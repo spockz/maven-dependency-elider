@@ -54,6 +54,17 @@ public final class JarIndexScanner {
     }
   }
 
+  /** Offers a serial option for callers avoiding virtual-thread scheduling. */
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  public ArtifactClassIndex scanSequential(final Collection<ArtifactFileRef> artifacts)
+      throws IOException {
+    final Map<ArtifactFileRef, Set<String>> classesByArtifact = new java.util.LinkedHashMap<>();
+    for (final ArtifactFileRef artifact : artifacts) {
+      classesByArtifact.put(artifact, scanJar(artifact.filePath()));
+    }
+    return new ArtifactClassIndex(classesByArtifact);
+  }
+
   private static Set<String> scanJar(final Path jarPath) throws IOException {
     final Set<String> classes = new HashSet<>();
     try (ZipFile zipFile = new ZipFile(jarPath.toFile())) {

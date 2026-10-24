@@ -33,6 +33,7 @@ class JarIndexScannerTest {
   JarIndexScannerTest() {}
 
   @Test
+  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void indexesClassNamesWithoutInflatingAndExcludesModuleDescriptors() throws IOException {
     final Path jarPath = temporaryDirectory.resolve("fixture.jar");
     try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jarPath))) {
@@ -40,11 +41,14 @@ class JarIndexScannerTest {
       addEntry(zip, "module-info.class", new byte[] {4});
       addEntry(zip, "META-INF/versions/17/module-info.class", new byte[] {5});
       addEntry(zip, "META-INF/versions/17/org/example/Versioned.class", new byte[] {6});
+      addEntry(zip, "META-INF/versions/17/org/example/Regular.class", new byte[] {8});
       addEntry(zip, "org/example/data.txt", new byte[] {7});
     }
     final ArtifactFileRef artifact = artifact(jarPath, "fixture");
+    final JarIndexScanner scanner = new JarIndexScanner();
 
-    final ArtifactClassIndex index = new JarIndexScanner().scan(List.of(artifact));
+    final ArtifactClassIndex index = scanner.scan(List.of(artifact));
+    assertThat(scanner.scanSequential(List.of(artifact))).isEqualTo(index);
 
     assertThat(index.classesFor(artifact))
         .containsExactlyInAnyOrder("org.example.Regular", "org.example.Versioned");
