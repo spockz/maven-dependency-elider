@@ -54,7 +54,7 @@
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>io.github.spockz.example.basic.Main</mainClass>
+                                    <mainClass>io.github.spockz.example.basic.BasicApplication</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>
