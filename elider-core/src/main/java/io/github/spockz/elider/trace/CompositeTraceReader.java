@@ -13,14 +13,15 @@ public final class CompositeTraceReader implements RuntimeTraceReader {
   /** Holds all built-in readers used for path dispatch. */
   private final List<RuntimeTraceReader> readers;
 
-  /** Creates a composite over the built-in text, CDS, GraalVM, and JFR readers. */
+  /** Creates a composite over every built-in telemetry reader. */
   public CompositeTraceReader() {
     readers =
         List.of(
             new ClassLoaderLogReader(),
             new CdsClassListReader(),
             new GraalVmConfigReader(),
-            new JfrTraceReader());
+            new JfrTraceReader(),
+            new JaCoCoTraceReader());
   }
 
   /** Returns whether at least one built-in reader recognizes the path. */

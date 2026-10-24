@@ -37,8 +37,9 @@
         <dependency-check-maven.version>13.0.0</dependency-check-maven.version>
         <checkstyle.version>14.3.0</checkstyle.version>
         <pmd.version>7.28.0</pmd.version>
-        <asm.version>9.7.1</asm.version>
+        <asm.version>9.10.1</asm.version>
         <jackson.version>2.18.2</jackson.version>
+        <jacoco.version>0.8.15</jacoco.version>
         <junit.version>5.11.4</junit.version>
         <assertj.version>3.27.3</assertj.version>
         <jmh.version>1.37</jmh.version>
@@ -101,6 +102,11 @@
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
                 <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jacoco</groupId>
+                <artifactId>org.jacoco.core</artifactId>
+                <version>${jacoco.version}</version>
             </dependency>
 
             <!-- Testing -->

@@ -67,6 +67,7 @@ Traditional software composition analysis (SCA) and dependency management suffer
 * `io.github.spockz.elider.trace.CdsClassListReader`
 * `io.github.spockz.elider.trace.JfrTraceReader`
 * `io.github.spockz.elider.trace.GraalVmConfigReader`
+* `io.github.spockz.elider.trace.JaCoCoTraceReader`
 * `io.github.spockz.elider.trace.CompositeTraceReader`
 
 #### Implementation Details
