@@ -12,7 +12,7 @@ final class TraceClassName {
     if (name == null || name.isEmpty()) {
       return false;
     }
-    final int marker = name.lastIndexOf("/0x");
+    final int marker = hiddenMarker(name);
     if (marker >= 0 && !isHexSuffix(name, marker + 3)) {
       return false;
     }
@@ -48,8 +48,12 @@ final class TraceClassName {
   }
 
   static boolean isHidden(final String name) {
-    final int marker = name.lastIndexOf("/0x");
+    final int marker = hiddenMarker(name);
     return marker >= 0 && isHexSuffix(name, marker + 3) && isValid(name);
+  }
+
+  private static int hiddenMarker(final String name) {
+    return Math.max(name.lastIndexOf("/0x"), name.lastIndexOf(".0x"));
   }
 
   private static boolean isHexSuffix(final String name, final int start) {
