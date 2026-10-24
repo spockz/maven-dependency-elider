@@ -1,0 +1,4 @@
+# WHY: Excludes Maven outputs and workspace-local tools, including downloaded JDK distributions.
+.scratch/
+**/target/
+*.class

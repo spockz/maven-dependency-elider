@@ -1,0 +1,15 @@
+# WHY: Applies the source documentation lint policy to Markdown in this Java repository.
+config:
+  default: true
+  MD013: false
+  MD024:
+    siblings_only: true
+  MD029:
+    style: one_or_ordered
+
+ignores:
+  - .git
+  - .scratch
+  - "**/.scratch/**"
+  - "**/target/**"
+  - .agents/**/*.md

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WHY: Keeps broad PMD coverage while tuning naming and control-flow rules to Java APIs and the project style. -->
+<ruleset name="Maven Dependency Elider"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.github.io/schema/ruleset_2_0_0.xsd">
+  <description>Project Java checks with explicit allowances for concise factories and guard clauses.</description>
+  <rule ref="category/java/bestpractices.xml" />
+  <rule ref="category/java/codestyle.xml">
+    <exclude name="OnlyOneReturn" />
+    <exclude name="LongVariable" />
+    <exclude name="ShortMethodName" />
+  </rule>
+  <rule ref="category/java/codestyle.xml/LongVariable">
+    <properties>
+      <property name="minimum" value="40" />
+    </properties>
+  </rule>
+  <rule ref="category/java/codestyle.xml/ShortMethodName">
+    <properties>
+      <property name="minimum" value="2" />
+    </properties>
+  </rule>
+  <rule ref="category/java/design.xml">
+    <exclude name="LoosePackageCoupling" />
+  </rule>
+  <rule ref="category/java/documentation.xml" />
+  <rule ref="category/java/errorprone.xml" />
+  <rule ref="category/java/multithreading.xml" />
+  <rule ref="category/java/performance.xml" />
+  <rule ref="category/java/security.xml" />
+</ruleset>

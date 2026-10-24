@@ -1,0 +1,52 @@
+# WHY: Gives the Maven repository fast and comprehensive checks matching its Java build and lint policy.
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
+
+MAVEN ?= ./mvnw
+MAVEN_ARGS ?= --batch-mode --no-transfer-progress
+MARKDOWNLINT ?= .scratch/tools/node_modules/.bin/markdownlint-cli2
+DEPENDENCY_CHECK_VERSION ?= 13.0.0
+
+.DEFAULT_GOAL := check
+.NOTPARALLEL: check check-ci
+
+.PHONY: check check-ci tools fix fmt lint lint-check lint-java lint-markdown vuln test-core test-all verify-docs
+
+check: lint-check test-core ## Run formatter, static analysis, and core tests
+
+check-ci: lint vuln test-all verify-docs ## Run all lint, vulnerability, test, and documentation checks
+
+tools: ## Download the Markdown linter used by repository documentation checks
+	command -v npm >/dev/null
+	npm install --prefix .scratch/tools --no-save --package-lock=false --no-audit --no-fund markdownlint-cli2@0.23.2
+
+fix: fmt ## Apply repository formatters
+
+fmt: ## Format Java sources and remove unused imports
+	$(MAVEN) $(MAVEN_ARGS) spotless:apply
+
+lint: lint-java lint-markdown ## Run all Java and documentation linters
+
+lint-check: fmt lint-java lint-markdown ## Apply safe formatting, then run blocking linters
+
+lint-java: ## Run Checkstyle, PMD, and SpotBugs
+	$(MAVEN) $(MAVEN_ARGS) compile spotless:check checkstyle:check pmd:check spotbugs:check
+
+lint-markdown: ## Lint Markdown documentation
+	command -v "$(MARKDOWNLINT)" >/dev/null
+	"$(MARKDOWNLINT)" "docs/**/*.md" "*.md"
+
+lint-vale: ## Run prose checks on documentation
+	command -v "$(VALE)" >/dev/null
+	"$(VALE)" docs
+
+vuln: ## Check dependencies against the OWASP vulnerability database
+	$(MAVEN) $(MAVEN_ARGS) org.owasp:dependency-check-maven:$(DEPENDENCY_CHECK_VERSION):check
+
+test-core: ## Run core library unit tests
+	$(MAVEN) $(MAVEN_ARGS) -pl elider-core test
+
+test-all: ## Run the complete reactor verification suite
+	$(MAVEN) $(MAVEN_ARGS) verify
+
+verify-docs: lint-markdown ## Verify Markdown documentation

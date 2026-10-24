@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WHY: SpotBugs does not recognize immutable JDK collection factories in record constructors. -->
+<FindBugsFilter>
+  <Match>
+    <Bug code="EI" pattern="EI_EXPOSE_REP" />
+    <Class name="io.github.spockz.elider.model.ElisionDecision" />
+  </Match>
+  <!-- WHY: Maven generates HelpMojo during the build and SpotBugs flags its template code. -->
+  <Match>
+    <Bug code="EI" pattern="EI_EXPOSE_REP" />
+    <Class name="io.github.spockz.elider.model.TraceData" />
+  </Match>
+  <Match>
+    <Bug pattern="UI_INHERITANCE_UNSAFE_GETRESOURCE" />
+    <Class name="io.github.spockz.dependency_elider_maven_plugin.HelpMojo" />
+  </Match>
+</FindBugsFilter>
