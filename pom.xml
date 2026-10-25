@@ -42,6 +42,7 @@
         <jacoco.version>0.8.15</jacoco.version>
         <junit.version>5.11.4</junit.version>
         <assertj.version>3.27.3</assertj.version>
+        <json-schema-validator.version>1.5.6</json-schema-validator.version>
         <jmh.version>1.37</jmh.version>
     </properties>
 
@@ -102,6 +103,11 @@
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-databind</artifactId>
                 <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.networknt</groupId>
+                <artifactId>json-schema-validator</artifactId>
+                <version>${json-schema-validator.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.jacoco</groupId>
