@@ -167,7 +167,7 @@ public final class DependencyJarTrimmer {
     if (roots.isEmpty()) {
       final Set<String> allProgramClasses = new TreeSet<>();
       programPool.classNames().forEachRemaining(allProgramClasses::add);
-      return new TrimAnalysis(programPool.size(), allProgramClasses, roots);
+      return new TrimAnalysis(programPool.size(), allProgramClasses, roots, Set.of());
     }
     final Set<String> missingRoots = new TreeSet<>();
     for (final String root : roots) {
@@ -220,7 +220,9 @@ public final class DependencyJarTrimmer {
 
     final Set<String> retainedClasses = new TreeSet<>();
     visited.forEach(clazz -> retainedClasses.add(clazz.getName()));
-    return new TrimAnalysis(programPool.size(), retainedClasses, roots);
+    final Set<String> reachableLibraryClasses = new TreeSet<>();
+    visitedLibraries.forEach(clazz -> reachableLibraryClasses.add(clazz.getName()));
+    return new TrimAnalysis(programPool.size(), retainedClasses, roots, reachableLibraryClasses);
   }
 
   private static Set<String> normalizeRoots(final Collection<String> roots) {
@@ -301,11 +303,22 @@ public final class DependencyJarTrimmer {
   }
 
   /** Immutable analysis result preserving roots for audit callers. */
-  public record TrimAnalysis(int totalClasses, Set<String> retainedClasses, Set<String> roots) {
+  public record TrimAnalysis(
+      int totalClasses,
+      Set<String> retainedClasses,
+      Set<String> roots,
+      Set<String> reachableLibraryClasses) {
+    /** Preserves the prior constructor for existing callers. */
+    public TrimAnalysis(
+        final int totalClasses, final Set<String> retainedClasses, final Set<String> roots) {
+      this(totalClasses, retainedClasses, roots, Set.of());
+    }
+
     /** Copies the result sets into immutable snapshots. */
     public TrimAnalysis {
       retainedClasses = Set.copyOf(retainedClasses);
       roots = Set.copyOf(roots);
+      reachableLibraryClasses = Set.copyOf(reachableLibraryClasses);
     }
   }
 

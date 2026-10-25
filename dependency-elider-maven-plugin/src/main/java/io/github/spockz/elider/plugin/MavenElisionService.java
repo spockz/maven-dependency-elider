@@ -14,6 +14,7 @@ import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.scanner.JarIndexScanner;
 import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
 import io.github.spockz.elider.trace.CompositeTraceReader;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -87,6 +88,27 @@ final class MavenElisionService {
       final MavenSession session,
       final boolean sourceRootsComplete)
       throws IOException, MojoFailureException {
+    return analyze(
+        project,
+        traceFiles,
+        excludedArtifacts,
+        productionOutput,
+        session,
+        sourceRootsComplete,
+        false,
+        List.of());
+  }
+
+  Analysis analyze(
+      final MavenProject project,
+      final List<File> traceFiles,
+      final List<String> excludedArtifacts,
+      final File productionOutput,
+      final MavenSession session,
+      final boolean sourceRootsComplete,
+      final boolean trimJars,
+      final List<String> explicitTrimRoots)
+      throws IOException, MojoFailureException {
     final List<Artifact> resolved = new ArrayList<>(project.getArtifacts());
     final List<ArtifactSnapshot> resolvedSnapshots = snapshots(resolved);
     validateIdentityPaths(resolvedSnapshots);
@@ -118,13 +140,29 @@ final class MavenElisionService {
                 trace,
                 config(excludedArtifacts, compilerInputs.compileVisibleCoordinates()),
                 compilerInputs.requiredClasses());
+    final MavenDependencyTrimmer.TrimResult trimResult =
+        trimJars
+            ? MavenDependencyTrimmer.trim(
+                project,
+                session,
+                resolvedSnapshots,
+                index,
+                new HashSet<>(decision.retainedArtifacts()),
+                trace,
+                compilerInputs.requiredClasses(),
+                bytecodeScan.map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
+                explicitTrimRoots)
+            : new MavenDependencyTrimmer.TrimResult(List.of(), 0, 0L);
     return new Analysis(
         resolvedSnapshots,
         directPresent,
         directSnapshots,
         decision,
         classUsageReport,
-        bytecodeScan);
+        bytecodeScan,
+        trimResult.records(),
+        trimResult.cacheHits(),
+        trimResult.maximumCacheHitNanos());
   }
 
   /** Prepares Maven artifact views without mutating project state. */
@@ -469,7 +507,29 @@ final class MavenElisionService {
       List<ArtifactSnapshot> directSnapshots,
       ElisionDecision decision,
       ClassUsageReport classUsageReport,
-      Optional<BytecodeReferenceScan> bytecodeScan) {
+      Optional<BytecodeReferenceScan> bytecodeScan,
+      List<ArtifactTrimRecord> trimRecords,
+      int trimCacheHits,
+      long maximumTrimCacheHitNanos) {
+    Analysis(
+        final List<ArtifactSnapshot> resolvedSnapshots,
+        final boolean directArtifactsPresent,
+        final List<ArtifactSnapshot> directSnapshots,
+        final ElisionDecision decision,
+        final ClassUsageReport classUsageReport,
+        final Optional<BytecodeReferenceScan> bytecodeScan) {
+      this(
+          resolvedSnapshots,
+          directArtifactsPresent,
+          directSnapshots,
+          decision,
+          classUsageReport,
+          bytecodeScan,
+          List.of(),
+          0,
+          0L);
+    }
+
     Analysis(
         final List<ArtifactSnapshot> resolvedSnapshots,
         final boolean directArtifactsPresent,
@@ -481,12 +541,16 @@ final class MavenElisionService {
           directSnapshots,
           decision,
           new ClassUsageReport(List.of()),
-          Optional.empty());
+          Optional.empty(),
+          List.of(),
+          0,
+          0L);
     }
 
     Analysis {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);
+      trimRecords = List.copyOf(trimRecords);
     }
 
     Set<Artifact> resolvedArtifacts() {

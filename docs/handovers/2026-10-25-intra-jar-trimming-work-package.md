@@ -146,6 +146,8 @@ Build upon the verified whole-artifact elision engine by introducing **intra-JAR
   * Cache trimmed JARs keyed by original SHA-256 + root set fingerprint, ensuring trimming executes only once per dependency version.
   * Ensure fast-path cache hit executes in $< 1.5\text{ ms}$.
 
+**Track 5 implementation note:** JAR trimming is opt-in (`elide.trimJars=false` by default). A cache entry binds original bytes, sorted candidate roots, retained sibling JAR bytes, effective platform signatures, and trimmed output bytes. Cross-artifact link closure is propagated to a fixed point before outputs are accepted. Repeated exact-validation cache paths measured 120.1 to 135.8 ms in a single-artifact lifecycle fixture under GraalVM JDK 21, so the 1.5 ms target is unmet. Validation remains content-based because Maven snapshots and local artifacts can change while filesystem metadata stays the same. Trimming emits a CycloneDX SBOM at `target/dependency-elider-sbom.cdx.json` by default when enabled; `elide.sbomFile` overrides the path.
+
 ---
 
 ### Track 6: Reference App Fixtures & Verification Loop (`examples/`)
