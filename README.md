@@ -46,7 +46,7 @@ make tools
 make check
 ```
 
-`make check` formats Java sources, runs Checkstyle, PMD, SpotBugs, lints Markdown, and runs the core module tests. Run individual checks with `make lint-java`, `make lint-markdown`, or `make test-core`.
+`make check` formats Java sources, runs Checkstyle, PMD, SpotBugs, lints Markdown, and runs the core and Maven plugin tests. Run individual checks with `make lint-java`, `make lint-markdown`, `make test-core`, or `make test-plugin`.
 
 ## Example applications
 
@@ -63,7 +63,18 @@ The fixtures currently demonstrate application behavior, tests, and downstream p
 
 ## Usage
 
-The Maven plugin goal and runtime analysis pipeline are not available yet. Follow the project status and implementation notes in [`docs/research/`](docs/research/) for current work. As new examples are added, their purpose, exercised behavior, and current verification status should be documented here.
+The Maven plugin provides a nonmutating, trace-based `analyze` goal. Install the plugin and its core dependency to the local repository, then run it in the consumer project with an explicit trace:
+
+```sh
+# From this repository root:
+./mvnw -pl dependency-elider-maven-plugin -am install
+
+# From the consumer project, use its Maven binary or wrapper:
+./mvnw io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
+  -Delide.traceFiles=target/classes.log
+```
+
+See [Maven plugin usage](docs/plugin-usage.md) for supported trace formats, summary fields, and global exclusions. The `elide` goal remains disabled before any Maven project state is accessed until a forked Maven 3.9 build proves that INITIALIZE mutation survives later resolution, compile/test classpath construction, and packaging. Maven 4 compatibility remains unverified.
 
 ## Contributing
 

@@ -68,7 +68,7 @@ public record PruneConfig(
       final ArtifactCoordinate first, final ArtifactCoordinate second) {
     return first.groupId().equals(second.groupId())
         && first.artifactId().equals(second.artifactId())
-        && Objects.equals(first.version(), second.version())
+        && (first.version() == null || Objects.equals(first.version(), second.version()))
         && first.type().equals(second.type())
         && first.classifier().equals(second.classifier());
   }

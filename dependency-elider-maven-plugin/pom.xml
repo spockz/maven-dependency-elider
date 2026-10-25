@@ -14,7 +14,7 @@
     <packaging>maven-plugin</packaging>
 
     <name>Dependency Elider Maven Plugin</name>
-    <description>Maven plugin that executes during the INITIALIZE lifecycle phase to elide unused dependencies and slice symbols.</description>
+    <description>Maven plugin for trace-grounded, nonmutating dependency analysis; INITIALIZE elision remains disabled pending lifecycle verification.</description>
 
     <dependencies>
         <dependency>

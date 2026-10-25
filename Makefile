@@ -10,9 +10,9 @@ DEPENDENCY_CHECK_VERSION ?= 13.0.0
 .DEFAULT_GOAL := check
 .NOTPARALLEL: check check-ci
 
-.PHONY: check check-ci tools fix fmt lint lint-check lint-java lint-markdown vuln test-core test-all verify-docs
+.PHONY: check check-ci tools fix fmt lint lint-check lint-java lint-markdown vuln test-core test-plugin test-all verify-docs
 
-check: lint-check test-core ## Run formatter, static analysis, and core tests
+check: lint-check test-core test-plugin ## Run formatter, static analysis, and core and plugin tests
 
 check-ci: lint vuln test-all verify-docs ## Run all lint, vulnerability, test, and documentation checks
 
@@ -45,6 +45,9 @@ vuln: ## Check dependencies against the OWASP vulnerability database
 
 test-core: ## Run core library unit tests
 	$(MAVEN) $(MAVEN_ARGS) -pl elider-core test
+
+test-plugin: ## Run Maven plugin unit tests with required core dependencies
+	$(MAVEN) $(MAVEN_ARGS) -pl dependency-elider-maven-plugin -am test
 
 test-all: ## Run the complete reactor verification suite
 	$(MAVEN) $(MAVEN_ARGS) verify
