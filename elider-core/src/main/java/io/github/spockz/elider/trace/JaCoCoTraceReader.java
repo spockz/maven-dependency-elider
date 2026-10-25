@@ -7,12 +7,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
+import org.jacoco.core.data.ExecutionData;
 import org.jacoco.core.data.ExecutionDataReader;
+import org.jacoco.core.data.ExecutionDataStore;
 
 /** Reads class names recorded in JaCoCo {@code .exec} files. */
 public final class JaCoCoTraceReader implements RuntimeTraceReader {
@@ -32,7 +33,6 @@ public final class JaCoCoTraceReader implements RuntimeTraceReader {
 
   /** Includes every class record, whether or not its execution probes were hit. */
   @Override
-  @SuppressWarnings("PMD.UseConcurrentHashMap")
   public TraceData read(final Path path) throws IOException {
     if (!supports(path)) {
       throw new IOException("Unsupported JaCoCo execution data file: " + path);
@@ -40,38 +40,30 @@ public final class JaCoCoTraceReader implements RuntimeTraceReader {
     if (Files.size(path) == 0) {
       throw new IOException("JaCoCo execution data file is empty: " + path);
     }
-    final Set<String> classes = new HashSet<>();
-    final Map<Long, String> classNamesById = new HashMap<>();
-    final Set<Long> conflicts = new HashSet<>();
     try {
       try (InputStream input = Files.newInputStream(path)) {
         final ExecutionDataReader reader = new ExecutionDataReader(input);
         reader.setSessionInfoVisitor(sessionInfo -> {});
-        reader.setExecutionDataVisitor(
-            data -> {
-              final String priorName = classNamesById.putIfAbsent(data.getId(), data.getName());
-              if (priorName != null && !priorName.equals(data.getName())) {
-                conflicts.add(data.getId());
-              }
-              classes.add(data.getName());
-            });
-        readToEnd(reader);
+        final ExecutionDataStore store = new ExecutionDataStore();
+        reader.setExecutionDataVisitor(store);
+        reader.read();
+        return readClassNames(path, store.getContents());
       }
-    } catch (final IOException exception) {
+    } catch (final IOException | IllegalArgumentException | IllegalStateException exception) {
       throw new IOException("Unable to read JaCoCo execution data file " + path, exception);
     }
-    if (!conflicts.isEmpty()) {
-      final IllegalStateException cause =
-          new IllegalStateException("Conflicting class IDs: " + conflicts);
-      throw new IOException("Unable to read JaCoCo execution data file " + path, cause);
-    }
-    return TraceData.of(classes);
   }
 
-  @SuppressWarnings("PMD.EmptyControlStatement")
-  private static void readToEnd(final ExecutionDataReader reader) throws IOException {
-    while (reader.read()) {
-      // WHY: Reading to EOF validates trailing records after each visitor callback.
+  private static TraceData readClassNames(final Path path, final Collection<ExecutionData> records)
+      throws IOException {
+    final Set<String> classes = new HashSet<>();
+    for (final ExecutionData record : records) {
+      final String className = record.getName();
+      if (!TraceClassName.isValid(className)) {
+        throw new IOException("Invalid class name in JaCoCo execution data file " + path);
+      }
+      classes.add(className);
     }
+    return TraceData.of(classes);
   }
 }
