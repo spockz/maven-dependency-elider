@@ -174,12 +174,16 @@ final class DependencyDynamicRoots {
     }
     for (final String propertyKey : metadata.stringPropertyNames()) {
       final String marker = metadataMarker(propertyKey);
+      final String value = metadata.getProperty(propertyKey);
       if (marker == null) {
+        if (value.isEmpty() && isBinaryClassName(propertyKey)) {
+          roots.add(propertyKey);
+          continue;
+        }
         throw new IOException("Unsupported Spring autoconfigure metadata key: " + propertyKey);
       }
-      final int conditionStart = propertyKey.indexOf(marker);
+      final int conditionStart = propertyKey.lastIndexOf(marker);
       roots.add(propertyKey.substring(0, conditionStart));
-      final String value = metadata.getProperty(propertyKey);
       if (marker.endsWith("Before") || marker.endsWith("After")) {
         for (final String candidate : value.split("[,;\\s]+")) {
           if (!isBinaryClassName(candidate)) {
@@ -215,14 +219,18 @@ final class DependencyDynamicRoots {
   }
 
   private static String metadataMarker(final String key) {
+    String selected = null;
+    int selectedIndex = -1;
     for (final String marker :
         Set.of(
             ".Conditional", ".AutoConfigureBefore", ".AutoConfigureAfter", ".AutoConfigureOrder")) {
-      if (key.contains(marker)) {
-        return marker;
+      final int markerIndex = key.lastIndexOf(marker);
+      if (markerIndex > selectedIndex) {
+        selected = marker;
+        selectedIndex = markerIndex;
       }
     }
-    return null;
+    return selectedIndex < 0 ? null : selected;
   }
 
   private static boolean isBinaryClassName(final String name) {

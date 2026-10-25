@@ -319,6 +319,34 @@ final class MavenDependencyTrimmer {
       final int schemaVersion,
       final String engineVersion)
       throws IOException {
+    final List<String> candidateIdentities = new ArrayList<>();
+    final Set<String> roots = new TreeSet<>();
+    for (final CandidateWork candidate : candidates) {
+      candidateIdentities.add(
+          candidate.snapshot().coordinate()
+              + ":"
+              + candidate.snapshot().filePath().toAbsolutePath().normalize());
+      roots.addAll(candidate.roots());
+    }
+    return fingerprintForInputs(
+        candidateIdentities,
+        orderedLibraries,
+        roots,
+        platformInputs(javaHome, release),
+        release,
+        schemaVersion,
+        engineVersion);
+  }
+
+  static String fingerprintForInputs(
+      final List<String> candidateIdentities,
+      final List<Path> orderedLibraries,
+      final Set<String> roots,
+      final List<Path> platformInputs,
+      final int release,
+      final int schemaVersion,
+      final String engineVersion)
+      throws IOException {
     final StringBuilder input =
         new StringBuilder("release=")
             .append(release)
@@ -327,16 +355,11 @@ final class MavenDependencyTrimmer {
             .append("\nengine=")
             .append(engineVersion)
             .append('\n');
-    for (final CandidateWork candidate : candidates) {
-      input
-          .append("candidate=")
-          .append(candidate.snapshot().coordinate())
-          .append(':')
-          .append(candidate.snapshot().filePath().toAbsolutePath().normalize())
-          .append('\n');
-      for (final String root : new TreeSet<>(candidate.roots())) {
-        input.append("root=").append(root).append('\n');
-      }
+    for (final String candidateIdentity : candidateIdentities) {
+      input.append("candidate=").append(candidateIdentity).append('\n');
+    }
+    for (final String root : new TreeSet<>(roots)) {
+      input.append("root=").append(root).append('\n');
     }
     for (int index = 0; index < orderedLibraries.size(); index++) {
       final Path library = orderedLibraries.get(index);
@@ -349,7 +372,7 @@ final class MavenDependencyTrimmer {
           .append(sha256(library))
           .append('\n');
     }
-    for (final Path platformInput : platformInputs(javaHome, release)) {
+    for (final Path platformInput : platformInputs) {
       input
           .append("platform=")
           .append(platformInput.getFileName())
@@ -432,6 +455,9 @@ final class MavenDependencyTrimmer {
       final CandidateWork candidate = candidates.get(index);
       final CacheEntry entry = manifest.entries().get(index);
       final Path original = candidate.snapshot().filePath().toAbsolutePath().normalize();
+      if (!validCacheEntry(entry, candidate)) {
+        return null;
+      }
       if (!original.toString().equals(entry.originalPath())
           || !sha256(original).equals(entry.originalSha256())) {
         return null;
@@ -458,6 +484,37 @@ final class MavenDependencyTrimmer {
               entry.retainedClasses()));
     }
     return new TrimResult(records, records.size(), System.nanoTime() - started, 0);
+  }
+
+  private static boolean validCacheEntry(final CacheEntry entry, final CandidateWork candidate) {
+    if (entry == null
+        || !validDigest(entry.originalSha256(), 64)
+        || entry.totalClasses() != candidate.classes().size()
+        || entry.retainedClasses() < 0
+        || entry.retainedClasses() > entry.totalClasses()
+        || entry.retainedClassNames().size() != entry.retainedClasses()
+        || !candidate.classes().containsAll(entry.roots())) {
+      return false;
+    }
+    for (final String retainedClass : entry.retainedClassNames()) {
+      if (!candidate.classes().contains(retainedClass.replace('/', '.'))) {
+        return false;
+      }
+    }
+    if (entry.trimmedPath() == null) {
+      return entry.retainedClasses() == entry.totalClasses()
+          && entry.originalSha1() == null
+          && entry.trimmedSha256() == null
+          && entry.trimmedSha1() == null;
+    }
+    return validDigest(entry.originalSha1(), 40)
+        && validDigest(entry.trimmedSha256(), 64)
+        && validDigest(entry.trimmedSha1(), 40)
+        && entry.retainedClasses() < entry.totalClasses();
+  }
+
+  private static boolean validDigest(final String value, final int length) {
+    return value != null && value.matches("[0-9a-f]{" + length + "}");
   }
 
   private static void storeCache(final Path manifestPath, final CacheManifest manifest)

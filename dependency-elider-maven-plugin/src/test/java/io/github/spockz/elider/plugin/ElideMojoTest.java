@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
@@ -34,6 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.AvoidAccessibilityAlteration",
   "PMD.AvoidDuplicateLiterals",
   "PMD.TooManyMethods",
+  "PMD.CouplingBetweenObjects",
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
   "PMD.ShortVariable",
@@ -144,6 +147,23 @@ final class ElideMojoTest {
     assertThat(cachedAnalysis.trimRecords())
         .singleElement()
         .satisfies(record -> assertThat(record.trimmedPath()).isEqualTo(expectedTrimmedPath));
+    final Path cacheManifest = tempDir.resolve("build/elided-artifacts/.trim-analysis-cache.json");
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode manifest = (ObjectNode) mapper.readTree(cacheManifest.toFile());
+    ((ObjectNode) manifest.path("entries").get(0)).putNull("trimmedSha256");
+    mapper.writeValue(cacheManifest.toFile(), manifest);
+    final MavenElisionService.Analysis malformedCacheAnalysis =
+        new MavenElisionService()
+            .analyze(
+                project,
+                List.of(writeTrace("sample.Keep\n").toFile()),
+                List.of(),
+                null,
+                null,
+                false,
+                true,
+                List.of());
+    assertThat(malformedCacheAnalysis.trimAnalysisRuns()).isPositive();
     Files.writeString(expectedTrimmedPath, "tampered output");
     final MavenElisionService.Analysis repairedAnalysis =
         new MavenElisionService()
@@ -168,27 +188,31 @@ final class ElideMojoTest {
     final Path cjar =
         compileJarSources(
             "End",
-            java.util.Map.of(
-                "End.java",
-                "package chain; public interface End { static void touch() {} }",
-                "Provider.java",
-                "package chain; public class Provider implements End {}",
-                "Reflected.java",
-                "package chain; public class Reflected {}",
-                "ProxyMarker.java",
-                "package chain; public interface ProxyMarker {}",
-                "SpringAuto.java",
-                "package chain; public class SpringAuto {}",
-                "Factory.java",
-                "package chain; public class Factory {}",
-                "MetadataCondition.java",
-                "package chain; public class MetadataCondition {}",
-                "BeforeAuto.java",
-                "package chain; public class BeforeAuto {}",
-                "AfterAuto.java",
-                "package chain; public class AfterAuto {}",
-                "Unused.java",
-                "package chain; public class Unused {}"),
+            java.util.Map.ofEntries(
+                java.util.Map.entry(
+                    "End.java", "package chain; public interface End { static void touch() {} }"),
+                java.util.Map.entry(
+                    "Provider.java", "package chain; public class Provider implements End {}"),
+                java.util.Map.entry("Reflected.java", "package chain; public class Reflected {}"),
+                java.util.Map.entry(
+                    "ProxyMarker.java", "package chain; public interface ProxyMarker {}"),
+                java.util.Map.entry("SpringAuto.java", "package chain; public class SpringAuto {}"),
+                java.util.Map.entry("Factory.java", "package chain; public class Factory {}"),
+                java.util.Map.entry(
+                    "MetadataCondition.java", "package chain; public class MetadataCondition {}"),
+                java.util.Map.entry(
+                    "AutoConfiguration.java",
+                    "package org.springframework.boot.autoconfigure; public class "
+                        + "AutoConfiguration { public static class Nested {} }"),
+                java.util.Map.entry(
+                    "ConditionalOnCheckpointRestore.java",
+                    "package org.springframework.boot.autoconfigure.condition; public class "
+                        + "ConditionalOnCheckpointRestore {}"),
+                java.util.Map.entry(
+                    "Resource.java", "package org.crac; public interface Resource {}"),
+                java.util.Map.entry("BeforeAuto.java", "package chain; public class BeforeAuto {}"),
+                java.util.Map.entry("AfterAuto.java", "package chain; public class AfterAuto {}"),
+                java.util.Map.entry("Unused.java", "package chain; public class Unused {}")),
             null);
     final Path bjar =
         compileJar(
@@ -215,6 +239,11 @@ final class ElideMojoTest {
                 "org.example.Factory=chain.Factory\n",
                 "META-INF/spring-autoconfigure-metadata.properties",
                 "chain.SpringAuto.ConditionalOnClass=chain.MetadataCondition\n"
+                    + "org.springframework.boot.autoconfigure.AutoConfiguration=\n"
+                    + "org.springframework.boot.autoconfigure.AutoConfiguration$Nested=\n"
+                    + "org.springframework.boot.autoconfigure.condition."
+                    + "ConditionalOnCheckpointRestore."
+                    + "ConditionalOnClass=org.crac.Resource\n"
                     + "chain.SpringAuto.AutoConfigureBefore=chain.BeforeAuto\n"
                     + "chain.SpringAuto.AutoConfigureAfter=chain.AfterAuto\n"
                     + "chain.SpringAuto.AutoConfigureOrder=10\n"));
@@ -257,6 +286,11 @@ final class ElideMojoTest {
     assertJarContains(c, "chain/SpringAuto.class");
     assertJarContains(c, "chain/Factory.class");
     assertJarContains(c, "chain/MetadataCondition.class");
+    assertJarContains(c, "org/springframework/boot/autoconfigure/AutoConfiguration.class");
+    assertJarContains(c, "org/springframework/boot/autoconfigure/AutoConfiguration$Nested.class");
+    assertJarContains(
+        c, "org/springframework/boot/autoconfigure/condition/ConditionalOnCheckpointRestore.class");
+    assertJarContains(c, "org/crac/Resource.class");
     assertJarContains(c, "chain/BeforeAuto.class");
     assertJarContains(c, "chain/AfterAuto.class");
     assertThat(serviceOwner.getFile().toPath()).isEqualTo(serviceJar);
@@ -363,6 +397,95 @@ final class ElideMojoTest {
   }
 
   @Test
+  void trimCacheFingerprintTracksExactOrderedAnalysisInputs() throws IOException {
+    final Path firstLibrary = tempDir.resolve("first.jar");
+    final Path secondLibrary = tempDir.resolve("second.jar");
+    final Path ctSym = tempDir.resolve("ct.sym");
+    final Path jmod = tempDir.resolve("java.base.jmod");
+    Files.writeString(firstLibrary, "first-bytes");
+    Files.writeString(secondLibrary, "second-bytes");
+    Files.writeString(ctSym, "ct-sym-bytes");
+    Files.writeString(jmod, "jmod-bytes");
+    final java.nio.file.attribute.FileTime timestamp =
+        java.nio.file.attribute.FileTime.fromMillis(1_700_000_000_000L);
+    Files.setLastModifiedTime(firstLibrary, timestamp);
+    final List<String> candidateIdentities = List.of("org.example:first:1.0:jar");
+    final String baseline =
+        MavenDependencyTrimmer.fingerprintForInputs(
+            candidateIdentities,
+            List.of(firstLibrary, secondLibrary),
+            Set.of("sample.Root"),
+            List.of(ctSym),
+            21,
+            4,
+            "proguard-core-9.1.10");
+
+    assertThat(
+            MavenDependencyTrimmer.fingerprintForInputs(
+                candidateIdentities,
+                List.of(secondLibrary, firstLibrary),
+                Set.of("sample.Root"),
+                List.of(ctSym),
+                21,
+                4,
+                "proguard-core-9.1.10"))
+        .isNotEqualTo(baseline);
+    assertThat(
+            MavenDependencyTrimmer.fingerprintForInputs(
+                candidateIdentities,
+                List.of(firstLibrary, secondLibrary),
+                Set.of("sample.OtherRoot"),
+                List.of(ctSym),
+                21,
+                4,
+                "proguard-core-9.1.10"))
+        .isNotEqualTo(baseline);
+    assertThat(
+            MavenDependencyTrimmer.fingerprintForInputs(
+                candidateIdentities,
+                List.of(firstLibrary, secondLibrary),
+                Set.of("sample.Root"),
+                List.of(jmod),
+                21,
+                4,
+                "proguard-core-9.1.10"))
+        .isNotEqualTo(baseline);
+    assertThat(
+            MavenDependencyTrimmer.fingerprintForInputs(
+                candidateIdentities,
+                List.of(firstLibrary, secondLibrary),
+                Set.of("sample.Root"),
+                List.of(ctSym),
+                21,
+                5,
+                "proguard-core-9.1.10"))
+        .isNotEqualTo(baseline);
+    assertThat(
+            MavenDependencyTrimmer.fingerprintForInputs(
+                candidateIdentities,
+                List.of(firstLibrary, secondLibrary),
+                Set.of("sample.Root"),
+                List.of(ctSym),
+                21,
+                4,
+                "proguard-core-9.1.11"))
+        .isNotEqualTo(baseline);
+
+    Files.writeString(firstLibrary, "other-bytes");
+    Files.setLastModifiedTime(firstLibrary, timestamp);
+    assertThat(
+            MavenDependencyTrimmer.fingerprintForInputs(
+                candidateIdentities,
+                List.of(firstLibrary, secondLibrary),
+                Set.of("sample.Root"),
+                List.of(ctSym),
+                21,
+                4,
+                "proguard-core-9.1.10"))
+        .isNotEqualTo(baseline);
+  }
+
+  @Test
   void explicitTrimRootKeepsItsWholeArtifactOwnerAndTrimsOtherClasses()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
@@ -406,6 +529,59 @@ final class ElideMojoTest {
     assertJarContains(explicit, "explicit/Keep.class");
     try (JarFile trimmed = new JarFile(explicit.getFile())) {
       assertThat(trimmed.getEntry("explicit/Drop.class")).isNull();
+    }
+  }
+
+  @Test
+  void trimSbomIncludesRetainedPomArtifacts()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Path dependencyJar =
+        compileJarSources(
+            "sbom-dependency",
+            java.util.Map.of(
+                "Keep.java", "package sbom; public class Keep {}",
+                "Drop.java", "package sbom; public class Drop {}"),
+            null);
+    final Artifact jarArtifact = runtimeArtifact("sbom-dependency", dependencyJar);
+    final Path pomFile = tempDir.resolve("descriptor-dependency.pom");
+    Files.writeString(pomFile, "<project/>\n");
+    final Artifact pomArtifact =
+        new DefaultArtifact(
+            "org.example",
+            "descriptor-dependency",
+            "1.0",
+            "runtime",
+            "pom",
+            null,
+            new DefaultArtifactHandler("pom"));
+    pomArtifact.setFile(pomFile.toFile());
+    final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(jarArtifact, pomArtifact));
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(artifacts);
+    project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
+    project.setGroupId("org.example");
+    project.setArtifactId("sbom-consumer");
+    project.setVersion("1.0");
+    project.setName("SBOM Consumer");
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("pom-sbom-build").toString());
+    project.setBuild(build);
+    final ElideMojo mojo = new ElideMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("sbom.Keep\n").toFile()));
+    set(mojo, "reportFile", tempDir.resolve("pom-sbom-report.json").toFile());
+    set(mojo, "sbomFile", tempDir.resolve("pom-sbom-build/sbom.json").toFile());
+    set(mojo, "trimJars", true);
+
+    mojo.execute();
+
+    assertThat(project.getArtifacts()).contains(jarArtifact, pomArtifact);
+    assertThat(tempDir.resolve("pom-sbom-build/sbom.json")).isRegularFile();
+    assertJarContains(jarArtifact, "sbom/Keep.class");
+    try (JarFile trimmed = new JarFile(jarArtifact.getFile())) {
+      assertThat(trimmed.getEntry("sbom/Drop.class")).isNull();
     }
   }
 

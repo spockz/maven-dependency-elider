@@ -144,7 +144,7 @@ final class MavenElisionService {
             ? Optional.empty()
             : Optional.of(new ProductionBytecodeReferenceScanner().scan(productionOutput.toPath()));
     final ClassUsageReport classUsageReport = ClassUsageReport.classify(index, trace, bytecodeScan);
-    final ElisionDecision decision =
+    final ElisionDecision jarDecision =
         new DependencyPruner()
             .prune(
                 scanCandidates,
@@ -152,6 +152,7 @@ final class MavenElisionService {
                 trace,
                 config(excludedArtifacts, keepForPruning),
                 pruningRequiredClasses);
+    final ElisionDecision decision = retainNonJarArtifacts(jarDecision, resolvedSnapshots);
     final MavenDependencyTrimmer.TrimResult trimResult =
         trimJars
             ? MavenDependencyTrimmer.trim(
@@ -279,6 +280,22 @@ final class MavenElisionService {
       }
     }
     return new PruneConfig(Set.of(), keepArtifacts, ELIGIBLE_SCOPES, exclusions);
+  }
+
+  private static ElisionDecision retainNonJarArtifacts(
+      final ElisionDecision jarDecision, final List<ArtifactSnapshot> snapshots) {
+    final Set<ArtifactCoordinate> retained = new HashSet<>(jarDecision.retainedArtifacts());
+    for (final ArtifactSnapshot snapshot : snapshots) {
+      if (!"jar".equals(snapshot.coordinate().type()) && snapshot.filePath() != null) {
+        retained.add(snapshot.coordinate());
+      }
+    }
+    return new ElisionDecision(
+        retained,
+        jarDecision.elidedArtifacts(),
+        jarDecision.retainedClassesPerArtifact(),
+        jarDecision.unusedClassesPerArtifact(),
+        jarDecision.elapsedNanos());
   }
 
   private static DynamicRootInputs dynamicRoots(final List<ArtifactFileRef> candidates)
