@@ -50,7 +50,7 @@ Traditional software composition analysis (SCA) and dependency management suffer
 | **Track 3: Graph Elision Engine & Sub-10ms Fingerprint Cache** | `elider-core/src/main/java/.../engine`, `.../cache` | 64-bit fingerprinting, cache storage/validation, dependency reachability graph pruning. | Tracks 1, 2 |
 | **Track 4: Provenance Generators** | `elider-core/src/main/java/.../metadata` | Audit POM and CycloneDX 1.6 inventory first; OpenVEX and Dependency-Check outputs require explicit vulnerability evidence. | Track 3 |
 | **Track 5: Early Lifecycle Maven Plugin Mojo** | `dependency-elider-maven-plugin` | `@Mojo(name="elide", defaultPhase=INITIALIZE)`, in-memory `project.getArtifacts()` mutator. | Tracks 3, 4 |
-| **Track 6: Sub-Artifact Bytecode Symbol Slicing (Step 2)** | `elider-core/src/main/java/.../slicer` | ASM intra-JAR link closure, Shade signature-stripping, sliced companion JAR creation. | Track 5 |
+| **Track 6: Sub-Artifact Bytecode Slicing** | Deferred | No sub-artifact deletion in the current product scope. An observed class retains its entire owning dependency JAR. | Explicit future scope revision |
 | **Track 7: JMH Benchmarking Suite** | `elider-benchmarks` | Microbenchmarks proving the $<10\text{ ms}$ invariant on cache-hit and parallel cold-path. | Tracks 2, 3 |
 | **Track 8: End-to-End Verification Harness** | `examples/`, `elider-core/src/test` | 3-stage recording $\rightarrow$ elision $\rightarrow$ verification tests on basic app and Spring Boot. | Tracks 5, 7 |
 
@@ -263,9 +263,9 @@ Later slices may add:
 
 ---
 
-### 3.6 Track 6: Sub-Artifact Bytecode Symbol Slicing (Step 2 Priority)
+### 3.6 Track 6: Sub-Artifact Bytecode Slicing (Deferred)
 
-Removal granularity follows Maven Shade whole-resource copy/delete behavior: retain or remove complete `.class` entries. Do not rewrite methods, fields, instructions, or other arbitrary bytecode regions. The first slicing capability is a class-level link-closure analysis that preserves all members of retained class files; any future JAR writer must copy or delete complete entries and follow an explicit resource policy.
+Sub-artifact slicing is outside the current product scope. Runtime class observations map to their owning dependency artifact, and any observed class retains the entire JAR. Do not run intra-JAR link-closure analysis or delete individual class entries. Reopen this track only through an explicit scope revision.
 
 **Files to implement:**
 

@@ -7,7 +7,7 @@
 
 Maven Dependency Elider is an early-stage Java project exploring runtime-informed dependency analysis for Maven applications. The goal is to use observed class-loading data to identify dependencies that an application does not use, then make those findings available to Maven builds and downstream packaging tools.
 
-The project is under active development. The core currently includes runtime trace readers, a JAR central-directory class index, an initial conservative dependency-pruning engine, and a cache API. The cache is not integrated into the Maven plugin, and the `elide` goal, provenance outputs, bytecode slicing, and end-to-end elision workflow are still being implemented. Do not use this project to remove dependencies from production builds.
+The project is under active development. The core currently includes runtime trace readers, a JAR central-directory class index, an initial conservative dependency-pruning engine, and a cache API. The cache is not integrated into the Maven plugin, and the `elide` goal, provenance outputs, and end-to-end elision workflow are still being implemented. Sub-artifact bytecode slicing is deferred; an observed class retains its entire dependency JAR. Do not use this project to remove dependencies from production builds.
 
 ## Project goals
 

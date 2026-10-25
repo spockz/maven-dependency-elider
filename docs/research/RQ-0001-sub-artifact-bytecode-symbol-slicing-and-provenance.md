@@ -1,7 +1,7 @@
 <!-- WHY: Investigates sub-artifact bytecode symbol slicing, constant-pool link closure, signature handling for signed JARs, and recording provenance across audit POMs, CycloneDX 1.6 SBOMs, and evidence-backed OpenVEX. -->
 # RQ-0001: Sub-Artifact Bytecode Symbol Slicing and Multi-Tier Provenance
 
-* **Status**: Open
+* **Status**: Deferred
 * **Category**: Bytecode Slicing & Provenance Metadata
 * **Date**: 2026-10-24
 * **Last Updated**: 2026-10-24
@@ -35,7 +35,7 @@ However, slicing a third-party JAR introduces three unresolved challenges:
 
 ### 2.1 Sub-Artifact Slicing & Link Closure
 
-The supported removal granularity is a complete JAR entry, especially a whole `.class` file, matching Maven Shade copy/delete filters. Do not rewrite individual methods, fields, or instructions. Link closure determines which full classes to retain; it does not authorize member-level bytecode surgery.
+This research remains deferred from the current product scope. Runtime observations map classes to owning dependency artifacts, and an observed class retains its entire JAR. The current implementation does not perform intra-JAR link-closure analysis, delete class entries, or rewrite methods, fields, or instructions. Reopen this work only through an explicit scope revision.
 
 * **Approach A: Static ASM Call-Graph Closure**:
   Starting from the set of classes $R_{\text{used}}$ referenced by the application in artifact $A$, parse the bytecode of each $c \in R_{\text{used}}$ to identify referenced types $t \in A$. Add $t$ to $R_{\text{used}}$ recursively until fixed-point closure is achieved.
@@ -119,6 +119,8 @@ OpenVEX statements require an identified product and vulnerability plus issuer/d
 ---
 
 ## 4. Next Steps & Decision Checkpoints
+
+The slicing checkpoints below are deferred and inactive under the current whole-artifact retention scope. Reopen them only through an explicit scope revision.
 
 * [ ] Checkpoint 1: Finalize link closure traversal algorithm and benchmark cold-path overhead.
 * [ ] Checkpoint 2: Validate CycloneDX `pedigree` acceptance with Trivy and Grype.
