@@ -87,6 +87,10 @@ main() {
     else
       timeout --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" "-Xlog:class+load=info:file=$trace" -jar "$jar_file" >"$baseline_output"
+      if [[ $fixture == example-basic-app ]]; then
+        verify_basic_unused_trace "$trace"
+        verify_elided_dependency_compiler_visibility "$repo_root" "$test_dir" "$trace"
+      fi
     fi
 
     "$maven" "${maven_options[@]}" -f "$pom" clean verify "${elision_options[@]}"
@@ -115,6 +119,78 @@ main() {
   done
 
   echo "Example elision lifecycle checks passed for ${#fixture_names[@]} fixtures."
+}
+
+verify_elided_dependency_compiler_visibility() {
+  local repo_root=$1
+  local test_dir=$2
+  local trace=$3
+  local probe_root="$test_dir/compiler-visibility-probe"
+  local probe_examples="$probe_root/examples"
+  local probe_fixture="$probe_examples/example-basic-app"
+  local probe_pom="$probe_fixture/pom.xml"
+  local active_log="$test_dir/compiler-visibility-elided.log"
+  local skipped_log="$test_dir/compiler-visibility-skipped.log"
+
+  mkdir -p "$probe_fixture"
+  cp -- "$repo_root/pom.xml" "$probe_root/pom.xml"
+  cp -- "$repo_root/examples/pom.xml" "$probe_examples/pom.xml"
+  cp -- "$repo_root/examples/example-basic-app/pom.xml" "$probe_fixture/pom.xml"
+  cp -a -- "$repo_root/examples/example-basic-app/src" "$probe_fixture/src"
+  mkdir -p "$probe_fixture/src/main/java/io/github/spockz/example/basic"
+  cat >"$probe_fixture/src/main/java/io/github/spockz/example/basic/ElidedCodecReference.java" <<'JAVA'
+/* WHY: Provides a compile-time reference to the dependency removed by the recorded runtime trace. */
+package io.github.spockz.example.basic;
+
+import org.apache.commons.codec.binary.Hex;
+
+/** Confirms compiler visibility follows the active Maven artifact set. */
+final class ElidedCodecReference {
+  private ElidedCodecReference() {}
+
+  static String encode(final byte[] value) {
+    return Hex.encodeHexString(value);
+  }
+}
+JAVA
+
+  if "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
+    -Delide.skip=false -Delide.traceFiles="$trace" -Delider.verifyElision=false \
+    >"$active_log" 2>&1; then
+    echo "Compiler unexpectedly resolved Commons Codec after elision" >&2
+    exit 1
+  fi
+  if ! grep -Fq '[ERROR] COMPILATION ERROR' "$active_log" \
+    || ! grep -Fq 'package org.apache.commons.codec.binary does not exist' "$active_log" \
+    || ! grep -Fq 'maven-compiler-plugin:' "$active_log"; then
+    echo "Elided build failed without the expected javac missing-package diagnostic" >&2
+    cat "$active_log" >&2
+    exit 1
+  fi
+
+  "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
+    -Delide.skip=true -Delide.traceFiles="$trace" -Delider.verifyElision=false \
+    >"$skipped_log" 2>&1
+  if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedCodecReference.class ]]; then
+    echo "Compiler did not produce the probe class when elision was skipped" >&2
+    cat "$skipped_log" >&2
+    exit 1
+  fi
+  echo "Compiler visibility probe passed: elided compile fails on missing Commons Codec; skipped compile succeeds."
+}
+
+verify_basic_unused_trace() {
+  local trace=$1
+  if grep -Eq 'org\.apache\.commons\.codec\.' "$trace"; then
+    echo "Commons Codec classes were loaded by the basic example" >&2
+    exit 1
+  else
+    local status=$?
+    if [[ $status -ne 1 ]]; then
+      echo "Could not read basic application class-load trace $trace" >&2
+      exit "$status"
+    fi
+  fi
 }
 
 verify_baseline_archive() {

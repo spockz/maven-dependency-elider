@@ -10,7 +10,12 @@ Track 8 now has a repeatable Maven lifecycle path for `example-basic-app`,
 runs it with class-load logging into a temporary directory outside `target`, then invokes Maven
 again with `clean verify`, explicit trace paths, and elision enabled. Surefire checks the resolved
 test classpath; the runner checks baseline and final archive contents and launches the packaged
-applications. The Spring Boot fixture is exercised through `GET /api/hello`.
+applications. The Spring Boot fixture is exercised through `GET /api/hello`. An isolated compiler
+probe copies the necessary parent POM hierarchy and basic fixture sources into the temporary
+evidence directory, adds a production class that references Commons Codec, and compiles against
+the same baseline trace twice. The elision-enabled compile must fail with javac's missing-package
+diagnostic; the otherwise identical elision-skipped compile must succeed. The probe never modifies
+the checked-in example sources or build outputs.
 
 The Spring Boot fixture declares unused BOM-managed Commons Codec and `spring-boot-starter-mail`.
 Its baseline class-load trace observes mail classes, while the copied production application
@@ -32,8 +37,11 @@ reported temporary evidence directory.
 ## Verification
 
 - `make test-examples` — passed all four fixtures, baseline and elided package checks, classpath
-  assertions, class usage report checks, and packaged runtime checks. Each baseline and elided
-  build passed 9 Surefire tests: 2 basic, 3 Spring Boot, and 2 in each CVE fixture.
+  assertions, class usage report checks, packaged runtime checks, and the compiler visibility
+  probe. The probe confirmed the baseline trace has no Commons Codec classes, javac reports
+  `package org.apache.commons.codec.binary does not exist` with elision enabled, and the same probe
+  source compiles when elision is skipped. Each baseline and elided build passed 9 Surefire tests:
+  2 basic, 3 Spring Boot, and 2 in each CVE fixture.
 - `make check` — passed with exit code 0 after the Track 5 rebase and documentation updates,
   including Java lint, SpotBugs, Markdown lint, 88 core tests, and 27 plugin tests.
 - Root `make check` after `mvnd clean` — passed formatting, Checkstyle, PMD, SpotBugs, Markdown
@@ -41,6 +49,8 @@ reported temporary evidence directory.
 - `git diff --check` — passed.
 - Independent Track 8 review — approved. The reviewer verified the final archive contents and
   Surefire results (two tests per fixture in elided mode).
+- Successful command output is saved in `.scratch/closeout-track-8-javac-probe-test-examples.log`
+  and `.scratch/closeout-track-8-javac-probe-make-check.log`.
 
 OSV-Scanner was not run by this receipt; CVE scanner outcomes remain documented expectations, not
 verified results.
@@ -62,3 +72,23 @@ when a production-class scan is unavailable or incomplete. Runtime-only evidence
 framework causation, and neither-evidence classification does not prove universal unreachability.
 The classification is report-only: runtime-observed classes continue to retain their complete
 dependency JARs, with no intra-JAR deletion.
+
+## Compiler Visibility Probe Follow-Up
+
+The example harness now checks that Maven's compiler classpath follows the elided artifact set.
+After the basic app baseline run, the harness confirms its external class-load trace contains no
+Commons Codec classes. In a temporary directory it copies the root/examples/basic-app POM ancestry
+and fixture sources, adds a production source that calls `Hex.encodeHexString`, and runs `clean compile`
+twice against that same trace. With elision enabled, the command must fail with the
+`maven-compiler-plugin` compilation error `package org.apache.commons.codec.binary does not exist`.
+With elision skipped, the same source and POM must compile successfully and produce the expected
+probe class. The temporary copy leaves checked-in example files untouched.
+
+Quiet Maven Daemon verification on GraalVM JDK 25.0.5:
+
+- `make test-examples` — passed in approximately 18.8 seconds; includes the compiler visibility
+  probe and all four full fixture cycles.
+- `make check` with the explicit `MARKDOWNLINT` path — passed in approximately 19.4 seconds;
+  Markdownlint reported 0 issues.
+- Logs: `.scratch/closeout-track-8-javac-probe-test-examples.log` and
+  `.scratch/closeout-track-8-javac-probe-make-check.log`.
