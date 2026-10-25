@@ -37,6 +37,8 @@ However, slicing a third-party JAR introduces three unresolved challenges:
 
 This research remains deferred from the current product scope. Runtime observations map classes to owning dependency artifacts, and an observed class retains its entire JAR. The current implementation does not perform intra-JAR link-closure analysis, delete class entries, or rewrite methods, fields, or instructions. Reopen this work only through an explicit scope revision.
 
+The remaining options below preserve the earlier research context; they are not active implementation instructions.
+
 * **Approach A: Static ASM Call-Graph Closure**:
   Starting from the set of classes $R_{\text{used}}$ referenced by the application in artifact $A$, parse the bytecode of each $c \in R_{\text{used}}$ to identify referenced types $t \in A$. Add $t$ to $R_{\text{used}}$ recursively until fixed-point closure is achieved.
 * **Approach B: Shade Plugin Filter Delegation**:

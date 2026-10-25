@@ -267,12 +267,14 @@ Later slices may add:
 
 Sub-artifact slicing is outside the current product scope. Runtime class observations map to their owning dependency artifact, and any observed class retains the entire JAR. Do not run intra-JAR link-closure analysis or delete individual class entries. Reopen this track only through an explicit scope revision.
 
-**Files to implement:**
+**Historical proposal only:** The files and algorithm below are not current implementation tasks or acceptance criteria.
+
+**Potential future files if the scope is explicitly reopened:**
 
 * `io.github.spockz.elider.slicer.BytecodeSlicer`
 * `io.github.spockz.elider.slicer.LinkClosureResolver`
 
-#### Implementation Details
+#### Historical Implementation Proposal
 
 1. **ASM Transitive Link Closure**:
    * For partially used dependencies, find root classes referenced by project or runtime traces.
