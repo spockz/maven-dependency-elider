@@ -118,8 +118,15 @@ Use this skill when receiving a comprehensive handover document, Architecture De
 
 * **Do**: Maintain an authoritative live status table in `.scratch/orchestration-status.md`.
 * **Do**: Bound parallel track execution to 2-3 concurrent worktrees.
+* **Do**: Keep one persistent Track Implementer and one persistent Dedicated Track Reviewer per track. Reuse each agent for every slice in that track by sending follow-up tasks; a slice transition is not a reason to spawn another agent.
+* **Do**: Use at most one session-wide Critical Architect & Integration Reviewer. Reuse that agent for initial seam scrutiny, escalations, and whole-system review.
+* **Do**: Treat Gemini MCP review as a tool call, not as another spawned agent.
+* **Do**: Spawn track pairs only when their tracks are ready to become active. For `N` tracks, the total unique agent roster is at most `1 + 2N`: one architect plus one implementer/reviewer pair per track. With 2-3 active tracks, no more than 5-7 agents should be live, including the architect.
+* **Do**: If an assigned agent becomes unavailable, replace that role once and record the replacement in the orchestration ledger; do not keep both agents active on the same role.
 * **Do**: Nudge quiescent threads after 5 minutes; alert the user if stalls persist after 3 further minutes.
 * **Don't**: Don't launch unconstrained parallel tracks that exhaust CPU, memory, or reviewer attention.
+* **Don't**: Don't spawn a new implementer or reviewer for each slice, each review round, each fixup, or each integration gate.
+* **Don't**: Don't create additional architecture, benchmark, audit, or review agents for subproblems already assigned to a track pair. Escalate the question to the track reviewer or session architect instead.
 * **Don't**: Don't allow stalled threads to idle without automated intervention.
 
 ### 11. Handoff to Wrap-Up and Terminal Fallback
@@ -200,7 +207,7 @@ flowchart TD
    ```
 
 3. **Leverage Ambient Caches**: Transparently reuse external caches (`GOCACHE`, `GOMODCACHE`).
-4. **Spawn Threads**: Launch Implementer and Track Reviewer using mapped environment profiles.
+4. **Spawn Threads**: For each track that is ready to start, launch exactly one Implementer and one Track Reviewer using mapped environment profiles. Keep those two agents assigned to that track through all slices, fixups, and track completion. Launch no per-slice agents. Reuse a single session-wide Critical Architect for upfront scrutiny and later escalations; do not spawn a separate architect for every track. Gemini review uses the bridge tool and does not add an agent.
 5. **Initialise Ledger**: Record initial states in `.scratch/orchestration-status.md`.
 
 ### Step 4: Implement Slices with Surgical Iteration and Pipelining

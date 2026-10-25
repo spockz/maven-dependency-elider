@@ -5,18 +5,37 @@
 [![Java 21](https://img.shields.io/badge/Java-21-blue.svg)](https://openjdk.org/projects/jdk/21/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Maven Dependency Elider is an early-stage Java project exploring runtime-informed dependency analysis for Maven applications. The goal is to use observed class-loading data to identify dependencies that an application does not use, then make those findings available to Maven builds and downstream packaging tools.
+Maven Dependency Elider aims to turn external usage knowledge into reduced dependencies that Maven uses throughout compilation, testing, and packaging. A usage oracle supplies retention roots: observed classes, reflective entry points, deployment-specific knowledge, or explicit configuration. The intended design combines those roots with source compilation dependencies and framework/resource requirements, then retains their required dependencies.
 
 The project is under active development. The core currently includes runtime trace readers, a JAR central-directory class index, an initial conservative dependency-pruning engine, and a cache API. The cache is not integrated into the Maven plugin, and the `elide` goal, provenance outputs, and end-to-end elision workflow are still being implemented. Sub-artifact bytecode slicing is deferred; an observed class retains its entire dependency JAR. Do not use this project to remove dependencies from production builds.
 
 ## Project goals
 
-- Use runtime observations such as class-loading logs and JVM class lists to inform dependency usage analysis.
-- Integrate analysis with Maven and surface results early in the build lifecycle.
-- Preserve accurate dependency and provenance information for downstream packaging and security tools.
-- Keep the build and analysis fast enough for routine developer workflows.
+- Bring external usage evidence into dependency reduction, including knowledge that ordinary static analysis cannot discover.
+- Compile and run existing tests against the reduced dependency set so the normal build exercises what will be packaged.
+- Automate retention rules, artifact replacement, consistent classpaths, packaging coordination, and reports explaining decisions.
+- Preserve dependency JAR boundaries so applications can keep their existing packaging model, including Spring Boot's nested executable archives.
+- Measure distribution size, added build time, and configuration effort while preserving accurate provenance for downstream tools.
 
 These are development goals; the current core components are not yet exposed as a production-ready Maven workflow.
+
+## Why integrate dependency reduction into Maven?
+
+The intended benefit is a repeatable workflow from usage evidence to dependencies exercised by the application build. Compilation can expose missing source dependencies, and tests can exercise the reduced implementations before packaging. This validation is bounded by the sources and workloads actually checked; it cannot establish that every deployment path is covered.
+
+Early transformation has prior art: [Gradle artifact transforms](https://docs.gradle.org/current/userguide/artifact_transforms.html) operate before consumers use artifacts, and [DepTrim](https://github.com/ASSERT-KTH/deptrim) specializes Maven dependencies. This project's intended differentiation is combining an external oracle with consistent Maven integration, explainable decisions, and less manual orchestration. For users who only need a smaller final distribution, a separate distribution module with an existing shrinker may already suffice.
+
+The current scope removes whole artifacts and retains the entire owning JAR for every observed class. [Intra-JAR trimming research](docs/research/RQ-0001-sub-artifact-bytecode-symbol-slicing-and-provenance.md) explores reducing surviving dependencies while preserving a separate output JAR for each input. That future capability would allow Boot to package ordinary transformed dependencies without requiring the trimming engine to understand Boot's final archive. No trimming engine has been selected.
+
+## Evidence and limitations
+
+An oracle's positive observations identify things to retain. Optional method information does not establish that unlisted methods are removable. Dynamic discovery through reflection, services, framework metadata, serialization, or native code needs additional roots or explicit configuration.
+
+For future source-aware reduction, source analysis must use the original dependencies and the real compiler settings. It must cover compilation references erased from bytecode, including inlined constants, source-retained annotations, and unreachable branches, as well as generated sources. Retained dependency code still needs its transitive supporting code and compilation metadata. These requirements are tracked in [RQ-0001](docs/research/RQ-0001-sub-artifact-bytecode-symbol-slicing-and-provenance.md).
+
+The integration must prove that compilation, tests, and packaging consume the intended artifacts, including after later dependency resolution. Build outputs must have traceable identities and must never overwrite original artifacts in the shared Maven repository. A single dependency set for compilation and runtime may retain compilation-only declarations; separate outputs would require additional orchestration. See [ADR-0002](docs/adr/0002-in-memory-artifact-mutation-for-downstream-packaging-transparency.md).
+
+Dependency reduction adds analysis and transformation work. A smaller classpath does not imply a faster overall build. Size savings, cold and cached build costs, and setup effort need separate measurements. Removing code also does not automatically remove a coordinate-based vulnerability finding or prove that a product is unaffected.
 
 ## Repository layout
 

@@ -4,7 +4,7 @@
 * **Status**: Open
 * **Category**: Implementation Handover & Engineering Specifications
 * **Date**: 2026-10-24
-* **Last Updated**: 2026-10-24
+* **Last Updated**: 2026-10-25
 
 Abbreviations: Architecture Decision Record (ADR), Abstract Syntax Tree (AST), Bytecode Manipulation (ASM), Central Directory (CEN), Class Data Sharing (CDS), Common Vulnerabilities and Exposures (CVE), Java Microbenchmark Harness (JMH), Java Virtual Machine (JVM), JDK Flight Recorder (JFR), Project Object Model (POM), Research Question (RQ), Software Bill of Materials (SBOM), Vulnerability Exploitability eXchange (VEX).
 
@@ -18,22 +18,22 @@ This document provides the complete engineering handover for a Luna agent to imp
 
 Traditional software composition analysis (SCA) and dependency management suffer from severe granularity and visibility mismatches:
 
-1. **False-Positive CVE Noise**: Empirical research proves that **57% of transitive library relationships in Maven are completely bloated** (zero classes ever loaded), and **92%–95% of package vulnerabilities in Java are unreachable at the function level**. Manifest-based scanners create overwhelming alert fatigue.
+1. **Distribution and Assessment Granularity**: Applications may require only part of their resolved dependencies. Removing unnecessary code can reduce distribution size, while vulnerability conclusions still require product-specific evidence; a coordinate-based finding is not automatically false because some code was unobserved.
 2. **Static Analysis Blindness**: Static inspection (e.g., `mvn dependency:analyze`) cannot observe dynamic reflection, Spring Boot auto-configuration, or Java SPI (`ServiceLoader`).
 3. **Classpath Mutation Timing**: Stripping dependencies during packaging (`prepare-package`) allows compilation and tests to execute against an artificially bloated classpath, introducing classpath collisions (split packages) and masking runtime missing-class failures until deployment.
 
-`maven-dependency-elider` solves this by binding automated elision to the early Maven `INITIALIZE` lifecycle phase, grounded in empirical runtime telemetry, mutating the in-memory `MavenProject.getArtifacts()` state so compiler, test runner, packagers (`maven-shade-plugin`, `spring-boot-maven-plugin:repackage`), and SBOM/CVE scanners transparently bundle and report only surviving code.
+The intended value is translating an external usage oracle into reduced dependencies used consistently by Maven compilation, testing, and packaging. `INITIALIZE` mutation is the proposed whole-artifact integration mechanism; it must be verified against later resolution and consumer classpaths. The differentiation is oracle integration and dependable orchestration, with prior art in Gradle transformations and DepTrim (ADR-0001).
 
 ### 1.2 Non-Negotiable Invariants
 
 1. **Sub-10ms Fast-Path Invariant (ADR-0001, RQ-0003)**:
    On routine, cached Maven builds where dependencies and traces have not changed, the plugin overhead must be strictly **$< 10\text{ ms}$** (target: $\approx 1\text{ ms}$). Every routine build evaluates a fast fingerprint; full disk rescanning must occur only on cache misses.
 2. **Runtime Telemetry Primacy (ADR-0001)**:
-   Elision decisions are grounded in runtime telemetry (CDS class lists, `-Xlog:class+load`, JFR, GraalVM config, JaCoCo). Static bytecode constant-pool scanning is rejected as a sole decision source.
+   Elision decisions use external evidence with an explicit coverage contract. Positive observations supply roots; absence alone does not prove non-use. Future source-aware trimming combines oracle, source compilation, and framework/resource roots with their required dependencies (RQ-0001 and RQ-0002).
 3. **Fail-Fast Early Phase Execution (ADR-0001)**:
-   The `elide` Mojo binds to `INITIALIZE` with `requiresDependencyResolution = ResolutionScope.TEST`. It mutates `project.getArtifacts()` *before* `compile` and *before* `test`. If an essential dependency is improperly elided, the build must fail immediately during `javac` or `surefire`.
+   The whole-artifact `elide` Mojo targets `INITIALIZE` with `requiresDependencyResolution = ResolutionScope.TEST`, before compilation and tests. Those checks expose missing dependencies on covered paths; they do not prove runtime completeness. Source-aware trimming requires a separate ordering decision for generated sources and processors.
 4. **Transparent Downstream Packaging (ADR-0002)**:
-   No custom adapters or modifications are permitted in downstream packaging plugins. Mutating `project.getArtifacts()` and `setFile()` in-memory must guarantee that `maven-shade-plugin`, `spring-boot-maven-plugin:repackage`, assembly, and container plugins bundle *only* surviving code.
+   Avoiding custom downstream adapters is a design goal. Verify actual compile/test classpaths and packaged bytes for each supported integration. In-memory mutation alone does not establish support for every packager or scanner (ADR-0002).
 5. **Dual Maven Compatibility (3.8+/3.9+ and 4.x)**:
    The codebase targets Java 21 LTS (`<maven.compiler.release>21</maven.compiler.release>`) and must build and execute cleanly on both Apache Maven 3.9.x and Maven 4.0.x.
 6. **Clean `mvn verify` Gate**:
@@ -366,6 +366,8 @@ Sub-artifact slicing is outside the current product scope. Runtime class observa
 
 ## 5. Acceptance Verification Checklist
 
+The follow-ups below qualify earlier implementation sketches. Deferred source-aware/member trimming is not activated by this handover update.
+
 Before declaring implementation complete:
 
 * [ ] **Compilation**: Root build `./mvnw clean compile` passes across all modules under Java 21.
@@ -377,3 +379,20 @@ Before declaring implementation complete:
 * [ ] **Provenance Output**: CycloneDX 1.6 inventory matches the applied retained-artifact set and validates against the pinned schema. Audit POM, OpenVEX, and Dependency-Check suppressions are emitted only when their required resolved-graph, product, vulnerability, digest, and slicing evidence is supplied.
 * [ ] **Elision Summary**: Each run prints absolute counts and percentages for whole artifacts elided and, when slicing runs, classes and bytecode symbols removed; denominators are explicit and exclude whole-artifact removals from surgical metrics.
 * [ ] **Documentation & Indexing**: ADR and RQ registers updated with completed checkpoints.
+
+## 6. Design Follow-Ups and Unresolved Boundaries
+
+| Area | Follow-up and evidence required | Owning work |
+| :--- | :--- | :--- |
+| Oracle contract | Specify observation versus completeness, member descriptors, attribution, instrumentation coverage, environment, workload, and stale-evidence handling. Class-only or partial method evidence must not enable arbitrary member deletion. | Track 1; RQ-0002 |
+| Source compilation roots | Resolve original dependencies, retain constants and other erased references, preserve metadata, and prove parity with generated sources and actual compiler settings. Determine lifecycle ordering before implementing the prepass. | Deferred Track 6; RQ-0001 |
+| Closure and engine choice | Compare established engines against custom class filtering; retain supporting code across JARs. Decide integration mode, Java support, and distribution terms. Begin with separate dependency outputs and no renaming/aggressive optimization if this scope is reopened. | Deferred Track 6; RQ-0001 |
+| Dynamic discovery and resources | Supply explicit/framework roots for services, Spring, reflection, serialization, and native code. Preserve or deliberately handle descriptors/resources and signed, modular, sealed, or multi-release inputs. | Tracks 1 and 8; RQ-0001 and RQ-0005 |
+| Consumer consistency | Prove compiler, Surefire/Failsafe, runtime launches, and packagers consume the intended files after later resolution. Verify identities/hashes as well as physical omissions. Keep original repository artifacts immutable. | Tracks 5 and 8; ADR-0002 |
+| Invocation and reactor behavior | Investigate inter-module outputs, dependency management/conflict mediation, parallel builds, Maven daemon reuse, offline builds, direct goal/IDE invocations, and test-only dependencies. State supported combinations explicitly. | Tracks 5 and 8 |
+| Compile/runtime outputs | Decide whether a single superset suffices. Separate outputs need explicit classpaths and packaging exclusions; `provided` is not a compilation-only packaging policy. Do not split fields between duplicate class definitions. | Track 5; RQ-0001; ADR-0002 |
+| Reproducibility and cache | Bind decisions to content/configuration/evidence identities; validate outputs, atomic writes, parallel access, and failed transformations. Measure cold and cached total build work. | Tracks 3 and 7; RQ-0003 |
+| Publication and scope | Specialization is application-specific. Publishing a reusable library requires roots for downstream APIs and a separate identity/resolution policy. Verify consumer resolution rather than publish references to unavailable transformed artifacts. | Tracks 4 and 5; RQ-0001 |
+| Validation and security reporting | Test actual transformed dependencies, positive/negative fixtures, packaged contents, and reasons for retention/removal. Separate package-size results, scanner results, and vulnerability assessments. | Tracks 4 and 8 |
+
+The first source-aware trimming experiment, if approved as a scope revision, should compare oracle plus source/framework roots against a distribution-only shrinker baseline, preserve individual JAR boundaries and compilation metadata, retain members conservatively, and report package size, total build cost, and setup effort. This is a research candidate, not an implemented feature or a replacement for the current whole-artifact scope.
