@@ -6,6 +6,7 @@ package io.github.spockz.elider.trace;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIOException;
 
+import io.github.spockz.elider.model.OriginEvidence;
 import io.github.spockz.elider.model.TraceData;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -93,6 +94,43 @@ class ClassLoaderLogReaderTest {
     final TraceData result = new ClassLoaderLogReader().read(log);
 
     assertThat(result.loadedClassesDotFormat()).containsExactly("example.Éclair");
+  }
+
+  @Test
+  void preservesOnlyUnambiguousLocalJarOriginsAndDecodesUriEscapes() throws IOException {
+    final Path log = tempDir.resolve("origins.log");
+    final Path jarPath = tempDir.resolve("shared library.jar").toAbsolutePath().normalize();
+    final String jarUri = jarPath.toUri().toASCIIString();
+    Files.writeString(
+        log,
+        "[info][class,load] example.Known source: "
+            + jarUri
+            + "\n"
+            + "[info][class,load] example.Directory source: file:/app/classes/\n"
+            + "[info][class,load] example.Runtime source: jrt:/java.base\n"
+            + "[info][class,load] example.Remote source: file://remote/app.jar\n"
+            + "[info][class,load] example.Nested source: jar:file:/app.jar!/\n"
+            + "[info][class,load] example.Ambiguous source: file:/one.jar source: file:/two.jar\n"
+            + "[info][class,load] example.EmptyRepeated source: file:/one.jar source:\n"
+            + "[info][class,load] example.TrailingGarbage source: file:/one.jar second.jar\n"
+            + "[info][class,load] example.Relative source: file:relative.jar\n"
+            + "[info][class,load] example.Malformed source: file:/bad%escape.jar\n"
+            + "[info][class,load] example.MissingSource\n");
+
+    final TraceData result = new ClassLoaderLogReader().read(log);
+
+    assertThat(result.originsFor("example.Known"))
+        .isEqualTo(new OriginEvidence(java.util.Set.of(jarPath), false));
+    assertThat(result.originsFor("example.Directory")).isEqualTo(OriginEvidence.unknown());
+    assertThat(result.originsFor("example.Runtime")).isEqualTo(OriginEvidence.unknown());
+    assertThat(result.originsFor("example.Remote")).isEqualTo(OriginEvidence.unknown());
+    assertThat(result.originsFor("example.Nested")).isEqualTo(OriginEvidence.unknown());
+    assertThat(result.originsFor("example.Ambiguous")).isEqualTo(OriginEvidence.unknown());
+    assertThat(result.originsFor("example.EmptyRepeated")).isEqualTo(OriginEvidence.unknown());
+    assertThat(result.originsFor("example.TrailingGarbage")).isEqualTo(OriginEvidence.unknown());
+    assertThat(result.originsFor("example.Relative")).isEqualTo(OriginEvidence.unknown());
+    assertThat(result.originsFor("example.Malformed")).isEqualTo(OriginEvidence.unknown());
+    assertThat(result.originsFor("example.MissingSource")).isEqualTo(OriginEvidence.unknown());
   }
 
   @Test

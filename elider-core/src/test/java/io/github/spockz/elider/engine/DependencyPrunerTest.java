@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.model.OriginEvidence;
 import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import java.nio.file.Path;
@@ -61,6 +62,88 @@ class DependencyPrunerTest {
     assertThat(result.retainedArtifacts())
         .containsExactlyInAnyOrder(first.coordinate(), second.coordinate());
     assertThat(result.elidedArtifacts()).isEmpty();
+  }
+
+  @Test
+  void exactJarOriginNarrowsDuplicateOwnerAndRetainsEveryCoordinateForThatFile() {
+    final Path firstPath = Path.of("/tmp/duplicate-a.jar");
+    final Path secondPath = Path.of("/tmp/duplicate-b.jar");
+    final ArtifactFileRef first = artifact("first", "jar", "", "compile", firstPath);
+    final ArtifactFileRef firstAlias = artifact("first-alias", "jar", "", "compile", firstPath);
+    final ArtifactFileRef second = artifact("second", "jar", "", "compile", secondPath);
+    final TraceData trace = attributedTrace("sample.Shared", firstPath);
+    final ElisionDecision result =
+        pruner.prune(
+            List.of(first, firstAlias, second),
+            index(
+                Map.of(
+                    first, Set.of("sample.Shared"),
+                    firstAlias, Set.of("sample.Shared"),
+                    second, Set.of("sample.Shared"))),
+            trace,
+            new PruneConfig());
+
+    assertThat(result.retainedArtifacts())
+        .containsExactlyInAnyOrder(first.coordinate(), firstAlias.coordinate());
+    assertThat(result.elidedArtifacts()).containsExactly(second.coordinate());
+  }
+
+  @Test
+  void classOnlyAndMergedClassOnlyEvidenceRetainAllDuplicateOwnersInEitherOrder() {
+    final Path firstPath = Path.of("/tmp/duplicate-a.jar");
+    final Path secondPath = Path.of("/tmp/duplicate-b.jar");
+    final ArtifactFileRef first = artifact("first", "jar", "", "compile", firstPath);
+    final ArtifactFileRef second = artifact("second", "jar", "", "compile", secondPath);
+    final ArtifactClassIndex index =
+        index(Map.of(first, Set.of("sample.Shared"), second, Set.of("sample.Shared")));
+    final TraceData attributed = attributedTrace("sample.Shared", firstPath);
+    final TraceData classOnly = trace("sample.Shared");
+
+    assertBothDuplicateOwnersRetained(List.of(first, second), index, classOnly);
+    assertBothDuplicateOwnersRetained(List.of(first, second), index, attributed.merge(classOnly));
+    assertBothDuplicateOwnersRetained(List.of(first, second), index, classOnly.merge(attributed));
+  }
+
+  @Test
+  void knownOriginsAcrossJarsRetainEveryObservedOwner() {
+    final Path firstPath = Path.of("/tmp/duplicate-a.jar");
+    final Path secondPath = Path.of("/tmp/duplicate-b.jar");
+    final ArtifactFileRef first = artifact("first", "jar", "", "compile", firstPath);
+    final ArtifactFileRef second = artifact("second", "jar", "", "compile", secondPath);
+    final TraceData trace =
+        TraceData.fromClassOrigins(
+            Map.of("sample.Shared", new OriginEvidence(Set.of(firstPath, secondPath), false)));
+    final ElisionDecision result =
+        prune(
+            List.of(first, second),
+            index(Map.of(first, Set.of("sample.Shared"), second, Set.of("sample.Shared"))),
+            trace);
+
+    assertThat(result.retainedArtifacts())
+        .containsExactlyInAnyOrder(first.coordinate(), second.coordinate());
+    assertThat(result.elidedArtifacts()).isEmpty();
+  }
+
+  @Test
+  void unknownUnmatchedAndInconsistentOriginsRetainAllDuplicateOwners() {
+    final Path firstPath = Path.of("/tmp/duplicate-a.jar");
+    final Path secondPath = Path.of("/tmp/duplicate-b.jar");
+    final ArtifactFileRef first = artifact("first", "jar", "", "compile", firstPath);
+    final ArtifactFileRef second = artifact("second", "jar", "", "compile", secondPath);
+    final ArtifactClassIndex index =
+        index(Map.of(first, Set.of("sample.Shared"), second, Set.of("sample.Shared")));
+    final List<TraceData> traces =
+        List.of(
+            trace("sample.Shared"),
+            attributedTrace("sample.Shared", Path.of("/tmp/unmatched.jar")),
+            TraceData.fromClassOrigins(
+                Map.of(
+                    "sample.Shared",
+                    new OriginEvidence(Set.of(firstPath, Path.of("/tmp/unmatched.jar")), false))));
+
+    for (final TraceData trace : traces) {
+      assertBothDuplicateOwnersRetained(List.of(first, second), index, trace);
+    }
   }
 
   @Test
@@ -316,6 +399,22 @@ class DependencyPrunerTest {
 
   private static TraceData trace(final String... names) {
     return TraceData.of(Set.of(names));
+  }
+
+  private static TraceData attributedTrace(final String className, final Path jarPath) {
+    return TraceData.fromClassOrigins(
+        Map.of(className, new OriginEvidence(Set.of(jarPath), false)));
+  }
+
+  private void assertBothDuplicateOwnersRetained(
+      final List<ArtifactFileRef> artifacts,
+      final ArtifactClassIndex index,
+      final TraceData trace) {
+    final ElisionDecision result = pruner.prune(artifacts, index, trace, new PruneConfig());
+    assertThat(result.retainedArtifacts())
+        .containsExactlyInAnyOrder(
+            artifacts.getFirst().coordinate(), artifacts.getLast().coordinate());
+    assertThat(result.elidedArtifacts()).isEmpty();
   }
 
   private static ArtifactClassIndex index(final Map<ArtifactFileRef, Set<String>> classes) {

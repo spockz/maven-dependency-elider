@@ -3,15 +3,17 @@
 
 package io.github.spockz.elider.trace;
 
+import io.github.spockz.elider.model.OriginEvidence;
 import io.github.spockz.elider.model.TraceData;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashSet;
 import java.util.Locale;
-import java.util.Set;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -43,7 +45,7 @@ public final class ClassLoaderLogReader implements RuntimeTraceReader {
     if (!supports(path)) {
       throw new IOException("Unsupported class loading log file: " + path);
     }
-    final Set<String> classes = new HashSet<>();
+    final Map<String, OriginEvidence> classes = new ConcurrentHashMap<>();
     final boolean unifiedLog = hasClassLoadMarker(path);
     try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
       if (unifiedLog) {
@@ -52,11 +54,12 @@ public final class ClassLoaderLogReader implements RuntimeTraceReader {
         readRawList(reader, path, classes);
       }
     }
-    return TraceData.of(classes);
+    return TraceData.fromClassOrigins(classes);
   }
 
   private static void readRawList(
-      final BufferedReader reader, final Path path, final Set<String> classes) throws IOException {
+      final BufferedReader reader, final Path path, final Map<String, OriginEvidence> classes)
+      throws IOException {
     boolean hasClassName = false;
     while (true) {
       final String line = reader.readLine();
@@ -64,7 +67,7 @@ public final class ClassLoaderLogReader implements RuntimeTraceReader {
         break;
       }
       if (!line.isBlank()) {
-        if (!addClassName(line.trim(), classes)) {
+        if (!addClassName(line.trim(), Optional.empty(), classes)) {
           throw new IOException("Malformed raw class name in class list: " + line);
         }
         hasClassName = true;
@@ -76,7 +79,8 @@ public final class ClassLoaderLogReader implements RuntimeTraceReader {
   }
 
   private static void readUnifiedLog(
-      final BufferedReader reader, final Path path, final Set<String> classes) throws IOException {
+      final BufferedReader reader, final Path path, final Map<String, OriginEvidence> classes)
+      throws IOException {
     boolean hasClassLoadRecord = false;
     while (true) {
       final String line = reader.readLine();
@@ -97,16 +101,20 @@ public final class ClassLoaderLogReader implements RuntimeTraceReader {
   }
 
   private static void addClassLoadRecord(
-      final String payload, final String line, final Set<String> classes) throws IOException {
+      final String payload, final String line, final Map<String, OriginEvidence> classes)
+      throws IOException {
     final Matcher className = CLASS_LOAD_NAME.matcher(payload);
-    if (!className.find() || !addClassName(className.group(1), classes)) {
+    if (!className.find()
+        || !addClassName(
+            className.group(1), ClassLoadOriginParser.parseJarPath(payload), classes)) {
       throw new IOException("Malformed class name in class loading log: " + line);
     }
   }
 
-  private static void addRawClassNameIfValid(final String candidate, final Set<String> classes) {
+  private static void addRawClassNameIfValid(
+      final String candidate, final Map<String, OriginEvidence> classes) {
     if (TraceClassName.isValid(candidate) && !TraceClassName.isHidden(candidate)) {
-      classes.add(candidate);
+      addClassName(candidate, Optional.empty(), classes);
     }
   }
 
@@ -136,12 +144,19 @@ public final class ClassLoaderLogReader implements RuntimeTraceReader {
     return name.endsWith(".log") || name.endsWith(".txt") ? name : null;
   }
 
-  private static boolean addClassName(final String candidate, final Set<String> classes) {
+  private static boolean addClassName(
+      final String candidate,
+      final Optional<Path> jarPath,
+      final Map<String, OriginEvidence> classes) {
     if (!TraceClassName.isValid(candidate)) {
       return false;
     }
     if (!TraceClassName.isHidden(candidate)) {
-      classes.add(candidate);
+      final OriginEvidence evidence =
+          jarPath.isEmpty()
+              ? OriginEvidence.unknown()
+              : new OriginEvidence(java.util.Set.of(jarPath.orElseThrow()), false);
+      classes.merge(TraceData.normalizeToDot(candidate), evidence, OriginEvidence::merge);
     }
     return true;
   }

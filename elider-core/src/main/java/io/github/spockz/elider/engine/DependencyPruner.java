@@ -6,6 +6,7 @@ package io.github.spockz.elider.engine;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.model.OriginEvidence;
 import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import java.util.Collection;
@@ -15,6 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Retains empty-index JARs because they may contain resources.
@@ -61,18 +63,25 @@ public final class DependencyPruner {
 
     final Set<ArtifactFileRef> uniqueArtifacts = new LinkedHashSet<>(byCoordinate.values());
     final Map<ArtifactFileRef, Set<String>> indexedClasses = classIndex.classesByArtifact();
-    final Set<String> allClassNames = new HashSet<>();
-    for (final ArtifactFileRef artifact : uniqueArtifacts) {
-      if (indexedClasses.containsKey(artifact)) {
-        allClassNames.addAll(indexedClasses.get(artifact));
-      }
-    }
+    final Map<String, Set<ArtifactFileRef>> ownersByClass =
+        ownersByClass(uniqueArtifacts, indexedClasses);
     final Set<String> observedSuppliedClasses = new HashSet<>(trace.loadedClassesDotFormat());
-    observedSuppliedClasses.retainAll(allClassNames);
+    observedSuppliedClasses.retainAll(ownersByClass.keySet());
     if (observedSuppliedClasses.isEmpty()) {
       throw new IllegalArgumentException(
           "Cannot prune because no observed class matches any supplied dependency");
     }
+    final Map<java.nio.file.Path, Set<ArtifactFileRef>> artifactsByPath =
+        artifactsByPath(uniqueArtifacts);
+    final Map<String, Set<ArtifactFileRef>> observedOwnersByClass = new HashMap<>();
+    for (final String className : observedSuppliedClasses) {
+      observedOwnersByClass.put(
+          className,
+          observedOwners(
+              trace.originsFor(className), ownersByClass.get(className), artifactsByPath));
+    }
+    final Set<ArtifactFileRef> originRetainedArtifacts = new HashSet<>();
+    observedOwnersByClass.values().forEach(originRetainedArtifacts::addAll);
 
     final Set<ArtifactCoordinate> retained = new LinkedHashSet<>();
     final Set<ArtifactCoordinate> elided = new LinkedHashSet<>();
@@ -85,7 +94,7 @@ public final class DependencyPruner {
       final Set<String> unused = new LinkedHashSet<>();
       if (hasIndexEntry) {
         for (final String className : indexedClasses.get(artifact)) {
-          if (trace.contains(className)) {
+          if (observedOwnersByClass.getOrDefault(className, Set.of()).contains(artifact)) {
             used.add(className);
           } else {
             unused.add(className);
@@ -94,7 +103,10 @@ public final class DependencyPruner {
       }
       usedByArtifact.put(coordinate, used);
       unusedByArtifact.put(coordinate, unused);
-      if (config.keeps(coordinate) || !config.canPrune(coordinate) || !isJar(coordinate)) {
+      if (config.keeps(coordinate)
+          || originRetainedArtifacts.contains(artifact)
+          || !config.canPrune(coordinate)
+          || !isJar(coordinate)) {
         retained.add(coordinate);
         continue;
       }
@@ -120,5 +132,46 @@ public final class DependencyPruner {
 
   private static boolean isJar(final ArtifactCoordinate coordinate) {
     return "jar".equals(coordinate.type());
+  }
+
+  private static Set<ArtifactFileRef> observedOwners(
+      final OriginEvidence evidence,
+      final Set<ArtifactFileRef> indexedOwners,
+      final Map<java.nio.file.Path, Set<ArtifactFileRef>> artifactsByPath) {
+    if (evidence.hasUnknownOrigin() || evidence.jarPaths().isEmpty()) {
+      return indexedOwners;
+    }
+    final Set<ArtifactFileRef> matchedOwners = new HashSet<>();
+    for (final java.nio.file.Path jarPath : evidence.jarPaths()) {
+      final Set<ArtifactFileRef> artifactsForPath = artifactsByPath.get(jarPath);
+      if (artifactsForPath == null
+          || artifactsForPath.stream().noneMatch(indexedOwners::contains)) {
+        return indexedOwners;
+      }
+      matchedOwners.addAll(artifactsForPath);
+    }
+    return matchedOwners;
+  }
+
+  private static Map<String, Set<ArtifactFileRef>> ownersByClass(
+      final Set<ArtifactFileRef> artifacts,
+      final Map<ArtifactFileRef, Set<String>> indexedClasses) {
+    return artifacts.stream()
+        .filter(indexedClasses::containsKey)
+        .flatMap(
+            artifact ->
+                indexedClasses.get(artifact).stream()
+                    .map(className -> Map.entry(className, artifact)))
+        .collect(
+            Collectors.groupingBy(
+                Map.Entry::getKey, Collectors.mapping(Map.Entry::getValue, Collectors.toSet())));
+  }
+
+  private static Map<java.nio.file.Path, Set<ArtifactFileRef>> artifactsByPath(
+      final Set<ArtifactFileRef> artifacts) {
+    return artifacts.stream()
+        .collect(
+            Collectors.groupingBy(
+                artifact -> artifact.filePath().toAbsolutePath().normalize(), Collectors.toSet()));
   }
 }
