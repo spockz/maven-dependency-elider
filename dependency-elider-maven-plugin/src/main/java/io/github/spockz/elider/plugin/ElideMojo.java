@@ -110,7 +110,7 @@ public final class ElideMojo extends AbstractMojo {
       if (trimJars) {
         writeSbom(plan, analysis);
       }
-      applyTrimRecords(plan, analysis.trimRecords());
+      validateAndApplyTrimRecords(plan, analysis.trimRecords());
       project.setArtifacts(new LinkedHashSet<>(plan.resolvedArtifacts()));
       if (plan.directArtifactsPresent()) {
         project.setDependencyArtifacts(new LinkedHashSet<>(plan.directArtifacts()));
@@ -137,30 +137,42 @@ public final class ElideMojo extends AbstractMojo {
     }
   }
 
-  private static void applyTrimRecords(
+  private static void validateAndApplyTrimRecords(
       final MavenElisionService.ApplyPlan plan,
       final List<io.github.spockz.elider.trimmer.ArtifactTrimRecord> records)
       throws IOException {
-    final java.util.Map<
-            io.github.spockz.elider.model.ArtifactCoordinate,
-            io.github.spockz.elider.trimmer.ArtifactTrimRecord>
-        byCoordinate = new java.util.HashMap<>();
+    final java.util.Map<ArtifactIdentity, io.github.spockz.elider.trimmer.ArtifactTrimRecord>
+        recordsByIdentity = new java.util.HashMap<>();
     for (final var record : records) {
-      byCoordinate.put(record.coordinate(), record);
+      final ArtifactIdentity identity = ArtifactIdentity.from(record.coordinate());
+      if (recordsByIdentity.putIfAbsent(identity, record) != null) {
+        throw new IOException("Multiple trim records have the same Maven identity: " + identity);
+      }
     }
-    final Set<org.apache.maven.artifact.Artifact> all =
-        new LinkedHashSet<>(plan.resolvedArtifacts());
-    all.addAll(plan.directArtifacts());
-    for (final org.apache.maven.artifact.Artifact artifact : all) {
-      final var coordinate =
-          new io.github.spockz.elider.model.ArtifactCoordinate(
-              artifact.getGroupId(),
-              artifact.getArtifactId(),
-              artifact.getVersion(),
-              artifact.getType(),
-              artifact.getClassifier(),
-              artifact.getScope());
-      final var record = byCoordinate.get(coordinate);
+    final List<org.apache.maven.artifact.Artifact> resolved =
+        new ArrayList<>(plan.resolvedArtifacts());
+    final List<org.apache.maven.artifact.Artifact> direct = new ArrayList<>(plan.directArtifacts());
+    final Set<ArtifactIdentity> matchedResolved = new java.util.HashSet<>();
+    validateArtifactPaths(resolved, recordsByIdentity, matchedResolved);
+    validateArtifactPaths(direct, recordsByIdentity, null);
+    if (!matchedResolved.containsAll(recordsByIdentity.keySet())) {
+      final Set<ArtifactIdentity> missing = new java.util.HashSet<>(recordsByIdentity.keySet());
+      missing.removeAll(matchedResolved);
+      throw new IOException("Trim records have no resolved Maven artifacts: " + missing);
+    }
+    applyRecords(resolved, recordsByIdentity);
+    applyRecords(direct, recordsByIdentity);
+  }
+
+  private static void validateArtifactPaths(
+      final List<org.apache.maven.artifact.Artifact> artifacts,
+      final java.util.Map<ArtifactIdentity, io.github.spockz.elider.trimmer.ArtifactTrimRecord>
+          recordsByIdentity,
+      final Set<ArtifactIdentity> matched)
+      throws IOException {
+    for (final org.apache.maven.artifact.Artifact artifact : artifacts) {
+      final ArtifactIdentity identity = ArtifactIdentity.from(artifact);
+      final var record = recordsByIdentity.get(identity);
       if (record != null) {
         if (artifact.getFile() == null
             || !artifact
@@ -169,10 +181,46 @@ public final class ElideMojo extends AbstractMojo {
                 .toAbsolutePath()
                 .normalize()
                 .equals(record.originalPath())) {
-          throw new IOException("Artifact path changed before applying trim: " + coordinate);
+          throw new IOException("Artifact path changed before applying trim: " + identity);
         }
+        if (matched != null) {
+          matched.add(identity);
+        }
+      }
+    }
+  }
+
+  private static void applyRecords(
+      final List<org.apache.maven.artifact.Artifact> artifacts,
+      final java.util.Map<ArtifactIdentity, io.github.spockz.elider.trimmer.ArtifactTrimRecord>
+          recordsByIdentity) {
+    for (final org.apache.maven.artifact.Artifact artifact : artifacts) {
+      final var record = recordsByIdentity.get(ArtifactIdentity.from(artifact));
+      if (record != null) {
         artifact.setFile(record.trimmedPath().toFile());
       }
+    }
+  }
+
+  private record ArtifactIdentity(
+      String groupId, String artifactId, String version, String type, String classifier) {
+    private static ArtifactIdentity from(
+        final io.github.spockz.elider.model.ArtifactCoordinate coordinate) {
+      return new ArtifactIdentity(
+          coordinate.groupId(),
+          coordinate.artifactId(),
+          coordinate.version(),
+          coordinate.type(),
+          coordinate.classifier());
+    }
+
+    private static ArtifactIdentity from(final org.apache.maven.artifact.Artifact artifact) {
+      return new ArtifactIdentity(
+          artifact.getGroupId(),
+          artifact.getArtifactId(),
+          artifact.getVersion(),
+          artifact.getType(),
+          artifact.getClassifier() == null ? "" : artifact.getClassifier());
     }
   }
 

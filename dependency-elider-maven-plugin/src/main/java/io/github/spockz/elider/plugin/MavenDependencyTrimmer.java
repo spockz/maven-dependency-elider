@@ -3,6 +3,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
@@ -18,13 +19,11 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
@@ -46,19 +45,50 @@ import org.apache.maven.project.MavenProject;
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.UseConcurrentHashMap",
   "PMD.CompareObjectsWithEquals",
-  "PMD.AvoidCatchingGenericException",
-  "PMD.ConsecutiveAppendsShouldReuse",
   "PMD.InsufficientStringBufferDeclaration",
-  "PMD.ConsecutiveLiteralAppends",
   "PMD.AvoidLiteralsInIfCondition",
   "PMD.CommentRequired",
   "PMD.DataClass",
   "PMD.AvoidFieldNameMatchingMethodName"
 })
 final class MavenDependencyTrimmer {
-  record TrimResult(List<ArtifactTrimRecord> records, int cacheHits, long maximumCacheHitNanos) {
+  private static final String ELIDED_ARTIFACTS = "elided-artifacts";
+  private static final ObjectMapper JSON = new ObjectMapper();
+  private static final int CACHE_SCHEMA_VERSION = 4;
+  private static final String ENGINE_VERSION = "proguard-core-9.1.10";
+
+  record TrimResult(
+      List<ArtifactTrimRecord> records,
+      int cacheHits,
+      long maximumCacheHitNanos,
+      int analysisRuns) {
     TrimResult {
       records = List.copyOf(records);
+    }
+  }
+
+  private record CacheManifest(String fingerprint, List<CacheEntry> entries) {
+    private CacheManifest {
+      entries = List.copyOf(entries);
+    }
+  }
+
+  private record CacheEntry(
+      String originalPath,
+      String originalSha256,
+      String originalSha1,
+      String trimmedPath,
+      String trimmedSha256,
+      String trimmedSha1,
+      int totalClasses,
+      int retainedClasses,
+      Set<String> roots,
+      Set<String> retainedClassNames,
+      Set<String> reachableLibraryClasses) {
+    private CacheEntry {
+      roots = Set.copyOf(roots);
+      retainedClassNames = Set.copyOf(retainedClassNames);
+      reachableLibraryClasses = Set.copyOf(reachableLibraryClasses);
     }
   }
 
@@ -86,7 +116,6 @@ final class MavenDependencyTrimmer {
         MavenCompilerSettings.options(project, session, compileClasspath);
     final Path javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
     final int release = releaseFromOptions(compilerOptions, javaHome);
-    final var platform = new JdkApiClassPoolReader().read(javaHome, release);
 
     final Set<String> allRoots = new LinkedHashSet<>(trace.loadedClassesDotFormat());
     allRoots.addAll(sourceRoots);
@@ -96,15 +125,21 @@ final class MavenDependencyTrimmer {
         classIndex.classesByArtifact();
     final List<MavenElisionService.ArtifactSnapshot> retained =
         candidates.stream()
-            .filter(snapshot -> retainedCoordinates.contains(snapshot.coordinate()))
+            .filter(
+                snapshot ->
+                    "jar".equals(snapshot.coordinate().type())
+                        && retainedCoordinates.contains(snapshot.coordinate()))
             .toList();
     final List<Path> retainedPaths =
         retained.stream().map(MavenElisionService.ArtifactSnapshot::filePath).toList();
     final Set<Path> distinctOutputs = new HashSet<>();
     final List<ArtifactTrimRecord> records = new ArrayList<>();
     final List<CandidateWork> work = new ArrayList<>();
+    final Set<String> retainedDynamicRoots = new HashSet<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : retained) {
+      retainedDynamicRoots.addAll(DependencyDynamicRoots.scan(snapshot.filePath()).roots());
+    }
     for (final MavenElisionService.ArtifactSnapshot candidate : retained) {
-      final Path original = candidate.filePath();
       final Set<String> candidateClasses =
           classesByArtifact.entrySet().stream()
               .filter(entry -> entry.getKey().filePath().equals(candidate.filePath()))
@@ -119,11 +154,14 @@ final class MavenDependencyTrimmer {
           roots.add(normalized);
         }
       }
-      for (final String dynamicRoot : DependencyDynamicRoots.read(original)) {
+      for (final String dynamicRoot : retainedDynamicRoots) {
         final String normalized = dynamicRoot.replace('/', '.');
         if (candidateClasses.contains(normalized)) {
           roots.add(normalized);
         }
+      }
+      if (candidateClasses.isEmpty()) {
+        continue;
       }
       final Path output = outputPath(project, candidate.coordinate());
       if (!distinctOutputs.add(output)) {
@@ -134,27 +172,50 @@ final class MavenDependencyTrimmer {
     }
 
     final Map<String, List<CandidateWork>> ownersByClass = new java.util.HashMap<>();
-    int cacheHits = 0;
-    long maximumCacheHitNanos = 0L;
+    final Map<String, Path> ownerByClass = new java.util.HashMap<>();
     for (final CandidateWork candidate : work) {
       for (final String className : candidate.classes()) {
+        final Path previous = ownerByClass.putIfAbsent(className, candidate.snapshot().filePath());
+        if (previous != null && !previous.equals(candidate.snapshot().filePath())) {
+          throw new IOException(
+              "Duplicate class across retained dependency JARs makes library order ambiguous: "
+                  + className);
+        }
         ownersByClass.computeIfAbsent(className, ignored -> new ArrayList<>()).add(candidate);
       }
     }
+    final Path cacheManifestPath =
+        project.getBuild() == null || project.getBuild().getDirectory() == null
+            ? Path.of("target", ELIDED_ARTIFACTS, ".trim-analysis-cache.json")
+                .toAbsolutePath()
+                .normalize()
+            : Path.of(
+                    project.getBuild().getDirectory(),
+                    ELIDED_ARTIFACTS,
+                    ".trim-analysis-cache.json")
+                .toAbsolutePath()
+                .normalize();
+    final long cacheStart = System.nanoTime();
+    final String completeFingerprint =
+        fingerprint(work, retainedPaths, javaHome, release, CACHE_SCHEMA_VERSION, ENGINE_VERSION);
+    final TrimResult cached = loadCache(cacheManifestPath, completeFingerprint, work, cacheStart);
+    if (cached != null) {
+      return cached;
+    }
+    final var platform = new JdkApiClassPoolReader().read(javaHome, release);
     final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
+    int analysisRuns = 0;
     boolean rootsChanged;
     do {
       rootsChanged = false;
       for (final CandidateWork candidate : work) {
-        if (candidate.roots().isEmpty()) {
-          continue;
-        }
         final List<Path> siblings =
             retainedPaths.stream()
                 .filter(path -> !path.equals(candidate.snapshot().filePath()))
                 .toList();
         final DependencyJarTrimmer.TrimAnalysis analysis =
             trimmer.analyze(candidate.snapshot().filePath(), siblings, platform, candidate.roots());
+        analysisRuns++;
         candidate.analysis(analysis);
         for (final String linkedName : analysis.reachableLibraryClasses()) {
           final String dottedName = linkedName.replace('/', '.');
@@ -167,35 +228,14 @@ final class MavenDependencyTrimmer {
       }
     } while (rootsChanged);
 
+    final List<CacheEntry> cacheEntries = new ArrayList<>();
     for (final CandidateWork candidate : work) {
       final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
       if (analysis == null) {
         continue;
       }
       if (analysis.retainedClasses().size() == analysis.totalClasses()) {
-        continue;
-      }
-      final List<Path> siblings =
-          retainedPaths.stream()
-              .filter(path -> !path.equals(candidate.snapshot().filePath()))
-              .toList();
-      final String fingerprint =
-          fingerprint(
-              candidate.snapshot().filePath(), siblings, candidate.roots(), javaHome, release);
-      final Path sidecar =
-          candidate.output().resolveSibling(candidate.output().getFileName() + ".cache");
-      final ArtifactTrimRecord cached =
-          loadCache(
-              sidecar,
-              candidate.output(),
-              candidate.snapshot().filePath(),
-              candidate.snapshot().coordinate(),
-              fingerprint);
-      if (cached != null) {
-        cacheHits++;
-        maximumCacheHitNanos =
-            Math.max(maximumCacheHitNanos, System.nanoTime() - candidate.cachePathStartNanos());
-        records.add(cached);
+        cacheEntries.add(cacheEntry(candidate, null));
         continue;
       }
       final ArtifactTrimRecord record =
@@ -205,10 +245,11 @@ final class MavenDependencyTrimmer {
                   candidate.output(),
                   candidate.snapshot().coordinate(),
                   analysis);
-      storeCache(sidecar, fingerprint, record);
       records.add(record);
+      cacheEntries.add(cacheEntry(candidate, record));
     }
-    return new TrimResult(records, cacheHits, maximumCacheHitNanos);
+    storeCache(cacheManifestPath, new CacheManifest(completeFingerprint, cacheEntries));
+    return new TrimResult(records, 0, 0L, analysisRuns);
   }
 
   private static Path outputPath(final MavenProject project, final ArtifactCoordinate coordinate) {
@@ -221,8 +262,8 @@ final class MavenDependencyTrimmer {
             + (coordinate.classifier().isBlank() ? "" : "-" + safeFilePart(coordinate.classifier()))
             + "-trimmed.jar";
     return project.getBuild() == null || project.getBuild().getDirectory() == null
-        ? Path.of("target", "elided-artifacts", basename).toAbsolutePath().normalize()
-        : Path.of(project.getBuild().getDirectory(), "elided-artifacts", basename)
+        ? Path.of("target", ELIDED_ARTIFACTS, basename).toAbsolutePath().normalize()
+        : Path.of(project.getBuild().getDirectory(), ELIDED_ARTIFACTS, basename)
             .toAbsolutePath()
             .normalize();
   }
@@ -232,7 +273,6 @@ final class MavenDependencyTrimmer {
     private final Set<String> classes;
     private final Set<String> roots;
     private final Path output;
-    private final long cachePathStartNanos;
     private DependencyJarTrimmer.TrimAnalysis analysis;
 
     private CandidateWork(
@@ -242,9 +282,8 @@ final class MavenDependencyTrimmer {
         final Path output) {
       this.snapshot = snapshot;
       this.classes = Set.copyOf(classes);
-      this.roots = new TreeSet<>(roots);
+      this.roots = new TreeSet<>(roots.isEmpty() ? classes : roots);
       this.output = output;
-      this.cachePathStartNanos = System.nanoTime();
     }
 
     private MavenElisionService.ArtifactSnapshot snapshot() {
@@ -263,10 +302,6 @@ final class MavenDependencyTrimmer {
       return output;
     }
 
-    private long cachePathStartNanos() {
-      return cachePathStartNanos;
-    }
-
     private DependencyJarTrimmer.TrimAnalysis analysis() {
       return analysis;
     }
@@ -277,93 +312,169 @@ final class MavenDependencyTrimmer {
   }
 
   private static String fingerprint(
-      final Path original,
-      final List<Path> siblings,
-      final Set<String> roots,
+      final List<CandidateWork> candidates,
+      final List<Path> orderedLibraries,
       final Path javaHome,
-      final int release)
+      final int release,
+      final int schemaVersion,
+      final String engineVersion)
       throws IOException {
-    final StringBuilder input = new StringBuilder("release=").append(release).append('\n');
-    input.append("original=").append(sha256(original)).append('\n');
-    input.append("ct.sym=").append(sha256(javaHome.resolve("lib/ct.sym"))).append('\n');
-    final List<Path> orderedLibraries = new ArrayList<>(siblings);
-    orderedLibraries.sort(Comparator.comparing(Path::toString));
-    for (final Path library : orderedLibraries) {
+    final StringBuilder input =
+        new StringBuilder("release=")
+            .append(release)
+            .append("\nschema=")
+            .append(schemaVersion)
+            .append("\nengine=")
+            .append(engineVersion)
+            .append('\n');
+    for (final CandidateWork candidate : candidates) {
       input
-          .append("library=")
+          .append("candidate=")
+          .append(candidate.snapshot().coordinate())
+          .append(':')
+          .append(candidate.snapshot().filePath().toAbsolutePath().normalize())
+          .append('\n');
+      for (final String root : new TreeSet<>(candidate.roots())) {
+        input.append("root=").append(root).append('\n');
+      }
+    }
+    for (int index = 0; index < orderedLibraries.size(); index++) {
+      final Path library = orderedLibraries.get(index);
+      input
+          .append("library[")
+          .append(index)
+          .append("]=")
           .append(library.toAbsolutePath().normalize())
           .append(':')
           .append(sha256(library))
           .append('\n');
     }
-    for (final String root : new TreeSet<>(roots)) {
-      input.append("root=").append(root).append('\n');
+    for (final Path platformInput : platformInputs(javaHome, release)) {
+      input
+          .append("platform=")
+          .append(platformInput.getFileName())
+          .append(':')
+          .append(sha256(platformInput))
+          .append('\n');
     }
     return hash(input.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
   }
 
-  private static ArtifactTrimRecord loadCache(
-      final Path sidecar,
-      final Path output,
-      final Path original,
-      final ArtifactCoordinate coordinate,
-      final String fingerprint)
+  private static List<Path> platformInputs(final Path javaHome, final int release)
       throws IOException {
-    if (!Files.isRegularFile(sidecar) || !Files.isRegularFile(output)) {
-      return null;
+    final Path ctSym = javaHome.resolve("lib/ct.sym");
+    if (!Files.isRegularFile(ctSym)) {
+      throw new IOException("The selected JDK does not provide lib/ct.sym: " + ctSym);
     }
-    final Properties values = new Properties();
-    try (InputStream input = Files.newInputStream(sidecar)) {
-      values.load(input);
+    final String releaseCode =
+        release <= 9 ? Integer.toString(release) : Character.toString((char) ('A' + release - 10));
+    try (java.util.zip.ZipFile archive = new java.util.zip.ZipFile(ctSym.toFile())) {
+      final var entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        final String[] parts = entries.nextElement().getName().split("/", 3);
+        if (parts.length == 3 && parts[0].contains(releaseCode) && parts[2].endsWith(".sig")) {
+          return List.of(ctSym);
+        }
+      }
     }
-    if (!fingerprint.equals(values.getProperty("fingerprint"))) {
-      return null;
+    final Path jmods = javaHome.resolve("jmods");
+    if (!Files.isDirectory(jmods)) {
+      throw new IOException("The selected JDK has no jmods directory: " + jmods);
     }
-    final String originalSha256 = sha256(original);
-    final String trimmedSha256 = values.getProperty("trimmedSha256");
-    if (!originalSha256.equals(values.getProperty("originalSha256"))
-        || trimmedSha256 == null
-        || !trimmedSha256.equals(sha256(output))) {
-      return null;
-    }
-    try {
-      return new ArtifactTrimRecord(
-          coordinate,
-          original.toRealPath(),
-          originalSha256,
-          values.getProperty("originalSha1"),
-          output.toRealPath(),
-          trimmedSha256,
-          values.getProperty("trimmedSha1"),
-          Integer.parseInt(values.getProperty("totalClasses")),
-          Integer.parseInt(values.getProperty("retainedClasses")));
-    } catch (final RuntimeException exception) {
-      return null;
+    try (var paths = Files.list(jmods)) {
+      final List<Path> modules =
+          paths.filter(path -> path.toString().endsWith(".jmod")).sorted().toList();
+      if (modules.isEmpty()) {
+        throw new IOException("No JDK platform signatures found for release " + release);
+      }
+      return modules;
     }
   }
 
-  private static void storeCache(
-      final Path sidecar, final String fingerprint, final ArtifactTrimRecord record)
+  private static CacheEntry cacheEntry(
+      final CandidateWork candidate, final ArtifactTrimRecord record) throws IOException {
+    final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
+    return new CacheEntry(
+        candidate.snapshot().filePath().toAbsolutePath().normalize().toString(),
+        sha256(candidate.snapshot().filePath()),
+        record == null ? null : record.originalSha1(),
+        record == null ? null : record.trimmedPath().toString(),
+        record == null ? null : record.trimmedSha256(),
+        record == null ? null : record.trimmedSha1(),
+        analysis.totalClasses(),
+        analysis.retainedClasses().size(),
+        candidate.roots(),
+        analysis.retainedClasses(),
+        analysis.reachableLibraryClasses());
+  }
+
+  private static TrimResult loadCache(
+      final Path manifestPath,
+      final String fingerprint,
+      final List<CandidateWork> candidates,
+      final long started)
       throws IOException {
-    final Properties values = new Properties();
-    values.setProperty("fingerprint", fingerprint);
-    values.setProperty("originalSha256", record.originalSha256());
-    values.setProperty("originalSha1", record.originalSha1());
-    values.setProperty("trimmedSha256", record.trimmedSha256());
-    values.setProperty("trimmedSha1", record.trimmedSha1());
-    values.setProperty("totalClasses", Integer.toString(record.totalClasses()));
-    values.setProperty("retainedClasses", Integer.toString(record.retainedClasses()));
-    final Path parent = sidecar.getParent();
-    if (parent == null) {
-      throw new IOException("Trim cache sidecar has no parent directory: " + sidecar);
+    if (!Files.isRegularFile(manifestPath)) {
+      return null;
     }
-    final Path temporary = Files.createTempFile(parent, ".trim-cache-", ".tmp");
+    final CacheManifest manifest;
     try {
-      try (var output = Files.newOutputStream(temporary)) {
-        values.store(output, null);
+      manifest = JSON.readValue(manifestPath.toFile(), CacheManifest.class);
+    } catch (final IOException exception) {
+      return null;
+    }
+    if (!fingerprint.equals(manifest.fingerprint())
+        || manifest.entries().size() != candidates.size()) {
+      return null;
+    }
+    final List<ArtifactTrimRecord> records = new ArrayList<>();
+    for (int index = 0; index < candidates.size(); index++) {
+      final CandidateWork candidate = candidates.get(index);
+      final CacheEntry entry = manifest.entries().get(index);
+      final Path original = candidate.snapshot().filePath().toAbsolutePath().normalize();
+      if (!original.toString().equals(entry.originalPath())
+          || !sha256(original).equals(entry.originalSha256())) {
+        return null;
       }
+      if (entry.trimmedPath() == null) {
+        continue;
+      }
+      final Path output = candidate.output().toAbsolutePath().normalize();
+      if (!output.toString().equals(entry.trimmedPath())
+          || !Files.isRegularFile(output)
+          || !entry.trimmedSha256().equals(sha256(output))) {
+        return null;
+      }
+      records.add(
+          new ArtifactTrimRecord(
+              candidate.snapshot().coordinate(),
+              original.toRealPath(),
+              entry.originalSha256(),
+              entry.originalSha1(),
+              output.toRealPath(),
+              entry.trimmedSha256(),
+              entry.trimmedSha1(),
+              entry.totalClasses(),
+              entry.retainedClasses()));
+    }
+    return new TrimResult(records, records.size(), System.nanoTime() - started, 0);
+  }
+
+  private static void storeCache(final Path manifestPath, final CacheManifest manifest)
+      throws IOException {
+    final Path parent = manifestPath.getParent();
+    if (parent == null) {
+      throw new IOException("Trim cache manifest has no parent directory: " + manifestPath);
+    }
+    Files.createDirectories(parent);
+    final Path temporary = Files.createTempFile(parent, ".trim-cache-", ".json.tmp");
+    try {
+      JSON.writeValue(temporary.toFile(), manifest);
       Files.move(
-          temporary, sidecar, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+          temporary,
+          manifestPath,
+          StandardCopyOption.REPLACE_EXISTING,
+          StandardCopyOption.ATOMIC_MOVE);
     } finally {
       Files.deleteIfExists(temporary);
     }

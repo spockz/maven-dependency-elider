@@ -10,9 +10,11 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -58,7 +60,13 @@ final class ElideMojoTest {
   @Test
   void retainsCompileVisibleArtifactsInResolvedAndDirectViews()
       throws IOException, ReflectiveOperationException, MojoFailureException {
-    final Artifact used = artifact("used", "used/Sample.class");
+    final Artifact used =
+        runtimeArtifact(
+            "used",
+            compileJarSources(
+                "used",
+                java.util.Map.of("Sample.java", "package used; public class Sample {}"),
+                null));
     final Artifact unused = artifact("unused", "unused/Idle.class");
     final Set<Artifact> resolved = new LinkedHashSet<>(List.of(used, unused));
     final Set<Artifact> direct = new LinkedHashSet<>(List.of(used, unused));
@@ -82,7 +90,9 @@ final class ElideMojoTest {
   void trimJarsRedirectsTheArtifactAndWritesPedigreeSbom()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact runtime = compiledArtifact();
-    final MavenProject project = project(runtime, new LinkedHashSet<>(List.of(runtime)));
+    final Artifact directRuntime =
+        runtimeArtifact("runtime-dependency", runtime.getFile().toPath());
+    final MavenProject project = project(runtime, new LinkedHashSet<>(List.of(directRuntime)));
     project.setGroupId("org.example");
     project.setArtifactId("consumer");
     project.setVersion("1.0");
@@ -103,8 +113,9 @@ final class ElideMojoTest {
     mojo.execute();
 
     assertThat(runtime.getFile().toPath()).isNotEqualTo(original).isRegularFile();
+    assertThat(directRuntime.getFile().toPath()).isEqualTo(runtime.getFile().toPath());
     assertThat(project.getArtifacts()).contains(runtime);
-    assertThat(project.getDependencyArtifacts()).contains(runtime);
+    assertThat(project.getDependencyArtifacts()).contains(directRuntime);
     try (JarFile trimmed = new JarFile(runtime.getFile())) {
       assertThat(trimmed.getEntry("sample/Keep.class")).isNotNull();
       assertThat(trimmed.getEntry("sample/Helper.class")).isNotNull();
@@ -114,31 +125,106 @@ final class ElideMojoTest {
     assertThat(original).isRegularFile();
 
     runtime.setFile(original.toFile());
+    directRuntime.setFile(original.toFile());
+    final MavenElisionService.Analysis cachedAnalysis =
+        new MavenElisionService()
+            .analyze(
+                project,
+                List.of(writeTrace("sample.Keep\n").toFile()),
+                List.of(),
+                null,
+                null,
+                false,
+                true,
+                List.of());
+    assertThat(cachedAnalysis.trimAnalysisRuns()).isZero();
+    assertThat(cachedAnalysis.trimCacheHits()).isPositive();
+    final Path expectedTrimmedPath =
+        tempDir.resolve("build/elided-artifacts/org.example-runtime-dependency-1.0-trimmed.jar");
+    assertThat(cachedAnalysis.trimRecords())
+        .singleElement()
+        .satisfies(record -> assertThat(record.trimmedPath()).isEqualTo(expectedTrimmedPath));
+    Files.writeString(expectedTrimmedPath, "tampered output");
+    final MavenElisionService.Analysis repairedAnalysis =
+        new MavenElisionService()
+            .analyze(
+                project,
+                List.of(writeTrace("sample.Keep\n").toFile()),
+                List.of(),
+                null,
+                null,
+                false,
+                true,
+                List.of());
+    assertThat(repairedAnalysis.trimAnalysisRuns()).isPositive();
+    assertThat(expectedTrimmedPath).isRegularFile();
     mojo.execute();
-    assertThat(runtime.getFile().toPath()).isNotEqualTo(original).isRegularFile();
+    assertThat(runtime.getFile().toPath()).isEqualTo(expectedTrimmedPath);
   }
 
   @Test
   void trimRootsPropagateAcrossRetainedSiblingJars()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path cjar =
-        compileJar(
-            "End", "package chain; public class End { public static void touch() {} }", null);
+        compileJarSources(
+            "End",
+            java.util.Map.of(
+                "End.java",
+                "package chain; public interface End { static void touch() {} }",
+                "Provider.java",
+                "package chain; public class Provider implements End {}",
+                "Reflected.java",
+                "package chain; public class Reflected {}",
+                "ProxyMarker.java",
+                "package chain; public interface ProxyMarker {}",
+                "SpringAuto.java",
+                "package chain; public class SpringAuto {}",
+                "Factory.java",
+                "package chain; public class Factory {}",
+                "MetadataCondition.java",
+                "package chain; public class MetadataCondition {}",
+                "BeforeAuto.java",
+                "package chain; public class BeforeAuto {}",
+                "AfterAuto.java",
+                "package chain; public class AfterAuto {}",
+                "Unused.java",
+                "package chain; public class Unused {}"),
+            null);
     final Path bjar =
         compileJar(
             "Bridge",
             "package chain; public class Bridge { public void next() { new Helper().touch(); "
                 + "End.touch(); } private static class Helper { void touch() {} } }",
             cjar);
-    final Path ajar =
+    final Path compiledRoot =
         compileJar(
             "Root",
             "package chain; public class Root { public Bridge next() { return null; } }",
             bjar);
+    final Path ajar =
+        rewriteJar(
+            compiledRoot,
+            java.util.Map.of(
+                "META-INF/native-image/test/reflect-config.json",
+                "[{\"name\":\"chain.Reflected\"}]",
+                "META-INF/native-image/test/proxy-config.json",
+                "[[\"chain.ProxyMarker\"]]",
+                "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports",
+                "chain.SpringAuto\n",
+                "META-INF/spring.factories",
+                "org.example.Factory=chain.Factory\n",
+                "META-INF/spring-autoconfigure-metadata.properties",
+                "chain.SpringAuto.ConditionalOnClass=chain.MetadataCondition\n"
+                    + "chain.SpringAuto.AutoConfigureBefore=chain.BeforeAuto\n"
+                    + "chain.SpringAuto.AutoConfigureAfter=chain.AfterAuto\n"
+                    + "chain.SpringAuto.AutoConfigureOrder=10\n"));
+    final Path serviceJar =
+        descriptorJar("service-owner.jar", "META-INF/services/chain.End", "chain.Provider\n");
     final Artifact a = runtimeArtifact("chain-a", ajar);
     final Artifact b = runtimeArtifact("chain-b", bjar);
     final Artifact c = runtimeArtifact("chain-c", cjar);
-    final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(a, b, c));
+    final Artifact serviceOwner = runtimeArtifact("service-owner", serviceJar);
+    final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(a, b, c, serviceOwner));
     final MavenProject project = new MavenProject();
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
@@ -165,6 +251,162 @@ final class ElideMojoTest {
     assertJarContains(b, "chain/Bridge.class");
     assertJarContains(b, "chain/Bridge$Helper.class");
     assertJarContains(c, "chain/End.class");
+    assertJarContains(c, "chain/Provider.class");
+    assertJarContains(c, "chain/Reflected.class");
+    assertJarContains(c, "chain/ProxyMarker.class");
+    assertJarContains(c, "chain/SpringAuto.class");
+    assertJarContains(c, "chain/Factory.class");
+    assertJarContains(c, "chain/MetadataCondition.class");
+    assertJarContains(c, "chain/BeforeAuto.class");
+    assertJarContains(c, "chain/AfterAuto.class");
+    assertThat(serviceOwner.getFile().toPath()).isEqualTo(serviceJar);
+    assertThat(project.getArtifacts()).contains(serviceOwner);
+    try (JarFile trimmed = new JarFile(c.getFile())) {
+      assertThat(trimmed.getEntry("chain/Unused.class")).isNull();
+    }
+  }
+
+  @Test
+  void rootlessRetainedJarSeedsLinksIntoAnIndependentlyRootedSibling()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Path callbackJar =
+        compileJarSources(
+            "callback",
+            java.util.Map.of(
+                "Callback.java",
+                "package callback; public class Callback { public String invoke() { "
+                    + "return \"callback\"; } }",
+                "Independent.java",
+                "package callback; public class Independent {}",
+                "Unused.java",
+                "package callback; public class Unused {}"),
+            null);
+    final Path helperJar =
+        compileJarSources(
+            "helper",
+            java.util.Map.of(
+                "Helper.java",
+                "package callback; public class Helper { public static String call() { "
+                    + "return new Callback().invoke(); } }"),
+            callbackJar);
+    final Artifact helper = runtimeArtifact("helper", helperJar);
+    final Artifact callback = runtimeArtifact("callback", callbackJar);
+    final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(helper, callback));
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(artifacts);
+    project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
+    project.setGroupId("org.example");
+    project.setArtifactId("rootless-consumer");
+    project.setVersion("1.0");
+    project.setName("Rootless Consumer");
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("rootless-build").toString());
+    project.setBuild(build);
+    final ElideMojo mojo = new ElideMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("callback.Independent\n").toFile()));
+    set(mojo, "excludedArtifacts", List.of("org.example:helper"));
+    set(mojo, "reportFile", tempDir.resolve("rootless-report.json").toFile());
+    set(mojo, "sbomFile", tempDir.resolve("rootless-build/rootless-sbom.json").toFile());
+    set(mojo, "trimJars", true);
+
+    mojo.execute();
+
+    assertThat(helper.getFile().toPath()).isEqualTo(helperJar);
+    assertJarContains(callback, "callback/Callback.class");
+    try (java.net.URLClassLoader loader =
+        new java.net.URLClassLoader(
+            new java.net.URL[] {
+              helper.getFile().toURI().toURL(), callback.getFile().toURI().toURL()
+            })) {
+      assertThat(loader.loadClass("callback.Helper").getMethod("call").invoke(null))
+          .isEqualTo("callback");
+    }
+    try (JarFile trimmed = new JarFile(callback.getFile())) {
+      assertThat(trimmed.getEntry("callback/Unused.class")).isNull();
+    }
+  }
+
+  @Test
+  void malformedSpringMetadataFailsBeforeArtifactMutation()
+      throws IOException, ReflectiveOperationException {
+    final Artifact used = artifact("used", "used/Sample.class");
+    final Path original = used.getFile().toPath();
+    used.setFile(
+        rewriteJar(
+                original,
+                java.util.Map.of(
+                    "META-INF/spring-autoconfigure-metadata.properties", "not-a-supported-key=x\n"))
+            .toFile());
+    final Path malformed = used.getFile().toPath();
+    final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
+    project.setGroupId("org.example");
+    project.setArtifactId("consumer");
+    project.setVersion("1.0");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("malformed-build").toString());
+    project.setBuild(build);
+    final ElideMojo mojo = new ElideMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
+    set(mojo, "reportFile", tempDir.resolve("malformed-report.json").toFile());
+    set(mojo, "trimJars", true);
+
+    assertThatThrownBy(mojo::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("Unsupported Spring autoconfigure metadata key");
+    assertThat(used.getFile().toPath()).isEqualTo(malformed).isNotEqualTo(original);
+    assertThat(project.getArtifacts()).contains(used);
+  }
+
+  @Test
+  void explicitTrimRootKeepsItsWholeArtifactOwnerAndTrimsOtherClasses()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Artifact used =
+        runtimeArtifact(
+            "used",
+            compileJarSources(
+                "used",
+                java.util.Map.of("Sample.java", "package used; public class Sample {}"),
+                null));
+    final Path explicitJar =
+        compileJarSources(
+            "explicit",
+            java.util.Map.of(
+                "Keep.java", "package explicit; public class Keep {}",
+                "Drop.java", "package explicit; public class Drop {}"),
+            null);
+    final Artifact explicit = runtimeArtifact("explicit", explicitJar);
+    final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(used, explicit));
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(artifacts);
+    project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
+    project.setGroupId("org.example");
+    project.setArtifactId("explicit-consumer");
+    project.setVersion("1.0");
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("explicit-build").toString());
+    project.setBuild(build);
+    final ElideMojo mojo = new ElideMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
+    set(mojo, "trimRoots", List.of("explicit.Keep"));
+    set(mojo, "reportFile", tempDir.resolve("explicit-report.json").toFile());
+    set(mojo, "sbomFile", tempDir.resolve("explicit-build/explicit-sbom.json").toFile());
+    set(mojo, "trimJars", true);
+
+    mojo.execute();
+
+    assertThat(project.getArtifacts()).contains(explicit);
+    assertJarContains(explicit, "explicit/Keep.class");
+    try (JarFile trimmed = new JarFile(explicit.getFile())) {
+      assertThat(trimmed.getEntry("explicit/Drop.class")).isNull();
+    }
   }
 
   private Artifact compiledArtifact() throws IOException {
@@ -217,24 +459,36 @@ final class ElideMojoTest {
 
   private Path compileJar(final String className, final String source, final Path classpath)
       throws IOException {
-    final Path sourceFile = tempDir.resolve(className + "-src/chain/" + className + ".java");
-    final Path output = tempDir.resolve(className + "-classes");
-    Files.createDirectories(sourceFile.getParent());
+    return compileJarSources(className, java.util.Map.of(className + ".java", source), classpath);
+  }
+
+  private Path compileJarSources(
+      final String jarName, final java.util.Map<String, String> sources, final Path classpath)
+      throws IOException {
+    final Path sourceDirectory = tempDir.resolve(jarName + "-src");
+    final Path output = tempDir.resolve(jarName + "-classes");
+    Files.createDirectories(sourceDirectory);
     Files.createDirectories(output);
-    Files.writeString(sourceFile, source);
+    final List<Path> sourceFiles = new ArrayList<>();
+    for (final java.util.Map.Entry<String, String> source : sources.entrySet()) {
+      final Path sourceFile = sourceDirectory.resolve(source.getKey());
+      Files.createDirectories(sourceFile.getParent());
+      Files.writeString(sourceFile, source.getValue());
+      sourceFiles.add(sourceFile);
+    }
     final List<String> arguments =
-        new java.util.ArrayList<>(List.of("--release", "21", "-d", output.toString()));
+        new ArrayList<>(List.of("--release", "21", "-d", output.toString()));
     if (classpath != null) {
       arguments.addAll(List.of("-classpath", classpath.toString()));
     }
-    arguments.add(sourceFile.toString());
+    sourceFiles.forEach(source -> arguments.add(source.toString()));
     final int result =
         ToolProvider.getSystemJavaCompiler()
             .run(null, null, null, arguments.toArray(String[]::new));
     if (result != 0) {
-      throw new IOException("Could not compile cross-artifact trimming fixture " + className);
+      throw new IOException("Could not compile cross-artifact trimming fixture " + jarName);
     }
-    final Path jar = tempDir.resolve(className + ".jar");
+    final Path jar = tempDir.resolve(jarName + ".jar");
     try (ZipOutputStream archive = new ZipOutputStream(Files.newOutputStream(jar));
         java.util.stream.Stream<Path> paths = Files.walk(output)) {
       for (final Path classFile : paths.filter(Files::isRegularFile).toList()) {
@@ -245,6 +499,40 @@ final class ElideMojoTest {
       }
     }
     return jar;
+  }
+
+  private Path descriptorJar(final String name, final String entry, final String content)
+      throws IOException {
+    final Path jar = tempDir.resolve(name);
+    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(jar))) {
+      output.putNextEntry(new ZipEntry(entry));
+      output.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      output.closeEntry();
+    }
+    return jar;
+  }
+
+  private Path rewriteJar(final Path original, final java.util.Map<String, String> resources)
+      throws IOException {
+    final Path outputJar = tempDir.resolve("with-metadata-" + original.getFileName());
+    try (JarFile inputJar = new JarFile(original.toFile());
+        ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(outputJar))) {
+      final java.util.Enumeration<JarEntry> entries = inputJar.entries();
+      while (entries.hasMoreElements()) {
+        final ZipEntry entry = entries.nextElement();
+        output.putNextEntry(new ZipEntry(entry.getName()));
+        try (java.io.InputStream stream = inputJar.getInputStream(entry)) {
+          stream.transferTo(output);
+        }
+        output.closeEntry();
+      }
+      for (final java.util.Map.Entry<String, String> resource : resources.entrySet()) {
+        output.putNextEntry(new ZipEntry(resource.getKey()));
+        output.write(resource.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        output.closeEntry();
+      }
+    }
+    return outputJar;
   }
 
   private Artifact runtimeArtifact(final String artifactId, final Path jar) {

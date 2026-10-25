@@ -127,6 +127,18 @@ final class MavenElisionService {
     final ArtifactClassIndex index = new JarIndexScanner().scan(scanCandidates);
     final CompilerInputs compilerInputs =
         compilerInputs(project, session, scanCandidates, index, sourceRootsComplete);
+    final DynamicRootInputs dynamicRootInputs =
+        trimJars ? dynamicRoots(scanCandidates) : new DynamicRootInputs(Set.of(), Set.of());
+    final Set<String> pruningRequiredClasses =
+        requiredClassesForTrimming(
+            compilerInputs.requiredClasses(),
+            dynamicRootInputs.classNames(),
+            explicitTrimRoots,
+            index,
+            trimJars);
+    final Set<ArtifactCoordinate> keepForPruning =
+        new HashSet<>(compilerInputs.compileVisibleCoordinates());
+    keepForPruning.addAll(dynamicRootInputs.declaringArtifacts());
     final Optional<BytecodeReferenceScan> bytecodeScan =
         productionOutput == null
             ? Optional.empty()
@@ -138,8 +150,8 @@ final class MavenElisionService {
                 scanCandidates,
                 index,
                 trace,
-                config(excludedArtifacts, compilerInputs.compileVisibleCoordinates()),
-                compilerInputs.requiredClasses());
+                config(excludedArtifacts, keepForPruning),
+                pruningRequiredClasses);
     final MavenDependencyTrimmer.TrimResult trimResult =
         trimJars
             ? MavenDependencyTrimmer.trim(
@@ -149,10 +161,10 @@ final class MavenElisionService {
                 index,
                 new HashSet<>(decision.retainedArtifacts()),
                 trace,
-                compilerInputs.requiredClasses(),
+                pruningRequiredClasses,
                 bytecodeScan.map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
                 explicitTrimRoots)
-            : new MavenDependencyTrimmer.TrimResult(List.of(), 0, 0L);
+            : new MavenDependencyTrimmer.TrimResult(List.of(), 0, 0L, 0);
     return new Analysis(
         resolvedSnapshots,
         directPresent,
@@ -162,7 +174,8 @@ final class MavenElisionService {
         bytecodeScan,
         trimResult.records(),
         trimResult.cacheHits(),
-        trimResult.maximumCacheHitNanos());
+        trimResult.maximumCacheHitNanos(),
+        trimResult.analysisRuns());
   }
 
   /** Prepares Maven artifact views without mutating project state. */
@@ -257,7 +270,7 @@ final class MavenElisionService {
   }
 
   private static PruneConfig config(
-      final List<String> excludedArtifacts, final Set<ArtifactCoordinate> compileVisibleArtifacts)
+      final List<String> excludedArtifacts, final Set<ArtifactCoordinate> keepArtifacts)
       throws MojoFailureException {
     final Set<ArtifactCoordinate> exclusions = new LinkedHashSet<>();
     if (excludedArtifacts != null) {
@@ -265,7 +278,52 @@ final class MavenElisionService {
         exclusions.add(parseExclusion(text));
       }
     }
-    return new PruneConfig(Set.of(), compileVisibleArtifacts, ELIGIBLE_SCOPES, exclusions);
+    return new PruneConfig(Set.of(), keepArtifacts, ELIGIBLE_SCOPES, exclusions);
+  }
+
+  private static DynamicRootInputs dynamicRoots(final List<ArtifactFileRef> candidates)
+      throws IOException {
+    final Set<String> classNames = new HashSet<>();
+    final Set<ArtifactCoordinate> declaringArtifacts = new HashSet<>();
+    for (final ArtifactFileRef candidate : candidates) {
+      final DependencyDynamicRoots.RootScan scan =
+          DependencyDynamicRoots.scan(candidate.filePath());
+      classNames.addAll(scan.roots());
+      if (scan.declaresClassRoots()) {
+        declaringArtifacts.add(candidate.coordinate());
+      }
+    }
+    return new DynamicRootInputs(classNames, declaringArtifacts);
+  }
+
+  private static Set<String> requiredClassesForTrimming(
+      final Set<String> sourceClasses,
+      final Set<String> dynamicClasses,
+      final List<String> explicitRoots,
+      final ArtifactClassIndex index,
+      final boolean trimJars)
+      throws IOException {
+    final Set<String> required = new HashSet<>(sourceClasses);
+    if (!trimJars) {
+      return required;
+    }
+    final Set<String> indexedNames = new HashSet<>();
+    index.classesByArtifact().values().forEach(indexedNames::addAll);
+    required.addAll(dynamicClasses);
+    if (explicitRoots != null) {
+      for (final String root : explicitRoots) {
+        if (root == null || root.isBlank()) {
+          throw new IOException("elide.trimRoots must not contain blank class names");
+        }
+        final String normalized = TraceData.normalizeToDot(root.trim());
+        if (!indexedNames.contains(normalized)) {
+          throw new IOException(
+              "elide.trimRoots class is not present in a dependency JAR: " + root);
+        }
+        required.add(normalized);
+      }
+    }
+    return Set.copyOf(required);
   }
 
   /** Resolves source roots or retains all compiler-visible classes. */
@@ -412,6 +470,14 @@ final class MavenElisionService {
     }
   }
 
+  private record DynamicRootInputs(
+      Set<String> classNames, Set<ArtifactCoordinate> declaringArtifacts) {
+    private DynamicRootInputs {
+      classNames = Set.copyOf(classNames);
+      declaringArtifacts = Set.copyOf(declaringArtifacts);
+    }
+  }
+
   private static ArtifactCoordinate parseExclusion(final String text) throws MojoFailureException {
     final String[] pieces = text.split(":", -1);
     if (pieces.length < 2 || pieces.length > 5 || pieces[0].isBlank() || pieces[1].isBlank()) {
@@ -510,7 +576,8 @@ final class MavenElisionService {
       Optional<BytecodeReferenceScan> bytecodeScan,
       List<ArtifactTrimRecord> trimRecords,
       int trimCacheHits,
-      long maximumTrimCacheHitNanos) {
+      long maximumTrimCacheHitNanos,
+      int trimAnalysisRuns) {
     Analysis(
         final List<ArtifactSnapshot> resolvedSnapshots,
         final boolean directArtifactsPresent,
@@ -527,7 +594,8 @@ final class MavenElisionService {
           bytecodeScan,
           List.of(),
           0,
-          0L);
+          0L,
+          0);
     }
 
     Analysis(
@@ -544,7 +612,8 @@ final class MavenElisionService {
           Optional.empty(),
           List.of(),
           0,
-          0L);
+          0L,
+          0);
     }
 
     Analysis {
