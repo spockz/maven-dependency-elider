@@ -265,6 +265,8 @@ Later slices may add:
 
 ### 3.6 Track 6: Sub-Artifact Bytecode Symbol Slicing (Step 2 Priority)
 
+Removal granularity follows Maven Shade whole-resource copy/delete behavior: retain or remove complete `.class` entries. Do not rewrite methods, fields, instructions, or other arbitrary bytecode regions. The first slicing capability is a class-level link-closure analysis that preserves all members of retained class files; any future JAR writer must copy or delete complete entries and follow an explicit resource policy.
+
 **Files to implement:**
 
 * `io.github.spockz.elider.slicer.BytecodeSlicer`

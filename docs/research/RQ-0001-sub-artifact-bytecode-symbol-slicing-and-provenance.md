@@ -35,6 +35,8 @@ However, slicing a third-party JAR introduces three unresolved challenges:
 
 ### 2.1 Sub-Artifact Slicing & Link Closure
 
+The supported removal granularity is a complete JAR entry, especially a whole `.class` file, matching Maven Shade copy/delete filters. Do not rewrite individual methods, fields, or instructions. Link closure determines which full classes to retain; it does not authorize member-level bytecode surgery.
+
 * **Approach A: Static ASM Call-Graph Closure**:
   Starting from the set of classes $R_{\text{used}}$ referenced by the application in artifact $A$, parse the bytecode of each $c \in R_{\text{used}}$ to identify referenced types $t \in A$. Add $t$ to $R_{\text{used}}$ recursively until fixed-point closure is achieved.
 * **Approach B: Shade Plugin Filter Delegation**:
