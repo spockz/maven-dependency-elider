@@ -218,6 +218,19 @@ class DependencyPrunerTest {
   }
 
   @Test
+  void runtimeOnlyObservedClassRetainsItsWholeOwningJar() {
+    final ArtifactFileRef owner = artifact("runtime-only", "jar", "", "compile");
+    final ArtifactClassIndex index =
+        index(Map.of(owner, Set.of("sample.RuntimeOnly", "sample.Other")));
+
+    final ElisionDecision result = prune(List.of(owner), index, trace("sample.RuntimeOnly"));
+
+    assertThat(result.retainedArtifacts()).containsExactly(owner.coordinate());
+    assertThat(result.getRetainedClasses(owner.coordinate())).containsExactly("sample.RuntimeOnly");
+    assertThat(result.getUnusedClasses(owner.coordinate())).containsExactly("sample.Other");
+  }
+
+  @Test
   void keepArtifactsOverrideRetainsOnlyTheMatchingCoordinate() {
     final ArtifactFileRef pinned = artifact("pinned", "jar", "tests", "compile");
     final ArtifactFileRef sibling = artifact("sibling", "jar", "", "compile");
