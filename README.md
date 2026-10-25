@@ -7,7 +7,7 @@
 
 Maven Dependency Elider is an early-stage Java project exploring runtime-informed dependency analysis for Maven applications. The goal is to use observed class-loading data to identify dependencies that an application does not use, then make those findings available to Maven builds and downstream packaging tools.
 
-The project is under active development. The current repository contains the Maven multi-module skeleton, initial core model types, and build checks. Runtime trace readers, dependency analysis, artifact removal, and the Maven `elide` goal are not implemented yet. Do not use this project to remove dependencies from production builds.
+The project is under active development. The core currently includes runtime trace readers, a JAR central-directory class index, and an initial conservative dependency-pruning engine. The Maven `elide` goal, cache, provenance outputs, bytecode slicing, and end-to-end elision workflow are still being implemented. Do not use this project to remove dependencies from production builds.
 
 ## Project goals
 
@@ -16,7 +16,7 @@ The project is under active development. The current repository contains the Mav
 - Preserve accurate dependency and provenance information for downstream packaging and security tools.
 - Keep the build and analysis fast enough for routine developer workflows.
 
-These are development goals, not features available in the current release.
+These are development goals; the current core components are not yet exposed as a production-ready Maven workflow.
 
 ## Repository layout
 
@@ -48,9 +48,22 @@ make check
 
 `make check` formats Java sources, runs Checkstyle, PMD, SpotBugs, lints Markdown, and runs the core module tests. Run individual checks with `make lint-java`, `make lint-markdown`, or `make test-core`.
 
+## Example applications
+
+The `examples/` reactor contains two consumer applications used to exercise the eventual record, elide, package, and runtime-verification workflow:
+
+- **`example-basic-app`** is a plain Java application that uses Jackson to print `{"message":"hello"}`. Its shaded executable JAR is the packaging fixture; `commons-codec` is included as an unused dependency candidate.
+- **`example-spring-boot-app`** is a Spring Boot web application with a `GET /api/hello` endpoint. Its `HelloControllerTest` exercises the endpoint, and `spring-boot-starter-mail` is included as an unused starter candidate.
+
+The fixtures currently demonstrate application behavior, tests, and downstream packaging configuration. The automated dependency recording and elision cycle is not yet available. Build the examples with:
+
+```sh
+./mvnw -f examples/pom.xml verify
+```
+
 ## Usage
 
-The Maven plugin goal and runtime analysis pipeline are not available yet. Follow the project status and implementation notes in [`docs/research/`](docs/research/) for current work.
+The Maven plugin goal and runtime analysis pipeline are not available yet. Follow the project status and implementation notes in [`docs/research/`](docs/research/) for current work. As new examples are added, their purpose, exercised behavior, and current verification status should be documented here.
 
 ## Contributing
 
@@ -59,3 +72,5 @@ Contributions are welcome. Before opening a pull request, run `make check` and i
 ## License
 
 This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the complete text.
+
+This project is co-created with Codex and Gemini.

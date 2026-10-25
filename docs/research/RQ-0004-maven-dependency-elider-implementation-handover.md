@@ -97,6 +97,9 @@ Traditional software composition analysis (SCA) and dependency management suffer
    * Extracts the `"name"` property from each reflected class descriptor.
 6. **`CompositeTraceReader`**:
    * Inspects candidate files, identifies applicable readers, and merges results into a single `TraceData` instance.
+7. **Artifact attribution**:
+   * Preserve defining-artifact information when a telemetry format provides it (for example, a class-loading record with a JAR source). Do not infer artifact identity from class name alone.
+   * The pruning engine may use a reported origin to disambiguate duplicate classes only when the source identifies the artifact reliably. For class-only observations, retain every supplied artifact containing an observed duplicate class.
 
 ---
 
@@ -225,6 +228,9 @@ Traditional software composition analysis (SCA) and dependency management suffer
 
        @Parameter(property = "elide.failOnUnused", defaultValue = "false")
        private boolean failOnUnused;
+
+       @Parameter(property = "elide.excludedArtifacts")
+       private List<String> excludedArtifacts;
        ...
    }
    ```
@@ -236,6 +242,7 @@ Traditional software composition analysis (SCA) and dependency management suffer
      2. Scan Central Directory of all `project.getArtifacts()`.
      3. Execute `DependencyPruner.prune(...)`.
      4. Save decision to cache.
+   * Pass plugin-user-configured `excludedArtifacts` into the pruning policy. Matching exclusions retain those dependencies globally, regardless of where they enter the dependency set; keep this distinct from exclusions scoped to an individual Maven dependency declaration. The default is empty, and coordinate matching must be documented and tested.
    * **In-Memory Mutation (ADR-0002)**:
 
      ```java
@@ -254,6 +261,7 @@ Traditional software composition analysis (SCA) and dependency management suffer
      ```
 
    * Emit provenance metadata files into `target/`.
+   * Print a concise Maven build summary after every elision run, including cache hits. Report whole-artifact elisions as `elided / input dependency artifacts` and a percentage. Report surgical removals separately: classes removed / classes considered and bytecode symbols (methods and fields) removed / symbols considered, each with a percentage. Whole-artifact removals must not be double-counted in the surgical denominators. When slicing is not run, report surgical counts as zero and mark the stage as not run; never present a missing denominator as 0%.
 
 ---
 
@@ -365,4 +373,5 @@ Before declaring implementation complete:
 * [ ] **Basic App Verification**: `commons-codec` is physically pruned from `example-basic-app` shaded JAR while Jackson-based execution continues to succeed.
 * [ ] **Spring Boot Verification**: Unused starter libraries are physically omitted from `BOOT-INF/lib` while Spring Boot web endpoint boots and tests cleanly.
 * [ ] **Provenance Output**: `effective-pom-elided.xml`, `bom-elided.cdx.json`, and `elided.vex.json` are emitted with valid syntax and `pedigree`/`not_affected` statements.
+* [ ] **Elision Summary**: Each run prints absolute counts and percentages for whole artifacts elided and, when slicing runs, classes and bytecode symbols removed; denominators are explicit and exclude whole-artifact removals from surgical metrics.
 * [ ] **Documentation & Indexing**: ADR and RQ registers updated with completed checkpoints.
