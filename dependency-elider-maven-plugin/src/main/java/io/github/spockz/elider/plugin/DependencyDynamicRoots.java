@@ -188,7 +188,7 @@ final class DependencyDynamicRoots {
         roots.add(propertyKey);
         continue;
       }
-      final String marker = metadataMarker(propertyKey);
+      final String marker = metadataMarker(propertyKey, jarClasses);
       if (marker == null) {
         throw new IOException("Unsupported Spring autoconfigure metadata key: " + propertyKey);
       }
@@ -221,6 +221,10 @@ final class DependencyDynamicRoots {
           }
           roots.add(candidate);
         }
+      } else if (marker.endsWith("Conditional")
+          && propertyKey.endsWith(".ConditionalOnWebApplication")
+          && !Set.of("", "SERVLET", "REACTIVE").contains(value)) {
+        throw new IOException("Unsupported Spring web application condition value: " + value);
       }
     }
   }
@@ -233,20 +237,18 @@ final class DependencyDynamicRoots {
         || condition.startsWith("OnSingleCandidate");
   }
 
-  private static String metadataMarker(final String key) {
+  private static String metadataMarker(final String key, final Set<String> jarClasses) {
     for (final String suffix :
-        Set.of(
-            ".ConditionalOnClass",
-            ".ConditionalOnMissingClass",
-            ".ConditionalOnBean",
-            ".ConditionalOnMissingBean",
-            ".ConditionalOnSingleCandidate",
-            ".AutoConfigureBefore",
-            ".AutoConfigureAfter",
-            ".AutoConfigureOrder")) {
+        Set.of(".AutoConfigureBefore", ".AutoConfigureAfter", ".AutoConfigureOrder")) {
       if (key.endsWith(suffix)) {
-        return suffix.startsWith(".Conditional") ? ".Conditional" : suffix;
+        return suffix;
       }
+    }
+    final int conditionIndex = key.lastIndexOf(".Conditional");
+    if (conditionIndex >= 0
+        && jarClasses.contains(key.substring(0, conditionIndex))
+        && key.substring(conditionIndex + 1).matches("Conditional[A-Za-z0-9_$]+")) {
+      return ".Conditional";
     }
     return null;
   }

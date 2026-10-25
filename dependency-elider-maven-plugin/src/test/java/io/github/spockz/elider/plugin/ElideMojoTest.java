@@ -157,6 +157,20 @@ final class ElideMojoTest {
     final MavenElisionService.Analysis malformedCacheAnalysis = analyzeTrim(project);
     assertThat(malformedCacheAnalysis.trimAnalysisRuns()).isPositive();
 
+    for (final String field : List.of("roots", "retainedClassNames", "reachableLibraryClasses")) {
+      final ObjectNode withNullMember = (ObjectNode) mapper.readTree(cacheManifest.toFile());
+      final ObjectNode entry = (ObjectNode) withNullMember.path("entries").get(0);
+      final com.fasterxml.jackson.databind.node.ArrayNode values =
+          (com.fasterxml.jackson.databind.node.ArrayNode) entry.path(field);
+      if (values.isEmpty()) {
+        values.addNull();
+      } else {
+        values.set(0, com.fasterxml.jackson.databind.node.NullNode.getInstance());
+      }
+      mapper.writeValue(cacheManifest.toFile(), withNullMember);
+      assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
+    }
+
     Files.writeString(cacheManifest, "null");
     assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
 
@@ -271,8 +285,13 @@ final class ElideMojoTest {
                     + "ConditionalOnClass=org.crac.Resource\n"
                     + "org.springframework.boot.autoconfigure.kafka."
                     + "KafkaStreamsAnnotationDrivenConfiguration.ConditionalOnBean=\n"
+                    + "org.springframework.boot.autoconfigure.kafka."
+                    + "KafkaStreamsAnnotationDrivenConfiguration."
+                    + "ConditionalOnWebApplication=SERVLET\n"
                     + "org.springframework.boot.autoconfigure.task.TaskSchedulingConfigurations$"
                     + "TaskSchedulerConfiguration.ConditionalOnBean=\n"
+                    + "org.springframework.boot.autoconfigure.task.TaskSchedulingConfigurations$"
+                    + "TaskSchedulerConfiguration.ConditionalOnWebApplication=\n"
                     + "org.springframework.boot.autoconfigure.condition."
                     + "ConditionalOnCheckpointRestore=\n"
                     + "chain.SpringAuto.AutoConfigureBefore=chain.BeforeAuto\n"

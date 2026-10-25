@@ -482,8 +482,11 @@ final class MavenDependencyTrimmer {
     if (entry == null
         || !validDigest(entry.originalSha256(), 64)
         || entry.roots() == null
+        || entry.roots().contains(null)
         || entry.retainedClassNames() == null
+        || entry.retainedClassNames().contains(null)
         || entry.reachableLibraryClasses() == null
+        || entry.reachableLibraryClasses().contains(null)
         || entry.totalClasses() != candidate.classes().size()
         || entry.retainedClasses() < 0
         || entry.retainedClasses() > entry.totalClasses()
