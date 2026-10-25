@@ -1,4 +1,4 @@
-<!-- WHY: Investigates sub-artifact bytecode symbol slicing, constant-pool link closure, signature handling for signed JARs, and recording provenance across Effective POMs, CycloneDX 1.5+ SBOMs, and OpenVEX. -->
+<!-- WHY: Investigates sub-artifact bytecode symbol slicing, constant-pool link closure, signature handling for signed JARs, and recording provenance across audit POMs, CycloneDX 1.6 SBOMs, and evidence-backed OpenVEX. -->
 # RQ-0001: Sub-Artifact Bytecode Symbol Slicing and Multi-Tier Provenance
 
 * **Status**: Open
@@ -26,8 +26,8 @@ However, slicing a third-party JAR introduces three unresolved challenges:
 * **RQ-0001.2**: What is the safest policy for signed JARs (e.g., skip slicing by default vs. strip signatures following `maven-shade-plugin` conventions)?
 * **RQ-0001.3**: How should sliced artifacts be represented across:
   * The **Effective / Consumer POM** (Maven 3 flattened POM vs. Maven 4 Consumer POM)?
-  * **CycloneDX 1.5+ SBOMs** using the standard `pedigree` and `properties` schemas?
-  * **OpenVEX and CycloneDX VEX** documents using `status: not_affected` and `justification: code_not_present`?
+  * **CycloneDX 1.6 SBOMs** using schema-valid `pedigree` and `properties` data?
+  * **OpenVEX and CycloneDX VEX** documents using vulnerability-to-product evidence and valid status justifications?
 
 ---
 
@@ -44,12 +44,13 @@ However, slicing a third-party JAR introduces three unresolved challenges:
 
 #### 1. Effective / Consumer POM
 
-* **Maven 4**: Hook into `ConsumerModelSource` to emit an updated consumer POM. Sliced dependencies can be tagged or carry a `<classifier>elided</classifier>`.
-* **Maven 3**: Write `target/effective-pom-elided.xml` with dependencies updated and attach or set as the project POM file.
+* **Maven 4**: Investigate `ConsumerModelSource` only after dependency-resolution semantics are proven for the emitted model.
+* **Maven 3**: Initially write `target/effective-pom-elided.xml` as an audit report. Removing direct dependency elements alone cannot stop a retained dependency from resolving an elided transitive again.
+* Do not emit a consumer POM that names an `elided` classifier until the companion artifact is actually installed/deployed and consumer resolution is verified. An in-memory file pointer does not publish a new Maven coordinate.
 
-#### 2. CycloneDX 1.5+ SBOM
+#### 2. CycloneDX 1.6 SBOM
 
-CycloneDX provides first-class support for modified components via `pedigree`:
+CycloneDX provides first-class support for modified components via `pedigree`. The following is a shape example only; emit it only when an actual slicing result provides the original/output files and hashes:
 
 ```json
 {
@@ -61,6 +62,7 @@ CycloneDX provides first-class support for modified components via `pedigree`:
   "pedigree": {
     "ancestors": [
       {
+        "type": "library",
         "group": "org.apache.commons",
         "name": "commons-compress",
         "version": "1.21",
@@ -69,10 +71,10 @@ CycloneDX provides first-class support for modified components via `pedigree`:
     ],
     "patches": [
       {
-        "type": "unofficial",
-        "description": "Elided unreferenced classes via maven-dependency-elider link closure"
+        "type": "unofficial"
       }
-    ]
+    ],
+    "notes": "Elided unreferenced classes using maven-dependency-elider link closure."
   },
   "properties": [
     { "name": "elider:status", "value": "sliced" },
@@ -83,11 +85,24 @@ CycloneDX provides first-class support for modified components via `pedigree`:
 
 #### 3. OpenVEX
 
+OpenVEX statements require an identified product and vulnerability plus issuer/document metadata. Do not infer a vulnerability assessment from an elision decision. The schema example below uses placeholders and is emitted only when a vulnerability-to-component mapping and evidence prove the stated outcome. For removed vulnerable code in a sliced component, the valid justification is `vulnerable_code_not_present`; `code_not_present` is not a valid label.
+
 ```json
 {
-  "status": "not_affected",
-  "justification": "code_not_present",
-  "impact_statement": "The vulnerable class was omitted during bytecode symbol slicing."
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "urn:uuid:<document-id>",
+  "author": "<issuer>",
+  "timestamp": "<RFC-3339 timestamp>",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": { "name": "<CVE-ID>" },
+      "products": [{ "@id": "<product-purl>" }],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "The vulnerability-mapped code was omitted from the sliced component."
+    }
+  ]
 }
 ```
 

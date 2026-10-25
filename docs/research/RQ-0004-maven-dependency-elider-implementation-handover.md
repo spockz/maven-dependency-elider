@@ -48,7 +48,7 @@ Traditional software composition analysis (SCA) and dependency management suffer
 | **Track 1: Telemetry Ingestion Layer** | `elider-core/src/main/java/.../trace` | Multi-source trace readers (ClassLoader logs, CDS lists, JFR events, GraalVM JSON). | None |
 | **Track 2: High-Performance ZIP Central Directory Indexer** | `elider-core/src/main/java/.../scanner` | Parallel virtual-thread scanner of JAR Central Directories (`CEN`) without entry inflation. | None |
 | **Track 3: Graph Elision Engine & Sub-10ms Fingerprint Cache** | `elider-core/src/main/java/.../engine`, `.../cache` | 64-bit fingerprinting, cache storage/validation, dependency reachability graph pruning. | Tracks 1, 2 |
-| **Track 4: Three-Tier Provenance Generators** | `elider-core/src/main/java/.../metadata` | Effective/Consumer POM, CycloneDX 1.5+ SBOM (`pedigree`), OpenVEX JSON, Dependency-Check XML. | Track 3 |
+| **Track 4: Provenance Generators** | `elider-core/src/main/java/.../metadata` | Audit POM and CycloneDX 1.6 inventory first; OpenVEX and Dependency-Check outputs require explicit vulnerability evidence. | Track 3 |
 | **Track 5: Early Lifecycle Maven Plugin Mojo** | `dependency-elider-maven-plugin` | `@Mojo(name="elide", defaultPhase=INITIALIZE)`, in-memory `project.getArtifacts()` mutator. | Tracks 3, 4 |
 | **Track 6: Sub-Artifact Bytecode Symbol Slicing (Step 2)** | `elider-core/src/main/java/.../slicer` | ASM intra-JAR link closure, Shade signature-stripping, sliced companion JAR creation. | Track 5 |
 | **Track 7: JMH Benchmarking Suite** | `elider-benchmarks` | Microbenchmarks proving the $<10\text{ ms}$ invariant on cache-hit and parallel cold-path. | Tracks 2, 3 |
@@ -166,7 +166,7 @@ Traditional software composition analysis (SCA) and dependency management suffer
 
 ---
 
-### 3.4 Track 4: Three-Tier Provenance Generators (`elider-core/metadata`)
+### 3.4 Track 4: Provenance Generators (`elider-core/metadata`)
 
 **Files to implement:**
 
@@ -177,25 +177,22 @@ Traditional software composition analysis (SCA) and dependency management suffer
 
 #### Implementation Details
 
+The initial provenance slice is a fresh CycloneDX 1.6 inventory for whole-artifact elision. It requires the root project identity, the applied retained-artifact inventory, the pruning decision, document metadata, and real artifact paths when hashes are emitted. It must not infer dependency edges from a flat artifact list. Deduplicate scope variants by artifact identity while preserving version, type, and classifier distinctions; represent Maven scopes as properties rather than CycloneDX scope values. Validate output against a pinned CycloneDX 1.6 schema in an offline test.
+
+Later slices may add:
+
 1. **`EffectivePomGenerator`**:
-   * Writes `target/effective-pom-elided.xml`.
-   * Strips `<dependency>` entries for elided artifacts.
-   * For sliced dependencies (Step 2), attaches `<classifier>elided</classifier>` and XML comments documenting original SHA-256 and retained symbol counts.
-2. **`CycloneDxSbomGenerator`**:
-   * Generates/enriches `target/bom-elided.cdx.json` conforming to CycloneDX 1.5/1.6 schema.
-   * Elided dependencies are excluded or tagged.
-   * Sliced dependencies declare:
-     * `hashes`: actual SHA-256 of the on-disk sliced JAR.
-     * `pedigree.ancestors`: original Maven Central coordinate and original SHA-256 digest.
-     * `pedigree.patches`: `"Debloated unused classes via maven-dependency-elider"`.
-     * `properties`: `elider:status=sliced`, `elider:retainedClasses`, `elider:totalClasses`.
+   * Takes the original effective model and resolved dependency paths as inputs and writes an audit POM. Removing direct dependency elements alone is insufficient because a retained dependency may bring an elided transitive back into resolution.
+   * Do not emit a consumer POM that references an `elided` classifier until the companion artifact is actually installed/deployed and consumer resolution is verified. Changing an in-memory file pointer does not publish a new Maven coordinate.
+2. **`CycloneDxSbomGenerator` slicing enrichment**:
+   * Use actual SHA-256 values from on-disk original and sliced JARs.
+   * CycloneDX 1.6 pedigree ancestors are complete component objects, including required `type` and `name` fields. Pedigree patches are objects with required `type`; use `pedigree.notes` for explanatory text rather than a patch `description` field.
+   * Emit retained/removed class and symbol properties only from a slicing result that records those actual counts. An `ElisionDecision` class breakdown describes observed/unused classes and is not evidence of physically removed bytecode.
 3. **`OpenVexGenerator`**:
-   * Writes `target/elided.vex.json` conforming to the OpenVEX specification:
-     * `status: "not_affected"`.
-     * `justification: "component_not_present"` for whole-artifact elisions.
-     * `justification: "code_not_present"` for sliced classes.
+   * Requires explicit product identity, vulnerability identifiers and mappings, issuer, timestamp, document ID/version, and evidence supporting each statement. Do not synthesize vulnerability statements from dependency pruning alone.
+   * Use the specification’s `component_not_present` justification only when the identified product and vulnerability assessment support it. For sliced code, use `vulnerable_code_not_present`; do not use `code_not_present`.
 4. **`DependencyCheckSuppressionGenerator`**:
-   * Writes `target/dependency-check-suppressions.xml` for legacy scanners lacking VEX support.
+   * Requires vulnerability-to-component evidence and writes narrowly scoped suppressions for legacy scanners. Do not infer vulnerability selectors from unused classes or generate broad suppressions without evidence.
 
 ---
 
@@ -261,7 +258,7 @@ Traditional software composition analysis (SCA) and dependency management suffer
      }
      ```
 
-   * Emit provenance metadata files into `target/`.
+   * Emit only provenance artifacts supported by the available product, resolved-inventory, digest, slicing, and vulnerability evidence; report omitted unsupported formats explicitly.
    * Print a concise Maven build summary after every elision run, including cache hits. Report whole-artifact elisions as `elided / input dependency artifacts` and a percentage. Report surgical removals separately: classes removed / classes considered and bytecode symbols (methods and fields) removed / symbols considered, each with a percentage. Whole-artifact removals must not be double-counted in the surgical denominators. When slicing is not run, report surgical counts as zero and mark the stage as not run; never present a missing denominator as 0%.
 
 ---
@@ -336,7 +333,7 @@ Traditional software composition analysis (SCA) and dependency management suffer
    * **Physical**: Inspect the fat JAR entries:
      * `commons-codec` classes must be **100% absent** from `example-basic-app` shaded JAR.
      * `angus-mail` / `jakarta.mail` JARs must be **100% absent** from `example-spring-boot-app` `BOOT-INF/lib`.
-   * **Security**: Verify `target/bom-elided.cdx.json` and `target/elided.vex.json` omit the elided dependencies.
+   * **Security**: Validate CycloneDX against its pinned schema and ensure it matches the applied inventory. Emit VEX only for vulnerability assessments with required product identity and evidence; never treat a flat pruning decision as vulnerability proof.
 
 ---
 
@@ -373,6 +370,6 @@ Before declaring implementation complete:
 * [ ] **Plugin Descriptor**: `dependency-elider-maven-plugin` generates valid plugin descriptors for Maven 3.x and 4.x.
 * [ ] **Basic App Verification**: `commons-codec` is physically pruned from `example-basic-app` shaded JAR while Jackson-based execution continues to succeed.
 * [ ] **Spring Boot Verification**: Unused starter libraries are physically omitted from `BOOT-INF/lib` while Spring Boot web endpoint boots and tests cleanly.
-* [ ] **Provenance Output**: `effective-pom-elided.xml`, `bom-elided.cdx.json`, and `elided.vex.json` are emitted with valid syntax and `pedigree`/`not_affected` statements.
+* [ ] **Provenance Output**: CycloneDX 1.6 inventory matches the applied retained-artifact set and validates against the pinned schema. Audit POM, OpenVEX, and Dependency-Check suppressions are emitted only when their required resolved-graph, product, vulnerability, digest, and slicing evidence is supplied.
 * [ ] **Elision Summary**: Each run prints absolute counts and percentages for whole artifacts elided and, when slicing runs, classes and bytecode symbols removed; denominators are explicit and exclude whole-artifact removals from surgical metrics.
 * [ ] **Documentation & Indexing**: ADR and RQ registers updated with completed checkpoints.
