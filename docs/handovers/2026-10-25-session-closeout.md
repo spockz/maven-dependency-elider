@@ -79,6 +79,8 @@ Chat archival was attempted after repository closeout, but the app tool was unav
 
 ## Next session
 
+The orchestration skill now uses **work package → tracks → slices**. Each package belongs to one coordinating thread/session; a later session selects a new package from this handover's remaining scope. The terminology follow-up is delivered without changing the original implementation plan's incomplete status. Session closeout does not declare every research question or remaining track complete.
+
 1. Read this handover, the current README, ADR-0001/0002, RQ-0004's follow-up table, and the relevant RQ before editing.
 2. Inspect the retained unreviewed cache worktree and its patch backup first. Review/adopt or explicitly retire that candidate before Maven cache integration and its invalidation/lifecycle proof. Keep performance claims separate until measured.
 3. Then address provenance integration and the documented Maven compatibility gaps in bounded follow-up slices, reusing track roles.

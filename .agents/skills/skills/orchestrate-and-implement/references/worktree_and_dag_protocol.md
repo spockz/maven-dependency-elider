@@ -1,6 +1,9 @@
+<!-- WHY: Defines isolation and integration mechanics for tracks within the coordinating session's work package. -->
 # Worktree and Dependency DAG Protocol
 
 This reference operationalises dependency analysis, execution Directed Acyclic Graphs (DAGs), sandboxed Git worktrees, progressive linear integration, and live state tracking across Codex and Antigravity environments.
+
+Apply this protocol to the [work package](../SKILL.md#work-package-tracks-and-slices) owned by the current coordinating thread/session. Record its scope and acceptance criteria before deriving the track DAG. A new session selects a new package from any handed-over remainder; preserved branches and worktrees retain their provenance without extending the previous package into that session.
 
 ---
 

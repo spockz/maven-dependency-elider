@@ -1,3 +1,4 @@
+<!-- WHY: Defines review evidence and acceptance gates for slices, tracks, and their session-scoped work package. -->
 # The Review Triangle Protocol
 
 This reference operationalises the review framework across Track Reviewers, the Integration Reviewer, and the Gemini Model Context Protocol (MCP) bridge across Codex and Antigravity environments.
@@ -84,6 +85,7 @@ Enforce strict compliance with Architecture Decision Records (ADRs) partitioned 
 
 ### Pillar 4: Assignment and Scope Fidelity
 
+* **Do**: Evaluate slice and track scope against the current work package's recorded acceptance criteria. At final integration, report the work package as complete or incomplete independently of whether the session is closing; a handover preserves unfinished requirements for a new package in a later session.
 * **Do**: Keep code modifications strictly within assigned packages, interfaces, and file boundaries.
 * **Do**: Confirm that every requirement in the slice assignment is verifiable in code, documentation, or tests.
 * **Don't**: Don't perform speculative refactorings on unrelated subsystems.

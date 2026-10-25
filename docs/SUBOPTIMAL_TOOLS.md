@@ -14,3 +14,7 @@ The local transcript extractor inspected 39 retained root/child logs for thread 
 | Documentation verification | Markdown lint found one trailing blank-line issue in RQ-0005. Its configured mechanical fix resolved it; the full Markdown check passed. | Normal validation/fix cycle, not a semantic-tool defect. |
 
 The extractor output is `.scratch/closeout-semantic-calls.json`; track receipts are bundled in `.scratch/closeout-review-evidence.tar.gz`. The final integration checks and their measured elapsed times are recorded in the [session handover](handovers/2026-10-25-session-closeout.md) and `.scratch/closeout-verification.json`. Those build measurements are not a semantic-tool benchmark. No token savings, runtime savings, or exhaustive coverage of unavailable history is claimed.
+
+The terminology follow-up used the skill validator, repository-native reads/patches, and configured checks. No additional semantic operation was invoked, so the comparative efficiency and runtime conclusions remain unchanged. Chat archival remains unavailable as recorded above; the repeated closeout preserves that limitation.
+
+Direct skill Markdown validation needed an isolated YAML configuration because the repository intentionally excludes `.agents` from its normal Markdown glob. Earlier caller configurations either checked zero files or applied default rules instead of the repository settings. The corrected invocation checked all three edited skill files with zero findings; these configuration retries were not defects in the skill content.

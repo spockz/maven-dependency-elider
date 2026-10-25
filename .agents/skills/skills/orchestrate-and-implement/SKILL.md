@@ -1,6 +1,6 @@
 ---
 name: orchestrate-and-implement
-description: Decomposes complex handover documents into parallel tracks, slices each track into atomic committable improvements, pairs dedicated implementers (Luna 6 high) with dedicated track reviewers (Sol 6.1) using two-tier verification, and orchestrates progressive worktree integration with whole-system review and Gemini MCP bridge verification (Gemini 3.8 medium).
+description: Implements a work package within one coordinating thread/session, decomposing its scope into tracks and committable slices with dedicated implementers and reviewers, progressive integration, and verified closeout.
 ---
 
 <!-- This skill coordinates multi-track implementations from a handover document, enforcing sliced atomic commits, dedicated implementer-reviewer pairings, cross-model Gemini MCP reviews, and verified integration. Compatible with Codex and Antigravity execution harnesses. -->
@@ -8,6 +8,20 @@ description: Decomposes complex handover documents into parallel tracks, slices 
 # Orchestrate and Implement
 
 Use this skill when receiving a comprehensive handover document, Architecture Decision Record (ADR), or technical specification requiring multi-component implementation across independent or interdependent parallel workstreams.
+
+## Work Package, Tracks, and Slices
+
+The hierarchy is **work package → tracks → slices**.
+
+* A **work package** is the complete unit of work selected for one coordinating thread/session. It has a name or identifier, an explicit scope, acceptance criteria, and a final integration and closeout result. Its delegated agents belong to that work package.
+* A **track** owns a coherent part of the work package and contains ordered slices. Tracks may run concurrently when their dependencies allow it.
+* A **slice** is an atomic, committable improvement with observable acceptance criteria and a review verdict.
+
+A handover, specification, ADR, or research question supplies requirements; it may describe more work than one work package contains. Select and record the session's work package before decomposing it. Use “continue implementing the work package” to resume its tracks and slices within the same thread/session.
+
+Each work package belongs to a single coordinating thread/session. If work moves to a new thread/session, define a new work package from the recorded remaining scope and link it to the previous package. Context compaction within the same thread does not create a new work package.
+
+Distinguish session closeout from work package completion. Mark a work package complete only when its agreed scope is implemented, reviewed, integrated, and verified. If the session ends earlier, record the package as incomplete, preserve unfinished work, and hand over exact remaining criteria. Do not silently narrow its scope or equate a closed session with completed implementation.
 
 ## Model Roles and Environment Mappings
 
@@ -116,7 +130,7 @@ Use this skill when receiving a comprehensive handover document, Architecture De
 
 ### 10. Coordinator Oversight and Concurrency
 
-* **Do**: Maintain an authoritative live status table in `.scratch/orchestration-status.md`.
+* **Do**: Maintain an authoritative live status table in `.scratch/orchestration-status.md`, identifying the work package, owning thread/session, scope, acceptance criteria, and track/slice states.
 * **Do**: Bound parallel track execution to 2-3 concurrent worktrees.
 * **Do**: Keep one persistent Track Implementer and one persistent Dedicated Track Reviewer per track. Reuse each agent for every slice in that track by sending follow-up tasks; a slice transition is not a reason to spawn another agent.
 * **Do**: Use at most one session-wide Critical Architect & Integration Reviewer. Reuse that agent for initial seam scrutiny, escalations, and whole-system review.
@@ -179,11 +193,12 @@ flowchart TD
 
 ## Execution Workflow Steps
 
-### Step 1: Ingest Handover Specification and Verify Seams
+### Step 1: Define the Work Package, Ingest Requirements, and Verify Seams
 
-1. **Ingest Specification**: Ingest the specification from a committed path (e.g. [`docs/handovers/LUNA_HANDOVER_REFACTORING_TAXONOMY.md`](file:///Users/alessandro/sources/semantic-editor/docs/handovers/LUNA_HANDOVER_REFACTORING_TAXONOMY.md)) or write inline prompt markdown to `.scratch/handover.md`.
-2. **Architectural Scrutiny**: The Critical Architect verifies functional requirements, acceptance criteria, ADR alignment, and decoupling seams.
-3. **Clearance**: Issue formal track boundaries and DAG sequencing to the coordinator thread.
+1. **Define Work Package**: Record its name or identifier, owning thread/session, selected scope, acceptance criteria, and source documents in `.scratch/orchestration-status.md`. Select a bounded package for this session rather than assuming an entire project roadmap is the assignment. If continuing work from another session, create a new package linked to the prior package's handover.
+2. **Ingest Specification**: Ingest the specification from a committed path (e.g. [`docs/handovers/LUNA_HANDOVER_REFACTORING_TAXONOMY.md`](file:///Users/alessandro/sources/semantic-editor/docs/handovers/LUNA_HANDOVER_REFACTORING_TAXONOMY.md)) or write inline prompt markdown to `.scratch/handover.md`.
+3. **Architectural Scrutiny**: The Critical Architect verifies the work package's functional requirements, acceptance criteria, ADR alignment, and decoupling seams.
+4. **Clearance**: Issue formal track boundaries and DAG sequencing within the work package to the coordinator thread.
 
 ### Step 2: Formulate DAG and Partition Slices
 
@@ -276,7 +291,7 @@ flowchart TD
 
 ### Step 9: Follow-Up Routing and Continuity
 
-1. **Centralised Triage**: Global reviewer triages follow-ups against ADRs and slices assignments non-disruptively.
+1. **Centralised Triage**: Global reviewer triages follow-ups against the work package's scope and ADRs, then slices assignments non-disruptively. Record work outside the package as a candidate for a later package unless the user explicitly expands the current scope.
 2. **Branch Continuity**: Implementers advance the existing `track/<track-name>` branch by rebasing onto updated `$BASE_REF` in the retained worktree.
 3. **Track Abort Protocol**: Retain valid integrated slices on `$BASE_REF` (forward ratchet), dispatch stub cleanup slices, and record rationale in the deviations log.
 
@@ -291,9 +306,10 @@ flowchart TD
 
 2. **Retain Caches**: Leave shared build and module caches untouched.
 
-### Step 11: Final Presentation, Closeout Bundling, and Wrap-Up Handoff
+### Step 11: Work Package Closeout, Final Presentation, and Wrap-Up Handoff
 
 1. **Bundle Track Analyses into Closeout Artifact**: Compile `.scratch/handover-closeout.md`, consolidating:
+   * Work package identity, owning thread/session, agreed acceptance criteria, and an explicit complete or incomplete verdict. For incomplete packages, identify remaining criteria, preserved work, and candidate scope for a new package in a later session.
    * Cumulative git diff statistics and integrated commit log on `$BASE_REF`.
    * Bundled per-track wrap-up QoL assessments (`.scratch/reviews/*-wrapup.md`), tool runtime comparisons, and net agent-efficiency conclusions.
    * Project-wide verification proofs (`make check`, txtar scripts, and benchmark sweeps).
