@@ -59,6 +59,14 @@ Distinguish session closeout from work package completion. Mark a work package c
 * **Don't**: Don't branch tracks from dirty, unverified, or failing initial baselines.
 * **Don't**: Don't permit circular code dependencies across parallel tracks.
 
+### 2.1 Running Decision Register and FAQ
+
+* **Do**: Maintain a repository decision register and FAQ for material behavior, compatibility, failure-policy, performance, and lifecycle choices made during the work package. Prefer an existing repository document; otherwise create a concise `docs/decisions-and-faq.md` and link it from the repository documentation index.
+* **Do**: For each decision, record the chosen behavior, rationale, affected scope, status, and evidence or open assumption. Distinguish tested behavior from policy and hypothesis; link the relevant ADR, research question, test, and user-facing option.
+* **Do**: Add FAQ entries for concrete “what if” cases such as alternate JDK/runtime versions, unsupported archive layouts, generated sources, repeated dependency resolution, cache invalidation, and downstream consumers of different model views.
+* **Do**: Revisit the register when the user changes priorities or an experiment changes the supported behavior. Include all material decisions before track integration and closeout.
+* **Don't**: Don't record an assumption as verified behavior, hide an unmet target, or duplicate full ADR/RQ content in the register.
+
 ### 3. Worktree Isolation and Ambient Caches
 
 * **Do**: Place all track worktrees strictly in `.scratch/worktrees/track-<track-name>`.
