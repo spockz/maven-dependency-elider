@@ -7,7 +7,9 @@
 
 Maven Dependency Elider aims to turn external usage knowledge into reduced dependencies that Maven uses throughout compilation, testing, and packaging. A usage oracle supplies retention roots: observed classes, reflective entry points, deployment-specific knowledge, or explicit configuration. The intended design combines those roots with source compilation dependencies and framework/resource requirements, then retains their required dependencies.
 
-The project is under active development. The core currently includes runtime trace readers, a JAR central-directory class index, an initial conservative dependency-pruning engine, and a cache API. The `elide` goal applies whole-artifact decisions to Maven's in-memory artifact views. Cache integration and provenance outputs are still being implemented; `make test-examples` verifies the current Shade and Spring Boot packaging paths. Sub-artifact bytecode slicing is deferred; an observed class retains its entire dependency JAR. Do not use this project to remove dependencies from production builds.
+The project is under active development. The core includes runtime trace readers, a JAR central-directory class index, a conservative dependency-pruning engine, a cache API, and a CycloneDX 1.6 inventory generator. The `elide` goal applies whole-artifact decisions to Maven's in-memory artifact views. Plugin integration of caching and provenance remains pending; `make test-examples` verifies the current Shade and Spring Boot packaging paths. Sub-artifact bytecode slicing is deferred; an observed class retains its entire dependency JAR. Do not use this project to remove dependencies from production builds.
+
+See the [session handover](docs/handovers/2026-10-25-session-closeout.md) for verified track status, scope decisions, and remaining work.
 
 ## Project goals
 
@@ -53,6 +55,7 @@ Dependency reduction adds analysis and transformation work. A smaller classpath 
 - JDK 21 or newer. The project compiles with Java 21 language and API compatibility.
 - A POSIX shell and `make` for the documented developer commands.
 - Node.js and `npm` to install the Markdown linter used by `make check`.
+- Bash, Python 3, and the `timeout` utility for `make test-examples`.
 
 The Maven Wrapper is included, so a separate Maven installation is not required.
 
@@ -98,7 +101,7 @@ The `examples/` reactor contains two consumer applications used to exercise the 
 - **`example-basic-app`** is a plain Java application that uses Jackson to print `{"message":"hello"}`. Its shaded executable JAR is the packaging fixture; `commons-codec` is included as an unused dependency candidate.
 - **`example-spring-boot-app`** is a Spring Boot web application with a `GET /api/hello` endpoint. It declares BOM-managed Commons Codec, which the baseline trace confirms is unused and the elided Boot JAR omits, plus `spring-boot-starter-mail`. The trace observes mail classes that have no direct reference from application production bytecode, so the report classifies them as runtime-observed without an application reference and the complete mail artifacts remain packaged. This is an evidence classification; it does not establish why Spring or another runtime component loaded those classes.
 
-The default `examples/` reactor demonstrates application behavior, unit tests, and downstream packaging configuration. Run `make test-examples` to exercise the full trace-driven lifecycle across both reactor applications and the two opt-in CVE fixtures. It builds baseline packages, runs them with JVM class-load logging, copies Spring's baseline production classes outside `target`, reruns Maven with elision enabled and explicit trace and bytecode-scan inputs, checks classpaths, packaged JAR contents, and the generated class usage report, then runs the final packages. The report must identify the copied application output, classify mail classes as runtime-only, and classify Commons Codec's unused `Hex` class as neither referenced nor observed.
+The default `examples/` reactor demonstrates application behavior, unit tests, and downstream packaging configuration. Run `make test-examples` to exercise the full trace-driven lifecycle across both reactor applications and the two opt-in CVE fixtures. It builds baseline packages, runs them with JVM class-load logging, copies Spring's baseline production classes outside `target`, reruns Maven with elision enabled and explicit trace and bytecode-scan inputs, checks classpaths, packaged JAR contents, and the generated class usage report, then runs the final packages. The report must identify the copied application output, classify mail classes as runtime-only, and classify Commons Codec's unused `Hex` class as neither referenced nor observed. An isolated compiler probe also requires a source reference to elided Commons Codec to fail specifically in javac, then compile successfully with elision skipped.
 
 Build only the default examples reactor with:
 

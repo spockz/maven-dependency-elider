@@ -10,6 +10,8 @@ Abbreviations: Architecture Decision Record (ADR), Abstract Syntax Tree (AST), B
 
 This document provides the complete engineering handover for a Luna agent to implement the runtime telemetry-driven dependency elision engine, the Maven 3.x/4.x plugin, and the empirical test harness for `maven-dependency-elider`.
 
+Implementation snapshot (2026-10-25): the whole-artifact elision, evidence-reporting, and four-example lifecycle follow-ups are integrated. The original plan remains partially complete: Maven cache/provenance integration and Maven 4 verification remain pending, and intra-JAR trimming is deferred. The [session closeout](../handovers/2026-10-25-session-closeout.md) records verified behavior, test evidence, and the next session's priorities; specification sketches below are not declarations that every feature is implemented.
+
 ---
 
 ## 1. Executive Summary & Non-Negotiable Invariants
