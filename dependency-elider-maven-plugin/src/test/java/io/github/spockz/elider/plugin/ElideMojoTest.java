@@ -50,7 +50,7 @@ final class ElideMojoTest {
   }
 
   @Test
-  void removesUnobservedArtifactsFromResolvedAndDirectViews()
+  void retainsCompileVisibleArtifactsInResolvedAndDirectViews()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used = artifact("used", "used/Sample.class");
     final Artifact unused = artifact("unused", "unused/Idle.class");
@@ -62,9 +62,9 @@ final class ElideMojoTest {
     execute(project, "used/Sample\n");
 
     assertThat(project.getArtifacts()).isNotSameAs(resolved);
-    assertThat(project.getArtifacts()).containsExactly(used);
+    assertThat(project.getArtifacts()).containsExactlyInAnyOrder(used, unused);
     assertThat(project.getDependencyArtifacts()).isNotSameAs(direct);
-    assertThat(project.getDependencyArtifacts()).containsExactly(used);
+    assertThat(project.getDependencyArtifacts()).containsExactlyInAnyOrder(used, unused);
     final Artifact addedLater = artifact("later", "later/Added.class");
     project.getArtifacts().add(addedLater);
     project.getDependencyArtifacts().add(addedLater);

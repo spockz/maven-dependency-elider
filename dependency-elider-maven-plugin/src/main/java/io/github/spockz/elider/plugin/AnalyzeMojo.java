@@ -6,6 +6,7 @@ package io.github.spockz.elider.plugin;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -21,6 +22,14 @@ public final class AnalyzeMojo extends AbstractMojo {
   /** Maven project whose resolved artifacts are analyzed. */
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
+
+  /** Maven session used to detect an externally selected compiler toolchain. */
+  @Parameter(defaultValue = "${session}", readonly = true)
+  private MavenSession session;
+
+  /** User assertion that all production/generated sources exist before INITIALIZE. */
+  @Parameter(property = "elide.sourceRootsComplete", defaultValue = "false")
+  private boolean sourceRootsComplete;
 
   /** Explicit trace files that supply runtime observations. */
   @Parameter(property = "elide.traceFiles", required = true)
@@ -51,7 +60,13 @@ public final class AnalyzeMojo extends AbstractMojo {
     try {
       final MavenElisionService.Analysis analysis =
           new MavenElisionService()
-              .analyze(project, traceFiles, excludedArtifacts, productionOutput);
+              .analyze(
+                  project,
+                  traceFiles,
+                  excludedArtifacts,
+                  productionOutput,
+                  session,
+                  sourceRootsComplete);
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       ElisionSummary.report(getLog(), analysis.decision(), analysis.resolvedSnapshots().size());

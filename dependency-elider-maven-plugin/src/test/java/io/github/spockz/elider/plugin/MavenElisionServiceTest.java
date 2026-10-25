@@ -18,11 +18,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import javax.tools.ToolProvider;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,6 +35,8 @@ import org.junit.jupiter.api.io.TempDir;
 /** Verifies Maven elision preparation without mutating Maven state. */
 @SuppressWarnings({
   "PMD.AvoidDuplicateLiterals",
+  "PMD.LawOfDemeter",
+  "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.TooManyMethods",
   "PMD.UnitTestContainsTooManyAsserts"
 })
@@ -267,6 +274,103 @@ final class MavenElisionServiceTest {
   }
 
   @Test
+  void generatedSourceOwnerStaysAvailableAtInitializeWhenItsRootIsNotPresentYet() throws Exception {
+    final Artifact observed = resolvedArtifact("observed", "compile", "observed.jar");
+    observed.setFile(writeJar("observed.jar", "observed/RuntimeEntry.class").toFile());
+    final Artifact generatedOwner = resolvedArtifact("generated", "compile", "generated.jar");
+    generatedOwner.setFile(writeJar("generated.jar", "generated/GeneratedType.class").toFile());
+    final Artifact runtimeOnly = resolvedArtifact("runtime-only", "runtime", "runtime-only.jar");
+    runtimeOnly.setFile(writeJar("runtime-only.jar", "unused/RuntimeOnly.class").toFile());
+    final MavenProject project =
+        projectWith(new LinkedHashSet<>(List.of(observed, generatedOwner, runtimeOnly)), null);
+    final Path generatedSources = tempDir.resolve("generated-sources");
+    project.addCompileSourceRoot(generatedSources.toString());
+    final Plugin generator = new Plugin();
+    generator.setGroupId("org.codehaus.mojo");
+    generator.setArtifactId("build-helper-maven-plugin");
+    final PluginExecution execution = new PluginExecution();
+    execution.setPhase("generate-sources");
+    execution.setGoals(List.of("add-source"));
+    generator.addExecution(execution);
+    project.getBuild().addPlugin(generator);
+    final Path trace = tempDir.resolve("generated-source-runtime.lst");
+    Files.writeString(trace, "observed/RuntimeEntry\n");
+
+    final MavenElisionService.Analysis analysis =
+        new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
+
+    assertThat(Files.exists(generatedSources)).isFalse();
+    assertThat(analysis.decision().retainedArtifacts())
+        .containsExactlyInAnyOrder(
+            coordinateFor("observed", "compile"), generatedOwnerCoordinate());
+    assertThat(analysis.decision().elidedArtifacts())
+        .containsExactly(coordinateFor("runtime-only", "runtime"));
+    assertThat(analysis.decision().getRetainedClasses(generatedOwnerCoordinate()))
+        .containsExactly("generated.GeneratedType");
+  }
+
+  @Test
+  void emptyCurrentSourceRootsRetainCompileClasspathAndStillElideRuntimeOnlyJar() throws Exception {
+    final Artifact observed = resolvedArtifact("observed-empty", "compile", "observed-empty.jar");
+    observed.setFile(writeJar("observed-empty.jar", "observed/RuntimeEntry.class").toFile());
+    final Artifact compileOnly = resolvedArtifact("compile-only", "compile", "compile-only.jar");
+    compileOnly.setFile(writeJar("compile-only.jar", "future/GeneratedType.class").toFile());
+    final Artifact runtimeOnly = resolvedArtifact("runtime-idle", "runtime", "runtime-idle.jar");
+    runtimeOnly.setFile(writeJar("runtime-idle.jar", "unused/RuntimeOnly.class").toFile());
+    final MavenProject project =
+        projectWith(new LinkedHashSet<>(List.of(observed, compileOnly, runtimeOnly)), null);
+    final Path trace = tempDir.resolve("empty-source-roots-runtime.lst");
+    Files.writeString(trace, "observed/RuntimeEntry\n");
+
+    final MavenElisionService.Analysis analysis =
+        new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
+
+    assertThat(project.getCompileSourceRoots()).isEmpty();
+    assertThat(analysis.decision().retainedArtifacts())
+        .containsExactlyInAnyOrder(
+            coordinateFor("observed-empty", "compile"), coordinateFor("compile-only", "compile"));
+    assertThat(analysis.decision().elidedArtifacts())
+        .containsExactly(coordinateFor("runtime-idle", "runtime"));
+    assertThat(analysis.decision().getRetainedClasses(coordinateFor("compile-only", "compile")))
+        .containsExactly("future.GeneratedType");
+  }
+
+  @Test
+  void explicitCompleteSourceRootsAllowUnusedCompileJarElision() throws Exception {
+    final Artifact used = resolvedArtifact("source-used", "compile", "source-used.jar");
+    used.setFile(compileJar("source-used.jar", "library.Used").toFile());
+    final Artifact unused = resolvedArtifact("source-unused", "compile", "source-unused.jar");
+    unused.setFile(compileJar("source-unused.jar", "library.Unused").toFile());
+    final Artifact observed =
+        resolvedArtifact("runtime-observed", "runtime", "runtime-observed.jar");
+    observed.setFile(writeJar("runtime-observed.jar", "observed/Entry.class").toFile());
+    final MavenProject project =
+        projectWith(new LinkedHashSet<>(List.of(used, unused, observed)), null);
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("complete-app-src"));
+    final Path source = sourceRoot.resolve("app/UsesDependency.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(
+        source, "package app; public final class UsesDependency { library.Used value; }\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    project.getProperties().setProperty("maven.compiler.proc", "none");
+    final String usedJarPath = used.getFile().getPath();
+    assertThat(project.getCompileClasspathElements()).contains(usedJarPath);
+    final Path trace = tempDir.resolve("complete-source-runtime.lst");
+    Files.writeString(trace, "observed/Entry\n");
+
+    final MavenElisionService.Analysis analysis =
+        new MavenElisionService()
+            .analyze(project, List.of(trace.toFile()), List.of(), null, null, true);
+
+    assertThat(analysis.decision().retainedArtifacts())
+        .containsExactlyInAnyOrder(
+            coordinateFor("source-used", "compile"), coordinateFor("runtime-observed", "runtime"));
+    assertThat(analysis.decision().elidedArtifacts())
+        .containsExactly(coordinateFor("source-unused", "compile"));
+  }
+
+  @Test
   void planRejectsConflictingPathsWithinDirectViewAndLeavesProjectUnchanged() throws IOException {
     final Artifact resolved = resolvedArtifact("library", "compile", "resolved.jar");
     final Artifact firstDirect = resolvedArtifact("library", "runtime", "direct-a.jar");
@@ -290,7 +394,18 @@ final class MavenElisionServiceTest {
 
   private static Artifact artifact(final String artifactId, final String scope) {
     return new DefaultArtifact(
-        "org.example", artifactId, "1.0", scope, "jar", null, new DefaultArtifactHandler("jar"));
+        "org.example",
+        artifactId,
+        "1.0",
+        scope,
+        "jar",
+        null,
+        new DefaultArtifactHandler("jar") {
+          @Override
+          public boolean isAddedToClasspath() {
+            return true;
+          }
+        });
   }
 
   private static ArtifactCoordinate coordinate(final String scope) {
@@ -303,13 +418,55 @@ final class MavenElisionServiceTest {
   }
 
   private Path writeJar(final String name) throws IOException {
+    return writeJar(name, "library/Unused.class");
+  }
+
+  private Path writeJar(final String name, final String classEntry) throws IOException {
     final Path jar = tempDir.resolve(name);
     try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(jar))) {
-      output.putNextEntry(new ZipEntry("library/Unused.class"));
+      output.putNextEntry(new ZipEntry(classEntry));
       output.write(new byte[] {0});
       output.closeEntry();
     }
     return jar;
+  }
+
+  private Path compileJar(final String jarName, final String className) throws IOException {
+    final String packageName = className.substring(0, className.lastIndexOf('.'));
+    final String simpleName = className.substring(className.lastIndexOf('.') + 1);
+    final Path source =
+        tempDir
+            .resolve(jarName + "-src")
+            .resolve(packageName.replace('.', '/'))
+            .resolve(simpleName + ".java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, "package " + packageName + "; public class " + simpleName + " {}\n");
+    final Path output = Files.createDirectories(tempDir.resolve(jarName + "-classes"));
+    final int result =
+        ToolProvider.getSystemJavaCompiler()
+            .run(null, null, null, "--release", "21", "-d", output.toString(), source.toString());
+    if (result != 0) {
+      throw new IOException("Could not compile the complete-source test dependency");
+    }
+    final Path jar = tempDir.resolve(jarName);
+    try (JarOutputStream archive = new JarOutputStream(Files.newOutputStream(jar));
+        java.util.stream.Stream<Path> paths = Files.walk(output)) {
+      for (final Path classFile : paths.filter(Files::isRegularFile).toList()) {
+        archive.putNextEntry(
+            new JarEntry(output.relativize(classFile).toString().replace('\\', '/')));
+        Files.copy(classFile, archive);
+        archive.closeEntry();
+      }
+    }
+    return jar;
+  }
+
+  private static ArtifactCoordinate generatedOwnerCoordinate() {
+    return new ArtifactCoordinate("org.example", "generated", "1.0", "jar", "", "compile");
+  }
+
+  private static ArtifactCoordinate coordinateFor(final String artifactId, final String scope) {
+    return new ArtifactCoordinate("org.example", artifactId, "1.0", "jar", "", scope);
   }
 
   private Artifact resolvedArtifact(final String artifactId, final String scope, final String name)

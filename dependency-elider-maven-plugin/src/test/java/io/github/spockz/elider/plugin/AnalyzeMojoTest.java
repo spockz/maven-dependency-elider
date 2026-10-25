@@ -98,7 +98,7 @@ final class AnalyzeMojoTest {
     assertThat(testScoped.getFile()).isSameAs(testScopedFile);
     assertThat(log.messages)
         .contains(
-            "  Whole artifacts: 1 / 5 (20.0%)",
+            "  Whole artifacts: 0 / 5 (0.0%)",
             "  Classes removed: 0 / N/A (N/A; stage not run)",
             "  Methods removed: 0 / N/A (N/A; stage not run)",
             "  Fields removed: 0 / N/A (N/A; stage not run)",

@@ -74,6 +74,8 @@ Build upon the verified whole-artifact elision engine by introducing **intra-JAR
   * Integrate source roots into `DependencyPruner` so dependencies required for source compilation are never elided, even if unobserved at runtime.
   * Verify that the negative compiler probe in `make test-examples` continues to cleanly enforce compiler visibility.
 
+**INITIALIZE source-completeness contract (implementation deviation):** `elide.sourceRootsComplete` defaults to `false`; the plugin then skips source attribution and conservatively pins every effective compile-classpath JAR and all indexed classes for later trimming. Users may set it to `true` only when all production and generated sources are already present before `INITIALIZE` and no later processor or generator introduces compile references. That mode resolves supported effective compiler settings and fails closed on unsupported modes or uncertain source generation. Both modes preserve the independent runtime-trace match requirement. This bounded contract replaces any assumption that roots present at `INITIALIZE` are complete by default.
+
 ---
 
 ### Track 2: ProGuard Core Engine & Link Closure (`elider-core`)

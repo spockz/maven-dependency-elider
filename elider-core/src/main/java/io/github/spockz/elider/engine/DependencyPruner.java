@@ -30,23 +30,32 @@ public final class DependencyPruner {
    *
    * <p>Missing indexes fail only for eligible, unretained JARs.
    */
-  @SuppressWarnings({
-    "PMD.CognitiveComplexity",
-    "PMD.CyclomaticComplexity",
-    "PMD.NPathComplexity",
-    "PMD.UseConcurrentHashMap",
-    "PMD.AvoidInstantiatingObjectsInLoops"
-  })
   public ElisionDecision prune(
       final Collection<ArtifactFileRef> artifacts,
       final ArtifactClassIndex classIndex,
       final TraceData trace,
       final PruneConfig config) {
+    return prune(artifacts, classIndex, trace, config, Set.of());
+  }
+
+  /** Uses runtime traces and compiler-resolved source references. */
+  @SuppressWarnings({
+    "PMD.CognitiveComplexity",
+    "PMD.CyclomaticComplexity",
+    "PMD.UseConcurrentHashMap"
+  })
+  public ElisionDecision prune(
+      final Collection<ArtifactFileRef> artifacts,
+      final ArtifactClassIndex classIndex,
+      final TraceData trace,
+      final PruneConfig config,
+      final Set<String> compilerRequiredClasses) {
     final long started = System.nanoTime();
     Objects.requireNonNull(artifacts, "artifacts must not be null");
     Objects.requireNonNull(classIndex, "classIndex must not be null");
     Objects.requireNonNull(trace, "trace must not be null");
     Objects.requireNonNull(config, "config must not be null");
+    Objects.requireNonNull(compilerRequiredClasses, "compilerRequiredClasses must not be null");
     if (trace.size() == 0) {
       throw new IllegalArgumentException("Cannot prune with an empty normalized runtime trace");
     }
@@ -67,6 +76,8 @@ public final class DependencyPruner {
         ownersByClass(uniqueArtifacts, indexedClasses);
     final Set<String> observedSuppliedClasses = new HashSet<>(trace.loadedClassesDotFormat());
     observedSuppliedClasses.retainAll(ownersByClass.keySet());
+    final Set<String> sourceSuppliedClasses =
+        sourceSuppliedClasses(compilerRequiredClasses, ownersByClass);
     if (observedSuppliedClasses.isEmpty()) {
       throw new IllegalArgumentException(
           "Cannot prune because no observed class matches any supplied dependency");
@@ -82,6 +93,8 @@ public final class DependencyPruner {
     }
     final Set<ArtifactFileRef> originRetainedArtifacts = new HashSet<>();
     observedOwnersByClass.values().forEach(originRetainedArtifacts::addAll);
+    final Set<ArtifactFileRef> sourceRetainedArtifacts =
+        sourceRetainedArtifacts(sourceSuppliedClasses, ownersByClass);
 
     final Set<ArtifactCoordinate> retained = new LinkedHashSet<>();
     final Set<ArtifactCoordinate> elided = new LinkedHashSet<>();
@@ -90,21 +103,18 @@ public final class DependencyPruner {
     for (final ArtifactFileRef artifact : uniqueArtifacts) {
       final ArtifactCoordinate coordinate = artifact.coordinate();
       final boolean hasIndexEntry = indexedClasses.containsKey(artifact);
-      final Set<String> used = new LinkedHashSet<>();
-      final Set<String> unused = new LinkedHashSet<>();
-      if (hasIndexEntry) {
-        for (final String className : indexedClasses.get(artifact)) {
-          if (observedOwnersByClass.getOrDefault(className, Set.of()).contains(artifact)) {
-            used.add(className);
-          } else {
-            unused.add(className);
-          }
-        }
-      }
-      usedByArtifact.put(coordinate, used);
-      unusedByArtifact.put(coordinate, unused);
+      final ArtifactUsage usage =
+          usageFor(
+              artifact,
+              indexedClasses,
+              observedOwnersByClass,
+              sourceSuppliedClasses,
+              ownersByClass);
+      usedByArtifact.put(coordinate, usage.usedClasses());
+      unusedByArtifact.put(coordinate, usage.unusedClasses());
       if (config.keeps(coordinate)
           || originRetainedArtifacts.contains(artifact)
+          || sourceRetainedArtifacts.contains(artifact)
           || !config.canPrune(coordinate)
           || !isJar(coordinate)) {
         retained.add(coordinate);
@@ -120,7 +130,7 @@ public final class DependencyPruner {
         retained.add(coordinate);
         continue;
       }
-      if (used.isEmpty()) {
+      if (usage.usedClasses().isEmpty()) {
         elided.add(coordinate);
       } else {
         retained.add(coordinate);
@@ -133,6 +143,49 @@ public final class DependencyPruner {
   private static boolean isJar(final ArtifactCoordinate coordinate) {
     return "jar".equals(coordinate.type());
   }
+
+  private static Set<String> sourceSuppliedClasses(
+      final Set<String> compilerRequiredClasses,
+      final Map<String, Set<ArtifactFileRef>> ownersByClass) {
+    final Set<String> suppliedClasses = new HashSet<>(compilerRequiredClasses);
+    suppliedClasses.retainAll(ownersByClass.keySet());
+    return suppliedClasses;
+  }
+
+  private static Set<ArtifactFileRef> sourceRetainedArtifacts(
+      final Set<String> sourceSuppliedClasses,
+      final Map<String, Set<ArtifactFileRef>> ownersByClass) {
+    final Set<ArtifactFileRef> retained = new HashSet<>();
+    sourceSuppliedClasses.forEach(className -> retained.addAll(ownersByClass.get(className)));
+    return retained;
+  }
+
+  private static ArtifactUsage usageFor(
+      final ArtifactFileRef artifact,
+      final Map<ArtifactFileRef, Set<String>> indexedClasses,
+      final Map<String, Set<ArtifactFileRef>> observedOwnersByClass,
+      final Set<String> sourceSuppliedClasses,
+      final Map<String, Set<ArtifactFileRef>> ownersByClass) {
+    final Set<String> used = new LinkedHashSet<>();
+    final Set<String> unused = new LinkedHashSet<>();
+    if (indexedClasses.containsKey(artifact)) {
+      for (final String className : indexedClasses.get(artifact)) {
+        final boolean runtimeUsed =
+            observedOwnersByClass.getOrDefault(className, Set.of()).contains(artifact);
+        final boolean sourceUsed =
+            sourceSuppliedClasses.contains(className)
+                && ownersByClass.get(className).contains(artifact);
+        if (runtimeUsed || sourceUsed) {
+          used.add(className);
+        } else {
+          unused.add(className);
+        }
+      }
+    }
+    return new ArtifactUsage(used, unused);
+  }
+
+  private record ArtifactUsage(Set<String> usedClasses, Set<String> unusedClasses) {}
 
   private static Set<ArtifactFileRef> observedOwners(
       final OriginEvidence evidence,

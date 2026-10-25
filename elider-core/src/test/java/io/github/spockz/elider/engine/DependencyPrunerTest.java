@@ -50,6 +50,54 @@ class DependencyPrunerTest {
   }
 
   @Test
+  void compilerRequiredClassesRetainDependenciesAlongsideRuntimeEvidence() {
+    final ArtifactFileRef constantOwner = artifact("constants", "jar", "", "compile");
+    final ArtifactFileRef observed = artifact("observed", "jar", "", "compile");
+    final ArtifactFileRef unused = artifact("unused", "jar", "", "compile");
+    final ArtifactClassIndex index =
+        index(
+            Map.of(
+                constantOwner,
+                Set.of("library.Constants", "library.GenericBound", "library.Mark"),
+                observed,
+                Set.of("app.RuntimeEntry"),
+                unused,
+                Set.of("library.Idle")));
+
+    final ElisionDecision result =
+        pruner.prune(
+            List.of(constantOwner, observed, unused),
+            index,
+            trace("app.RuntimeEntry"),
+            new PruneConfig(),
+            Set.of("library.Constants", "library.GenericBound", "library.Mark"));
+
+    assertThat(result.retainedArtifacts())
+        .containsExactlyInAnyOrder(constantOwner.coordinate(), observed.coordinate());
+    assertThat(result.elidedArtifacts()).containsExactly(unused.coordinate());
+    assertThat(result.getRetainedClasses(constantOwner.coordinate()))
+        .containsExactlyInAnyOrder("library.Constants", "library.GenericBound", "library.Mark");
+    assertThat(result.getUnusedClasses(unused.coordinate())).containsExactly("library.Idle");
+  }
+
+  @Test
+  void compilerRequiredClassesCannotReplaceMatchingRuntimeEvidence() {
+    final ArtifactFileRef sourceOwner = artifact("source", "jar", "", "compile");
+    final ArtifactClassIndex index = index(Map.of(sourceOwner, Set.of("library.Constants")));
+
+    assertThatIllegalArgumentException()
+        .isThrownBy(
+            () ->
+                pruner.prune(
+                    List.of(sourceOwner),
+                    index,
+                    trace("application.Only"),
+                    new PruneConfig(),
+                    Set.of("library.Constants")))
+        .withMessageContaining("no observed class matches any supplied dependency");
+  }
+
+  @Test
   void duplicateObservedClassRetainsEveryOwningArtifact() {
     final ArtifactFileRef first = artifact("first", "jar", "", "compile");
     final ArtifactFileRef second = artifact("second", "jar", "", "compile");

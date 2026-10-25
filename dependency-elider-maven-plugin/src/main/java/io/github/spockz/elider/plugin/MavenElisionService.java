@@ -16,23 +16,33 @@ import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
 import io.github.spockz.elider.trace.CompositeTraceReader;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.artifact.Artifact;
+import org.apache.maven.artifact.DependencyResolutionRequiredException;
+import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
 /** Coordinates shared trace analysis and a nonmutating Maven artifact plan. */
 @SuppressWarnings({
+  "PMD.ExcessiveImports",
   "PMD.LawOfDemeter",
   "PMD.CouplingBetweenObjects",
   "PMD.GodClass",
+  "PMD.CyclomaticComplexity",
   "PMD.TooManyMethods",
   "PMD.CommentDefaultAccessModifier",
   "PMD.AvoidDuplicateLiterals"
@@ -40,6 +50,9 @@ import org.apache.maven.project.MavenProject;
 final class MavenElisionService {
   /** Maven scopes that may be considered for whole-artifact elision. */
   private static final Set<String> ELIGIBLE_SCOPES = Set.of("compile", "runtime");
+
+  /** Dependency scopes Maven can place on its production compile classpath. */
+  private static final Set<String> COMPILE_VISIBLE_SCOPES = Set.of("compile", "provided", "system");
 
   /** Creates the stateless Maven adapter. */
   MavenElisionService() {
@@ -52,6 +65,27 @@ final class MavenElisionService {
       final List<File> traceFiles,
       final List<String> excludedArtifacts,
       final File productionOutput)
+      throws IOException, MojoFailureException {
+    return analyze(project, traceFiles, excludedArtifacts, productionOutput, null, false);
+  }
+
+  Analysis analyze(
+      final MavenProject project,
+      final List<File> traceFiles,
+      final List<String> excludedArtifacts,
+      final File productionOutput,
+      final MavenSession session)
+      throws IOException, MojoFailureException {
+    return analyze(project, traceFiles, excludedArtifacts, productionOutput, session, false);
+  }
+
+  Analysis analyze(
+      final MavenProject project,
+      final List<File> traceFiles,
+      final List<String> excludedArtifacts,
+      final File productionOutput,
+      final MavenSession session,
+      final boolean sourceRootsComplete)
       throws IOException, MojoFailureException {
     final List<Artifact> resolved = new ArrayList<>(project.getArtifacts());
     final List<ArtifactSnapshot> resolvedSnapshots = snapshots(resolved);
@@ -69,13 +103,21 @@ final class MavenElisionService {
     }
     final TraceData trace = new CompositeTraceReader().readAll(toPaths(traceFiles));
     final ArtifactClassIndex index = new JarIndexScanner().scan(scanCandidates);
+    final CompilerInputs compilerInputs =
+        compilerInputs(project, session, scanCandidates, index, sourceRootsComplete);
     final Optional<BytecodeReferenceScan> bytecodeScan =
         productionOutput == null
             ? Optional.empty()
             : Optional.of(new ProductionBytecodeReferenceScanner().scan(productionOutput.toPath()));
     final ClassUsageReport classUsageReport = ClassUsageReport.classify(index, trace, bytecodeScan);
     final ElisionDecision decision =
-        new DependencyPruner().prune(scanCandidates, index, trace, config(excludedArtifacts));
+        new DependencyPruner()
+            .prune(
+                scanCandidates,
+                index,
+                trace,
+                config(excludedArtifacts, compilerInputs.compileVisibleCoordinates()),
+                compilerInputs.requiredClasses());
     return new Analysis(
         resolvedSnapshots,
         directPresent,
@@ -156,7 +198,7 @@ final class MavenElisionService {
       throw new IOException("Resolved artifact has no regular file: " + snapshot.coordinate());
     }
     final Path fileName = file.getFileName();
-    if (fileName == null || !java.nio.file.Files.isRegularFile(file)) {
+    if (fileName == null || !Files.isRegularFile(file)) {
       throw new IOException("Resolved artifact has no regular file: " + snapshot.coordinate());
     }
     return fileName.toString().endsWith(".jar");
@@ -176,7 +218,8 @@ final class MavenElisionService {
         artifact.getScope());
   }
 
-  private static PruneConfig config(final List<String> excludedArtifacts)
+  private static PruneConfig config(
+      final List<String> excludedArtifacts, final Set<ArtifactCoordinate> compileVisibleArtifacts)
       throws MojoFailureException {
     final Set<ArtifactCoordinate> exclusions = new LinkedHashSet<>();
     if (excludedArtifacts != null) {
@@ -184,7 +227,151 @@ final class MavenElisionService {
         exclusions.add(parseExclusion(text));
       }
     }
-    return new PruneConfig(Set.of(), Set.of(), ELIGIBLE_SCOPES, exclusions);
+    return new PruneConfig(Set.of(), compileVisibleArtifacts, ELIGIBLE_SCOPES, exclusions);
+  }
+
+  /** Resolves source roots or retains all compiler-visible classes. */
+  private static CompilerInputs compilerInputs(
+      final MavenProject project,
+      final MavenSession session,
+      final List<ArtifactFileRef> candidates,
+      final ArtifactClassIndex index,
+      final boolean sourceRootsComplete)
+      throws IOException {
+    final List<String> classpath;
+    try {
+      classpath = project.getCompileClasspathElements();
+    } catch (final DependencyResolutionRequiredException exception) {
+      throw new IOException(
+          "Cannot resolve the Maven compile classpath for source analysis", exception);
+    }
+    final Set<Path> compileClasspath = normalizedPaths(classpath);
+    final Set<ArtifactFileRef> compileVisibleArtifacts = new HashSet<>();
+    for (final ArtifactFileRef candidate : candidates) {
+      final String scope = candidate.coordinate().scope();
+      if (COMPILE_VISIBLE_SCOPES.contains(scope)
+          || compileClasspath.contains(candidate.filePath().toAbsolutePath().normalize())) {
+        compileVisibleArtifacts.add(candidate);
+      }
+    }
+    final Set<String> requiredClasses = new HashSet<>();
+    final Map<ArtifactFileRef, Set<String>> indexedClasses = index.classesByArtifact();
+    if (sourceRootsComplete) {
+      final List<Path> sources =
+          JavaSourceReferenceScanner.sourceFiles(project.getCompileSourceRoots());
+      verifySourceRootsComplete(project, sources);
+      if (sources.stream().anyMatch(MavenElisionService::isModuleDescriptor)) {
+        throw new IOException("Source attribution does not support Java module descriptors");
+      }
+      final List<String> options = MavenCompilerSettings.options(project, session, classpath);
+      requiredClasses.addAll(
+          new JavaSourceReferenceScanner().scanFiles(sources, classpath, options));
+      compileVisibleArtifacts.removeIf(
+          artifact -> !sourceClassesByArtifact(artifact, requiredClasses, indexedClasses));
+    } else {
+      compileVisibleArtifacts.forEach(
+          artifact -> requiredClasses.addAll(indexedClasses.getOrDefault(artifact, Set.of())));
+    }
+    final Set<ArtifactCoordinate> compileVisibleCoordinates = new HashSet<>();
+    compileVisibleArtifacts.forEach(
+        artifact -> compileVisibleCoordinates.add(artifact.coordinate()));
+    return new CompilerInputs(compileVisibleCoordinates, requiredClasses);
+  }
+
+  private static boolean sourceClassesByArtifact(
+      final ArtifactFileRef artifact,
+      final Set<String> requiredClasses,
+      final Map<ArtifactFileRef, Set<String>> indexedClasses) {
+    return indexedClasses.getOrDefault(artifact, Set.of()).stream()
+        .anyMatch(requiredClasses::contains);
+  }
+
+  private static boolean isModuleDescriptor(final Path source) {
+    final Path fileName = source.getFileName();
+    return fileName != null && "module-info.java".equals(fileName.toString());
+  }
+
+  private static void verifySourceRootsComplete(
+      final MavenProject project, final List<Path> currentSources) throws IOException {
+    if (currentSources.isEmpty()) {
+      throw new IOException(
+          "elide.sourceRootsComplete=true requires current production Java sources");
+    }
+    for (final String root : project.getCompileSourceRoots()) {
+      if (!Files.isDirectory(Path.of(root))) {
+        throw new IOException("A declared production source root is not present: " + root);
+      }
+    }
+    if (hasUnknownSourceGeneration(project)) {
+      throw new IOException(
+          "elide.sourceRootsComplete=true conflicts with a source-generation lifecycle execution");
+    }
+  }
+
+  private static boolean hasUnknownSourceGeneration(final MavenProject project) {
+    final org.apache.maven.model.Build build = project.getBuild();
+    if (build == null
+        || !Set.of("jar", "pom", "war", "maven-plugin").contains(project.getPackaging())
+        || !build.getExtensions().isEmpty()) {
+      return true;
+    }
+    for (final Plugin plugin : build.getPlugins()) {
+      for (final PluginExecution execution : plugin.getExecutions()) {
+        if (!isKnownNonGeneratingExecution(plugin, execution)
+            && (execution.getPhase() == null
+                || phaseCanAddProductionSources(execution.getPhase()))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean isKnownNonGeneratingExecution(
+      final Plugin plugin, final PluginExecution execution) {
+    if ("org.apache.maven.plugins".equals(plugin.getGroupId())
+        && "maven-resources-plugin".equals(plugin.getArtifactId())) {
+      return execution.getGoals().stream().allMatch("resources"::equals);
+    }
+    if ("org.apache.maven.plugins".equals(plugin.getGroupId())
+        && "maven-compiler-plugin".equals(plugin.getArtifactId())) {
+      return execution.getGoals().stream().allMatch(Set.of("compile", "testCompile")::contains);
+    }
+    return "io.github.spockz".equals(plugin.getGroupId())
+        && "dependency-elider-maven-plugin".equals(plugin.getArtifactId())
+        && execution.getGoals().stream().allMatch(Set.of("elide", "analyze")::contains);
+  }
+
+  private static boolean phaseCanAddProductionSources(final String phase) {
+    return Set.of(
+            "validate",
+            "initialize",
+            "generate-sources",
+            "process-sources",
+            "generate-resources",
+            "process-resources",
+            "compile")
+        .contains(phase);
+  }
+
+  private static Set<Path> normalizedPaths(final List<String> classpath) throws IOException {
+    final Set<Path> paths = new HashSet<>();
+    for (final String entry : classpath) {
+      try {
+        paths.add(Path.of(entry).toAbsolutePath().normalize());
+      } catch (final InvalidPathException exception) {
+        throw new IOException("Invalid Maven compile classpath entry: " + entry, exception);
+      }
+    }
+    return paths;
+  }
+
+  private record CompilerInputs(
+      Set<ArtifactCoordinate> compileVisibleCoordinates, Set<String> requiredClasses) {
+    private CompilerInputs {
+      compileVisibleCoordinates = Set.copyOf(compileVisibleCoordinates);
+      requiredClasses = Set.copyOf(requiredClasses);
+    }
   }
 
   private static ArtifactCoordinate parseExclusion(final String text) throws MojoFailureException {
@@ -233,7 +420,7 @@ final class MavenElisionService {
   @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.UseConcurrentHashMap"})
   private static void validateIdentityPaths(final List<ArtifactSnapshot> snapshots)
       throws IOException {
-    final java.util.Map<ArtifactIdentity, Path> paths = new java.util.LinkedHashMap<>();
+    final Map<ArtifactIdentity, Path> paths = new java.util.LinkedHashMap<>();
     for (final ArtifactSnapshot snapshot : snapshots) {
       if (!"jar".equals(snapshot.coordinate().type())) {
         continue;
@@ -244,9 +431,7 @@ final class MavenElisionService {
             "Resolved artifact has no regular JAR file: " + snapshot.coordinate());
       }
       final Path fileName = file.getFileName();
-      if (fileName == null
-          || !java.nio.file.Files.isRegularFile(file)
-          || !fileName.toString().endsWith(".jar")) {
+      if (fileName == null || !Files.isRegularFile(file) || !fileName.toString().endsWith(".jar")) {
         throw new IOException(
             "Resolved artifact has no regular JAR file: " + snapshot.coordinate());
       }
@@ -262,7 +447,7 @@ final class MavenElisionService {
   private static void validateDirectPaths(
       final Collection<ArtifactSnapshot> resolved, final Collection<ArtifactSnapshot> direct)
       throws IOException {
-    final java.util.Map<ArtifactIdentity, Path> resolvedPaths = new java.util.LinkedHashMap<>();
+    final Map<ArtifactIdentity, Path> resolvedPaths = new java.util.LinkedHashMap<>();
     for (final ArtifactSnapshot snapshot : resolved) {
       if ("jar".equals(snapshot.coordinate().type()) && snapshot.filePath() != null) {
         resolvedPaths.put(ArtifactIdentity.from(snapshot.coordinate()), snapshot.filePath());

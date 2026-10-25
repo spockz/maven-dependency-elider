@@ -6,6 +6,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.List;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
@@ -24,6 +25,14 @@ public final class ElideMojo extends AbstractMojo {
   /** Maven project whose artifact views are pruned. */
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
+
+  /** Maven session used to detect an externally selected compiler toolchain. */
+  @Parameter(defaultValue = "${session}", readonly = true)
+  private MavenSession session;
+
+  /** User assertion that all production/generated sources exist before INITIALIZE. */
+  @Parameter(property = "elide.sourceRootsComplete", defaultValue = "false")
+  private boolean sourceRootsComplete;
 
   /** Explicit runtime evidence used when the goal is active. */
   @Parameter(property = "elide.traceFiles")
@@ -56,7 +65,13 @@ public final class ElideMojo extends AbstractMojo {
     try {
       final MavenElisionService service = new MavenElisionService();
       final MavenElisionService.Analysis analysis =
-          service.analyze(project, traceFiles, excludedArtifacts, productionOutput);
+          service.analyze(
+              project,
+              traceFiles,
+              excludedArtifacts,
+              productionOutput,
+              session,
+              sourceRootsComplete);
       final MavenElisionService.ApplyPlan plan = service.plan(project, analysis);
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
