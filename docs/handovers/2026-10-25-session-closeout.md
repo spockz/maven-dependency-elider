@@ -7,7 +7,7 @@ Date: 2026-10-25. Status: approved whole-artifact implementation integrated and 
 
 The original RQ-0004 plan remains open. This closeout integrates the independently reviewed whole-artifact elision and usage-evidence follow-ups, updates the value proposition and caveats, preserves deferred work, and establishes the next session's starting point. Gemini review was omitted at the user's explicit request because the bridge is unavailable.
 
-Current behavior maps observed classes to their dependency artifacts and retains whole owning JARs. The optional production-bytecode scan is report-only; it does not supply source compilation roots or enable member/class deletion inside JARs. No intra-JAR engine is selected. Source-aware trimming remains deferred under RQ-0001; Spring bean usage recommendations are future research under RQ-0005.
+Current behavior maps observed classes to their dependency artifacts and retains whole owning JARs. The optional production-bytecode scan is report-only; it does not supply source compilation roots or enable member/class deletion inside JARs. Protecting source-required artifacts is an active correctness gap in whole-JAR elision, selected by the user for the next work package. Intra-JAR trimming and engine selection remain deferred under RQ-0001; Spring bean usage recommendations are future research under RQ-0005.
 
 The intended product value is external-oracle integration and consistent Maven compilation, testing, and packaging. Pre-compilation timing alone is not claimed as novel. Positive evidence supplies roots; incomplete method coverage does not authorize deleting every unlisted member. Compiler/test success validates covered behavior and is not a universal reachability proof.
 
@@ -15,7 +15,7 @@ The intended product value is external-oracle integration and consistent Maven c
 
 | Track | Integrated capability | Remaining work |
 | :--- | :--- | :--- |
-| 1: Telemetry and evidence | Class-load, CDS, JFR, GraalVM reflection metadata, JaCoCo readers; reliable JAR origins; conservative merging; optional production-bytecode reference scanner. | A fuller oracle completeness contract and deployment/workload identity; source analysis is separate deferred research. |
+| 1: Telemetry and evidence | Class-load, CDS, JFR, GraalVM reflection metadata, JaCoCo readers; reliable JAR origins; conservative merging; optional production-bytecode reference scanner. | Source compilation roots for whole-JAR retention in the next work package, plus a fuller oracle completeness contract and deployment/workload identity. |
 | 2: ZIP index | Central-directory class index and parallel scanner, with behavioral tests. | Broader real-world archive/performance coverage as needed. |
 | 3: Pruner and cache | Whole-artifact pruning, user retention exclusions, origin-aware duplicates, evidence classification, fingerprint and complete-decision cache APIs. | Maven plugin cache integration, invalidation/recheck orchestration, and lifecycle hit-path verification. |
 | 4: Provenance | Core CycloneDX 1.6 retained-inventory generator and pinned-schema tests. | Plugin emission wiring, audit/consumer POM semantics, and vulnerability-evidence-backed VEX/suppressions. |
@@ -25,6 +25,8 @@ The intended product value is external-oracle integration and consistent Maven c
 | 8: Examples | Basic Shade, Spring Boot, and two opt-in CVE fixtures; record/elide/package/run loop; runtime-only mail classification and byte-for-byte retained mail JAR comparisons. | OSV-Scanner outcomes remain unverified; original code-specific CVE removal demonstration remains constrained by whole-JAR scope. |
 
 The negative compiler probe must show an application source referencing Commons Codec fails specifically in javac when the unchanged baseline trace elides Codec, while the same source compiles when elision is skipped. This closes the gap between package/test checks and actual compiler dependency visibility.
+
+That deliberately induced failure also exposes the current retention gap: source-required Codec should be retained even when absent from runtime observations. The probe establishes classpath integration, not a correct retention set. The next package should prove that source-required dependencies compile with elision enabled while genuinely unused artifacts are still omitted, including source references erased by compilation and generated-source cases.
 
 ## Verification
 
@@ -82,7 +84,7 @@ Chat archival was attempted after repository closeout, but the app tool was unav
 The orchestration skill now uses **work package → tracks → slices**. Each package belongs to one coordinating thread/session; a later session selects a new package from this handover's remaining scope. The terminology follow-up is delivered without changing the original implementation plan's incomplete status. Session closeout does not declare every research question or remaining track complete.
 
 1. Read this handover, the current README, ADR-0001/0002, RQ-0004's follow-up table, and the relevant RQ before editing.
-2. Inspect the retained unreviewed cache worktree and its patch backup first. Review/adopt or explicitly retire that candidate before Maven cache integration and its invalidation/lifecycle proof. Keep performance claims separate until measured.
-3. Then address provenance integration and the documented Maven compatibility gaps in bounded follow-up slices, reusing track roles.
-4. Keep source-aware/intra-JAR trimming and the Spring helper as separately approved research scopes rather than silently expanding artifact elision.
-5. Preserve the distinction between verified example package behavior and the unrun vulnerability scanner expectations.
+2. The user will define the next work package to protect source compilation roots during whole-JAR elision, using RQ-0001 §2.2 and RQ-0004's active follow-up. It should retain source-required dependencies absent from runtime evidence and still elide genuinely unused artifacts. No implementation of that package is part of this closeout.
+3. Preserve the unreviewed cache worktree and patch. Review/adopt or explicitly retire that candidate before later cache integration; provenance wiring and compatibility gaps remain subsequent work.
+4. Keep intra-JAR/member trimming and the Spring helper as separate research scopes. Source-root protection for whole-JAR elision does not depend on reopening either.
+5. Preserve the distinctions between classpath integration and correct retention, and between verified package behavior and unrun vulnerability scanner expectations.

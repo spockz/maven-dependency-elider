@@ -48,6 +48,8 @@ The remaining options below preserve the earlier research context; they are not 
 
 ### 2.2 Source-Aware Trimming Requirements
 
+Source compilation roots are also required for current whole-JAR elision. Their protection is an active correctness gap routed through RQ-0004's telemetry, pruning, Maven, and verification tracks, independently of this RQ's deferred intra-JAR/member-trimming scope. The user will define the next work package for that gap.
+
 This proposal remains research, with no selected engine or active member-removal track. The initial experiment should preserve individual dependency JARs, disable renaming and aggressive optimization, and retain members conservatively when oracle coverage is incomplete.
 
 | Concern | Required investigation and observable proof |
