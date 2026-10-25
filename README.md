@@ -7,7 +7,7 @@
 
 Maven Dependency Elider is an early-stage Java project exploring runtime-informed dependency analysis for Maven applications. The goal is to use observed class-loading data to identify dependencies that an application does not use, then make those findings available to Maven builds and downstream packaging tools.
 
-The project is under active development. The core currently includes runtime trace readers, a JAR central-directory class index, and an initial conservative dependency-pruning engine. The Maven `elide` goal, cache, provenance outputs, bytecode slicing, and end-to-end elision workflow are still being implemented. Do not use this project to remove dependencies from production builds.
+The project is under active development. The core currently includes runtime trace readers, a JAR central-directory class index, an initial conservative dependency-pruning engine, and a cache API. The cache is not integrated into the Maven plugin, and the `elide` goal, provenance outputs, bytecode slicing, and end-to-end elision workflow are still being implemented. Do not use this project to remove dependencies from production builds.
 
 ## Project goals
 
@@ -47,6 +47,30 @@ make check
 ```
 
 `make check` formats Java sources, runs Checkstyle, PMD, SpotBugs, lints Markdown, and runs the core and Maven plugin tests. Run individual checks with `make lint-java`, `make lint-markdown`, `make test-core`, or `make test-plugin`.
+
+## Cache benchmarks
+
+The JMH cache benchmarks measure fresh metadata fingerprinting, complete decision cache loading, and the combined fingerprint plus lookup over 100 local artifact fixtures. They exercise the core cache API only; they do not measure a Maven plugin fast path or establish the whole-build sub-10ms target. Build the standalone JMH runner and run these methods from the repository root with:
+
+```sh
+./mvnw -pl elider-benchmarks -am package
+java -jar elider-benchmarks/target/benchmarks.jar '.*ElisionCacheBenchmark.*' \
+  -f 2 -wi 3 -i 5 -w 1s -r 1s
+```
+
+JMH reports the fork, warmup, measurement, and JVM metadata. Record hardware, operating system, and filesystem separately when comparing runs.
+
+### Recorded run
+
+With JMH 1.37 on GraalVM JDK 25.0.5, the command above measured:
+
+| Benchmark | Average time | 99.9% confidence interval |
+| --- | ---: | ---: |
+| Fresh metadata fingerprinting | 0.221 ms/op | ±0.043 ms/op |
+| Complete decision cache load | 0.722 ms/op | ±0.011 ms/op |
+| Fingerprinting plus cache lookup | 1.078 ms/op | ±0.302 ms/op |
+
+The cache load result exceeds the research note's 0.5 ms component budget. The combined result measures the core cache API only; the cache is not integrated into the Maven plugin, so it does not prove lifecycle or whole-build overhead. The recorded environment was an AMD Ryzen 9 5900X 12-core processor (12 cores, 24 threads) and Linux 7.2.9-1-cachyos-bore-lto x86_64. Benchmark fixtures were created under `/tmp` on overlay storage; the workspace mount is Btrfs. The benchmark run used 2 forks, 3 warmup iterations, and 5 measurement iterations of 1 second each. The results are specific to this run and environment.
 
 ## Example applications
 
