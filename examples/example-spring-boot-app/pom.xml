@@ -14,7 +14,7 @@
     <packaging>jar</packaging>
 
     <name>Example: Spring Boot Application</name>
-    <description>Spring Boot web application with an unused BOM-managed Commons Codec dependency.</description>
+    <description>Spring Boot web application with runtime-only mail classes and an unused Commons Codec dependency.</description>
 
     <properties>
         <spring-boot.version>3.3.5</spring-boot.version>
@@ -51,6 +51,12 @@
         <dependency>
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
+        </dependency>
+
+        <!-- Mail classes are loaded at runtime but are not referenced by application bytecode. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
 
         <!-- Testing -->

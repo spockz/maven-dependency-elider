@@ -12,11 +12,16 @@ again with `clean verify`, explicit trace paths, and elision enabled. Surefire c
 test classpath; the runner checks baseline and final archive contents and launches the packaged
 applications. The Spring Boot fixture is exercised through `GET /api/hello`.
 
-Direct BOM-managed Commons Codec replaces `spring-boot-starter-mail` as the unused Spring Boot
-candidate. A baseline trace showed that Boot's mail auto-configuration loads mail API classes,
-including when the app does not send mail, so removing those mail libraries would not be supported
-by the trace. The current fixture demonstrates removal of an unused BOM-managed library from the
-Boot archive while preserving endpoint behavior. It does not establish unused-starter removal.
+The Spring Boot fixture declares unused BOM-managed Commons Codec and `spring-boot-starter-mail`.
+Its baseline class-load trace observes mail classes, while the copied production application
+bytecode contains no direct mail references. The test passes that baseline output to the active
+build with `-Delide.productionOutput` and directs the JSON report outside `target`. Assertions
+require observed mail classes in `runtimeObservedWithoutApplicationReference`, Commons Codec's
+`Hex` class in `neitherReferencedNorObserved`, and the complete Spring mail runtime artifacts in
+the final Boot JAR. The runner preserves the baseline nested mail JAR bytes before the active
+`clean` and compares both names and SHA-256 digests afterward. This does not establish why mail
+classes were loaded. The endpoint is still verified over HTTP, and Commons Codec is removed from
+the final archive.
 
 The `elision-test` profile is activated by `-Delide.skip=false`; default example builds therefore
 do not need the unpublished plugin installed. The test runner installs it before elision builds.
@@ -27,7 +32,10 @@ reported temporary evidence directory.
 ## Verification
 
 - `make test-examples` — passed all four fixtures, baseline and elided package checks, classpath
-  assertions, and packaged runtime checks.
+  assertions, class usage report checks, and packaged runtime checks. Each baseline and elided
+  build passed 9 Surefire tests: 2 basic, 3 Spring Boot, and 2 in each CVE fixture.
+- `make check` — passed with exit code 0 after the Track 5 rebase and documentation updates,
+  including Java lint, SpotBugs, Markdown lint, 88 core tests, and 27 plugin tests.
 - Root `make check` after `mvnd clean` — passed formatting, Checkstyle, PMD, SpotBugs, Markdown
   lint, and core/plugin tests. The repository's `make tools` target installed Markdown lint locally.
 - `git diff --check` — passed.
@@ -36,3 +44,16 @@ reported temporary evidence directory.
 
 OSV-Scanner was not run by this receipt; CVE scanner outcomes remain documented expectations, not
 verified results.
+
+## Usage Evidence Classification Follow-Up
+
+Track 5 added production bytecode scanning and the class usage JSON report in commit `29adc6d`.
+Track 8 now supplies the preserved Spring production output and class-load trace to that report,
+and checks the result in the packaged fixture lifecycle.
+
+The report distinguishes application-bytecode referenced; runtime-observed without an application
+bytecode reference; and neither referenced nor observed. It keeps unknown static evidence distinct
+when a production-class scan is unavailable or incomplete. Runtime-only evidence does not prove
+framework causation, and neither-evidence classification does not prove universal unreachability.
+The classification is report-only: runtime-observed classes continue to retain their complete
+dependency JARs, with no intra-JAR deletion.

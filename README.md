@@ -93,12 +93,12 @@ The cache load result exceeds the research note's 0.5 ms component budget. The c
 
 ## Example applications
 
-The `examples/` reactor contains two consumer applications used to exercise the eventual record, elide, package, and runtime-verification workflow:
+The `examples/` reactor contains two consumer applications used to exercise the record, elide, package, and runtime-verification workflow:
 
 - **`example-basic-app`** is a plain Java application that uses Jackson to print `{"message":"hello"}`. Its shaded executable JAR is the packaging fixture; `commons-codec` is included as an unused dependency candidate.
-- **`example-spring-boot-app`** is a Spring Boot web application with a `GET /api/hello` endpoint. Its packaged app is exercised over HTTP. The fixture also declares BOM-managed Commons Codec, which the baseline trace confirms is unused and the elided Boot JAR omits.
+- **`example-spring-boot-app`** is a Spring Boot web application with a `GET /api/hello` endpoint. It declares BOM-managed Commons Codec, which the baseline trace confirms is unused and the elided Boot JAR omits, plus `spring-boot-starter-mail`. The trace observes mail classes that have no direct reference from application production bytecode, so the report classifies them as runtime-observed without an application reference and the complete mail artifacts remain packaged. This is an evidence classification; it does not establish why Spring or another runtime component loaded those classes.
 
-The default `examples/` reactor demonstrates application behavior, unit tests, and downstream packaging configuration. Run `make test-examples` to exercise the full trace-driven lifecycle across both reactor applications and the two opt-in CVE fixtures. It builds baseline packages, runs them with JVM class-load logging, reruns Maven with elision enabled and explicit traces, checks test classpaths and packaged JAR contents, then runs the final packages.
+The default `examples/` reactor demonstrates application behavior, unit tests, and downstream packaging configuration. Run `make test-examples` to exercise the full trace-driven lifecycle across both reactor applications and the two opt-in CVE fixtures. It builds baseline packages, runs them with JVM class-load logging, copies Spring's baseline production classes outside `target`, reruns Maven with elision enabled and explicit trace and bytecode-scan inputs, checks classpaths, packaged JAR contents, and the generated class usage report, then runs the final packages. The report must identify the copied application output, classify mail classes as runtime-only, and classify Commons Codec's unused `Hex` class as neither referenced nor observed.
 
 Build only the default examples reactor with:
 

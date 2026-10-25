@@ -101,6 +101,10 @@ The intended value is translating an external usage oracle into reduced dependen
 7. **Artifact attribution**:
    * Preserve defining-artifact information when a telemetry format provides it (for example, a class-loading record with a JAR source). Do not infer artifact identity from class name alone.
    * The pruning engine may use a reported origin to disambiguate duplicate classes only when the source identifies the artifact reliably. For class-only observations, retain every supplied artifact containing an observed duplicate class.
+8. **Application bytecode evidence follow-up**:
+   * Add a separate scanner for direct symbolic class references in compiled production application classes. Keep these references separate from runtime observations and artifact-origin evidence.
+   * Record whether the application scan completed and which production class output was scanned. Missing or failed scans mean static evidence is unknown, never that a class is unreferenced.
+   * Define direct references from bytecode structures; do not count class-name string literals, reflection configuration, dependency-to-dependency references, or test classes as direct application references unless a separately named input is added.
 
 ---
 
@@ -163,6 +167,11 @@ The intended value is translating an external usage oracle into reduced dependen
      * If count of loaded classes == 0: mark `ELIDED`.
      * If count of loaded classes > 0: mark `RETAINED`.
    * Returns `ElisionDecision` with retained artifacts, elided artifacts, and class breakdowns.
+3. **Usage evidence classification follow-up**:
+   * Join the dependency class inventory, complete application bytecode-reference scan, and runtime trace into distinct report groups: application-bytecode referenced; runtime-observed without an application-bytecode reference; and neither referenced nor observed.
+   * Preserve the four underlying referenced/observed combinations and an explicit unknown state when the static scan is incomplete.
+   * Report-only: direct references do not prove execution, and runtime-only observations do not identify why a framework loaded a class. The second group must not be labeled “framework loaded.”
+   * Keep existing retention behavior: every runtime-observed class retains its owning dependency JAR. This classification adds no intra-JAR deletion and does not prove classes in the third group are universally unused.
 
 ---
 
@@ -319,19 +328,20 @@ Sub-artifact slicing is outside the current product scope. Runtime class observa
 
 * Spring Boot 3.3.5 web application.
 * Uses `spring-boot-starter-web` for a REST endpoint `/api/hello`.
-* Declares unused starter `spring-boot-starter-mail`.
+* Declares both unused BOM-managed Commons Codec and `spring-boot-starter-mail`. Baseline runtime telemetry observes mail classes even though application production bytecode does not directly reference them.
 * Packaged with `spring-boot-maven-plugin:repackage`.
 
-**Implementation follow-up (2026-10-25):** The repeatable lifecycle test uses a BOM-managed
-`commons-codec` dependency as the unused Spring Boot candidate instead of `spring-boot-starter-mail`.
-Baseline class-load telemetry showed that Boot's mail auto-configuration loads mail API classes
-even when the endpoint does not send mail, so the mail JARs cannot truthfully be expected to elide
-from this app. The test now proves that the unused Commons Codec JAR disappears from the
-repackaged Boot archive while `GET /api/hello` still returns its expected JSON. This verifies
-unused dependency removal for the Boot package, but does not claim unused-starter removal; the CVE
-fixtures separately verify removal of unused transitive libraries. The elision goal is now in an
-opt-in profile activated by `-Delide.skip=false`, so default example verification does not require
-the unpublished plugin to be installed first.
+**Implementation follow-up (2026-10-25):** The repeatable lifecycle test declares both the unused,
+BOM-managed `commons-codec` candidate and `spring-boot-starter-mail`. Before the active build runs
+`clean`, the harness copies baseline `target/classes` outside the build directory and passes that
+copy using `-Delide.productionOutput`. It also directs `-Delide.reportFile` outside `target`. The
+report assertions require mail classes seen in runtime telemetry to be classified as
+`runtimeObservedWithoutApplicationReference`, and require Commons Codec's `Hex` class to appear in
+`neitherReferencedNorObserved`. The packaged Boot JAR omits Commons Codec while retaining the
+complete mail artifacts, and `GET /api/hello` continues to return the expected response. This
+classification does not establish why mail classes were loaded and does not change whole-JAR
+retention. The elision goal remains in an opt-in profile activated by `-Delide.skip=false`, so
+default example verification does not require the unpublished plugin to be installed first.
 
 #### 3. Integration Test Loop (Programmatic Test Case)
 
@@ -339,15 +349,19 @@ the unpublished plugin to be installed first.
    * Launch app / test with `-Xlog:class+load:file=target/classes.log` or CDS `-XX:DumpLoadedClassList=target/classes.lst`.
    * Execute integration test; shut down app; verify trace file exists.
 2. **Stage 2 (Elision)**:
-   * Execute `./mvnw clean package` with elider active.
-   * Plugin runs at `INITIALIZE`, detects unused `commons-codec` (basic app) and unused mail transitives (Spring Boot app).
+   * Preserve the baseline application production output outside `target`, then execute
+     `./mvnw clean package` with elider active and the preserved output supplied for static scan.
+   * Plugin runs at `INITIALIZE`, elides unobserved `commons-codec`, and retains runtime-observed mail artifacts while reporting mail classes separately from direct application bytecode references.
    * In-memory `project.getArtifacts()` is pruned.
    * Shade and Spring Boot repackage complete.
 3. **Stage 3 (Dual Verification)**:
    * **Functional**: Start the resulting fat JAR (`java -jar target/*.jar`) and execute HTTP/integration tests. Must pass with zero errors.
    * **Physical**: Inspect the fat JAR entries:
      * `commons-codec` classes must be **100% absent** from `example-basic-app` shaded JAR.
-     * `angus-mail` / `jakarta.mail` JARs must be **100% absent** from `example-spring-boot-app` `BOOT-INF/lib`.
+     * The `spring-context-support`, `org.eclipse.angus:jakarta.mail`,
+       `jakarta.activation-api`, and `angus-activation` JARs must remain in
+       `example-spring-boot-app` `BOOT-INF/lib` when the runtime trace observes their classes, even
+       if application bytecode has no direct reference to those classes.
    * **Security**: Validate CycloneDX against its pinned schema and ensure it matches the applied inventory. Emit VEX only for vulnerability assessments with required product identity and evidence; never treat a flat pruning decision as vulnerability proof.
 
 ---
@@ -386,7 +400,7 @@ Before declaring implementation complete:
 * [ ] **JMH Invariant**: Fast-path cache validation benchmark measures $< 1\text{ ms}$ ($< 10\text{ ms}$ overhead gate satisfied).
 * [ ] **Plugin Descriptor**: `dependency-elider-maven-plugin` generates valid plugin descriptors for Maven 3.x and 4.x.
 * [ ] **Basic App Verification**: `commons-codec` is physically pruned from `example-basic-app` shaded JAR while Jackson-based execution continues to succeed.
-* [ ] **Spring Boot Verification**: Unused starter libraries are physically omitted from `BOOT-INF/lib` while Spring Boot web endpoint boots and tests cleanly.
+* [ ] **Spring Boot Verification**: Unobserved Commons Codec is omitted from `BOOT-INF/lib`; runtime-observed mail classes without direct application references are classified in the report, and the exact mail runtime JAR bytes remain in `BOOT-INF/lib` while the web endpoint passes.
 * [ ] **Provenance Output**: CycloneDX 1.6 inventory matches the applied retained-artifact set and validates against the pinned schema. Audit POM, OpenVEX, and Dependency-Check suppressions are emitted only when their required resolved-graph, product, vulnerability, digest, and slicing evidence is supplied.
 * [ ] **Elision Summary**: Each run prints absolute counts and percentages for whole artifacts elided and, when slicing runs, classes and bytecode symbols removed; denominators are explicit and exclude whole-artifact removals from surgical metrics.
 * [ ] **Documentation & Indexing**: ADR and RQ registers updated with completed checkpoints.

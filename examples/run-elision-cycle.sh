@@ -55,6 +55,11 @@ main() {
     trace="$test_dir/$fixture.log"
     baseline_output="$test_dir/$fixture-baseline.out"
     final_output="$test_dir/$fixture-final.out"
+    elision_options=(
+      -Delide.skip=false
+      "-Delide.traceFiles=$trace"
+      -Delider.verifyElision=true
+    )
 
     "$maven" "${maven_options[@]}" -f "$pom" clean verify \
       -Delide.skip=true -Delider.verifyElision=false
@@ -62,22 +67,42 @@ main() {
     baseline_entries="$test_dir/$fixture-baseline.jar-entries"
     "$jar" tf "$jar_file" >"$baseline_entries"
     verify_baseline_archive "$fixture" "$baseline_entries"
+    if [[ $fixture == example-spring-boot-app ]]; then
+      mail_artifacts="$test_dir/$fixture-mail-artifacts"
+      python3 "$repo_root/examples/support/verify_spring_mail_artifacts.py" \
+        capture "$jar_file" "$mail_artifacts"
+    fi
 
     if [[ $fixture == example-spring-boot-app ]]; then
       python3 "$repo_root/examples/support/run_spring_boot_endpoint.py" \
         "$java" "$jar_file" "$trace" "$baseline_output"
       verify_spring_unused_trace "$trace"
+      production_output="$test_dir/$fixture-production-classes"
+      usage_report="$test_dir/$fixture-class-usage.json"
+      cp -a -- "$fixture_dir/target/classes" "$production_output"
+      elision_options+=(
+        "-Delide.productionOutput=$production_output"
+        "-Delide.reportFile=$usage_report"
+      )
     else
       timeout --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" "-Xlog:class+load=info:file=$trace" -jar "$jar_file" >"$baseline_output"
     fi
 
-    "$maven" "${maven_options[@]}" -f "$pom" clean verify \
-      -Delide.skip=false -Delide.traceFiles="$trace" -Delider.verifyElision=true
+    "$maven" "${maven_options[@]}" -f "$pom" clean verify "${elision_options[@]}"
+
+    if [[ $fixture == example-spring-boot-app ]]; then
+      python3 "$repo_root/examples/support/verify_class_usage_report.py" \
+        "$usage_report" "$production_output"
+    fi
 
     entries="$test_dir/$fixture.jar-entries"
     "$jar" tf "$jar_file" >"$entries"
     verify_archive "$fixture" "$entries"
+    if [[ $fixture == example-spring-boot-app ]]; then
+      python3 "$repo_root/examples/support/verify_spring_mail_artifacts.py" \
+        compare "$jar_file" "$mail_artifacts"
+    fi
 
     if [[ $fixture == example-spring-boot-app ]]; then
       python3 "$repo_root/examples/support/run_spring_boot_endpoint.py" \
@@ -103,6 +128,10 @@ verify_baseline_archive() {
     example-spring-boot-app)
       has_pattern "$entries" 'BOOT-INF/lib/spring-webmvc-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/jakarta.mail-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/jakarta.activation-api-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/angus-activation-[^/]+\.jar'
       ;;
     example-cve-unused-app)
       has_entry "$entries" 'com/fasterxml/jackson/databind/ObjectMapper.class'
@@ -130,6 +159,10 @@ verify_archive() {
     example-spring-boot-app)
       has_pattern "$entries" 'BOOT-INF/lib/spring-webmvc-[^/]+\.jar'
       lacks_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/jakarta.mail-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/jakarta.activation-api-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/angus-activation-[^/]+\.jar'
       ;;
     example-cve-unused-app)
       has_entry "$entries" 'com/fasterxml/jackson/databind/ObjectMapper.class'

@@ -49,6 +49,14 @@ class HelloControllerTest {
         .isEqualTo(expectedPresent);
   }
 
+  /** Confirms mail remains available because the runtime trace observes mail classes. */
+  @Test
+  void mailClassesRemainAvailable() {
+    assertThat(resource("jakarta/mail/Session.class") != null)
+        .as("Jakarta Mail must remain on the classpath in baseline and elided builds")
+        .isTrue();
+  }
+
   private static URL resource(final String path) {
     return HelloControllerTest.class.getResource("/" + path);
   }
