@@ -16,6 +16,98 @@
     <name>Elider Examples &amp; Integration Fixtures</name>
     <description>Reference projects used as empirical integration test fixtures.</description>
 
+    <properties>
+        <elide.skip>true</elide.skip>
+        <elider.verifyElision>false</elider.verifyElision>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>enforce-build-and-dependency-invariants</id>
+                        <configuration>
+                            <rules>
+                                <requirePluginVersions>
+                                    <unCheckedPluginList>io.github.spockz:dependency-elider-maven-plugin</unCheckedPluginList>
+                                </requirePluginVersions>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <elider.verifyElision>${elider.verifyElision}</elider.verifyElision>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <configuration>
+                        <createDependencyReducedPom>false</createDependencyReducedPom>
+                        <filters>
+                            <filter>
+                                <artifact>*:*</artifact>
+                                <excludes>
+                                    <exclude>META-INF/*.SF</exclude>
+                                    <exclude>META-INF/*.DSA</exclude>
+                                    <exclude>META-INF/*.RSA</exclude>
+                                    <exclude>META-INF/*.EC</exclude>
+                                    <exclude>META-INF/SIG-*</exclude>
+                                </excludes>
+                            </filter>
+                        </filters>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>elision-test</id>
+            <activation>
+                <property>
+                    <name>elide.skip</name>
+                    <value>false</value>
+                </property>
+            </activation>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>io.github.spockz</groupId>
+                            <artifactId>dependency-elider-maven-plugin</artifactId>
+                            <version>${project.version}</version>
+                            <configuration>
+                                <skip>${elide.skip}</skip>
+                            </configuration>
+                            <executions>
+                                <execution>
+                                    <goals>
+                                        <goal>elide</goal>
+                                    </goals>
+                                </execution>
+                            </executions>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
+        </profile>
+    </profiles>
+
+    <!-- Intentionally vulnerable CVE fixtures stay outside this default reactor. -->
     <modules>
         <module>example-basic-app</module>
         <module>example-spring-boot-app</module>

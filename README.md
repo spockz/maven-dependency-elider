@@ -7,7 +7,7 @@
 
 Maven Dependency Elider aims to turn external usage knowledge into reduced dependencies that Maven uses throughout compilation, testing, and packaging. A usage oracle supplies retention roots: observed classes, reflective entry points, deployment-specific knowledge, or explicit configuration. The intended design combines those roots with source compilation dependencies and framework/resource requirements, then retains their required dependencies.
 
-The project is under active development. The core currently includes runtime trace readers, a JAR central-directory class index, an initial conservative dependency-pruning engine, and a cache API. The cache is not integrated into the Maven plugin, and the `elide` goal, provenance outputs, and end-to-end elision workflow are still being implemented. Sub-artifact bytecode slicing is deferred; an observed class retains its entire dependency JAR. Do not use this project to remove dependencies from production builds.
+The project is under active development. The core currently includes runtime trace readers, a JAR central-directory class index, an initial conservative dependency-pruning engine, and a cache API. The `elide` goal applies whole-artifact decisions to Maven's in-memory artifact views. Cache integration and provenance outputs are still being implemented; `make test-examples` verifies the current Shade and Spring Boot packaging paths. Sub-artifact bytecode slicing is deferred; an observed class retains its entire dependency JAR. Do not use this project to remove dependencies from production builds.
 
 ## Project goals
 
@@ -96,12 +96,36 @@ The cache load result exceeds the research note's 0.5 ms component budget. The c
 The `examples/` reactor contains two consumer applications used to exercise the eventual record, elide, package, and runtime-verification workflow:
 
 - **`example-basic-app`** is a plain Java application that uses Jackson to print `{"message":"hello"}`. Its shaded executable JAR is the packaging fixture; `commons-codec` is included as an unused dependency candidate.
-- **`example-spring-boot-app`** is a Spring Boot web application with a `GET /api/hello` endpoint. Its `HelloControllerTest` exercises the endpoint, and `spring-boot-starter-mail` is included as an unused starter candidate.
+- **`example-spring-boot-app`** is a Spring Boot web application with a `GET /api/hello` endpoint. Its packaged app is exercised over HTTP. The fixture also declares BOM-managed Commons Codec, which the baseline trace confirms is unused and the elided Boot JAR omits.
 
-The fixtures currently demonstrate application behavior, tests, and downstream packaging configuration. The automated dependency recording and elision cycle is not yet available. Build the examples with:
+The default `examples/` reactor demonstrates application behavior, unit tests, and downstream packaging configuration. Run `make test-examples` to exercise the full trace-driven lifecycle across both reactor applications and the two opt-in CVE fixtures. It builds baseline packages, runs them with JVM class-load logging, reruns Maven with elision enabled and explicit traces, checks test classpaths and packaged JAR contents, then runs the final packages.
+
+Build only the default examples reactor with:
 
 ```sh
 ./mvnw -f examples/pom.xml verify
+```
+
+### CVE and whole-artifact examples
+
+Two additional standalone fixtures are intentionally excluded from the default reactor because they reproduce a vulnerable Logback version. Both import the Spring Boot 3.5.0 BOM, which manages Logback 1.5.18, Janino 3.1.12, and Spring Framework 6.2.7 without version overrides. OSV records [CVE-2025-11226](https://osv.dev/vulnerability/CVE-2025-11226) against `logback-core` through 1.5.18. Exploitation additionally requires Janino and Spring Framework on the classpath, as well as control of the Logback configuration. The POMs state the expected result for each direct, transitive, and prerequisite dependency. This older BOM release is selected to reproduce this finding; newer Spring Boot releases manage Logback versions fixed for this CVE.
+
+- **`example-cve-unused-app`** uses Jackson but no logging, Janino, or Spring. Expected result: elide `logback-classic`, its transitive `logback-core`, Janino, and Spring Context; retain Jackson and its runtime dependencies. A scan of the resulting shaded JAR should no longer report CVE-2025-11226.
+- **`example-cve-safe-class-app`** uses SLF4J with Logback and Spring Context, but does not use Janino. Expected result: retain `logback-classic`, its transitive `logback-core`, and Spring Context; elide Janino. OSV-Scanner is still expected to report CVE-2025-11226 against the retained vulnerable `logback-core` version, even though elision removes one of the advisory's stated prerequisites. This demonstrates the difference between a package-version finding and whether the documented exploit conditions are present.
+
+The standalone CVE fixtures inherit an `elision-test` profile that activates the `elide` goal only when `-Delide.skip=false` is supplied. These commands build baseline shaded JARs without resolving the elider plugin:
+
+```sh
+./mvnw -pl dependency-elider-maven-plugin -am install
+./mvnw -f examples/example-cve-unused-app/pom.xml verify -Delide.skip=true
+./mvnw -f examples/example-cve-safe-class-app/pom.xml verify -Delide.skip=true
+```
+
+The `elide.skip` Maven property controls the profile: `true` or omitted leaves the goal inactive, while `false` activates it. `make test-examples` installs the plugin, creates each trace outside `target`, then supplies `-Delide.skip=false` and `-Delide.traceFiles=...` for each elision build. The unused-dependency fixture should stop showing CVE-2025-11226 because Logback is removed; the safe-class fixture may continue showing it because Logback remains, even after Janino is removed. The test target verifies package contents and behavior; scanner output remains a separate check. Scan the packaged output, not the unchanged source POM, when checking whether a component is physically absent:
+
+```sh
+osv-scanner scan source examples/example-cve-unused-app/target/example-cve-unused-app-0.1.0-SNAPSHOT.jar
+osv-scanner scan source examples/example-cve-safe-class-app/target/example-cve-safe-class-app-0.1.0-SNAPSHOT.jar
 ```
 
 ## Usage
@@ -117,7 +141,7 @@ The Maven plugin provides a nonmutating, trace-based `analyze` goal. Install the
   -Delide.traceFiles=target/classes.log
 ```
 
-See [Maven plugin usage](docs/plugin-usage.md) for supported trace formats, summary fields, and global exclusions. The `elide` goal remains disabled before any Maven project state is accessed until a forked Maven 3.9 build proves that INITIALIZE mutation survives later resolution, compile/test classpath construction, and packaging. Maven 4 compatibility remains unverified.
+See [Maven plugin usage](docs/plugin-usage.md) for supported trace formats, summary fields, and global exclusions. The `elide` goal mutates Maven's in-memory artifact views at `INITIALIZE`; `make test-examples` verifies the listed Shade and Spring Boot paths, while other packagers and Maven 4 compatibility remain unverified.
 
 ## Contributing
 

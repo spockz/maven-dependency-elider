@@ -322,6 +322,17 @@ Sub-artifact slicing is outside the current product scope. Runtime class observa
 * Declares unused starter `spring-boot-starter-mail`.
 * Packaged with `spring-boot-maven-plugin:repackage`.
 
+**Implementation follow-up (2026-10-25):** The repeatable lifecycle test uses a BOM-managed
+`commons-codec` dependency as the unused Spring Boot candidate instead of `spring-boot-starter-mail`.
+Baseline class-load telemetry showed that Boot's mail auto-configuration loads mail API classes
+even when the endpoint does not send mail, so the mail JARs cannot truthfully be expected to elide
+from this app. The test now proves that the unused Commons Codec JAR disappears from the
+repackaged Boot archive while `GET /api/hello` still returns its expected JSON. This verifies
+unused dependency removal for the Boot package, but does not claim unused-starter removal; the CVE
+fixtures separately verify removal of unused transitive libraries. The elision goal is now in an
+opt-in profile activated by `-Delide.skip=false`, so default example verification does not require
+the unpublished plugin to be installed first.
+
 #### 3. Integration Test Loop (Programmatic Test Case)
 
 1. **Stage 1 (Recording)**:

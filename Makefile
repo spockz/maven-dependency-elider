@@ -10,7 +10,7 @@ DEPENDENCY_CHECK_VERSION ?= 13.0.0
 .DEFAULT_GOAL := check
 .NOTPARALLEL: check check-ci
 
-.PHONY: check check-ci tools fix fmt lint lint-check lint-java lint-markdown vuln test-core test-plugin test-all verify-docs
+.PHONY: check check-ci tools fix fmt lint lint-check lint-java lint-markdown vuln test-core test-plugin test-all test-examples verify-docs
 
 check: lint-check test-core test-plugin ## Run formatter, static analysis, and core and plugin tests
 
@@ -51,5 +51,8 @@ test-plugin: ## Run Maven plugin unit tests with required core dependencies
 
 test-all: ## Run the complete reactor verification suite
 	$(MAVEN) $(MAVEN_ARGS) verify
+
+test-examples: ## Run baseline, trace-driven elision, package, and runtime checks for all examples
+	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS)" ./examples/run-elision-cycle.sh
 
 verify-docs: lint-markdown ## Verify Markdown documentation

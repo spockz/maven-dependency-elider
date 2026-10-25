@@ -4,10 +4,12 @@
 
 package io.github.spockz.example.springboot;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.net.URL;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -35,5 +37,19 @@ class HelloControllerTest {
         .perform(get("/api/hello"))
         .andExpect(status().isOk())
         .andExpect(content().json("{\"message\":\"hello\"}"));
+  }
+
+  /** Confirms the unused, BOM-managed Commons Codec dependency follows elision mode. */
+  @Test
+  void commonsCodecIsAvailableOnlyInBaselineBuilds() {
+    final boolean expectedPresent = !Boolean.getBoolean("elider.verifyElision");
+    final URL codecClass = resource("org/apache/commons/codec/binary/Hex.class");
+    assertThat(codecClass != null)
+        .as("Commons Codec should match baseline versus elided mode")
+        .isEqualTo(expectedPresent);
+  }
+
+  private static URL resource(final String path) {
+    return HelloControllerTest.class.getResource("/" + path);
   }
 }

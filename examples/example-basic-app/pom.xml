@@ -40,6 +40,11 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>io.github.spockz</groupId>
+                <artifactId>dependency-elider-maven-plugin</artifactId>
+                <version>${project.version}</version>
+            </plugin>
             <!-- Downstream packaging: bundles dependencies into an uber-jar -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

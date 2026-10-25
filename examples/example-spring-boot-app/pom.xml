@@ -14,7 +14,7 @@
     <packaging>jar</packaging>
 
     <name>Example: Spring Boot Application</name>
-    <description>Spring Boot application with web starter and an additional unused starter.</description>
+    <description>Spring Boot web application with an unused BOM-managed Commons Codec dependency.</description>
 
     <properties>
         <spring-boot.version>3.3.5</spring-boot.version>
@@ -47,10 +47,10 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <!-- Unused starter: Present on classpath but never configured or instantiated -->
+        <!-- BOM-managed candidate: No application or framework code uses Commons Codec. -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-mail</artifactId>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
         </dependency>
 
         <!-- Testing -->
@@ -63,6 +63,11 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>io.github.spockz</groupId>
+                <artifactId>dependency-elider-maven-plugin</artifactId>
+                <version>${project.version}</version>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
