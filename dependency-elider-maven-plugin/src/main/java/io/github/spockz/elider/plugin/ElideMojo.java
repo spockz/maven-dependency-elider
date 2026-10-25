@@ -33,6 +33,16 @@ public final class ElideMojo extends AbstractMojo {
   @Parameter(property = "elide.excludedArtifacts")
   private List<String> excludedArtifacts;
 
+  /** Optional production class output for static references. */
+  @Parameter(property = "elide.productionOutput")
+  private File productionOutput;
+
+  /** Structured report path, defaulting to the Maven build directory. */
+  @Parameter(
+      property = "elide.reportFile",
+      defaultValue = "${project.build.directory}/dependency-elider-class-usage.json")
+  private File reportFile;
+
   /** Maven switch that skips analysis and mutation. */
   @Parameter(property = "elide.skip", defaultValue = "false")
   private boolean skip;
@@ -46,13 +56,18 @@ public final class ElideMojo extends AbstractMojo {
     try {
       final MavenElisionService service = new MavenElisionService();
       final MavenElisionService.Analysis analysis =
-          service.analyze(project, traceFiles, excludedArtifacts);
+          service.analyze(project, traceFiles, excludedArtifacts, productionOutput);
       final MavenElisionService.ApplyPlan plan = service.plan(project, analysis);
+      MavenClassUsageReportWriter.write(
+          reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       project.setArtifacts(new LinkedHashSet<>(plan.resolvedArtifacts()));
       if (plan.directArtifactsPresent()) {
         project.setDependencyArtifacts(new LinkedHashSet<>(plan.directArtifacts()));
       }
       ElisionSummary.report(getLog(), analysis.decision(), analysis.resolvedSnapshots().size());
+      if (getLog().isInfoEnabled()) {
+        getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
+      }
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency elision failed: " + exception.getMessage(), exception);

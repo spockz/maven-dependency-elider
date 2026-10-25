@@ -30,6 +30,16 @@ public final class AnalyzeMojo extends AbstractMojo {
   @Parameter(property = "elide.excludedArtifacts")
   private List<String> excludedArtifacts;
 
+  /** Optional production class output for static references. */
+  @Parameter(property = "elide.productionOutput")
+  private File productionOutput;
+
+  /** Structured report path, defaulting to the Maven build directory. */
+  @Parameter(
+      property = "elide.reportFile",
+      defaultValue = "${project.build.directory}/dependency-elider-class-usage.json")
+  private File reportFile;
+
   /** Creates a Mojo instance for Maven injection. */
   public AnalyzeMojo() {
     super();
@@ -40,8 +50,14 @@ public final class AnalyzeMojo extends AbstractMojo {
   public void execute() throws MojoFailureException {
     try {
       final MavenElisionService.Analysis analysis =
-          new MavenElisionService().analyze(project, traceFiles, excludedArtifacts);
+          new MavenElisionService()
+              .analyze(project, traceFiles, excludedArtifacts, productionOutput);
+      MavenClassUsageReportWriter.write(
+          reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       ElisionSummary.report(getLog(), analysis.decision(), analysis.resolvedSnapshots().size());
+      if (getLog().isInfoEnabled()) {
+        getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
+      }
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency analysis failed closed: " + exception.getMessage(), exception);

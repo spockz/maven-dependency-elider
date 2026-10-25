@@ -146,6 +146,7 @@ final class ElideMojoTest {
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "reportFile", tempDir.resolve("elide-report.json").toFile());
     mojo.execute();
   }
 

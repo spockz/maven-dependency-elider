@@ -260,7 +260,7 @@ final class MavenElisionServiceTest {
     final Artifact second = resolvedArtifact("library", "runtime", "resolved-b.jar");
     final MavenProject project = projectWith(identitySet(first, second), null);
 
-    assertThatThrownBy(() -> new MavenElisionService().analyze(project, List.of(), List.of()))
+    assertThatThrownBy(() -> new MavenElisionService().analyze(project, List.of(), List.of(), null))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Conflicting files for artifact identity");
     assertThat(project.getArtifacts()).containsExactlyInAnyOrder(first, second);
@@ -335,7 +335,7 @@ final class MavenElisionServiceTest {
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     final Path trace = tempDir.resolve(traceName);
     Files.writeString(trace, "library/Unused\n");
-    return new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of());
+    return new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
   }
 
   @SafeVarargs

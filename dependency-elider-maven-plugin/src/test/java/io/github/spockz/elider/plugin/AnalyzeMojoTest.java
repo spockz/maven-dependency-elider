@@ -23,12 +23,15 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
 
 /** Verifies conservative Maven artifact adaptation and explicit trace requirements. */
 @SuppressWarnings({
   "PMD.AvoidAccessibilityAlteration",
   "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.LawOfDemeter"
+  "PMD.LawOfDemeter",
+  "PMD.TooManyMethods"
 })
 final class AnalyzeMojoTest {
   /** Temporary directory for ZIP fixtures and explicit trace files. */
@@ -77,6 +80,8 @@ final class AnalyzeMojoTest {
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "excludedArtifacts", List.of("org.example:excluded"));
+    final Path report = tempDir.resolve("analysis.json");
+    set(mojo, "reportFile", report.toFile());
     final RecordingLog log = new RecordingLog();
     mojo.setLog(log);
 
@@ -98,6 +103,76 @@ final class AnalyzeMojoTest {
             "  Methods removed: 0 / N/A (N/A; stage not run)",
             "  Fields removed: 0 / N/A (N/A; stage not run)",
             "  Cache: unavailable");
+    final com.fasterxml.jackson.databind.JsonNode json =
+        new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
+    assertThat(json.path("staticEvidenceAvailable").asBoolean()).isFalse();
+    assertThat(json.path("groups").path("applicationReferenced").isNull()).isTrue();
+    assertThat(json.path("groups").path("runtimeObservedWithoutApplicationReference").isNull())
+        .isTrue();
+    assertThat(json.path("groups").path("neitherReferencedNorObserved").isNull()).isTrue();
+    assertThat(json.path("runtimeObservedClasses").toString()).contains("used.Sample");
+    assertThat(json.path("classes").toString()).contains("UNKNOWN_STATIC_EVIDENCE");
+  }
+
+  @Test
+  void writesCompleteStaticGroupsAndDeterministicClassNames()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Artifact used =
+        artifact("used", "1.0", "compile", "jar", "used.jar", "used/Sample.class");
+    final Artifact runtimeOnly =
+        artifact(
+            "runtime-only", "1.0", "compile", "jar", "runtime-only.jar", "runtimeOnly/Type.class");
+    final Artifact unused =
+        artifact("unused", "1.0", "compile", "jar", "unused.jar", "unused/Idle.class");
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(new LinkedHashSet<>(List.of(used, runtimeOnly, unused)));
+    final Path trace = tempDir.resolve("complete.lst");
+    Files.writeString(trace, "used/Sample\nruntimeOnly/Type\n");
+    final Path productionOutput = Files.createDirectories(tempDir.resolve("classes"));
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Main", null, "java/lang/Object", null);
+    writer.visitField(Opcodes.ACC_PRIVATE, "used", "Lused/Sample;", null, null).visitEnd();
+    writer.visitEnd();
+    Files.createDirectories(productionOutput.resolve("app"));
+    Files.write(productionOutput.resolve("app/Main.class"), writer.toByteArray());
+    final Path report = tempDir.resolve("complete-report.json");
+    final AnalyzeMojo mojo = new AnalyzeMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "productionOutput", productionOutput.toFile());
+    set(mojo, "reportFile", report.toFile());
+
+    mojo.execute();
+    final String firstOutput = Files.readString(report);
+    mojo.execute();
+
+    assertThat(Files.readString(report)).isEqualTo(firstOutput);
+    final com.fasterxml.jackson.databind.JsonNode json =
+        new com.fasterxml.jackson.databind.ObjectMapper().readTree(firstOutput);
+    assertThat(json.path("staticEvidenceAvailable").asBoolean()).isTrue();
+    assertThat(json.path("classFilesScanned").asInt()).isEqualTo(1);
+    assertThat(json.path("groups").path("applicationReferenced").toString())
+        .contains("used.Sample");
+    assertThat(json.path("groups").path("runtimeObservedWithoutApplicationReference").toString())
+        .contains("runtimeOnly.Type");
+    assertThat(json.path("groups").path("neitherReferencedNorObserved").toString())
+        .contains("unused.Idle");
+    assertThat(json.path("classes").toString())
+        .contains("used.Sample", "runtimeOnly.Type", "unused.Idle");
+  }
+
+  @Test
+  void rejectsInvalidClassOutputWithoutWritingReport()
+      throws IOException, ReflectiveOperationException {
+    final Fixture fixture = fixture("used/Sample\n");
+    final Path report = tempDir.resolve("invalid-scan.json");
+    set(fixture.mojo, "productionOutput", tempDir.resolve("missing-classes").toFile());
+    set(fixture.mojo, "reportFile", report.toFile());
+
+    assertThatThrownBy(fixture.mojo::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("Production class output directory is missing");
+    assertThat(report).doesNotExist();
   }
 
   @Test
@@ -212,6 +287,7 @@ final class AnalyzeMojoTest {
     final AnalyzeMojo mojo = new AnalyzeMojo();
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "reportFile", tempDir.resolve("fixture-report.json").toFile());
     return new Fixture(mojo);
   }
 

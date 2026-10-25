@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.engine.ClassUsageReport;
 import io.github.spockz.elider.engine.DependencyPruner;
 import io.github.spockz.elider.engine.PruneConfig;
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -9,7 +10,9 @@ import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
+import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.scanner.JarIndexScanner;
+import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
 import io.github.spockz.elider.trace.CompositeTraceReader;
 import java.io.File;
 import java.io.IOException;
@@ -19,6 +22,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.MojoFailureException;
@@ -44,7 +48,10 @@ final class MavenElisionService {
 
   /** Analyzes the complete resolved set while scanning only real JAR artifacts. */
   Analysis analyze(
-      final MavenProject project, final List<File> traceFiles, final List<String> excludedArtifacts)
+      final MavenProject project,
+      final List<File> traceFiles,
+      final List<String> excludedArtifacts,
+      final File productionOutput)
       throws IOException, MojoFailureException {
     final List<Artifact> resolved = new ArrayList<>(project.getArtifacts());
     final List<ArtifactSnapshot> resolvedSnapshots = snapshots(resolved);
@@ -62,9 +69,20 @@ final class MavenElisionService {
     }
     final TraceData trace = new CompositeTraceReader().readAll(toPaths(traceFiles));
     final ArtifactClassIndex index = new JarIndexScanner().scan(scanCandidates);
+    final Optional<BytecodeReferenceScan> bytecodeScan =
+        productionOutput == null
+            ? Optional.empty()
+            : Optional.of(new ProductionBytecodeReferenceScanner().scan(productionOutput.toPath()));
+    final ClassUsageReport classUsageReport = ClassUsageReport.classify(index, trace, bytecodeScan);
     final ElisionDecision decision =
         new DependencyPruner().prune(scanCandidates, index, trace, config(excludedArtifacts));
-    return new Analysis(resolvedSnapshots, directPresent, directSnapshots, decision);
+    return new Analysis(
+        resolvedSnapshots,
+        directPresent,
+        directSnapshots,
+        decision,
+        classUsageReport,
+        bytecodeScan);
   }
 
   /** Prepares Maven artifact views without mutating project state. */
@@ -264,7 +282,23 @@ final class MavenElisionService {
       List<ArtifactSnapshot> resolvedSnapshots,
       boolean directArtifactsPresent,
       List<ArtifactSnapshot> directSnapshots,
-      ElisionDecision decision) {
+      ElisionDecision decision,
+      ClassUsageReport classUsageReport,
+      Optional<BytecodeReferenceScan> bytecodeScan) {
+    Analysis(
+        final List<ArtifactSnapshot> resolvedSnapshots,
+        final boolean directArtifactsPresent,
+        final List<ArtifactSnapshot> directSnapshots,
+        final ElisionDecision decision) {
+      this(
+          resolvedSnapshots,
+          directArtifactsPresent,
+          directSnapshots,
+          decision,
+          new ClassUsageReport(List.of()),
+          Optional.empty());
+    }
+
     Analysis {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);

@@ -24,6 +24,8 @@ Only resolved regular JAR files are scanned. Non-JAR artifact types remain retai
 
 The summary reports whole-artifact elisions over the complete pre-analysis Maven artifact count. Surgical classes, methods, and fields are reported as zero with an unrun stage and N/A denominators. Cache status is unavailable.
 
+Both goals also write a deterministic class usage report to `target/dependency-elider-class-usage.json` by default. Set `-Delide.reportFile=/path/to/report.json` to choose another location. The report lists classes by their complete static and runtime evidence groups, along with a per-class category. Static scanning is opt-in because it examines only the application production output explicitly supplied through `-Delide.productionOutput=target/classes`; it does not inspect test output. When that option is omitted, the report sets `staticEvidenceAvailable` to `false`, leaves the three static-dependent group values `null`, and labels each class as having unknown static evidence. It never labels a class runtime-only or unused without a completed scan.
+
 The `elide` goal runs in `INITIALIZE` with test dependency resolution. It requires explicit trace inputs and applies the validated whole-artifact decision to Maven's resolved and direct artifact views before later lifecycle phases.
 
 `elide.skip` is a Boolean Maven user property (`-Delide.skip=true|false`). The CVE example fixtures bind the goal and default this property to `true` so baseline packaging remains available. Set it to `false` and supply `-Delide.traceFiles=...` to apply elision. Missing, malformed, unsupported, or unmatched trace evidence fails the goal.

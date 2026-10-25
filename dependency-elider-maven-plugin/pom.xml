@@ -21,6 +21,10 @@
             <groupId>io.github.spockz</groupId>
             <artifactId>elider-core</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
 
         <!-- Maven Plugin APIs -->
         <dependency>
