@@ -1,5 +1,5 @@
 <!-- WHY: Evaluates generating a user-facing Maven plugin documentation site and automated publishing via GitHub Actions and GitHub Pages without legacy Maven site-deploy baggage. -->
-# RQ-0006: Maven Plugin Documentation Site and GitHub Pages Publishing
+# RQ-0007: Maven Plugin Documentation Site and GitHub Pages Publishing
 
 * **Status**: Open
 * **Category**: Documentation & Publishing
