@@ -53,18 +53,30 @@ final class TraceClassName {
   }
 
   private static int hiddenMarker(final String name) {
-    return Math.max(name.lastIndexOf("/0x"), name.lastIndexOf(".0x"));
+    return Math.max(
+        Math.max(name.lastIndexOf("/0x"), name.lastIndexOf(".0x")), name.lastIndexOf("+0x"));
   }
 
   private static boolean isHexSuffix(final String name, final int start) {
     if (start >= name.length()) {
       return false;
     }
-    for (int index = start; index < name.length(); index++) {
-      if (Character.digit(name.charAt(index), 16) < 0) {
-        return false;
-      }
+    final String suffix = name.substring(start);
+    final int separator = suffix.indexOf('.');
+    if (separator < 0) {
+      return containsOnlyHexDigits(suffix);
     }
-    return true;
+    return separator == suffix.lastIndexOf('.')
+        && containsOnlyHexDigits(suffix.substring(0, separator))
+        && containsOnlyDecimalDigits(suffix.substring(separator + 1));
+  }
+
+  private static boolean containsOnlyHexDigits(final String value) {
+    return !value.isEmpty()
+        && value.chars().allMatch(character -> Character.digit(character, 16) >= 0);
+  }
+
+  private static boolean containsOnlyDecimalDigits(final String value) {
+    return !value.isEmpty() && value.chars().allMatch(Character::isDigit);
   }
 }
