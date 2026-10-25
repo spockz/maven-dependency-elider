@@ -47,6 +47,11 @@ verified results.
 
 ## Usage Evidence Classification Follow-Up
 
+Track 8 follow-up commit: `976a3a23109fd7793f7d9dc0ed5b713ab70dc8b0`, rebased on Track 5 report
+commit `29adc6d02718c63b1adceee13ddb68a5fac4390a`. The independent Track 8 reviewer approved the
+final evidence checks after confirming mail classification, exact nested-JAR integrity, and
+acceptance checklist consistency.
+
 Track 5 added production bytecode scanning and the class usage JSON report in commit `29adc6d`.
 Track 8 now supplies the preserved Spring production output and class-load trace to that report,
 and checks the result in the packaged fixture lifecycle.
