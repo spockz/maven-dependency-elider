@@ -12,11 +12,13 @@ import com.networknt.schema.SpecVersion;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
@@ -33,6 +35,7 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.LocalVariableCouldBeFinal",
+  "PMD.TooManyMethods",
   "PMD.UnitTestContainsTooManyAsserts"
 })
 class CycloneDxSbomGeneratorTest {
@@ -80,15 +83,143 @@ class CycloneDxSbomGeneratorTest {
             .formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(jar)));
     assertThat(component.path("hashes").get(0).path("content").asText()).isEqualTo(expectedHash);
 
-    byte[] schemaBytes;
-    try (InputStream schemaStream = getClass().getResourceAsStream("/schema/bom-1.6.schema.json")) {
-      assertThat(schemaStream).isNotNull();
-      schemaBytes = schemaStream.readAllBytes();
-    }
-    assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(schemaBytes)))
-        .isEqualTo("18f57f7482593bad9f21b4feed09084640cbeff419d62ad5090c5ceccca5b37d");
-    JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
-    assertThat(factory.getSchema(JSON.readTree(schemaBytes)).validate(bom)).isEmpty();
+    assertSchemaValid(readPinnedSchema(), bom);
+  }
+
+  @Test
+  void writesSchemaValidTrimPedigreeWithOriginalAndTrimmedDigests() throws Exception {
+    final Path original = temp.resolve("original.jar");
+    final Path trimmed = temp.resolve("trimmed.jar");
+    final Path output = temp.resolve("trimmed-bom.json");
+    Files.writeString(original, "original artifact bytes");
+    Files.writeString(trimmed, "trimmed artifact bytes");
+    final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "library", "1.2");
+    final ArtifactTrimRecord record = trimRecord(coordinate, original, trimmed, 12, 5);
+    final ArtifactFileRef inventory = ArtifactFileRef.fromPath(coordinate, trimmed);
+    final ElisionDecision decision =
+        new ElisionDecision(Set.of(coordinate), Set.of(), Map.of(), Map.of(), 0);
+
+    GENERATOR.write(output, ROOT, List.of(inventory), decision, METADATA, List.of(record));
+
+    final JsonNode bom = JSON.readTree(output.toFile());
+    final JsonNode component = bom.path("components").get(0);
+    assertThat(component.path("hashes").get(0).path("content").asText())
+        .isEqualTo(record.trimmedSha256());
+    assertThat(component.path("pedigree").path("ancestors").get(0).path("purl").asText())
+        .isEqualTo("pkg:maven/org.example/library@1.2");
+    assertThat(component.path("bom-ref").asText())
+        .isNotEqualTo(component.path("pedigree").path("ancestors").get(0).path("bom-ref").asText());
+    assertThat(
+            component
+                .path("pedigree")
+                .path("ancestors")
+                .get(0)
+                .path("hashes")
+                .get(0)
+                .path("content")
+                .asText())
+        .isEqualTo(record.originalSha256());
+    assertThat(component.path("pedigree").path("patches").get(0).path("type").asText())
+        .isEqualTo("unofficial");
+    assertThat(
+            component
+                .path("pedigree")
+                .path("patches")
+                .get(0)
+                .path("diff")
+                .path("text")
+                .path("content")
+                .asText())
+        .isEqualTo("Trimmed 7 unreferenced classes via ProGuard Core link closure");
+    assertThat(component.path("properties").findValuesAsText("name"))
+        .contains("elider:status", "elider:retainedClasses", "elider:totalClasses");
+    assertThat(component.path("properties").findValuesAsText("value"))
+        .contains("trimmed", "5", "12");
+
+    assertSchemaValid(readPinnedSchema(), bom);
+  }
+
+  @Test
+  void rejectsDuplicateOrOrphanTrimRecords() throws Exception {
+    final Path original = temp.resolve("identity-original.jar");
+    final Path trimmed = temp.resolve("identity-trimmed.jar");
+    Files.writeString(original, "original");
+    Files.writeString(trimmed, "trimmed");
+    final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "present", "1");
+    final ArtifactTrimRecord record = trimRecord(coordinate, original, trimmed, 2, 1);
+    final ArtifactFileRef ref = ArtifactFileRef.fromPath(coordinate, trimmed);
+    final ElisionDecision decision =
+        new ElisionDecision(Set.of(coordinate), Set.of(), Map.of(), Map.of(), 0);
+
+    assertThatThrownBy(
+            () ->
+                GENERATOR.generate(ROOT, List.of(ref), decision, METADATA, List.of(record, record)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Duplicate trim record");
+
+    final ArtifactTrimRecord orphan =
+        trimRecord(ArtifactCoordinate.of("org.example", "orphan", "1"), original, trimmed, 2, 1);
+    assertThatThrownBy(
+            () -> GENERATOR.generate(ROOT, List.of(ref), decision, METADATA, List.of(orphan)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("no retained inventory component");
+  }
+
+  @Test
+  void rejectsTrimRecordPathAndDigestMismatches() throws Exception {
+    final Path original = temp.resolve("mismatch-original.jar");
+    final Path trimmed = temp.resolve("mismatch-trimmed.jar");
+    final Path otherOutput = temp.resolve("mismatch-other.jar");
+    Files.writeString(original, "original");
+    Files.writeString(trimmed, "trimmed");
+    Files.writeString(otherOutput, "other output");
+    final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "mismatch", "1");
+    final ArtifactTrimRecord record = trimRecord(coordinate, original, trimmed, 3, 2);
+    final ArtifactFileRef ref = ArtifactFileRef.fromPath(coordinate, otherOutput);
+    final ElisionDecision decision =
+        new ElisionDecision(Set.of(coordinate), Set.of(), Map.of(), Map.of(), 0);
+
+    assertThatThrownBy(
+            () -> GENERATOR.generate(ROOT, List.of(ref), decision, METADATA, List.of(record)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("output path does not match");
+
+    final ArtifactFileRef trimmedRef = ArtifactFileRef.fromPath(coordinate, trimmed);
+    final ArtifactTrimRecord badDigest =
+        new ArtifactTrimRecord(
+            coordinate,
+            original,
+            record.originalSha256(),
+            record.originalSha1(),
+            trimmed,
+            "0".repeat(64),
+            record.trimmedSha1(),
+            record.totalClasses(),
+            record.retainedClasses());
+    assertThatThrownBy(
+            () ->
+                GENERATOR.generate(
+                    ROOT, List.of(trimmedRef), decision, METADATA, List.of(badDigest)))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Trimmed artifact digest does not match");
+
+    final ArtifactTrimRecord badOriginalDigest =
+        new ArtifactTrimRecord(
+            coordinate,
+            original,
+            "0".repeat(64),
+            record.originalSha1(),
+            trimmed,
+            record.trimmedSha256(),
+            record.trimmedSha1(),
+            record.totalClasses(),
+            record.retainedClasses());
+    assertThatThrownBy(
+            () ->
+                GENERATOR.generate(
+                    ROOT, List.of(trimmedRef), decision, METADATA, List.of(badOriginalDigest)))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Original artifact digest does not match");
   }
 
   @Test
@@ -211,5 +342,47 @@ class CycloneDxSbomGeneratorTest {
     assertThatThrownBy(() -> GENERATOR.write(output, ROOT, Set.of(missing), decision, METADATA))
         .isInstanceOf(IOException.class);
     assertThat(Files.readString(output)).isEqualTo("previous");
+  }
+
+  private byte[] readPinnedSchema() throws IOException {
+    try (InputStream schemaStream = getClass().getResourceAsStream("/schema/bom-1.6.schema.json")) {
+      assertThat(schemaStream).isNotNull();
+      final byte[] schemaBytes = schemaStream.readAllBytes();
+      assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(schemaBytes)))
+          .isEqualTo("18f57f7482593bad9f21b4feed09084640cbeff419d62ad5090c5ceccca5b37d");
+      return schemaBytes;
+    } catch (final NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("SHA-256 is unavailable", exception);
+    }
+  }
+
+  private void assertSchemaValid(final byte[] schemaBytes, final JsonNode bom) throws IOException {
+    final JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
+    assertThat(factory.getSchema(JSON.readTree(schemaBytes)).validate(bom)).isEmpty();
+  }
+
+  private static ArtifactTrimRecord trimRecord(
+      final ArtifactCoordinate coordinate,
+      final Path original,
+      final Path trimmed,
+      final int totalClasses,
+      final int retainedClasses)
+      throws IOException, NoSuchAlgorithmException {
+    return new ArtifactTrimRecord(
+        coordinate,
+        original,
+        digest(original, "SHA-256"),
+        digest(original, "SHA-1"),
+        trimmed,
+        digest(trimmed, "SHA-256"),
+        digest(trimmed, "SHA-1"),
+        totalClasses,
+        retainedClasses);
+  }
+
+  private static String digest(final Path path, final String algorithm)
+      throws IOException, NoSuchAlgorithmException {
+    return HexFormat.of()
+        .formatHex(MessageDigest.getInstance(algorithm).digest(Files.readAllBytes(path)));
   }
 }

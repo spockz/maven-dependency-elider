@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,8 +17,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
@@ -34,13 +37,15 @@ import java.util.UUID;
   "PMD.CommentRequired",
   "PMD.CommentSize",
   "PMD.CyclomaticComplexity",
+  "PMD.GodClass",
   "PMD.ConsecutiveAppendsShouldReuse",
   "PMD.LawOfDemeter",
   "PMD.LocalVariableCouldBeFinal",
   "PMD.LooseCoupling",
   "PMD.MethodArgumentCouldBeFinal",
   "PMD.ShortVariable",
-  "PMD.UseExplicitTypes"
+  "PMD.UseExplicitTypes",
+  "PMD.TooManyMethods"
 })
 public final class CycloneDxSbomGenerator {
   private static final ObjectMapper JSON = new ObjectMapper();
@@ -100,8 +105,20 @@ public final class CycloneDxSbomGenerator {
       ElisionDecision decision,
       DocumentMetadata metadata)
       throws IOException {
+    write(output, root, appliedRetainedInventory, decision, metadata, Set.of());
+  }
+
+  /** Writes an inventory with provenance records for any trimmed dependency artifacts. */
+  public void write(
+      Path output,
+      RootIdentity root,
+      Collection<ArtifactFileRef> appliedRetainedInventory,
+      ElisionDecision decision,
+      DocumentMetadata metadata,
+      Collection<ArtifactTrimRecord> trimRecords)
+      throws IOException {
     Objects.requireNonNull(output, "output must not be null");
-    byte[] bytes = generate(root, appliedRetainedInventory, decision, metadata);
+    byte[] bytes = generate(root, appliedRetainedInventory, decision, metadata, trimRecords);
     Path absolute = output.toAbsolutePath();
     Path parent = absolute.getParent();
     if (parent == null) {
@@ -124,10 +141,21 @@ public final class CycloneDxSbomGenerator {
       ElisionDecision decision,
       DocumentMetadata metadata)
       throws IOException {
+    return generate(root, inventory, decision, metadata, Set.of());
+  }
+
+  byte[] generate(
+      RootIdentity root,
+      Collection<ArtifactFileRef> inventory,
+      ElisionDecision decision,
+      DocumentMetadata metadata,
+      Collection<ArtifactTrimRecord> trimRecords)
+      throws IOException {
     Objects.requireNonNull(root, "root must not be null");
     Objects.requireNonNull(inventory, "inventory must not be null");
     Objects.requireNonNull(decision, "decision must not be null");
     Objects.requireNonNull(metadata, "metadata must not be null");
+    Objects.requireNonNull(trimRecords, "trimRecords must not be null");
     TreeMap<String, ComponentEntry> components = new TreeMap<>();
     Set<ArtifactCoordinate> inventoryCoordinates = new HashSet<>();
     for (ArtifactFileRef ref : inventory) {
@@ -165,6 +193,8 @@ public final class CycloneDxSbomGenerator {
         throw new IllegalArgumentException("Applied inventory contains elided artifact: " + elided);
       }
     }
+    final Map<String, ArtifactTrimRecord> trimsByIdentity =
+        validateTrimRecords(trimRecords, components);
 
     ObjectNode bom = JSON.createObjectNode();
     bom.put("$schema", "http://cyclonedx.org/schema/bom-1.6.schema.json");
@@ -195,23 +225,17 @@ public final class CycloneDxSbomGenerator {
     rootComponent.put("purl", rootComponent.path("bom-ref").asText());
     ArrayNode outComponents = bom.putArray("components");
     for (ComponentEntry entry : components.values()) {
-      outComponents.add(component(entry));
+      outComponents.add(component(entry, trimsByIdentity.get(identity(entry.ref.coordinate()))));
     }
     return JSON.writeValueAsBytes(bom);
   }
 
-  private static ObjectNode component(ComponentEntry entry) throws IOException {
+  private static ObjectNode component(ComponentEntry entry, ArtifactTrimRecord trimRecord)
+      throws IOException {
     ArtifactCoordinate c = entry.ref.coordinate();
     ObjectNode node = JSON.createObjectNode();
     node.put("type", "library");
-    String purl =
-        "pkg:maven/"
-            + purl(c.groupId())
-            + "/"
-            + purl(c.artifactId())
-            + "@"
-            + purl(c.version())
-            + purlQualifiers(c);
+    String purl = componentPurl(c);
     node.put("bom-ref", purl);
     node.put("group", c.groupId());
     node.put("name", c.artifactId());
@@ -225,7 +249,118 @@ public final class CycloneDxSbomGenerator {
     if (!c.classifier().isEmpty()) {
       properties.addObject().put("name", "maven:classifier").put("value", c.classifier());
     }
+    if (trimRecord != null) {
+      properties.addObject().put("name", "elider:status").put("value", "trimmed");
+      properties
+          .addObject()
+          .put("name", "elider:retainedClasses")
+          .put("value", Integer.toString(trimRecord.retainedClasses()));
+      properties
+          .addObject()
+          .put("name", "elider:totalClasses")
+          .put("value", Integer.toString(trimRecord.totalClasses()));
+      addPedigree(node, entry, trimRecord);
+    }
     return node;
+  }
+
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  private static Map<String, ArtifactTrimRecord> validateTrimRecords(
+      Collection<ArtifactTrimRecord> trimRecords, TreeMap<String, ComponentEntry> components)
+      throws IOException {
+    Map<String, ArtifactTrimRecord> records = new HashMap<>();
+    for (ArtifactTrimRecord record : trimRecords) {
+      Objects.requireNonNull(record, "trim record must not be null");
+      String key = identity(record.coordinate());
+      ComponentEntry component = components.get(key);
+      if (component == null) {
+        throw new IllegalArgumentException(
+            "Trim record has no retained inventory component: " + key);
+      }
+      if (!component.scopes.contains(record.coordinate().scope())) {
+        throw new IllegalArgumentException(
+            "Trim record scope is missing from applied inventory: " + key);
+      }
+      if (records.putIfAbsent(key, record) != null) {
+        throw new IllegalArgumentException("Duplicate trim record for artifact identity " + key);
+      }
+      validateTrimRecord(record, component);
+    }
+    return records;
+  }
+
+  private static void validateTrimRecord(ArtifactTrimRecord record, ComponentEntry component)
+      throws IOException {
+    Path outputPath = record.trimmedPath().toAbsolutePath().normalize();
+    Path inventoryPath = component.ref.filePath().toAbsolutePath().normalize();
+    if (!outputPath.equals(inventoryPath)) {
+      throw new IllegalArgumentException(
+          "Trim record output path does not match retained inventory for "
+              + identity(record.coordinate()));
+    }
+    if (!Files.isRegularFile(record.originalPath()) || !Files.isRegularFile(outputPath)) {
+      throw new IOException("Trim record paths must reference regular files");
+    }
+    if (Files.isSameFile(record.originalPath(), outputPath)) {
+      throw new IllegalArgumentException("Trim record output must differ from original artifact");
+    }
+    if (!record.originalSha256().equals(sha256(record.originalPath()))) {
+      throw new IOException("Original artifact digest does not match trim record");
+    }
+    if (!record.trimmedSha256().equals(sha256(outputPath))) {
+      throw new IOException("Trimmed artifact digest does not match trim record");
+    }
+  }
+
+  private static void addPedigree(
+      ObjectNode component, ComponentEntry entry, ArtifactTrimRecord record) throws IOException {
+    ObjectNode pedigree = component.putObject("pedigree");
+    pedigree.putArray("ancestors").add(originalComponent(entry, record));
+    ObjectNode patch = pedigree.putArray("patches").addObject();
+    patch.put("type", "unofficial");
+    patch
+        .putObject("diff")
+        .putObject("text")
+        .put("contentType", "text/plain")
+        .put(
+            "content",
+            "Trimmed "
+                + (record.totalClasses() - record.retainedClasses())
+                + " unreferenced classes via ProGuard Core link closure");
+  }
+
+  private static ObjectNode originalComponent(ComponentEntry entry, ArtifactTrimRecord record) {
+    ArtifactCoordinate coordinate = record.coordinate();
+    String purl = componentPurl(coordinate);
+    ObjectNode ancestor = JSON.createObjectNode();
+    ancestor.put("type", "library");
+    ancestor.put("bom-ref", purl + "#original");
+    ancestor.put("group", coordinate.groupId());
+    ancestor.put("name", coordinate.artifactId());
+    ancestor.put("version", coordinate.version());
+    ancestor.put("purl", purl);
+    ancestor
+        .putArray("hashes")
+        .addObject()
+        .put("alg", "SHA-256")
+        .put("content", record.originalSha256());
+    ArrayNode properties = ancestor.putArray("properties");
+    properties.addObject().put("name", "maven:scope").put("value", String.join(",", entry.scopes));
+    properties.addObject().put("name", "maven:type").put("value", coordinate.type());
+    if (!coordinate.classifier().isEmpty()) {
+      properties.addObject().put("name", "maven:classifier").put("value", coordinate.classifier());
+    }
+    return ancestor;
+  }
+
+  private static String componentPurl(ArtifactCoordinate coordinate) {
+    return "pkg:maven/"
+        + purl(coordinate.groupId())
+        + "/"
+        + purl(coordinate.artifactId())
+        + "@"
+        + purl(coordinate.version())
+        + purlQualifiers(coordinate);
   }
 
   private static void atomicReplace(Path temporary, Path destination) throws IOException {
