@@ -24,7 +24,7 @@ final class ElisionSummary {
         inputCount == 0
             ? "N/A"
             : String.format(Locale.ROOT, "%.1f%%", removed * 100.0 / inputCount);
-    log.info("Dependency Elider analysis summary");
+    log.info("Dependency Elider summary");
     log.info("  Whole artifacts: " + removed + " / " + inputCount + " (" + percentage + ")");
     log.info("  Classes removed: 0 / N/A (N/A; stage not run)");
     log.info("  Methods removed: 0 / N/A (N/A; stage not run)");

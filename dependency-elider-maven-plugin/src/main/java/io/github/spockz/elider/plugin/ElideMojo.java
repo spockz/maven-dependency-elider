@@ -1,36 +1,62 @@
-// WHY: Guards Maven lifecycle mutation until integration behavior is verified.
-// It prevents later phases from consuming an unproven artifact set.
+// WHY: Applies the trace-grounded artifact decision early enough for later Maven phases to use it.
 
 package io.github.spockz.elider.plugin;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.LinkedHashSet;
+import java.util.List;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
+import org.apache.maven.project.MavenProject;
 
-/** Fails before Maven project state is accessed. */
+/** Removes unobserved dependency JARs from Maven's in-memory artifact views. */
 @Mojo(
     name = "elide",
     defaultPhase = LifecyclePhase.INITIALIZE,
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
 public final class ElideMojo extends AbstractMojo {
-  /** Maven switch that disables this goal without side effects. */
+  /** Maven project whose artifact views are pruned. */
+  @Parameter(defaultValue = "${project}", readonly = true, required = true)
+  private MavenProject project;
+
+  /** Explicit runtime evidence used when the goal is active. */
+  @Parameter(property = "elide.traceFiles")
+  private List<File> traceFiles;
+
+  /** Global artifact identities that must remain in the build. */
+  @Parameter(property = "elide.excludedArtifacts")
+  private List<String> excludedArtifacts;
+
+  /** Maven switch that skips analysis and mutation. */
   @Parameter(property = "elide.skip", defaultValue = "false")
   private boolean skip;
 
-  /** Fails before reading or changing the Maven project artifact sets. */
+  /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
   @Override
   public void execute() throws MojoFailureException {
     if (skip) {
       return;
     }
-    throw new MojoFailureException(
-        "The elide goal is disabled: INITIALIZE artifact mutation has not been verified against "
-            + "forked Maven 3.9 resolution, classpath, and packaging behavior. Use the nonmutating "
-            + "analyze goal with explicit -Delide.traceFiles=... inputs.");
+    try {
+      final MavenElisionService service = new MavenElisionService();
+      final MavenElisionService.Analysis analysis =
+          service.analyze(project, traceFiles, excludedArtifacts);
+      final MavenElisionService.ApplyPlan plan = service.plan(project, analysis);
+      project.setArtifacts(new LinkedHashSet<>(plan.resolvedArtifacts()));
+      if (plan.directArtifactsPresent()) {
+        project.setDependencyArtifacts(new LinkedHashSet<>(plan.directArtifacts()));
+      }
+      ElisionSummary.report(getLog(), analysis.decision(), analysis.resolvedSnapshots().size());
+    } catch (final IOException | IllegalArgumentException exception) {
+      throw new MojoFailureException(
+          "Dependency elision failed: " + exception.getMessage(), exception);
+    }
   }
 
   /** Creates a Mojo instance for Maven injection. */

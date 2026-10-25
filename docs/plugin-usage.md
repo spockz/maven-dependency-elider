@@ -24,4 +24,6 @@ Only resolved regular JAR files are scanned. Non-JAR artifact types remain retai
 
 The summary reports whole-artifact elisions over the complete pre-analysis Maven artifact count. Surgical classes, methods, and fields are reported as zero with an unrun stage and N/A denominators. Cache status is unavailable.
 
-The `elide` goal is declared for `INITIALIZE` with test dependency resolution, but always fails before reading or mutating Maven project state. It will remain disabled until a forked Maven 3.9 end-to-end build proves that mutation survives subsequent resolution, compile/test classpath construction, and Shade packaging. Maven 4 compatibility remains unverified.
+The `elide` goal runs in `INITIALIZE` with test dependency resolution. It requires explicit trace inputs and applies the validated whole-artifact decision to Maven's resolved and direct artifact views before later lifecycle phases.
+
+`elide.skip` is a Boolean Maven user property (`-Delide.skip=true|false`). The CVE example fixtures bind the goal and default this property to `true` so baseline packaging remains available. Set it to `false` and supply `-Delide.traceFiles=...` to apply elision. Missing, malformed, unsupported, or unmatched trace evidence fails the goal.
