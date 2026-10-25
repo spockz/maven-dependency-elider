@@ -75,6 +75,8 @@ The cache worktree at `.scratch/worktrees/track-cache` on `track/cache` was inte
 
 The removed slicing worktree's four prototype files were verified against their archive hashes before removal. The prototype archive, cache patch, and all evidence remain under the primary checkout's `.scratch`; they are workspace-local, ignored artifacts, not published source. Retain them if moving the repository to another machine. No branches were deleted and nothing was pushed.
 
+Chat archival was attempted after repository closeout, but the app tool was unavailable on this host. The conversation remains open; a new session can use this handover directly.
+
 ## Next session
 
 1. Read this handover, the current README, ADR-0001/0002, RQ-0004's follow-up table, and the relevant RQ before editing.
