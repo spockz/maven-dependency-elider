@@ -51,6 +51,12 @@ final class DependencyDynamicRoots {
     final Set<String> roots = new LinkedHashSet<>();
     boolean declaresClassRoots = false;
     try (JarFile archive = new JarFile(jar.toFile())) {
+      final Set<String> jarClasses =
+          archive.stream()
+              .map(JarEntry::getName)
+              .filter(name -> name.endsWith(".class"))
+              .map(name -> name.substring(0, name.length() - ".class".length()).replace('/', '.'))
+              .collect(java.util.stream.Collectors.toSet());
       final Enumeration<JarEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
         final JarEntry entry = entries.nextElement();
@@ -119,7 +125,7 @@ final class DependencyDynamicRoots {
           readSpringImports(archive.getInputStream(entry), roots, name);
         } else if (SPRING_METADATA.equals(name)) {
           declaresClassRoots = true;
-          readSpringMetadata(archive.getInputStream(entry), roots);
+          readSpringMetadata(archive.getInputStream(entry), roots, jarClasses);
         }
       }
     }
@@ -166,24 +172,32 @@ final class DependencyDynamicRoots {
     }
   }
 
-  private static void readSpringMetadata(final InputStream input, final Set<String> roots)
+  private static void readSpringMetadata(
+      final InputStream input, final Set<String> roots, final Set<String> jarClasses)
       throws IOException {
     final Properties metadata = new Properties();
     try (InputStream stream = input) {
       metadata.load(stream);
     }
     for (final String propertyKey : metadata.stringPropertyNames()) {
-      final String marker = metadataMarker(propertyKey);
       final String value = metadata.getProperty(propertyKey);
-      if (marker == null) {
-        if (value.isEmpty() && isBinaryClassName(propertyKey)) {
-          roots.add(propertyKey);
-          continue;
+      if (jarClasses.contains(propertyKey)) {
+        if (!value.isEmpty()) {
+          throw new IOException("Unsupported Spring autoconfigure metadata key: " + propertyKey);
         }
+        roots.add(propertyKey);
+        continue;
+      }
+      final String marker = metadataMarker(propertyKey);
+      if (marker == null) {
         throw new IOException("Unsupported Spring autoconfigure metadata key: " + propertyKey);
       }
       final int conditionStart = propertyKey.lastIndexOf(marker);
-      roots.add(propertyKey.substring(0, conditionStart));
+      final String owner = propertyKey.substring(0, conditionStart);
+      if (!jarClasses.contains(owner)) {
+        throw new IOException("Spring autoconfigure metadata owner is not in the JAR: " + owner);
+      }
+      roots.add(owner);
       if (marker.endsWith("Before") || marker.endsWith("After")) {
         for (final String candidate : value.split("[,;\\s]+")) {
           if (!isBinaryClassName(candidate)) {
@@ -199,7 +213,8 @@ final class DependencyDynamicRoots {
               "Unsupported Spring autoconfigure order value: " + value, exception);
         }
       } else if (marker.endsWith("Conditional")
-          && classValuedCondition(propertyKey.substring(conditionStart + marker.length()))) {
+          && classValuedCondition(propertyKey.substring(conditionStart + marker.length()))
+          && !value.isBlank()) {
         for (final String candidate : value.split("[,;\\s]+")) {
           if (!isBinaryClassName(candidate)) {
             throw new IOException("Unsupported Spring autoconfigure class value: " + candidate);
@@ -219,18 +234,21 @@ final class DependencyDynamicRoots {
   }
 
   private static String metadataMarker(final String key) {
-    String selected = null;
-    int selectedIndex = -1;
-    for (final String marker :
+    for (final String suffix :
         Set.of(
-            ".Conditional", ".AutoConfigureBefore", ".AutoConfigureAfter", ".AutoConfigureOrder")) {
-      final int markerIndex = key.lastIndexOf(marker);
-      if (markerIndex > selectedIndex) {
-        selected = marker;
-        selectedIndex = markerIndex;
+            ".ConditionalOnClass",
+            ".ConditionalOnMissingClass",
+            ".ConditionalOnBean",
+            ".ConditionalOnMissingBean",
+            ".ConditionalOnSingleCandidate",
+            ".AutoConfigureBefore",
+            ".AutoConfigureAfter",
+            ".AutoConfigureOrder")) {
+      if (key.endsWith(suffix)) {
+        return suffix.startsWith(".Conditional") ? ".Conditional" : suffix;
       }
     }
-    return selectedIndex < 0 ? null : selected;
+    return null;
   }
 
   private static boolean isBinaryClassName(final String name) {

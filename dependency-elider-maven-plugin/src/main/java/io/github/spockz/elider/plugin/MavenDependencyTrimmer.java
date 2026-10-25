@@ -67,11 +67,7 @@ final class MavenDependencyTrimmer {
     }
   }
 
-  private record CacheManifest(String fingerprint, List<CacheEntry> entries) {
-    private CacheManifest {
-      entries = List.copyOf(entries);
-    }
-  }
+  private record CacheManifest(String fingerprint, List<CacheEntry> entries) {}
 
   private record CacheEntry(
       String originalPath,
@@ -84,13 +80,7 @@ final class MavenDependencyTrimmer {
       int retainedClasses,
       Set<String> roots,
       Set<String> retainedClassNames,
-      Set<String> reachableLibraryClasses) {
-    private CacheEntry {
-      roots = Set.copyOf(roots);
-      retainedClassNames = Set.copyOf(retainedClassNames);
-      reachableLibraryClasses = Set.copyOf(reachableLibraryClasses);
-    }
-  }
+      Set<String> reachableLibraryClasses) {}
 
   private MavenDependencyTrimmer() {}
 
@@ -446,7 +436,9 @@ final class MavenDependencyTrimmer {
     } catch (final IOException exception) {
       return null;
     }
-    if (!fingerprint.equals(manifest.fingerprint())
+    if (manifest == null
+        || manifest.entries() == null
+        || !fingerprint.equals(manifest.fingerprint())
         || manifest.entries().size() != candidates.size()) {
       return null;
     }
@@ -489,6 +481,9 @@ final class MavenDependencyTrimmer {
   private static boolean validCacheEntry(final CacheEntry entry, final CandidateWork candidate) {
     if (entry == null
         || !validDigest(entry.originalSha256(), 64)
+        || entry.roots() == null
+        || entry.retainedClassNames() == null
+        || entry.reachableLibraryClasses() == null
         || entry.totalClasses() != candidate.classes().size()
         || entry.retainedClasses() < 0
         || entry.retainedClasses() > entry.totalClasses()

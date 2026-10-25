@@ -90,6 +90,7 @@ final class ElideMojoTest {
   }
 
   @Test
+  @SuppressWarnings("PMD.NcssCount")
   void trimJarsRedirectsTheArtifactAndWritesPedigreeSbom()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact runtime = compiledArtifact();
@@ -152,34 +153,45 @@ final class ElideMojoTest {
     final ObjectNode manifest = (ObjectNode) mapper.readTree(cacheManifest.toFile());
     ((ObjectNode) manifest.path("entries").get(0)).putNull("trimmedSha256");
     mapper.writeValue(cacheManifest.toFile(), manifest);
-    final MavenElisionService.Analysis malformedCacheAnalysis =
-        new MavenElisionService()
-            .analyze(
-                project,
-                List.of(writeTrace("sample.Keep\n").toFile()),
-                List.of(),
-                null,
-                null,
-                false,
-                true,
-                List.of());
+    final String fingerprint = manifest.path("fingerprint").asText();
+    final MavenElisionService.Analysis malformedCacheAnalysis = analyzeTrim(project);
     assertThat(malformedCacheAnalysis.trimAnalysisRuns()).isPositive();
+
+    Files.writeString(cacheManifest, "null");
+    assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
+
+    final ObjectNode nullEntries = mapper.createObjectNode();
+    nullEntries.put("fingerprint", fingerprint);
+    nullEntries.putNull("entries");
+    mapper.writeValue(cacheManifest.toFile(), nullEntries);
+    assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
+
+    final ObjectNode nullEntry = mapper.createObjectNode();
+    nullEntry.put("fingerprint", fingerprint);
+    nullEntry.putArray("entries").addNull();
+    mapper.writeValue(cacheManifest.toFile(), nullEntry);
+    assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
+
     Files.writeString(expectedTrimmedPath, "tampered output");
-    final MavenElisionService.Analysis repairedAnalysis =
-        new MavenElisionService()
-            .analyze(
-                project,
-                List.of(writeTrace("sample.Keep\n").toFile()),
-                List.of(),
-                null,
-                null,
-                false,
-                true,
-                List.of());
+    final MavenElisionService.Analysis repairedAnalysis = analyzeTrim(project);
     assertThat(repairedAnalysis.trimAnalysisRuns()).isPositive();
     assertThat(expectedTrimmedPath).isRegularFile();
     mojo.execute();
     assertThat(runtime.getFile().toPath()).isEqualTo(expectedTrimmedPath);
+  }
+
+  private MavenElisionService.Analysis analyzeTrim(final MavenProject project)
+      throws IOException, MojoFailureException {
+    return new MavenElisionService()
+        .analyze(
+            project,
+            List.of(writeTrace("sample.Keep\n").toFile()),
+            List.of(),
+            null,
+            null,
+            false,
+            true,
+            List.of());
   }
 
   @Test
@@ -210,6 +222,15 @@ final class ElideMojoTest {
                         + "ConditionalOnCheckpointRestore {}"),
                 java.util.Map.entry(
                     "Resource.java", "package org.crac; public interface Resource {}"),
+                java.util.Map.entry(
+                    "KafkaStreamsAnnotationDrivenConfiguration.java",
+                    "package org.springframework.boot.autoconfigure.kafka; public class "
+                        + "KafkaStreamsAnnotationDrivenConfiguration {}"),
+                java.util.Map.entry(
+                    "TaskSchedulingConfigurations.java",
+                    "package org.springframework.boot.autoconfigure.task; public class "
+                        + "TaskSchedulingConfigurations { public static class "
+                        + "TaskSchedulerConfiguration {} }"),
                 java.util.Map.entry("BeforeAuto.java", "package chain; public class BeforeAuto {}"),
                 java.util.Map.entry("AfterAuto.java", "package chain; public class AfterAuto {}"),
                 java.util.Map.entry("Unused.java", "package chain; public class Unused {}")),
@@ -236,7 +257,11 @@ final class ElideMojoTest {
                 "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports",
                 "chain.SpringAuto\n",
                 "META-INF/spring.factories",
-                "org.example.Factory=chain.Factory\n",
+                "org.example.Factory=chain.Factory\n"));
+    final Path metadataJar =
+        rewriteJar(
+            cjar,
+            java.util.Map.of(
                 "META-INF/spring-autoconfigure-metadata.properties",
                 "chain.SpringAuto.ConditionalOnClass=chain.MetadataCondition\n"
                     + "org.springframework.boot.autoconfigure.AutoConfiguration=\n"
@@ -244,6 +269,12 @@ final class ElideMojoTest {
                     + "org.springframework.boot.autoconfigure.condition."
                     + "ConditionalOnCheckpointRestore."
                     + "ConditionalOnClass=org.crac.Resource\n"
+                    + "org.springframework.boot.autoconfigure.kafka."
+                    + "KafkaStreamsAnnotationDrivenConfiguration.ConditionalOnBean=\n"
+                    + "org.springframework.boot.autoconfigure.task.TaskSchedulingConfigurations$"
+                    + "TaskSchedulerConfiguration.ConditionalOnBean=\n"
+                    + "org.springframework.boot.autoconfigure.condition."
+                    + "ConditionalOnCheckpointRestore=\n"
                     + "chain.SpringAuto.AutoConfigureBefore=chain.BeforeAuto\n"
                     + "chain.SpringAuto.AutoConfigureAfter=chain.AfterAuto\n"
                     + "chain.SpringAuto.AutoConfigureOrder=10\n"));
@@ -251,7 +282,7 @@ final class ElideMojoTest {
         descriptorJar("service-owner.jar", "META-INF/services/chain.End", "chain.Provider\n");
     final Artifact a = runtimeArtifact("chain-a", ajar);
     final Artifact b = runtimeArtifact("chain-b", bjar);
-    final Artifact c = runtimeArtifact("chain-c", cjar);
+    final Artifact c = runtimeArtifact("chain-c", metadataJar);
     final Artifact serviceOwner = runtimeArtifact("service-owner", serviceJar);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(a, b, c, serviceOwner));
     final MavenProject project = new MavenProject();
@@ -290,6 +321,16 @@ final class ElideMojoTest {
     assertJarContains(c, "org/springframework/boot/autoconfigure/AutoConfiguration$Nested.class");
     assertJarContains(
         c, "org/springframework/boot/autoconfigure/condition/ConditionalOnCheckpointRestore.class");
+    assertJarContains(
+        c,
+        "org/springframework/boot/autoconfigure/kafka/"
+            + "KafkaStreamsAnnotationDrivenConfiguration.class");
+    assertJarContains(
+        c, "org/springframework/boot/autoconfigure/task/TaskSchedulingConfigurations.class");
+    assertJarContains(
+        c,
+        "org/springframework/boot/autoconfigure/task/TaskSchedulingConfigurations$"
+            + "TaskSchedulerConfiguration.class");
     assertJarContains(c, "org/crac/Resource.class");
     assertJarContains(c, "chain/BeforeAuto.class");
     assertJarContains(c, "chain/AfterAuto.class");
