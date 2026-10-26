@@ -1028,14 +1028,18 @@ final class ElideMojoTest {
     final Path firstLibrary = tempDir.resolve("first.jar");
     final Path secondLibrary = tempDir.resolve("second.jar");
     final Path ctSym = tempDir.resolve("ct.sym");
+    final Path otherJdkCtSym = tempDir.resolve("other-jdk/lib/ct.sym");
     final Path jmod = tempDir.resolve("java.base.jmod");
     Files.writeString(firstLibrary, "first-bytes");
     Files.writeString(secondLibrary, "second-bytes");
     Files.writeString(ctSym, "ct-sym-bytes");
+    Files.createDirectories(otherJdkCtSym.getParent());
+    Files.writeString(otherJdkCtSym, "other-jdk-platform-bytes");
     Files.writeString(jmod, "jmod-bytes");
     final java.nio.file.attribute.FileTime timestamp =
         java.nio.file.attribute.FileTime.fromMillis(1_700_000_000_000L);
     Files.setLastModifiedTime(firstLibrary, timestamp);
+    Files.setLastModifiedTime(ctSym, timestamp);
     final List<String> candidateIdentities = List.of("org.example:first:1.0:jar");
     final String baseline =
         MavenDependencyTrimmer.fingerprintForInputs(
@@ -1053,6 +1057,26 @@ final class ElideMojoTest {
                 List.of(secondLibrary, firstLibrary),
                 Set.of("sample.Root"),
                 List.of(ctSym),
+                21,
+                4,
+                "proguard-core-9.1.10"))
+        .isNotEqualTo(baseline);
+    assertThat(
+            MavenDependencyTrimmer.fingerprintForInputs(
+                candidateIdentities,
+                List.of(firstLibrary, secondLibrary),
+                Set.of("sample.Root"),
+                List.of(ctSym),
+                17,
+                4,
+                "proguard-core-9.1.10"))
+        .isNotEqualTo(baseline);
+    assertThat(
+            MavenDependencyTrimmer.fingerprintForInputs(
+                candidateIdentities,
+                List.of(firstLibrary, secondLibrary),
+                Set.of("sample.Root"),
+                List.of(otherJdkCtSym),
                 21,
                 4,
                 "proguard-core-9.1.10"))
@@ -1110,6 +1134,21 @@ final class ElideMojoTest {
 
     Files.writeString(firstLibrary, "other-bytes");
     Files.setLastModifiedTime(firstLibrary, timestamp);
+    final String dependencyChangedFingerprint =
+        MavenDependencyTrimmer.fingerprintForInputs(
+            candidateIdentities,
+            List.of(firstLibrary, secondLibrary),
+            Set.of("sample.Root"),
+            List.of(ctSym),
+            21,
+            4,
+            "proguard-core-9.1.10");
+    assertThat(dependencyChangedFingerprint).isNotEqualTo(baseline);
+    final long ctSymSize = Files.size(ctSym);
+    Files.writeString(ctSym, "xt-sym-bytes");
+    Files.setLastModifiedTime(ctSym, timestamp);
+    assertThat(Files.size(ctSym)).isEqualTo(ctSymSize);
+    assertThat(Files.getLastModifiedTime(ctSym)).isEqualTo(timestamp);
     assertThat(
             MavenDependencyTrimmer.fingerprintForInputs(
                 candidateIdentities,
@@ -1119,7 +1158,7 @@ final class ElideMojoTest {
                 21,
                 4,
                 "proguard-core-9.1.10"))
-        .isNotEqualTo(baseline);
+        .isNotEqualTo(dependencyChangedFingerprint);
   }
 
   @Test
