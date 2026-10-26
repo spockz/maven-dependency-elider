@@ -88,6 +88,9 @@ Enforce strict compliance with Architecture Decision Records (ADRs) partitioned 
 * **Do**: Evaluate slice and track scope against the current work package's recorded acceptance criteria. At final integration, report the work package as complete or incomplete independently of whether the session is closing; a handover preserves unfinished requirements for a new package in a later session.
 * **Do**: Keep code modifications strictly within assigned packages, interfaces, and file boundaries.
 * **Do**: Confirm that every requirement in the slice assignment is verifiable in code, documentation, or tests.
+* **Do**: When code changes user-visible behavior, supported inputs, configuration, Maven goal behavior, examples, or an architectural finding, verify that applicable user-facing documentation is updated in the same slice. Check README and example guidance, Maven usage/site source pages, goal/help text, and source comments or Javadocs that are published or copied into those pages. Require an update when relevant; avoid unrelated documentation churn and record a brief not-applicable rationale when appropriate.
+* **Do**: Search existing research questions relevant to the changed behavior. Check whether the new implementation or evidence answers part of a question; update it with findings and code/test links, and mark resolved or implemented portions accordingly. Keep open questions and limits explicit; leave unrelated research questions untouched.
+* **Do**: Include documentation and research-question paths, or a brief not-applicable rationale, in the review receipt.
 * **Don't**: Don't perform speculative refactorings on unrelated subsystems.
 * **Don't**: Don't introduce unassigned feature expansions.
 
@@ -213,9 +216,9 @@ The reviewer issues `CHANGES REQUESTED` if any finding across Pillars 1 to 4 req
 - Status: [Satisfied | Deficient]
 - Findings: <Code scope ADR adherence, Test scope ADR adherence, Codified invariant citations>
 
-#### 4. Assignment and Scope Fidelity
+#### 4. Assignment, Scope, Documentation, and Research Fidelity
 - Status: [Satisfied | Deficient]
-- Findings: <Coverage of slice requirements, absence of scope creep>
+- Findings: <Coverage of slice requirements; absence of scope creep; applicable README, Maven usage/site, goal/help, and published comment updates; related research-question updates or not-applicable rationale>
 
 #### 5. Gemini MCP Bridge Findings & Arbitration
 - Status: [Concur | Deficiencies Adopted | Findings Dismissed With Rationale | Bridge Unavailable - Failed Open | N/A]

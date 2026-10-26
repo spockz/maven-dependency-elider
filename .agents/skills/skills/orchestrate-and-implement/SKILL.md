@@ -82,7 +82,10 @@ Distinguish session closeout from work package completion. Mark a work package c
 
 ### 5. Review Gates and Strictness Bar
 
-* **Do**: Review every slice against the four Review Triangle pillars: Code and Tests, Code Quality, ADR Adherence, and Scope Fidelity.
+* **Do**: Review every slice against the four Review Triangle pillars: Code and Tests, Code Quality, ADR Adherence, and Scope Fidelity. Scope Fidelity review also checks Documentation and Research Traceability.
+* **Do**: When a code change changes user-visible behavior, supported inputs, configuration, Maven goal behavior, examples, or an architectural finding, require the implementer to update applicable user-facing documentation in the same slice. Check README content, Maven usage and site source pages, goal/help text, and source comments or Javadocs that are published or copied into those pages. Do not require unrelated documentation churn; record why a surface is not applicable when its relevance is unclear.
+* **Do**: Review existing research questions relevant to the changed behavior. Check whether the implementation adds evidence or resolves part of the question; update the question with the finding and implementation/test links, and mark resolved or implemented portions accordingly. Keep unresolved questions and limitations explicit, and do not edit unrelated research questions.
+* **Do**: Include documentation and research-question findings in the structured review receipt, including updated paths or a brief not-applicable rationale.
 * **Do**: Enforce a strict, zero-compromise review bar: issue `CHANGES REQUESTED` for any stylistic defect, ambiguous naming, imprecise comment, or lint warning.
 * **Do**: Require a dedicated `fixup!` commit (or amended commit) resolving findings before slice approval.
 * **Do**: Persist structured review receipts to `.scratch/reviews/`.
@@ -197,8 +200,9 @@ flowchart TD
 
 1. **Define Work Package**: Record its name or identifier, owning thread/session, selected scope, acceptance criteria, and source documents in `.scratch/orchestration-status.md`. Select a bounded package for this session rather than assuming an entire project roadmap is the assignment. If continuing work from another session, create a new package linked to the prior package's handover.
 2. **Ingest Specification**: Ingest the specification from a committed path (e.g. [`docs/handovers/LUNA_HANDOVER_REFACTORING_TAXONOMY.md`](file:///Users/alessandro/sources/semantic-editor/docs/handovers/LUNA_HANDOVER_REFACTORING_TAXONOMY.md)) or write inline prompt markdown to `.scratch/handover.md`.
-3. **Architectural Scrutiny**: The Critical Architect verifies the work package's functional requirements, acceptance criteria, ADR alignment, and decoupling seams.
-4. **Clearance**: Issue formal track boundaries and DAG sequencing within the work package to the coordinator thread.
+3. **Documentation and Research Discovery**: Identify the user-facing documentation surfaces affected by the requested behavior, including README and example documentation, Maven usage/site source pages, goal/help text, and published API comments where applicable. Search existing research questions for related decisions, evidence, and unresolved concerns; record the relevant documents and whether they may need an update.
+4. **Architectural Scrutiny**: The Critical Architect verifies the work package's functional requirements, acceptance criteria, ADR alignment, decoupling seams, and identified documentation/research follow-ups.
+5. **Clearance**: Issue formal track boundaries and DAG sequencing within the work package to the coordinator thread.
 
 ### Step 2: Formulate DAG and Partition Slices
 
@@ -227,7 +231,7 @@ flowchart TD
 
 ### Step 4: Implement Slices with Surgical Iteration and Pipelining
 
-1. **Implement & Test**: Implement slice modifications, codify ADR invariants in tests (`TestADR<XXXX>_*`), and verify using surgical test commands.
+1. **Implement, Document, and Test**: Implement slice modifications and update applicable user-facing documentation and published comments alongside code whose behavior or contract changes. Revisit the relevant research questions identified during discovery; add new evidence and mark implemented or fixed portions with links to code and tests. Codify ADR invariants in tests (`TestADR<XXXX>_*`) and verify using surgical test commands.
 2. **Execute Sweep**: Run the complete repository sweep (`make check`).
 3. **Commit**: Stage only the assigned slice targets and commit with a descriptive message:
 
@@ -241,8 +245,8 @@ flowchart TD
 
 ### Step 5: Execute Track Review Gate
 
-1. **Inspect Review Triangle**: Track Reviewer evaluates Code and Tests, Code Quality, ADR Adherence, and Scope Fidelity.
-2. **Issue Verdict**: Record structured verdict to `.scratch/reviews/<track-name>-slice-<id>.md`:
+1. **Inspect Review Triangle**: Track Reviewer evaluates Code and Tests, Code Quality, ADR Adherence, and Scope Fidelity. As part of Scope Fidelity, confirm that relevant README, Maven usage/site pages, goal/help descriptions, and published source comments were updated with the implementation. Inspect related research questions for new findings and ensure resolved portions are marked implemented/fixed with evidence; request changes when applicable updates are missing or stale.
+2. **Issue Verdict**: Record structured verdict to `.scratch/reviews/<track-name>-slice-<id>.md`, naming updated documentation and research-question paths or explaining briefly why none apply:
    * **CHANGES REQUESTED**: Mandate fixups for any stylistic, naming, comment, or structural flaw.
    * **APPROVED**: Slice accepted and locked.
 
