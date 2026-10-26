@@ -239,7 +239,6 @@ For the deterministic two-artifact Mojo fixture, the unused input JAR is 151 byt
 The estimate excludes class-level trimming and may differ from the final package delta. Analyze output has no class, method, or field stage-not-run rows; `elide` keeps its existing summary behavior. See [Maven plugin usage](docs/plugin-usage.md) for supported trace formats and configuration.
 
 ## Requirements
-The Maven plugin provides a nonmutating, trace-based `analyze` goal. Its summary qualifies removals as artifacts that would be elided by that analysis and gives the exact sum of the original JAR file sizes as an estimate; final package savings may differ, and `analyze` does not run intra-JAR trimming. Install the plugin and its core dependency to the local repository, then run it in the consumer project with an explicit trace:
 
 * **JDK 21** or newer.
 * Bash and the `timeout` utility for `make test-examples`.
