@@ -67,17 +67,8 @@ record MavenElisionReportSnapshot(
       final org.apache.maven.project.MavenProject project,
       final MavenElisionService.Analysis analysis)
       throws IOException {
-    final List<DroppedArtifact> dropped = new ArrayList<>();
-    for (final ArtifactCoordinate coordinate : analysis.decision().elidedArtifacts()) {
-      final MavenElisionService.ArtifactSnapshot artifact =
-          snapshotForCoordinate(analysis, coordinate);
-      final Path path = artifact.filePath();
-      if (path == null || !Files.isRegularFile(path)) {
-        throw new IOException("Elided artifact has no regular input JAR: " + coordinate);
-      }
-      dropped.add(new DroppedArtifact(coordinate.toString(), Files.size(path)));
-    }
-    dropped.sort(Comparator.comparing(DroppedArtifact::coordinate));
+    final DroppedArtifactSummary droppedSummary = droppedArtifactSummary(analysis);
+    final List<DroppedArtifact> dropped = droppedSummary.artifacts();
 
     final List<TrimmedArtifact> trimmed =
         analysis.trimRecords().stream()
@@ -89,7 +80,6 @@ record MavenElisionReportSnapshot(
                         record.prunedClassBytes()))
             .sorted(Comparator.comparing(TrimmedArtifact::coordinate))
             .toList();
-    final long droppedBytes = sumDroppedArtifactBytes(dropped);
     final int prunedClasses = sumPrunedClassCounts(trimmed);
     final long prunedBytes = sumPrunedClassBytes(trimmed);
     final Path projectBaseDirectory = canonicalProjectDirectory(project);
@@ -101,11 +91,27 @@ record MavenElisionReportSnapshot(
         projectBaseDirectory.toString(),
         Instant.now().toString(),
         dropped.size(),
-        droppedBytes,
+        droppedSummary.originalJarBytes(),
         dropped,
         prunedClasses,
         prunedBytes,
         trimmed);
+  }
+
+  static DroppedArtifactSummary droppedArtifactSummary(final MavenElisionService.Analysis analysis)
+      throws IOException {
+    final List<DroppedArtifact> dropped = new ArrayList<>();
+    for (final ArtifactCoordinate coordinate : analysis.decision().elidedArtifacts()) {
+      final MavenElisionService.ArtifactSnapshot artifact =
+          snapshotForCoordinate(analysis, coordinate);
+      final Path path = artifact.filePath();
+      if (path == null || !Files.isRegularFile(path)) {
+        throw new IOException("Elided artifact has no regular input JAR: " + coordinate);
+      }
+      dropped.add(new DroppedArtifact(coordinate.toString(), Files.size(path)));
+    }
+    dropped.sort(Comparator.comparing(DroppedArtifact::coordinate));
+    return new DroppedArtifactSummary(dropped, sumDroppedArtifactBytes(dropped));
   }
 
   @SuppressWarnings("PMD.LawOfDemeter")
@@ -189,6 +195,13 @@ record MavenElisionReportSnapshot(
   record DroppedArtifact(String coordinate, long originalJarBytes) {
     DroppedArtifact {
       requireNonBlank(coordinate, "coordinate");
+      require(originalJarBytes >= 0, "originalJarBytes must not be negative");
+    }
+  }
+
+  record DroppedArtifactSummary(List<DroppedArtifact> artifacts, long originalJarBytes) {
+    DroppedArtifactSummary {
+      artifacts = List.copyOf(Objects.requireNonNull(artifacts, "artifacts"));
       require(originalJarBytes >= 0, "originalJarBytes must not be negative");
     }
   }

@@ -69,7 +69,7 @@ public final class AnalyzeMojo extends AbstractMojo {
                   sourceRootsComplete);
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
-      ElisionSummary.reportAnalysis(getLog(), analysis.decision(), analysis.resolvedSnapshots());
+      ElisionSummary.reportAnalysis(getLog(), analysis);
       if (getLog().isInfoEnabled()) {
         getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
       }

@@ -88,9 +88,13 @@ final class MavenElisionReportWriterTest {
     final MavenProject project = project();
 
     final MavenElisionReportSnapshot snapshot = MavenElisionReportSnapshot.from(project, analysis);
+    final MavenElisionReportSnapshot.DroppedArtifactSummary droppedArtifacts =
+        MavenElisionReportSnapshot.droppedArtifactSummary(analysis);
 
     assertThat(snapshot.wholeArtifactsDropped()).isOne();
     assertThat(snapshot.originalJarBytesDropped()).isEqualTo(2048);
+    assertThat(droppedArtifacts.artifacts()).isEqualTo(snapshot.droppedArtifacts());
+    assertThat(droppedArtifacts.originalJarBytes()).isEqualTo(snapshot.originalJarBytesDropped());
     assertThat(snapshot.programClassesPruned()).isEqualTo(4);
     assertThat(snapshot.uncompressedProgramClassBytesPruned()).isEqualTo(3096);
     assertThat(snapshot.droppedArtifacts())
