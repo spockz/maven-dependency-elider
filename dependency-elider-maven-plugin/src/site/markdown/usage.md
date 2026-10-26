@@ -3,7 +3,7 @@
 
 The nonmutating `analyze` goal reads explicit runtime trace files and reports artifacts that would be elided by this analysis. It also reports the exact sum of their original on-disk JAR sizes as an estimate; the final package delta may differ. It does not mutate Maven's artifact sets, classpaths, or packaged output. The analysis uses trim-disabled options, so it does not predict the additional changes from intra-JAR trimming.
 
-For practical configuration and compatibility questions, see the [User FAQ](faq.md). Implementation rationale and benchmark evidence are in the [Contributor Decision Register and Engineering FAQ](contributor-decisions-and-faq.md).
+For practical configuration and compatibility questions, see the [User FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/faq.md). Implementation rationale and benchmark evidence are in the [Contributor Decision Register and Engineering FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/contributor-decisions-and-faq.md).
 
 First, install this repository's plugin and core dependency using the repository wrapper:
 
