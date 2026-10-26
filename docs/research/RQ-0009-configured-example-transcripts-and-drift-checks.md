@@ -7,7 +7,7 @@ Open
 
 ## Current boundary
 
-The example reactor executes real Maven packaging and runtime scenarios, while README output and invocation examples are maintained separately. There is no generator/update/check command that captures those configured runs into checked-in documentation. This investigation uses PR #651's generator/update/check pattern as a reference: invocation configuration plus arguments, local execution, transcript capture, conservative volatile-output normalization, explicit update/check targets, and CI checking.
+The example reactor executes real Maven packaging and runtime scenarios, while README output and invocation examples are maintained separately. There is no generator/update/check command that captures those configured runs into checked-in documentation. The user-provided reference is [Draft/open PR #651](https://github.com/tetratelabs/built-on-envoy/pull/651). Its proposed pattern describes configured invocations and arguments, local execution, transcript capture, conservative volatile-output normalization, explicit update/check targets, and CI checking. This research note has not established that the PR is merged or independently verified its exact implementation; evaluate the proposal against this repository's needs.
 
 ## Research questions
 
