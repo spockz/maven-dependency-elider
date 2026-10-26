@@ -38,19 +38,24 @@ public final class ExampleSupport {
       throw new IllegalArgumentException(
           "Usage: run-spring-endpoint JAVA JAR TRACE LOG");
     }
+    final Path java = requireAbsolutePath(arguments[1], "JAVA");
+    final Path jar = requireAbsolutePath(arguments[2], "JAR");
+    final Path trace = requireAbsolutePath(arguments[3], "TRACE");
+    final Path log = requireAbsolutePath(arguments[4], "LOG");
     final int port;
     try (ServerSocket socket = new ServerSocket(0)) {
       port = socket.getLocalPort();
     }
     final Process process =
         new ProcessBuilder(
-                arguments[1],
-                "-Xlog:class+load=info:file=" + arguments[3],
+                java.toString(),
+                "-Xlog:class+load=info:file=" + trace,
+                "-Djava.io.tmpdir=" + trace.getParent(),
                 "-jar",
-                arguments[2],
+                jar.toString(),
                 "--server.port=" + port)
             .redirectErrorStream(true)
-            .redirectOutput(Path.of(arguments[4]).toFile())
+            .redirectOutput(log.toFile())
             .start();
     try {
       final HttpClient client =
@@ -64,7 +69,7 @@ public final class ExampleSupport {
       while (System.nanoTime() < deadline) {
         if (!process.isAlive()) {
           throw new IOException(
-              "Spring Boot exited before serving the endpoint; see " + arguments[4]);
+              "Spring Boot exited before serving the endpoint; see " + log);
         }
         try {
           final HttpResponse<String> response =
@@ -80,7 +85,7 @@ public final class ExampleSupport {
           TimeUnit.MILLISECONDS.sleep(250);
         }
       }
-      throw new IOException("Spring Boot did not serve the endpoint; see " + arguments[4]);
+      throw new IOException("Spring Boot did not serve the endpoint; see " + log);
     } finally {
       process.destroy();
       if (!process.waitFor(20, TimeUnit.SECONDS)) {
@@ -94,8 +99,9 @@ public final class ExampleSupport {
     if (arguments.length != 3) {
       throw new IllegalArgumentException("Usage: verify-class-report REPORT PRODUCTION_OUTPUT");
     }
-    final Path reportPath = Path.of(arguments[1]);
-    final Path productionOutput = Path.of(arguments[2]).toRealPath();
+    final Path reportPath = requireAbsolutePath(arguments[1], "REPORT");
+    final Path productionOutput =
+        requireAbsolutePath(arguments[2], "PRODUCTION_OUTPUT").toRealPath();
     if (!Files.isDirectory(productionOutput)) {
       throw new IOException("Copied baseline production output is missing: " + productionOutput);
     }
@@ -106,6 +112,14 @@ public final class ExampleSupport {
     }
     final JsonNode report = JSON.readTree(reportPath.toFile());
     validateClassUsageReport(report, productionOutput);
+  }
+
+  static Path requireAbsolutePath(final String value, final String label) throws IOException {
+    final Path path = Path.of(value);
+    if (!path.isAbsolute()) {
+      throw new IOException(label + " path must be absolute: " + value);
+    }
+    return path.normalize();
   }
 
   static void validateClassUsageReport(final JsonNode report, final Path productionOutput)

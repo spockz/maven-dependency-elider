@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WHY: Runs the trace, elide, package, runtime, and archive checks that make example expectations reproducible.
+# WHY: Runs reproducible example checks with project paths and temporary evidence anchored at the repository root.
 set -euo pipefail
 
 configured_passthrough_names=(
@@ -20,6 +20,7 @@ automatic_passthrough_names=(
 
 main() {
   repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+  cd -- "$repo_root"
   maven=${MAVEN:-"$repo_root/.scratch/toolchains/maven-mvnd-1.0.6/bin/mvnd"}
   maven_args=${MAVEN_ARGS:---batch-mode --no-transfer-progress}
   app_timeout=${APP_TIMEOUT:-30s}
@@ -31,9 +32,13 @@ main() {
     fi
   fi
   if [[ -n ${JAVA_HOME:-} ]]; then
-    java="$JAVA_HOME/bin/java"
-    javac="$JAVA_HOME/bin/javac"
-    jar="$JAVA_HOME/bin/jar"
+    java_home=$JAVA_HOME
+    if [[ $java_home != /* ]]; then
+      java_home="$repo_root/$java_home"
+    fi
+    java="$java_home/bin/java"
+    javac="$java_home/bin/javac"
+    jar="$java_home/bin/jar"
   else
     echo "JAVA_HOME must point to a supported JDK; full verification currently targets GraalVM JDK 21" >&2
     exit 2
@@ -56,7 +61,8 @@ main() {
     printf '%s\n' "$((finished - started))" >"$timing_file"
   }
 
-  test_dir=$(mktemp -d "${TMPDIR:-/tmp}/maven-dependency-elider-examples.XXXXXX")
+  mkdir -p -- "$repo_root/.scratch"
+  test_dir=$(mktemp -d "$repo_root/.scratch/maven-dependency-elider-examples.XXXXXX")
   cleanup() {
     local status=$?
     if [[ $status -eq 0 ]]; then
@@ -79,7 +85,7 @@ main() {
   "$javac" -classpath "$(<"$dependency_classpath")" -d "$support_classes" \
     "$repo_root/examples/support/ExampleSupport.java" \
     "$repo_root/examples/support/ExampleSupportContractTest.java"
-  "$java" --class-path "$support_classpath" ExampleSupportContractTest
+  "$java" "-Djava.io.tmpdir=$test_dir" --class-path "$support_classpath" ExampleSupportContractTest
 
   fixture_names=(
     example-basic-app

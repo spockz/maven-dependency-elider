@@ -14,6 +14,7 @@ public final class ExampleSupportContractTest {
   private ExampleSupportContractTest() {}
 
   public static void main(final String[] arguments) throws IOException {
+    rejectsRelativePath();
     final Path productionOutput = Files.createTempDirectory("example-support-contract-").toRealPath();
     try {
       final ObjectNode nonBoolean = report(productionOutput);
@@ -30,6 +31,18 @@ public final class ExampleSupportContractTest {
     } finally {
       Files.deleteIfExists(productionOutput);
     }
+  }
+
+  private static void rejectsRelativePath() throws IOException {
+    try {
+      ExampleSupport.requireAbsolutePath("target/report.json", "REPORT");
+    } catch (final IOException exception) {
+      if (exception.getMessage().contains("must be absolute")) {
+        return;
+      }
+      throw new AssertionError("Unexpected relative-path validation error", exception);
+    }
+    throw new AssertionError("Relative helper path was accepted");
   }
 
   private static ObjectNode report(final Path productionOutput) {
