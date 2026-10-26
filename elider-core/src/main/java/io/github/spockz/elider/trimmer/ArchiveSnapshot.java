@@ -14,9 +14,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import org.objectweb.asm.ClassReader;
 import proguard.classfile.ClassPool;
-import proguard.classfile.LibraryClass;
 import proguard.classfile.ProgramClass;
-import proguard.classfile.io.LibraryClassReader;
 import proguard.classfile.io.ProgramClassReader;
 
 /** Validated archive bytes with fresh ProGuard pool construction. */
@@ -37,9 +35,13 @@ final class ArchiveSnapshot {
   /** Whether the archive contains a direct module descriptor. */
   private final boolean hasModuleDescriptor;
 
+  /** Caches symbolic declarations while materializing mutable classes per graph. */
+  private final LibraryArchiveTemplates libraryTemplates;
+
   private ArchiveSnapshot(final Map<String, byte[]> classBytes, final boolean hasModuleDescriptor) {
     this.classBytes = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(classBytes));
     this.hasModuleDescriptor = hasModuleDescriptor;
+    this.libraryTemplates = new LibraryArchiveTemplates(this.classBytes);
   }
 
   private static boolean isNestedArchive(final String entryName) {
@@ -138,21 +140,27 @@ final class ArchiveSnapshot {
   }
 
   ClassPool newClassPool(final boolean library) throws IOException {
+    if (library) {
+      return newLibraryClassPool();
+    }
     final ClassPool pool = new ClassPool();
     for (final Map.Entry<String, byte[]> entry : classBytes.entrySet()) {
       try (DataInputStream input =
           new DataInputStream(new ByteArrayInputStream(entry.getValue()))) {
-        if (library) {
-          final LibraryClass clazz = new LibraryClass();
-          clazz.accept(new LibraryClassReader(input, false, false));
-          pool.addClass(clazz);
-        } else {
-          final ProgramClass clazz = new ProgramClass();
-          clazz.accept(new ProgramClassReader(input));
-          pool.addClass(clazz);
-        }
+        final ProgramClass clazz = new ProgramClass();
+        clazz.accept(new ProgramClassReader(input));
+        pool.addClass(clazz);
       }
     }
     return pool;
+  }
+
+  /** Builds a fresh mutable pool from cached symbolic sibling declarations. */
+  ClassPool newLibraryClassPool() throws IOException {
+    return libraryTemplates.newClassPool();
+  }
+
+  int libraryDeclarationParseCount() {
+    return libraryTemplates.parseCount();
   }
 }
