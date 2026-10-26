@@ -24,7 +24,12 @@ class TraceClassNameTest {
   @Test
   void keepsOrdinaryNamesAndRejectsMalformedHiddenSuffixes() {
     assertThat(
-            Stream.of("example.Hidden", "example.Hidden+0x", "example.Hidden+0x1234.x")
+            Stream.of(
+                    "example.Hidden",
+                    "example.Hidden+0x",
+                    "example.Hidden+0x1234.x",
+                    "example.Hidden+0x１２3.1",
+                    "example.Hidden+0xabc.١")
                 .map(TraceClassName::isHidden))
         .containsOnly(false);
   }

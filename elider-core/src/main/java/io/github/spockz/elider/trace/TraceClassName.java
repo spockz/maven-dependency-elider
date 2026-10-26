@@ -72,11 +72,20 @@ final class TraceClassName {
   }
 
   private static boolean containsOnlyHexDigits(final String value) {
-    return !value.isEmpty()
-        && value.chars().allMatch(character -> Character.digit(character, 16) >= 0);
+    return !value.isEmpty() && value.chars().allMatch(TraceClassName::isAsciiHexDigit);
   }
 
   private static boolean containsOnlyDecimalDigits(final String value) {
-    return !value.isEmpty() && value.chars().allMatch(Character::isDigit);
+    return !value.isEmpty() && value.chars().allMatch(TraceClassName::isAsciiDecimalDigit);
+  }
+
+  private static boolean isAsciiHexDigit(final int character) {
+    return character >= '0' && character <= '9'
+        || character >= 'a' && character <= 'f'
+        || character >= 'A' && character <= 'F';
+  }
+
+  private static boolean isAsciiDecimalDigit(final int character) {
+    return character >= '0' && character <= '9';
   }
 }
