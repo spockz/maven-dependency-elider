@@ -128,6 +128,6 @@ The retained `track/cache` worktree currently contains uncommitted cache-reader 
 
 #### Slice 5.4 evidence and review
 
-* **Implementer / commit**: Maven trimming track; `847ad5f` plus fixup `3a6400a`.
-* **Focused and full verification**: passed `make check` with repository GraalVM 21; 106 core tests, 50 plugin tests, static analysis, formatting, and Markdown lint passed. The trim-boundary test verifies supplied dynamic roots affect output and missing scan evidence fails explicitly.
-* **Review verdict**: pending replacement reviewer; initial reviewer could not start because its selected model was at capacity.
+* **Implementer / commit**: Maven trimming track; `8b3c4c4` (`Reuse Maven invocation dependency scans`).
+* **Focused and full verification**: passed `make check` with repository GraalVM 21; 116 core tests, 64 plugin tests, static analysis, formatting, and Markdown lint passed. The trim-boundary test verifies supplied dynamic roots affect output and missing scan evidence fails explicitly. The JMH benchmark now computes the dynamic-root input inside each measured operation, preserving its previous measurement boundary.
+* **Review verdict**: approved after the initial reviewer model hit capacity; replacement review accepted the full commit. Receipt: `.scratch/reviews/track-plugin-trimming-performance.md`.
