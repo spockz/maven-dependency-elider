@@ -60,7 +60,7 @@ It fails before changing Maven artifact pointers rather than assuming unknown me
 
 ### Does removing classes make a vulnerability finding go away?
 
-Not necessarily. Many vulnerability tools report by artifact coordinates and version, even when some classes have been removed. Inspect and scan the final packaged artifact, and assess the advisory's affected code and exploit conditions separately.
+Not necessarily. Many vulnerability tools report by artifact coordinates and version, even when some classes have been removed. The trimmer records removed artifacts/classes and provenance but has no CVE knowledge and does not generate VEX. A vulnerability/SBOM-aware scanner may use `vulnerable_code_not_present` only when vulnerability data maps the CVE to omitted code with sufficient precision; a package/version finding or unused artifact alone is insufficient. Inspect and scan the final packaged artifact, and assess the advisory's affected code and exploit conditions separately.
 
 ## Compatibility and Performance
 

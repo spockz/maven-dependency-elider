@@ -115,7 +115,7 @@ CycloneDX provides first-class support for modified components via `pedigree`. S
 
 #### 3. OpenVEX
 
-When vulnerability-to-class mappings prove a vulnerable class was purged during trimming, OpenVEX emits statements using the valid justification `vulnerable_code_not_present`:
+The trimmer records class-removal provenance but has no CVE knowledge and does not generate VEX. A vulnerability/SBOM-aware scanner may emit an OpenVEX statement with `vulnerable_code_not_present` only when vulnerability data maps the CVE to omitted code with sufficient precision. A package/version finding or unused-artifact result alone does not establish that mapping:
 
 ```json
 {

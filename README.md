@@ -238,7 +238,6 @@ The estimate excludes class-level trimming and may differ from the final package
 
 ## Requirements
 The Maven plugin provides a nonmutating, trace-based `analyze` goal. Its summary qualifies removals as artifacts that would be elided by that analysis and gives the exact sum of the original JAR file sizes as an estimate; final package savings may differ, and `analyze` does not run intra-JAR trimming. Install the plugin and its core dependency to the local repository, then run it in the consumer project with an explicit trace:
->>>>>>> cb65adc (Qualify nonmutating analysis predictions)
 
 * **JDK 21** or newer.
 * Bash and the `timeout` utility for `make test-examples`.
