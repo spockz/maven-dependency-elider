@@ -1,3 +1,5 @@
+<!-- This ADR records the cache publication contract because concurrent edits during a Maven build are outside the build's determinism guarantee. -->
+
 # ADR 0004: Assume Resolved Inputs Stay Stable During a Maven Invocation
 
 ## Status

@@ -22,7 +22,7 @@ Starting revision: `41f0607`
 | --- | --- | --- | --- | --- |
 | 2.6c: frozen graph-local class lookup index | ProGuard graph construction | Complete, independently reviewed (`ed6a33d`) | 2.6b | Full check passed (137 core, 66 plugin). The implementation keeps sorted TreeMap storage, indexes the same `Clazz` instances after final pool assembly, and blocks membership mutation after freeze. The reviewer approved precedence, iteration, identity, inherited resolution, and unresolved-link behavior. |
 | 7.3: publish under invocation-level input stability | Cache publication | Implemented; re-review pending (`dbf7214`, `c49fe04`) | ADR 0004 | Compute SHA-256 and SHA-1 in one read per normalized input and reuse path-bound provenance. Remove source rehashes that only detect concurrent edits. Preserve cache-output validation, staged/published-output digest checks, temp staging, and atomic moves. Full check passed (140 core, 66 plugin); independent re-review remains. |
-| 8.1: decision and contributor-doc closeout | Documentation | Open | 7.3 and 6.6 | Carry ADR 0004 into this branch; update the user FAQ, contributor decision FAQ, and research notes with the input-stability contract and measured result ranges. Run Markdown lint and `git diff --check`. |
+| 8.1: decision and contributor-doc closeout | Documentation | Complete | 7.3 and 6.6 | ADR 0004 is indexed; user FAQ and contributor decision register record the invocation-level input-stability contract and retained output/cache integrity checks. The contributor entry links the measured context in RQ-0003. Markdown lint and `git diff --check` passed. |
 
 ## Performance evidence and interpretation
 

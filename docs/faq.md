@@ -30,6 +30,10 @@ The goal is for Maven's standard `dependency:tree` to show the post-elision effe
 
 Set `elide.trimSkipArtifacts` to the exact resolved coordinate, such as `groupId:artifactId:version:jar:`. The JAR remains byte-identical and is protected from whole-artifact elision. Its classes can still cause linked classes in other trim candidates to be retained. See [Maven plugin usage](plugin-usage.md) for the Spring example.
 
+### What if a dependency JAR changes during or between Maven builds?
+
+The elider computes content digests for resolved inputs and uses them to identify cached results. It assumes those files stay stable during one Maven invocation; concurrent edits can make that invocation nondeterministic. Between invocations, changed content gets a different cache identity and is analyzed again. Maven's resolution-time checksum verification does not lock a file for the rest of the build. See [ADR 0004](adr/0004-assume-resolved-inputs-stable-during-build.md).
+
 ### What happens if a dependency contains multi-release implementation classes?
 
 That JAR is kept byte-identical and skipped as a trim target with a warning. Other supported JARs can still be trimmed. Set `-Delide.failOnUnsupportedMultiRelease=true` if encountering such a JAR should fail the build.
