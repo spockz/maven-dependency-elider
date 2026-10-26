@@ -62,4 +62,4 @@ No, not with the currently pinned ProGuard Core 9.1.10. The validated example to
 
 ### How much build time does elision add?
 
-One local `clean verify` run measured Basic at 2.256 seconds without elision and 4.218 seconds with it; Spring Boot measured 4.072 seconds and 75.933 seconds, respectively. These are single-run observations, not stable performance guarantees. The Spring result shows that the current trimming path can add substantial time. Elision remains under active development and should not be used to remove dependencies from production builds.
+Three baseline-first `clean verify` cycles with warm local Maven dependencies measured Basic at a median 2.244 seconds without elision and 4.286 seconds with it; Spring Boot measured 4.090 seconds and 26.752 seconds. These are descriptive observations, not stable performance guarantees. Spring still adds about 22.7 seconds end to end. Elision remains under active development and should not be used to remove dependencies from production builds.
