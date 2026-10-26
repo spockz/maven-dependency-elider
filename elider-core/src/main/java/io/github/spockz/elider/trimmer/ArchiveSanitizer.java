@@ -61,6 +61,38 @@ public final class ArchiveSanitizer {
       final DependencyJarTrimmer.TrimAnalysis analysis,
       final String expectedOriginalSha256)
       throws IOException {
+    validateInputs(originalJar, trimmedJar, coordinate, analysis);
+    final ArtifactDigests originalDigests = ArtifactDigests.read(originalJar);
+    if (expectedOriginalSha256 != null
+        && !expectedOriginalSha256.equals(originalDigests.sha256())) {
+      throw new IOException("Original dependency changed during trim analysis: " + originalJar);
+    }
+    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests);
+  }
+
+  /**
+   * Stages an archive using provenance already captured by the caller.
+   *
+   * <p>The caller keeps the source stable for this build invocation.
+   */
+  public PreparedOutput prepareWithProvenance(
+      final Path originalJar,
+      final Path trimmedJar,
+      final ArtifactCoordinate coordinate,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final ArtifactDigests originalDigests)
+      throws IOException {
+    validateInputs(originalJar, trimmedJar, coordinate, analysis);
+    Objects.requireNonNull(originalDigests, "originalDigests");
+    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests);
+  }
+
+  private static void validateInputs(
+      final Path originalJar,
+      final Path trimmedJar,
+      final ArtifactCoordinate coordinate,
+      final DependencyJarTrimmer.TrimAnalysis analysis)
+      throws IOException {
     Objects.requireNonNull(originalJar, "originalJar");
     Objects.requireNonNull(trimmedJar, "trimmedJar");
     Objects.requireNonNull(coordinate, "coordinate");
@@ -71,12 +103,15 @@ public final class ArchiveSanitizer {
     if (analysis.retainedClasses().size() > analysis.totalClasses()) {
       throw new IOException("Trim analysis has more retained classes than total classes");
     }
+  }
 
-    final ArtifactDigests originalDigests = ArtifactDigests.read(originalJar);
-    if (expectedOriginalSha256 != null
-        && !expectedOriginalSha256.equals(originalDigests.sha256())) {
-      throw new IOException("Original dependency changed during trim analysis: " + originalJar);
-    }
+  private PreparedOutput prepareValidated(
+      final Path originalJar,
+      final Path trimmedJar,
+      final ArtifactCoordinate coordinate,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final ArtifactDigests originalDigests)
+      throws IOException {
     final Path parent = trimmedJar.toAbsolutePath().normalize().getParent();
     final Path fileName = trimmedJar.getFileName();
     if (parent == null || fileName == null) {
@@ -94,9 +129,6 @@ public final class ArchiveSanitizer {
     boolean moved = false;
     try {
       writeArchive(originalJar, temporaryJar, analysis);
-      if (!originalDigests.equals(ArtifactDigests.read(originalJar))) {
-        throw new IOException("Original dependency changed while being staged: " + originalJar);
-      }
       final ArtifactDigests trimmedDigests = ArtifactDigests.read(temporaryJar);
       moved = true;
       return new PreparedOutput(
@@ -121,13 +153,6 @@ public final class ArchiveSanitizer {
   /** Publishes staged archive bytes and returns provenance. */
   public ArtifactTrimRecord publish(final PreparedOutput prepared) throws IOException {
     Objects.requireNonNull(prepared, "prepared");
-    if (!prepared
-        .originalSha256()
-        .equals(ArtifactDigests.read(prepared.validationPath()).sha256())) {
-      throw new IOException(
-          "Original dependency changed before trimmed output publication: "
-              + prepared.validationPath());
-    }
     moveIntoPlace(prepared.temporaryJar(), prepared.outputPath());
     final ArtifactDigests publishedDigests = ArtifactDigests.read(prepared.outputPath());
     if (!prepared.trimmedSha256().equals(publishedDigests.sha256())

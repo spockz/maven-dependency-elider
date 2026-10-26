@@ -10,11 +10,16 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
-/** Package-local digest values for one artifact file. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
-record ArtifactDigests(String sha256, String sha1) {
+/** Immutable SHA-256 and SHA-1 provenance captured for one artifact file. */
+public record ArtifactDigests(String sha256, String sha1) {
+  /** Validates the SHA-256 and SHA-1 encodings. */
+  public ArtifactDigests {
+    requireDigest(sha256, 64, "sha256");
+    requireDigest(sha1, 40, "sha1");
+  }
+
   /** Reads both digest algorithms from one stable file pass. */
-  static ArtifactDigests read(final Path path) throws IOException {
+  public static ArtifactDigests read(final Path path) throws IOException {
     final MessageDigest sha256 = digest("SHA-256");
     final MessageDigest sha1 = digest("SHA-1");
     try (InputStream input = Files.newInputStream(path)) {
@@ -38,6 +43,12 @@ record ArtifactDigests(String sha256, String sha1) {
     } catch (final NoSuchAlgorithmException exception) {
       throw new IllegalStateException(
           "Required digest algorithm is unavailable: " + algorithm, exception);
+    }
+  }
+
+  private static void requireDigest(final String value, final int length, final String name) {
+    if (value == null || !value.matches("[0-9a-f]{" + length + "}")) {
+      throw new IllegalArgumentException(name + " must be a lowercase hexadecimal digest");
     }
   }
 }

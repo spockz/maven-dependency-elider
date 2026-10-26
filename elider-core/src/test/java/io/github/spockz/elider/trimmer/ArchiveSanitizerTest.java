@@ -41,6 +41,12 @@ class ArchiveSanitizerTest {
   /** Identifies the digest algorithm used to bind replacement JARs to their analysis. */
   private static final String SHA_256 = "SHA-256";
 
+  /** Identifies the source digest algorithm recorded alongside SHA-256. */
+  private static final String SHA_1 = "SHA-1";
+
+  /** Value preserved in the fixture manifest and publication sentinel. */
+  private static final String PRESERVED_VALUE = "preserve";
+
   /** Package used for independently compiled fixture types. */
   private static final String FIXTURE_PACKAGE = "fixture";
 
@@ -84,9 +90,9 @@ class ArchiveSanitizerTest {
     assertThat(record.totalClasses()).isEqualTo(2);
     assertThat(record.retainedClasses()).isEqualTo(1);
     assertThat(record.originalSha256()).isEqualTo(digest(originalBytes, SHA_256));
-    assertThat(record.originalSha1()).isEqualTo(digest(originalBytes, "SHA-1"));
+    assertThat(record.originalSha1()).isEqualTo(digest(originalBytes, SHA_1));
     assertThat(record.trimmedSha256()).isEqualTo(digest(Files.readAllBytes(trimmed), SHA_256));
-    assertThat(record.trimmedSha1()).isEqualTo(digest(Files.readAllBytes(trimmed), "SHA-1"));
+    assertThat(record.trimmedSha1()).isEqualTo(digest(Files.readAllBytes(trimmed), SHA_1));
     assertThat(repeatRecord.trimmedSha256()).isEqualTo(record.trimmedSha256());
 
     try (JarFile output = new JarFile(trimmed.toFile())) {
@@ -108,7 +114,7 @@ class ArchiveSanitizerTest {
       assertThat(manifest.getEntries()).containsKey(KEEP_CLASS_ENTRY);
       assertThat(manifest.getEntries().get(KEEP_CLASS_ENTRY).getValue("SHA-256-Digest")).isNull();
       assertThat(manifest.getEntries().get(KEEP_CLASS_ENTRY).getValue("X-Note"))
-          .isEqualTo("preserve");
+          .isEqualTo(PRESERVED_VALUE);
       assertThat(manifest.getEntries()).doesNotContainKey(FIXTURE_PACKAGE + "/Drop.class");
     }
   }
@@ -146,14 +152,39 @@ class ArchiveSanitizerTest {
   }
 
   @Test
-  void rejectsReplacementAfterStagingBeforePublication() throws Exception {
+  void capturedProvenancePreservesSourceAndOutputDigests() throws Exception {
     final Path original = createCandidateJar();
-    final byte[] initialBytes = Files.readAllBytes(original);
-    final String initialSha256 = digest(initialBytes, SHA_256);
+    final ArtifactDigests sourceDigests = ArtifactDigests.read(original);
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
             .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
-    final Path output = temporaryDirectory.resolve("staged-stale-trimmed.jar");
+    final Path output = temporaryDirectory.resolve("captured-provenance-trimmed.jar");
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepareWithProvenance(
+            original,
+            output,
+            ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+            analysis,
+            sourceDigests);
+
+    final ArtifactTrimRecord record = sanitizer.publish(prepared);
+
+    assertThat(record.originalSha256()).isEqualTo(sourceDigests.sha256());
+    assertThat(record.originalSha1()).isEqualTo(sourceDigests.sha1());
+    assertThat(record.originalSha256()).isEqualTo(digest(Files.readAllBytes(original), SHA_256));
+    assertThat(record.originalSha1()).isEqualTo(digest(Files.readAllBytes(original), SHA_1));
+    assertThat(record.trimmedSha256()).isEqualTo(digest(Files.readAllBytes(output), SHA_256));
+    assertThat(record.trimmedSha1()).isEqualTo(digest(Files.readAllBytes(output), SHA_1));
+  }
+
+  @Test
+  void detectsStagedOutputCorruptionWhenPublishing() throws Exception {
+    final Path original = createCandidateJar();
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer()
+            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+    final Path output = temporaryDirectory.resolve("corrupt-staged-trimmed.jar");
     final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
     final ArchiveSanitizer.PreparedOutput prepared =
         sanitizer.prepare(
@@ -161,49 +192,42 @@ class ArchiveSanitizerTest {
             output,
             ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
             analysis,
-            initialSha256);
-    final Path replacement = createCandidateJar("replacement.jar", "Live");
-    final byte[] replacementBytes = Files.readAllBytes(replacement);
-    Files.write(original, replacementBytes);
+            null);
+    Files.writeString(prepared.temporaryJar(), "corrupt staged output");
 
     assertThatThrownBy(() -> sanitizer.publish(prepared))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("changed before trimmed output publication");
+        .hasMessageContaining("changed while being published");
 
-    assertThat(Files.readAllBytes(original)).isEqualTo(replacementBytes);
-    assertThat(output).doesNotExist();
-    sanitizer.discard(prepared);
+    assertThat(Files.readString(output)).isEqualTo("corrupt staged output");
+    assertThat(prepared.temporaryJar()).doesNotExist();
   }
 
   @Test
-  void rejectsRetargetedArtifactSymlinkBeforePublication() throws Exception {
+  void failedAtomicPublicationKeepsExistingOutputAndAllowsStagingCleanup() throws Exception {
     final Path original = createCandidateJar();
-    final byte[] initialBytes = Files.readAllBytes(original);
-    final String initialSha256 = digest(initialBytes, SHA_256);
-    final Path artifactLink = temporaryDirectory.resolve("artifact-link.jar");
-    Files.createSymbolicLink(artifactLink, original);
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(artifactLink, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
-    final Path output = temporaryDirectory.resolve("symlink-stale-trimmed.jar");
+            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+    final Path output = temporaryDirectory.resolve("non-empty-output-directory");
+    Files.createDirectory(output);
+    final Path sentinel = output.resolve("existing-output");
+    Files.writeString(sentinel, PRESERVED_VALUE);
     final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
     final ArchiveSanitizer.PreparedOutput prepared =
         sanitizer.prepare(
-            artifactLink,
+            original,
             output,
             ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
             analysis,
-            initialSha256);
-    final Path replacement = createCandidateJar("replacement.jar", "Live");
-    Files.delete(artifactLink);
-    Files.createSymbolicLink(artifactLink, replacement);
+            null);
 
-    assertThatThrownBy(() -> sanitizer.publish(prepared))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("changed before trimmed output publication");
+    assertThatThrownBy(() -> sanitizer.publish(prepared)).isInstanceOf(IOException.class);
 
-    assertThat(output).doesNotExist();
+    assertThat(Files.readString(sentinel)).isEqualTo(PRESERVED_VALUE);
+    assertThat(prepared.temporaryJar()).exists();
     sanitizer.discard(prepared);
+    assertThat(prepared.temporaryJar()).doesNotExist();
   }
 
   private Path createCandidateJar() throws IOException {
@@ -353,7 +377,7 @@ class ArchiveSanitizerTest {
     main.putValue("SHA-256-Digest-Manifest", "invalidated");
     final Attributes keep = new Attributes();
     keep.putValue("SHA-256-Digest", "invalidated");
-    keep.putValue("X-Note", "preserve");
+    keep.putValue("X-Note", PRESERVED_VALUE);
     manifest.getEntries().put(KEEP_CLASS_ENTRY, keep);
     final ByteArrayOutputStream output = new ByteArrayOutputStream();
     manifest.write(output);

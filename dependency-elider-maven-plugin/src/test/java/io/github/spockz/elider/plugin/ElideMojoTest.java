@@ -13,17 +13,22 @@ import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
 import io.github.spockz.elider.trimmer.TrimAnalysisSession;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import javax.tools.ToolProvider;
@@ -37,6 +42,8 @@ import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.ModuleVisitor;
 import org.objectweb.asm.Opcodes;
@@ -177,6 +184,11 @@ final class ElideMojoTest {
     final String fingerprint = manifest.path("fingerprint").asText();
     final MavenElisionService.Analysis malformedCacheAnalysis = analyzeTrim(project);
     assertThat(malformedCacheAnalysis.trimAnalysisRuns()).isPositive();
+
+    final ObjectNode incorrectSourceDigest = (ObjectNode) mapper.readTree(cacheManifest.toFile());
+    ((ObjectNode) incorrectSourceDigest.path("entries").get(0)).put("originalSha1", "0".repeat(40));
+    mapper.writeValue(cacheManifest.toFile(), incorrectSourceDigest);
+    assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
 
     for (final String field : List.of("roots", "retainedClassNames", "reachableLibraryClasses")) {
       final ObjectNode withNullMember = (ObjectNode) mapper.readTree(cacheManifest.toFile());
@@ -467,10 +479,16 @@ final class ElideMojoTest {
 
   private MavenElisionService.Analysis analyzeTrim(final MavenProject project)
       throws IOException, MojoFailureException {
+    return analyzeTrim(project, "sample.Keep\n");
+  }
+
+  private MavenElisionService.Analysis analyzeTrim(
+      final MavenProject project, final String traceClasses)
+      throws IOException, MojoFailureException {
     return new MavenElisionService()
         .analyze(
             project,
-            List.of(writeTrace("sample.Keep\n").toFile()),
+            List.of(writeTrace(traceClasses).toFile()),
             List.of(),
             null,
             null,
@@ -500,7 +518,7 @@ final class ElideMojoTest {
               .getBytes(java.nio.charset.StandardCharsets.UTF_8));
       output.closeEntry();
       output.putNextEntry(new ZipEntry("META-INF/versions/11/testscope/Variant.class"));
-      try (java.io.InputStream input =
+      try (InputStream input =
           compiled.getInputStream(compiled.getEntry("testscope/Variant.class"))) {
         input.transferTo(output);
       }
@@ -917,14 +935,14 @@ final class ElideMojoTest {
     final Path result = tempDir.resolve(sourceJar.getFileName() + "-modular.jar");
     try (JarFile input = new JarFile(sourceJar.toFile());
         ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(result))) {
-      final java.util.Enumeration<JarEntry> entries = input.entries();
+      final Enumeration<JarEntry> entries = input.entries();
       while (entries.hasMoreElements()) {
         final JarEntry entry = entries.nextElement();
         if (MODULE_INFO_CLASS.equals(entry.getName())) {
           continue;
         }
         output.putNextEntry(new ZipEntry(entry.getName()));
-        try (java.io.InputStream content = input.getInputStream(entry)) {
+        try (InputStream content = input.getInputStream(entry)) {
           content.transferTo(output);
         }
         output.closeEntry();
@@ -1111,8 +1129,7 @@ final class ElideMojoTest {
     Files.createDirectories(otherJdkCtSym.getParent());
     Files.writeString(otherJdkCtSym, "other-jdk-platform-bytes");
     Files.writeString(jmod, "jmod-bytes");
-    final java.nio.file.attribute.FileTime timestamp =
-        java.nio.file.attribute.FileTime.fromMillis(1_700_000_000_000L);
+    final FileTime timestamp = FileTime.fromMillis(1_700_000_000_000L);
     Files.setLastModifiedTime(firstLibrary, timestamp);
     Files.setLastModifiedTime(ctSym, timestamp);
     final List<String> candidateIdentities = List.of("org.example:first:1.0:jar");
@@ -1234,6 +1251,64 @@ final class ElideMojoTest {
                 4,
                 "proguard-core-9.1.10"))
         .isNotEqualTo(dependencyChangedFingerprint);
+  }
+
+  @Test
+  void trimCacheMissesWhenCandidateOrRetainedSiblingContentChangesAtSameSizeAndTimestamp()
+      throws Exception {
+    final Path siblingJar =
+        compileJarSources(
+            "digest-sibling",
+            java.util.Map.of(
+                "Use.java",
+                "package helper; public class Use {}",
+                "Drop.java",
+                "package helper; public class Drop {}"),
+            null);
+    final Path candidateJar =
+        compileJarSources(
+            "digest-candidate",
+            java.util.Map.of(
+                "Keep.java", "package sample; public class Keep { helper.Use use; }",
+                "Drop.java", "package sample; public class Drop {}"),
+            siblingJar);
+    final FileTime sourceTimestamp = FileTime.fromMillis(1_700_000_000_000L);
+    rewriteStoredJar(candidateJar, null, null, sourceTimestamp);
+    rewriteStoredJar(siblingJar, null, null, sourceTimestamp);
+    final Artifact candidate = runtimeArtifact("digest-candidate", candidateJar);
+    final Artifact sibling = runtimeArtifact("digest-sibling", siblingJar);
+    final MavenProject project =
+        project(candidate, new LinkedHashSet<>(List.of(candidate, sibling)), sibling);
+    project.setGroupId("org.example");
+    project.setArtifactId("digest-cache-consumer");
+    project.setVersion("1.0");
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("digest-cache-build").toString());
+    project.setBuild(build);
+
+    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimAnalysisRuns()).isPositive();
+    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimAnalysisRuns()).isZero();
+
+    final long candidateSize = Files.size(candidateJar);
+    rewriteStoredJar(
+        candidateJar,
+        "sample/Keep.class",
+        toggleFinalClassFlag(candidateJar, "sample/Keep.class"),
+        sourceTimestamp);
+    assertThat(Files.size(candidateJar)).isEqualTo(candidateSize);
+    assertThat(Files.getLastModifiedTime(candidateJar)).isEqualTo(sourceTimestamp);
+    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimAnalysisRuns()).isPositive();
+
+    final long siblingSize = Files.size(siblingJar);
+    rewriteStoredJar(
+        siblingJar,
+        "helper/Use.class",
+        toggleFinalClassFlag(siblingJar, "helper/Use.class"),
+        sourceTimestamp);
+    assertThat(Files.size(siblingJar)).isEqualTo(siblingSize);
+    assertThat(Files.getLastModifiedTime(siblingJar)).isEqualTo(sourceTimestamp);
+    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimAnalysisRuns()).isPositive();
   }
 
   @Test
@@ -1428,6 +1503,80 @@ final class ElideMojoTest {
     return jar;
   }
 
+  private static byte[] toggleFinalClassFlag(final Path jar, final String entryName)
+      throws IOException {
+    try (JarFile input = new JarFile(jar.toFile())) {
+      final JarEntry entry = input.getJarEntry(entryName);
+      if (entry == null) {
+        throw new IOException("Missing test class entry: " + entryName);
+      }
+      final byte[] original;
+      try (InputStream classInput = input.getInputStream(entry)) {
+        original = classInput.readAllBytes();
+      }
+      final ClassReader reader = new ClassReader(original);
+      final ClassWriter writer = new ClassWriter(reader, 0);
+      reader.accept(
+          new ClassVisitor(Opcodes.ASM9, writer) {
+            @Override
+            public void visit(
+                final int version,
+                final int access,
+                final String name,
+                final String signature,
+                final String superName,
+                final String[] interfaces) {
+              super.visit(
+                  version, access ^ Opcodes.ACC_FINAL, name, signature, superName, interfaces);
+            }
+          },
+          0);
+      return writer.toByteArray();
+    }
+  }
+
+  private void rewriteStoredJar(
+      final Path jar,
+      final String replacedEntry,
+      final byte[] replacementBytes,
+      final FileTime timestamp)
+      throws IOException {
+    final Path rewrittenJar = jar.resolveSibling(jar.getFileName() + ".rewrite");
+    boolean replaced = replacedEntry == null;
+    try (JarFile input = new JarFile(jar.toFile());
+        ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(rewrittenJar))) {
+      final Enumeration<JarEntry> entries = input.entries();
+      while (entries.hasMoreElements()) {
+        final JarEntry entry = entries.nextElement();
+        final byte[] contents;
+        if (entry.getName().equals(replacedEntry)) {
+          contents = replacementBytes;
+          replaced = true;
+        } else {
+          try (InputStream stream = input.getInputStream(entry)) {
+            contents = stream.readAllBytes();
+          }
+        }
+        final CRC32 crc = new CRC32();
+        crc.update(contents);
+        final ZipEntry stored = new ZipEntry(entry.getName());
+        stored.setMethod(ZipEntry.STORED);
+        stored.setSize(contents.length);
+        stored.setCompressedSize(contents.length);
+        stored.setCrc(crc.getValue());
+        stored.setTime(timestamp.toMillis());
+        output.putNextEntry(stored);
+        output.write(contents);
+        output.closeEntry();
+      }
+    }
+    if (!replaced) {
+      throw new IOException("Missing test archive entry to replace: " + replacedEntry);
+    }
+    Files.move(rewrittenJar, jar, StandardCopyOption.REPLACE_EXISTING);
+    Files.setLastModifiedTime(jar, timestamp);
+  }
+
   private MultiReleaseFixture multiReleaseFixture(final String name) throws IOException {
     final Path candidatePath =
         compileJarSources(
@@ -1494,14 +1643,14 @@ final class ElideMojoTest {
     try (JarFile input = new JarFile(source.toFile());
         java.util.jar.JarOutputStream output =
             new java.util.jar.JarOutputStream(Files.newOutputStream(outputJar))) {
-      final java.util.Enumeration<JarEntry> entries = input.entries();
+      final Enumeration<JarEntry> entries = input.entries();
       while (entries.hasMoreElements()) {
         final JarEntry entry = entries.nextElement();
         if (entry.isDirectory() || entry.getName().equals(omittedClass)) {
           continue;
         }
         output.putNextEntry(new JarEntry(entry.getName()));
-        try (java.io.InputStream contents = input.getInputStream(entry)) {
+        try (InputStream contents = input.getInputStream(entry)) {
           contents.transferTo(output);
         }
         output.closeEntry();
@@ -1529,7 +1678,7 @@ final class ElideMojoTest {
   private static void copyJarEntries(
       final JarFile source, final java.util.jar.JarOutputStream output, final String prefix)
       throws IOException {
-    final java.util.Enumeration<JarEntry> entries = source.entries();
+    final Enumeration<JarEntry> entries = source.entries();
     while (entries.hasMoreElements()) {
       final JarEntry entry = entries.nextElement();
       if (entry.isDirectory()
@@ -1538,7 +1687,7 @@ final class ElideMojoTest {
         continue;
       }
       output.putNextEntry(new JarEntry(prefix + entry.getName()));
-      try (java.io.InputStream contents = source.getInputStream(entry)) {
+      try (InputStream contents = source.getInputStream(entry)) {
         contents.transferTo(output);
       }
       output.closeEntry();
@@ -1573,7 +1722,7 @@ final class ElideMojoTest {
   private static Set<String> archiveClassNames(final Path archivePath) throws IOException {
     final Set<String> names = new LinkedHashSet<>();
     try (JarFile archive = new JarFile(archivePath.toFile())) {
-      final java.util.Enumeration<JarEntry> entries = archive.entries();
+      final Enumeration<JarEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
         final String name = entries.nextElement().getName();
         if (name.endsWith(".class")) {
@@ -1600,11 +1749,11 @@ final class ElideMojoTest {
     final Path outputJar = tempDir.resolve("with-metadata-" + original.getFileName());
     try (JarFile inputJar = new JarFile(original.toFile());
         ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(outputJar))) {
-      final java.util.Enumeration<JarEntry> entries = inputJar.entries();
+      final Enumeration<JarEntry> entries = inputJar.entries();
       while (entries.hasMoreElements()) {
         final ZipEntry entry = entries.nextElement();
         output.putNextEntry(new ZipEntry(entry.getName()));
-        try (java.io.InputStream stream = inputJar.getInputStream(entry)) {
+        try (InputStream stream = inputJar.getInputStream(entry)) {
           stream.transferTo(output);
         }
         output.closeEntry();
@@ -1630,7 +1779,7 @@ final class ElideMojoTest {
           throw new IOException("Missing cycle fixture entry: " + entryName);
         }
         output.putNextEntry(new ZipEntry(entryName));
-        try (java.io.InputStream stream = inputJar.getInputStream(entry)) {
+        try (InputStream stream = inputJar.getInputStream(entry)) {
           stream.transferTo(output);
         }
         output.closeEntry();
