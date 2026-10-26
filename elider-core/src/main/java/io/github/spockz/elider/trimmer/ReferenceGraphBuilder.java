@@ -171,9 +171,11 @@ final class ReferenceGraphBuilder {
   private record LibraryPools(ClassPool pool, Set<String> platformNames) {}
 
   private ReferenceGraph build(final ArchiveSnapshot candidateArchive) throws IOException {
-    final ClassPool programPool = checkedPool(candidateArchive, false, candidateJar);
+    final ClassPool programPool =
+        FrozenClassPool.copyOf(checkedPool(candidateArchive, false, candidateJar));
     final LibraryPools libraries = libraryPools(programPool);
-    return new ReferenceGraphIndexer(programPool, libraries.pool(), libraries.platformNames())
+    final ClassPool frozenLibraryPool = FrozenClassPool.copyOf(libraries.pool());
+    return new ReferenceGraphIndexer(programPool, frozenLibraryPool, libraries.platformNames())
         .build();
   }
 }
