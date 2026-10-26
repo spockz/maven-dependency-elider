@@ -52,7 +52,8 @@ Distinguish session closeout from work package completion. Mark a work package c
 
 ### 2. Handover Scrutiny and Two-Tier Baseline Gates
 
-* **Do**: Ingest handover specifications via repository path or inline prompt markdown (auto-saved to `.scratch/handover.md`).
+* **Do**: Start each session from a handover file. Use the handover path supplied in the initial prompt; if the prompt defines the work but supplies no file, save that initial prompt verbatim to `.scratch/handover.md` before planning or editing and record the path in the orchestration status.
+* **Do**: Ingest handover specifications from the supplied repository path or the saved initial prompt. For a later session, start from a handover that names the prior work package's remaining scope rather than relying on chat context alone.
 * **Do**: Scrutinise acceptance criteria, failure modes, ADR alignments, and decoupling seams upfront with the Critical Architect before branching.
 * **Do**: Enforce the **Initial Session Baseline Gate**: verify that `$BASE_REF` is pristine (`test -z "$(git status --porcelain)"` and `make check` passes) before creating any worktree.
 * **Do**: Enforce the **Post-Merge Integration Baseline Gate**: re-verify that `$BASE_REF` is pristine and passing `make check` after every progressive track merge before consolidating logs or notifying sibling tracks.
@@ -208,11 +209,12 @@ flowchart TD
 
 ### Step 1: Define the Work Package, Ingest Requirements, and Verify Seams
 
-1. **Define Work Package**: Record its name or identifier, owning thread/session, selected scope, acceptance criteria, and source documents in `.scratch/orchestration-status.md`. Select a bounded package for this session rather than assuming an entire project roadmap is the assignment. If continuing work from another session, create a new package linked to the prior package's handover.
-2. **Ingest Specification**: Ingest the specification from a committed path (e.g. [`docs/handovers/LUNA_HANDOVER_REFACTORING_TAXONOMY.md`](file:///Users/alessandro/sources/semantic-editor/docs/handovers/LUNA_HANDOVER_REFACTORING_TAXONOMY.md)) or write inline prompt markdown to `.scratch/handover.md`.
-3. **Documentation and Research Discovery**: Identify the user-facing documentation surfaces affected by the requested behavior, including README and example documentation, Maven usage/site source pages, goal/help text, and published API comments where applicable. Search existing research questions for related decisions, evidence, and unresolved concerns; record the relevant documents and whether they may need an update.
-4. **Architectural Scrutiny**: The Critical Architect verifies the work package's functional requirements, acceptance criteria, ADR alignment, decoupling seams, and identified documentation/research follow-ups.
-5. **Clearance**: Issue formal track boundaries and DAG sequencing within the work package to the coordinator thread.
+1. **Establish the Handover File**: Start from the handover file supplied in the initial prompt. If none is supplied but the prompt defines the requested work, save that initial prompt verbatim as `.scratch/handover.md` before planning, delegation, or edits. Record the source handover path in the orchestration status. Do not reconstruct the initial assignment from later chat context.
+2. **Define Work Package**: Record its name or identifier, owning thread/session, selected scope, acceptance criteria, and source handover in `.scratch/orchestration-status.md`. Select a bounded package for this session rather than assuming an entire project roadmap is the assignment. If continuing work from another session, create a new package linked to the prior package's closeout handover.
+3. **Ingest Specification**: Read the requirements from the established handover file.
+4. **Documentation and Research Discovery**: Identify the user-facing documentation surfaces affected by the requested behavior, including README and example documentation, Maven usage/site source pages, goal/help text, and published API comments where applicable. Search existing research questions for related decisions, evidence, and unresolved concerns; record the relevant documents and whether they may need an update.
+5. **Architectural Scrutiny**: The Critical Architect verifies the work package's functional requirements, acceptance criteria, ADR alignment, decoupling seams, and identified documentation/research follow-ups.
+6. **Clearance**: Issue formal track boundaries and DAG sequencing within the work package to the coordinator thread.
 
 ### Step 2: Formulate DAG and Partition Slices
 
@@ -322,13 +324,14 @@ flowchart TD
 
 ### Step 11: Work Package Closeout, Final Presentation, and Wrap-Up Handoff
 
-1. **Bundle Track Analyses into Closeout Artifact**: Compile `.scratch/handover-closeout.md`, consolidating:
+1. **Bundle Track Analyses into Closeout Artifact**: Compile `.scratch/handover-closeout.md`, then persist a sibling of the source handover by inserting `-closeout` before `.md`. For this work package, the required versioned artifact is `docs/handovers/2026-10-25-intra-jar-trimming-work-package-closeout.md`; use the same naming rule for other handover filenames. The sibling carries the consolidated closeout content:
    * Work package identity, owning thread/session, agreed acceptance criteria, and an explicit complete or incomplete verdict. For incomplete packages, identify remaining criteria, preserved work, and candidate scope for a new package in a later session.
    * Cumulative git diff statistics and integrated commit log on `$BASE_REF`.
    * Bundled per-track wrap-up QoL assessments (`.scratch/reviews/*-wrapup.md`), tool runtime comparisons, and net agent-efficiency conclusions.
    * Project-wide verification proofs (`make check`, txtar scripts, and benchmark sweeps).
    * Review receipts links from `.scratch/reviews/`.
    * The complete **Specification Deviations and Architectural Choices Log**.
+   The source handover and its closeout sibling travel together so a later session can resume from the exact remaining scope without relying on prior chat history.
 2. **Confirm with User**: Present summary and clickable file link (`file://.../.scratch/handover-closeout.md`) to the user for explicit sign-off.
 3. **Handoff Execution**:
    * **Installed `$wrap-up` Skill**: Call or recommend `$wrap-up` to ingest pre-bundled assessments from `.scratch/handover-closeout.md`, merge `$BASE_REF` into local `main`, archive the chat, and remove scratch artifacts.
