@@ -23,7 +23,8 @@ import java.util.Set;
 @SuppressWarnings({
   "PMD.TooManyMethods",
   "PMD.UseConcurrentHashMap",
-  "PMD.AvoidSynchronizedAtMethodLevel"
+  "PMD.AvoidSynchronizedAtMethodLevel",
+  "PMD.CommentDefaultAccessModifier"
 })
 public final class JdkPlatformContext implements AutoCloseable {
   /** Changes when platform source selection or class-pool interpretation changes. */
@@ -44,13 +45,25 @@ public final class JdkPlatformContext implements AutoCloseable {
   /** WHY: Pair cache identities and captured bytes under one monitor. */
   private final Map<Integer, PlatformSnapshot> snapshots = new LinkedHashMap<>();
 
-  /** Whether close has released the temporary source copies. */
+  /** Whether callers are prevented from using this context. */
   private boolean closed;
+
+  /** Whether every temporary path was removed successfully. */
+  private boolean cleanupComplete;
+
+  /** Filesystem deletion used for temporary snapshot cleanup. */
+  private final PathDeleter pathDeleter;
 
   /** Creates an invocation-local snapshot owner for the supplied JDK location. */
   public JdkPlatformContext(final Path javaHome) throws IOException {
+    this(javaHome, Files::deleteIfExists);
+  }
+
+  /** Test seam for deterministic cleanup failures. */
+  JdkPlatformContext(final Path javaHome, final PathDeleter deleter) throws IOException {
     this.jdkLocation = normalize(javaHome);
     snapshotDirectory = Files.createTempDirectory("elider-platform-snapshot-");
+    pathDeleter = java.util.Objects.requireNonNull(deleter, "deleter");
   }
 
   /** Captures or returns a release snapshot; bytes remain until context close. */
@@ -89,7 +102,7 @@ public final class JdkPlatformContext implements AutoCloseable {
   /** Removes the invocation-owned source copies. */
   @Override
   public synchronized void close() throws IOException {
-    if (closed) {
+    if (cleanupComplete) {
       return;
     }
     closed = true;
@@ -98,7 +111,7 @@ public final class JdkPlatformContext implements AutoCloseable {
       final List<Path> pathsToDelete = paths.sorted(Comparator.reverseOrder()).toList();
       for (final Path path : pathsToDelete) {
         try {
-          Files.deleteIfExists(path);
+          pathDeleter.deleteIfExists(path);
         } catch (final IOException exception) {
           if (failure == null) {
             failure = exception;
@@ -111,6 +124,7 @@ public final class JdkPlatformContext implements AutoCloseable {
         throw failure;
       }
     }
+    cleanupComplete = true;
   }
 
   private PlatformSnapshot captureRelease(final int release, final Map<Path, CapturedFile> pending)
@@ -284,6 +298,13 @@ public final class JdkPlatformContext implements AutoCloseable {
     }
   }
 
+  /** Deletes temporary paths and permits deterministic cleanup-failure tests. */
+  @FunctionalInterface
+  interface PathDeleter {
+    /** Deletes the path if present and reports whether it existed. */
+    boolean deleteIfExists(Path path) throws IOException;
+  }
+
   /** Content identity for one captured source archive or release metadata file. */
   public record SourceIdentity(Path sourcePath, String sha256, String sha1, long size) {}
 
@@ -374,12 +395,10 @@ public final class JdkPlatformContext implements AutoCloseable {
       return identityText;
     }
 
-    @SuppressWarnings("PMD.CommentDefaultAccessModifier")
     List<CapturedFile> capturedFiles() {
       return sourceEntries;
     }
   }
 
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   record CapturedFile(Path sourcePath, Path snapshotPath, SourceIdentity identity) {}
 }

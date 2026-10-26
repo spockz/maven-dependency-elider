@@ -17,6 +17,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -193,6 +195,40 @@ class JdkPlatformContextTest {
           ctSym, "L/java.base/" + CLASS_NAME + ".sig", classBytes(CLASS_NAME, Opcodes.ACC_PUBLIC));
       assertThat(context.snapshot(RELEASE_21).sourceIdentities()).hasSize(1);
       assertThat(context.capturedStorageBytes()).isEqualTo(Files.size(ctSym));
+    }
+  }
+
+  @Test
+  @DisplayName("ADR-0003: failed cleanup leaves the context closed and permits cleanup retry")
+  @SuppressWarnings("PMD.UseTryWithResources")
+  void failedCleanupCanRetry() throws Exception {
+    final AtomicBoolean failFirstDelete = new AtomicBoolean(true);
+    final AtomicReference<Path> snapshotDirectory = new AtomicReference<>();
+    final JdkPlatformContext context =
+        new JdkPlatformContext(
+            temporaryDirectory,
+            path -> {
+              snapshotDirectory.compareAndSet(null, path);
+              if (failFirstDelete.compareAndSet(true, false)) {
+                throw new IOException("injected deletion failure");
+              }
+              return Files.deleteIfExists(path);
+            });
+    try {
+      assertThatThrownBy(context::close)
+          .isInstanceOf(IOException.class)
+          .hasMessage("injected deletion failure");
+      final Path failedPath = snapshotDirectory.get();
+      assertThat(failedPath).isNotNull();
+      assertThat(Files.exists(failedPath)).isTrue();
+      assertThatThrownBy(() -> context.snapshot(RELEASE_21))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessage("JDK platform context is closed");
+
+      context.close();
+      assertThat(Files.exists(failedPath)).isFalse();
+    } finally {
+      context.close();
     }
   }
 
