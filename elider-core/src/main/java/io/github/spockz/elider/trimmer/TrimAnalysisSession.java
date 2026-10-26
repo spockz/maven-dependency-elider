@@ -37,7 +37,11 @@ public final class TrimAnalysisSession {
     return analyze(candidateJar, libraryClassPath, new ClassPool(), retainedRoots);
   }
 
-  /** Analyzes one candidate with the supplied platform API and fresh ProGuard pools. */
+  /**
+   * Analyzes with platform API classes; Kotlin metadata is rejected.
+   *
+   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   */
   public DependencyJarTrimmer.TrimAnalysis analyze(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
@@ -54,7 +58,11 @@ public final class TrimAnalysisSession {
         this::archive);
   }
 
-  /** Prepares an unchanged candidate with its supplied API context. */
+  /**
+   * Prepares an unchanged candidate; Kotlin metadata is rejected.
+   *
+   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   */
   public DependencyJarTrimmer.PreparedAnalysis prepareUnchangedPassThrough(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
@@ -71,7 +79,11 @@ public final class TrimAnalysisSession {
         this::archive);
   }
 
-  /** Prepares a candidate with tolerated unchanged sibling classes. */
+  /**
+   * Prepares candidate closure; Kotlin metadata is rejected.
+   *
+   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   */
   public DependencyJarTrimmer.PreparedAnalysis prepareWithUnchangedPassThroughLibraries(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
@@ -88,7 +100,11 @@ public final class TrimAnalysisSession {
         this::archive);
   }
 
-  /** Analyzes an unchanged pass-through candidate with cached sibling archive bytes. */
+  /**
+   * Analyzes an unchanged candidate; Kotlin metadata is rejected.
+   *
+   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   */
   public DependencyJarTrimmer.TrimAnalysis analyzeUnchangedPassThrough(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
@@ -106,7 +122,11 @@ public final class TrimAnalysisSession {
         this::archive);
   }
 
-  /** Tolerates unresolved references originating in unchanged sibling libraries. */
+  /**
+   * Tolerates unresolved sibling links; Kotlin metadata is rejected.
+   *
+   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   */
   public DependencyJarTrimmer.TrimAnalysis analyzeWithUnchangedPassThroughLibraries(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,

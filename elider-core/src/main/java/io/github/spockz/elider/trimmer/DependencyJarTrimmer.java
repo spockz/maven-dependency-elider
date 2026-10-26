@@ -41,7 +41,7 @@ public final class DependencyJarTrimmer {
   }
 
   /**
-   * Adds compiler API signatures to closure analysis.
+   * Adds compiler API signatures; Kotlin metadata is rejected.
    *
    * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
    */
@@ -62,11 +62,9 @@ public final class DependencyJarTrimmer {
   }
 
   /**
-   * Computes links from every class in an unchanged pass-through archive.
+   * Computes pass-through closure; Kotlin metadata is rejected.
    *
-   * <p>Unresolved links from unchanged classes are ignored.
-   *
-   * <p>Absent classes cannot identify candidates. Sibling gaps remain fatal.
+   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
    */
   public TrimAnalysis analyzeUnchangedPassThrough(
       final Path candidateJar,
@@ -78,7 +76,11 @@ public final class DependencyJarTrimmer {
         candidateJar, libraryClassPath, platformLibraryPool, retainedRoots, Set.of());
   }
 
-  /** Computes closure for one unchanged pass-through archive and its sibling owners. */
+  /**
+   * Computes unchanged-archive closure; Kotlin metadata is rejected.
+   *
+   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   */
   public TrimAnalysis analyzeUnchangedPassThrough(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
@@ -98,7 +100,11 @@ public final class DependencyJarTrimmer {
         ArchiveSnapshot::read);
   }
 
-  /** Computes candidate closure with unchanged-library tolerance. */
+  /**
+   * Computes candidate closure; Kotlin metadata is rejected.
+   *
+   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   */
   public TrimAnalysis analyzeWithUnchangedPassThroughLibraries(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,

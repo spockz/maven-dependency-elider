@@ -24,6 +24,7 @@ import org.objectweb.asm.Opcodes;
 import proguard.classfile.ClassPool;
 import proguard.classfile.LibraryClass;
 import proguard.classfile.LibraryMethod;
+import proguard.classfile.kotlin.UnsupportedKotlinMetadata;
 
 /** Tests immutable inputs for lazy prepared reference graphs. */
 @SuppressWarnings({
@@ -122,6 +123,28 @@ class PreparedAnalysisContextTest {
                         ArchiveSnapshot::read))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Platform class pool entries must be LibraryClass instances");
+  }
+
+  @Test
+  @DisplayName("ADR-0003: platform pools reject Kotlin metadata with an explicit diagnostic")
+  void platformPoolRejectsKotlinMetadataEntries() throws Exception {
+    final Path candidateJar =
+        writeClassJar(
+            "metadata-candidate.jar", Map.of("fixture/Root", simpleClass("fixture/Root", null)));
+    final Path platformJar =
+        writeClassJar("metadata-api.jar", Map.of("fixture/Api", simpleClass("fixture/Api", null)));
+    final ClassPool platformPool = ArchiveSnapshot.read(platformJar, true).newClassPool(true);
+    ((LibraryClass) platformPool.getClass("fixture/Api")).kotlinMetadata =
+        new UnsupportedKotlinMetadata(1, new int[0], 0, null, null);
+
+    assertThatThrownBy(
+            () ->
+                new TrimAnalysisSession(new DependencyJarTrimmer())
+                    .prepareWithUnchangedPassThroughLibraries(
+                        candidateJar, List.of(), platformPool, Set.of()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage(
+            "Platform class pool entries with Kotlin metadata are unsupported: fixture/Api");
   }
 
   private Path writeClassJar(final String fileName, final Map<String, byte[]> classes)
