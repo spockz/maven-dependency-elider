@@ -29,8 +29,13 @@ This page is for project contributors. It tracks behavior-affecting implementati
 | Exact input digest reuse and publication guard | Reuse each initial SHA-256 value for fingerprint and cache-entry validation, then verify the complete input snapshot before staging and after all trimmed outputs publish. Keep exact content checks for both inputs and trimmed outputs. | A file can change without changing its size or mtime, and a prior per-output check could miss an earlier input changing during publication of a later output. | Reviewed slice 7.1 is integrated as `01bb9f7`. Tests cover restored-mtime content changes, output corruption, replacement, symlink retargeting, and mutation during sequential multi-output publication. |
 | Archive boundaries and signatures | Keep one output JAR per Maven coordinate. When an archive is modified, strip invalidated signature blocks and manifest section digests; preserve non-class resources. | Shading or flattening would lose coordinate boundaries and signature files would no longer authenticate the modified bytes. | Implemented in Tracks 2–4 with archive and SBOM tests. |
 | Provenance | Emit the modified component's actual digest and record the source component/digest and trimming patch in CycloneDX 1.6 pedigree. | Consumers need to distinguish the modified bytes from the upstream release. | Implemented in Track 4 with pinned schema validation. |
+| Example baseline and elision modes | Select fixture behavior from the same POM with `-Delide.mode=baseline` or `-Delide.mode=elision`; the latter activates the named Maven `elision` profile. | One dependency and packaging definition makes output differences attributable to the elision switch and avoids maintaining parallel fixture POMs. | Implemented in the examples parent POM and exercised by `make test-examples`. |
 
 ## Engineering FAQ
+
+### Why do the examples use `elide.mode` while the plugin exposes `elide.skip`?
+
+`elide.mode=baseline|elision` names the two fixture behaviors and activates the example's `elision` Maven profile by property. The profile maps the `elision` mode to the plugin's internal `elide.skip=false` setting. This keeps each fixture's dependencies and packaging configuration in one POM while making baseline and elided builds easy to compare. General plugin users continue to control the goal with `elide.skip`.
 
 ### Can we keep all multi-release entries and analyze only the base classes?
 

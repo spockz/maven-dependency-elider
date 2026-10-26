@@ -170,6 +170,15 @@ make test-examples
 
 The example script uses the Maven Wrapper, a JDK 21 toolchain, Bash, and `timeout`. It places temporary traces, logs, and verification staging under the repository `.scratch/` directory. It does not run OSV-Scanner or generate VEX. The Spring fixture checks trimmed `spring-webmvc` bytes and class entries and verifies the packaged HTTP endpoint; its runtime-only mail classification is evidence, not an explanation of why Spring loaded those classes.
 
+Example POMs use `-Delide.mode=baseline` or `-Delide.mode=elision` to select the named baseline and elision behaviors. The plugin's internal skip parameter remains `elide.skip`; the mode property activates the example's Maven profile.
+
+Run the standalone CVE fixture baselines with:
+
+```sh
+./mvnw -f examples/example-cve-unused-app/pom.xml verify -Delide.mode=baseline
+./mvnw -f examples/example-cve-safe-class-app/pom.xml verify -Delide.mode=baseline
+```
+
 ## Cache benchmarks
 
 The core JMH cache benchmark measures metadata fingerprinting and cache loading, but does not establish the plugin's whole-build overhead. The production trim-cache benchmark uses exact content hashes. Its recorded warm hit is **93.038 ± 0.756 ms/op** on GraalVM JDK 21.0.12, above the <10 ms target; the per-artifact <1.5 ms target remains unmet. See [RQ-0003](docs/research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for method, limitations, and the deferred performance follow-up.

@@ -342,8 +342,8 @@ report assertions require mail classes seen in runtime telemetry to be classifie
 `neitherReferencedNorObserved`. The packaged Boot JAR omits Commons Codec while retaining the
 complete mail artifacts, and `GET /api/hello` continues to return the expected response. This
 classification does not establish why mail classes were loaded and does not change whole-JAR
-retention. The elision goal remains in an opt-in profile activated by `-Delide.skip=false`, so
-default example verification does not require the unpublished plugin to be installed first.
+retention. The elision goal remains in an opt-in profile activated by `-Delide.mode=elision`; the
+baseline mode does not activate the profile.
 
 #### 3. Integration Test Loop (Programmatic Test Case)
 

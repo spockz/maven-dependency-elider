@@ -75,7 +75,7 @@ PY
     baseline_seconds="$test_dir/$fixture-baseline.seconds"
     elision_seconds="$test_dir/$fixture-elision.seconds"
     elision_options=(
-      -Delide.skip=false
+      -Delide.mode=elision
       "-Delide.traceFiles=$trace"
       -Delider.verifyElision=true
     )
@@ -103,7 +103,7 @@ PY
     fi
 
     run_timed "$baseline_seconds" "$maven" "${maven_options[@]}" -f "$pom" clean verify \
-      -Delide.skip=true -Delider.verifyElision=false
+      -Delide.mode=baseline -Delider.verifyElision=false
     test -f "$jar_file"
     if [[ $fixture == example-basic-app ]]; then
       baseline_package_bytes=$(wc -c <"$jar_file")
@@ -247,7 +247,7 @@ final class ElidedCodecReference {
 JAVA
 
   "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
-    -Delide.skip=false -Delide.traceFiles="$trace" -Delider.verifyElision=false \
+    -Delide.mode=elision -Delide.traceFiles="$trace" -Delider.verifyElision=false \
     -Delide.sourceRootsComplete=true -Dmaven.compiler.proc=none \
     >"$active_log" 2>&1
   if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedCodecReference.class ]]; then
@@ -257,7 +257,7 @@ JAVA
   fi
 
   "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
-    -Delide.skip=true -Delide.traceFiles="$trace" -Delider.verifyElision=false \
+    -Delide.mode=baseline -Delide.traceFiles="$trace" -Delider.verifyElision=false \
     >"$skipped_log" 2>&1
   if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedCodecReference.class ]]; then
     echo "Compiler did not produce the probe class when elision was skipped" >&2

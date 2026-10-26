@@ -163,6 +163,10 @@ Build upon the verified whole-artifact elision engine by introducing **intra-JAR
 * **Slice 6.3: JMH Benchmark Gate**
   * Run JMH benchmarks in `elider-benchmarks` to assert that the $< 10\text{ ms}$ fast-path overhead invariant holds with trimming cache enabled.
 
+* **Slice 6.5: Named Baseline and Elision Modes**
+  * Select fixture behavior from one POM with `-Delide.mode=baseline` or `-Delide.mode=elision`; the `elision` value activates a named Maven profile.
+  * Verify that `make test-examples` builds and compares both modes without parallel POM definitions.
+
 ---
 
 ## 4. Verification Protocol

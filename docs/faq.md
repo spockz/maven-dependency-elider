@@ -13,6 +13,8 @@ Elision can remove unused dependency artifacts from the current Maven build and 
 
 Configure a supported trace file and set `-Delide.skip=false`. See [Maven plugin usage](plugin-usage.md) for trace formats, JAR trimming options, and examples.
 
+For the repository examples, use `-Delide.mode=baseline` or `-Delide.mode=elision` with the same POM. `elision` activates the example profile; `baseline` is the default. This makes it easy to compare the two packaged outputs without maintaining separate POMs.
+
 ### How can I see the dependencies effective after elision?
 
 Run the lifecycle phase and tree goal in one invocation if you want the elider to execute before the report:

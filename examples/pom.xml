@@ -17,6 +17,7 @@
     <description>Reference projects used as empirical integration test fixtures.</description>
 
     <properties>
+        <elide.mode>baseline</elide.mode>
         <elide.skip>true</elide.skip>
         <elider.verifyElision>false</elider.verifyElision>
     </properties>
@@ -76,13 +77,16 @@
 
     <profiles>
         <profile>
-            <id>elision-test</id>
+            <id>elision</id>
             <activation>
                 <property>
-                    <name>elide.skip</name>
-                    <value>false</value>
+                    <name>elide.mode</name>
+                    <value>elision</value>
                 </property>
             </activation>
+            <properties>
+                <elide.skip>false</elide.skip>
+            </properties>
             <build>
                 <pluginManagement>
                     <plugins>

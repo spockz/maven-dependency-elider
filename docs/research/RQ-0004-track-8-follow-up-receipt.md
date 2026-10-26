@@ -28,8 +28,8 @@ the final Boot JAR. The runner preserves the baseline nested mail JAR bytes befo
 classes were loaded. The endpoint is still verified over HTTP, and Commons Codec is removed from
 the final archive.
 
-The `elision-test` profile is activated by `-Delide.skip=false`; default example builds therefore
-do not need the unpublished plugin installed. The test runner installs it before elision builds.
+The `elision` profile is activated by `-Delide.mode=elision`; baseline remains the default example
+mode. The test runner installs the plugin before elision builds.
 Shade signature metadata is excluded from fat JARs so runtime verification remains valid after
 repacking signed dependencies. Failed test runs preserve their traces and archive listings in the
 reported temporary evidence directory.
