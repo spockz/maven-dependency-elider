@@ -133,10 +133,12 @@ final class ElideMojoTest {
     final MavenProject project = newProject();
     project.setArtifacts(resolved);
     project.setDependencyArtifacts(direct);
-    execute(project, "used/Sample\n");
+    final RecordingMavenLog log = new RecordingMavenLog();
+    execute(project, "used/Sample\n", log);
 
     assertThat(project.getArtifacts()).isNotSameAs(resolved);
     assertThat(project.getArtifacts()).containsExactlyInAnyOrder(used, unused);
+    assertThat(log.messages()).contains("  Classes removed: 0 / N/A (N/A; stage not run)");
     assertThat(project.getDependencyArtifacts()).isSameAs(direct);
     assertThat(project.getDependencyArtifacts()).containsExactlyInAnyOrder(used, unused);
     final Artifact addedLater = artifact("later", "later/Added.class");
@@ -168,7 +170,8 @@ final class ElideMojoTest {
     project.setBuild(build);
     final Path original = runtime.getFile().toPath();
     final ElideMojo mojo = new ElideMojo();
-    mojo.setLog(new SystemStreamLog());
+    final RecordingMavenLog log = new RecordingMavenLog();
+    mojo.setLog(log);
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("sample.Keep\n").toFile()));
     set(mojo, "reportFile", tempDir.resolve("trim-report.json").toFile());
@@ -178,6 +181,12 @@ final class ElideMojoTest {
     mojo.execute();
 
     assertThat(runtime.getFile().toPath()).isNotEqualTo(original).isRegularFile();
+    assertThat(log.messages())
+        .contains(
+            "  Program classes removed: 1 (uncompressed omitted .class entry payload bytes: "
+                + MavenElisionReportWriter.formatBytes(
+                    classEntrySize(original, "sample/Drop.class"))
+                + "; excludes module descriptors and archive sanitation metadata)");
     assertThat(directRuntime.getFile().toPath()).isEqualTo(runtime.getFile().toPath());
     assertThat(project.getArtifacts()).contains(runtime);
     assertThat(project.getArtifacts()).doesNotContain(unusedRuntime);
@@ -1966,10 +1975,15 @@ final class ElideMojoTest {
 
   private void execute(final MavenProject project, final String traceContent)
       throws IOException, ReflectiveOperationException, MojoFailureException {
+    execute(project, traceContent, new SystemStreamLog());
+  }
+
+  private void execute(final MavenProject project, final String traceContent, final Log log)
+      throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path trace = tempDir.resolve("runtime.lst");
     Files.writeString(trace, traceContent);
     final ElideMojo mojo = new ElideMojo();
-    mojo.setLog(new SystemStreamLog());
+    mojo.setLog(log);
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "reportFile", tempDir.resolve("elide-report.json").toFile());

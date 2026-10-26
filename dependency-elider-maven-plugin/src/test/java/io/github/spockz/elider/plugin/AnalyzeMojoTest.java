@@ -19,7 +19,6 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -82,7 +81,7 @@ final class AnalyzeMojoTest {
     set(mojo, "excludedArtifacts", List.of("org.example:excluded"));
     final Path report = tempDir.resolve("analysis.json");
     set(mojo, "reportFile", report.toFile());
-    final RecordingLog log = new RecordingLog();
+    final RecordingMavenLog log = new RecordingMavenLog();
     mojo.setLog(log);
 
     mojo.execute();
@@ -96,7 +95,7 @@ final class AnalyzeMojoTest {
     assertThat(unused.getFile()).isSameAs(unusedFile);
     assertThat(excluded.getFile()).isSameAs(excludedFile);
     assertThat(testScoped.getFile()).isSameAs(testScopedFile);
-    assertThat(log.messages)
+    assertThat(log.messages())
         .contains(
             "  Whole artifacts: 0 / 5 (0.0%)",
             "  Classes removed: 0 / N/A (N/A; stage not run)",
@@ -292,73 +291,4 @@ final class AnalyzeMojoTest {
   }
 
   private record Fixture(AnalyzeMojo mojo) {}
-
-  /** Captures informational lines emitted by the Mojo. */
-  @SuppressWarnings({"PMD.TooManyMethods", "PMD.UncommentedEmptyMethodBody"})
-  private static final class RecordingLog implements Log {
-    /** Captured informational lines emitted by the Mojo. */
-    private final List<String> messages = new java.util.ArrayList<>();
-
-    @Override
-    public boolean isDebugEnabled() {
-      return false;
-    }
-
-    @Override
-    public void debug(final CharSequence content) {}
-
-    @Override
-    public void debug(final CharSequence content, final Throwable error) {}
-
-    @Override
-    public void debug(final Throwable error) {}
-
-    @Override
-    public boolean isInfoEnabled() {
-      return true;
-    }
-
-    @Override
-    public void info(final CharSequence content) {
-      messages.add(content.toString());
-    }
-
-    @Override
-    public void info(final CharSequence content, final Throwable error) {
-      messages.add(content.toString());
-    }
-
-    @Override
-    public void info(final Throwable error) {
-      messages.add(error.toString());
-    }
-
-    @Override
-    public boolean isWarnEnabled() {
-      return false;
-    }
-
-    @Override
-    public void warn(final CharSequence content) {}
-
-    @Override
-    public void warn(final CharSequence content, final Throwable error) {}
-
-    @Override
-    public void warn(final Throwable error) {}
-
-    @Override
-    public boolean isErrorEnabled() {
-      return false;
-    }
-
-    @Override
-    public void error(final CharSequence content) {}
-
-    @Override
-    public void error(final CharSequence content, final Throwable error) {}
-
-    @Override
-    public void error(final Throwable error) {}
-  }
 }

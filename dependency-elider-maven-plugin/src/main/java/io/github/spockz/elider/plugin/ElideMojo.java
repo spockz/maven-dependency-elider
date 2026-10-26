@@ -128,7 +128,15 @@ public final class ElideMojo extends AbstractMojo {
                       + " ms (target < 1.5 ms)");
         }
       }
-      ElisionSummary.report(getLog(), analysis.decision(), analysis.resolvedSnapshots().size());
+      if (trimJars) {
+        ElisionSummary.reportTrimmed(
+            getLog(),
+            analysis.decision(),
+            analysis.resolvedSnapshots().size(),
+            analysis.trimRecords());
+      } else {
+        ElisionSummary.report(getLog(), analysis.decision(), analysis.resolvedSnapshots().size());
+      }
       if (getLog().isInfoEnabled()) {
         getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
       }

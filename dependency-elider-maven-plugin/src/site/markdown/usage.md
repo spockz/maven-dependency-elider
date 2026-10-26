@@ -24,7 +24,7 @@ Pass multiple trace paths as a comma-separated `elide.traceFiles` value. Support
 
 Only resolved regular JAR files are scanned. Non-JAR artifact types remain retained. The analysis currently considers `compile` and `runtime` scopes as candidates, and excludes all others from elision.
 
-The summary reports whole-artifact elisions over the complete pre-analysis Maven artifact count. Surgical classes, methods, and fields are reported as zero with an unrun stage and N/A denominators. Cache status is unavailable.
+The summary reports whole-artifact elisions over the complete pre-analysis Maven artifact count. `analyze` and trim-disabled `elide` report classes as zero with an unrun stage and N/A denominator. When `elide.trimJars=true`, `elide` reports the number of program classes removed from retained JARs and the sum of their uncompressed omitted `.class` entry payload bytes. That total excludes module descriptors and archive sanitation metadata. Methods and fields remain marked as unrun, and cache status is unavailable.
 
 After a successful lifecycle run with `elide` enabled, the `report` goal reads its saved result without repeating dependency analysis. By default, `elide` writes `target/dependency-elider-report.json`; set `-Delide.summaryFile=/path/to/report.json` to change the location. Invoke the report from the same project checkout:
 

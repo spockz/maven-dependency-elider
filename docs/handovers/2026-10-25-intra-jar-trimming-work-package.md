@@ -187,6 +187,11 @@ Track 7 (Persisted Elision Report) depends on Tracks 3 and 5; Track 6's report e
 * **Slice 7.3: Report Every Example**
   * Invoke the report goal after successful elision for Basic, Spring Boot, CVE-unused, and CVE-safe-class examples.
   * Capture representative goal output for each example in the README.
+* **Slice 7.4: Report Trim Results During Elision**
+  * When `elide.trimJars=true`, report program classes pruned from retained JARs and the sum of uncompressed omitted `.class` entry payload bytes from `analysis.trimRecords()` in the `elide` summary.
+  * Label the payload-byte basis and state that module descriptors and archive sanitation metadata are excluded.
+  * Keep the stage-not-run class summary for `analyze` and trim-disabled `elide`; methods and fields remain stage-not-run.
+  * Update plugin usage documentation and test the visible trim-enabled summary using the Maven Mojo trimming fixture.
 
 ---
 
