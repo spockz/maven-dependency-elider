@@ -179,6 +179,54 @@ class ArchiveSanitizerTest {
   }
 
   @Test
+  void capturedProvenanceMatchesNormalizedPathWithoutRehashingSource() throws Exception {
+    final Path original = createCandidateJar();
+    final ArtifactDigests sourceDigests = ArtifactDigests.read(original);
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer()
+            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+    final byte[] originalBytes = Files.readAllBytes(original);
+    Files.write(original, new byte[] {0}, java.nio.file.StandardOpenOption.APPEND);
+    assertThat(Files.readAllBytes(original)).isNotEqualTo(originalBytes);
+
+    final Path normalizedAlias = original.getParent().resolve(".").resolve(original.getFileName());
+    final Path output = temporaryDirectory.resolve("captured-path-trimmed.jar");
+    final ArchiveSanitizer.PreparedOutput prepared =
+        new ArchiveSanitizer()
+            .prepareWithProvenance(
+                normalizedAlias,
+                output,
+                ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+                analysis,
+                sourceDigests);
+
+    assertThat(new ArchiveSanitizer().publish(prepared).originalSha256())
+        .isEqualTo(sourceDigests.sha256());
+  }
+
+  @Test
+  void capturedProvenanceRejectsDifferentSourcePath() throws Exception {
+    final Path original = createCandidateJar();
+    final Path other = createCandidateJar("different-source.jar", "Drop");
+    final ArtifactDigests sourceDigests = ArtifactDigests.read(original);
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer()
+            .analyze(other, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+
+    assertThatThrownBy(
+            () ->
+                new ArchiveSanitizer()
+                    .prepareWithProvenance(
+                        other,
+                        temporaryDirectory.resolve("mismatched-path-trimmed.jar"),
+                        ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+                        analysis,
+                        sourceDigests))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("belong to a different path");
+  }
+
+  @Test
   void detectsStagedOutputCorruptionWhenPublishing() throws Exception {
     final Path original = createCandidateJar();
     final DependencyJarTrimmer.TrimAnalysis analysis =

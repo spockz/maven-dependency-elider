@@ -11,15 +11,45 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 /** Immutable SHA-256 and SHA-1 provenance captured for one artifact file. */
-public record ArtifactDigests(String sha256, String sha1) {
-  /** Validates the SHA-256 and SHA-1 encodings. */
-  public ArtifactDigests {
-    requireDigest(sha256, 64, "sha256");
-    requireDigest(sha1, 40, "sha1");
+public final class ArtifactDigests {
+  /** Keeps provenance bound to the normalized archive input. */
+  private final Path sourcePath;
+
+  /** Stores SHA-256 from the single source read. */
+  private final String sha256Digest;
+
+  /** Stores SHA-1 from the same source read for Maven's report. */
+  private final String sha1Digest;
+
+  private ArtifactDigests(final Path path, final String sha256, final String sha1) {
+    this.sourcePath = path;
+    this.sha256Digest = sha256;
+    this.sha1Digest = sha1;
+  }
+
+  /** Returns the normalized source path whose bytes produced these digests. */
+  public Path path() {
+    return sourcePath;
+  }
+
+  /** Returns the source SHA-256 digest. */
+  public String sha256() {
+    return sha256Digest;
+  }
+
+  /** Returns the source SHA-1 digest. */
+  public String sha1() {
+    return sha1Digest;
+  }
+
+  /** Returns whether this provenance was captured for the supplied normalized path. */
+  public boolean matchesPath(final Path candidate) {
+    return sourcePath.equals(normalize(candidate));
   }
 
   /** Reads both digest algorithms from one stable file pass. */
   public static ArtifactDigests read(final Path path) throws IOException {
+    final Path normalizedPath = normalize(path);
     final MessageDigest sha256 = digest("SHA-256");
     final MessageDigest sha1 = digest("SHA-1");
     try (InputStream input = Files.newInputStream(path)) {
@@ -34,7 +64,13 @@ public record ArtifactDigests(String sha256, String sha1) {
       }
     }
     return new ArtifactDigests(
-        HexFormat.of().formatHex(sha256.digest()), HexFormat.of().formatHex(sha1.digest()));
+        normalizedPath,
+        HexFormat.of().formatHex(sha256.digest()),
+        HexFormat.of().formatHex(sha1.digest()));
+  }
+
+  private static Path normalize(final Path path) {
+    return java.util.Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
   }
 
   private static MessageDigest digest(final String algorithm) {
@@ -43,12 +79,6 @@ public record ArtifactDigests(String sha256, String sha1) {
     } catch (final NoSuchAlgorithmException exception) {
       throw new IllegalStateException(
           "Required digest algorithm is unavailable: " + algorithm, exception);
-    }
-  }
-
-  private static void requireDigest(final String value, final int length, final String name) {
-    if (value == null || !value.matches("[0-9a-f]{" + length + "}")) {
-      throw new IllegalArgumentException(name + " must be a lowercase hexadecimal digest");
     }
   }
 }

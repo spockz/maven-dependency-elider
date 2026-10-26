@@ -84,6 +84,10 @@ public final class ArchiveSanitizer {
       throws IOException {
     validateInputs(originalJar, trimmedJar, coordinate, analysis);
     Objects.requireNonNull(originalDigests, "originalDigests");
+    if (!originalDigests.matchesPath(originalJar)) {
+      throw new IOException(
+          "Captured original dependency digests belong to a different path: " + originalJar);
+    }
     return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests);
   }
 
