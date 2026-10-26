@@ -82,6 +82,8 @@ Software Composition Analysis (SCA) suffers from a severe **four-tier granularit
 
 An SBOM or vulnerability scanner can continue to report a coordinate-level finding after artifact or class trimming. A scanner may compare the post-elision CycloneDX inventory, but a class-specific `vulnerable_code_not_present` statement requires vulnerability data that maps the finding to omitted code with sufficient precision. An unused artifact or removed class alone is not that proof. The plugin currently performs no OSV-Scanner integration, CVE-to-class mapping, or VEX generation; see [RQ-0008](docs/research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md).
 
+After `make test-examples`, OSV-Scanner can check the Spring example's generated CycloneDX component inventory against known vulnerability data with `osv-scanner scan source -L examples/example-spring-boot-app/target/dependency-elider-sbom.cdx.json` ([official usage](https://google.github.io/osv-scanner/usage/scan-source)). This repository does not run OSV-Scanner in its example test target, so it makes no scanner-result claim. SBOM inventory scanning matches known findings to components; it does not map CVEs to omitted classes or generate VEX.
+
 ## How Elision Works
 
 ```text

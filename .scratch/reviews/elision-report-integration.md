@@ -3,17 +3,19 @@
 
 ### Review Verdict: APPROVED
 
-Reviewed range: `d9d1ca56d7248dc4b34719f6aa3b838c339f0c98..6a3f210`.
-Base was clean at `d9d1ca5`; the integration branch is `6a3f210`.
+Reviewed range: `d9d1ca56d7248dc4b34719f6aa3b838c339f0c98..6e4704e`.
+Base was clean at `d9d1ca5`; the reviewed integration content is now rebased onto main `e893087`.
 
 #### 1. Code and Tests (Handover & ADR Assertion Fidelity)
 
 - Status: Satisfied.
 - The persisted report flow remains coherent: `ElideMojo` captures original artifact paths and sizes before mutating Maven views, trim records preserve class counts and uncompressed omitted-class bytes through the cache, and the standalone `report` goal only reads and renders the project-bound snapshot.
 - The report writer validates schema and aggregate totals, publishes atomically, distinguishes original JAR file bytes from uncompressed omitted `.class` payload bytes, and reports last-success timestamp semantics. Tests cover accounting, serialization, formatting, missing and mismatched snapshots, and failure/skip behavior.
-- **F1, resolved in Slice 7.4:** When `elide.trimJars=true`, `ElideMojo` passes the already-computed `MavenElisionReportSnapshot` to `ElisionSummary`, which reads its checked class-count and uncompressed omitted `.class` payload-byte totals directly. It no longer emits the incorrect stage-not-run class line. `AnalyzeMojo` and trim-disabled `elide` continue to mark class trimming as not run. `ElideMojoTest` asserts the trimmed totals and absence of the obsolete message.
+- **F1, resolved in Slice 7.4:** When `elide.trimJars=true`, `ElideMojo` passes the already-computed `MavenElisionReportSnapshot` to `ElisionSummary`, which reads its checked class-count and uncompressed omitted `.class` payload-byte totals directly. It no longer emits the incorrect stage-not-run class line. Trim-disabled `elide` continues to mark class trimming as not run; `AnalyzeMojo` reports predicted artifact removals and omits class/method/field stage rows. `ElideMojoTest` asserts the trimmed totals and absence of the obsolete message.
 - `docs/plugin-usage.md` now documents the distinct analyze, trim-disabled, and trim-enabled summary behavior.
+- A documentation follow-up clarifies that trim provenance has no CVE mapping and that VEX claims require vulnerability-to-omitted-code evidence. Open RQ-0008 records optional OSV-SBOM comparison and evidence gates; neither scanner invocation nor VEX generation is implemented. This documentation-only follow-up is pending independent review and does not change trimming or SBOM behavior.
 - **F2, resolved in Slice 7.5:** `AnalyzeMojo` labels removed artifacts as predicted elisions and reports the sum of their original JAR file sizes as an estimate. It omits class/method/field stage rows because analysis does not trim. `MavenElisionReportSnapshot` now supplies the shared dropped-artifact lookup and byte accounting used by both this estimate and persisted reporting. `RQ-0006` clarifies that the `report` goal exists, while the mediated original dependency graph paths remain unavailable, leaving the early-resolver question open.
+- Open `RQ-0008` evaluates optional OSV-Scanner comparison of CycloneDX package inventories and evidence-gated VEX generation. Scanner orchestration, CVE-to-class mapping, and VEX generation are not implemented; the README command is an optional instruction, not a claim of observed scan output.
 
 #### 2. Code Quality, Idioms, and Semantic Deduplication
 
@@ -48,8 +50,8 @@ Base was clean at `d9d1ca5`; the integration branch is `6a3f210`.
 
 #### Verification Evidence
 
-- Inspected `/workspace/sources/maven-dependency-elider/.scratch/verification/wp-trim-track-7-slice-7.5-integration-check.log`: formatting and `make check` completed successfully on GraalVM 21.0.12+7.1 with 149 core tests, 82 plugin tests, Markdownlint across 24 files with zero issues, and `BUILD SUCCESS` at `2026-10-26T18:44:28Z`. The run used the shared Markdownlint binary via `MARKDOWNLINT`.
-- `git show --format= --check 6a3f210` passed. No integration conflicts occurred; main worktree changes were not touched.
+- Inspected `/workspace/sources/maven-dependency-elider/.scratch/verification/wp-trim-osv-research-final-check.log`: formatting and `make check` completed successfully on GraalVM 21.0.12+7.1 with 149 core tests, 82 plugin tests, Markdownlint across 26 files with zero issues, and `BUILD SUCCESS` at `2026-10-26T18:55:39Z`. The run used the shared Markdownlint binary via `MARKDOWNLINT`.
+- The work-package branch was rebased onto committed main `e893087`; the sole conflict was the research register, resolved by preserving artifact-view consistency as RQ-0006 and renumbering the plugin-site question to RQ-0007. Main worktree changes were not touched.
 
 #### Action Items and Follow-Up Work
 
