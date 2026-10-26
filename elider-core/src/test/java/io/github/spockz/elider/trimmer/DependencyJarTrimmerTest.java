@@ -125,6 +125,25 @@ class DependencyJarTrimmerTest {
   }
 
   @Test
+  @DisplayName("ADR-0003: reuses immutable archive bytes with fresh analysis pools")
+  void analysisSessionReusesArchiveSnapshotAcrossFreshAnalyses() throws Exception {
+    final Path candidateJar = compileFixtureJar(false);
+    final Path siblingJar = writeSiblingJar();
+    final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
+
+    final DependencyJarTrimmer.TrimAnalysis first =
+        session.analyze(candidateJar, List.of(siblingJar), jdkLibraryPool, List.of("fixture.A"));
+    Files.write(candidateJar, new byte[] {0, 1, 2});
+    Files.write(siblingJar, new byte[] {0, 1, 2});
+    final DependencyJarTrimmer.TrimAnalysis second =
+        session.analyze(candidateJar, List.of(siblingJar), jdkLibraryPool, List.of("fixture.C"));
+
+    assertThat(first.retainedClasses()).contains("fixture/A").doesNotContain("fixture/C");
+    assertThat(second.retainedClasses()).containsExactly("fixture/C");
+    assertThat(second.roots()).containsExactly("fixture/C");
+  }
+
+  @Test
   @DisplayName("ADR-0003: retained class bytes verify and resolve runtime metadata")
   void retainedClassesPassJvmVerificationAndMetadataUse() throws Exception {
     final Path candidateJar = compileFixtureJar(false);

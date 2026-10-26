@@ -11,6 +11,7 @@ import io.github.spockz.elider.trimmer.ArchiveSanitizer;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
+import io.github.spockz.elider.trimmer.TrimAnalysisSession;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -348,6 +349,7 @@ final class MavenDependencyTrimmer {
             ? platform
             : new JdkApiClassPoolReader().read(javaHome, runtimeRelease);
     final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
+    final var analysisSession = new TrimAnalysisSession(trimmer);
     final Set<String> allCandidateClasses = new HashSet<>(ownerByClass.keySet());
     for (final SkippedProgram skippedProgram : skippedPrograms) {
       for (final String className : skippedProgram.classNames()) {
@@ -363,7 +365,7 @@ final class MavenDependencyTrimmer {
       final List<Path> siblings =
           analysisLibraries.stream().filter(path -> !path.equals(skippedProgram.path())).toList();
       final DependencyJarTrimmer.TrimAnalysis analysis =
-          trimmer.analyzeUnchangedPassThrough(
+          analysisSession.analyzeUnchangedPassThrough(
               skippedProgram.path(),
               siblings,
               runtimePlatform,
@@ -386,7 +388,7 @@ final class MavenDependencyTrimmer {
                 .filter(path -> !path.equals(candidate.snapshot().filePath()))
                 .toList();
         final DependencyJarTrimmer.TrimAnalysis analysis =
-            trimmer.analyzeWithUnchangedPassThroughLibraries(
+            analysisSession.analyzeWithUnchangedPassThroughLibraries(
                 candidate.snapshot().filePath(),
                 siblings,
                 platform,

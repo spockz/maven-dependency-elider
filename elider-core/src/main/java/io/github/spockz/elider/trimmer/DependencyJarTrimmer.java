@@ -16,9 +16,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
-import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Type;
 import proguard.classfile.ClassPool;
 import proguard.classfile.Clazz;
@@ -34,17 +31,14 @@ import proguard.classfile.util.ClassSuperHierarchyInitializer;
 import proguard.classfile.util.InvalidReferenceVisitor;
 import proguard.classfile.visitor.ClassVisitor;
 import proguard.classfile.visitor.ReferencedClassVisitor;
-import proguard.io.util.IOUtil;
 
 /** Computes class retention from roots; it does not discover them. */
 @SuppressWarnings({
-  "PMD.ExcessiveImports",
   "PMD.GodClass",
   "PMD.CyclomaticComplexity",
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.UseConcurrentHashMap",
   "PMD.CompareObjectsWithEquals",
-  "PMD.AvoidCatchingGenericException"
 })
 public final class DependencyJarTrimmer {
   /** Creates a dependency trimmer backed by ProGuard Core's class-file model. */
@@ -63,7 +57,13 @@ public final class DependencyJarTrimmer {
       final Collection<String> retainedRoots)
       throws IOException {
     return analyzeInternal(
-        candidateJar, libraryClassPath, new ClassPool(), retainedRoots, false, Set.of());
+        candidateJar,
+        libraryClassPath,
+        new ClassPool(),
+        retainedRoots,
+        false,
+        Set.of(),
+        ArchiveSnapshot::read);
   }
 
   /**
@@ -78,7 +78,13 @@ public final class DependencyJarTrimmer {
       final Collection<String> retainedRoots)
       throws IOException {
     return analyzeInternal(
-        candidateJar, libraryClassPath, platformLibraryPool, retainedRoots, false, Set.of());
+        candidateJar,
+        libraryClassPath,
+        platformLibraryPool,
+        retainedRoots,
+        false,
+        Set.of(),
+        ArchiveSnapshot::read);
   }
 
   /**
@@ -107,10 +113,15 @@ public final class DependencyJarTrimmer {
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
     Objects.requireNonNull(unchangedPassThroughClassNames, "unchangedPassThroughClassNames");
-    final Set<String> toleratedNames = new HashSet<>();
-    unchangedPassThroughClassNames.forEach(name -> toleratedNames.add(name.replace('.', '/')));
+    final Set<String> toleratedNames = normalizeClassNames(unchangedPassThroughClassNames);
     return analyzeInternal(
-        candidateJar, libraryClassPath, platformLibraryPool, retainedRoots, true, toleratedNames);
+        candidateJar,
+        libraryClassPath,
+        platformLibraryPool,
+        retainedRoots,
+        true,
+        toleratedNames,
+        ArchiveSnapshot::read);
   }
 
   /** Computes candidate closure with unchanged-library tolerance. */
@@ -122,20 +133,31 @@ public final class DependencyJarTrimmer {
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
     Objects.requireNonNull(unchangedPassThroughClassNames, "unchangedPassThroughClassNames");
-    final Set<String> toleratedNames = new HashSet<>();
-    unchangedPassThroughClassNames.forEach(name -> toleratedNames.add(name.replace('.', '/')));
+    final Set<String> toleratedNames = normalizeClassNames(unchangedPassThroughClassNames);
     return analyzeInternal(
-        candidateJar, libraryClassPath, platformLibraryPool, retainedRoots, false, toleratedNames);
+        candidateJar,
+        libraryClassPath,
+        platformLibraryPool,
+        retainedRoots,
+        false,
+        toleratedNames,
+        ArchiveSnapshot::read);
   }
 
-  @SuppressWarnings({"PMD.NcssCount", "PMD.CognitiveComplexity", "PMD.NPathComplexity"})
-  private TrimAnalysis analyzeInternal(
+  @SuppressWarnings({
+    "PMD.NcssCount",
+    "PMD.CognitiveComplexity",
+    "PMD.NPathComplexity",
+    "PMD.CommentDefaultAccessModifier"
+  })
+  TrimAnalysis analyzeInternal(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
       final ClassPool platformLibraryPool,
       final Collection<String> retainedRoots,
       final boolean tolerateUnresolvedProgramReferences,
-      final Set<String> toleratedUnresolvedLibraryClasses)
+      final Set<String> toleratedUnresolvedLibraryClasses,
+      final ArchiveProvider archiveProvider)
       throws IOException {
     Objects.requireNonNull(candidateJar, "candidateJar");
     Objects.requireNonNull(libraryClassPath, "libraryClassPath");
@@ -144,9 +166,10 @@ public final class DependencyJarTrimmer {
     if (!Files.isRegularFile(candidateJar)) {
       throw new IllegalArgumentException("Candidate JAR is not a regular file: " + candidateJar);
     }
-    final Set<String> expectedProgramClasses = validateArchive(candidateJar, true);
+    final ArchiveSnapshot candidateArchive = archiveProvider.read(candidateJar, true);
+    final Set<String> expectedProgramClasses = candidateArchive.classNames();
 
-    final ClassPool programPool = IOUtil.read(candidateJar.toFile(), false);
+    final ClassPool programPool = candidateArchive.newClassPool(false);
     if (programPool.size() == 0) {
       throw new IllegalArgumentException("Candidate JAR contains no classes: " + candidateJar);
     }
@@ -165,8 +188,9 @@ public final class DependencyJarTrimmer {
         throw new IllegalArgumentException(
             "Library classpath entry does not exist: " + libraryPath);
       }
-      final Set<String> expectedLibraryClasses = validateArchive(libraryPath, false);
-      final ClassPool nextPool = IOUtil.read(libraryPath.toFile(), true);
+      final ArchiveSnapshot libraryArchive = archiveProvider.read(libraryPath, false);
+      final Set<String> expectedLibraryClasses = libraryArchive.classNames();
+      final ClassPool nextPool = libraryArchive.newClassPool(true);
       final Set<String> ingestedLibraryClasses = new TreeSet<>();
       nextPool.classNames().forEachRemaining(ingestedLibraryClasses::add);
       if (!ingestedLibraryClasses.equals(expectedLibraryClasses)) {
@@ -303,83 +327,17 @@ public final class DependencyJarTrimmer {
     return normalized;
   }
 
-  @SuppressWarnings("PMD.CognitiveComplexity")
-  private static Set<String> validateArchive(final Path archivePath, final boolean candidate)
-      throws IOException {
-    final Path fileName = archivePath.getFileName();
-    if (!candidate
-        && (Files.isDirectory(archivePath)
-            || fileName == null
-            || !fileName.toString().endsWith(".jar"))) {
-      throw new IOException("Only flat sibling JAR libraries are supported: " + archivePath);
-    }
-    final Set<String> classNames = new HashSet<>();
-    try (JarFile archive = new JarFile(archivePath.toFile())) {
-      final java.util.Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
-        final String entryName = entry.getName();
-        if (entry.isDirectory() || !entryName.endsWith(".class")) {
-          if (isNestedArchive(entryName)) {
-            throw new IOException("Nested archives are not supported: " + entryName);
-          }
-          continue;
-        }
-        if (candidate && "module-info.class".equals(entryName)) {
-          throw new IOException("Cannot safely trim an explicit modular JAR: " + archivePath);
-        }
-        if (isVersionedModuleDescriptor(entryName)) {
-          try (java.io.InputStream input = archive.getInputStream(entry)) {
-            if (!"module-info".equals(new ClassReader(input).getClassName())) {
-              throw new IOException(
-                  "Invalid versioned module descriptor in classpath JAR: " + archivePath);
-            }
-          } catch (final RuntimeException exception) {
-            throw new IOException(
-                "Could not read versioned module descriptor in " + archivePath, exception);
-          }
-          continue;
-        }
-        if (entryName.startsWith("META-INF/versions/")) {
-          final String kind = candidate ? "candidate" : "library";
-          throw new IOException(
-              "Cannot safely resolve a multi-release " + kind + " JAR: " + archivePath);
-        }
-        final String declaredName;
-        try (java.io.InputStream input = archive.getInputStream(entry)) {
-          declaredName = new ClassReader(input).getClassName();
-        } catch (final RuntimeException exception) {
-          throw new IOException("Could not read class entry " + entryName, exception);
-        }
-        if (!entryName.equals(declaredName + ".class")) {
-          throw new IOException(
-              "Class entry path does not match its declared name in "
-                  + archivePath
-                  + ": "
-                  + entryName
-                  + " -> "
-                  + declaredName);
-        }
-        if (!classNames.add(declaredName)) {
-          throw new IOException(
-              "Duplicate class definition in " + archivePath + ": " + declaredName);
-        }
-      }
-    }
-    return classNames;
+  private static Set<String> normalizeClassNames(final Collection<String> classNames) {
+    Objects.requireNonNull(classNames, "classNames");
+    final Set<String> normalized = new HashSet<>();
+    classNames.forEach(name -> normalized.add(name.replace('.', '/')));
+    return normalized;
   }
 
   /** Package scope shares the accepted archive rule with the sanitizer. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static boolean isVersionedModuleDescriptor(final String entryName) {
     return entryName.matches("META-INF/versions/[0-9]+/module-info\\.class");
-  }
-
-  private static boolean isNestedArchive(final String entryName) {
-    return entryName.endsWith(".jar")
-        || entryName.endsWith(".zip")
-        || entryName.endsWith(".war")
-        || entryName.endsWith(".ear");
   }
 
   /** Immutable analysis result preserving roots for audit callers. */
