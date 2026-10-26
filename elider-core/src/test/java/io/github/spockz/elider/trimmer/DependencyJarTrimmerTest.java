@@ -194,7 +194,8 @@ class DependencyJarTrimmerTest {
                         List.of(temporaryDirectory.resolve("missing-sibling.jar")),
                         jdkLibraryPool,
                         List.of()))
-        .isInstanceOf(IOException.class);
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Library classpath entry does not exist");
   }
 
   @Test

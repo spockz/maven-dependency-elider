@@ -5,6 +5,7 @@ package io.github.spockz.elider.trimmer;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -22,8 +23,8 @@ final class ReferenceGraphBuilder {
   /** Sibling paths retain lookup precedence during pool construction. */
   private final Collection<Path> libraryClassPath;
 
-  /** API classes resolve references but are excluded from closure results. */
-  private final ClassPool platformLibraryPool;
+  /** API class entries are captured at preparation to isolate later pool mutations. */
+  private final List<Clazz> platformClasses;
 
   /** Reuses validated archive bytes for this invocation. */
   private final ArchiveProvider archiveProvider;
@@ -31,15 +32,15 @@ final class ReferenceGraphBuilder {
   private ReferenceGraphBuilder(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final List<Clazz> platformClasses,
       final ArchiveProvider archiveProvider) {
     this.candidateJar = candidateJar;
     this.libraryClassPath = libraryClassPath;
-    this.platformLibraryPool = platformLibraryPool;
+    this.platformClasses = platformClasses;
     this.archiveProvider = archiveProvider;
   }
 
-  /** Builds a context while deferring ProGuard pools until closure is requested. */
+  /** Captures immutable inputs and defers graph initialization. */
   static PreparedAnalysisState prepare(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
@@ -58,14 +59,15 @@ final class ReferenceGraphBuilder {
       throw new IllegalArgumentException("Candidate JAR is not a regular file: " + candidateJar);
     }
     final ArchiveSnapshot candidate = archiveProvider.read(candidateJar, true);
-    final List<Path> orderedLibraries = List.copyOf(libraryClassPath);
+    final List<Path> orderedLibraries =
+        java.util.Collections.unmodifiableList(new ArrayList<>(libraryClassPath));
     validateLibraries(orderedLibraries, archiveProvider);
     if (candidate.classNames().isEmpty()) {
       throw new IllegalArgumentException("Candidate JAR contains no classes: " + candidateJar);
     }
+    final List<Clazz> platformClasses = snapshotPlatformClasses(platformLibraryPool);
     final ReferenceGraphBuilder builder =
-        new ReferenceGraphBuilder(
-            candidateJar, orderedLibraries, platformLibraryPool, archiveProvider);
+        new ReferenceGraphBuilder(candidateJar, orderedLibraries, platformClasses, archiveProvider);
     return new PreparedAnalysisState(
         candidateJar,
         () -> builder.build(candidate),
@@ -78,8 +80,16 @@ final class ReferenceGraphBuilder {
       final Collection<Path> libraryPaths, final ArchiveProvider archiveProvider)
       throws IOException {
     for (final Path libraryPath : libraryPaths) {
+      if (libraryPath == null || !Files.exists(libraryPath)) {
+        throw new IllegalArgumentException(
+            "Library classpath entry does not exist: " + libraryPath);
+      }
       archiveProvider.read(libraryPath, false);
     }
+  }
+
+  private static List<Clazz> snapshotPlatformClasses(final ClassPool platformLibraryPool) {
+    return PlatformClassSnapshot.copyOf(platformLibraryPool);
   }
 
   private static void requireInputs(
@@ -143,7 +153,7 @@ final class ReferenceGraphBuilder {
 
   private void addPlatformClasses(
       final ClassPool programPool, final ClassPool libraryPool, final Set<String> platformNames) {
-    for (final Clazz clazz : platformLibraryPool.classes()) {
+    for (final Clazz clazz : platformClasses) {
       if (programPool.getClass(clazz.getName()) == null
           && libraryPool.getClass(clazz.getName()) == null) {
         libraryPool.addClass(clazz);

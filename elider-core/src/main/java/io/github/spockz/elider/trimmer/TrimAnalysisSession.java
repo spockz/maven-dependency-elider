@@ -61,7 +61,7 @@ public final class TrimAnalysisSession {
       final ClassPool platformLibraryPool,
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
-    // The pool is read on the first non-empty query.
+    // Copy API signatures now so later caller mutations cannot change this context.
     return trimmer.prepareInternal(
         candidateJar,
         libraryClassPath,
@@ -78,7 +78,7 @@ public final class TrimAnalysisSession {
       final ClassPool platformLibraryPool,
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
-    // The pool is read on the first non-empty query.
+    // Copy API signatures now so later caller mutations cannot change this context.
     return trimmer.prepareInternal(
         candidateJar,
         libraryClassPath,

@@ -41,9 +41,9 @@ public final class DependencyJarTrimmer {
   }
 
   /**
-   * Adds the explicitly selected compiler/JDK API pool to closure analysis.
+   * Adds compiler API signatures to closure analysis.
    *
-   * @param platformLibraryPool API classes for the effective compiler release
+   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
    */
   public TrimAnalysis analyze(
       final Path candidateJar,
