@@ -61,15 +61,16 @@ Run the non-mutating `analyze` goal to inspect bloat and trimming potential:
 
 ### 4. Build with Elision
 
-Activate the `elide` goal to compile, test, and package against the reduced classpath:
+Run `elide` before the consumer's package lifecycle in the same Maven invocation. Intra-JAR trimming is opt-in; this example enables it:
 
 ```sh
-./mvnw package \
+./mvnw io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:elide package \
   -Delide.skip=false \
-  -Delide.traceFiles=target/classes.log
+  -Delide.traceFiles=target/classes.log \
+  -Delide.trimJars=true
 ```
 
-For complete configuration options and multi-source telemetry merging, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md).
+For complete configuration options and multi-source telemetry merging, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md), the [User FAQ](docs/faq.md), and the [Contributor Decision Register and Engineering FAQ](docs/contributor-decisions-and-faq.md).
 
 ## Vulnerability findings and code evidence
 
@@ -101,7 +102,7 @@ After `make test-examples`, OSV-Scanner can check the Spring example's generated
 │                   └───[ Unreferenced Classes ]───────> ELIDED          │
 │                                                                        │
 │   Output: Separate sanitized JAR in target/elided-artifacts/          │
-│   Preserves: META-INF/services, licenses, resources, manifest digests  │
+│   Keeps services, licenses, resources; strips signature/digest metadata│
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -142,7 +143,12 @@ Trimmed components record their actual on-disk SHA-256 while preserving upstream
     }],
     "patches": [{
       "type": "unofficial",
-      "description": "Trimmed unreferenced classes using ProGuard Core link closure"
+      "diff": {
+        "text": {
+          "contentType": "text/plain",
+          "content": "Trimmed unreferenced classes using ProGuard Core link closure"
+        }
+      }
     }]
   },
   "properties": [
@@ -236,7 +242,7 @@ For the deterministic two-artifact Mojo fixture, the unused input JAR is 151 byt
 [INFO]   Cache: unavailable
 ```
 
-The estimate excludes class-level trimming and may differ from the final package delta. Analyze output has no class, method, or field stage-not-run rows; `elide` keeps its existing summary behavior. See [Maven plugin usage](docs/plugin-usage.md) for supported trace formats and configuration.
+The estimate excludes class-level trimming and may differ from the final package delta. Analyze output has no class, method, or field stage-not-run rows; `elide` keeps its existing summary behavior. See [Maven plugin usage](dependency-elider-maven-plugin/src/site/markdown/usage.md) for supported trace formats and configuration.
 
 ## Requirements
 

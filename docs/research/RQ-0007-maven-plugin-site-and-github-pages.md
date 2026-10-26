@@ -1,7 +1,7 @@
 <!-- WHY: Evaluates generating a user-facing Maven plugin documentation site and automated publishing via GitHub Actions and GitHub Pages without legacy Maven site-deploy baggage. -->
 # RQ-0007: Maven Plugin Documentation Site and GitHub Pages Publishing
 
-* **Status**: Open
+* **Status**: Partially implemented; release versioning and complete link validation remain open
 * **Category**: Documentation & Publishing
 * **Date**: 2026-10-26
 * **Last Updated**: 2026-10-26
@@ -14,18 +14,20 @@ Abbreviations: Continuous Integration (CI), Abstract Syntax Tree (AST), Applicat
 
 The `maven-dependency-elider` repository delivers both a core analysis/elision engine (`elider-core`) and a Maven plugin (`dependency-elider-maven-plugin`). For Maven plugin consumers, documentation accessibility and accuracy are paramount. Users need precise descriptions of plugin goals (`analyze`, `elide`), configuration properties (`elide.traceFiles`, `elide.reportFile`, `elide.excludedArtifacts`, etc.), supported runtime telemetry formats, lifecycle phase bindings, and troubleshooting diagnostics.
 
-Currently, user guidance is split between `README.md` and `docs/plugin-usage.md`, while architectural records (ADRs, RQs, handovers) reside under `docs/`. While GitHub repository browsing works for developers and contributors, standard Maven plugins publish static documentation sites that integrate automatically generated Mojo parameter references with hand-written user manuals.
+User guidance starts from `README.md`; the detailed plugin guide now lives at `dependency-elider-maven-plugin/src/site/markdown/usage.md`. User FAQ and contributor records remain under `docs/`. The generated Maven site combines the usage guide with Mojo parameter references.
 
 Maven provides the `maven-site-plugin` and `maven-plugin-report-plugin` to generate static sites directly from plugin descriptors, Mojo annotations, and Javadoc. Concurrently, GitHub Actions and GitHub Pages support zero-credential artifact deployments (`actions/deploy-pages`), eliminating the need for legacy Wagon-based `site-deploy` mechanisms.
 
 ### Primary Research Questions
 
-* **RQ-0006.1**: Which documentation assets belong on the public user-facing plugin site versus remaining repository-internal for contributors?
-* **RQ-0006.2**: Can `maven-plugin-report-plugin` generate accurate goal and parameter reference pages from Mojo annotations and Javadoc without build fragility?
-* **RQ-0006.3**: Which site generation architecture (Doxia versioning, skin, multi-module layout vs plugin-specific site) provides the most maintainable setup?
-* **RQ-0006.4**: How do publishing options compare across repository-only docs, local/CI site generation, GitHub Actions Pages deployment, and Maven `site-deploy`?
-* **RQ-0006.5**: What versioning and URL hierarchy should be adopted for default branch development snapshots versus immutable tagged releases?
-* **RQ-0006.6**: What automated verification gates in CI should validate site build integrity, goal descriptor completeness, and broken link prevention before publishing?
+* **RQ-0007.1 (Resolved)**: Which documentation assets belong on the public user-facing plugin site versus remaining repository-internal for contributors?
+* **RQ-0007.2 (Resolved)**: Can Maven plugin reports generate goal and parameter reference pages from Mojo metadata and Javadocs?
+* **RQ-0007.3 (Resolved)**: Which site-generation architecture is used for the plugin documentation?
+* **RQ-0007.4 (Resolved)**: Which publishing approach is used for the current development site?
+* **RQ-0007.5 (Open)**: What versioning and URL hierarchy should be adopted for default-branch snapshots versus immutable tagged releases?
+* **RQ-0007.6 (Open)**: Which CI checks should verify site links in addition to build success and required generated pages?
+
+The resolved answers are recorded below with implementation references. Tagged-release versioning and comprehensive link validation have not been implemented.
 
 ---
 
@@ -47,7 +49,7 @@ Mixing contributor-internal artifacts into the user-facing site creates noise an
 | **User Guide / Usage (`usage.html`)** | Yes | Relocated to `dependency-elider-maven-plugin/src/site/markdown/usage.md` | Comprehensive walkthrough of CLI analysis, lifecycle bindings, and skip flags. |
 | **Telemetry Sensors Guide (`sensors.html`)** | Yes | No | Actionable command lines for generating CDS lists, class-load logs, JFR events, JaCoCo execs, and GraalVM reflection configs. |
 | **Class Usage Report Spec (`report-schema.html`)** | Yes | No | Detailed explanation of `dependency-elider-class-usage.json`, evidence categories, and attribution rules. |
-| **Troubleshooting & FAQs (`faq.html`)** | Yes | No | Explanations for fail-closed behaviors, empty trace errors, and Spring Boot auto-configuration interactions. |
+| **User FAQ** | Linked from the README to `docs/faq.md` on GitHub | Repository-only | The site README links to the maintained user FAQ; there is no separate generated `faq.html` page. |
 | **Architecture Decision Records (`docs/adr/`)** | No | Yes | Contributor design history and immutable architectural boundaries. |
 | **Research Questions (`docs/research/`)** | No | Yes | Exploratory investigations, empirical benchmarks, and prospective studies. |
 | **Session Handovers (`docs/handovers/`)** | No | Yes | Ephemeral engineering continuity notes. |
@@ -58,16 +60,27 @@ Mixing contributor-internal artifacts into the user-facing site creates noise an
 
 To enforce clean separation of concerns:
 
-1. **Move Detailed Usage Guides to the Plugin Module**:
-   * Detailed user guides currently residing under `docs/` (such as `docs/plugin-usage.md`) are moved directly into the plugin module's site source tree: `dependency-elider-maven-plugin/src/site/markdown/usage.md`.
-   * This co-locates the user documentation with the plugin Mojo sources it explains, allowing standard Maven Site builds (`mvn site`) to naturally compile them into `usage.html` alongside generated goal references (`plugin-info.html`, `analyze-mojo.html`, `elide-mojo.html`).
+1. **Keep the Detailed Usage Guide with the Plugin Module**:
+   * `dependency-elider-maven-plugin/src/site/markdown/usage.md` is the maintained user guide.
+   * Maven Site builds render it as `usage.html` alongside generated goal references (`plugin-info.html`, `analyze-mojo.html`, `elide-mojo.html`).
 2. **Retain Duplication of `README.md`**:
    * The repository root `README.md` is retained as the canonical entry point for GitHub visitors browsing the source repository.
-   * For the plugin documentation site starting page (`dependency-elider-maven-plugin/src/site/markdown/index.md`), `README.md` is reused/duplicated.
-   * In `index.md`, site-internal links resolve naturally to `usage.html` and `plugin-info.html`, while links to contributor-only design records (`docs/adr/`, `docs/research/`) point back to their respective GitHub repository URLs.
+   * `scripts/generate-site-index.sh` adapts the root `README.md` into a generated `index.md` during the site build.
+   * The generator rewrites the usage guide link to `usage.html` and repository-only FAQ, ADR, research, and handover links to GitHub URLs.
 3. **Purification of `docs/`**:
    * The root `docs/` directory is preserved exclusively for contributor-facing and architectural documentation: Architecture Decision Records (`docs/adr/`), Research Questions (`docs/research/`), and Session Handovers (`docs/handovers/`).
-   * No user-facing guides remain adrift in `docs/`, removing confusion over whether a file in `docs/` is public documentation or an internal design note.
+   * User FAQs and contributor records remain distinguishable in `docs/`; the detailed usage guide is maintained with the plugin.
+
+### 2.3 Implementation status
+
+| Question | Current answer | Evidence |
+| :--- | :--- | :--- |
+| RQ-0007.1 | Resolved. README and usage content are user-facing; FAQ and architecture/research/handovers are repository records. | `README.md`, `dependency-elider-maven-plugin/src/site/markdown/usage.md`, `docs/faq.md`, `scripts/generate-site-index.sh` |
+| RQ-0007.2 | Resolved. Maven plugin reports generate plugin and goal reference pages from plugin metadata/Javadocs. | `dependency-elider-maven-plugin/pom.xml`, `.github/workflows/pages.yml` |
+| RQ-0007.3 | Resolved. Dedicated plugin module site uses Maven Site 3.21.0, Fluido skin, and Doxia 2.x. | `pom.xml`, `dependency-elider-maven-plugin/src/site/site.xml` |
+| RQ-0007.4 | Resolved for the development site. GitHub Actions builds/verifies assets and deploys the site artifact to Pages; `site-deploy` is not used. | `.github/workflows/pages.yml`, `Makefile` |
+| RQ-0007.5 | Open. The current workflow publishes from `main`; snapshot/release URL and version-retention policy remain undecided. | `.github/workflows/pages.yml` |
+| RQ-0007.6 | Open. CI verifies site build and required pages, but does not comprehensively validate generated relative links. | `.github/workflows/pages.yml`, `scripts/generate-site-index.sh` |
 
 ---
 
@@ -166,7 +179,9 @@ on:
       - 'dependency-elider-maven-plugin/**'
       - 'elider-core/**'
       - 'pom.xml'
-      - 'docs/plugin-usage.md'
+      - 'dependency-elider-maven-plugin/src/site/markdown/**'
+      - 'scripts/generate-site-index.sh'
+      - 'README.md'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -259,41 +274,28 @@ jobs:
 
 ---
 
-## 7. Actionable Implementation Plan
+## 7. Implementation Record
 
-The implementation should be carried out across four sequential tracks:
+The documentation site implementation answered RQ-0007.1 through RQ-0007.4. This section records what exists rather than proposing the original plan again:
 
-1. **Track 1: POM Configuration & Plugin Upgrades**:
-   * Pin `maven-site-plugin:3.21.0` in parent `pom.xml` `<pluginManagement>`.
-   * Add `maven-plugin-report-plugin:3.15.1` and `maven-project-info-reports-plugin:3.9.0` under `<reporting>` in `dependency-elider-maven-plugin/pom.xml`.
-   * Configure `maven-fluido-skin:2.0.0-M9`.
-2. **Track 2: Site Descriptor & Documentation Relocation**:
-   * Create `dependency-elider-maven-plugin/src/site/site.xml` declaring navigation, banner, and project links.
-   * Duplicate/adapt `README.md` into `dependency-elider-maven-plugin/src/site/markdown/index.md` as the site starting page.
-   * Move `docs/plugin-usage.md` to `dependency-elider-maven-plugin/src/site/markdown/usage.md` as the primary user usage guide.
-   * Add `src/site/markdown/sensors.md` (telemetry capture instructions).
-   * Add `src/site/markdown/report-schema.md` (JSON report semantics).
-   * Add `src/site/markdown/faq.md` (common pitfalls and troubleshooting).
-3. **Track 3: Verification & Makefile Integration**:
-   * Add a `make site` target that compiles and renders the site locally.
-   * Add a `make verify-site` target that enforces asset presence and link validity.
-4. **Track 4: GitHub Actions Deployment Workflow**:
-   * Add `.github/workflows/pages.yml` with OIDC deployment permissions.
-   * Enable GitHub Pages in repository settings pointing to GitHub Actions.
-   * Update root `README.md` to link to the published documentation site.
+1. Parent `pom.xml` pins Maven Site 3.21.0 and related reporting versions. The plugin module configures Maven Plugin Report and Project Info reports; `src/site/site.xml` selects the Fluido skin and navigation.
+2. `dependency-elider-maven-plugin/src/site/markdown/usage.md` is the detailed guide. `scripts/generate-site-index.sh` adapts README links for the generated site, including links to repository-only FAQ, contributor, research, architecture, and handover records.
+3. `make site` generates the README-derived index and renders the site. `.github/workflows/pages.yml` builds it, checks required pages, and deploys the artifact through GitHub Pages Actions.
+4. The remaining investigations are tagged-release URL/version retention (RQ-0007.5) and comprehensive generated-link validation (RQ-0007.6). The current workflow checks required assets but does not run a general broken-link scan.
 
 ---
 
 ## 8. Acceptance Criteria
 
-* [ ] Parent `pom.xml` pins `maven-site-plugin` (>= 3.21.0 with Doxia 2.0.0) and reporting plugins with explicit version convergence.
-* [ ] `dependency-elider-maven-plugin` generates accurate, up-to-date goal documentation (`analyze-mojo.html`, `elide-mojo.html`) from Mojo annotations and Javadoc.
-* [ ] Detailed usage guides are housed under `dependency-elider-maven-plugin/src/site/markdown/usage.md`, `README.md` is duplicated/reused for the site starting page (`index.md`), and `docs/` is preserved exclusively for contributor and architectural records.
-* [ ] Site is styled with responsive HTML5 using `maven-fluido-skin`.
-* [ ] Build process validates site integrity (zero exit code, critical file existence, no broken internal relative links) prior to publication.
-* [ ] GitHub Actions workflow deploys the site to GitHub Pages using official `actions/upload-pages-artifact` and `actions/deploy-pages` without storing credentials or committing to a git branch.
-* [ ] Legacy Maven `site-deploy` and Wagon providers are explicitly rejected and omitted.
-* [ ] Root `README.md` contains a prominent badge and link directing users to the published documentation site.
+* [x] Parent `pom.xml` pins Maven Site 3.21.0 and reporting plugin versions.
+* [x] The plugin site generates goal documentation from Mojo metadata and Javadocs.
+* [x] The usage guide is maintained in the plugin site source tree; README links repository-only FAQs and contributor records through the generated index.
+* [x] The site uses the configured Fluido skin and Maven Site generation pipeline.
+* [ ] Add comprehensive broken-link validation for generated site links (RQ-0007.6).
+* [x] GitHub Actions builds required assets and deploys the Pages artifact without `site-deploy`.
+* [x] Maven `site-deploy` and Wagon publishing are not used.
+* [x] Root `README.md` contains a documentation badge.
+* [ ] Decide tagged-release URLs and documentation retention/version navigation (RQ-0007.5).
 
 ---
 
