@@ -97,11 +97,16 @@ final class AnalyzeMojoTest {
     assertThat(testScoped.getFile()).isSameAs(testScopedFile);
     assertThat(log.messages())
         .contains(
-            "  Whole artifacts: 0 / 5 (0.0%)",
-            "  Classes removed: 0 / N/A (N/A; stage not run)",
-            "  Methods removed: 0 / N/A (N/A; stage not run)",
-            "  Fields removed: 0 / N/A (N/A; stage not run)",
+            "  Artifacts that would be elided by this analysis: 0 / 5 (0.0%)",
+            "  Estimated original JAR bytes for those artifacts: 0 B "
+                + "(sum of original on-disk input JAR sizes; final package delta may differ)",
             "  Cache: unavailable");
+    assertThat(log.messages())
+        .noneMatch(
+            line ->
+                line.startsWith("  Classes removed:")
+                    || line.startsWith("  Methods removed:")
+                    || line.startsWith("  Fields removed:"));
     final com.fasterxml.jackson.databind.JsonNode json =
         new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
     assertThat(json.path("staticEvidenceAvailable").asBoolean()).isFalse();
@@ -111,6 +116,45 @@ final class AnalyzeMojoTest {
     assertThat(json.path("groups").path("neitherReferencedNorObserved").isNull()).isTrue();
     assertThat(json.path("runtimeObservedClasses").toString()).contains("used.Sample");
     assertThat(json.path("classes").toString()).contains("UNKNOWN_STATIC_EVIDENCE");
+  }
+
+  @Test
+  void reportsPredictedElisionsAndExactOriginalJarBytesWithoutMutation()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Artifact used =
+        artifact("used", "1.0", "compile", "jar", "analysis-used.jar", "used/Sample.class");
+    final Artifact unused =
+        artifact(
+            "unused-runtime", "1.0", "runtime", "jar", "analysis-unused.jar", "unused/Idle.class");
+    final File unusedFile = unused.getFile();
+    final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(used, unused));
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(artifacts);
+    final Path trace = tempDir.resolve("predicted-elisions.lst");
+    Files.writeString(trace, "used/Sample\n");
+    final AnalyzeMojo mojo = new AnalyzeMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "reportFile", tempDir.resolve("predicted-elisions.json").toFile());
+    final RecordingMavenLog log = new RecordingMavenLog();
+    mojo.setLog(log);
+
+    mojo.execute();
+
+    assertThat(log.messages())
+        .contains(
+            "  Artifacts that would be elided by this analysis: 1 / 2 (50.0%)",
+            "  Estimated original JAR bytes for those artifacts: "
+                + MavenElisionReportWriter.formatBytes(Files.size(unused.getFile().toPath()))
+                + " (sum of original on-disk input JAR sizes; final package delta may differ)");
+    assertThat(project.getArtifacts()).isSameAs(artifacts).containsExactlyInAnyOrder(used, unused);
+    assertThat(unused.getFile()).isSameAs(unusedFile);
+    assertThat(log.messages())
+        .noneMatch(
+            line ->
+                line.startsWith("  Classes removed:")
+                    || line.startsWith("  Methods removed:")
+                    || line.startsWith("  Fields removed:"));
   }
 
   @Test

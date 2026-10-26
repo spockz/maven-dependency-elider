@@ -24,7 +24,11 @@ Run the lifecycle phase and tree goal in one invocation if you want the elider t
   initialize org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree
 ```
 
-The goal is for Maven's standard `dependency:tree` to show the post-elision effective dependencies. The current integration does not do that yet: the Basic example's tree lists Commons Codec although the elided classpath and package omit it. Until resolver integration changes, inspect the effective classpath or final package for the actual inventory. A separate elider report is planned to show the original dependency paths with each artifact marked retained or elided. See [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+The goal is for Maven's standard `dependency:tree` to show the post-elision effective dependencies. The current integration does not do that yet: the Basic example's tree lists Commons Codec although the elided classpath and package omit it. Until resolver integration changes, inspect the effective classpath or final package for the actual inventory. The `dependency-elider:report` goal exists and reports saved elision totals, but its snapshot does not retain Maven's mediated original graph paths. The early resolver question therefore remains open. See [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+
+### What does the nonmutating `analyze` summary mean?
+
+It reports artifacts that would be elided by that analysis and the exact sum of their original on-disk JAR sizes. The byte total is an estimate of possible savings; the final package delta may differ. `analyze` uses trim-disabled options and does not predict intra-JAR class removal. It does not mutate Maven artifact views or package output.
 
 ### How can I keep a dependency JAR unchanged?
 

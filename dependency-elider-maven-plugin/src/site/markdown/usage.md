@@ -1,7 +1,7 @@
 <!-- WHY: Documents the usable Maven goal and the lifecycle safety boundary for plugin consumers. -->
 # Maven plugin usage
 
-The `analyze` goal reads explicit runtime trace files and reports whole artifacts that the core policy would elide. It does not mutate Maven's artifact sets, classpaths, or packaged output.
+The nonmutating `analyze` goal reads explicit runtime trace files and reports artifacts that would be elided by this analysis. It also reports the exact sum of their original on-disk JAR sizes as an estimate; the final package delta may differ. It does not mutate Maven's artifact sets, classpaths, or packaged output. The analysis uses trim-disabled options, so it does not predict the additional changes from intra-JAR trimming.
 
 For practical configuration and compatibility questions, see the [User FAQ](faq.md). Implementation rationale and benchmark evidence are in the [Contributor Decision Register and Engineering FAQ](contributor-decisions-and-faq.md).
 
@@ -51,3 +51,5 @@ Use `-Delide.trimSkipArtifacts=groupId:artifactId:version[:type[:classifier]],..
 With trimming enabled, the plugin writes a CycloneDX 1.6 SBOM to `target/dependency-elider-sbom.cdx.json`; set `-Delide.sbomFile=/path/to/bom.json` to choose another path. Trimmed component provenance includes the original component and digest. The global trim cache binds ordered candidate and sibling JAR content digests, sorted roots, the selected platform signature digest, engine/schema versions, and each trimmed output digest. Repeated single-artifact lifecycle tests measured 95.2 to 99.1 ms for validated warm hits under GraalVM JDK 21. The <1.5 ms target remains unmet; exact content validation and cross-JAR link closure remain enabled, and a cache hit skips ProGuard analysis.
 
 `elide.skip` is a Boolean Maven user property (`-Delide.skip=true|false`). The CVE example fixtures bind the goal and default this property to `true` so baseline packaging remains available. Set it to `false` and supply `-Delide.traceFiles=...` to apply elision. Missing, malformed, unsupported, or unmatched trace evidence fails the goal.
+
+The `analyze` summary omits class, method, and field stage rows because that nonmutating goal does not run trimming. The mutating `elide` summary keeps its existing stage wording; when `elide.trimJars=true`, it reports measured class and uncompressed class-entry payload metrics.

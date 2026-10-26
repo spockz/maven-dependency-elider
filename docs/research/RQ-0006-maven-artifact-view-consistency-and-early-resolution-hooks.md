@@ -14,7 +14,7 @@ Abbreviations: Abstract Syntax Tree (AST), Build Extension (BE), Core Extension 
 
 The `elide` mojo runs during `INITIALIZE`. It can update the resolved artifact view used by standard classpaths and packagers, and point retained artifact objects at trimmed JARs. Maven also exposes a direct-dependency view. Keeping both views consistent is the documented contract, but an experiment found that changing the direct-artifact set causes Maven to resolve the POM graph again for later dependency-resolving goals. That resolution can restore original artifacts and file paths. Leaving the direct set unchanged avoids that same-session re-resolution in the tested Maven context, but then a direct-view consumer can still observe an elided dependency.
 
-The product objective includes giving engineers a dependable view of the dependencies effective for each project. The standard `dependency:tree` goal is a natural place to inspect that inventory, so it should omit artifacts elision removes. A separate elider report can preserve the original mediated dependency paths and label each artifact retained or elided, including the reason. The lifecycle integration question is whether an earlier resolver hook can provide that effective graph to Maven's standard consumers while retaining enough pre-elision information for the elider report.
+The product objective includes giving engineers a dependable view of the dependencies effective for each project. The standard `dependency:tree` goal is a natural place to inspect that inventory, so it should omit artifacts elision removes. The `dependency-elider:report` goal now reports persisted whole-artifact and class-trimming totals, but its snapshot does not preserve Maven-mediated dependency paths or the full original graph. The lifecycle integration question remains whether an earlier resolver hook can provide an effective graph to Maven's standard consumers while retaining enough pre-elision information for a path-aware audit report.
 
 ### Primary Research Questions
 
@@ -23,7 +23,7 @@ The product objective includes giving engineers a dependable view of the depende
 * **RQ-0006.3**: Does pruning both views at `INITIALIZE` cause Maven to restore the original graph or artifact paths before compilation or packaging? Which lifecycle transitions trigger that behavior?
 * **RQ-0006.4**: If a concrete failure warrants earlier integration, which public extension point provides stable per-project redirection and filtering across repeated resolution, reactor projects, and supported Maven versions?
 * **RQ-0006.5**: If no consequential consumer failure is found, can the current simpler behavior remain with the limitation clearly documented and surfaced?
-* **RQ-0006.6**: Can an early resolver integration make ordinary `dependency:tree` show the post-elision effective dependency graph, while preserving the original mediated paths and per-artifact elision outcomes for a separate `mvn-dep-elider:report` goal?
+* **RQ-0006.6**: Can an early resolver integration make ordinary `dependency:tree` show the post-elision effective dependency graph, while preserving the original mediated paths and per-artifact elision outcomes for a path-aware audit report?
 
 ---
 
@@ -62,7 +62,7 @@ The same-session command is still useful to ensure elision executes before the r
 
 The command's order causes Maven to execute the lifecycle through `INITIALIZE`, then invokes the tree goal in the same session. It does **not** make the tree honor elision, as the Commons Codec result demonstrates. For now, use the tested effective classpath or packaged archive when answering which artifacts are actually present.
 
-The desired split is: standard `dependency:tree` displays the effective post-elision dependency graph; `mvn-dep-elider:report` uses the pre-elision, Maven-mediated graph plus retained/elided outcomes to explain original paths and decisions. The early hook would need to snapshot graph edges and node metadata before filtering, then expose the filtered graph to later resolutions. The report may consume that snapshot from Maven session state in the same invocation or from a saved report model in a later invocation; that scope is still to be decided. A filtered inventory alone is insufficient to reconstruct the original paths.
+The desired split is: standard `dependency:tree` displays the effective post-elision dependency graph; a path-aware audit report uses the pre-elision, Maven-mediated graph plus retained/elided outcomes to explain original paths and decisions. The existing `dependency-elider:report` goal only reads saved totals and does not provide that path-aware audit. An early hook would need to snapshot graph edges and node metadata before filtering, then expose the filtered graph to later resolutions. The report may consume that snapshot from Maven session state in the same invocation or from a saved report model in a later invocation; that scope is still to be decided. A filtered inventory alone is insufficient to reconstruct the original paths.
 
 ### 2.4 Remaining Consumers
 
@@ -84,7 +84,7 @@ No specific plugin has yet been shown to produce an incorrect application result
 
 ## 4. Benefits and Costs of Moving Earlier
 
-The main benefit of an earlier resolver integration is to make Maven's ordinary dependency reports and consumers use the effective retained graph, including after Maven resolves dependencies again. Engineers could inspect `dependency:tree` to see which dependencies remain for the project. A separate `mvn-dep-elider:report` could explain those decisions by combining the saved pre-elision mediated paths with retained/elided status and reasons. This separates an effective inventory from an audit trail without asking one tree to serve both purposes.
+The main benefit of an earlier resolver integration is to make Maven's ordinary dependency reports and consumers use the effective retained graph, including after Maven resolves dependencies again. Engineers could inspect `dependency:tree` to see which dependencies remain for the project. A future path-aware audit report could explain those decisions by combining saved pre-elision mediated paths with retained/elided status and reasons. The existing `dependency-elider:report` goal reports totals only. This separates an effective inventory from an audit trail without asking one tree to serve both purposes.
 
 The cost is moving from a normal plugin goal to Maven startup infrastructure. A core extension must be loaded before project resolution, persist or reconstruct each project's plan at the correct time, preserve dependency mediation, avoid cross-project state leaks, and support the project's Maven version range. A lifecycle participant alone may run earlier but may not intercept later resolution. A `RepositorySessionDecorator` is the more direct candidate, but its behavior and version compatibility require integration tests.
 

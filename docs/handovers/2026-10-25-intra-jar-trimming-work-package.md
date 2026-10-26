@@ -192,6 +192,11 @@ Track 7 (Persisted Elision Report) depends on Tracks 3 and 5; Track 6's report e
   * Label the payload-byte basis and state that module descriptors and archive sanitation metadata are excluded.
   * Keep the stage-not-run class summary for `analyze` and trim-disabled `elide`; methods and fields remain stage-not-run.
   * Update plugin usage documentation and test the visible trim-enabled summary using the Maven Mojo trimming fixture.
+* **Slice 7.5: Qualify Nonmutating Analysis Predictions**
+  * Have `analyze` label whole-artifact results as artifacts that would be elided by that analysis and report the exact sum of their original input JAR sizes as an estimate; state that final package delta may differ.
+  * Omit class, method, and field stage rows from `analyze` only. Preserve `elide` summary behavior.
+  * Update README, plugin usage, FAQ, contributor notes, RQ-0006, and this handover. Clarify that the persisted `dependency-elider:report` goal exists but does not retain original Maven-mediated graph paths.
+  * Test positive predicted-removal counts/bytes, nonmutation, and absence of stage-not-run class rows.
 
 ---
 

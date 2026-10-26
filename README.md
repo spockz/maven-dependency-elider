@@ -215,13 +215,53 @@ The core JMH cache benchmark measures metadata fingerprinting and cache loading,
 
 The latest paired example-build medians show about +1.977 s for Basic and +20.417 s for Spring Boot with elision enabled. These measurements include Maven startup, dependency resolution, compilation, tests, elision, and packaging; they are descriptive observations, not a whole-build performance guarantee.
 
+## Analyze summary
+
+The nonmutating, trace-based `analyze` goal qualifies removals as artifacts that would be elided by that analysis and estimates savings using the exact sum of original input JAR file sizes. Final package savings may differ, and `analyze` does not run intra-JAR trimming.
+
+An input class-loading trace may contain lines like this; the source path depends on the local Maven repository and build output:
+
+```text
+[0.001s][info][class,load] used.Sample source: file:/.../used.jar
+```
+
+For the deterministic two-artifact Mojo fixture, the unused input JAR is 151 bytes:
+
+```text
+[INFO] Dependency Elider analysis summary
+[INFO]   Artifacts that would be elided by this analysis: 1 / 2 (50.0%)
+[INFO]   Estimated original JAR bytes for those artifacts: 151 B (sum of original on-disk input JAR sizes; final package delta may differ)
+[INFO]   Cache: unavailable
+```
+
+The estimate excludes class-level trimming and may differ from the final package delta. Analyze output has no class, method, or field stage-not-run rows; `elide` keeps its existing summary behavior. See [Maven plugin usage](docs/plugin-usage.md) for supported trace formats and configuration.
+
 ## Requirements
+The Maven plugin provides a nonmutating, trace-based `analyze` goal. Its summary qualifies removals as artifacts that would be elided by that analysis and gives the exact sum of the original JAR file sizes as an estimate; final package savings may differ, and `analyze` does not run intra-JAR trimming. Install the plugin and its core dependency to the local repository, then run it in the consumer project with an explicit trace:
+>>>>>>> cb65adc (Qualify nonmutating analysis predictions)
 
 * **JDK 21** or newer.
 * Bash and the `timeout` utility for `make test-examples`.
 * Node.js and npm only to install/run the Markdown linter used by `make check`.
 
 The Maven Wrapper is included. The `make test-examples` script uses repository-root-relative paths and stores its temporary files in `.scratch/`.
+
+A class-loading trace may contain lines like this; the source path depends on the local Maven repository and build output:
+
+```text
+[0.001s][info][class,load] used.Sample source: file:/.../used.jar
+```
+
+The nonmutating `analyze` goal qualifies its result as a prediction and estimates savings from original JAR file sizes. For the deterministic two-artifact Mojo fixture, the unused input JAR is 151 bytes:
+
+```text
+[INFO] Dependency Elider analysis summary
+[INFO]   Artifacts that would be elided by this analysis: 1 / 2 (50.0%)
+[INFO]   Estimated original JAR bytes for those artifacts: 151 B (sum of original on-disk input JAR sizes; final package delta may differ)
+[INFO]   Cache: unavailable
+```
+
+This estimate does not include class-level trimming and may differ from the final package delta. The `analyze` output has no class, method, or field stage-not-run rows; `elide` keeps its existing summary behavior.
 
 ## Contributing
 
