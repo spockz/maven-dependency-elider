@@ -1,7 +1,7 @@
-<!-- WHY: Keeps implementation decisions, evidence, compatibility assumptions, and operational answers visible without replacing the detailed ADR and research records. -->
-# Decision Register and FAQ
+<!-- WHY: Gives contributors one evidence-backed index for implementation decisions and engineering questions without replacing detailed ADR and research records. -->
+# Contributor Decision Register and Engineering FAQ
 
-This page is the running index for behavior-affecting implementation decisions and recurring compatibility questions. ADRs remain the authority for accepted architecture; research questions track unresolved investigations. Record whether a statement is verified, an adopted policy, or an open assumption.
+This page is for project contributors. It tracks behavior-affecting implementation decisions, rationale, evidence, compatibility boundaries, and engineering questions. ADRs remain the authority for accepted architecture; research questions track unresolved investigations. User configuration and product concerns belong in the [User FAQ](faq.md), which summarizes relevant outcomes without internal implementation detail.
 
 ## Decision Register
 
@@ -20,33 +20,15 @@ This page is the running index for behavior-affecting implementation decisions a
 | Root module descriptors on the classpath | Retained JARs with a root `module-info.class` pass through unchanged with a warning; a validated class-only projection roots their ordinary classes. `-Delide.failOnUnsupportedModuleInfo=true` opts into hard failure. | Classpath execution ignores the root descriptor, but the trimming engine does not support editing modular JARs; analyzing ordinary class bodies still protects linked siblings. | Default warning, strict-before-mutation, malformed-descriptor and sibling-closure tests pass. JPMS module-path behavior remains unsupported. |
 | Compiler release vs. runtime release | Use compiler settings for the platform API pool; use the selected runtime feature for multi-release entry selection. Do not assume `--release` always equals the JVM that runs the packaged application. | The compiler target controls available APIs, while the runtime selects multi-release implementations. | JDK 21 path verified; broader deployment runtime selection remains an open compatibility question. |
 | Unsupported native-image metadata | Parse only understood metadata shapes and options; reject unknown class metadata before changing Maven artifact pointers. Preserve supported metadata resources in outputs. | Treating unknown reflection/resource instructions as harmless can silently remove dynamically reached classes or resources. | Supported Tomcat/Spring forms pass positive, fail-closed, and packaged-example checks. |
-| Maven artifact views | The current same-session example path keeps the original direct dependency set and updates the resolved/project view and file pointers. This avoids Maven 3.9.11's re-resolution shortcut invalidation in the tested sequence. | A direct-view consumer can still observe an elided dependency; consistent mutation triggers re-resolution and restores original paths in the tested lifecycle. | Basic MDEP/Shade experiment; lifecycle research is [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md). |
+| Maven artifact views | The current same-session example path keeps the original direct dependency set and updates the resolved/project view and file pointers. A same-session `initialize dependency:tree` still reports the original Commons Codec dependency. | Standard classpath/package consumers see the elided view, but a tree-report consumer may present the original dependency graph as if it were the effective inventory. | Basic classpath/Shade experiment and direct dependency-tree reproduction; the report mismatch is documented in [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md). |
 | Earlier resolver integration | Do not add a core extension solely to satisfy model consistency. First identify a consequential consumer failure or an explicit product guarantee; compare startup extension costs in RQ-0006. | A core extension can intercept repeated resolution but changes project setup, timing, and Maven compatibility. | Open research decision; Maven 3 `RepositorySessionDecorator` is a candidate, Maven 4 is unverified. |
 | Cache validation | Validate original candidate/sibling inputs and trimmed outputs by content digest; do not substitute mtime/size checks to meet the latency target. | Local artifacts and snapshots can change while filesystem metadata remains unchanged. | Correctness policy adopted. JDK 21 JMH result: 93.038 ± 0.756 ms/op (99.9% CI, 2 forks), above both the <10 ms work-package target and <1.5 ms design target. It measures one small artifact's cache operation, not full Mojo or whole-build overhead; see README. |
+| End-to-end Maven and trim-cache cost | Time matched `clean verify` runs with elision skipped/enabled and profile the warm trim-cache operation separately. `dependency:tree` does not run `INITIALIZE`. Fix repeated algorithmic work before adding more persistent caches. | The user-visible cost includes lifecycle work; the cache operation itself can repeat platform ZIP and digest reads, while cold closure rebuilds sibling class pools. | One JDK 21/Maven 3.9.11 run: Basic +1.962 s; Spring +71.861 s. JFR shows Spring dominated by CPU/allocation in repeated ProGuard descriptor/classpath traversal. The 92.860 ms warm hit uses a 695 B JAR but repeatedly enumerates/hashes 11.3 MB `ct.sym`; source and JFR evidence with priority order are in [RQ-0003](research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md). |
+| Performance follow-up slices | Optimize invocation work before persistent-cache placement: scan roots once, parse archives once without sharing initialized mutable class pools, then consider immutable graph propagation; deduplicate exact digests and reuse JDK identity only within a Maven session. | Repeated parsing and full-file reads dominate measured work, while incomplete identity or mutable engine reuse could return unsafe trim decisions. | Slice 5.4 is active; slices 2.4, 2.5, and 7.1–7.3 are assigned in dependency order in [RQ-0003](research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md). These slices do not alone prove the <10 ms Maven invariant. |
 | Archive boundaries and signatures | Keep one output JAR per Maven coordinate. When an archive is modified, strip invalidated signature blocks and manifest section digests; preserve non-class resources. | Shading or flattening would lose coordinate boundaries and signature files would no longer authenticate the modified bytes. | Implemented in Tracks 2–4 with archive and SBOM tests. |
 | Provenance | Emit the modified component's actual digest and record the source component/digest and trimming patch in CycloneDX 1.6 pedigree. | Consumers need to distinguish the modified bytes from the upstream release. | Implemented in Track 4 with pinned schema validation. |
 
-## FAQ
-
-### What happens when a retained JAR contains versioned implementation classes?
-
-By default, keep that JAR byte-identical and warn that it was skipped as a trim target. Continue trimming other supported JARs. Set `-Delide.failOnUnsupportedMultiRelease=true` to make encountering such a target fail the build before Maven artifact pointers are changed. Unit and Spring package tests verify the skip and unchanged bytes.
-
-### When should I configure `elide.trimSkipArtifacts`?
-
-Use an exact resolved compile/runtime JAR coordinate when that artifact must remain byte-identical, for example because its reachable classes contain optional external references. The plugin still analyzes its classes as roots and retains linked classes in other candidates. It does not make unresolved references in ordinary trim candidates acceptable, and it pins the artifact against whole-artifact pruning.
-
-### What if the packaged application runs on a different JDK than the one running Maven?
-
-The JDK version controls which `META-INF/versions/N` classes the JVM loads. Current example analysis selects the executing JDK feature version (21). If deployment targets differ, the analysis does not yet prove closure for those variants. The safe future choices are to configure the runtime release explicitly, compute the union of references across supported release variants, or leave affected dependencies and their linked code unchanged.
-
-### Can I analyze Java 25 class files with the current engine?
-
-Not with the pinned ProGuard Core 9.1.10: this run observed it reject Java 25 class-file major version 69, while the engine supports through major version 68. The current validated toolchain is GraalVM JDK 21. Running Maven on JDK 25 while analyzing dependencies compiled to an older supported class-file version is a separate case and has not been certified here.
-
-### What happens to a retained JAR with a root `module-info.class`?
-
-On the classpath, keep that JAR byte-identical and warn; analyze its ordinary classes through a validated class-only projection so links into trim candidates remain reachable. Set `-Delide.failOnUnsupportedModuleInfo=true` to fail instead. JPMS module-path resolution, descriptor `uses`/`provides`, and readability rules are not covered.
+## Engineering FAQ
 
 ### Can we keep all multi-release entries and analyze only the base classes?
 
@@ -60,17 +42,21 @@ No. ProGuard Core handles classfiles and their references. Java source attributi
 
 The JVM defines these as signature-polymorphic calls. Their call-site descriptor may differ from the declared method descriptor, but every class named by that descriptor must still resolve. The trimmer recognizes only the JVM-defined declarations and adds those descriptor types to closure; bogus names, missing descriptor classes, and unrelated missing members remain errors. See [JVMS §2.9.3](https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-2.html#jvms-2.9.3) and [§5.4.3.3](https://docs.oracle.com/javase/specs/jvms/se21/html/jvms-5.html#jvms-5.4.3.3).
 
-### What if generated sources are not present at `INITIALIZE`?
-
-Leave `elide.sourceRootsComplete=false`; this conservatively pins compile-visible JARs and their classes for trimming. Use `true` only when every production/generated source is already available and no later processor or generator adds compile references.
-
 ### Why can the direct and resolved Maven dependency views differ?
 
 The current tested same-session path preserves the direct set so Maven does not re-resolve the original graph, while classpath and packaging consumers use the pruned resolved view. A direct-view plugin may still report an elided dependency. If both views are pruned, the tested Maven 3.9.11 lifecycle resolves the original POM graph again and restores original classpaths. See [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md) for impact tests and earlier-hook options.
 
-### Why is a validated cache hit slower than the target?
+### Why does the warm per-JAR trim-cache operation take about 93 ms?
 
-The cache verifies content fingerprints for candidate and sibling JARs plus the output digest. One small-artifact JMH run measured 93.038 ± 0.756 ms/op (99.9% confidence interval, two forks), above the <10 ms target. Fixture setup is outside the timed operation, and the result does not measure full Mojo or whole-build overhead. The implementation keeps the correctness check and records the performance target as unmet rather than trusting file timestamps.
+One JMH fixture uses a 695-byte input JAR, so JAR size does not explain the latency. Each warm operation opens/enumerates the JDK `ct.sym` archive to find the release and hashes the full 11.3 MB file; it also hashes the candidate while fingerprinting and again during entry validation, plus the trimmed output. JFR sampled ZipFile central-directory work and native reads as hot. The no-JFR run measured 92.860 ±0.223 ms/op. Content validation remains necessary, but duplicate reads and repeated platform identification are candidates to remove without weakening exact identity. See [RQ-0003](research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md).
+
+### Why is the Spring elision Maven build much slower than baseline?
+
+The unprofiled `clean verify` example run took 75.933 s with elision versus 4.072 s baseline. JFR of a similar run showed nearly all added time in the elider phase, with sustained CPU and allocation activity in ProGuard descriptor/classpath traversal, ZipFile inflaters, buffered reads, and strings. Source inspection found every candidate closure pass rereads and rebuilds sibling pools, then repeats this across root-propagation passes; dynamic-root scanning is also repeated. Investigate reducing that work before adding more persistent caches. JFR evidence and the staged follow-up list are in [RQ-0003](research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md).
+
+### How do I measure elision's end-to-end Maven cost?
+
+Run `make test-examples`. It times matched `clean verify` invocations for the Basic and Spring Boot examples with elision skipped and enabled, and prints the difference. This includes Maven startup, dependency resolution, compilation, tests, the elider, and packaging; trace capture and running/verifying the final application are outside the timed calls. A direct `mvn dependency:tree` does not invoke the `initialize` lifecycle phase, so it cannot measure the elider. The currently recorded times are single-run observations, not a stable performance estimate.
 
 ### What happens when metadata or an archive layout is unknown?
 
@@ -82,4 +68,4 @@ Each dependency remains a distinct JAR keyed to its Maven coordinate. This prese
 
 ## Updating This Page
 
-Add each material work-package decision to the table with its current status, rationale, and evidence. Add an FAQ entry when the decision creates a recurring “what if” or version/platform boundary. Distinguish verified behavior from adopted policy and untested assumptions; link detailed ADRs, research questions, tests, and user-facing options rather than duplicating their full contents.
+Add each material work-package decision to the table with its current status, rationale, and evidence. Add an engineering FAQ entry when a decision creates a recurring architecture, compatibility, or performance question. Keep product configuration and user concerns in [faq.md](faq.md). Distinguish verified behavior from adopted policy and untested assumptions; link detailed ADRs, research questions, tests, and user-facing options rather than duplicating their full contents.

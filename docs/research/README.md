@@ -2,7 +2,7 @@
 
 This directory tracks open investigations, capability comparisons, empirical benchmarks, and architectural explorations for the `maven-dependency-elider` project.
 
-For current implementation choices and recurring compatibility questions, see the [Decision Register and FAQ](../decisions-and-faq.md). Detailed unresolved investigations remain in the RQ documents below.
+For user configuration and compatibility answers, see the [User FAQ](../faq.md). For implementation choices and engineering questions, see the [Contributor Decision Register and Engineering FAQ](../contributor-decisions-and-faq.md). Detailed unresolved investigations remain in the RQ documents below.
 
 ## Research Register
 

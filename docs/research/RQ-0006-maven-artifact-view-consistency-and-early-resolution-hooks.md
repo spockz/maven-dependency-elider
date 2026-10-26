@@ -4,7 +4,7 @@
 * **Status**: Open
 * **Category**: Maven Lifecycle & Resolver Integration
 * **Date**: 2026-10-25
-* **Last Updated**: 2026-10-25
+* **Last Updated**: 2026-10-26
 
 Abbreviations: Abstract Syntax Tree (AST), Build Extension (BE), Core Extension (CE), Dependency Elision (DE), Project Object Model (POM), Repository Session Decorator (RSD), Software Bill of Materials (SBOM).
 
@@ -40,9 +40,30 @@ An earlier Basic fixture run updated the direct and resolved sets consistently. 
 
 This is a reproducible lifecycle failure for the transparent-trimming goal: consistent mutation at `INITIALIZE` did not persist through the tested later resolver invocation. It did not break application execution, but it silently lost the requested artifact reduction in the package. The current workaround restores correct bytes for the two tested packaging consumers by retaining the direct set, at the cost of direct/resolved view consistency.
 
-### 2.3 Known Unknowns
+### 2.3 `dependency:tree` After `INITIALIZE`
 
-No specific plugin has yet been shown to produce an incorrect application result by consuming `getDependencyArtifacts()` while packaging uses `getArtifacts()`. Maven dependency reports, direct-dependency analysis, publication, vulnerability reports, repeated goals, separate task segments, and fresh resolver calls remain candidates to investigate. A discrepancy in a report may be acceptable if that report intentionally describes the declared POM graph; the research must distinguish declared-dependency reporting from claims about the actual packaged classpath.
+On the Basic fixture, a single Maven invocation ran `initialize` followed by `maven-dependency-plugin:3.8.1:tree`, with elision active and a baseline trace supplied. The log confirms the elide mojo ran and removed one of twelve whole artifacts. The dependency tree still listed `commons-codec:commons-codec:1.19.0`, although the tested post-elision classpath and shaded package omit it.
+
+This is a concrete difference between the declared/resolved dependency-tree report and the artifact view consumed by the tested classpath and packager. The standard tree goal cannot be treated as an authoritative post-elision inventory in the current integration. Apache's plugin documentation describes `dependency:tree` as the resolved dependency tree Maven uses, which makes this behavior especially important to label clearly for users. It does not show that the build's final package retained Commons Codec; the package test proves the opposite.
+
+The same-session command is still useful to ensure elision executes before the report:
+
+```sh
+./mvnw -f examples/example-basic-app/pom.xml \
+  -Delide.skip=false \
+  -Delide.traceFiles=/path/to/baseline-classes.log \
+  -Delide.trimJars=true \
+  -Delide.sourceRootsComplete=true \
+  -Dmaven.compiler.proc=none \
+  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3 \
+  initialize org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree
+```
+
+The command's order causes Maven to execute the lifecycle through `INITIALIZE`, then invokes the tree goal in the same session. It does **not** make the tree honor elision, as the Commons Codec result demonstrates. For now, use the tested effective classpath or packaged archive when answering which artifacts are actually present. A future elider report can display original dependency-tree edges annotated with retained/elided status, or a dedicated post-elision tree can be built from a preserved dependency graph and the retained coordinate inventory.
+
+### 2.4 Remaining Consumers
+
+No specific plugin has yet been shown to produce an incorrect application result by consuming `getDependencyArtifacts()` while packaging uses `getArtifacts()`. The dependency-tree mismatch is now reproduced as a diagnostic/reporting difference, not an application or package failure. Direct-dependency analysis, publication, vulnerability reports, repeated goals, separate task segments, and fresh resolver calls remain candidates to investigate. A discrepancy in a report may be acceptable if that report intentionally describes the declared POM graph; reports must distinguish that graph from the actual post-elision classpath and package.
 
 ---
 

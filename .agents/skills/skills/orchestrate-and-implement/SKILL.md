@@ -61,11 +61,13 @@ Distinguish session closeout from work package completion. Mark a work package c
 
 ### 2.1 Running Decision Register and FAQ
 
-* **Do**: Maintain a repository decision register and FAQ for material behavior, compatibility, failure-policy, performance, and lifecycle choices made during the work package. Prefer an existing repository document; otherwise create a concise `docs/decisions-and-faq.md` and link it from the repository documentation index.
-* **Do**: For each decision, record the chosen behavior, rationale, affected scope, status, and evidence or open assumption. Distinguish tested behavior from policy and hypothesis; link the relevant ADR, research question, test, and user-facing option.
-* **Do**: Add FAQ entries for concrete “what if” cases such as alternate JDK/runtime versions, unsupported archive layouts, generated sources, repeated dependency resolution, cache invalidation, and downstream consumers of different model views.
-* **Do**: Revisit the register when the user changes priorities or an experiment changes the supported behavior. Include all material decisions before track integration and closeout.
-* **Don't**: Don't record an assumption as verified behavior, hide an unmet target, or duplicate full ADR/RQ content in the register.
+* **Do**: Keep two audience-specific records distinct: `docs/faq.md` for users and `docs/contributor-decisions-and-faq.md` for contributors. Link both from the repository documentation index.
+* **Do**: Write the user FAQ in product terms: configuration, expected outcomes, compatibility limits, failure behavior, and practical concerns. Include internal mechanisms only when they help a user make a decision or diagnose a result.
+* **Do**: Maintain the contributor decision register with each material behavior, compatibility, failure-policy, performance, and lifecycle decision's rationale, affected scope, status, evidence, and open assumptions. ADRs remain authoritative for accepted architecture; research questions track unresolved investigations.
+* **Do**: When an internal decision changes user-visible behavior or action, update the user FAQ with a concise translation and link to the relevant usage instructions. Keep implementation details, benchmark methodology, alternatives, and unresolved hypotheses in the contributor document or linked ADR/RQ.
+* **Do**: Add contributor FAQ entries for engineering cases such as alternate JDK/runtime versions, source completeness, repeated dependency resolution, cache invalidation, and downstream consumers of different Maven model views. Add user FAQ entries for concrete user-facing “what if” cases and remedies.
+* **Do**: Revisit both records when priorities or experimental evidence change. Before track integration and closeout, verify the contributor register includes material decisions and that the user FAQ reflects supported behavior users need to know.
+* **Don't**: Don't merge the two audiences into one FAQ, present a contributor hypothesis as a user guarantee, record an assumption as verified behavior, hide an unmet target, or duplicate full ADR/RQ content.
 
 ### 3. Worktree Isolation and Ambient Caches
 

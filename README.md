@@ -174,6 +174,8 @@ The example script uses the Maven Wrapper, a JDK 21 toolchain, Bash, and `timeou
 
 The core JMH cache benchmark measures metadata fingerprinting and cache loading, but does not establish the plugin's whole-build overhead. The production trim-cache benchmark uses exact content hashes. Its recorded warm hit is **93.038 ± 0.756 ms/op** on GraalVM JDK 21.0.12, above the <10 ms target; the per-artifact <1.5 ms target remains unmet. See [RQ-0003](docs/research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for method, limitations, and the deferred performance follow-up.
 
+The latest paired example-build medians show about +1.977 s for Basic and +20.417 s for Spring Boot with elision enabled. These measurements include Maven startup, dependency resolution, compilation, tests, elision, and packaging; they are descriptive observations, not a whole-build performance guarantee.
+
 ## Requirements
 
 * **JDK 21** or newer.

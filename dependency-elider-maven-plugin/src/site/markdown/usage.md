@@ -3,6 +3,8 @@
 
 The `analyze` goal reads explicit runtime trace files and reports whole artifacts that the core policy would elide. It does not mutate Maven's artifact sets, classpaths, or packaged output.
 
+For practical configuration and compatibility questions, see the [User FAQ](faq.md). Implementation rationale and benchmark evidence are in the [Contributor Decision Register and Engineering FAQ](contributor-decisions-and-faq.md).
+
 First, install this repository's plugin and core dependency using the repository wrapper:
 
 ```sh

@@ -27,6 +27,23 @@ main() {
   fi
 
   read -r -a maven_options <<<"$maven_args"
+
+  run_timed() {
+    local timing_file=$1
+    shift
+    python3 - "$timing_file" "$@" <<'PY'
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+started = time.perf_counter()
+result = subprocess.run(sys.argv[2:])
+Path(sys.argv[1]).write_text(f"{time.perf_counter() - started:.3f}\n")
+raise SystemExit(result.returncode)
+PY
+  }
+
   test_dir=$(mktemp -d "${TMPDIR:-/tmp}/maven-dependency-elider-examples.XXXXXX")
   cleanup() {
     local status=$?
@@ -55,6 +72,8 @@ main() {
     trace="$test_dir/$fixture.log"
     baseline_output="$test_dir/$fixture-baseline.out"
     final_output="$test_dir/$fixture-final.out"
+    baseline_seconds="$test_dir/$fixture-baseline.seconds"
+    elision_seconds="$test_dir/$fixture-elision.seconds"
     elision_options=(
       -Delide.skip=false
       "-Delide.traceFiles=$trace"
@@ -83,7 +102,7 @@ main() {
       )
     fi
 
-    "$maven" "${maven_options[@]}" -f "$pom" clean verify \
+    run_timed "$baseline_seconds" "$maven" "${maven_options[@]}" -f "$pom" clean verify \
       -Delide.skip=true -Delider.verifyElision=false
     test -f "$jar_file"
     if [[ $fixture == example-basic-app ]]; then
@@ -129,7 +148,23 @@ main() {
       fi
     fi
 
-    "$maven" "${maven_options[@]}" -f "$pom" clean verify "${elision_options[@]}"
+    run_timed "$elision_seconds" "$maven" "${maven_options[@]}" -f "$pom" clean verify "${elision_options[@]}"
+
+    if [[ $fixture == example-basic-app || $fixture == example-spring-boot-app ]]; then
+      python3 - "$fixture" "$baseline_seconds" "$elision_seconds" <<'PY'
+import sys
+from pathlib import Path
+
+fixture, baseline_file, elision_file = sys.argv[1:]
+baseline = float(Path(baseline_file).read_text())
+elision = float(Path(elision_file).read_text())
+print(
+    f"Maven clean verify timing for {fixture}: "
+    f"baseline={baseline:.3f}s, elision={elision:.3f}s, "
+    f"difference={elision - baseline:+.3f}s"
+)
+PY
+    fi
 
     if [[ $fixture == example-basic-app ]]; then
       verify_basic_shade_input_paths "$fixture_dir"
