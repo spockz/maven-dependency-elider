@@ -171,6 +171,12 @@ final class ElideMojoTest {
                 List.of());
     assertThat(cachedAnalysis.trimAnalysisRuns()).isZero();
     assertThat(cachedAnalysis.trimCacheHits()).isPositive();
+    assertThat(cachedAnalysis.trimRecords())
+        .singleElement()
+        .satisfies(
+            record ->
+                assertThat(record.prunedClassBytes())
+                    .isEqualTo(classEntrySize(original, "sample/Drop.class")));
     final Path expectedTrimmedPath =
         tempDir.resolve("build/elided-artifacts/org.example-runtime-dependency-1.0-trimmed.jar");
     assertThat(cachedAnalysis.trimRecords())
@@ -1919,6 +1925,13 @@ final class ElideMojoTest {
             new DefaultArtifactHandler("jar"));
     artifact.setFile(writeJar(artifactId + ".jar", classEntry).toFile());
     return artifact;
+  }
+
+  private static long classEntrySize(final Path archivePath, final String entryName)
+      throws IOException {
+    try (JarFile archive = new JarFile(archivePath.toFile())) {
+      return archive.getEntry(entryName).getSize();
+    }
   }
 
   private Path writeJar(final String name, final String classEntry) throws IOException {

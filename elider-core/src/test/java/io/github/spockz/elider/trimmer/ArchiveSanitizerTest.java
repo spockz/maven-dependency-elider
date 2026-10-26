@@ -89,6 +89,8 @@ class ArchiveSanitizerTest {
     assertThat(record.coordinate()).isEqualTo(coordinate);
     assertThat(record.totalClasses()).isEqualTo(2);
     assertThat(record.retainedClasses()).isEqualTo(1);
+    assertThat(record.prunedClassBytes())
+        .isEqualTo(classEntrySize(candidate, "fixture/Drop.class"));
     assertThat(record.originalSha256()).isEqualTo(digest(originalBytes, SHA_256));
     assertThat(record.originalSha1()).isEqualTo(digest(originalBytes, SHA_1));
     assertThat(record.trimmedSha256()).isEqualTo(digest(Files.readAllBytes(trimmed), SHA_256));
@@ -332,6 +334,13 @@ class ArchiveSanitizerTest {
       writeEntry(output, "META-INF/SIG-CUSTOM", new byte[] {4, 5, 6});
     }
     return jar;
+  }
+
+  private static long classEntrySize(final Path archivePath, final String entryName)
+      throws IOException {
+    try (JarFile archive = new JarFile(archivePath.toFile())) {
+      return archive.getEntry(entryName).getSize();
+    }
   }
 
   @Test

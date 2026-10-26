@@ -6,7 +6,7 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.nio.file.Path;
 import java.util.Objects;
 
-/** Hash and class-count provenance for a sanitized dependency archive. */
+/** Hash and pruning provenance for a sanitized dependency archive. */
 public record ArtifactTrimRecord(
     ArtifactCoordinate coordinate,
     Path originalPath,
@@ -16,7 +16,8 @@ public record ArtifactTrimRecord(
     String trimmedSha256,
     String trimmedSha1,
     int totalClasses,
-    int retainedClasses) {
+    int retainedClasses,
+    long prunedClassBytes) {
 
   /** Validates that the record describes an actual trim with complete digests. */
   public ArtifactTrimRecord {
@@ -27,8 +28,11 @@ public record ArtifactTrimRecord(
     requireSha1(originalSha1, "originalSha1");
     requireSha256(trimmedSha256, "trimmedSha256");
     requireSha1(trimmedSha1, "trimmedSha1");
-    if (totalClasses < 0 || retainedClasses < 0 || retainedClasses > totalClasses) {
-      throw new IllegalArgumentException("Invalid retained and total class counts");
+    if (totalClasses < 0
+        || retainedClasses < 0
+        || retainedClasses > totalClasses
+        || prunedClassBytes < 0) {
+      throw new IllegalArgumentException("Invalid class counts or pruned-class byte total");
     }
   }
 

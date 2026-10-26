@@ -195,7 +195,8 @@ class CycloneDxSbomGeneratorTest {
             "0".repeat(64),
             record.trimmedSha1(),
             record.totalClasses(),
-            record.retainedClasses());
+            record.retainedClasses(),
+            record.prunedClassBytes());
     assertThatThrownBy(
             () ->
                 GENERATOR.generate(
@@ -213,7 +214,8 @@ class CycloneDxSbomGeneratorTest {
             record.trimmedSha256(),
             record.trimmedSha1(),
             record.totalClasses(),
-            record.retainedClasses());
+            record.retainedClasses(),
+            record.prunedClassBytes());
     assertThatThrownBy(
             () ->
                 GENERATOR.generate(
@@ -377,7 +379,8 @@ class CycloneDxSbomGeneratorTest {
         digest(trimmed, "SHA-256"),
         digest(trimmed, "SHA-1"),
         totalClasses,
-        retainedClasses);
+        retainedClasses,
+        0L);
   }
 
   private static String digest(final Path path, final String algorithm)

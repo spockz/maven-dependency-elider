@@ -62,7 +62,7 @@ final class MavenDependencyTrimmer {
   private static final String ELIDED_ARTIFACTS = "elided-artifacts";
   private static final Set<String> TRIMMABLE_SCOPES = Set.of("compile", "runtime");
   private static final ObjectMapper JSON = new ObjectMapper();
-  private static final int CACHE_SCHEMA_VERSION = 9;
+  private static final int CACHE_SCHEMA_VERSION = 10;
   private static final String ENGINE_VERSION = "proguard-core-9.1.10";
 
   record TrimResult(
@@ -121,6 +121,7 @@ final class MavenDependencyTrimmer {
       String trimmedSha1,
       int totalClasses,
       int retainedClasses,
+      Long prunedClassBytes,
       Set<String> roots,
       Set<String> retainedClassNames,
       Set<String> reachableLibraryClasses) {}
@@ -985,6 +986,7 @@ final class MavenDependencyTrimmer {
         record == null ? null : record.trimmedSha1(),
         analysis.totalClasses(),
         analysis.retainedClasses().size(),
+        record == null ? 0L : record.prunedClassBytes(),
         candidate.roots(),
         analysis.retainedClasses(),
         analysis.reachableLibraryClasses());
@@ -1050,7 +1052,8 @@ final class MavenDependencyTrimmer {
               entry.trimmedSha256(),
               entry.trimmedSha1(),
               entry.totalClasses(),
-              entry.retainedClasses()));
+              entry.retainedClasses(),
+              entry.prunedClassBytes()));
     }
     return new TrimResult(
         records,
@@ -1069,6 +1072,8 @@ final class MavenDependencyTrimmer {
         || entry.roots().contains(null)
         || entry.retainedClassNames() == null
         || entry.retainedClassNames().contains(null)
+        || entry.prunedClassBytes() == null
+        || entry.prunedClassBytes() < 0
         || entry.reachableLibraryClasses() == null
         || entry.reachableLibraryClasses().contains(null)
         || entry.totalClasses() != candidate.classes().size()

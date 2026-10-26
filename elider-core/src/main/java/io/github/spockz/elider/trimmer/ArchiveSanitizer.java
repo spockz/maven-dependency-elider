@@ -132,7 +132,7 @@ public final class ArchiveSanitizer {
     final Path temporaryJar = Files.createTempFile(outputDirectory, ".trimmed-", ".jar.tmp");
     boolean moved = false;
     try {
-      writeArchive(originalJar, temporaryJar, analysis);
+      final long prunedClassBytes = writeArchive(originalJar, temporaryJar, analysis);
       final ArtifactDigests trimmedDigests = ArtifactDigests.read(temporaryJar);
       moved = true;
       return new PreparedOutput(
@@ -146,7 +146,8 @@ public final class ArchiveSanitizer {
           trimmedDigests.sha256(),
           trimmedDigests.sha1(),
           analysis.totalClasses(),
-          analysis.retainedClasses().size());
+          analysis.retainedClasses().size(),
+          prunedClassBytes);
     } finally {
       if (!moved) {
         Files.deleteIfExists(temporaryJar);
@@ -173,7 +174,8 @@ public final class ArchiveSanitizer {
         prepared.trimmedSha256(),
         prepared.trimmedSha1(),
         prepared.totalClasses(),
-        prepared.retainedClasses());
+        prepared.retainedClasses(),
+        prepared.prunedClassBytes());
   }
 
   /** Removes an unpublished staged archive. */
@@ -194,9 +196,10 @@ public final class ArchiveSanitizer {
       String trimmedSha256,
       String trimmedSha1,
       int totalClasses,
-      int retainedClasses) {}
+      int retainedClasses,
+      long prunedClassBytes) {}
 
-  private static void writeArchive(
+  private static long writeArchive(
       final Path originalJar,
       final Path temporaryJar,
       final DependencyJarTrimmer.TrimAnalysis analysis)
@@ -205,6 +208,7 @@ public final class ArchiveSanitizer {
     final Set<String> seenNames = new HashSet<>();
     final Set<String> writtenClasses = new HashSet<>();
     final Set<String> inputClasses = new HashSet<>();
+    final PrunedClassByteCounter prunedClassBytes = new PrunedClassByteCounter();
     try (JarFile input = new JarFile(originalJar.toFile());
         OutputStream fileOutput = Files.newOutputStream(temporaryJar);
         JarOutputStream output = new JarOutputStream(fileOutput)) {
@@ -249,6 +253,7 @@ public final class ArchiveSanitizer {
           }
           inputClasses.add(className);
           if (!retainedClasses.contains(className)) {
+            prunedClassBytes.add(entry);
             continue;
           }
           writtenClasses.add(className);
@@ -267,6 +272,28 @@ public final class ArchiveSanitizer {
     }
     if (inputClasses.size() != analysis.totalClasses()) {
       throw new IOException("Trim analysis class count does not match original JAR entries");
+    }
+    return prunedClassBytes.value();
+  }
+
+  /** Counts omitted class payload bytes without retaining the payloads. */
+  private static final class PrunedClassByteCounter {
+    /** Total uncompressed bytes across omitted class entries. */
+    private long totalBytes;
+
+    private void add(final JarEntry entry) throws IOException {
+      if (entry.getSize() < 0) {
+        throw new IOException("Class entry has unknown uncompressed size: " + entry.getName());
+      }
+      try {
+        totalBytes = Math.addExact(totalBytes, entry.getSize());
+      } catch (final ArithmeticException exception) {
+        throw new IOException("Pruned class byte total overflowed", exception);
+      }
+    }
+
+    private long value() {
+      return totalBytes;
     }
   }
 

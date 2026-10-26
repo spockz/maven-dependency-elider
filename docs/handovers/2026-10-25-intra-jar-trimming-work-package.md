@@ -55,6 +55,8 @@ Build upon the verified whole-artifact elision engine by introducing **intra-JAR
 ┌────────────────────────────────────────────────────────┐
 │ Track 6: Fixtures, End-to-End Verification & JMH Gates │
 └────────────────────────────────────────────────────────┘
+
+Track 7 (Persisted Elision Report) depends on Tracks 3 and 5; Track 6's report examples depend on Track 7.
 ```
 
 ---
@@ -167,6 +169,25 @@ Build upon the verified whole-artifact elision engine by introducing **intra-JAR
   * Select fixture behavior from one POM with `-Delide.mode=baseline` or `-Delide.mode=elision`; the `elision` value activates a named Maven profile.
   * Verify that `make test-examples` builds and compares both modes without parallel POM definitions.
 
+### Track 7: Persisted Elision Report Goal and Example Output (`dependency-elider-maven-plugin`, `examples/`)
+
+**Worktree**: `.scratch/worktrees/track-elision-report`
+**Dependencies**: Tracks 3 and 5; Track 6 example reporting depends on Track 7.
+
+* **Slice 7.1: Exact Pruned-Class Payload Accounting**
+  * Record the uncompressed byte size of omitted `.class` entries in each `ArtifactTrimRecord` while the sanitizer reads the source archive.
+  * Preserve the value in the trim cache so cache hits produce identical report totals without reopening JARs.
+  * Test that an omitted class's recorded payload bytes equal its uncompressed input ZIP entry size.
+* **Slice 7.2: Persisted Snapshot and `report` Goal**
+  * Have a successful `elide` execution atomically persist the pre-mutation whole-artifact removals and trim records under the Maven build directory.
+  * Add `dependency-elider:report`, which reads that snapshot without re-running analysis or relying on mutated Maven artifact views.
+  * Report whole artifacts dropped by count and sum of their original on-disk JAR sizes. Report classes pruned from retained JARs by count and sum of uncompressed omitted `.class` entry payload bytes; label the byte basis explicitly and use binary `KiB`/`MiB` units.
+  * Identify the snapshot's project GAV and successful-run timestamp. Fail clearly if no successful snapshot exists. A failed or skipped `elide` must not publish a new snapshot; if an earlier successful snapshot remains, `report` must describe it as the last successful run.
+  * Test exact counts/bytes, stable formatting, cache-hit equivalence, no re-analysis, missing snapshots, and failed/skipped-run freshness semantics.
+* **Slice 7.3: Report Every Example**
+  * Invoke the report goal after successful elision for Basic, Spring Boot, CVE-unused, and CVE-safe-class examples.
+  * Capture representative goal output for each example in the README.
+
 ---
 
 ## 4. Verification Protocol
@@ -188,3 +209,4 @@ Build upon the verified whole-artifact elision engine by introducing **intra-JAR
    * Signatures stripped and digests cleansed.
    * Repackaged fat JARs and Spring Boot JARs boot and pass integration tests.
    * CycloneDX 1.6 SBOM validates against official schema.
+   * Each example documents the report goal output for whole-artifact and class-pruning counts and byte totals, with GAV and snapshot freshness visible.
