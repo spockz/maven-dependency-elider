@@ -187,6 +187,7 @@ final class ElideMojoTest {
                 + MavenElisionReportWriter.formatBytes(
                     classEntrySize(original, "sample/Drop.class"))
                 + "; excludes module descriptors and archive sanitation metadata)");
+    assertThat(log.messages()).doesNotContain("  Classes removed: 0 / N/A (N/A; stage not run)");
     assertThat(directRuntime.getFile().toPath()).isEqualTo(runtime.getFile().toPath());
     assertThat(project.getArtifacts()).contains(runtime);
     assertThat(project.getArtifacts()).doesNotContain(unusedRuntime);

@@ -130,10 +130,7 @@ public final class ElideMojo extends AbstractMojo {
       }
       if (trimJars) {
         ElisionSummary.reportTrimmed(
-            getLog(),
-            analysis.decision(),
-            analysis.resolvedSnapshots().size(),
-            analysis.trimRecords());
+            getLog(), analysis.decision(), analysis.resolvedSnapshots().size(), reportSnapshot);
       } else {
         ElisionSummary.report(getLog(), analysis.decision(), analysis.resolvedSnapshots().size());
       }

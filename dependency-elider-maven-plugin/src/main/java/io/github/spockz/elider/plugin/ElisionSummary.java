@@ -3,8 +3,6 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ElisionDecision;
-import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
-import java.util.List;
 import java.util.Locale;
 import org.apache.maven.plugin.logging.Log;
 
@@ -34,17 +32,17 @@ final class ElisionSummary {
       final Log log,
       final ElisionDecision decision,
       final int inputCount,
-      final List<ArtifactTrimRecord> trimRecords) {
+      final MavenElisionReportSnapshot reportSnapshot) {
     if (!log.isInfoEnabled()) {
       return;
     }
     reportHeader(log, decision, inputCount);
-    final TrimTotals totals = totalTrimmedClasses(trimRecords);
     log.info(
         "  Program classes removed: "
-            + totals.classes()
+            + reportSnapshot.programClassesPruned()
             + " (uncompressed omitted .class entry payload bytes: "
-            + MavenElisionReportWriter.formatBytes(totals.classBytes())
+            + MavenElisionReportWriter.formatBytes(
+                reportSnapshot.uncompressedProgramClassBytesPruned())
             + "; excludes module descriptors and archive sanitation metadata)");
     log.info("  Methods removed: 0 / N/A (N/A; stage not run)");
     log.info("  Fields removed: 0 / N/A (N/A; stage not run)");
@@ -63,16 +61,4 @@ final class ElisionSummary {
       log.info("  Whole artifacts: " + removed + " / " + inputCount + " (" + percentage + ")");
     }
   }
-
-  private static TrimTotals totalTrimmedClasses(final List<ArtifactTrimRecord> trimRecords) {
-    int classes = 0;
-    long classBytes = 0;
-    for (final ArtifactTrimRecord record : trimRecords) {
-      classes = Math.addExact(classes, record.totalClasses() - record.retainedClasses());
-      classBytes = Math.addExact(classBytes, record.prunedClassBytes());
-    }
-    return new TrimTotals(classes, classBytes);
-  }
-
-  private record TrimTotals(int classes, long classBytes) {}
 }
