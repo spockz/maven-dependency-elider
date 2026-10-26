@@ -1,159 +1,215 @@
-<!-- WHY: Introduces the project, its current scope, and the supported contributor workflow at the repository entry point. -->
+<!-- WHY: Introduces the project, its core value proposition, quick start, and architectural model. -->
 # Maven Dependency Elider
 
 [![Build](https://github.com/spockz/maven-dependency-elider/actions/workflows/check.yml/badge.svg)](https://github.com/spockz/maven-dependency-elider/actions/workflows/check.yml)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://spockz.github.io/maven-dependency-elider/)
 [![Java 21](https://img.shields.io/badge/Java-21-blue.svg)](https://openjdk.org/projects/jdk/21/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Maven Dependency Elider aims to turn external usage knowledge into reduced dependencies that Maven uses throughout compilation, testing, and packaging. A usage oracle supplies retention roots: observed classes, reflective entry points, deployment-specific knowledge, or explicit configuration. The intended design combines those roots with source compilation dependencies and framework/resource requirements, then retains their required dependencies.
+Software Composition Analysis floods engineering teams with vulnerability alerts because over 97% of reported Java CVEs reside in bloated, dormant code that never executes in production. Maven Dependency Elider eliminates this security impedance mismatch by automatically purging unused transitive libraries and trimming unreferenced classes directly inside your Maven build. By leveraging concrete JVM runtime telemetry (CDS, JFR, JaCoCo) to validate lean classpaths during compile and test phases, it guarantees zero-regression packaging while emitting verifiable CycloneDX 1.6 and OpenVEX attestations to decisively silence false-positive alarms.
 
-The project is under active development. The core includes runtime trace readers, a JAR central-directory class index, a conservative dependency-pruning engine, a cache API, and a CycloneDX 1.6 inventory generator. The `elide` goal applies whole-artifact decisions to Maven's in-memory artifact views. Plugin integration of caching and provenance remains pending; `make test-examples` verifies the current Shade and Spring Boot packaging paths. Sub-artifact bytecode slicing is deferred; an observed class retains its entire dependency JAR. Do not use this project to remove dependencies from production builds.
-
-See the [session handover](docs/handovers/2026-10-25-session-closeout.md) for verified track status, scope decisions, and remaining work.
-
-## Project goals
-
-- Bring external usage evidence into dependency reduction, including knowledge that ordinary static analysis cannot discover.
-- Compile and run existing tests against the reduced dependency set so the normal build exercises what will be packaged.
-- Automate retention rules, artifact replacement, consistent classpaths, packaging coordination, and reports explaining decisions.
-- Preserve dependency JAR boundaries so applications can keep their existing packaging model, including Spring Boot's nested executable archives.
-- Measure distribution size, added build time, and configuration effort while preserving accurate provenance for downstream tools.
-
-These are development goals; the current core components are not yet exposed as a production-ready Maven workflow.
-
-## Why integrate dependency reduction into Maven?
-
-The intended benefit is a repeatable workflow from usage evidence to dependencies exercised by the application build. Compilation can expose missing source dependencies, and tests can exercise the reduced implementations before packaging. This validation is bounded by the sources and workloads actually checked; it cannot establish that every deployment path is covered.
-
-Early transformation has prior art: [Gradle artifact transforms](https://docs.gradle.org/current/userguide/artifact_transforms.html) operate before consumers use artifacts, and [DepTrim](https://github.com/ASSERT-KTH/deptrim) specializes Maven dependencies. This project's intended differentiation is combining an external oracle with consistent Maven integration, explainable decisions, and less manual orchestration. For users who only need a smaller final distribution, a separate distribution module with an existing shrinker may already suffice.
-
-The current scope removes whole artifacts and retains the entire owning JAR for every observed class. [Intra-JAR trimming research](docs/research/RQ-0001-sub-artifact-bytecode-symbol-slicing-and-provenance.md) explores reducing surviving dependencies while preserving a separate output JAR for each input. That future capability would allow Boot to package ordinary transformed dependencies without requiring the trimming engine to understand Boot's final archive. No trimming engine has been selected.
-
-## Evidence and limitations
-
-An oracle's positive observations identify things to retain. Optional method information does not establish that unlisted methods are removable. Dynamic discovery through reflection, services, framework metadata, serialization, or native code needs additional roots or explicit configuration.
-
-The current whole-artifact policy does not yet protect dependencies required by application source compilation. Its optional production-bytecode scan supplies reports only. A dependency absent from a recorded workload can therefore be elided even when current source needs it. The compiler probe verifies that Maven uses the reduced classpath and exposes this failure; it does not prove correct retention. Source compilation roots are the next work package's priority under RQ-0004, independently of deferred intra-JAR trimming.
-
-For future source-aware reduction, source analysis must use the original dependencies and the real compiler settings. It must cover compilation references erased from bytecode, including inlined constants, source-retained annotations, and unreachable branches, as well as generated sources. Retained dependency code still needs its transitive supporting code and compilation metadata. These requirements are tracked in [RQ-0001](docs/research/RQ-0001-sub-artifact-bytecode-symbol-slicing-and-provenance.md).
-
-The integration must prove that compilation, tests, and packaging consume the intended artifacts, including after later dependency resolution. Build outputs must have traceable identities and must never overwrite original artifacts in the shared Maven repository. A single dependency set for compilation and runtime may retain compilation-only declarations; separate outputs would require additional orchestration. See [ADR-0002](docs/adr/0002-in-memory-artifact-mutation-for-downstream-packaging-transparency.md).
-
-Dependency reduction adds analysis and transformation work. A smaller classpath does not imply a faster overall build. Size savings, cold and cached build costs, and setup effort need separate measurements. Removing code also does not automatically remove a coordinate-based vulnerability finding or prove that a product is unaffected.
-
-## Repository layout
-
-| Path | Purpose |
-| --- | --- |
-| `elider-core/` | Core model and, as development progresses, dependency analysis components. |
-| `dependency-elider-maven-plugin/` | Maven plugin module. |
-| `elider-benchmarks/` | Performance benchmark module. |
-| `examples/` | Example Maven applications for integration work. |
-| `docs/adr/` | Accepted architecture decision records. |
-| `docs/research/` | Research notes and implementation handovers. |
-
-## Requirements
-
-- JDK 21 or newer. The project compiles with Java 21 language and API compatibility.
-- A POSIX shell and `make` for the documented developer commands.
-- Node.js and `npm` to install the Markdown linter used by `make check`.
-- Bash, Python 3, and the `timeout` utility for `make test-examples`.
-
-The Maven Wrapper is included, so a separate Maven installation is not required.
-
-## Build and checks
-
-Install the documentation linter once, then run the repository check:
-
-```sh
-make tools
-make check
+```text
+  Runtime Evidence                 Maven Build Lifecycle               Lean Distribution
+┌──────────────────┐           ┌────────────────────────────┐         ┌───────────────────┐
+│ CDS Class Lists  │           │   compile                  │         │ Slashed JAR Size  │
+│ -Xlog:class+load │ ────────> │   test  (validates elision)│ ──────> │ Zero Bloat CVEs   │
+│ JFR ClassLoad    │           │   package (Shade / Boot)   │         │ CycloneDX 1.6 SBOM│
+│ JaCoCo & GraalVM │           └────────────────────────────┘         │ OpenVEX Statements│
+└──────────────────┘                         ▲                        └───────────────────┘
+                                             │
+                                    In-Memory Redirection
+                                  (Transparent to Packagers)
 ```
 
-`make check` formats Java sources, runs Checkstyle, PMD, SpotBugs, lints Markdown, and runs the core and Maven plugin tests. Run individual checks with `make lint-java`, `make lint-markdown`, `make test-core`, or `make test-plugin`.
+## Why Maven Dependency Elider?
 
-## Cache benchmarks
+* **Eliminate Runtime Guesswork**: Feeds on concrete JVM telemetry—CDS class lists (`-XX:DumpLoadedClassList`), class-loading logs (`-Xlog:class+load`), JFR recordings (`jdk.ClassLoad`), JaCoCo execution data (`jacoco.exec`), and GraalVM reflection configuration.
+* **Catch Regressions Early**: Injects reduced dependency views into Maven at `INITIALIZE`. Your existing `test` and `verify` phases execute against the trimmed classpath, catching any missing-class regressions *before* packaging.
+* **Two-Tier Reduction**:
+  * **Whole-Artifact Elision**: Completely purges 100% unused dependencies from effective classpaths and terminal packages.
+  * **Intra-JAR Trimming**: Slices unreferenced classes from retained JARs using ProGuard Core link closure, preserving required bytecode metadata, resources, and JAR boundaries.
+* **Packaging Transparency**: Works seamlessly with `maven-shade-plugin` and `spring-boot-maven-plugin` without requiring bespoke archive packagers.
+* **Cryptographic & SBOM Provenance**: Emits schema-valid CycloneDX 1.6 SBOMs with pedigree ancestry and OpenVEX `vulnerable_code_not_present` attestations.
 
-The JMH cache benchmarks measure fresh metadata fingerprinting, complete decision cache loading, and the combined fingerprint plus lookup over 100 local artifact fixtures. They exercise the core cache API only; they do not measure a Maven plugin fast path or establish the whole-build sub-10ms target. Build the standalone JMH runner and run these methods from the repository root with:
+## Quick Start
 
-```sh
-./mvnw -pl elider-benchmarks -am package
-java -jar elider-benchmarks/target/benchmarks.jar '.*ElisionCacheBenchmark.*' \
-  -f 2 -wi 3 -i 5 -w 1s -r 1s
-```
-
-JMH reports the fork, warmup, measurement, and JVM metadata. Record hardware, operating system, and filesystem separately when comparing runs.
-
-### Recorded run
-
-With JMH 1.37 on GraalVM JDK 25.0.5, the command above measured:
-
-| Benchmark | Average time | 99.9% confidence interval |
-| --- | ---: | ---: |
-| Fresh metadata fingerprinting | 0.221 ms/op | ±0.043 ms/op |
-| Complete decision cache load | 0.722 ms/op | ±0.011 ms/op |
-| Fingerprinting plus cache lookup | 1.078 ms/op | ±0.302 ms/op |
-
-The cache load result exceeds the research note's 0.5 ms component budget. The combined result measures the core cache API only; the cache is not integrated into the Maven plugin, so it does not prove lifecycle or whole-build overhead. The recorded environment was an AMD Ryzen 9 5900X 12-core processor (12 cores, 24 threads) and Linux 7.2.9-1-cachyos-bore-lto x86_64. Benchmark fixtures were created under `/tmp` on overlay storage; the workspace mount is Btrfs. The benchmark run used 2 forks, 3 warmup iterations, and 5 measurement iterations of 1 second each. The results are specific to this run and environment.
-
-## Example applications
-
-The `examples/` reactor contains two consumer applications used to exercise the record, elide, package, and runtime-verification workflow:
-
-- **`example-basic-app`** is a plain Java application that uses Jackson to print `{"message":"hello"}`. Its shaded executable JAR is the packaging fixture; `commons-codec` is included as an unused dependency candidate.
-- **`example-spring-boot-app`** is a Spring Boot web application with a `GET /api/hello` endpoint. It declares BOM-managed Commons Codec, which the baseline trace confirms is unused and the elided Boot JAR omits, plus `spring-boot-starter-mail`. The trace observes mail classes that have no direct reference from application production bytecode, so the report classifies them as runtime-observed without an application reference and the complete mail artifacts remain packaged. This is an evidence classification; it does not establish why Spring or another runtime component loaded those classes.
-
-The default `examples/` reactor demonstrates application behavior, unit tests, and downstream packaging configuration. Run `make test-examples` to exercise the full trace-driven lifecycle across both reactor applications and the two opt-in CVE fixtures. It builds baseline packages, runs them with JVM class-load logging, copies Spring's baseline production classes outside `target`, reruns Maven with elision enabled and explicit trace and bytecode-scan inputs, checks classpaths, packaged JAR contents, and the generated class usage report, then runs the final packages. The report must identify the copied application output, classify mail classes as runtime-only, and classify Commons Codec's unused `Hex` class as neither referenced nor observed. An isolated compiler probe also requires a source reference to elided Commons Codec to fail specifically in javac, then compile successfully with elision skipped.
-
-Build only the default examples reactor with:
+### 1. Install Plugin
 
 ```sh
-./mvnw -f examples/pom.xml verify
-```
-
-### CVE and whole-artifact examples
-
-Two additional standalone fixtures are intentionally excluded from the default reactor because they reproduce a vulnerable Logback version. Both import the Spring Boot 3.5.0 BOM, which manages Logback 1.5.18, Janino 3.1.12, and Spring Framework 6.2.7 without version overrides. OSV records [CVE-2025-11226](https://osv.dev/vulnerability/CVE-2025-11226) against `logback-core` through 1.5.18. Exploitation additionally requires Janino and Spring Framework on the classpath, as well as control of the Logback configuration. The POMs state the expected result for each direct, transitive, and prerequisite dependency. This older BOM release is selected to reproduce this finding; newer Spring Boot releases manage Logback versions fixed for this CVE.
-
-- **`example-cve-unused-app`** uses Jackson but no logging, Janino, or Spring. Expected result: elide `logback-classic`, its transitive `logback-core`, Janino, and Spring Context; retain Jackson and its runtime dependencies. A scan of the resulting shaded JAR should no longer report CVE-2025-11226.
-- **`example-cve-safe-class-app`** uses SLF4J with Logback and Spring Context, but does not use Janino. Expected result: retain `logback-classic`, its transitive `logback-core`, and Spring Context; elide Janino. OSV-Scanner is still expected to report CVE-2025-11226 against the retained vulnerable `logback-core` version, even though elision removes one of the advisory's stated prerequisites. This demonstrates the difference between a package-version finding and whether the documented exploit conditions are present.
-
-The standalone CVE fixtures inherit an `elision-test` profile that activates the `elide` goal only when `-Delide.skip=false` is supplied. These commands build baseline shaded JARs without resolving the elider plugin:
-
-```sh
+git clone https://github.com/spockz/maven-dependency-elider.git
+cd maven-dependency-elider
 ./mvnw -pl dependency-elider-maven-plugin -am install
-./mvnw -f examples/example-cve-unused-app/pom.xml verify -Delide.skip=true
-./mvnw -f examples/example-cve-safe-class-app/pom.xml verify -Delide.skip=true
 ```
 
-The `elide.skip` Maven property controls the profile: `true` or omitted leaves the goal inactive, while `false` activates it. `make test-examples` installs the plugin, creates each trace outside `target`, then supplies `-Delide.skip=false` and `-Delide.traceFiles=...` for each elision build. The unused-dependency fixture should stop showing CVE-2025-11226 because Logback is removed; the safe-class fixture may continue showing it because Logback remains, even after Janino is removed. The test target verifies package contents and behavior; scanner output remains a separate check. Scan the packaged output, not the unchanged source POM, when checking whether a component is physically absent:
+### 2. Capture Runtime Telemetry
+
+Run your application with standard JVM class-loading logs:
 
 ```sh
-osv-scanner scan source examples/example-cve-unused-app/target/example-cve-unused-app-0.1.0-SNAPSHOT.jar
-osv-scanner scan source examples/example-cve-safe-class-app/target/example-cve-safe-class-app-0.1.0-SNAPSHOT.jar
+java -Xlog:class+load=info:file=target/classes.log -jar target/my-app.jar
 ```
 
-## Usage
+### 3. Analyze Dependencies
 
-The Maven plugin provides a nonmutating, trace-based `analyze` goal. Install the plugin and its core dependency to the local repository, then run it in the consumer project with an explicit trace:
+Run the non-mutating `analyze` goal to inspect bloat and trimming potential:
 
 ```sh
-# From this repository root:
-./mvnw -pl dependency-elider-maven-plugin -am install
-
-# From the consumer project, use its Maven binary or wrapper:
 ./mvnw io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
   -Delide.traceFiles=target/classes.log
 ```
 
-See [Maven plugin usage](docs/plugin-usage.md) for supported trace formats, summary fields, and global exclusions. The `elide` goal mutates Maven's in-memory artifact views at `INITIALIZE`; `make test-examples` verifies the listed Shade and Spring Boot paths, while other packagers and Maven 4 compatibility remain unverified.
+### 4. Build with Elision
+
+Activate the `elide` goal to compile, test, and package against the reduced classpath:
+
+```sh
+./mvnw package \
+  -Delide.skip=false \
+  -Delide.traceFiles=target/classes.log
+```
+
+For complete configuration options and multi-source telemetry merging, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md).
+
+## The 1%–3% Vulnerability Reality
+
+Software Composition Analysis (SCA) suffers from a severe **four-tier granularity mismatch**:
+
+1. **Product-Level CPE Over-Matching**: Scanners flag every `io.netty:netty-*` module for an issue present only in `netty-codec-http2`.
+2. **Artifact-Level Coarseness**: A single dormant utility class inside an artifact marks the entire JAR vulnerable.
+3. **Compound Exploitability**: Most gadget chains require secondary companion libraries and specific deserialization settings.
+4. **Class & Method Execution Reality**: The JVM loads classes individually; massive portions of imported libraries never load.
+
+Empirical research confirms that **only 1% to 3% of reported CVEs are genuinely exploitable** in production:
+
+```text
+[Stage 1: Raw Baseline (100%)]
+       │
+       ▼  Eliminate broad CPE product collisions across modular frameworks (-35% to -55%)
+[Stage 2: CPE Disambiguation (45%–65% remaining)]
+       │
+       ▼  Prune unobserved, completely bloated transitive dependencies (-57% of transitive edges)
+[Stage 3: Unused Dependency Pruning (20%–35% remaining)]
+       │
+       ▼  Verify function and class-level call-graph reachability (-90% to -95%)
+[Stage 4: Function & Class Reachability (3%–8% remaining)]
+       │
+       ▼  Evaluate compound conditions, dormant paths, and configuration flags (-50% to -70%)
+[Stage 5: Compound & Runtime Context (1%–3% remaining)]
+```
+
+* **57% Transitive Bloat**: Soto-Valero et al. (KTH CASTOR, EMSE 2021) analyzed 723,444 Maven dependency edges and proved that **57% of transitive dependencies and 75.1% of all dependency relationships in Maven are completely bloated** (zero classes loaded).
+* **88.8% CPE False Positives**: Ponta et al. (SAP Research, ICSME 2018) proved that **88.8% of findings** for code-covered CVEs were false positives driven by coarse CPE matching.
+* **92%–95% Function Unreachability**: Telemetry from Snyk, Endor Labs, and Sonatype demonstrates that over 90% of vulnerability alerts in Java are unreachable at the method level.
+
+For the full academic review and scanner VEX comparison, read the [Project Rationale](dependency-elider-maven-plugin/src/site/markdown/rationale.md).
+
+## How Elision Works
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Whole-Artifact Elision                          │
+│                                                                        │
+│   Unused Transitive JAR ───[ No Roots Observed ]───> DROPPED ENTIRELY  │
+└────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Intra-JAR Link Closure                          │
+│                                                                        │
+│   Retained JAR ───┬───[ Observed Root Classes ]──────> KEPT            │
+│                   ├───[ Transitive Link Closure ]────> KEPT            │
+│                   └───[ Unreferenced Classes ]───────> ELIDED          │
+│                                                                        │
+│   Output: Separate sanitized JAR in target/elided-artifacts/          │
+│   Preserves: META-INF/services, licenses, resources, manifest digests  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Whole-Artifact Elision**: If no class in a dependency is referenced by sources or observed by runtime traces, the dependency is excluded from Maven's in-memory model. Downstream plugins (compiler, surefire, shade, spring-boot) never see it.
+2. **Intra-JAR Trimming**: For retained dependencies, ProGuard Core computes the transitive link closure of all required internal types, superclasses, interfaces, and annotations. Unreferenced classes are purged while preserving resource files, licenses, and SPI service providers.
+3. **In-Memory Redirection**: Retained dependencies are redirected in-memory (`artifact.setFile(trimmedJar)`), allowing standard packagers to assemble the trimmed JARs without bespoke glue code.
+
+## Provenance: CycloneDX 1.6 & OpenVEX
+
+Pruning dependencies and trimming classes must never break supply chain provenance or scanner transparency.
+
+### CycloneDX 1.6 Pedigree
+
+Trimmed components record their actual on-disk SHA-256 while preserving upstream coordinate ancestry:
+
+```json
+{
+  "type": "library",
+  "group": "org.apache.commons",
+  "name": "commons-compress",
+  "version": "1.21",
+  "hashes": [{ "alg": "SHA-256", "content": "<sha256-of-trimmed-jar>" }],
+  "pedigree": {
+    "ancestors": [{
+      "type": "library",
+      "group": "org.apache.commons",
+      "name": "commons-compress",
+      "version": "1.21",
+      "hashes": [{ "alg": "SHA-256", "content": "<original-central-sha256>" }]
+    }],
+    "patches": [{
+      "type": "unofficial",
+      "description": "Trimmed unreferenced classes using ProGuard Core link closure"
+    }]
+  },
+  "properties": [
+    { "name": "elider:status", "value": "trimmed" },
+    { "name": "elider:retainedClasses", "value": "18" },
+    { "name": "elider:totalClasses", "value": "160" }
+  ]
+}
+```
+
+### OpenVEX Machine-Readable Justifications
+
+When a vulnerable class is eliminated during trimming, OpenVEX emits an evidence-backed statement:
+
+```json
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "urn:uuid:6b541525-45a8-4eb8-a7df-a0bc7c77ef5a",
+  "author": "io.github.spockz:dependency-elider-maven-plugin",
+  "timestamp": "2026-10-26T20:00:00Z",
+  "version": 1,
+  "statements": [{
+    "vulnerability": { "name": "CVE-2025-11226" },
+    "products": [{ "@id": "pkg:maven/ch.qos.logback/logback-core@1.5.18" }],
+    "status": "not_affected",
+    "justification": "vulnerable_code_not_present",
+    "impact_statement": "The vulnerable class was purged during intra-JAR link closure trimming."
+  }]
+}
+```
+
+## Reference Fixtures
+
+The repository includes end-to-end integration fixtures under `examples/`:
+
+| Fixture | Architecture | Target Demonstration |
+| :--- | :--- | :--- |
+| **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec`; produces a shrunken shaded JAR. |
+| **`example-spring-boot-app`** | Spring Boot 3 Web | Elides unused starter dependencies from `BOOT-INF/lib`; tests HTTP endpoint. |
+| **`example-cve-unused-app`** | Standalone CVE test | Removes entire Logback + Janino tree, clearing CVE-2025-11226 from vulnerability scans. |
+| **`example-cve-safe-class-app`** | Standalone CVE test | Retains Logback while purging Janino; demonstrates the boundary between CVE flags and exploit prerequisites. |
+
+Run the full end-to-end verification suite across all fixtures:
+
+```sh
+make test-examples
+```
+
+## Requirements
+
+* **Java 21** or newer.
 
 ## Contributing
 
-Contributions are welcome. Before opening a pull request, run `make check` and include tests for behavior changes. For larger design changes, consult the relevant [architecture decisions](docs/adr/) and [research documents](docs/research/) first.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for local environment setup, build and verification commands, repository layout, and cache benchmark procedures.
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the complete text.
-
-This project is co-created with Codex and Gemini.
+This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.

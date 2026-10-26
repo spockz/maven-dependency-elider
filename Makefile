@@ -6,11 +6,12 @@ MAVEN ?= ./mvnw
 MAVEN_ARGS ?= --batch-mode --no-transfer-progress
 MARKDOWNLINT ?= .scratch/tools/node_modules/.bin/markdownlint-cli2
 DEPENDENCY_CHECK_VERSION ?= 13.0.0
+SERVE_PORT ?= 8080
 
 .DEFAULT_GOAL := check
 .NOTPARALLEL: check check-ci
 
-.PHONY: check check-ci tools fix fmt lint lint-check lint-java lint-markdown vuln test-core test-plugin test-all test-examples verify-docs
+.PHONY: check check-ci tools fix fmt lint lint-check lint-java lint-markdown vuln test-core test-plugin test-all test-examples verify-docs site serve
 
 check: lint-check test-core test-plugin ## Run formatter, static analysis, and core and plugin tests
 
@@ -34,7 +35,7 @@ lint-java: ## Run Checkstyle, PMD, and SpotBugs
 
 lint-markdown: ## Lint Markdown documentation
 	command -v "$(MARKDOWNLINT)" >/dev/null
-	"$(MARKDOWNLINT)" "docs/**/*.md" "*.md"
+	"$(MARKDOWNLINT)" "docs/**/*.md" "*.md" "dependency-elider-maven-plugin/src/site/**/*.md"
 
 lint-vale: ## Run prose checks on documentation
 	command -v "$(VALE)" >/dev/null
@@ -54,5 +55,13 @@ test-all: ## Run the complete reactor verification suite
 
 test-examples: ## Run baseline, trace-driven elision, package, and runtime checks for all examples
 	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS)" ./examples/run-elision-cycle.sh
+
+site: ## Build the Maven plugin documentation site locally
+	./scripts/generate-site-index.sh
+	$(MAVEN) $(MAVEN_ARGS) -pl dependency-elider-maven-plugin -am compile site -DskipTests
+
+serve: site ## Build the documentation site and serve it using Caddy
+	command -v caddy >/dev/null 2>&1 || { echo "Error: caddy is not installed or not in PATH. Please install Caddy: https://caddyserver.com" >&2; exit 1; }
+	caddy file-server --root dependency-elider-maven-plugin/target/site --listen :$(SERVE_PORT)
 
 verify-docs: lint-markdown ## Verify Markdown documentation

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site xmlns="http://maven.apache.org/SITE/2.0.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://maven.apache.org/SITE/2.0.0 https://maven.apache.org/xsd/site-2.0.0.xsd"
+      name="Dependency Elider Maven Plugin">
+
+    <bannerLeft name="Dependency Elider Maven Plugin" href="index.html"/>
+
+    <skin>
+        <groupId>org.apache.maven.skins</groupId>
+        <artifactId>maven-fluido-skin</artifactId>
+        <version>2.0.0-M9</version>
+    </skin>
+
+    <custom>
+        <fluidoSkin>
+            <topBarEnabled>true</topBarEnabled>
+            <sideBarEnabled>true</sideBarEnabled>
+            <gitHub>
+                <projectId>spockz/maven-dependency-elider</projectId>
+                <ribbonOrientation>right</ribbonOrientation>
+                <ribbonColor>black</ribbonColor>
+            </gitHub>
+        </fluidoSkin>
+    </custom>
+
+    <body>
+        <links>
+            <item name="GitHub Repository" href="https://github.com/spockz/maven-dependency-elider"/>
+        </links>
+
+        <menu name="Overview">
+            <item name="Introduction" href="index.html"/>
+            <item name="Project Rationale" href="rationale.html"/>
+            <item name="Usage Guide" href="usage.html"/>
+            <item name="Plugin Goals" href="plugin-info.html"/>
+        </menu>
+
+        <menu ref="reports"/>
+    </body>
+</site>

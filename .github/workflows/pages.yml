@@ -1,0 +1,72 @@
+# WHY: Builds and verifies the Maven plugin documentation site and publishes it to GitHub Pages.
+name: Documentation Site
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'dependency-elider-maven-plugin/**'
+      - 'elider-core/**'
+      - 'scripts/generate-site-index.sh'
+      - 'pom.xml'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & Verify Site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build Plugin & Generate Site
+        run: |
+          make site
+
+      - name: Verify Generated Site Assets
+        run: |
+          SITE_DIR="dependency-elider-maven-plugin/target/site"
+          test -f "$SITE_DIR/index.html" || { echo "Missing index.html"; exit 1; }
+          test -f "$SITE_DIR/rationale.html" || { echo "Missing rationale.html"; exit 1; }
+          test -f "$SITE_DIR/usage.html" || { echo "Missing usage.html"; exit 1; }
+          test -f "$SITE_DIR/plugin-info.html" || { echo "Missing plugin-info.html"; exit 1; }
+          test -f "$SITE_DIR/analyze-mojo.html" || { echo "Missing analyze-mojo.html"; exit 1; }
+          test -f "$SITE_DIR/elide-mojo.html" || { echo "Missing elide-mojo.html"; exit 1; }
+          echo "All critical documentation and goal pages verified."
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dependency-elider-maven-plugin/target/site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
