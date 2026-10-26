@@ -84,6 +84,12 @@ public final class ElideMojo extends AbstractMojo {
       defaultValue = "${project.build.directory}/dependency-elider-sbom.cdx.json")
   private File sbomFile;
 
+  /** Persisted totals consumed by the separate Maven {@code report} goal. */
+  @Parameter(
+      property = "elide.summaryFile",
+      defaultValue = "${project.build.directory}/dependency-elider-report.json")
+  private File summaryFile;
+
   /** Maven switch that skips analysis and mutation. */
   @Parameter(property = "elide.skip", defaultValue = DEFAULT_FALSE)
   private boolean skip;
@@ -99,6 +105,8 @@ public final class ElideMojo extends AbstractMojo {
       final MavenElisionService.Analysis analysis = service.analyze(project, analysisOptions());
       logPassThroughWarnings(analysis);
       final MavenElisionService.ApplyPlan plan = service.plan(project, analysis);
+      final MavenElisionReportSnapshot reportSnapshot =
+          MavenElisionReportSnapshot.from(project, analysis);
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       if (trimJars) {
@@ -124,6 +132,8 @@ public final class ElideMojo extends AbstractMojo {
       if (getLog().isInfoEnabled()) {
         getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
       }
+      MavenElisionReportWriter.write(
+          MavenElisionReportWriter.outputPath(summaryFile, project), reportSnapshot);
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency elision failed: " + exception.getMessage(), exception);

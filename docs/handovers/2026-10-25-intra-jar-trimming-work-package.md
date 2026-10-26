@@ -175,14 +175,14 @@ Track 7 (Persisted Elision Report) depends on Tracks 3 and 5; Track 6's report e
 **Dependencies**: Tracks 3 and 5; Track 6 example reporting depends on Track 7.
 
 * **Slice 7.1: Exact Pruned-Class Payload Accounting**
-  * Record the uncompressed byte size of omitted `.class` entries in each `ArtifactTrimRecord` while the sanitizer reads the source archive.
+  * Record the uncompressed byte size of omitted program `.class` entries in each `ArtifactTrimRecord` while the sanitizer reads the source archive; class counts and bytes exclude module descriptors and archive sanitation metadata.
   * Preserve the value in the trim cache so cache hits produce identical report totals without reopening JARs.
   * Test that an omitted class's recorded payload bytes equal its uncompressed input ZIP entry size.
 * **Slice 7.2: Persisted Snapshot and `report` Goal**
   * Have a successful `elide` execution atomically persist the pre-mutation whole-artifact removals and trim records under the Maven build directory.
   * Add `dependency-elider:report`, which reads that snapshot without re-running analysis or relying on mutated Maven artifact views.
-  * Report whole artifacts dropped by count and sum of their original on-disk JAR sizes. Report classes pruned from retained JARs by count and sum of uncompressed omitted `.class` entry payload bytes; label the byte basis explicitly and use binary `KiB`/`MiB` units.
-  * Identify the snapshot's project GAV and successful-run timestamp. Fail clearly if no successful snapshot exists. A failed or skipped `elide` must not publish a new snapshot; if an earlier successful snapshot remains, `report` must describe it as the last successful run.
+  * Report whole artifacts dropped by count and sum of their original on-disk JAR sizes. Report program classes pruned from retained JARs by count and sum of uncompressed omitted `.class` entry payload bytes, excluding module descriptors and archive sanitation metadata; label the byte basis explicitly and use binary `KiB`/`MiB` units.
+  * Identify the snapshot's project GAV, canonical project directory, and successful-run timestamp. Fail clearly if no successful snapshot exists or it belongs to a different project checkout. A failed or skipped `elide` must not publish a new snapshot; if an earlier successful snapshot remains, `report` must describe it as the last successful run. The report does not revalidate changed dependencies, sources, or traces when displaying that saved result.
   * Test exact counts/bytes, stable formatting, cache-hit equivalence, no re-analysis, missing snapshots, and failed/skipped-run freshness semantics.
 * **Slice 7.3: Report Every Example**
   * Invoke the report goal after successful elision for Basic, Spring Boot, CVE-unused, and CVE-safe-class examples.

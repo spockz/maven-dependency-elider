@@ -84,6 +84,40 @@ final class ElideMojoTest {
   }
 
   @Test
+  void skippedElisionPreservesLastSuccessfulReportSnapshot()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Path snapshot = tempDir.resolve("previous-report.json");
+    final MavenElisionReportSnapshot previous = previousSnapshot();
+    MavenElisionReportWriter.write(snapshot, previous);
+    final ElideMojo mojo = new ElideMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "skip", true);
+    set(mojo, "summaryFile", snapshot.toFile());
+
+    mojo.execute();
+
+    assertLastSuccessfulSnapshotRemains(snapshot, previous);
+  }
+
+  @Test
+  void failedElisionPreservesLastSuccessfulReportSnapshot()
+      throws IOException, ReflectiveOperationException {
+    final Path snapshot = tempDir.resolve("previous-report.json");
+    final MavenElisionReportSnapshot previous = previousSnapshot();
+    MavenElisionReportWriter.write(snapshot, previous);
+    final MavenProject project = newProject();
+    project.setArtifacts(Set.of());
+    final ElideMojo mojo = new ElideMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(tempDir.resolve("missing-trace.lst").toFile()));
+    set(mojo, "summaryFile", snapshot.toFile());
+
+    assertThatThrownBy(mojo::execute).isInstanceOf(MojoFailureException.class);
+    assertLastSuccessfulSnapshotRemains(snapshot, previous);
+  }
+
+  @Test
   void retainsCompileVisibleArtifactsInResolvedAndDirectViews()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
@@ -96,7 +130,7 @@ final class ElideMojoTest {
     final Artifact unused = artifact("unused", "unused/Idle.class");
     final Set<Artifact> resolved = new LinkedHashSet<>(List.of(used, unused));
     final Set<Artifact> direct = new LinkedHashSet<>(List.of(used, unused));
-    final MavenProject project = new MavenProject();
+    final MavenProject project = newProject();
     project.setArtifacts(resolved);
     project.setDependencyArtifacts(direct);
     execute(project, "used/Sample\n");
@@ -695,7 +729,7 @@ final class ElideMojoTest {
     final Artifact c = runtimeArtifact("chain-c", metadatfirstJar);
     final Artifact serviceOwner = runtimeArtifact("service-owner", serviceJar);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(a, b, c, serviceOwner));
-    final MavenProject project = new MavenProject();
+    final MavenProject project = newProject();
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
     project.setGroupId("org.example");
@@ -763,7 +797,7 @@ final class ElideMojoTest {
     final Artifact b = runtimeArtifact("cycle-b", secondJar);
     final Artifact c = runtimeArtifact("cycle-c", thirdJar);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(a, b, c));
-    final MavenProject project = new MavenProject();
+    final MavenProject project = newProject();
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
     project.setGroupId("org.example");
@@ -986,7 +1020,7 @@ final class ElideMojoTest {
     final Artifact helper = runtimeArtifact("helper", helperJar);
     final Artifact callback = runtimeArtifact("callback", callbackJar);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(helper, callback));
-    final MavenProject project = new MavenProject();
+    final MavenProject project = newProject();
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
     project.setGroupId("org.example");
@@ -1336,7 +1370,7 @@ final class ElideMojoTest {
             null);
     final Artifact explicit = runtimeArtifact("explicit", explicitJar);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(used, explicit));
-    final MavenProject project = new MavenProject();
+    final MavenProject project = newProject();
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
     project.setGroupId("org.example");
@@ -1388,7 +1422,7 @@ final class ElideMojoTest {
             new DefaultArtifactHandler("pom"));
     pomArtifact.setFile(pomFile.toFile());
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(jarArtifact, pomArtifact));
-    final MavenProject project = new MavenProject();
+    final MavenProject project = newProject();
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
     project.setGroupId("org.example");
@@ -1616,7 +1650,7 @@ final class ElideMojoTest {
     final Artifact root = runtimeArtifact(name + "-root", multiReleasePath);
     final Artifact candidate = runtimeArtifact(name + "-candidate", candidatePath);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(root, candidate));
-    final MavenProject project = new MavenProject();
+    final MavenProject project = newProject();
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
     project.setGroupId("org.example");
@@ -1630,7 +1664,7 @@ final class ElideMojoTest {
   }
 
   private MavenProject projectForArtifacts(final String name, final Set<Artifact> artifacts) {
-    final MavenProject project = new MavenProject();
+    final MavenProject project = newProject();
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
     project.setGroupId("org.example");
@@ -1891,7 +1925,7 @@ final class ElideMojoTest {
 
   private MavenProject project(
       final Artifact resolved, final Set<Artifact> direct, final Artifact additionalResolved) {
-    final MavenProject project = new MavenProject();
+    final MavenProject project = newProject();
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(resolved));
     if (additionalResolved != null) {
       artifacts.add(additionalResolved);
@@ -1899,6 +1933,35 @@ final class ElideMojoTest {
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(direct);
     return project;
+  }
+
+  private MavenProject newProject() {
+    final MavenProject project = new MavenProject();
+    project.setFile(tempDir.resolve("pom.xml").toFile());
+    return project;
+  }
+
+  private MavenElisionReportSnapshot previousSnapshot() throws IOException {
+    return new MavenElisionReportSnapshot(
+        MavenElisionReportSnapshot.SCHEMA_VERSION,
+        "org.example",
+        "consumer",
+        "1.0",
+        tempDir.toRealPath().toString(),
+        "2026-10-25T12:00:00Z",
+        0,
+        0,
+        List.of(),
+        0,
+        0,
+        List.of());
+  }
+
+  private static void assertLastSuccessfulSnapshotRemains(
+      final Path output, final MavenElisionReportSnapshot previous) throws IOException {
+    assertThat(MavenElisionReportWriter.read(output)).isEqualTo(previous);
+    assertThat(MavenElisionReportWriter.render(MavenElisionReportWriter.read(output)))
+        .contains("Snapshot: last successful elide run at 2026-10-25T12:00:00Z");
   }
 
   private void execute(final MavenProject project, final String traceContent)
