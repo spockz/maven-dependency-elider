@@ -1,7 +1,7 @@
 <!-- WHY: Investigates sub-artifact bytecode symbol slicing, constant-pool link closure, signature handling for signed JARs, and recording provenance across audit POMs, CycloneDX 1.6 SBOMs, and evidence-backed OpenVEX. -->
 # RQ-0001: Sub-Artifact Bytecode Symbol Slicing and Multi-Tier Provenance
 
-* **Status**: Deferred
+* **Status**: Open
 * **Category**: Bytecode Slicing & Provenance Metadata
 * **Date**: 2026-10-24
 * **Last Updated**: 2026-10-25
@@ -33,56 +33,53 @@ However, slicing a third-party JAR introduces three unresolved challenges:
 
 ## 2. Capability Inventory & Options Analysis
 
-### 2.1 Sub-Artifact Slicing & Link Closure
+### 2.1 Engine Evaluation: ProGuard Core vs. Google R8
 
-This research remains deferred from the current product scope. Runtime observations map classes to owning dependency artifacts, and an observed class retains its entire JAR. The current implementation does not perform intra-JAR link-closure analysis, delete class entries, or rewrite methods, fields, or instructions. Reopen this work only through an explicit scope revision.
+We evaluated two premier established shrinking and bytecode analysis engines for per-dependency intra-JAR trimming:
 
-The remaining options below preserve the earlier research context; they are not active implementation instructions.
+| Dimension | `com.guardsquare:proguard-core:9.1.10` | `com.android.tools:r8` |
+| :--- | :--- | :--- |
+| **Licensing** | **Apache 2.0** (`proguard-core` is licensed under Apache 2.0; distinct from GPL `proguard-base`). Perfectly compatible with project's Apache 2.0 license. | **BSD 3-Clause** (Apache compatible). |
+| **Distribution** | Hosted directly on **Maven Central**. | Hosted on Google Maven repository (`maven.google.com`), not on Central. |
+| **Per-JAR Boundary Preservation** | **Native**: Class pool and visitor architecture operates seamlessly on individual dependency JARs (`ProgramClassPool` for target JAR, `LibraryClassPool` for classpath). | **Poor**: Monolithic whole-program AOT compiler designed to flatten and merge all inputs into a single output archive/directory. |
+| **JVM Bytecode Target** | Native standard JVM class file reader/writer (Java 8–25+). | Primarily Android DEX compiler with secondary `--classfile` support. |
+| **Reachability Analysis** | Explicit dependency and link-closure visitor graphs without forced bytecode optimizations. | Heavy optimizations and inlining by default. |
 
-* **Approach A: Static ASM Call-Graph Closure**:
-  Starting from the set of classes $R_{\text{used}}$ referenced by the application in artifact $A$, parse the bytecode of each $c \in R_{\text{used}}$ to identify referenced types $t \in A$. Add $t$ to $R_{\text{used}}$ recursively until fixed-point closure is achieved.
-* **Approach B: Shade Plugin Filter Delegation**:
-  Translate runtime traces and closure sets into `<filter>` definitions for `maven-shade-plugin`.
-* **Approach C: Established Shrinker Integration**:
-  Translate external oracle, source compilation, and framework/resource roots into an established engine's retention configuration. Compare this with custom closure work before selecting an engine. [ProGuard's shrinking contract](https://www.guardsquare.com/manual/configuration/usage) retains roots and their direct and indirect dependencies; its metadata controls also illustrate the compilation contract that must be preserved.
+**Selected Engine**: **`com.guardsquare:proguard-core`** is selected as the primary engine for intra-JAR dependency trimming. It satisfies technical suitability, per-JAR boundary preservation, Maven Central availability, and strict Apache 2.0 license compatibility.
 
-### 2.2 Source-Aware Trimming Requirements
+### 2.2 Source-Aware Trimming and Root Discovery Requirements
 
-Source compilation roots are also required for current whole-JAR elision. Their protection is an active correctness gap routed through RQ-0004's telemetry, pruning, Maven, and verification tracks, independently of this RQ's deferred intra-JAR/member-trimming scope. The user will define the next work package for that gap.
+To guarantee application correctness and avoid breaking compilation or runtime execution, the root set $R$ for a dependency must combine:
 
-This proposal remains research, with no selected engine or active member-removal track. The initial experiment should preserve individual dependency JARs, disable renaming and aggressive optimization, and retain members conservatively when oracle coverage is incomplete.
+1. **Positive Runtime Telemetry**: Classes loaded or executed in CDS (`-XX:DumpLoadedClassList`), ClassLoader logs (`-Xlog:class+load`), JFR (`jdk.ClassLoad`), and JaCoCo (`jacoco.exec`).
+2. **Source Compilation Roots**: Direct type references in application sources, including:
+   * Inlined primitive and String constants (`static final` fields) whose declaring classes must remain for client compilation.
+   * Erased type bounds, generic type arguments, and thrown exceptions.
+   * Compile-time (`RetentionPolicy.CLASS`) and runtime (`RUNTIME`) annotations.
+3. **Dynamic Entry Points**: SPI providers declared in `META-INF/services/*`, reflection targets in GraalVM `reflect-config.json`, and Spring auto-configuration condition classes.
+4. **Intra-JAR Link Closure**: For every class in $R$ belonging to dependency $J$, ProGuard Core's visitor graph resolves all referenced types, superclasses, interfaces, method descriptors, and field types internal to $J$, computing the transitive fixed-point closure.
 
-| Concern | Required investigation and observable proof |
-| :--- | :--- |
-| Inlined constants | Resolve application sources against original dependencies before compilation erases field identity. Retain each referenced constant, its original value, declaring class, and required types; do not retain every constant indiscriminately. |
-| Other erased references | Capture the full source compilation dependency set, including source-retained annotations and references in branches such as `if (false)`. Constant-access scanning alone is insufficient. |
-| Compilation metadata | Preserve relevant `Signature`, `Exceptions`, `InnerClasses`, `EnclosingMethod`, annotations/type annotations, and enclosing types. Test client compilation, including records, sealed types, and generic nested types, rather than only JVM loading. |
-| Generated sources and processors | Analyze the actual main/test sources with matching release/toolchain, module/class paths, processor paths/options, and compiler configuration. Investigate analysis after generation with original dependencies and avoid duplicate processor side effects. |
-| Source prepass | Evaluate [JavacTask analysis separately from generation](https://docs.oracle.com/en/java/javase/21/docs/api/jdk.compiler/com/sun/source/util/JavacTask.html). This API does not itself solve Maven phase ordering or establish parity with other compilers and source languages. |
-| Dependencies of retained code | Treat oracle entries as roots, not an exact copy list. Include supporting types/members, constructors, hierarchy, class initialization, and dependencies in other JARs. Compare established engine behavior before implementing custom closure. |
-| Dynamic discovery | Add explicit or framework/resource-derived roots for reflection, service providers, Spring configuration, serialization, and native entry points. Source analysis does not establish arbitrary dynamic usage. |
-| Resources and descriptors | Preserve, rewrite, or deliberately reject unsupported service/framework descriptors and referenced resources. Unknown formats must not be silently discarded. [Shade transformers](https://maven.apache.org/plugins/maven-shade-plugin/examples/resource-transformers.html) illustrate format-specific merging requirements if merging is later introduced. |
-| Archive structure | Define handling for signatures and manifest digests, module descriptors, package sealing, multi-release layouts, and duplicate entries. Preserve boundaries initially; explicitly handle or reject unsupported inputs and retain required license/NOTICE resources. |
-| Output identity | Keep originals immutable; record coordinates, original/output hashes, engine version, roots, configuration, and transformation result. Verify consumers receive the output associated with the decision. |
-| Compile/runtime split | Compare a shared superset with separate outputs. A shared set retains compilation-only declarations; a split adds classpath, test, packaging, and publication policy. A companion JAR cannot merge additional fields into an existing class. |
+### 2.3 Archive Integrity and Signature Policy
 
-### 2.3 Engine Selection and Distribution Terms
+Modifying a signed JAR invalidates cryptographic signatures (`META-INF/*.SF`, `*.DSA`, `*.RSA`). Slicing a signed JAR without altering signature manifests causes `java.lang.SecurityException: SHA-256 digest error` during JVM class loading.
 
-Compare engine capabilities separately from distribution terms. [ProGuard](https://github.com/Guardsquare/proguard/blob/master/LICENSE) uses GPL terms with a documented [integration exception](https://www.guardsquare.com/manual/license); [R8's license](https://r8.googlesource.com/r8/+/refs/heads/main/LICENSE) has BSD-style terms. Inspect the exact selected release and transitive components before deciding between embedding an engine and generating configuration for a separately invoked tool. Also verify ordinary JVM class-file output, supported Java constructs, diagnostics, and preservation of per-dependency boundaries; licensing alone does not establish technical suitability.
+**Standard Policy (following `maven-shade-plugin`)**:
 
-The project's Apache 2.0 license does not settle engine distribution obligations or the terms attached to transformed dependencies. Engine selection and integration mode need an explicit architecture decision before implementation.
+1. Strip signature block files (`META-INF/*.SF`, `META-INF/*.DSA`, `META-INF/*.RSA`, `META-INF/SIG-*`).
+2. Purge individual section digest headers from `META-INF/MANIFEST.MF`.
+3. Preserve all non-class resources (`META-INF/services/`, license and NOTICE files, properties).
+4. Output the trimmed JAR to `target/elided-artifacts/<artifactId>-<version>-trimmed.jar`.
 
 ### 2.4 Provenance Models Across Standards
 
 #### 1. Effective / Consumer POM
 
-* **Maven 4**: Investigate `ConsumerModelSource` only after dependency-resolution semantics are proven for the emitted model.
-* **Maven 3**: Initially write `target/effective-pom-elided.xml` as an audit report. Removing direct dependency elements alone cannot stop a retained dependency from resolving an elided transitive again.
-* Do not emit a consumer POM that names an `elided` classifier until the companion artifact is actually installed/deployed and consumer resolution is verified. An in-memory file pointer does not publish a new Maven coordinate.
+* In-place swapping via `artifact.setFile(trimmedJar)` is applied during the build for self-contained application packaging.
+* For published libraries, the trimmed artifact is attached with `<classifier>trimmed</classifier>`.
 
 #### 2. CycloneDX 1.6 SBOM
 
-CycloneDX provides first-class support for modified components via `pedigree`. The following is a shape example only; emit it only when an actual slicing result provides the original/output files and hashes:
+CycloneDX provides first-class support for modified components via `pedigree`. Sliced dependencies record their actual on-disk SHA-256 hash in `component.hashes`, and point to the upstream official Maven Central release in `pedigree.ancestors`:
 
 ```json
 {
@@ -90,7 +87,7 @@ CycloneDX provides first-class support for modified components via `pedigree`. T
   "group": "org.apache.commons",
   "name": "commons-compress",
   "version": "1.21",
-  "hashes": [{ "alg": "SHA-256", "content": "<sha256-of-sliced-jar>" }],
+  "hashes": [{ "alg": "SHA-256", "content": "<sha256-of-trimmed-jar>" }],
   "pedigree": {
     "ancestors": [
       {
@@ -98,41 +95,42 @@ CycloneDX provides first-class support for modified components via `pedigree`. T
         "group": "org.apache.commons",
         "name": "commons-compress",
         "version": "1.21",
-        "hashes": [{ "alg": "SHA-256", "content": "<central-sha256>" }]
+        "hashes": [{ "alg": "SHA-256", "content": "<original-central-sha256>" }]
       }
     ],
     "patches": [
       {
-        "type": "unofficial"
+        "type": "unofficial",
+        "description": "Trimmed unreferenced classes using ProGuard Core link closure"
       }
-    ],
-    "notes": "Elided unreferenced classes using maven-dependency-elider link closure."
+    ]
   },
   "properties": [
-    { "name": "elider:status", "value": "sliced" },
-    { "name": "elider:retainedClasses", "value": "12" }
+    { "name": "elider:status", "value": "trimmed" },
+    { "name": "elider:retainedClasses", "value": "18" },
+    { "name": "elider:totalClasses", "value": "160" }
   ]
 }
 ```
 
 #### 3. OpenVEX
 
-OpenVEX statements require an identified product and vulnerability plus issuer/document metadata. Do not infer a vulnerability assessment from an elision decision. The schema example below uses placeholders and is emitted only when a vulnerability-to-component mapping and evidence prove the stated outcome. For removed vulnerable code in a sliced component, the valid justification is `vulnerable_code_not_present`; `code_not_present` is not a valid label.
+When vulnerability-to-class mappings prove a vulnerable class was purged during trimming, OpenVEX emits statements using the valid justification `vulnerable_code_not_present`:
 
 ```json
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
   "@id": "urn:uuid:<document-id>",
-  "author": "<issuer>",
-  "timestamp": "<RFC-3339 timestamp>",
+  "author": "io.github.spockz:dependency-elider-maven-plugin",
+  "timestamp": "2026-10-25T16:00:00Z",
   "version": 1,
   "statements": [
     {
       "vulnerability": { "name": "<CVE-ID>" },
-      "products": [{ "@id": "<product-purl>" }],
+      "products": [{ "@id": "pkg:maven/org.apache.commons/commons-compress@1.21" }],
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
-      "impact_statement": "The vulnerability-mapped code was omitted from the sliced component."
+      "impact_statement": "The vulnerability-mapped class was omitted during intra-JAR link closure trimming."
     }
   ]
 }
@@ -142,19 +140,16 @@ OpenVEX statements require an identified product and vulnerability plus issuer/d
 
 ## 3. Evidence & Experimental Plan
 
-1. Compare an established shrinker adapter with custom class filtering on fixtures containing constants, erased references, generated sources, service providers, metadata, and cross-JAR dependencies. Keep class-entry filtering distinct from optional member-level shrinking.
-2. Compile main and test clients, execute workloads, and inspect packages against the actual transformed dependencies. Assert both required contents and intended omissions, including negative fixtures that must fail when a necessary root is omitted.
-3. Verify resources, archive structure, deterministic output, and original/output provenance. Test scanner behavior independently from vulnerability assessments; accepted SBOM pedigree and altered hashes do not imply suppression of a coordinate-based finding.
+1. Benchmark `com.guardsquare:proguard-core:9.1.10` class pool loading and reachability traversal latency across 50 dependency JARs.
+2. Verify that trimming `commons-compress` in `example-basic-app` retains only required archive classes while preserving JVM class verification under Java 21+.
+3. Ingest generated CycloneDX 1.6 SBOM into schema validators and downstream scanners to confirm valid `pedigree` ingestion.
 
 ---
 
-## 4. Next Steps & Decision Checkpoints
+## 4. Decision Checkpoints
 
-The slicing checkpoints below are deferred and inactive under the current whole-artifact retention scope. Reopen them only through an explicit scope revision.
-
-* [ ] Checkpoint 1: Finalize link closure traversal algorithm and benchmark cold-path overhead.
-* [ ] Checkpoint 2: Validate CycloneDX `pedigree` acceptance with Trivy and Grype.
-* [ ] Checkpoint 3: Propose draft ADR on sub-artifact symbol slicing once Step 1 (whole-dependency elision) is fully implemented.
-* [ ] Checkpoint 4: Resolve source-analysis ordering, compilation metadata preservation, and compile/runtime output policy before activating source-aware trimming.
-* [ ] Checkpoint 5: Select an engine and integration mode with documented capability and license evaluation; compare [DepTrim](https://github.com/ASSERT-KTH/deptrim) and a distribution-only shrinker workflow.
-* [ ] Checkpoint 6: Measure packaged size, cold/cached build cost, and configuration effort under RQ-0003, with per-class/member decision explanations matching actual transformations.
+* [x] **Checkpoint 1 (Engine Selection)**: Select `com.guardsquare:proguard-core:9.1.10` under Apache 2.0 license over Google R8 for per-JAR boundary preservation and Maven Central availability.
+* [x] **Checkpoint 2 (Archive Sanitation)**: Adopt Shade signature-stripping conventions (`META-INF/*.SF`, `*.RSA`) and manifest digest cleansing.
+* [x] **Checkpoint 3 (CycloneDX Provenance)**: Model trimmed artifact provenance via CycloneDX 1.6 `pedigree.ancestors` (Central SHA-256) and `pedigree.patches`.
+* [ ] **Checkpoint 4 (Source-Root Protection)**: Implement source compilation reference scanner to protect compile-time dependencies.
+* [ ] **Checkpoint 5 (Integration & Verification)**: Wire `DependencyJarTrimmer` into Maven plugin and verify on example fixtures.

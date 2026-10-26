@@ -14,6 +14,8 @@ Runtime class loading and execution evidence alone cannot distinguish framework 
 
 Spring Boot provides condition evaluation diagnostics, and Spring bean factories expose declared bean dependency relationships. These signals can help identify auto-configured capabilities that appear unnecessary in a measured application context. They are evidence for investigation, not proof that an auto-configuration or dependency can be removed.
 
+One ambiguity is whether a starter's beans support application features or are only loaded or touched during auto-configuration, health checks, or metrics collection. Record the triggering context where possible. Health and metrics observations must remain distinguishable from application-feature requests; they may still represent required operational behavior and cannot simply be discarded.
+
 This research question defines an optional Spring-aware evidence collector and recommendation report. It does not change the core whole-artifact elision rule or automatically add recommendations to the Elider's global exclusion list.
 
 ## 2. Research Questions
@@ -23,6 +25,7 @@ This research question defines an optional Spring-aware evidence collector and r
 * **RQ-0005.3**: How complete are Spring's declared dependency edges for constructor/setter injection, `@DependsOn`, programmatic lookups, providers, events, and framework-managed callbacks?
 * **RQ-0005.4**: Can a transitive chain of unrequested beans identify a candidate auto-configuration without incorrectly labeling lifecycle infrastructure or capabilities exercised only outside the recorded workload?
 * **RQ-0005.5**: What repeatable verification is required before recommending exclusion of an auto-configuration or removal of its starter, and how should this be distinguished from the Elider's global retention exclusions?
+* **RQ-0005.6**: How can bean use triggered only by health checks or metrics scrapes be identified and reported separately from application-feature requests without assuming it is operationally unnecessary?
 
 ## 3. Proposed Evidence Model
 
@@ -30,7 +33,7 @@ The collector should record distinct evidence states rather than collapse them i
 
 1. **Condition outcome**: auto-configuration or bean condition matched, did not match, or has no available outcome, including the reported reason where available.
 2. **Definition**: bean definition was registered, with bean name/type, factory method or definition origin, scope, lazy flag, and originating configuration when resolvable.
-3. **Creation/request**: bean instance was created or requested during the recording interval. These are separate facts; eager singleton creation does not establish application-level demand.
+3. **Creation/request**: bean instance was created or requested during the recording interval. These are separate facts; eager singleton creation does not establish application-level demand. Record whether the trigger was an application endpoint/background task, a health check, metrics collection, or another known context.
 4. **Dependency edge**: bean A declared or was observed requesting bean B. Preserve the edge source and confidence; do not imply a complete graph where only declared edges are available.
 5. **Runtime code evidence**: available class/method telemetry for the owning artifact. This supplements bean evidence but does not replace it.
 6. **Artifact attribution**: exact artifact origin only when available from class/resource provenance. Do not infer the owner solely from a class name when duplicates exist.
@@ -61,6 +64,7 @@ Use the Spring Boot reference application from RQ-0002 and add fixtures for:
 * a bean used only on an error/retry path;
 * multiple beans where an apparently unrequested auto-configured bean is a dependency of another bean;
 * a conditionally registered bean whose condition matches but whose capability is not exercised;
+* a bean loaded or requested only by health checks or metrics, alongside a separate application-feature request fixture;
 * a bean contributed by application code overriding an auto-configured bean;
 * duplicate class names across artifacts or an origin that cannot be attributed reliably.
 
@@ -71,6 +75,7 @@ For each fixture, compare condition evaluation, bean definitions, creation/reque
 * [ ] Identify the least invasive Spring extension points that can capture bean definitions, requests/creation, origins, and dependency relationships across the supported Boot versions.
 * [ ] Specify the evidence format, confidence/coverage markers, and attribution behavior, including unresolved and duplicate origins.
 * [ ] Demonstrate correct distinctions between matched condition, registered bean, created bean, requested bean, and observed application execution in the fixtures.
+* [ ] Distinguish health/metrics-only bean activity from application-feature requests, while retaining it as separately reviewable operational evidence.
 * [ ] Produce recommendations that identify candidate auto-configurations and explain their supporting and missing evidence.
 * [ ] Verify that recommendations do not themselves mutate dependency resolution or the global exclusion list.
 * [ ] Demonstrate an explicit exclude-and-test workflow that catches a feature exercised only on a non-default path.
