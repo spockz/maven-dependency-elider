@@ -13,7 +13,7 @@ Elision can remove unused dependency artifacts from the current Maven build and 
 
 Configure a supported trace file and set `-Delide.skip=false`. See [Maven plugin usage](plugin-usage.md) for trace formats, JAR trimming options, and examples.
 
-### Why does `dependency:tree` still show an artifact that elision removed?
+### How can I see the dependencies effective after elision?
 
 Run the lifecycle phase and tree goal in one invocation if you want the elider to execute before the report:
 
@@ -22,7 +22,7 @@ Run the lifecycle phase and tree goal in one invocation if you want the elider t
   initialize org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree
 ```
 
-Even then, the current dependency tree can list an artifact that the elided classpath and package omit. The Basic example reproduces this for Commons Codec. Treat the tree as a dependency-graph report, not the authoritative post-elision inventory; inspect the effective classpath or final package to see which artifacts are actually present. See [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+The goal is for Maven's standard `dependency:tree` to show the post-elision effective dependencies. The current integration does not do that yet: the Basic example's tree lists Commons Codec although the elided classpath and package omit it. Until resolver integration changes, inspect the effective classpath or final package for the actual inventory. A separate elider report is planned to show the original dependency paths with each artifact marked retained or elided. See [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
 
 ### How can I keep a dependency JAR unchanged?
 
