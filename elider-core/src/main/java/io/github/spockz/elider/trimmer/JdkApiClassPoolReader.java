@@ -4,7 +4,6 @@
 package io.github.spockz.elider.trimmer;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -27,29 +26,49 @@ public final class JdkApiClassPoolReader {
   /** Minimum release accepted by the reader. */
   private static final int MIN_SUPPORTED_RELEASE = 8;
 
+  /** Snapshot source kind backed by Java release signatures. */
+  private static final String CT_SYM = "ct.sym";
+
+  /** Snapshot source kind backed by runtime module archives. */
+  private static final String JMODS = "jmods";
+
   /** Creates a reader for explicit compiler API releases. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
   public JdkApiClassPoolReader() {}
 
   /** Reads historical signatures or exact runtime classes for the selected release. */
+  public ClassPool read(final Path javaHome, final int effectiveRelease) throws IOException {
+    try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
+      return read(context.snapshot(effectiveRelease));
+    }
+  }
+
+  /** Reads a fresh mutable class pool from the captured snapshot. */
+  public ClassPool read(final JdkPlatformContext.PlatformSnapshot snapshot) throws IOException {
+    Objects.requireNonNull(snapshot, "snapshot");
+    if (snapshot.effectiveRelease() < MIN_SUPPORTED_RELEASE) {
+      throw new IllegalArgumentException(
+          "Java release must be at least 8: " + snapshot.effectiveRelease());
+    }
+    if (CT_SYM.equals(snapshot.sourceKind())) {
+      return readCtSym(snapshot.capturedFiles().getFirst(), snapshot.effectiveRelease());
+    }
+    if (JMODS.equals(snapshot.sourceKind())) {
+      return readJmods(snapshot.capturedFiles().subList(2, snapshot.capturedFiles().size()));
+    }
+    throw new IOException("Unsupported captured JDK platform source: " + snapshot.sourceKind());
+  }
+
   @SuppressWarnings({
-    "PMD.CognitiveComplexity",
     "PMD.CyclomaticComplexity",
+    "PMD.AvoidCatchingGenericException",
     "PMD.ExceptionAsFlowControl"
   })
-  public ClassPool read(final Path javaHome, final int effectiveRelease) throws IOException {
-    Objects.requireNonNull(javaHome, "javaHome");
-    if (effectiveRelease < MIN_SUPPORTED_RELEASE) {
-      throw new IllegalArgumentException("Java release must be at least 8: " + effectiveRelease);
-    }
-    final Path ctSym = javaHome.resolve("lib/ct.sym");
-    if (!Files.isRegularFile(ctSym)) {
-      throw new IOException("The selected JDK does not provide lib/ct.sym: " + ctSym);
-    }
-
+  private static ClassPool readCtSym(
+      final JdkPlatformContext.CapturedFile source, final int effectiveRelease) throws IOException {
     final String releaseCode = releaseCode(effectiveRelease);
     final ClassPool classPool = new ClassPool();
-    try (ZipFile archive = new ZipFile(ctSym.toFile())) {
+    try (ZipFile archive = new ZipFile(source.snapshotPath().toFile())) {
       final Enumeration<? extends ZipEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
         final ZipEntry entry = entries.nextElement();
@@ -77,75 +96,57 @@ public final class JdkApiClassPoolReader {
             throw new IllegalArgumentException("ct.sym class path does not match class name");
           }
           addLibraryClass(reader, classPool);
-        } catch (final IllegalArgumentException exception) {
+        } catch (final RuntimeException exception) {
           throw new IOException("Could not read JDK API signature: " + entry.getName(), exception);
         }
       }
     }
     if (classPool.size() == 0) {
-      if (readJdkRelease(javaHome) == effectiveRelease) {
-        return readJmods(javaHome);
-      }
       throw new IOException(
-          "No JDK API signatures were found for --release " + effectiveRelease + " in " + ctSym);
+          "No captured JDK API signatures were found for --release "
+              + effectiveRelease
+              + " in "
+              + source.sourcePath());
     }
     return classPool;
   }
 
-  @SuppressWarnings({"PMD.CognitiveComplexity", "PMD.CyclomaticComplexity"})
-  private static ClassPool readJmods(final Path javaHome) throws IOException {
-    final Path jmods = javaHome.resolve("jmods");
-    if (!Files.isDirectory(jmods)) {
-      throw new IOException("The selected JDK has no jmods directory: " + jmods);
-    }
+  @SuppressWarnings({
+    "PMD.CognitiveComplexity",
+    "PMD.CyclomaticComplexity",
+    "PMD.AvoidCatchingGenericException"
+  })
+  private static ClassPool readJmods(final List<JdkPlatformContext.CapturedFile> modules)
+      throws IOException {
     final ClassPool classPool = new ClassPool();
-    try (java.util.stream.Stream<Path> paths = Files.list(jmods)) {
-      for (final Path jmod : paths.filter(path -> path.toString().endsWith(".jmod")).toList()) {
-        try (ZipFile archive = new ZipFile(jmod.toFile())) {
-          final Enumeration<? extends ZipEntry> entries = archive.entries();
-          while (entries.hasMoreElements()) {
-            final ZipEntry entry = entries.nextElement();
-            if (!entry.getName().startsWith("classes/") || !entry.getName().endsWith(".class")) {
-              continue;
-            }
-            try (java.io.InputStream input = archive.getInputStream(entry)) {
-              final ClassReader reader = new ClassReader(input);
-              final String name = reader.getClassName();
-              if (!name.endsWith("module-info")) {
-                if (classPool.getClass(name) != null) {
-                  throw new IOException("Duplicate runtime JDK class in jmods: " + name);
-                }
-                addLibraryClass(reader, classPool);
+    for (final JdkPlatformContext.CapturedFile module : modules) {
+      try (ZipFile archive = new ZipFile(module.snapshotPath().toFile())) {
+        final Enumeration<? extends ZipEntry> entries = archive.entries();
+        while (entries.hasMoreElements()) {
+          final ZipEntry entry = entries.nextElement();
+          if (!entry.getName().startsWith("classes/") || !entry.getName().endsWith(".class")) {
+            continue;
+          }
+          try (java.io.InputStream input = archive.getInputStream(entry)) {
+            final ClassReader reader = new ClassReader(input);
+            final String name = reader.getClassName();
+            if (!name.endsWith("module-info")) {
+              if (classPool.getClass(name) != null) {
+                throw new IOException("Duplicate runtime JDK class in jmods: " + name);
               }
+              addLibraryClass(reader, classPool);
             }
+          } catch (final RuntimeException exception) {
+            throw new IOException(
+                "Could not read captured runtime JDK class: " + entry.getName(), exception);
           }
         }
       }
     }
     if (classPool.size() == 0) {
-      throw new IOException("No runtime JDK classes found in " + jmods);
+      throw new IOException("No runtime JDK classes found in captured jmods");
     }
     return classPool;
-  }
-
-  private static int readJdkRelease(final Path javaHome) throws IOException {
-    final Path releaseFile = javaHome.resolve("release");
-    if (!Files.isRegularFile(releaseFile)) {
-      return -1;
-    }
-    for (final String line : Files.readAllLines(releaseFile)) {
-      if (line.startsWith("JAVA_VERSION=")) {
-        final String version = line.substring("JAVA_VERSION=\"".length()).replace("\"", "");
-        final int separator = version.indexOf('.');
-        final String feature = separator < 0 ? version : version.substring(0, separator);
-        try {
-          return Integer.parseInt(feature);
-        } catch (final NumberFormatException exception) {
-          throw new IOException("Invalid JAVA_VERSION in " + releaseFile, exception);
-        }
-      }
-    }
-    return -1;
   }
 
   private static void addLibraryClass(final ClassReader reader, final ClassPool classPool) {

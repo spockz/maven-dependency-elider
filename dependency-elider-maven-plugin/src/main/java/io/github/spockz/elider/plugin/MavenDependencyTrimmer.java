@@ -12,6 +12,7 @@ import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
+import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import io.github.spockz.elider.trimmer.TrimAnalysisSession;
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,6 +22,7 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
@@ -33,6 +35,7 @@ import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
+import proguard.classfile.ClassPool;
 
 /** Creates sanitized outputs for retained dependency JARs without mutating Maven artifacts. */
 @SuppressWarnings({
@@ -59,7 +62,7 @@ final class MavenDependencyTrimmer {
   private static final String ELIDED_ARTIFACTS = "elided-artifacts";
   private static final Set<String> TRIMMABLE_SCOPES = Set.of("compile", "runtime");
   private static final ObjectMapper JSON = new ObjectMapper();
-  private static final int CACHE_SCHEMA_VERSION = 8;
+  private static final int CACHE_SCHEMA_VERSION = 9;
   private static final String ENGINE_VERSION = "proguard-core-9.1.10";
 
   record TrimResult(
@@ -83,7 +86,31 @@ final class MavenDependencyTrimmer {
 
   private record CacheManifest(String fingerprint, List<CacheEntry> entries) {}
 
-  private record FingerprintSnapshot(String value, Map<Path, ArtifactDigests> inputDigests) {}
+  private record FingerprintSnapshot(
+      String value,
+      Map<Path, ArtifactDigests> inputDigests,
+      List<JdkPlatformContext.PlatformSnapshot> platformSnapshots) {}
+
+  private record PlatformPools(ClassPool compiler, ClassPool runtime) {}
+
+  private record CandidatePlan(
+      List<Path> retainedInputPaths,
+      List<CandidateWork> work,
+      Map<String, List<CandidateWork>> ownersByClass,
+      Map<String, Path> ownerByClass) {}
+
+  private record PassThroughPlan(
+      List<MavenElisionService.ArtifactSnapshot> retainedLibraries,
+      List<MavenElisionService.ArtifactSnapshot> retained,
+      Set<String> multiReleaseIdentities,
+      Set<String> moduleInfoIdentities,
+      Set<String> skippedArtifactIdentities,
+      List<ArtifactCoordinate> multiReleaseCoordinates,
+      List<ArtifactCoordinate> moduleInfoCoordinates,
+      List<ArtifactCoordinate> configuredCoordinates) {}
+
+  private record AnalysisLibraries(
+      List<Path> paths, List<SkippedProgram> skippedPrograms, Set<String> passThroughClassNames) {}
 
   private record CacheEntry(
       String originalPath,
@@ -117,16 +144,6 @@ final class MavenDependencyTrimmer {
   static TrimResult trim(final TrimRequest request) throws IOException, MojoFailureException {
     final MavenProject project = request.project();
     final MavenSession session = request.session();
-    final List<MavenElisionService.ArtifactSnapshot> candidates = request.candidates();
-    final ScanInputs scanInputs = request.scanInputs();
-    final Set<ArtifactCoordinate> retainedCoordinates = request.retainedCoordinates();
-    final TraceData trace = request.trace();
-    final Set<String> sourceRoots = request.sourceRoots();
-    final Set<String> bytecodeRoots = request.bytecodeRoots();
-    final List<String> explicitRoots = request.explicitRoots();
-    final boolean failOnUnsupportedMultiRelease = request.failOnUnsupportedMultiRelease();
-    final List<String> explicitPassThroughCoordinates = request.explicitPassThroughCoordinates();
-    final boolean failOnUnsupportedModuleInfo = request.failOnUnsupportedModuleInfo();
     final List<String> compileClasspath;
     try {
       compileClasspath = project.getCompileClasspathElements();
@@ -138,6 +155,24 @@ final class MavenDependencyTrimmer {
         MavenCompilerSettings.options(project, session, compileClasspath);
     final Path javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
     final int release = releaseFromOptions(compilerOptions, javaHome);
+    final int runtimeRelease = Runtime.version().feature();
+    try (JdkPlatformContext platformContext = new JdkPlatformContext(javaHome)) {
+      return trim(request, release, runtimeRelease, platformContext);
+    }
+  }
+
+  private static TrimResult trim(
+      final TrimRequest request,
+      final int release,
+      final int runtimeRelease,
+      final JdkPlatformContext platformContext)
+      throws IOException, MojoFailureException {
+    final MavenProject project = request.project();
+    final ScanInputs scanInputs = request.scanInputs();
+    final TraceData trace = request.trace();
+    final Set<String> sourceRoots = request.sourceRoots();
+    final Set<String> bytecodeRoots = request.bytecodeRoots();
+    final List<String> explicitRoots = request.explicitRoots();
 
     final Set<String> allRoots = new LinkedHashSet<>(trace.loadedClassesDotFormat());
     allRoots.addAll(sourceRoots);
@@ -145,125 +180,23 @@ final class MavenDependencyTrimmer {
     allRoots.addAll(explicitRoots);
     final Map<io.github.spockz.elider.model.ArtifactFileRef, Set<String>> classesByArtifact =
         scanInputs.classIndex().classesByArtifact();
+    final PassThroughPlan passThroughPlan = passThroughPlan(request);
     final List<MavenElisionService.ArtifactSnapshot> retainedLibraries =
-        candidates.stream()
-            .filter(
-                snapshot ->
-                    "jar".equals(snapshot.coordinate().type())
-                        && TRIMMABLE_SCOPES.contains(snapshot.coordinate().scope())
-                        && retainedCoordinates.contains(snapshot.coordinate()))
-            .toList();
-    final List<MavenElisionService.ArtifactSnapshot> multiReleasePassthrough = new ArrayList<>();
-    final List<MavenElisionService.ArtifactSnapshot> moduleInfoPassthrough = new ArrayList<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
-      if (MultiReleaseLibraryProjection.hasUnsupportedVersionedClasses(snapshot.filePath())) {
-        if (failOnUnsupportedMultiRelease) {
-          throw new IOException(
-              "Unsupported multi-release implementation classes in " + snapshot.coordinate());
-        }
-        multiReleasePassthrough.add(snapshot);
-      }
-      if (MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath())) {
-        if (failOnUnsupportedModuleInfo) {
-          throw new IOException(
-              "Unsupported root module descriptor in retained classpath JAR: "
-                  + snapshot.coordinate());
-        }
-        moduleInfoPassthrough.add(snapshot);
-      }
-    }
-    final List<MavenElisionService.ArtifactSnapshot> configuredPassThrough =
-        parsePassThroughArtifacts(explicitPassThroughCoordinates, retainedLibraries);
-    final Set<String> multiReleaseIdentities = identities(multiReleasePassthrough);
-    final Set<String> moduleInfoIdentities = identities(moduleInfoPassthrough);
-    final List<MavenElisionService.ArtifactSnapshot> configuredNonMrPassThrough =
-        configuredPassThrough.stream()
-            .filter(
-                snapshot ->
-                    !multiReleaseIdentities.contains(artifactIdentity(snapshot.coordinate()))
-                        && !moduleInfoIdentities.contains(artifactIdentity(snapshot.coordinate())))
-            .toList();
-    final Set<String> skippedArtifactIdentities = new LinkedHashSet<>(multiReleaseIdentities);
-    skippedArtifactIdentities.addAll(moduleInfoIdentities);
-    skippedArtifactIdentities.addAll(identities(configuredPassThrough));
+        passThroughPlan.retainedLibraries();
+    final List<MavenElisionService.ArtifactSnapshot> retained = passThroughPlan.retained();
+    final Set<String> skippedArtifactIdentities = passThroughPlan.skippedArtifactIdentities();
     final List<ArtifactCoordinate> multiReleasePassthroughCoordinates =
-        multiReleasePassthrough.stream()
-            .map(MavenElisionService.ArtifactSnapshot::coordinate)
-            .toList();
+        passThroughPlan.multiReleaseCoordinates();
     final List<ArtifactCoordinate> moduleInfoPassthroughCoordinates =
-        moduleInfoPassthrough.stream()
-            .map(MavenElisionService.ArtifactSnapshot::coordinate)
-            .toList();
+        passThroughPlan.moduleInfoCoordinates();
     final List<ArtifactCoordinate> configuredPassThroughCoordinates =
-        configuredNonMrPassThrough.stream()
-            .map(MavenElisionService.ArtifactSnapshot::coordinate)
-            .toList();
-    final List<Path> retainedInputPaths =
-        retainedLibraries.stream().map(MavenElisionService.ArtifactSnapshot::filePath).toList();
-    final List<MavenElisionService.ArtifactSnapshot> retained =
-        retainedLibraries.stream()
-            .filter(
-                snapshot ->
-                    !skippedArtifactIdentities.contains(artifactIdentity(snapshot.coordinate())))
-            .toList();
-    final Set<Path> distinctOutputs = new HashSet<>();
+        passThroughPlan.configuredCoordinates();
     final List<ArtifactTrimRecord> records = new ArrayList<>();
-    final List<CandidateWork> work = new ArrayList<>();
-    final Set<String> retainedDynamicRoots = new HashSet<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
-      final DependencyDynamicRoots.RootScan scan =
-          scanInputs.dynamicRootScans().get(snapshot.filePath());
-      if (scan == null) {
-        throw new IOException(
-            "Missing dynamic-root scan for retained artifact " + snapshot.coordinate());
-      }
-      retainedDynamicRoots.addAll(scan.roots());
-    }
-    for (final MavenElisionService.ArtifactSnapshot candidate : retained) {
-      final Set<String> candidateClasses =
-          classesByArtifact.entrySet().stream()
-              .filter(entry -> entry.getKey().filePath().equals(candidate.filePath()))
-              .map(Map.Entry::getValue)
-              .findFirst()
-              .orElseThrow(
-                  () -> new IOException("Missing indexed classes for " + candidate.coordinate()));
-      final Set<String> roots = new TreeSet<>();
-      for (final String root : allRoots) {
-        final String normalized = root.replace('/', '.');
-        if (candidateClasses.contains(normalized)) {
-          roots.add(normalized);
-        }
-      }
-      for (final String dynamicRoot : retainedDynamicRoots) {
-        final String normalized = dynamicRoot.replace('/', '.');
-        if (candidateClasses.contains(normalized)) {
-          roots.add(normalized);
-        }
-      }
-      if (candidateClasses.isEmpty()) {
-        continue;
-      }
-      final Path output = outputPath(project, candidate.coordinate());
-      if (!distinctOutputs.add(output)) {
-        throw new IOException(
-            "Distinct Maven artifacts map to the same trimmed output path: " + output);
-      }
-      work.add(new CandidateWork(candidate, candidateClasses, roots, output));
-    }
-
-    final Map<String, List<CandidateWork>> ownersByClass = new java.util.HashMap<>();
-    final Map<String, Path> ownerByClass = new java.util.HashMap<>();
-    for (final CandidateWork candidate : work) {
-      for (final String className : candidate.classes()) {
-        final Path previous = ownerByClass.putIfAbsent(className, candidate.snapshot().filePath());
-        if (previous != null && !previous.equals(candidate.snapshot().filePath())) {
-          throw new IOException(
-              "Duplicate class across retained dependency JARs makes library order ambiguous: "
-                  + className);
-        }
-        ownersByClass.computeIfAbsent(className, ignored -> new ArrayList<>()).add(candidate);
-      }
-    }
+    final CandidatePlan plan =
+        candidatePlan(
+            project, retainedLibraries, retained, scanInputs, classesByArtifact, allRoots);
+    final List<Path> retainedInputPaths = plan.retainedInputPaths();
+    final List<CandidateWork> work = plan.work();
     final Path cacheManifestPath =
         project.getBuild() == null || project.getBuild().getDirectory() == null
             ? Path.of("target", ELIDED_ARTIFACTS, ".trim-analysis-cache.json")
@@ -276,17 +209,16 @@ final class MavenDependencyTrimmer {
                 .toAbsolutePath()
                 .normalize();
     final long cacheStart = System.nanoTime();
-    final int runtimeRelease = Runtime.version().feature();
     final FingerprintSnapshot fingerprintSnapshot =
         fingerprint(
             work,
             retainedInputPaths,
             skippedArtifactIdentities,
             runtimeRelease,
-            javaHome,
             release,
             CACHE_SCHEMA_VERSION,
-            ENGINE_VERSION);
+            ENGINE_VERSION,
+            platformContext);
     final String completeFingerprint = fingerprintSnapshot.value();
     final TrimResult cached =
         loadCache(
@@ -301,118 +233,11 @@ final class MavenDependencyTrimmer {
     if (cached != null) {
       return cached;
     }
-    final Path analysisLibraryDirectory =
-        project.getBuild() == null || project.getBuild().getDirectory() == null
-            ? Path.of("target", ELIDED_ARTIFACTS, ".analysis-libraries")
-                .toAbsolutePath()
-                .normalize()
-            : Path.of(project.getBuild().getDirectory(), ELIDED_ARTIFACTS, ".analysis-libraries")
-                .toAbsolutePath()
-                .normalize();
-    final List<Path> analysisLibraries = new ArrayList<>();
-    final List<SkippedProgram> skippedPrograms = new ArrayList<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
-      if (skippedArtifactIdentities.contains(artifactIdentity(snapshot.coordinate()))) {
-        final boolean multiRelease =
-            multiReleaseIdentities.contains(artifactIdentity(snapshot.coordinate()));
-        final boolean rootModuleDescriptor =
-            MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath());
-        final Path analysisPath =
-            multiRelease || rootModuleDescriptor
-                ? MultiReleaseLibraryProjection.create(
-                    snapshot.filePath(),
-                    snapshot.coordinate(),
-                    analysisLibraryDirectory,
-                    runtimeRelease)
-                : snapshot.filePath();
-        analysisLibraries.add(analysisPath);
-        skippedPrograms.add(new SkippedProgram(analysisPath, classNames(analysisPath)));
-      } else {
-        analysisLibraries.add(snapshot.filePath());
-      }
-    }
-    final Set<String> unchangedPassThroughClassNames = new LinkedHashSet<>();
-    skippedPrograms.stream()
-        .flatMap(program -> program.classNames().stream())
-        .forEach(unchangedPassThroughClassNames::add);
-    for (final SkippedProgram skippedProgram : skippedPrograms) {
-      for (final Path siblingPath : analysisLibraries) {
-        if (siblingPath.equals(skippedProgram.path())) {
-          continue;
-        }
-        final Set<String> ambiguousNames = new HashSet<>(skippedProgram.classNames());
-        ambiguousNames.retainAll(classNames(siblingPath));
-        if (!ambiguousNames.isEmpty()) {
-          throw new IOException(
-              "Duplicate class ownership makes pass-through unresolved-link tolerance ambiguous: "
-                  + ambiguousNames);
-        }
-      }
-    }
-    final var platform = new JdkApiClassPoolReader().read(javaHome, release);
-    final var runtimePlatform =
-        runtimeRelease == release
-            ? platform
-            : new JdkApiClassPoolReader().read(javaHome, runtimeRelease);
-    final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
-    final var analysisSession = new TrimAnalysisSession(trimmer);
-    final Set<String> allCandidateClasses = new HashSet<>(ownerByClass.keySet());
-    for (final SkippedProgram skippedProgram : skippedPrograms) {
-      for (final String className : skippedProgram.classNames()) {
-        if (!allCandidateClasses.add(className)) {
-          throw new IOException(
-              "Duplicate class across retained dependency JARs makes library order ambiguous: "
-                  + className);
-        }
-      }
-    }
-    int analysisRuns = 0;
-    for (final SkippedProgram skippedProgram : skippedPrograms) {
-      final List<Path> siblings =
-          analysisLibraries.stream().filter(path -> !path.equals(skippedProgram.path())).toList();
-      final DependencyJarTrimmer.PreparedAnalysis prepared =
-          analysisSession.prepareUnchangedPassThrough(
-              skippedProgram.path(), siblings, runtimePlatform, unchangedPassThroughClassNames);
-      final DependencyJarTrimmer.TrimAnalysis analysis =
-          prepared.analyze(skippedProgram.classNames());
-      analysisRuns++;
-      for (final String linkedName : analysis.reachableLibraryClasses()) {
-        final String dottedName = linkedName.replace('/', '.');
-        for (final CandidateWork owner : ownersByClass.getOrDefault(dottedName, List.of())) {
-          owner.roots().add(dottedName);
-        }
-      }
-    }
-    final Map<CandidateWork, DependencyJarTrimmer.PreparedAnalysis> candidateAnalyses =
-        new java.util.HashMap<>();
-    for (final CandidateWork candidate : work) {
-      final List<Path> siblings =
-          analysisLibraries.stream()
-              .filter(path -> !path.equals(candidate.snapshot().filePath()))
-              .toList();
-      candidateAnalyses.put(
-          candidate,
-          analysisSession.prepareWithUnchangedPassThroughLibraries(
-              candidate.snapshot().filePath(), siblings, platform, unchangedPassThroughClassNames));
-    }
-    boolean rootsChanged;
-    do {
-      rootsChanged = false;
-      for (final CandidateWork candidate : work) {
-        final DependencyJarTrimmer.TrimAnalysis analysis =
-            candidateAnalyses.get(candidate).analyze(candidate.roots());
-        analysisRuns++;
-        candidate.analysis(analysis);
-        for (final String linkedName : analysis.reachableLibraryClasses()) {
-          final String dottedName = linkedName.replace('/', '.');
-          for (final CandidateWork owner : ownersByClass.getOrDefault(dottedName, List.of())) {
-            if (owner != candidate && owner.roots().add(dottedName)) {
-              rootsChanged = true;
-            }
-          }
-        }
-      }
-    } while (rootsChanged);
+    final Path analysisLibraryDirectory = analysisLibraryDirectory(project);
+    final PlatformPools platformPools =
+        readPlatformPools(fingerprintSnapshot.platformSnapshots(), release, runtimeRelease);
+    final int analysisRuns =
+        analyze(plan, passThroughPlan, analysisLibraryDirectory, runtimeRelease, platformPools);
 
     final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
     final Map<CandidateWork, CacheEntry> entriesByCandidate = new java.util.HashMap<>();
@@ -471,6 +296,301 @@ final class MavenDependencyTrimmer {
         0,
         0L,
         analysisRuns);
+  }
+
+  private static int analyze(
+      final CandidatePlan candidatePlan,
+      final PassThroughPlan passThroughPlan,
+      final Path analysisLibraryDirectory,
+      final int runtimeRelease,
+      final PlatformPools platformPools)
+      throws IOException {
+    final AnalysisLibraries libraries =
+        analysisLibraries(passThroughPlan, analysisLibraryDirectory, runtimeRelease);
+    final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
+    final TrimAnalysisSession session = new TrimAnalysisSession(trimmer);
+    validateUniqueAnalysisClasses(candidatePlan, libraries.skippedPrograms());
+    final int passThroughRuns =
+        analyzePassThroughPrograms(candidatePlan, libraries, session, platformPools.runtime());
+    return passThroughRuns
+        + analyzeCandidateFixedPoint(candidatePlan, libraries, session, platformPools.compiler());
+  }
+
+  private static AnalysisLibraries analysisLibraries(
+      final PassThroughPlan passThroughPlan,
+      final Path analysisLibraryDirectory,
+      final int runtimeRelease)
+      throws IOException {
+    final List<Path> analysisLibraries = new ArrayList<>();
+    final List<SkippedProgram> skippedPrograms = new ArrayList<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot :
+        passThroughPlan.retainedLibraries()) {
+      if (passThroughPlan
+          .skippedArtifactIdentities()
+          .contains(artifactIdentity(snapshot.coordinate()))) {
+        final boolean multiRelease =
+            passThroughPlan
+                .multiReleaseIdentities()
+                .contains(artifactIdentity(snapshot.coordinate()));
+        final boolean rootModuleDescriptor =
+            MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath());
+        final Path analysisPath =
+            multiRelease || rootModuleDescriptor
+                ? MultiReleaseLibraryProjection.create(
+                    snapshot.filePath(),
+                    snapshot.coordinate(),
+                    analysisLibraryDirectory,
+                    runtimeRelease)
+                : snapshot.filePath();
+        analysisLibraries.add(analysisPath);
+        skippedPrograms.add(new SkippedProgram(analysisPath, classNames(analysisPath)));
+      } else {
+        analysisLibraries.add(snapshot.filePath());
+      }
+    }
+    final Set<String> unchangedPassThroughClassNames = new LinkedHashSet<>();
+    skippedPrograms.stream()
+        .flatMap(program -> program.classNames().stream())
+        .forEach(unchangedPassThroughClassNames::add);
+    for (final SkippedProgram skippedProgram : skippedPrograms) {
+      for (final Path siblingPath : analysisLibraries) {
+        if (siblingPath.equals(skippedProgram.path())) {
+          continue;
+        }
+        final Set<String> ambiguousNames = new HashSet<>(skippedProgram.classNames());
+        ambiguousNames.retainAll(classNames(siblingPath));
+        if (!ambiguousNames.isEmpty()) {
+          throw new IOException(
+              "Duplicate class ownership makes pass-through unresolved-link tolerance ambiguous: "
+                  + ambiguousNames);
+        }
+      }
+    }
+    return new AnalysisLibraries(
+        analysisLibraries, skippedPrograms, unchangedPassThroughClassNames);
+  }
+
+  private static void validateUniqueAnalysisClasses(
+      final CandidatePlan candidatePlan, final List<SkippedProgram> skippedPrograms)
+      throws IOException {
+    final Set<String> allCandidateClasses = new HashSet<>(candidatePlan.ownerByClass().keySet());
+    for (final SkippedProgram skippedProgram : skippedPrograms) {
+      for (final String className : skippedProgram.classNames()) {
+        if (!allCandidateClasses.add(className)) {
+          throw new IOException(
+              "Duplicate class across retained dependency JARs makes library order ambiguous: "
+                  + className);
+        }
+      }
+    }
+  }
+
+  private static int analyzePassThroughPrograms(
+      final CandidatePlan candidatePlan,
+      final AnalysisLibraries libraries,
+      final TrimAnalysisSession analysisSession,
+      final ClassPool runtimePlatform)
+      throws IOException {
+    int analysisRuns = 0;
+    for (final SkippedProgram skippedProgram : libraries.skippedPrograms()) {
+      final List<Path> siblings =
+          libraries.paths().stream().filter(path -> !path.equals(skippedProgram.path())).toList();
+      final DependencyJarTrimmer.PreparedAnalysis prepared =
+          analysisSession.prepareUnchangedPassThrough(
+              skippedProgram.path(), siblings, runtimePlatform, libraries.passThroughClassNames());
+      final DependencyJarTrimmer.TrimAnalysis analysis =
+          prepared.analyze(skippedProgram.classNames());
+      analysisRuns++;
+      for (final String linkedName : analysis.reachableLibraryClasses()) {
+        final String dottedName = linkedName.replace('/', '.');
+        for (final CandidateWork owner :
+            candidatePlan.ownersByClass().getOrDefault(dottedName, List.of())) {
+          owner.roots().add(dottedName);
+        }
+      }
+    }
+    return analysisRuns;
+  }
+
+  private static int analyzeCandidateFixedPoint(
+      final CandidatePlan candidatePlan,
+      final AnalysisLibraries libraries,
+      final TrimAnalysisSession analysisSession,
+      final ClassPool platform)
+      throws IOException {
+    int analysisRuns = 0;
+    final Map<CandidateWork, DependencyJarTrimmer.PreparedAnalysis> candidateAnalyses =
+        new java.util.HashMap<>();
+    for (final CandidateWork candidate : candidatePlan.work()) {
+      final List<Path> siblings =
+          libraries.paths().stream()
+              .filter(path -> !path.equals(candidate.snapshot().filePath()))
+              .toList();
+      candidateAnalyses.put(
+          candidate,
+          analysisSession.prepareWithUnchangedPassThroughLibraries(
+              candidate.snapshot().filePath(),
+              siblings,
+              platform,
+              libraries.passThroughClassNames()));
+    }
+    boolean rootsChanged;
+    do {
+      rootsChanged = false;
+      for (final CandidateWork candidate : candidatePlan.work()) {
+        final DependencyJarTrimmer.TrimAnalysis analysis =
+            candidateAnalyses.get(candidate).analyze(candidate.roots());
+        analysisRuns++;
+        candidate.analysis(analysis);
+        for (final String linkedName : analysis.reachableLibraryClasses()) {
+          final String dottedName = linkedName.replace('/', '.');
+          for (final CandidateWork owner :
+              candidatePlan.ownersByClass().getOrDefault(dottedName, List.of())) {
+            if (owner != candidate && owner.roots().add(dottedName)) {
+              rootsChanged = true;
+            }
+          }
+        }
+      }
+    } while (rootsChanged);
+    return analysisRuns;
+  }
+
+  private static Path analysisLibraryDirectory(final MavenProject project) {
+    return project.getBuild() == null || project.getBuild().getDirectory() == null
+        ? Path.of("target", ELIDED_ARTIFACTS, ".analysis-libraries").toAbsolutePath().normalize()
+        : Path.of(project.getBuild().getDirectory(), ELIDED_ARTIFACTS, ".analysis-libraries")
+            .toAbsolutePath()
+            .normalize();
+  }
+
+  private static PassThroughPlan passThroughPlan(final TrimRequest request) throws IOException {
+    final List<MavenElisionService.ArtifactSnapshot> retainedLibraries =
+        request.candidates().stream()
+            .filter(
+                snapshot ->
+                    "jar".equals(snapshot.coordinate().type())
+                        && TRIMMABLE_SCOPES.contains(snapshot.coordinate().scope())
+                        && request.retainedCoordinates().contains(snapshot.coordinate()))
+            .toList();
+    final List<MavenElisionService.ArtifactSnapshot> multiRelease = new ArrayList<>();
+    final List<MavenElisionService.ArtifactSnapshot> moduleInfo = new ArrayList<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
+      if (MultiReleaseLibraryProjection.hasUnsupportedVersionedClasses(snapshot.filePath())) {
+        if (request.failOnUnsupportedMultiRelease()) {
+          throw new IOException(
+              "Unsupported multi-release implementation classes in " + snapshot.coordinate());
+        }
+        multiRelease.add(snapshot);
+      }
+      if (MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath())) {
+        if (request.failOnUnsupportedModuleInfo()) {
+          throw new IOException(
+              "Unsupported root module descriptor in retained classpath JAR: "
+                  + snapshot.coordinate());
+        }
+        moduleInfo.add(snapshot);
+      }
+    }
+    final List<MavenElisionService.ArtifactSnapshot> configured =
+        parsePassThroughArtifacts(request.explicitPassThroughCoordinates(), retainedLibraries);
+    final Set<String> multiReleaseIdentities = identities(multiRelease);
+    final Set<String> moduleInfoIdentities = identities(moduleInfo);
+    final List<MavenElisionService.ArtifactSnapshot> configuredOnly =
+        configured.stream()
+            .filter(
+                snapshot ->
+                    !multiReleaseIdentities.contains(artifactIdentity(snapshot.coordinate()))
+                        && !moduleInfoIdentities.contains(artifactIdentity(snapshot.coordinate())))
+            .toList();
+    final Set<String> skippedIdentities = new LinkedHashSet<>(multiReleaseIdentities);
+    skippedIdentities.addAll(moduleInfoIdentities);
+    skippedIdentities.addAll(identities(configured));
+    final List<MavenElisionService.ArtifactSnapshot> retained =
+        retainedLibraries.stream()
+            .filter(
+                snapshot -> !skippedIdentities.contains(artifactIdentity(snapshot.coordinate())))
+            .toList();
+    return new PassThroughPlan(
+        retainedLibraries,
+        retained,
+        multiReleaseIdentities,
+        moduleInfoIdentities,
+        skippedIdentities,
+        multiRelease.stream().map(MavenElisionService.ArtifactSnapshot::coordinate).toList(),
+        moduleInfo.stream().map(MavenElisionService.ArtifactSnapshot::coordinate).toList(),
+        configuredOnly.stream().map(MavenElisionService.ArtifactSnapshot::coordinate).toList());
+  }
+
+  private static CandidatePlan candidatePlan(
+      final MavenProject project,
+      final List<MavenElisionService.ArtifactSnapshot> retainedLibraries,
+      final List<MavenElisionService.ArtifactSnapshot> retained,
+      final ScanInputs scanInputs,
+      final Map<io.github.spockz.elider.model.ArtifactFileRef, Set<String>> classesByArtifact,
+      final Set<String> allRoots)
+      throws IOException {
+    final List<Path> retainedInputPaths =
+        retainedLibraries.stream().map(MavenElisionService.ArtifactSnapshot::filePath).toList();
+    final Set<String> retainedDynamicRoots = new HashSet<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
+      final DependencyDynamicRoots.RootScan scan =
+          scanInputs.dynamicRootScans().get(snapshot.filePath());
+      if (scan == null) {
+        throw new IOException(
+            "Missing dynamic-root scan for retained artifact " + snapshot.coordinate());
+      }
+      retainedDynamicRoots.addAll(scan.roots());
+    }
+
+    final Set<Path> distinctOutputs = new HashSet<>();
+    final List<CandidateWork> work = new ArrayList<>();
+    for (final MavenElisionService.ArtifactSnapshot candidate : retained) {
+      final Set<String> candidateClasses =
+          classesByArtifact.entrySet().stream()
+              .filter(entry -> entry.getKey().filePath().equals(candidate.filePath()))
+              .map(Map.Entry::getValue)
+              .findFirst()
+              .orElseThrow(
+                  () -> new IOException("Missing indexed classes for " + candidate.coordinate()));
+      if (candidateClasses.isEmpty()) {
+        continue;
+      }
+      final Set<String> roots = new TreeSet<>();
+      addPresentRoots(roots, allRoots, candidateClasses);
+      addPresentRoots(roots, retainedDynamicRoots, candidateClasses);
+      final Path output = outputPath(project, candidate.coordinate());
+      if (!distinctOutputs.add(output)) {
+        throw new IOException(
+            "Distinct Maven artifacts map to the same trimmed output path: " + output);
+      }
+      work.add(new CandidateWork(candidate, candidateClasses, roots, output));
+    }
+
+    final Map<String, List<CandidateWork>> ownersByClass = new java.util.HashMap<>();
+    final Map<String, Path> ownerByClass = new java.util.HashMap<>();
+    for (final CandidateWork candidate : work) {
+      for (final String className : candidate.classes()) {
+        final Path previous = ownerByClass.putIfAbsent(className, candidate.snapshot().filePath());
+        if (previous != null && !previous.equals(candidate.snapshot().filePath())) {
+          throw new IOException(
+              "Duplicate class across retained dependency JARs makes library order ambiguous: "
+                  + className);
+        }
+        ownersByClass.computeIfAbsent(className, ignored -> new ArrayList<>()).add(candidate);
+      }
+    }
+    return new CandidatePlan(retainedInputPaths, work, ownersByClass, ownerByClass);
+  }
+
+  private static void addPresentRoots(
+      final Set<String> roots, final Set<String> candidates, final Set<String> candidateClasses) {
+    for (final String root : candidates) {
+      final String normalized = root.replace('/', '.');
+      if (candidateClasses.contains(normalized)) {
+        roots.add(normalized);
+      }
+    }
   }
 
   private static Set<String> classNames(final Path archivePath) throws IOException {
@@ -577,10 +697,10 @@ final class MavenDependencyTrimmer {
       final List<Path> allRetainedInputs,
       final Set<String> skippedArtifactIdentities,
       final int runtimeRelease,
-      final Path javaHome,
       final int release,
       final int schemaVersion,
-      final String engineVersion)
+      final String engineVersion,
+      final JdkPlatformContext platformContext)
       throws IOException {
     final List<String> candidateIdentities = new ArrayList<>();
     final Set<String> roots = new TreeSet<>();
@@ -597,22 +717,49 @@ final class MavenDependencyTrimmer {
             .map(identity -> "trim-skip:" + identity)
             .toList());
     candidateIdentities.add("runtime-release:" + runtimeRelease);
-    final Set<Path> platformInputs = new LinkedHashSet<>(platformInputs(javaHome, release));
+    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots = new ArrayList<>(2);
+    platformSnapshots.add(platformContext.snapshot(release));
     if (runtimeRelease != release) {
-      platformInputs.addAll(platformInputs(javaHome, runtimeRelease));
+      platformSnapshots.add(platformContext.snapshot(runtimeRelease));
     }
+    platformSnapshots.sort(
+        Comparator.comparingInt(JdkPlatformContext.PlatformSnapshot::effectiveRelease));
     final Map<Path, ArtifactDigests> inputDigests = inputDigests(allRetainedInputs);
     final String value =
-        fingerprintForInputs(
+        fingerprintForPlatformSnapshots(
             candidateIdentities,
             allRetainedInputs,
             roots,
-            List.copyOf(platformInputs),
+            platformSnapshots,
             release,
             schemaVersion,
             engineVersion,
             inputDigests);
-    return new FingerprintSnapshot(value, inputDigests);
+    return new FingerprintSnapshot(value, inputDigests, List.copyOf(platformSnapshots));
+  }
+
+  private static JdkPlatformContext.PlatformSnapshot platformSnapshot(
+      final List<JdkPlatformContext.PlatformSnapshot> snapshots, final int release) {
+    return snapshots.stream()
+        .filter(snapshot -> snapshot.effectiveRelease() == release)
+        .findFirst()
+        .orElseThrow(
+            () ->
+                new IllegalStateException("No captured platform snapshot for release " + release));
+  }
+
+  private static PlatformPools readPlatformPools(
+      final List<JdkPlatformContext.PlatformSnapshot> snapshots,
+      final int compilerRelease,
+      final int runtimeRelease)
+      throws IOException {
+    final JdkApiClassPoolReader reader = new JdkApiClassPoolReader();
+    final ClassPool compiler = reader.read(platformSnapshot(snapshots, compilerRelease));
+    final ClassPool runtime =
+        runtimeRelease == compilerRelease
+            ? compiler
+            : reader.read(platformSnapshot(snapshots, runtimeRelease));
+    return new PlatformPools(compiler, runtime);
   }
 
   private static String artifactIdentity(final ArtifactCoordinate coordinate) {
@@ -714,6 +861,55 @@ final class MavenDependencyTrimmer {
       final String engineVersion,
       final Map<Path, ArtifactDigests> inputDigests)
       throws IOException {
+    final List<String> platformIdentities = new ArrayList<>(platformInputs.size());
+    for (final Path platformInput : platformInputs) {
+      platformIdentities.add(
+          platformInput.toAbsolutePath().normalize().getFileName() + ":" + sha256(platformInput));
+    }
+    return fingerprintForPlatformIdentities(
+        candidateIdentities,
+        orderedLibraries,
+        roots,
+        platformIdentities,
+        release,
+        schemaVersion,
+        engineVersion,
+        inputDigests);
+  }
+
+  private static String fingerprintForPlatformSnapshots(
+      final List<String> candidateIdentities,
+      final List<Path> orderedLibraries,
+      final Set<String> roots,
+      final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots,
+      final int release,
+      final int schemaVersion,
+      final String engineVersion,
+      final Map<Path, ArtifactDigests> inputDigests)
+      throws IOException {
+    final List<String> platformIdentities =
+        platformSnapshots.stream().map(JdkPlatformContext.PlatformSnapshot::identity).toList();
+    return fingerprintForPlatformIdentities(
+        candidateIdentities,
+        orderedLibraries,
+        roots,
+        platformIdentities,
+        release,
+        schemaVersion,
+        engineVersion,
+        inputDigests);
+  }
+
+  private static String fingerprintForPlatformIdentities(
+      final List<String> candidateIdentities,
+      final List<Path> orderedLibraries,
+      final Set<String> roots,
+      final List<String> platformIdentities,
+      final int release,
+      final int schemaVersion,
+      final String engineVersion,
+      final Map<Path, ArtifactDigests> inputDigests)
+      throws IOException {
     final StringBuilder input =
         new StringBuilder("release=")
             .append(release)
@@ -739,12 +935,12 @@ final class MavenDependencyTrimmer {
           .append(requiredInputDigest(inputDigests, library).sha256())
           .append('\n');
     }
-    for (final Path platformInput : platformInputs) {
+    for (int index = 0; index < platformIdentities.size(); index++) {
       input
-          .append("platform=")
-          .append(platformInput.getFileName())
-          .append(':')
-          .append(sha256(platformInput))
+          .append("platform[")
+          .append(index)
+          .append("]=")
+          .append(platformIdentities.get(index))
           .append('\n');
     }
     return hash(input.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -771,37 +967,6 @@ final class MavenDependencyTrimmer {
           "Missing input digest for retained archive: " + normalizedPath);
     }
     return digest;
-  }
-
-  private static List<Path> platformInputs(final Path javaHome, final int release)
-      throws IOException {
-    final Path ctSym = javaHome.resolve("lib/ct.sym");
-    if (!Files.isRegularFile(ctSym)) {
-      throw new IOException("The selected JDK does not provide lib/ct.sym: " + ctSym);
-    }
-    final String releaseCode =
-        release <= 9 ? Integer.toString(release) : Character.toString((char) ('A' + release - 10));
-    try (java.util.zip.ZipFile archive = new java.util.zip.ZipFile(ctSym.toFile())) {
-      final var entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final String[] parts = entries.nextElement().getName().split("/", 3);
-        if (parts.length == 3 && parts[0].contains(releaseCode) && parts[2].endsWith(".sig")) {
-          return List.of(ctSym);
-        }
-      }
-    }
-    final Path jmods = javaHome.resolve("jmods");
-    if (!Files.isDirectory(jmods)) {
-      throw new IOException("The selected JDK has no jmods directory: " + jmods);
-    }
-    try (var paths = Files.list(jmods)) {
-      final List<Path> modules =
-          paths.filter(path -> path.toString().endsWith(".jmod")).sorted().toList();
-      if (modules.isEmpty()) {
-        throw new IOException("No JDK platform signatures found for release " + release);
-      }
-      return modules;
-    }
   }
 
   private static CacheEntry cacheEntry(
