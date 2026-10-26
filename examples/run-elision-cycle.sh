@@ -2,6 +2,22 @@
 # WHY: Runs the trace, elide, package, runtime, and archive checks that make example expectations reproducible.
 set -euo pipefail
 
+configured_passthrough_names=(
+  groovy-templates-4.0.23.jar micrometer-commons-1.13.6.jar
+  micrometer-observation-1.13.6.jar spring-aop-6.1.14.jar
+  spring-beans-6.1.14.jar spring-boot-3.3.5.jar
+  spring-boot-autoconfigure-3.3.5.jar spring-context-6.1.14.jar
+  spring-context-support-6.1.14.jar spring-expression-6.1.14.jar spring-web-6.1.14.jar
+)
+automatic_passthrough_names=(
+  angus-activation-2.0.2.jar jackson-annotations-2.18.2.jar jackson-core-2.18.2.jar
+  jakarta.activation-api-2.1.3.jar jakarta.annotation-api-2.1.1.jar jakarta.mail-2.0.3.jar
+  jakarta.servlet.jsp.jstl-api-3.0.2.jar jakarta.validation-api-3.0.2.jar log4j-api-2.23.1.jar
+  log4j-to-slf4j-2.23.1.jar logback-classic-1.5.11.jar logback-core-1.5.11.jar
+  reactor-core-3.6.11.jar spring-core-6.1.14.jar tomcat-embed-core-10.1.31.jar
+  tomcat-embed-el-10.1.31.jar tomcat-embed-websocket-10.1.31.jar
+)
+
 main() {
   repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
   maven=${MAVEN:-"$repo_root/.scratch/toolchains/maven-mvnd-1.0.6/bin/mvnd"}
@@ -16,13 +32,14 @@ main() {
   fi
   if [[ -n ${JAVA_HOME:-} ]]; then
     java="$JAVA_HOME/bin/java"
+    javac="$JAVA_HOME/bin/javac"
     jar="$JAVA_HOME/bin/jar"
   else
     echo "JAVA_HOME must point to a supported JDK; full verification currently targets GraalVM JDK 21" >&2
     exit 2
   fi
-  if [[ ! -x $maven || ! -x $java || ! -x $jar ]] || ! command -v timeout >/dev/null; then
-    echo "Maven, Java, jar, or timeout executable is missing" >&2
+  if [[ ! -x $maven || ! -x $java || ! -x $javac || ! -x $jar ]] || ! command -v timeout >/dev/null; then
+    echo "Maven, javac, Java, jar, or timeout executable is missing" >&2
     exit 2
   fi
 
@@ -30,18 +47,13 @@ main() {
 
   run_timed() {
     local timing_file=$1
+    local started
+    local finished
     shift
-    python3 - "$timing_file" "$@" <<'PY'
-import subprocess
-import sys
-import time
-from pathlib import Path
-
-started = time.perf_counter()
-result = subprocess.run(sys.argv[2:])
-Path(sys.argv[1]).write_text(f"{time.perf_counter() - started:.3f}\n")
-raise SystemExit(result.returncode)
-PY
+    started=$(date +%s%N)
+    "$@"
+    finished=$(date +%s%N)
+    printf '%s\n' "$((finished - started))" >"$timing_file"
   }
 
   test_dir=$(mktemp -d "${TMPDIR:-/tmp}/maven-dependency-elider-examples.XXXXXX")
@@ -57,6 +69,17 @@ PY
 
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
     -pl dependency-elider-maven-plugin -am install
+
+  dependency_classpath="$test_dir/example-support.classpath"
+  "$maven" "${maven_options[@]}" -f "$repo_root/dependency-elider-maven-plugin/pom.xml" \
+    dependency:build-classpath -DincludeScope=test "-Dmdep.outputFile=$dependency_classpath"
+  support_classes="$test_dir/example-support-classes"
+  support_classpath="$support_classes:$(<"$dependency_classpath")"
+  mkdir -p -- "$support_classes"
+  "$javac" -classpath "$(<"$dependency_classpath")" -d "$support_classes" \
+    "$repo_root/examples/support/ExampleSupport.java" \
+    "$repo_root/examples/support/ExampleSupportContractTest.java"
+  "$java" --class-path "$support_classpath" ExampleSupportContractTest
 
   fixture_names=(
     example-basic-app
@@ -120,17 +143,13 @@ PY
     verify_baseline_archive "$fixture" "$baseline_entries"
     if [[ $fixture == example-spring-boot-app ]]; then
       mail_artifacts="$test_dir/$fixture-mail-artifacts"
-      python3 "$repo_root/examples/support/verify_spring_mail_artifacts.py" \
-        capture "$jar_file" "$mail_artifacts"
-      python3 "$repo_root/examples/support/verify_spring_trimmed_artifacts.py" \
-        capture "$jar_file" "$test_dir/$fixture-spring-webmvc.jar"
-      python3 "$repo_root/examples/support/verify_spring_trimmed_artifacts.py" \
-        capture-skip "$jar_file" "$test_dir/$fixture-passthrough-jars"
+      capture_spring_mail_artifacts "$jar_file" "$mail_artifacts"
+      capture_spring_webmvc "$jar_file" "$test_dir/$fixture-spring-webmvc.jar"
+      capture_spring_passthrough "$jar_file" "$test_dir/$fixture-passthrough-jars"
     fi
 
     if [[ $fixture == example-spring-boot-app ]]; then
-      python3 "$repo_root/examples/support/run_spring_boot_endpoint.py" \
-        "$java" "$jar_file" "$trace" "$baseline_output"
+      run_spring_boot_endpoint "$jar_file" "$trace" "$baseline_output"
       verify_spring_unused_trace "$trace"
       production_output="$test_dir/$fixture-production-classes"
       usage_report="$test_dir/$fixture-class-usage.json"
@@ -151,19 +170,10 @@ PY
     run_timed "$elision_seconds" "$maven" "${maven_options[@]}" -f "$pom" clean verify "${elision_options[@]}"
 
     if [[ $fixture == example-basic-app || $fixture == example-spring-boot-app ]]; then
-      python3 - "$fixture" "$baseline_seconds" "$elision_seconds" <<'PY'
-import sys
-from pathlib import Path
-
-fixture, baseline_file, elision_file = sys.argv[1:]
-baseline = float(Path(baseline_file).read_text())
-elision = float(Path(elision_file).read_text())
-print(
-    f"Maven clean verify timing for {fixture}: "
-    f"baseline={baseline:.3f}s, elision={elision:.3f}s, "
-    f"difference={elision - baseline:+.3f}s"
-)
-PY
+      baseline_millis=$(( $(<"$baseline_seconds") / 1000000 ))
+      elision_millis=$(( $(<"$elision_seconds") / 1000000 ))
+      awk -v fixture="$fixture" -v baseline="$baseline_millis" -v elision="$elision_millis" \
+        'BEGIN { printf "Maven clean verify timing for %s: baseline=%.3fs, elision=%.3fs, difference=%+.3fs\n", fixture, baseline / 1000, elision / 1000, (elision - baseline) / 1000 }'
     fi
 
     if [[ $fixture == example-basic-app ]]; then
@@ -171,21 +181,26 @@ PY
     fi
 
     if [[ $fixture == example-spring-boot-app ]]; then
-      python3 "$repo_root/examples/support/verify_class_usage_report.py" \
-        "$usage_report" "$production_output"
+      "$java" --class-path "$support_classpath" ExampleSupport \
+        verify-class-report "$usage_report" "$production_output"
     fi
+
+    report_output="$test_dir/$fixture-elision-report.out"
+    "$maven" "${maven_options[@]}" -f "$pom" \
+      io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report >"$report_output" 2>&1
+    printf '\n%s report:\n' "$fixture"
+    grep -E '^\[INFO\] (Project:|Snapshot:|Whole artifacts dropped:|Program classes pruned from retained JARs:|  - )' \
+      "$report_output"
 
     entries="$test_dir/$fixture.jar-entries"
     "$jar" tf "$jar_file" >"$entries"
     verify_archive "$fixture" "$entries"
     if [[ $fixture == example-spring-boot-app ]]; then
-      python3 "$repo_root/examples/support/verify_spring_mail_artifacts.py" \
-        compare "$jar_file" "$mail_artifacts"
+      compare_spring_mail_artifacts "$jar_file" "$mail_artifacts"
     fi
 
     if [[ $fixture == example-spring-boot-app ]]; then
-      python3 "$repo_root/examples/support/run_spring_boot_endpoint.py" \
-        "$java" "$jar_file" "$test_dir/$fixture-final.log" "$final_output"
+      run_spring_boot_endpoint "$jar_file" "$test_dir/$fixture-final.log" "$final_output"
     else
       timeout --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" -jar "$jar_file" >"$final_output"
@@ -195,10 +210,8 @@ PY
       verify_basic_trimmed_artifacts "$fixture_dir" "$jar_file" \
         "$test_dir/basic-original/commons-compress-1.28.0.jar" "$baseline_package_bytes"
     elif [[ $fixture == example-spring-boot-app ]]; then
-      python3 "$repo_root/examples/support/verify_spring_trimmed_artifacts.py" \
-        compare "$jar_file" "$test_dir/$fixture-spring-webmvc.jar"
-      python3 "$repo_root/examples/support/verify_spring_trimmed_artifacts.py" \
-        compare-skip "$jar_file" "$test_dir/$fixture-passthrough-jars"
+      compare_spring_webmvc "$jar_file" "$test_dir/$fixture-spring-webmvc.jar"
+      compare_spring_passthrough "$jar_file" "$test_dir/$fixture-passthrough-jars"
       final_package_bytes=$(wc -c <"$jar_file")
       if (( final_package_bytes >= baseline_package_bytes )); then
         echo "Spring Boot package did not shrink: $baseline_package_bytes to $final_package_bytes bytes" >&2
@@ -211,6 +224,214 @@ PY
   done
 
   echo "Example elision lifecycle checks passed for ${#fixture_names[@]} fixtures."
+}
+
+run_spring_boot_endpoint() {
+  local archive=$1
+  local trace=$2
+  local output=$3
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    run-spring-endpoint "$java" "$archive" "$trace" "$output"
+}
+
+capture_spring_mail_artifacts() {
+  local archive=$1
+  local output_dir=$2
+  local entries="$test_dir/spring-mail-entries"
+  local manifest="$output_dir/sha256.txt"
+  local -a patterns=(
+    'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
+    'BOOT-INF/lib/jakarta\.mail-[^/]+\.jar'
+    'BOOT-INF/lib/jakarta\.activation-api-[^/]+\.jar'
+    'BOOT-INF/lib/angus-activation-[^/]+\.jar'
+  )
+  local pattern
+  local entry
+  local destination
+  local digest
+  mkdir -p -- "$output_dir"
+  : >"$manifest"
+  "$jar" tf "$archive" >"$entries"
+  for pattern in "${patterns[@]}"; do
+    mapfile -t matches < <(grep -E "^$pattern$" "$entries" || true)
+    if [[ ${#matches[@]} -ne 1 ]]; then
+      echo "Expected exactly one nested mail JAR matching $pattern in $archive; found ${#matches[@]}" >&2
+      exit 1
+    fi
+    entry=${matches[0]}
+    destination="$output_dir/${entry##*/}"
+    extract_nested_jar "$archive" "$entry" "$destination"
+    digest=$(sha256sum "$destination" | cut -d ' ' -f 1)
+    printf '%s %s\n' "$entry" "$digest" >>"$manifest"
+  done
+  sort -o "$manifest" "$manifest"
+}
+
+compare_spring_mail_artifacts() {
+  local archive=$1
+  local baseline_dir=$2
+  local current_dir="$test_dir/spring-mail-current"
+  capture_spring_mail_artifacts "$archive" "$current_dir"
+  cmp -- "$baseline_dir/sha256.txt" "$current_dir/sha256.txt" || {
+    echo "Final Spring mail runtime JAR names or SHA-256 digests differ from baseline" >&2
+    exit 1
+  }
+  while read -r entry _; do
+    cmp -- "$baseline_dir/${entry##*/}" "$current_dir/${entry##*/}" || {
+      echo "Nested mail JAR bytes changed for $entry" >&2
+      exit 1
+    }
+  done <"$baseline_dir/sha256.txt"
+}
+
+capture_spring_webmvc() {
+  local archive=$1
+  local output=$2
+  local entries="$test_dir/spring-webmvc-entries"
+  local -a matches
+  "$jar" tf "$archive" >"$entries"
+  mapfile -t matches < <(grep -E '^BOOT-INF/lib/spring-webmvc-[^/]+\.jar$' "$entries" || true)
+  if [[ ${#matches[@]} -ne 1 ]]; then
+    echo "Expected exactly one nested Spring MVC JAR in $archive; found ${#matches[@]}" >&2
+    exit 1
+  fi
+  extract_nested_jar "$archive" "${matches[0]}" "$output"
+}
+
+compare_spring_webmvc() {
+  local archive=$1
+  local baseline=$2
+  local current="$test_dir/spring-webmvc-current.jar"
+  local baseline_classes="$test_dir/spring-webmvc-baseline-classes"
+  local current_classes="$test_dir/spring-webmvc-current-classes"
+  local extra_classes="$test_dir/spring-webmvc-extra-classes"
+  capture_spring_webmvc "$archive" "$current"
+  "$jar" tf "$baseline" | grep '\.class$' | sort >"$baseline_classes"
+  "$jar" tf "$current" | grep '\.class$' | sort >"$current_classes"
+  comm -23 "$current_classes" "$baseline_classes" >"$extra_classes"
+  if [[ -s $extra_classes ]]; then
+    echo "Trimmed Spring MVC JAR contains class entries absent from the original" >&2
+    cat "$extra_classes" >&2
+    exit 1
+  fi
+  local missing_classes="$test_dir/spring-webmvc-missing-classes"
+  comm -13 "$current_classes" "$baseline_classes" >"$missing_classes"
+  if [[ ! -s $missing_classes ]]; then
+    echo "Nested Spring MVC JAR did not lose any class entries" >&2
+    exit 1
+  fi
+  has_entry "$current_classes" 'org/springframework/web/servlet/DispatcherServlet.class'
+  local baseline_bytes
+  local current_bytes
+  baseline_bytes=$(wc -c <"$baseline")
+  current_bytes=$(wc -c <"$current")
+  if (( current_bytes >= baseline_bytes )); then
+    echo "Nested Spring MVC JAR did not shrink: $baseline_bytes to $current_bytes bytes" >&2
+    exit 1
+  fi
+  printf 'Nested Spring MVC JAR shrank from %s to %s bytes and from %s to %s classes\n' \
+    "$baseline_bytes" "$current_bytes" \
+    "$(wc -l <"$baseline_classes")" "$(wc -l <"$current_classes")"
+}
+
+capture_spring_passthrough() {
+  collect_spring_passthrough "$1" "$2" false
+}
+
+compare_spring_passthrough() {
+  local archive=$1
+  local baseline_dir=$2
+  local current_dir="$test_dir/passthrough-current"
+  local baseline_names="$test_dir/passthrough-baseline-names"
+  local current_names="$test_dir/passthrough-current-names"
+  collect_spring_passthrough "$archive" "$current_dir" true
+  find "$baseline_dir" -type f -name '*.jar' -printf '%f\n' | sort >"$baseline_names"
+  find "$current_dir" -type f -name '*.jar' -printf '%f\n' | sort >"$current_names"
+  local configured
+  for configured in "${configured_passthrough_names[@]}"; do
+    grep -Fqx -- "$configured" "$current_names" || {
+      echo "Configured pass-through JAR was not packaged: $configured" >&2
+      exit 1
+    }
+  done
+  diff -u "$baseline_names" "$current_names" || {
+    echo "Set of pass-through nested JARs changed from baseline" >&2
+    exit 1
+  }
+  local name
+  while IFS= read -r name; do
+    cmp -- "$baseline_dir/$name" "$current_dir/$name" || {
+      echo "Pass-through JAR was modified: $name" >&2
+      exit 1
+    }
+  done <"$current_names"
+  printf '%s configured and %s automatic pass-through JAR(s) remained byte-identical\n' \
+    "$(grep -Fxf <(printf '%s\n' "${configured_passthrough_names[@]}") "$current_names" | wc -l)" \
+    "$(grep -Fxf <(printf '%s\n' "${automatic_passthrough_names[@]}") "$current_names" | wc -l)"
+}
+
+collect_spring_passthrough() {
+  local archive=$1
+  local output_dir=$2
+  local reject_unknown=$3
+  local entries="$test_dir/passthrough-entries"
+  local staging="$test_dir/passthrough-stage"
+  local entry
+  local name
+  local nested_listing
+  local unsupported
+  local selected
+  mkdir -p -- "$output_dir" "$staging"
+  "$jar" tf "$archive" >"$entries"
+  while IFS= read -r entry; do
+    [[ $entry == BOOT-INF/lib/*.jar ]] || continue
+    name=${entry##*/}
+    local nested="$staging/$name"
+    extract_nested_jar "$archive" "$entry" "$nested"
+    nested_listing="$staging/$name.entries"
+    "$jar" tf "$nested" >"$nested_listing"
+    unsupported=false
+    if grep -Fqx 'module-info.class' "$nested_listing" || \
+      awk '/^META-INF\/versions\/[0-9]+\/.*\.class$/ && $0 !~ /\/module-info\.class$/ { found=1 } END { exit !found }' "$nested_listing"; then
+      unsupported=true
+    fi
+    selected=false
+    if contains_string "$name" "${configured_passthrough_names[@]}"; then
+      selected=true
+    elif [[ $unsupported == true ]]; then
+      if contains_string "$name" "${automatic_passthrough_names[@]}"; then
+        selected=true
+      elif [[ $reject_unknown == true ]]; then
+        echo "Unknown automatic pass-through archive appeared: $name" >&2
+        exit 1
+      fi
+    fi
+    if [[ $selected == true ]]; then
+      cp -- "$nested" "$output_dir/$name"
+    fi
+  done < <(grep -E '^BOOT-INF/lib/[^/]+\.jar$' "$entries")
+}
+
+contains_string() {
+  local needle=$1
+  shift
+  local candidate
+  for candidate in "$@"; do
+    [[ $candidate == "$needle" ]] && return 0
+  done
+  return 1
+}
+
+extract_nested_jar() {
+  local archive=$1
+  local entry=$2
+  local output=$3
+  local extraction="$test_dir/extract-${BASHPID}"
+  rm -rf -- "$extraction"
+  mkdir -p -- "$extraction"
+  (cd -- "$extraction" && "$jar" --extract --file "$archive" "$entry")
+  mkdir -p -- "$(dirname -- "$output")"
+  cp -- "$extraction/$entry" "$output"
 }
 
 verify_source_root_compiler_visibility() {

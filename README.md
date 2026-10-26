@@ -170,6 +170,36 @@ make test-examples
 
 The example script uses the Maven Wrapper, a JDK 21 toolchain, Bash, and `timeout`. It places temporary traces, logs, and verification staging under the repository `.scratch/` directory. It does not run OSV-Scanner or generate VEX. The Spring fixture checks trimmed `spring-webmvc` bytes and class entries and verifies the packaged HTTP endpoint; its runtime-only mail classification is evidence, not an explanation of why Spring loaded those classes.
 
+### Sample elision report output
+
+`make test-examples` invokes `dependency-elider:report` after each successful elision build. The report counts whole artifacts removed using original on-disk JAR sizes and classes removed using uncompressed `.class` entry sizes; class metrics exclude module descriptors and archive sanitation metadata. These representative summaries came from one captured run; timestamps vary between runs:
+
+```text
+example-basic-app
+[INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
+[INFO] Snapshot: last successful elide run at 2026-10-26T16:35:10.573567220Z
+[INFO] Whole artifacts dropped: 1 (original JAR file bytes: 365.93 KiB)
+[INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
+
+example-spring-boot-app
+[INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
+[INFO] Snapshot: last successful elide run at 2026-10-26T16:35:47.614372810Z
+[INFO] Whole artifacts dropped: 2 (original JAR file bytes: 683.41 KiB)
+[INFO] Program classes pruned from retained JARs: 3374 (uncompressed omitted .class payload bytes: 8.38 MiB; excludes module descriptors and archive metadata)
+
+example-cve-unused-app
+[INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
+[INFO] Snapshot: last successful elide run at 2026-10-26T16:36:05.417027340Z
+[INFO] Whole artifacts dropped: 13 (original JAR file bytes: 6.89 MiB)
+[INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
+
+example-cve-safe-class-app
+[INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
+[INFO] Snapshot: last successful elide run at 2026-10-26T16:36:11.688187181Z
+[INFO] Whole artifacts dropped: 5 (original JAR file bytes: 1.50 MiB)
+[INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
+```
+
 Example POMs use `-Delide.mode=baseline` or `-Delide.mode=elision` to select the named baseline and elision behaviors. The plugin's internal skip parameter remains `elide.skip`; the mode property activates the example's Maven profile.
 
 Run the standalone CVE fixture baselines with:
