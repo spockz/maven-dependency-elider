@@ -124,7 +124,13 @@ The source audit and JFR findings are assigned to the existing Maven-trimming, P
 | **7.2 Maven-session platform identity** | Cache | Reuse selected-release detection and exact `ct.sym` identity per normalized JDK path and release for one Maven session; include ordered JMOD names and exact content digests on fallback. Verify multiple JDKs/releases and do not share identities across sessions. State and test the file-change-during-session assumption. | 7.1 | Assigned after 7.1 |
 | **7.3 Earlier persistent-cache lookup** | Cache + Maven plugin trimming | Move lookup earlier only after specifying and testing all result-affecting key dimensions: sources/generated sources, traces, metadata, ordered dependency bytes, roots, compiler/toolchain/runtime settings, processors, pass-through policy, engine/schema, destination, and inventory. Preserve output digest validation, atomic publication, and safe corrupt/concurrent recovery; prove each key change misses. | 5.4, 2.4, 2.5, 7.1, 7.2 | Deferred pending identity contract |
 
-The retained `track/cache` worktree currently contains uncommitted cache-reader changes. Preserve those edits and finish their existing review before starting slices 7.1–7.3 there. Do not mix cache-reader allocation work into digest identity or platform identity slices.
+The pre-existing cache-reader allocation change is now reviewed and committed as `1f95d36` on `track/cache`; it reduces decoding allocations but does not remove exact content hashing. Its review and full-check evidence are recorded in `.scratch/reviews/track-cache-reader.md`. Keep that change separate from digest identity and platform identity slices. Start cache slices 7.1–7.3 only after engine slice 2.4 passes parity.
+
+#### Existing cache-reader allocation change
+
+* **Track / commits**: cache; `21bdc90` (strict GraalVM JFR hidden-class name handling) and `1f95d36` (bounded cache decoding allocation reuse).
+* **Review**: approved; receipt: `.scratch/reviews/track-cache-reader.md`.
+* **Verification**: rebased `make check` passed with GraalVM 21, 117 core tests and 64 plugin tests, static analysis, formatting, and Markdown lint. This work does not address repeated input/output digests or JDK platform identity.
 
 #### Slice 5.4 evidence and review
 
