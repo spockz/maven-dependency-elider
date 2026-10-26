@@ -29,6 +29,9 @@ final class ElisionCacheCodec {
 
   private ElisionCacheCodec() {}
 
+  /** Slice of the already loaded file containing the checksummed payload. */
+  private record PayloadSlice(byte[] bytes, int offset, int length) {}
+
   /** Decodes untrusted bytes; invalid frames and payloads become misses. */
   static ElisionCache.Lookup decode(
       final byte[] bytes,
@@ -36,7 +39,8 @@ final class ElisionCacheCodec {
       final Set<ArtifactCoordinate> expectedInventory)
       throws IOException {
     try {
-      return decodePayload(decodeFrame(bytes), expectedFingerprint, expectedInventory);
+      final PayloadSlice payload = decodeFrame(bytes);
+      return decodePayload(payload, expectedFingerprint, expectedInventory);
     } catch (InvalidCacheException e) {
       return ElisionCache.Lookup.miss(e.getMessage());
     } catch (IOException | IllegalArgumentException e) {
@@ -44,10 +48,25 @@ final class ElisionCacheCodec {
     }
   }
 
-  private static byte[] decodeFrame(final byte[] bytes) throws IOException {
-    try (DataInputStream frame = new DataInputStream(new ByteArrayInputStream(bytes))) {
+  private static PayloadSlice decodeFrame(final byte[] bytes) throws IOException {
+    final ByteArrayInputStream frameBytes = new ByteArrayInputStream(bytes);
+    try (DataInputStream frame = new DataInputStream(frameBytes)) {
       validateFrameHeader(frame);
-      return readAndValidatePayload(frame);
+      final int payloadSize =
+          ElisionCacheReader.bounded(frame.readInt(), MAX_FILE_BYTES, "payload size");
+      final int payloadOffset = bytes.length - frame.available();
+      if (payloadSize > frame.available() - 32) {
+        throw invalid("truncated");
+      }
+      frame.skipNBytes(payloadSize);
+      final byte[] storedChecksum = frame.readNBytes(32);
+      if (storedChecksum.length != 32 || frame.available() != 0) {
+        throw invalid("trailing or truncated data");
+      }
+      if (!MessageDigest.isEqual(storedChecksum, checksum(bytes, payloadOffset, payloadSize))) {
+        throw invalid("checksum mismatch");
+      }
+      return new PayloadSlice(bytes, payloadOffset, payloadSize);
     }
   }
 
@@ -60,29 +79,14 @@ final class ElisionCacheCodec {
     }
   }
 
-  private static byte[] readAndValidatePayload(final DataInputStream frame) throws IOException {
-    final int payloadSize =
-        ElisionCacheReader.bounded(frame.readInt(), MAX_FILE_BYTES, "payload size");
-    if (payloadSize > frame.available() - 32) {
-      throw invalid("truncated");
-    }
-    final byte[] payload = frame.readNBytes(payloadSize);
-    final byte[] storedChecksum = frame.readNBytes(32);
-    if (storedChecksum.length != 32 || frame.available() != 0) {
-      throw invalid("trailing or truncated data");
-    }
-    if (!MessageDigest.isEqual(storedChecksum, checksum(payload))) {
-      throw invalid("checksum mismatch");
-    }
-    return payload;
-  }
-
   private static ElisionCache.Lookup decodePayload(
-      final byte[] payload,
+      final PayloadSlice payload,
       final long expectedFingerprint,
       final Set<ArtifactCoordinate> expectedInventory)
       throws IOException {
-    try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(payload))) {
+    try (DataInputStream input =
+        new DataInputStream(
+            new ByteArrayInputStream(payload.bytes(), payload.offset(), payload.length()))) {
       final long fingerprint = input.readLong();
       if (fingerprint != expectedFingerprint) {
         throw invalid("fingerprint mismatch");
@@ -111,6 +115,16 @@ final class ElisionCacheCodec {
   static byte[] checksum(final byte[] value) {
     try {
       return MessageDigest.getInstance("SHA-256").digest(value);
+    } catch (NoSuchAlgorithmException e) {
+      throw new AssertionError(e);
+    }
+  }
+
+  private static byte[] checksum(final byte[] value, final int offset, final int length) {
+    try {
+      final MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      digest.update(value, offset, length);
+      return digest.digest();
     } catch (NoSuchAlgorithmException e) {
       throw new AssertionError(e);
     }

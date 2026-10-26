@@ -1,8 +1,10 @@
 package io.github.spockz.elider.model;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /** The immutable outcome of dependency elision analysis. */
 public record ElisionDecision(
@@ -58,11 +60,18 @@ public record ElisionDecision(
     return Set.copyOf(values);
   }
 
+  // This copied map is immutable before publication and is never mutated afterward.
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
   private static Map<ArtifactCoordinate, Set<String>> immutableClassMap(
       final Map<ArtifactCoordinate, Set<String>> classesByArtifact) {
-    return classesByArtifact.entrySet().stream()
-        .collect(
-            Collectors.toUnmodifiableMap(
-                Map.Entry::getKey, entry -> immutableSet(entry.getValue())));
+    final Map<ArtifactCoordinate, Set<String>> immutableCopy =
+        new HashMap<>(
+            Objects.requireNonNull(classesByArtifact, "class map must not be null").size());
+    classesByArtifact.forEach(
+        (coordinate, classes) ->
+            immutableCopy.put(
+                Objects.requireNonNull(coordinate, "class map coordinate must not be null"),
+                immutableSet(Objects.requireNonNull(classes, "class set must not be null"))));
+    return Collections.unmodifiableMap(immutableCopy);
   }
 }

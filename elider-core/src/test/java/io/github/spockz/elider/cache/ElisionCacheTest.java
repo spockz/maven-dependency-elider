@@ -13,7 +13,9 @@ import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.model.OriginEvidence;
 import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -189,7 +191,7 @@ final class ElisionCacheTest {
         new ElisionDecision(
             Set.of(retained),
             Set.of(elided),
-            Map.of(retained, Set.of("p.Used"), elided, Set.of()),
+            Map.of(retained, Set.of("p.Used", "p.ünicode"), elided, Set.of()),
             Map.of(retained, Set.of(), elided, Set.of("p.Other")),
             42L);
     final Path cache = temp.resolve("cache.bin");
@@ -254,6 +256,16 @@ final class ElisionCacheTest {
             -1L);
     assertThatThrownBy(() -> store.store(cache, 17L, inventory, negativeDuration))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void malformedUtf8IsRejected() {
+    final byte[] invalidString = {0, 0, 0, 1, (byte) 0xff};
+    assertThatThrownBy(
+            () ->
+                ElisionCacheReader.readCoordinate(
+                    new DataInputStream(new ByteArrayInputStream(invalidString))))
+        .isInstanceOf(ElisionCacheCodec.InvalidCacheException.class);
   }
 
   @Test

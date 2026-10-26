@@ -46,13 +46,22 @@ public final class ElisionCache {
     java.util.Objects.requireNonNull(file, "file must not be null");
     java.util.Objects.requireNonNull(expectedInventory, "expectedInventory must not be null");
     final byte[] bytes;
-    try (java.io.InputStream input = Files.newInputStream(file)) {
-      bytes = input.readNBytes(MAX_FILE_BYTES + 1);
+    try {
+      final long fileSize = Files.size(file);
+      if (fileSize > MAX_FILE_BYTES) {
+        return Lookup.miss("oversized");
+      }
+      bytes = new byte[(int) fileSize];
+      try (java.io.InputStream input = Files.newInputStream(file)) {
+        if (input.readNBytes(bytes, 0, bytes.length) != bytes.length) {
+          return Lookup.miss("truncated");
+        }
+        if (input.read() != -1) {
+          return Lookup.miss("oversized");
+        }
+      }
     } catch (NoSuchFileException missing) {
       return Lookup.miss("missing");
-    }
-    if (bytes.length > MAX_FILE_BYTES) {
-      return Lookup.miss("oversized");
     }
     return ElisionCacheCodec.decode(bytes, fingerprint, expectedInventory);
   }
