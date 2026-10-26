@@ -38,6 +38,9 @@ import proguard.classfile.ClassPool;
   "PMD.CommentDefaultAccessModifier"
 })
 class ArchiveSanitizerTest {
+  /** Identifies the digest algorithm used to bind replacement JARs to their analysis. */
+  private static final String SHA_256 = "SHA-256";
+
   /** Package used for independently compiled fixture types. */
   private static final String FIXTURE_PACKAGE = "fixture";
 
@@ -80,9 +83,9 @@ class ArchiveSanitizerTest {
     assertThat(record.coordinate()).isEqualTo(coordinate);
     assertThat(record.totalClasses()).isEqualTo(2);
     assertThat(record.retainedClasses()).isEqualTo(1);
-    assertThat(record.originalSha256()).isEqualTo(digest(originalBytes, "SHA-256"));
+    assertThat(record.originalSha256()).isEqualTo(digest(originalBytes, SHA_256));
     assertThat(record.originalSha1()).isEqualTo(digest(originalBytes, "SHA-1"));
-    assertThat(record.trimmedSha256()).isEqualTo(digest(Files.readAllBytes(trimmed), "SHA-256"));
+    assertThat(record.trimmedSha256()).isEqualTo(digest(Files.readAllBytes(trimmed), SHA_256));
     assertThat(record.trimmedSha1()).isEqualTo(digest(Files.readAllBytes(trimmed), "SHA-1"));
     assertThat(repeatRecord.trimmedSha256()).isEqualTo(record.trimmedSha256());
 
@@ -110,16 +113,115 @@ class ArchiveSanitizerTest {
     }
   }
 
+  @Test
+  void rejectsReplacementJarBeforeStagingStaleAnalysisOutput() throws Exception {
+    final Path original = createCandidateJar();
+    final byte[] initialBytes = Files.readAllBytes(original);
+    final String initialSha256 = digest(initialBytes, SHA_256);
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer()
+            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+    final Path replacement = createCandidateJar("replacement.jar", "Live");
+    final byte[] replacementBytes = Files.readAllBytes(replacement);
+    Files.write(original, replacementBytes);
+    final Path output = temporaryDirectory.resolve("stale-analysis-trimmed.jar");
+
+    assertThatThrownBy(
+            () ->
+                new ArchiveSanitizer()
+                    .prepare(
+                        original,
+                        output,
+                        ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+                        analysis,
+                        initialSha256))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("changed during trim analysis");
+
+    assertThat(Files.readAllBytes(original)).isEqualTo(replacementBytes);
+    assertThat(output).doesNotExist();
+    try (JarFile replacementJar = new JarFile(original.toFile())) {
+      assertThat(replacementJar.getEntry("fixture/Live.class")).isNotNull();
+    }
+  }
+
+  @Test
+  void rejectsReplacementAfterStagingBeforePublication() throws Exception {
+    final Path original = createCandidateJar();
+    final byte[] initialBytes = Files.readAllBytes(original);
+    final String initialSha256 = digest(initialBytes, SHA_256);
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer()
+            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+    final Path output = temporaryDirectory.resolve("staged-stale-trimmed.jar");
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepare(
+            original,
+            output,
+            ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+            analysis,
+            initialSha256);
+    final Path replacement = createCandidateJar("replacement.jar", "Live");
+    final byte[] replacementBytes = Files.readAllBytes(replacement);
+    Files.write(original, replacementBytes);
+
+    assertThatThrownBy(() -> sanitizer.publish(prepared))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("changed before trimmed output publication");
+
+    assertThat(Files.readAllBytes(original)).isEqualTo(replacementBytes);
+    assertThat(output).doesNotExist();
+    sanitizer.discard(prepared);
+  }
+
+  @Test
+  void rejectsRetargetedArtifactSymlinkBeforePublication() throws Exception {
+    final Path original = createCandidateJar();
+    final byte[] initialBytes = Files.readAllBytes(original);
+    final String initialSha256 = digest(initialBytes, SHA_256);
+    final Path artifactLink = temporaryDirectory.resolve("artifact-link.jar");
+    Files.createSymbolicLink(artifactLink, original);
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer()
+            .analyze(artifactLink, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+    final Path output = temporaryDirectory.resolve("symlink-stale-trimmed.jar");
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepare(
+            artifactLink,
+            output,
+            ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+            analysis,
+            initialSha256);
+    final Path replacement = createCandidateJar("replacement.jar", "Live");
+    Files.delete(artifactLink);
+    Files.createSymbolicLink(artifactLink, replacement);
+
+    assertThatThrownBy(() -> sanitizer.publish(prepared))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("changed before trimmed output publication");
+
+    assertThat(output).doesNotExist();
+    sanitizer.discard(prepared);
+  }
+
   private Path createCandidateJar() throws IOException {
-    final Path sourceRoot = temporaryDirectory.resolve("sources");
+    return createCandidateJar("original.jar", "Drop");
+  }
+
+  private Path createCandidateJar(final String jarName, final String secondClassName)
+      throws IOException {
+    final Path sourceRoot = temporaryDirectory.resolve(jarName + "-sources");
     final Path packageDirectory = sourceRoot.resolve("fixture");
-    final Path classes = temporaryDirectory.resolve("classes");
+    final Path classes = temporaryDirectory.resolve(jarName + "-classes");
     Files.createDirectories(packageDirectory);
     Files.createDirectories(classes);
     Files.writeString(
         packageDirectory.resolve("Keep.java"), "package fixture; public class Keep {}\n");
     Files.writeString(
-        packageDirectory.resolve("Drop.java"), "package fixture; public class Drop {}\n");
+        packageDirectory.resolve(secondClassName + ".java"),
+        "package fixture; public class " + secondClassName + " {}\n");
     final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     if (compiler == null
         || compiler.run(
@@ -129,12 +231,12 @@ class ArchiveSanitizerTest {
                 "-d",
                 classes.toString(),
                 packageDirectory.resolve("Keep.java").toString(),
-                packageDirectory.resolve("Drop.java").toString())
+                packageDirectory.resolve(secondClassName + ".java").toString())
             != 0) {
       throw new IOException("Could not compile archive sanitizer test fixture");
     }
 
-    final Path jar = temporaryDirectory.resolve("original.jar");
+    final Path jar = temporaryDirectory.resolve(jarName);
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar))) {
       writeEntry(output, "META-INF/MANIFEST.MF", manifestBytes());
       try (Stream<Path> classFiles = Files.list(classes.resolve("fixture"))) {

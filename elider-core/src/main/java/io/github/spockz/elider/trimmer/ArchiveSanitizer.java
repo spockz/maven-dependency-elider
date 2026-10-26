@@ -23,6 +23,7 @@ import org.objectweb.asm.ClassReader;
 
 /** Writes sanitized dependency JARs without merging artifact boundaries. */
 @SuppressWarnings({
+  "PMD.GodClass",
   "PMD.CyclomaticComplexity",
   "PMD.CognitiveComplexity",
   "PMD.AvoidInstantiatingObjectsInLoops",
@@ -40,6 +41,26 @@ public final class ArchiveSanitizer {
       final ArtifactCoordinate coordinate,
       final DependencyJarTrimmer.TrimAnalysis analysis)
       throws IOException {
+    final PreparedOutput prepared = prepare(originalJar, trimmedJar, coordinate, analysis, null);
+    try {
+      return publish(prepared);
+    } finally {
+      discard(prepared);
+    }
+  }
+
+  /**
+   * Stages sanitized bytes without publishing them.
+   *
+   * <p>The expected digest binds the result to the analysis input.
+   */
+  public PreparedOutput prepare(
+      final Path originalJar,
+      final Path trimmedJar,
+      final ArtifactCoordinate coordinate,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final String expectedOriginalSha256)
+      throws IOException {
     Objects.requireNonNull(originalJar, "originalJar");
     Objects.requireNonNull(trimmedJar, "trimmedJar");
     Objects.requireNonNull(coordinate, "coordinate");
@@ -52,6 +73,10 @@ public final class ArchiveSanitizer {
     }
 
     final ArtifactDigests originalDigests = ArtifactDigests.read(originalJar);
+    if (expectedOriginalSha256 != null
+        && !expectedOriginalSha256.equals(originalDigests.sha256())) {
+      throw new IOException("Original dependency changed during trim analysis: " + originalJar);
+    }
     final Path parent = trimmedJar.toAbsolutePath().normalize().getParent();
     final Path fileName = trimmedJar.getFileName();
     if (parent == null || fileName == null) {
@@ -70,27 +95,77 @@ public final class ArchiveSanitizer {
     try {
       writeArchive(originalJar, temporaryJar, analysis);
       if (!originalDigests.equals(ArtifactDigests.read(originalJar))) {
-        throw new IOException("Original dependency changed while being trimmed: " + originalJar);
+        throw new IOException("Original dependency changed while being staged: " + originalJar);
       }
-      moveIntoPlace(temporaryJar, outputPath);
+      final ArtifactDigests trimmedDigests = ArtifactDigests.read(temporaryJar);
       moved = true;
+      return new PreparedOutput(
+          temporaryJar,
+          outputPath,
+          originalJar.toAbsolutePath().normalize(),
+          originalPath,
+          coordinate,
+          originalDigests.sha256(),
+          originalDigests.sha1(),
+          trimmedDigests.sha256(),
+          trimmedDigests.sha1(),
+          analysis.totalClasses(),
+          analysis.retainedClasses().size());
     } finally {
       if (!moved) {
         Files.deleteIfExists(temporaryJar);
       }
     }
-    final ArtifactDigests trimmedDigests = ArtifactDigests.read(trimmedJar);
-    return new ArtifactTrimRecord(
-        coordinate,
-        originalPath,
-        originalDigests.sha256(),
-        originalDigests.sha1(),
-        outputPath,
-        trimmedDigests.sha256(),
-        trimmedDigests.sha1(),
-        analysis.totalClasses(),
-        analysis.retainedClasses().size());
   }
+
+  /** Publishes staged archive bytes and returns provenance. */
+  public ArtifactTrimRecord publish(final PreparedOutput prepared) throws IOException {
+    Objects.requireNonNull(prepared, "prepared");
+    if (!prepared
+        .originalSha256()
+        .equals(ArtifactDigests.read(prepared.validationPath()).sha256())) {
+      throw new IOException(
+          "Original dependency changed before trimmed output publication: "
+              + prepared.validationPath());
+    }
+    moveIntoPlace(prepared.temporaryJar(), prepared.outputPath());
+    final ArtifactDigests publishedDigests = ArtifactDigests.read(prepared.outputPath());
+    if (!prepared.trimmedSha256().equals(publishedDigests.sha256())
+        || !prepared.trimmedSha1().equals(publishedDigests.sha1())) {
+      throw new IOException(
+          "Trimmed dependency changed while being published: " + prepared.outputPath());
+    }
+    return new ArtifactTrimRecord(
+        prepared.coordinate(),
+        prepared.originalPath(),
+        prepared.originalSha256(),
+        prepared.originalSha1(),
+        prepared.outputPath(),
+        prepared.trimmedSha256(),
+        prepared.trimmedSha1(),
+        prepared.totalClasses(),
+        prepared.retainedClasses());
+  }
+
+  /** Removes an unpublished staged archive. */
+  public void discard(final PreparedOutput prepared) throws IOException {
+    Objects.requireNonNull(prepared, "prepared");
+    Files.deleteIfExists(prepared.temporaryJar());
+  }
+
+  /** Holds staged archive metadata for validation and publication. */
+  public record PreparedOutput(
+      Path temporaryJar,
+      Path outputPath,
+      Path validationPath,
+      Path originalPath,
+      ArtifactCoordinate coordinate,
+      String originalSha256,
+      String originalSha1,
+      String trimmedSha256,
+      String trimmedSha1,
+      int totalClasses,
+      int retainedClasses) {}
 
   private static void writeArchive(
       final Path originalJar,

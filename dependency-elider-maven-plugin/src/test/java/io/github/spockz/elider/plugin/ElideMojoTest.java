@@ -211,6 +211,13 @@ final class ElideMojoTest {
     assertThat(expectedTrimmedPath).isRegularFile();
     mojo.execute();
     assertThat(runtime.getFile().toPath()).isEqualTo(expectedTrimmedPath);
+
+    runtime.setFile(original.toFile());
+    directRuntime.setFile(original.toFile());
+    Files.delete(expectedTrimmedPath);
+    final MavenElisionService.Analysis missingOutputAnalysis = analyzeTrim(project);
+    assertThat(missingOutputAnalysis.trimAnalysisRuns()).isPositive();
+    assertThat(expectedTrimmedPath).isRegularFile();
   }
 
   @Test

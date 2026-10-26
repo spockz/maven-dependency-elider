@@ -81,6 +81,8 @@ final class MavenDependencyTrimmer {
 
   private record CacheManifest(String fingerprint, List<CacheEntry> entries) {}
 
+  private record FingerprintSnapshot(String value, Map<Path, String> inputDigests) {}
+
   private record CacheEntry(
       String originalPath,
       String originalSha256,
@@ -273,7 +275,7 @@ final class MavenDependencyTrimmer {
                 .normalize();
     final long cacheStart = System.nanoTime();
     final int runtimeRelease = Runtime.version().feature();
-    final String completeFingerprint =
+    final FingerprintSnapshot fingerprintSnapshot =
         fingerprint(
             work,
             retainedInputPaths,
@@ -283,16 +285,19 @@ final class MavenDependencyTrimmer {
             release,
             CACHE_SCHEMA_VERSION,
             ENGINE_VERSION);
+    final String completeFingerprint = fingerprintSnapshot.value();
     final TrimResult cached =
         loadCache(
             cacheManifestPath,
             completeFingerprint,
+            fingerprintSnapshot.inputDigests(),
             work,
             multiReleasePassthroughCoordinates,
             moduleInfoPassthroughCoordinates,
             configuredPassThroughCoordinates,
             cacheStart);
     if (cached != null) {
+      verifyInputsUnchanged(fingerprintSnapshot.inputDigests());
       return cached;
     }
     final Path analysisLibraryDirectory =
@@ -407,25 +412,58 @@ final class MavenDependencyTrimmer {
       }
     } while (rootsChanged);
 
-    final List<CacheEntry> cacheEntries = new ArrayList<>();
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final Map<CandidateWork, CacheEntry> entriesByCandidate = new java.util.HashMap<>();
+    final List<PendingOutput> pendingOutputs = new ArrayList<>();
+    try {
+      for (final CandidateWork candidate : work) {
+        final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
+        if (analysis == null) {
+          continue;
+        }
+        if (analysis.retainedClasses().size() == analysis.totalClasses()) {
+          entriesByCandidate.put(
+              candidate, cacheEntry(candidate, null, fingerprintSnapshot.inputDigests()));
+          continue;
+        }
+        final ArchiveSanitizer.PreparedOutput prepared =
+            sanitizer.prepare(
+                candidate.snapshot().filePath(),
+                candidate.output(),
+                candidate.snapshot().coordinate(),
+                analysis,
+                requiredInputDigest(
+                    fingerprintSnapshot.inputDigests(), candidate.snapshot().filePath()));
+        pendingOutputs.add(new PendingOutput(candidate, prepared));
+      }
+      if (!pendingOutputs.isEmpty()) {
+        verifyInputsUnchanged(fingerprintSnapshot.inputDigests());
+      }
+      final List<ArtifactTrimRecord> publishedRecords =
+          publishOutputs(
+              pendingOutputs.stream().map(PendingOutput::prepared).toList(),
+              sanitizer::publish,
+              fingerprintSnapshot.inputDigests());
+      for (int index = 0; index < pendingOutputs.size(); index++) {
+        final PendingOutput pending = pendingOutputs.get(index);
+        final ArtifactTrimRecord record = publishedRecords.get(index);
+        records.add(record);
+        entriesByCandidate.put(
+            pending.candidate(),
+            cacheEntry(pending.candidate(), record, fingerprintSnapshot.inputDigests()));
+      }
+    } finally {
+      for (final PendingOutput pending : pendingOutputs) {
+        sanitizer.discard(pending.prepared());
+      }
+    }
+    final List<CacheEntry> cacheEntries = new ArrayList<>(work.size());
     for (final CandidateWork candidate : work) {
-      final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
-      if (analysis == null) {
-        continue;
+      final CacheEntry entry = entriesByCandidate.get(candidate);
+      if (entry == null) {
+        throw new IOException("Missing trim-cache entry for " + candidate.snapshot().coordinate());
       }
-      if (analysis.retainedClasses().size() == analysis.totalClasses()) {
-        cacheEntries.add(cacheEntry(candidate, null));
-        continue;
-      }
-      final ArtifactTrimRecord record =
-          new ArchiveSanitizer()
-              .sanitize(
-                  candidate.snapshot().filePath(),
-                  candidate.output(),
-                  candidate.snapshot().coordinate(),
-                  analysis);
-      records.add(record);
-      cacheEntries.add(cacheEntry(candidate, record));
+      cacheEntries.add(entry);
     }
     storeCache(cacheManifestPath, new CacheManifest(completeFingerprint, cacheEntries));
     return new TrimResult(
@@ -519,7 +557,29 @@ final class MavenDependencyTrimmer {
     }
   }
 
-  private static String fingerprint(
+  private record PendingOutput(CandidateWork candidate, ArchiveSanitizer.PreparedOutput prepared) {}
+
+  @FunctionalInterface
+  interface PreparedOutputPublisher {
+    ArtifactTrimRecord publish(ArchiveSanitizer.PreparedOutput prepared) throws IOException;
+  }
+
+  static List<ArtifactTrimRecord> publishOutputs(
+      final List<ArchiveSanitizer.PreparedOutput> preparedOutputs,
+      final PreparedOutputPublisher publisher,
+      final Map<Path, String> inputDigests)
+      throws IOException {
+    final List<ArtifactTrimRecord> records = new ArrayList<>(preparedOutputs.size());
+    for (final ArchiveSanitizer.PreparedOutput prepared : preparedOutputs) {
+      records.add(publisher.publish(prepared));
+    }
+    if (!preparedOutputs.isEmpty()) {
+      verifyInputsUnchanged(inputDigests);
+    }
+    return List.copyOf(records);
+  }
+
+  private static FingerprintSnapshot fingerprint(
       final List<CandidateWork> candidates,
       final List<Path> allRetainedInputs,
       final Set<String> skippedArtifactIdentities,
@@ -548,14 +608,18 @@ final class MavenDependencyTrimmer {
     if (runtimeRelease != release) {
       platformInputs.addAll(platformInputs(javaHome, runtimeRelease));
     }
-    return fingerprintForInputs(
-        candidateIdentities,
-        allRetainedInputs,
-        roots,
-        List.copyOf(platformInputs),
-        release,
-        schemaVersion,
-        engineVersion);
+    final Map<Path, String> inputDigests = inputDigests(allRetainedInputs);
+    final String value =
+        fingerprintForInputs(
+            candidateIdentities,
+            allRetainedInputs,
+            roots,
+            List.copyOf(platformInputs),
+            release,
+            schemaVersion,
+            engineVersion,
+            inputDigests);
+    return new FingerprintSnapshot(value, inputDigests);
   }
 
   private static String artifactIdentity(final ArtifactCoordinate coordinate) {
@@ -636,6 +700,27 @@ final class MavenDependencyTrimmer {
       final int schemaVersion,
       final String engineVersion)
       throws IOException {
+    return fingerprintForInputs(
+        candidateIdentities,
+        orderedLibraries,
+        roots,
+        platformInputs,
+        release,
+        schemaVersion,
+        engineVersion,
+        inputDigests(orderedLibraries));
+  }
+
+  private static String fingerprintForInputs(
+      final List<String> candidateIdentities,
+      final List<Path> orderedLibraries,
+      final Set<String> roots,
+      final List<Path> platformInputs,
+      final int release,
+      final int schemaVersion,
+      final String engineVersion,
+      final Map<Path, String> inputDigests)
+      throws IOException {
     final StringBuilder input =
         new StringBuilder("release=")
             .append(release)
@@ -658,7 +743,7 @@ final class MavenDependencyTrimmer {
           .append("]=")
           .append(library.toAbsolutePath().normalize())
           .append(':')
-          .append(sha256(library))
+          .append(requiredInputDigest(inputDigests, library))
           .append('\n');
     }
     for (final Path platformInput : platformInputs) {
@@ -670,6 +755,39 @@ final class MavenDependencyTrimmer {
           .append('\n');
     }
     return hash(input.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  }
+
+  private static Map<Path, String> inputDigests(final List<Path> inputPaths) throws IOException {
+    final Map<Path, String> digests = new java.util.LinkedHashMap<>();
+    for (final Path inputPath : inputPaths) {
+      final Path normalizedPath = inputPath.toAbsolutePath().normalize();
+      if (!digests.containsKey(normalizedPath)) {
+        digests.put(normalizedPath, sha256(normalizedPath));
+      }
+    }
+    return Map.copyOf(digests);
+  }
+
+  private static String requiredInputDigest(
+      final Map<Path, String> inputDigests, final Path inputPath) {
+    final Path normalizedPath = inputPath.toAbsolutePath().normalize();
+    final String digest = inputDigests.get(normalizedPath);
+    if (digest == null) {
+      throw new IllegalStateException(
+          "Missing input digest for retained archive: " + normalizedPath);
+    }
+    return digest;
+  }
+
+  private static void verifyInputsUnchanged(final Map<Path, String> inputDigests)
+      throws IOException {
+    for (final Map.Entry<Path, String> input : inputDigests.entrySet()) {
+      if (!input.getValue().equals(sha256(input.getKey()))) {
+        throw new IOException(
+            "A retained dependency changed during trim analysis; no trimmed output was published: "
+                + input.getKey());
+      }
+    }
   }
 
   private static List<Path> platformInputs(final Path javaHome, final int release)
@@ -704,11 +822,13 @@ final class MavenDependencyTrimmer {
   }
 
   private static CacheEntry cacheEntry(
-      final CandidateWork candidate, final ArtifactTrimRecord record) throws IOException {
+      final CandidateWork candidate,
+      final ArtifactTrimRecord record,
+      final Map<Path, String> inputDigests) {
     final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
     return new CacheEntry(
         candidate.snapshot().filePath().toAbsolutePath().normalize().toString(),
-        sha256(candidate.snapshot().filePath()),
+        requiredInputDigest(inputDigests, candidate.snapshot().filePath()),
         record == null ? null : record.originalSha1(),
         record == null ? null : record.trimmedPath().toString(),
         record == null ? null : record.trimmedSha256(),
@@ -723,6 +843,7 @@ final class MavenDependencyTrimmer {
   private static TrimResult loadCache(
       final Path manifestPath,
       final String fingerprint,
+      final Map<Path, String> inputDigests,
       final List<CandidateWork> candidates,
       final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
       final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
@@ -753,7 +874,7 @@ final class MavenDependencyTrimmer {
         return null;
       }
       if (!original.toString().equals(entry.originalPath())
-          || !sha256(original).equals(entry.originalSha256())) {
+          || !requiredInputDigest(inputDigests, original).equals(entry.originalSha256())) {
         return null;
       }
       if (entry.trimmedPath() == null) {

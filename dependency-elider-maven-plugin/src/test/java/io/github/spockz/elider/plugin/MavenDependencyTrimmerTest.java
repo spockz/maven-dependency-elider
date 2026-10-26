@@ -37,6 +37,15 @@ final class MavenDependencyTrimmerTest {
   /** Artifact identity shared by the test archive and Maven project. */
   private static final String ARTIFACT_ID = "runtime";
 
+  /** Group shared by the fixture artifacts. */
+  private static final String GROUP_ID = "org.example";
+
+  /** Version shared by the fixture artifacts. */
+  private static final String VERSION = "1.0";
+
+  /** JAR type shared by fixture coordinates. */
+  private static final String JAR_TYPE = "jar";
+
   /** Temporary workspace for compiled JAR fixtures. */
   @TempDir private Path tempDir;
 
@@ -49,7 +58,7 @@ final class MavenDependencyTrimmerTest {
     final Path jar = compileJar();
     final Path normalizedJar = jar.toAbsolutePath().normalize();
     final ArtifactCoordinate coordinate =
-        new ArtifactCoordinate("org.example", ARTIFACT_ID, "1.0", "jar", "", ARTIFACT_ID);
+        new ArtifactCoordinate(GROUP_ID, ARTIFACT_ID, VERSION, JAR_TYPE, "", ARTIFACT_ID);
     final Artifact artifact = runtimeArtifact(jar);
     final MavenProject project = project(artifact);
     final MavenElisionService.ArtifactSnapshot snapshot =
@@ -142,11 +151,11 @@ final class MavenDependencyTrimmerTest {
   private static Artifact runtimeArtifact(final Path jar) {
     final Artifact artifact =
         new DefaultArtifact(
-            "org.example",
+            GROUP_ID,
             ARTIFACT_ID,
-            "1.0",
+            VERSION,
             ARTIFACT_ID,
-            "jar",
+            JAR_TYPE,
             null,
             new DefaultArtifactHandler("jar"));
     artifact.setFile(jar.toFile());
@@ -156,9 +165,9 @@ final class MavenDependencyTrimmerTest {
   private MavenProject project(final Artifact artifact) {
     final MavenProject project = new MavenProject();
     project.setArtifacts(Set.of(artifact));
-    project.setGroupId("org.example");
+    project.setGroupId(GROUP_ID);
     project.setArtifactId("consumer");
-    project.setVersion("1.0");
+    project.setVersion(VERSION);
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("build").toString());
