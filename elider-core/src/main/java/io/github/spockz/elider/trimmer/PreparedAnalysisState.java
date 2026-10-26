@@ -8,6 +8,7 @@ import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.LinkedHashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.locks.ReentrantLock;
@@ -19,7 +20,7 @@ final class PreparedAnalysisState {
   private final Path candidateJar;
 
   /** Supplies the role-scoped graph only when a non-empty closure is requested. */
-  private final GraphSupplier graphSupplier;
+  private Optional<GraphSupplier> graphSupplier;
 
   /** Candidate classes are known before ProGuard pools and adjacency are built. */
   private final Set<String> candidateClassNames;
@@ -59,7 +60,7 @@ final class PreparedAnalysisState {
       final boolean tolerateUnresolvedProgramReferences,
       final Set<String> toleratedUnresolvedLibraryClasses) {
     this.candidateJar = candidateJar;
-    this.graphSupplier = graphSupplier;
+    this.graphSupplier = Optional.of(graphSupplier);
     this.candidateClassNames = Set.copyOf(candidateClassNames);
     this.tolerateUnresolvedProgramReferences = tolerateUnresolvedProgramReferences;
     this.toleratedUnresolvedLibraryClasses = Set.copyOf(toleratedUnresolvedLibraryClasses);
@@ -145,9 +146,22 @@ final class PreparedAnalysisState {
     }
   }
 
+  boolean graphSupplierRetained() {
+    stateLock.lock();
+    try {
+      return graphSupplier.isPresent();
+    } finally {
+      stateLock.unlock();
+    }
+  }
+
   private ReferenceGraph graph() throws IOException {
     if (referenceGraph == null) {
-      referenceGraph = graphSupplier.build();
+      final GraphSupplier supplier = graphSupplier.orElseThrow();
+      final ReferenceGraph builtGraph =
+          java.util.Objects.requireNonNull(supplier.build(), "graphSupplier result");
+      referenceGraph = builtGraph;
+      graphSupplier = Optional.empty();
     }
     return referenceGraph;
   }
