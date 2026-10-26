@@ -195,14 +195,38 @@ class DependencyJarTrimmerTest {
   }
 
   @Test
-  @DisplayName("ADR-0003: unresolved candidate references fail closed")
-  void unresolvedReferencesFailClosedEvenWhenTheyAreOutsideRequestedRoots() throws Exception {
+  @DisplayName("ADR-0003: unresolved references in pruned candidate classes do not block trimming")
+  void prunesUnrootedCandidateClassWithMissingOptionalReference() throws Exception {
+    final Path candidateJar = compileFixtureJar(true);
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        analyze(candidateJar, List.of(writeSiblingJar()), List.of("fixture.A"));
+
+    assertThat(analysis.retainedClasses())
+        .doesNotContain("fixture/GhostUser", "fixture/OptionalPack200");
+  }
+
+  @Test
+  @DisplayName("ADR-0003: unresolved references in reachable candidate classes fail closed")
+  void reachableCandidateMissingReferencesFailClosed() throws Exception {
     final Path candidateJar = compileFixtureJar(true);
 
     assertThatThrownBy(
-            () -> analyze(candidateJar, List.of(writeSiblingJar()), List.of("fixture.A")))
+            () -> analyze(candidateJar, List.of(writeSiblingJar()), List.of("fixture.GhostUser")))
         .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
         .hasMessageContaining("fixture/Ghost");
+  }
+
+  @Test
+  @DisplayName("ADR-0003: reachable optional Pack200 classes fail on missing ASM references")
+  void reachableOptionalPack200ClassFailsOnMissingAsmReference() throws Exception {
+    final Path candidateJar = compileFixtureJar(true);
+
+    assertThatThrownBy(
+            () ->
+                analyze(
+                    candidateJar, List.of(writeSiblingJar()), List.of("fixture.OptionalPack200")))
+        .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
+        .hasMessageContaining("org/objectweb/asm/ClassVisitor");
   }
 
   @Test
@@ -256,6 +280,13 @@ class DependencyJarTrimmerTest {
     Files.createDirectories(outputDirectory);
     Files.writeString(
         sourceDirectory.resolve("fixture/Ghost.java"), SOURCE_ROOT + "public class Ghost {}");
+    Files.createDirectories(sourceDirectory.resolve("org/objectweb/asm"));
+    Files.writeString(
+        sourceDirectory.resolve("org/objectweb/asm/ClassVisitor.java"),
+        "package org.objectweb.asm; public class ClassVisitor {}");
+    Files.writeString(
+        sourceDirectory.resolve("fixture/OptionalPack200.java"),
+        SOURCE_ROOT + "public class OptionalPack200 { org.objectweb.asm.ClassVisitor visitor; }");
     final Map<String, String> sources =
         Map.ofEntries(
             Map.entry(
@@ -369,7 +400,9 @@ class DependencyJarTrimmerTest {
             sourceDirectory.resolve("fixture/lib/LibChild.java").toString(),
             sourceDirectory.resolve("fixture/lib/LibParent.java").toString(),
             sourceDirectory.resolve("fixture/lib/Creator.java").toString(),
-            sourceDirectory.resolve("fixture/GhostUser.java").toString());
+            sourceDirectory.resolve("fixture/GhostUser.java").toString(),
+            sourceDirectory.resolve("fixture/OptionalPack200.java").toString(),
+            sourceDirectory.resolve("org/objectweb/asm/ClassVisitor.java").toString());
     if (compiler.run(null, null, null, arguments.toArray(String[]::new)) != 0) {
       throw new IOException("Could not compile ProGuard Core test fixture");
     }
@@ -383,6 +416,9 @@ class DependencyJarTrimmerTest {
           continue;
         }
         if (classFile.toString().contains("fixture/lib/")) {
+          continue;
+        }
+        if (classFile.toString().contains("org/objectweb/asm/")) {
           continue;
         }
         final String entryName =

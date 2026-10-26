@@ -36,13 +36,7 @@ import proguard.classfile.visitor.ClassVisitor;
 import proguard.classfile.visitor.ReferencedClassVisitor;
 import proguard.io.util.IOUtil;
 
-/**
- * Roots include application, framework, SPI, Graal, and dynamic callbacks.
- *
- * <p>Also include sibling-body callback entry points.
- *
- * <p>No discovery or sibling-body analysis occurs; incomplete roots are unproven.
- */
+/** Computes class retention from roots; it does not discover them. */
 @SuppressWarnings({
   "PMD.ExcessiveImports",
   "PMD.GodClass",
@@ -68,7 +62,8 @@ public final class DependencyJarTrimmer {
       final Collection<Path> libraryClassPath,
       final Collection<String> retainedRoots)
       throws IOException {
-    return analyze(candidateJar, libraryClassPath, new ClassPool(), retainedRoots);
+    return analyzeInternal(
+        candidateJar, libraryClassPath, new ClassPool(), retainedRoots, false, Set.of());
   }
 
   /**
@@ -76,12 +71,71 @@ public final class DependencyJarTrimmer {
    *
    * @param platformLibraryPool API classes for the effective compiler release
    */
-  @SuppressWarnings({"PMD.NcssCount", "PMD.CognitiveComplexity", "PMD.NPathComplexity"})
   public TrimAnalysis analyze(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
       final ClassPool platformLibraryPool,
       final Collection<String> retainedRoots)
+      throws IOException {
+    return analyzeInternal(
+        candidateJar, libraryClassPath, platformLibraryPool, retainedRoots, false, Set.of());
+  }
+
+  /**
+   * Computes links from every class in an unchanged pass-through archive.
+   *
+   * <p>Unresolved links from unchanged classes are ignored.
+   *
+   * <p>Absent classes cannot identify candidates. Sibling gaps remain fatal.
+   */
+  public TrimAnalysis analyzeUnchangedPassThrough(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool platformLibraryPool,
+      final Collection<String> retainedRoots)
+      throws IOException {
+    return analyzeUnchangedPassThrough(
+        candidateJar, libraryClassPath, platformLibraryPool, retainedRoots, Set.of());
+  }
+
+  /** Computes closure for one unchanged pass-through archive and its sibling owners. */
+  public TrimAnalysis analyzeUnchangedPassThrough(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool platformLibraryPool,
+      final Collection<String> retainedRoots,
+      final Collection<String> unchangedPassThroughClassNames)
+      throws IOException {
+    Objects.requireNonNull(unchangedPassThroughClassNames, "unchangedPassThroughClassNames");
+    final Set<String> toleratedNames = new HashSet<>();
+    unchangedPassThroughClassNames.forEach(name -> toleratedNames.add(name.replace('.', '/')));
+    return analyzeInternal(
+        candidateJar, libraryClassPath, platformLibraryPool, retainedRoots, true, toleratedNames);
+  }
+
+  /** Computes candidate closure with unchanged-library tolerance. */
+  public TrimAnalysis analyzeWithUnchangedPassThroughLibraries(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool platformLibraryPool,
+      final Collection<String> retainedRoots,
+      final Collection<String> unchangedPassThroughClassNames)
+      throws IOException {
+    Objects.requireNonNull(unchangedPassThroughClassNames, "unchangedPassThroughClassNames");
+    final Set<String> toleratedNames = new HashSet<>();
+    unchangedPassThroughClassNames.forEach(name -> toleratedNames.add(name.replace('.', '/')));
+    return analyzeInternal(
+        candidateJar, libraryClassPath, platformLibraryPool, retainedRoots, false, toleratedNames);
+  }
+
+  @SuppressWarnings({"PMD.NcssCount", "PMD.CognitiveComplexity", "PMD.NPathComplexity"})
+  private TrimAnalysis analyzeInternal(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool platformLibraryPool,
+      final Collection<String> retainedRoots,
+      final boolean tolerateUnresolvedProgramReferences,
+      final Set<String> toleratedUnresolvedLibraryClasses)
       throws IOException {
     Objects.requireNonNull(candidateJar, "candidateJar");
     Objects.requireNonNull(libraryClassPath, "libraryClassPath");
@@ -135,9 +189,18 @@ public final class DependencyJarTrimmer {
       }
     }
 
+    final Function<String, Clazz> classLookup =
+        className -> {
+          final Clazz programClass = programPool.getClass(className);
+          return programClass == null ? libraryPool.getClass(className) : programClass;
+        };
+    final Map<String, Set<String>> signaturePolymorphicDescriptorTypes = new HashMap<>();
+    final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver =
+        new SignaturePolymorphicReferenceResolver(signaturePolymorphicDescriptorTypes, classLookup);
     final Map<String, Set<String>> unresolvedLibraryReferences = new HashMap<>();
     final InvalidReferenceVisitor libraryInvalidReferenceVisitor =
-        new RecordingLibraryReferenceVisitor(unresolvedLibraryReferences);
+        new RecordingLibraryReferenceVisitor(
+            unresolvedLibraryReferences, signaturePolymorphicResolver);
     final ClassSuperHierarchyInitializer libraryHierarchyInitializer =
         new ClassSuperHierarchyInitializer(
             programPool, libraryPool, libraryInvalidReferenceVisitor);
@@ -152,17 +215,13 @@ public final class DependencyJarTrimmer {
         new ClassReferenceInitializer(
             programPool, libraryPool, false, libraryInvalidReferenceVisitor));
 
-    final Set<String> unresolvedReferences = new TreeSet<>();
+    final Map<String, Set<String>> unresolvedReferences = new HashMap<>();
     final InvalidReferenceVisitor invalidReferenceVisitor =
-        new RecordingInvalidReferenceVisitor(unresolvedReferences);
+        new RecordingInvalidReferenceVisitor(unresolvedReferences, signaturePolymorphicResolver);
     programPool.classesAccept(
         new ClassSuperHierarchyInitializer(programPool, libraryPool, invalidReferenceVisitor));
     programPool.classesAccept(
         new ClassReferenceInitializer(programPool, libraryPool, false, invalidReferenceVisitor));
-    if (!unresolvedReferences.isEmpty()) {
-      throw new UnresolvedReferenceException(candidateJar, unresolvedReferences);
-    }
-
     final Set<String> roots = normalizeRoots(retainedRoots);
     if (roots.isEmpty()) {
       final Set<String> allProgramClasses = new TreeSet<>();
@@ -195,26 +254,29 @@ public final class DependencyJarTrimmer {
             }
           }
         };
-    final Function<String, Clazz> classLookup =
-        className -> {
-          final Clazz programClass = programPool.getClass(className);
-          return programClass == null ? libraryPool.getClass(className) : programClass;
-        };
     while (!pending.isEmpty()) {
       final Clazz current = pending.removeFirst();
       if (programPool.getClass(current.getName()) == current) {
         if (!visited.add(current)) {
           continue;
         }
+        if (!tolerateUnresolvedProgramReferences
+            && unresolvedReferences.containsKey(current.getName())) {
+          throw new UnresolvedReferenceException(
+              candidateJar, unresolvedReferences.get(current.getName()));
+        }
         current.accept(new CompleteReferencedClassVisitor(collectReferencedClasses, classLookup));
+        signaturePolymorphicResolver.enqueueDescriptorTypes(current, collectReferencedClasses);
       } else if (!platformLibraryClasses.contains(current.getName())
           && libraryPool.getClass(current.getName()) == current
           && visitedLibraries.add(current)) {
-        if (unresolvedLibraryReferences.containsKey(current.getName())) {
+        if (unresolvedLibraryReferences.containsKey(current.getName())
+            && !toleratedUnresolvedLibraryClasses.contains(current.getName())) {
           throw new UnresolvedReferenceException(
               candidateJar, unresolvedLibraryReferences.get(current.getName()));
         }
         current.accept(new CompleteReferencedClassVisitor(collectReferencedClasses, classLookup));
+        signaturePolymorphicResolver.enqueueDescriptorTypes(current, collectReferencedClasses);
       }
     }
 
@@ -266,6 +328,18 @@ public final class DependencyJarTrimmer {
         if (candidate && "module-info.class".equals(entryName)) {
           throw new IOException("Cannot safely trim an explicit modular JAR: " + archivePath);
         }
+        if (isVersionedModuleDescriptor(entryName)) {
+          try (java.io.InputStream input = archive.getInputStream(entry)) {
+            if (!"module-info".equals(new ClassReader(input).getClassName())) {
+              throw new IOException(
+                  "Invalid versioned module descriptor in classpath JAR: " + archivePath);
+            }
+          } catch (final RuntimeException exception) {
+            throw new IOException(
+                "Could not read versioned module descriptor in " + archivePath, exception);
+          }
+          continue;
+        }
         if (entryName.startsWith("META-INF/versions/")) {
           final String kind = candidate ? "candidate" : "library";
           throw new IOException(
@@ -293,6 +367,12 @@ public final class DependencyJarTrimmer {
       }
     }
     return classNames;
+  }
+
+  /** Package scope shares the accepted archive rule with the sanitizer. */
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  static boolean isVersionedModuleDescriptor(final String entryName) {
+    return entryName.matches("META-INF/versions/[0-9]+/module-info\\.class");
   }
 
   private static boolean isNestedArchive(final String entryName) {
@@ -408,45 +488,16 @@ public final class DependencyJarTrimmer {
   /** Records missing candidate links before closure starts. */
   private static final class RecordingInvalidReferenceVisitor implements InvalidReferenceVisitor {
     /** Stores missing reference descriptions. */
-    private final Set<String> unresolvedReferences;
-
-    private RecordingInvalidReferenceVisitor(final Set<String> unresolvedReferences) {
-      this.unresolvedReferences = unresolvedReferences;
-    }
-
-    @Override
-    public void visitMissingClass(final Clazz referencingClass, final String missingClassName) {
-      unresolvedReferences.add(referencingClass.getName() + " -> class " + missingClassName);
-    }
-
-    @Override
-    public void visitProgramDependency(final Clazz referencingClass, final Clazz dependencyClass) {
-      // Cross-artifact library references are valid.
-    }
-
-    @Override
-    public void visitAnyMissingMember(
-        final Clazz referencingClass,
-        final Clazz targetClass,
-        final String memberName,
-        final String memberDescriptor) {
-      unresolvedReferences.add(
-          referencingClass.getName()
-              + " -> member "
-              + targetClass.getName()
-              + "."
-              + memberName
-              + memberDescriptor);
-    }
-  }
-
-  /** Defers missing sibling links until a sibling class is reached. */
-  private static final class RecordingLibraryReferenceVisitor implements InvalidReferenceVisitor {
-    /** Maps each sibling class to its unresolved links. */
     private final Map<String, Set<String>> unresolvedReferences;
 
-    private RecordingLibraryReferenceVisitor(final Map<String, Set<String>> unresolvedReferences) {
+    /** Handles legal signature-polymorphic links omitted by Core's visitor. */
+    private final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver;
+
+    private RecordingInvalidReferenceVisitor(
+        final Map<String, Set<String>> unresolvedReferences,
+        final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver) {
       this.unresolvedReferences = unresolvedReferences;
+      this.signaturePolymorphicResolver = signaturePolymorphicResolver;
     }
 
     @Override
@@ -465,6 +516,57 @@ public final class DependencyJarTrimmer {
         final Clazz targetClass,
         final String memberName,
         final String memberDescriptor) {
+      if (signaturePolymorphicResolver.recordIfSignaturePolymorphic(
+          referencingClass, targetClass, memberName, memberDescriptor, unresolvedReferences)) {
+        return;
+      }
+      add(
+          referencingClass,
+          "member " + targetClass.getName() + "." + memberName + memberDescriptor);
+    }
+
+    private void add(final Clazz referencingClass, final String missingReference) {
+      unresolvedReferences
+          .computeIfAbsent(referencingClass.getName(), unused -> new TreeSet<>())
+          .add(referencingClass.getName() + " -> " + missingReference);
+    }
+  }
+
+  /** Defers missing sibling links until a sibling class is reached. */
+  private static final class RecordingLibraryReferenceVisitor implements InvalidReferenceVisitor {
+    /** Maps each sibling class to its unresolved links. */
+    private final Map<String, Set<String>> unresolvedReferences;
+
+    /** Handles legal signature-polymorphic links omitted by Core's visitor. */
+    private final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver;
+
+    private RecordingLibraryReferenceVisitor(
+        final Map<String, Set<String>> unresolvedReferences,
+        final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver) {
+      this.unresolvedReferences = unresolvedReferences;
+      this.signaturePolymorphicResolver = signaturePolymorphicResolver;
+    }
+
+    @Override
+    public void visitMissingClass(final Clazz referencingClass, final String missingClassName) {
+      add(referencingClass, "class " + missingClassName);
+    }
+
+    @Override
+    public void visitProgramDependency(final Clazz referencingClass, final Clazz dependencyClass) {
+      // Cross-artifact library references are valid.
+    }
+
+    @Override
+    public void visitAnyMissingMember(
+        final Clazz referencingClass,
+        final Clazz targetClass,
+        final String memberName,
+        final String memberDescriptor) {
+      if (signaturePolymorphicResolver.recordIfSignaturePolymorphic(
+          referencingClass, targetClass, memberName, memberDescriptor, unresolvedReferences)) {
+        return;
+      }
       add(
           referencingClass,
           "member " + targetClass.getName() + "." + memberName + memberDescriptor);

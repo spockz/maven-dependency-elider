@@ -36,6 +36,9 @@ final class MavenCompilerSettings {
   /** Safe Boolean compiler value. */
   private static final String SAFE_FALSE = "false";
 
+  /** Lint-only option that does not change source attribution symbols. */
+  private static final String SAFE_LINT_ARGUMENT = "-Xlint:all";
+
   /** Number of settings that is not a conflict. */
   private static final int SINGLE_VALUE_COUNT = 1;
 
@@ -140,7 +143,6 @@ final class MavenCompilerSettings {
       throws IOException {
     final Set<String> unsupported =
         Set.of(
-            "compilerArgs",
             "compilerArgument",
             "compilerArguments",
             "executable",
@@ -158,6 +160,9 @@ final class MavenCompilerSettings {
             "processorpath",
             "modulepath");
     for (final Xpp3Dom configuration : configurations) {
+      if (!safeCompilerArgs(configuration.getChild("compilerArgs"))) {
+        throw new IOException("Source attribution does not support compiler setting compilerArgs");
+      }
       for (final String name : unsupported) {
         if (hasValue(configuration.getChild(name))) {
           throw new IOException("Source attribution does not support compiler setting " + name);
@@ -175,7 +180,7 @@ final class MavenCompilerSettings {
   }
 
   private static void rejectUnsupportedProperties(final Properties properties) throws IOException {
-    rejectProperty(properties, "maven.compiler.compilerArgs");
+    rejectProperty(properties, "maven.compiler.compilerArgs", SAFE_LINT_ARGUMENT);
     rejectProperty(properties, "maven.compiler.compilerArgument");
     rejectProperty(properties, "maven.compiler.compilerArguments");
     rejectProperty(properties, "maven.compiler.executable");
@@ -190,6 +195,15 @@ final class MavenCompilerSettings {
     rejectProperty(properties, "maven.compiler.enablePreview", SAFE_FALSE);
     rejectProperty(properties, "maven.compiler.useModulePath", SAFE_FALSE);
     rejectProperty(properties, "maven.compiler.compilerId", "javac");
+  }
+
+  private static boolean safeCompilerArgs(final Xpp3Dom compilerArgs) {
+    if (!hasValue(compilerArgs)) {
+      return true;
+    }
+    final Xpp3Dom[] arguments = compilerArgs.getChildren("arg");
+    return arguments.length == SINGLE_VALUE_COUNT
+        && SAFE_LINT_ARGUMENT.equals(arguments[0].getValue());
   }
 
   private static void rejectProperty(final Properties properties, final String name)

@@ -354,6 +354,14 @@ final class MavenElisionServiceTest {
     project.addCompileSourceRoot(sourceRoot.toString());
     project.getProperties().setProperty("maven.compiler.release", "21");
     project.getProperties().setProperty("maven.compiler.proc", "none");
+    final Plugin enforcer = new Plugin();
+    enforcer.setGroupId("org.apache.maven.plugins");
+    enforcer.setArtifactId("maven-enforcer-plugin");
+    final PluginExecution enforcement = new PluginExecution();
+    enforcement.setPhase("validate");
+    enforcement.setGoals(List.of("enforce"));
+    enforcer.addExecution(enforcement);
+    project.getBuild().addPlugin(enforcer);
     final String usedJarPath = used.getFile().getPath();
     assertThat(project.getCompileClasspathElements()).contains(usedJarPath);
     final Path trace = tempDir.resolve("complete-source-runtime.lst");
@@ -368,6 +376,41 @@ final class MavenElisionServiceTest {
             coordinateFor("source-used", "compile"), coordinateFor("runtime-observed", "runtime"));
     assertThat(analysis.decision().elidedArtifacts())
         .containsExactly(coordinateFor("source-unused", "compile"));
+  }
+
+  @Test
+  void completeSourceRootsRejectUnknownSourceGenerationExecution() throws Exception {
+    final Artifact used = resolvedArtifact("generation-used", "compile", "generation-used.jar");
+    used.setFile(compileJar("generation-used.jar", "library.Used").toFile());
+    final Artifact unused =
+        resolvedArtifact("generation-unused", "compile", "generation-unused.jar");
+    unused.setFile(compileJar("generation-unused.jar", "library.Unused").toFile());
+    final MavenProject project = projectWith(new LinkedHashSet<>(List.of(used, unused)), null);
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("generated-app-src"));
+    final Path source = sourceRoot.resolve("app/UsesDependency.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(
+        source, "package app; public final class UsesDependency { library.Used value; }\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    project.getProperties().setProperty("maven.compiler.proc", "none");
+    final Plugin generator = new Plugin();
+    generator.setGroupId("org.codehaus.mojo");
+    generator.setArtifactId("build-helper-maven-plugin");
+    final PluginExecution generation = new PluginExecution();
+    generation.setPhase("generate-sources");
+    generation.setGoals(List.of("add-source"));
+    generator.addExecution(generation);
+    project.getBuild().addPlugin(generator);
+    final Path trace = tempDir.resolve("unknown-generator.lst");
+    Files.writeString(trace, "unobserved/RuntimeEntry\n");
+
+    assertThatThrownBy(
+            () ->
+                new MavenElisionService()
+                    .analyze(project, List.of(trace.toFile()), List.of(), null, null, true))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("source-generation lifecycle execution");
   }
 
   @Test

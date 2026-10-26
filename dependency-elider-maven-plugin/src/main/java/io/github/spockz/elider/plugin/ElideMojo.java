@@ -2,17 +2,12 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.metadata.CycloneDxSbomGenerator;
-import io.github.spockz.elider.model.ArtifactFileRef;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
-import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
@@ -28,16 +23,11 @@ import org.apache.maven.project.MavenProject;
     defaultPhase = LifecyclePhase.INITIALIZE,
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
-@SuppressWarnings({
-  "PMD.CyclomaticComplexity",
-  "PMD.CollapsibleIfStatements",
-  "PMD.GuardLogStatement",
-  "PMD.UseConcurrentHashMap",
-  "PMD.UseExplicitTypes",
-  "PMD.AvoidInstantiatingObjectsInLoops",
-  "PMD.LawOfDemeter"
-})
+@SuppressWarnings({"PMD.CollapsibleIfStatements", "PMD.GuardLogStatement"})
 public final class ElideMojo extends AbstractMojo {
+  /** Maven's annotation representation for disabled boolean options. */
+  private static final String DEFAULT_FALSE = "false";
+
   /** Maven project whose artifact views are pruned. */
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
@@ -47,16 +37,28 @@ public final class ElideMojo extends AbstractMojo {
   private MavenSession session;
 
   /** User assertion that all production/generated sources exist before INITIALIZE. */
-  @Parameter(property = "elide.sourceRootsComplete", defaultValue = "false")
+  @Parameter(property = "elide.sourceRootsComplete", defaultValue = DEFAULT_FALSE)
   private boolean sourceRootsComplete;
 
   /** Enables per-JAR trimming for retained dependency archives. */
-  @Parameter(property = "elide.trimJars", defaultValue = "false")
+  @Parameter(property = "elide.trimJars", defaultValue = DEFAULT_FALSE)
   private boolean trimJars;
 
   /** Additional class names that must remain available for dynamic loading. */
   @Parameter(property = "elide.trimRoots")
   private List<String> trimRoots;
+
+  /** Retained artifact coordinates to analyze as unchanged pass-through libraries. */
+  @Parameter(property = "elide.trimSkipArtifacts")
+  private List<String> trimSkipArtifacts;
+
+  /** Fails instead of retaining multi-release implementation JARs without trimming. */
+  @Parameter(property = "elide.failOnUnsupportedMultiRelease", defaultValue = DEFAULT_FALSE)
+  private boolean failOnUnsupportedMultiRelease;
+
+  /** Rejects retained classpath JARs with a root module descriptor. */
+  @Parameter(property = "elide.failOnUnsupportedModuleInfo", defaultValue = DEFAULT_FALSE)
+  private boolean failOnUnsupportedModuleInfo;
 
   /** Explicit runtime evidence used when the goal is active. */
   @Parameter(property = "elide.traceFiles")
@@ -83,7 +85,7 @@ public final class ElideMojo extends AbstractMojo {
   private File sbomFile;
 
   /** Maven switch that skips analysis and mutation. */
-  @Parameter(property = "elide.skip", defaultValue = "false")
+  @Parameter(property = "elide.skip", defaultValue = DEFAULT_FALSE)
   private boolean skip;
 
   /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
@@ -94,27 +96,18 @@ public final class ElideMojo extends AbstractMojo {
     }
     try {
       final MavenElisionService service = new MavenElisionService();
-      final MavenElisionService.Analysis analysis =
-          service.analyze(
-              project,
-              traceFiles,
-              excludedArtifacts,
-              productionOutput,
-              session,
-              sourceRootsComplete,
-              trimJars,
-              trimRoots == null ? List.of() : trimRoots);
+      final MavenElisionService.Analysis analysis = service.analyze(project, analysisOptions());
+      logPassThroughWarnings(analysis);
       final MavenElisionService.ApplyPlan plan = service.plan(project, analysis);
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       if (trimJars) {
-        writeSbom(plan, analysis);
+        MavenSbomWriter.write(project, sbomFile.toPath(), plan, analysis);
       }
-      validateAndApplyTrimRecords(plan, analysis.trimRecords());
-      project.setArtifacts(new LinkedHashSet<>(plan.resolvedArtifacts()));
-      if (plan.directArtifactsPresent()) {
-        project.setDependencyArtifacts(new LinkedHashSet<>(plan.directArtifacts()));
-      }
+      MavenArtifactViewUpdater.apply(plan, analysis.trimRecords());
+      final Set<Artifact> retainedResolvedArtifacts = new LinkedHashSet<>(plan.resolvedArtifacts());
+      project.setResolvedArtifacts(retainedResolvedArtifacts);
+      project.setArtifacts(retainedResolvedArtifacts);
       if (trimJars) {
         if (analysis.trimCacheHits() > 0) {
           final double milliseconds = analysis.maximumTrimCacheHitNanos() / 1_000_000.0;
@@ -137,136 +130,50 @@ public final class ElideMojo extends AbstractMojo {
     }
   }
 
-  private static void validateAndApplyTrimRecords(
-      final MavenElisionService.ApplyPlan plan,
-      final List<io.github.spockz.elider.trimmer.ArtifactTrimRecord> records)
-      throws IOException {
-    final java.util.Map<ArtifactIdentity, io.github.spockz.elider.trimmer.ArtifactTrimRecord>
-        recordsByIdentity = new java.util.HashMap<>();
-    for (final var record : records) {
-      final ArtifactIdentity identity = ArtifactIdentity.from(record.coordinate());
-      if (recordsByIdentity.putIfAbsent(identity, record) != null) {
-        throw new IOException("Multiple trim records have the same Maven identity: " + identity);
-      }
-    }
-    final List<org.apache.maven.artifact.Artifact> resolved =
-        new ArrayList<>(plan.resolvedArtifacts());
-    final List<org.apache.maven.artifact.Artifact> direct = new ArrayList<>(plan.directArtifacts());
-    final Set<ArtifactIdentity> matchedResolved = new java.util.HashSet<>();
-    validateArtifactPaths(resolved, recordsByIdentity, matchedResolved);
-    validateArtifactPaths(direct, recordsByIdentity, null);
-    if (!matchedResolved.containsAll(recordsByIdentity.keySet())) {
-      final Set<ArtifactIdentity> missing = new java.util.HashSet<>(recordsByIdentity.keySet());
-      missing.removeAll(matchedResolved);
-      throw new IOException("Trim records have no resolved Maven artifacts: " + missing);
-    }
-    applyRecords(resolved, recordsByIdentity);
-    applyRecords(direct, recordsByIdentity);
+  private MavenElisionService.AnalysisOptions analysisOptions() {
+    return new MavenElisionService.AnalysisOptions(
+        traceFiles,
+        excludedArtifacts,
+        productionOutput,
+        session,
+        sourceRootsComplete,
+        trimJars,
+        trimRoots == null ? List.of() : trimRoots,
+        failOnUnsupportedMultiRelease,
+        trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
+        failOnUnsupportedModuleInfo);
   }
 
-  private static void validateArtifactPaths(
-      final List<org.apache.maven.artifact.Artifact> artifacts,
-      final java.util.Map<ArtifactIdentity, io.github.spockz.elider.trimmer.ArtifactTrimRecord>
-          recordsByIdentity,
-      final Set<ArtifactIdentity> matched)
-      throws IOException {
-    for (final org.apache.maven.artifact.Artifact artifact : artifacts) {
-      final ArtifactIdentity identity = ArtifactIdentity.from(artifact);
-      final var record = recordsByIdentity.get(identity);
-      if (record != null) {
-        if (artifact.getFile() == null
-            || !artifact
-                .getFile()
-                .toPath()
-                .toAbsolutePath()
-                .normalize()
-                .equals(record.originalPath())) {
-          throw new IOException("Artifact path changed before applying trim: " + identity);
-        }
-        if (matched != null) {
-          matched.add(identity);
-        }
-      }
-    }
-  }
-
-  private static void applyRecords(
-      final List<org.apache.maven.artifact.Artifact> artifacts,
-      final java.util.Map<ArtifactIdentity, io.github.spockz.elider.trimmer.ArtifactTrimRecord>
-          recordsByIdentity) {
-    for (final org.apache.maven.artifact.Artifact artifact : artifacts) {
-      final var record = recordsByIdentity.get(ArtifactIdentity.from(artifact));
-      if (record != null) {
-        artifact.setFile(record.trimmedPath().toFile());
-      }
-    }
-  }
-
-  private record ArtifactIdentity(
-      String groupId, String artifactId, String version, String type, String classifier) {
-    private static ArtifactIdentity from(
-        final io.github.spockz.elider.model.ArtifactCoordinate coordinate) {
-      return new ArtifactIdentity(
-          coordinate.groupId(),
-          coordinate.artifactId(),
-          coordinate.version(),
-          coordinate.type(),
-          coordinate.classifier());
-    }
-
-    private static ArtifactIdentity from(final org.apache.maven.artifact.Artifact artifact) {
-      return new ArtifactIdentity(
-          artifact.getGroupId(),
-          artifact.getArtifactId(),
-          artifact.getVersion(),
-          artifact.getType(),
-          artifact.getClassifier() == null ? "" : artifact.getClassifier());
-    }
-  }
-
-  private void writeSbom(
-      final MavenElisionService.ApplyPlan plan, final MavenElisionService.Analysis analysis)
-      throws IOException {
-    final List<ArtifactFileRef> inventory = new ArrayList<>();
-    final java.util.Map<io.github.spockz.elider.model.ArtifactCoordinate, Path> trimmedPaths =
-        new java.util.HashMap<>();
-    for (final var record : analysis.trimRecords()) {
-      trimmedPaths.put(record.coordinate(), record.trimmedPath());
-    }
-    for (final org.apache.maven.artifact.Artifact artifact : plan.resolvedArtifacts()) {
-      if (artifact.getFile() != null) {
-        final var coordinate =
-            new io.github.spockz.elider.model.ArtifactCoordinate(
-                artifact.getGroupId(),
-                artifact.getArtifactId(),
-                artifact.getVersion(),
-                artifact.getType(),
-                artifact.getClassifier(),
-                artifact.getScope());
-        final Path inventoryPath =
-            trimmedPaths.getOrDefault(coordinate, artifact.getFile().toPath());
-        inventory.add(ArtifactFileRef.fromPath(coordinate, inventoryPath));
-      }
-    }
-    final String name = project.getName() == null ? project.getArtifactId() : project.getName();
-    final CycloneDxSbomGenerator.RootIdentity root =
-        new CycloneDxSbomGenerator.RootIdentity(
-            project.getGroupId(), project.getArtifactId(), project.getVersion(), name);
-    final CycloneDxSbomGenerator.DocumentMetadata metadata =
-        new CycloneDxSbomGenerator.DocumentMetadata(
-            "urn:uuid:" + UUID.randomUUID(),
-            1,
-            Instant.now(),
-            "dependency-elider-maven-plugin",
-            "0.1.0-SNAPSHOT");
-    new CycloneDxSbomGenerator()
-        .write(
-            sbomFile.toPath(),
-            root,
-            inventory,
-            analysis.decision(),
-            metadata,
-            analysis.trimRecords());
+  private void logPassThroughWarnings(final MavenElisionService.Analysis analysis) {
+    analysis
+        .multiReleasePassthroughArtifacts()
+        .forEach(
+            coordinate ->
+                getLog()
+                    .warn(
+                        "Keeping multi-release dependency unchanged with Java "
+                            + Runtime.version().feature()
+                            + " effective classes for closure; unchanged external links are "
+                            + "tolerated: "
+                            + coordinate));
+    analysis
+        .moduleInfoPassthroughArtifacts()
+        .forEach(
+            coordinate ->
+                getLog()
+                    .warn(
+                        "Keeping root-module-info dependency unchanged; its class-only projection "
+                            + "covers classpath closure, not module-path closure: "
+                            + coordinate));
+    analysis
+        .configuredPassThroughArtifacts()
+        .forEach(
+            coordinate ->
+                getLog()
+                    .warn(
+                        "Keeping configured dependency unchanged; external links from unchanged "
+                            + "classes are tolerated: "
+                            + coordinate));
   }
 
   /** Creates a Mojo instance for Maven injection. */

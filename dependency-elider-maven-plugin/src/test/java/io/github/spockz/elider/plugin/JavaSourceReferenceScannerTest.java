@@ -286,6 +286,40 @@ final class JavaSourceReferenceScannerTest {
   }
 
   @Test
+  void acceptsOnlyLintAllCompilerArgsForSourceAttribution() throws IOException {
+    final MavenProject project = new MavenProject();
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Xpp3Dom configuration = new Xpp3Dom("configuration");
+    final Xpp3Dom compilerArgs = new Xpp3Dom("compilerArgs");
+    final Xpp3Dom lint = new Xpp3Dom("arg");
+    lint.setValue("-Xlint:all");
+    compilerArgs.addChild(lint);
+    configuration.addChild(compilerArgs);
+    project.getBuild().addPlugin(compilerPlugin(configuration));
+
+    assertThat(MavenCompilerSettings.options(project, null, List.of()))
+        .containsExactly("--release", "21");
+
+    lint.setValue("-Xlint:all -proc:only");
+    assertThatThrownBy(() -> MavenCompilerSettings.options(project, null, List.of()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("compiler setting compilerArgs");
+  }
+
+  @Test
+  void rejectsUnknownCompilerArgsProperty() {
+    final MavenProject project = new MavenProject();
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Properties userProperties = new Properties();
+    userProperties.setProperty("maven.compiler.compilerArgs", "-proc:only");
+    final MavenSession session = new TestMavenSession(project, userProperties);
+
+    assertThatThrownBy(() -> MavenCompilerSettings.options(project, session, List.of()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("maven.compiler.compilerArgs");
+  }
+
+  @Test
   void rejectsForkedAndNonJavacPluginModes() {
     assertPluginCompilerSettingRejected("fork", "true");
     assertPluginCompilerSettingRejected("compilerId", "ecj");

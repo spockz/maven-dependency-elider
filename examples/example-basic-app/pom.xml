@@ -17,17 +17,17 @@
     <description>Plain Java application with direct dependencies and unused transitive libraries.</description>
 
     <dependencies>
-        <!-- Used dependency: App uses Jackson ObjectMapper -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-        </dependency>
-
         <!-- Unused dependency: Declared in POM but zero classes are ever loaded at runtime -->
         <dependency>
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
-            <version>1.17.1</version>
+            <version>1.19.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>1.28.0</version>
         </dependency>
 
         <!-- Testing -->
@@ -44,6 +44,25 @@
                 <groupId>io.github.spockz</groupId>
                 <artifactId>dependency-elider-maven-plugin</artifactId>
                 <version>${project.version}</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <id>record-shade-inputs</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <outputFile>${project.build.directory}/dependency-elider-shade-inputs.txt</outputFile>
+                            <includeScope>runtime</includeScope>
+                            <includeTypes>jar</includeTypes>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <!-- Downstream packaging: bundles dependencies into an uber-jar -->
             <plugin>
@@ -68,4 +87,5 @@
             </plugin>
         </plugins>
     </build>
+
 </project>

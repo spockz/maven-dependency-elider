@@ -34,6 +34,7 @@ import proguard.classfile.ClassPool;
   "PMD.AtLeastOneConstructor",
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
+  "PMD.TooManyMethods",
   "PMD.CommentDefaultAccessModifier"
 })
 class ArchiveSanitizerTest {
@@ -99,7 +100,7 @@ class ArchiveSanitizerTest {
       assertThat(output.getEntry("META-INF/LICENSE.txt").getSize()).isEqualTo(8);
       assertThat(output.getEntry("META-INF/services/example.Service").getSize()).isEqualTo(13);
       final Manifest manifest = output.getManifest();
-      assertThat(manifest.getMainAttributes().getValue("Main-Class")).isEqualTo("fixture.Keep");
+      assertThat(manifest.getMainAttributes().getValue("Main-Class")).isEqualTo(ROOT_CLASS_NAME);
       assertThat(manifest.getMainAttributes().getValue("SHA-256-Digest-Manifest")).isNull();
       assertThat(manifest.getEntries()).containsKey(KEEP_CLASS_ENTRY);
       assertThat(manifest.getEntries().get(KEEP_CLASS_ENTRY).getValue("SHA-256-Digest")).isNull();
@@ -144,7 +145,7 @@ class ArchiveSanitizerTest {
       writeEntry(
           output,
           "META-INF/services/example.Service",
-          "fixture.Keep\n".getBytes(StandardCharsets.UTF_8));
+          (ROOT_CLASS_NAME + "\n").getBytes(StandardCharsets.UTF_8));
       writeEntry(output, "META-INF/LICENSE.txt", "license\n".getBytes(StandardCharsets.UTF_8));
       writeEntry(
           output,
@@ -215,12 +216,38 @@ class ArchiveSanitizerTest {
     }
   }
 
+  @Test
+  void acceptsModuleDescriptorOnlyMultiReleaseJarAsClasspathInput() throws Exception {
+    final Path candidate = createCandidateJar();
+    final Path multiRelease = temporaryDirectory.resolve("module-info-only.jar");
+    copyWithVersionedModuleDescriptor(candidate, multiRelease);
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer()
+            .analyze(multiRelease, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+    final Path trimmed = temporaryDirectory.resolve("module-info-only-trimmed.jar");
+
+    new ArchiveSanitizer()
+        .sanitize(
+            multiRelease,
+            trimmed,
+            ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+            analysis);
+
+    try (JarFile output = new JarFile(trimmed.toFile());
+        java.net.URLClassLoader loader =
+            new java.net.URLClassLoader(new java.net.URL[] {trimmed.toUri().toURL()}, null)) {
+      assertThat(output.getEntry("META-INF/versions/9/module-info.class")).isNull();
+      assertThat(output.getEntry(KEEP_CLASS_ENTRY)).isNotNull();
+      assertThat(loader.loadClass(ROOT_CLASS_NAME)).isNotNull();
+    }
+  }
+
   @SuppressWarnings("PMD.LooseCoupling")
   private static byte[] manifestBytes() throws IOException {
     final Manifest manifest = new Manifest();
     final Attributes main = manifest.getMainAttributes();
     main.putValue("Manifest-Version", "1.0");
-    main.putValue("Main-Class", "fixture.Keep");
+    main.putValue("Main-Class", ROOT_CLASS_NAME);
     main.putValue("SHA-256-Digest-Manifest", "invalidated");
     final Attributes keep = new Attributes();
     keep.putValue("SHA-256-Digest", "invalidated");
@@ -245,6 +272,31 @@ class ArchiveSanitizerTest {
         content.transferTo(output);
       }
       output.closeEntry();
+    }
+  }
+
+  private void copyWithVersionedModuleDescriptor(final Path source, final Path destination)
+      throws IOException {
+    final Path moduleSource = temporaryDirectory.resolve("module-source/module-info.java");
+    final Path moduleOutput = Files.createDirectories(temporaryDirectory.resolve("module-classes"));
+    Files.createDirectories(moduleSource.getParent());
+    Files.writeString(moduleSource, "module fixture.module {}\n");
+    final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+    if (compiler == null
+        || compiler.run(null, null, null, "-d", moduleOutput.toString(), moduleSource.toString())
+            != 0) {
+      throw new IOException("Could not compile versioned module descriptor fixture");
+    }
+    try (JarFile input = new JarFile(source.toFile());
+        JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
+      final Enumeration<JarEntry> entries = input.entries();
+      while (entries.hasMoreElements()) {
+        copyEntry(input, output, entries.nextElement());
+      }
+      writeEntry(
+          output,
+          "META-INF/versions/9/module-info.class",
+          Files.readAllBytes(moduleOutput.resolve("module-info.class")));
     }
   }
 

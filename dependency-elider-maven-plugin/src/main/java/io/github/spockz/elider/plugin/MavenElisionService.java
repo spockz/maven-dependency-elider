@@ -55,6 +55,18 @@ final class MavenElisionService {
   /** Dependency scopes Maven can place on its production compile classpath. */
   private static final Set<String> COMPILE_VISIBLE_SCOPES = Set.of("compile", "provided", "system");
 
+  record AnalysisOptions(
+      List<File> traceFiles,
+      List<String> excludedArtifacts,
+      File productionOutput,
+      MavenSession session,
+      boolean sourceRootsComplete,
+      boolean trimJars,
+      List<String> explicitTrimRoots,
+      boolean failOnUnsupportedMultiRelease,
+      List<String> explicitPassThroughArtifacts,
+      boolean failOnUnsupportedModuleInfo) {}
+
   /** Creates the stateless Maven adapter. */
   MavenElisionService() {
     super();
@@ -109,6 +121,33 @@ final class MavenElisionService {
       final boolean trimJars,
       final List<String> explicitTrimRoots)
       throws IOException, MojoFailureException {
+    return analyze(
+        project,
+        new AnalysisOptions(
+            traceFiles,
+            excludedArtifacts,
+            productionOutput,
+            session,
+            sourceRootsComplete,
+            trimJars,
+            explicitTrimRoots,
+            false,
+            List.of(),
+            false));
+  }
+
+  Analysis analyze(final MavenProject project, final AnalysisOptions options)
+      throws IOException, MojoFailureException {
+    final List<File> traceFiles = options.traceFiles();
+    final List<String> excludedArtifacts = options.excludedArtifacts();
+    final File productionOutput = options.productionOutput();
+    final MavenSession session = options.session();
+    final boolean sourceRootsComplete = options.sourceRootsComplete();
+    final boolean trimJars = options.trimJars();
+    final List<String> explicitTrimRoots = options.explicitTrimRoots();
+    final boolean failOnUnsupportedMultiRelease = options.failOnUnsupportedMultiRelease();
+    final List<String> explicitPassThroughArtifacts = options.explicitPassThroughArtifacts();
+    final boolean failOnUnsupportedModuleInfo = options.failOnUnsupportedModuleInfo();
     final List<Artifact> resolved = new ArrayList<>(project.getArtifacts());
     final List<ArtifactSnapshot> resolvedSnapshots = snapshots(resolved);
     validateIdentityPaths(resolvedSnapshots);
@@ -139,6 +178,10 @@ final class MavenElisionService {
     final Set<ArtifactCoordinate> keepForPruning =
         new HashSet<>(compilerInputs.compileVisibleCoordinates());
     keepForPruning.addAll(dynamicRootInputs.declaringArtifacts());
+    if (trimJars) {
+      keepForPruning.addAll(
+          parsePassThroughCoordinates(explicitPassThroughArtifacts, resolvedSnapshots));
+    }
     final Optional<BytecodeReferenceScan> bytecodeScan =
         productionOutput == null
             ? Optional.empty()
@@ -156,16 +199,21 @@ final class MavenElisionService {
     final MavenDependencyTrimmer.TrimResult trimResult =
         trimJars
             ? MavenDependencyTrimmer.trim(
-                project,
-                session,
-                resolvedSnapshots,
-                index,
-                new HashSet<>(decision.retainedArtifacts()),
-                trace,
-                pruningRequiredClasses,
-                bytecodeScan.map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
-                explicitTrimRoots)
-            : new MavenDependencyTrimmer.TrimResult(List.of(), 0, 0L, 0);
+                new MavenDependencyTrimmer.TrimRequest(
+                    project,
+                    session,
+                    resolvedSnapshots,
+                    index,
+                    new HashSet<>(decision.retainedArtifacts()),
+                    trace,
+                    pruningRequiredClasses,
+                    bytecodeScan.map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
+                    explicitTrimRoots,
+                    failOnUnsupportedMultiRelease,
+                    explicitPassThroughArtifacts,
+                    failOnUnsupportedModuleInfo))
+            : new MavenDependencyTrimmer.TrimResult(
+                List.of(), List.of(), List.of(), List.of(), 0, 0L, 0);
     return new Analysis(
         resolvedSnapshots,
         directPresent,
@@ -174,6 +222,9 @@ final class MavenElisionService {
         classUsageReport,
         bytecodeScan,
         trimResult.records(),
+        trimResult.multiReleasePassthroughArtifacts(),
+        trimResult.moduleInfoPassthroughArtifacts(),
+        trimResult.configuredPassThroughArtifacts(),
         trimResult.cacheHits(),
         trimResult.maximumCacheHitNanos(),
         trimResult.analysisRuns());
@@ -280,6 +331,58 @@ final class MavenElisionService {
       }
     }
     return new PruneConfig(Set.of(), keepArtifacts, ELIGIBLE_SCOPES, exclusions);
+  }
+
+  private static Set<ArtifactCoordinate> parsePassThroughCoordinates(
+      final List<String> requested, final List<ArtifactSnapshot> snapshots)
+      throws MojoFailureException {
+    final Set<ArtifactCoordinate> result = new LinkedHashSet<>();
+    if (requested == null) {
+      return result;
+    }
+    for (final String raw : requested) {
+      if (raw == null || raw.isBlank()) {
+        throw new MojoFailureException(
+            "elide.trimSkipArtifacts must not contain blank coordinates");
+      }
+      final String[] parts = raw.trim().split(":", -1);
+      if (parts.length < 3
+          || parts.length > 5
+          || parts[0].isBlank()
+          || parts[1].isBlank()
+          || parts[2].isBlank()) {
+        throw new MojoFailureException(
+            "Invalid elide.trimSkipArtifacts coordinate; expected "
+                + "group:artifact:version[:type[:classifier]]: "
+                + raw);
+      }
+      final String type = optionalPiece(parts, 3, "jar");
+      final String classifier = optionalPiece(parts, 4, "");
+      if (!"jar".equals(type)) {
+        throw new MojoFailureException(
+            "elide.trimSkipArtifacts supports JAR artifacts only: " + raw);
+      }
+      final List<ArtifactSnapshot> matches =
+          snapshots.stream()
+              .filter(
+                  snapshot -> {
+                    final ArtifactCoordinate coordinate = snapshot.coordinate();
+                    return coordinate.groupId().equals(parts[0])
+                        && coordinate.artifactId().equals(parts[1])
+                        && coordinate.version().equals(parts[2])
+                        && coordinate.type().equals(type)
+                        && coordinate.classifier().equals(classifier)
+                        && ELIGIBLE_SCOPES.contains(coordinate.scope())
+                        && snapshot.filePath() != null;
+                  })
+              .toList();
+      if (matches.isEmpty()) {
+        throw new MojoFailureException(
+            "elide.trimSkipArtifacts coordinate is not a resolved compile/runtime JAR: " + raw);
+      }
+      matches.stream().map(ArtifactSnapshot::coordinate).forEach(result::add);
+    }
+    return result;
   }
 
   private static ElisionDecision retainNonJarArtifacts(
@@ -450,6 +553,10 @@ final class MavenElisionService {
         && "maven-compiler-plugin".equals(plugin.getArtifactId())) {
       return execution.getGoals().stream().allMatch(Set.of("compile", "testCompile")::contains);
     }
+    if ("org.apache.maven.plugins".equals(plugin.getGroupId())
+        && "maven-enforcer-plugin".equals(plugin.getArtifactId())) {
+      return execution.getGoals().stream().allMatch("enforce"::equals);
+    }
     return "io.github.spockz".equals(plugin.getGroupId())
         && "dependency-elider-maven-plugin".equals(plugin.getArtifactId())
         && execution.getGoals().stream().allMatch(Set.of("elide", "analyze")::contains);
@@ -592,6 +699,9 @@ final class MavenElisionService {
       ClassUsageReport classUsageReport,
       Optional<BytecodeReferenceScan> bytecodeScan,
       List<ArtifactTrimRecord> trimRecords,
+      List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+      List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+      List<ArtifactCoordinate> configuredPassThroughArtifacts,
       int trimCacheHits,
       long maximumTrimCacheHitNanos,
       int trimAnalysisRuns) {
@@ -609,6 +719,9 @@ final class MavenElisionService {
           decision,
           classUsageReport,
           bytecodeScan,
+          List.of(),
+          List.of(),
+          List.of(),
           List.of(),
           0,
           0L,
@@ -628,6 +741,9 @@ final class MavenElisionService {
           new ClassUsageReport(List.of()),
           Optional.empty(),
           List.of(),
+          List.of(),
+          List.of(),
+          List.of(),
           0,
           0L,
           0);
@@ -637,6 +753,9 @@ final class MavenElisionService {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);
       trimRecords = List.copyOf(trimRecords);
+      multiReleasePassthroughArtifacts = List.copyOf(multiReleasePassthroughArtifacts);
+      moduleInfoPassthroughArtifacts = List.copyOf(moduleInfoPassthroughArtifacts);
+      configuredPassThroughArtifacts = List.copyOf(configuredPassThroughArtifacts);
     }
 
     Set<Artifact> resolvedArtifacts() {

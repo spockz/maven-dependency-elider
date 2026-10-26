@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.jar.JarFile;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoFailureException;
@@ -53,17 +54,24 @@ import org.apache.maven.project.MavenProject;
 })
 final class MavenDependencyTrimmer {
   private static final String ELIDED_ARTIFACTS = "elided-artifacts";
+  private static final Set<String> TRIMMABLE_SCOPES = Set.of("compile", "runtime");
   private static final ObjectMapper JSON = new ObjectMapper();
-  private static final int CACHE_SCHEMA_VERSION = 4;
+  private static final int CACHE_SCHEMA_VERSION = 8;
   private static final String ENGINE_VERSION = "proguard-core-9.1.10";
 
   record TrimResult(
       List<ArtifactTrimRecord> records,
+      List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+      List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+      List<ArtifactCoordinate> configuredPassThroughArtifacts,
       int cacheHits,
       long maximumCacheHitNanos,
       int analysisRuns) {
     TrimResult {
       records = List.copyOf(records);
+      multiReleasePassthroughArtifacts = List.copyOf(multiReleasePassthroughArtifacts);
+      moduleInfoPassthroughArtifacts = List.copyOf(moduleInfoPassthroughArtifacts);
+      configuredPassThroughArtifacts = List.copyOf(configuredPassThroughArtifacts);
     }
   }
 
@@ -82,19 +90,35 @@ final class MavenDependencyTrimmer {
       Set<String> retainedClassNames,
       Set<String> reachableLibraryClasses) {}
 
+  record TrimRequest(
+      MavenProject project,
+      MavenSession session,
+      List<MavenElisionService.ArtifactSnapshot> candidates,
+      ArtifactClassIndex classIndex,
+      Set<ArtifactCoordinate> retainedCoordinates,
+      TraceData trace,
+      Set<String> sourceRoots,
+      Set<String> bytecodeRoots,
+      List<String> explicitRoots,
+      boolean failOnUnsupportedMultiRelease,
+      List<String> explicitPassThroughCoordinates,
+      boolean failOnUnsupportedModuleInfo) {}
+
   private MavenDependencyTrimmer() {}
 
-  static TrimResult trim(
-      final MavenProject project,
-      final MavenSession session,
-      final List<MavenElisionService.ArtifactSnapshot> candidates,
-      final ArtifactClassIndex classIndex,
-      final Set<ArtifactCoordinate> retainedCoordinates,
-      final TraceData trace,
-      final Set<String> sourceRoots,
-      final Set<String> bytecodeRoots,
-      final List<String> explicitRoots)
-      throws IOException, MojoFailureException {
+  static TrimResult trim(final TrimRequest request) throws IOException, MojoFailureException {
+    final MavenProject project = request.project();
+    final MavenSession session = request.session();
+    final List<MavenElisionService.ArtifactSnapshot> candidates = request.candidates();
+    final ArtifactClassIndex classIndex = request.classIndex();
+    final Set<ArtifactCoordinate> retainedCoordinates = request.retainedCoordinates();
+    final TraceData trace = request.trace();
+    final Set<String> sourceRoots = request.sourceRoots();
+    final Set<String> bytecodeRoots = request.bytecodeRoots();
+    final List<String> explicitRoots = request.explicitRoots();
+    final boolean failOnUnsupportedMultiRelease = request.failOnUnsupportedMultiRelease();
+    final List<String> explicitPassThroughCoordinates = request.explicitPassThroughCoordinates();
+    final boolean failOnUnsupportedModuleInfo = request.failOnUnsupportedModuleInfo();
     final List<String> compileClasspath;
     try {
       compileClasspath = project.getCompileClasspathElements();
@@ -113,20 +137,72 @@ final class MavenDependencyTrimmer {
     allRoots.addAll(explicitRoots);
     final Map<io.github.spockz.elider.model.ArtifactFileRef, Set<String>> classesByArtifact =
         classIndex.classesByArtifact();
-    final List<MavenElisionService.ArtifactSnapshot> retained =
+    final List<MavenElisionService.ArtifactSnapshot> retainedLibraries =
         candidates.stream()
             .filter(
                 snapshot ->
                     "jar".equals(snapshot.coordinate().type())
+                        && TRIMMABLE_SCOPES.contains(snapshot.coordinate().scope())
                         && retainedCoordinates.contains(snapshot.coordinate()))
             .toList();
-    final List<Path> retainedPaths =
-        retained.stream().map(MavenElisionService.ArtifactSnapshot::filePath).toList();
+    final List<MavenElisionService.ArtifactSnapshot> multiReleasePassthrough = new ArrayList<>();
+    final List<MavenElisionService.ArtifactSnapshot> moduleInfoPassthrough = new ArrayList<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
+      if (MultiReleaseLibraryProjection.hasUnsupportedVersionedClasses(snapshot.filePath())) {
+        if (failOnUnsupportedMultiRelease) {
+          throw new IOException(
+              "Unsupported multi-release implementation classes in " + snapshot.coordinate());
+        }
+        multiReleasePassthrough.add(snapshot);
+      }
+      if (MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath())) {
+        if (failOnUnsupportedModuleInfo) {
+          throw new IOException(
+              "Unsupported root module descriptor in retained classpath JAR: "
+                  + snapshot.coordinate());
+        }
+        moduleInfoPassthrough.add(snapshot);
+      }
+    }
+    final List<MavenElisionService.ArtifactSnapshot> configuredPassThrough =
+        parsePassThroughArtifacts(explicitPassThroughCoordinates, retainedLibraries);
+    final Set<String> multiReleaseIdentities = identities(multiReleasePassthrough);
+    final Set<String> moduleInfoIdentities = identities(moduleInfoPassthrough);
+    final List<MavenElisionService.ArtifactSnapshot> configuredNonMrPassThrough =
+        configuredPassThrough.stream()
+            .filter(
+                snapshot ->
+                    !multiReleaseIdentities.contains(artifactIdentity(snapshot.coordinate()))
+                        && !moduleInfoIdentities.contains(artifactIdentity(snapshot.coordinate())))
+            .toList();
+    final Set<String> skippedArtifactIdentities = new LinkedHashSet<>(multiReleaseIdentities);
+    skippedArtifactIdentities.addAll(moduleInfoIdentities);
+    skippedArtifactIdentities.addAll(identities(configuredPassThrough));
+    final List<ArtifactCoordinate> multiReleasePassthroughCoordinates =
+        multiReleasePassthrough.stream()
+            .map(MavenElisionService.ArtifactSnapshot::coordinate)
+            .toList();
+    final List<ArtifactCoordinate> moduleInfoPassthroughCoordinates =
+        moduleInfoPassthrough.stream()
+            .map(MavenElisionService.ArtifactSnapshot::coordinate)
+            .toList();
+    final List<ArtifactCoordinate> configuredPassThroughCoordinates =
+        configuredNonMrPassThrough.stream()
+            .map(MavenElisionService.ArtifactSnapshot::coordinate)
+            .toList();
+    final List<Path> retainedInputPaths =
+        retainedLibraries.stream().map(MavenElisionService.ArtifactSnapshot::filePath).toList();
+    final List<MavenElisionService.ArtifactSnapshot> retained =
+        retainedLibraries.stream()
+            .filter(
+                snapshot ->
+                    !skippedArtifactIdentities.contains(artifactIdentity(snapshot.coordinate())))
+            .toList();
     final Set<Path> distinctOutputs = new HashSet<>();
     final List<ArtifactTrimRecord> records = new ArrayList<>();
     final List<CandidateWork> work = new ArrayList<>();
     final Set<String> retainedDynamicRoots = new HashSet<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : retained) {
+    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
       retainedDynamicRoots.addAll(DependencyDynamicRoots.scan(snapshot.filePath()).roots());
     }
     for (final MavenElisionService.ArtifactSnapshot candidate : retained) {
@@ -186,25 +262,127 @@ final class MavenDependencyTrimmer {
                 .toAbsolutePath()
                 .normalize();
     final long cacheStart = System.nanoTime();
+    final int runtimeRelease = Runtime.version().feature();
     final String completeFingerprint =
-        fingerprint(work, retainedPaths, javaHome, release, CACHE_SCHEMA_VERSION, ENGINE_VERSION);
-    final TrimResult cached = loadCache(cacheManifestPath, completeFingerprint, work, cacheStart);
+        fingerprint(
+            work,
+            retainedInputPaths,
+            skippedArtifactIdentities,
+            runtimeRelease,
+            javaHome,
+            release,
+            CACHE_SCHEMA_VERSION,
+            ENGINE_VERSION);
+    final TrimResult cached =
+        loadCache(
+            cacheManifestPath,
+            completeFingerprint,
+            work,
+            multiReleasePassthroughCoordinates,
+            moduleInfoPassthroughCoordinates,
+            configuredPassThroughCoordinates,
+            cacheStart);
     if (cached != null) {
       return cached;
     }
+    final Path analysisLibraryDirectory =
+        project.getBuild() == null || project.getBuild().getDirectory() == null
+            ? Path.of("target", ELIDED_ARTIFACTS, ".analysis-libraries")
+                .toAbsolutePath()
+                .normalize()
+            : Path.of(project.getBuild().getDirectory(), ELIDED_ARTIFACTS, ".analysis-libraries")
+                .toAbsolutePath()
+                .normalize();
+    final List<Path> analysisLibraries = new ArrayList<>();
+    final List<SkippedProgram> skippedPrograms = new ArrayList<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
+      if (skippedArtifactIdentities.contains(artifactIdentity(snapshot.coordinate()))) {
+        final boolean multiRelease =
+            multiReleaseIdentities.contains(artifactIdentity(snapshot.coordinate()));
+        final boolean rootModuleDescriptor =
+            MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath());
+        final Path analysisPath =
+            multiRelease || rootModuleDescriptor
+                ? MultiReleaseLibraryProjection.create(
+                    snapshot.filePath(),
+                    snapshot.coordinate(),
+                    analysisLibraryDirectory,
+                    runtimeRelease)
+                : snapshot.filePath();
+        analysisLibraries.add(analysisPath);
+        skippedPrograms.add(new SkippedProgram(analysisPath, classNames(analysisPath)));
+      } else {
+        analysisLibraries.add(snapshot.filePath());
+      }
+    }
+    final Set<String> unchangedPassThroughClassNames = new LinkedHashSet<>();
+    skippedPrograms.stream()
+        .flatMap(program -> program.classNames().stream())
+        .forEach(unchangedPassThroughClassNames::add);
+    for (final SkippedProgram skippedProgram : skippedPrograms) {
+      for (final Path siblingPath : analysisLibraries) {
+        if (siblingPath.equals(skippedProgram.path())) {
+          continue;
+        }
+        final Set<String> ambiguousNames = new HashSet<>(skippedProgram.classNames());
+        ambiguousNames.retainAll(classNames(siblingPath));
+        if (!ambiguousNames.isEmpty()) {
+          throw new IOException(
+              "Duplicate class ownership makes pass-through unresolved-link tolerance ambiguous: "
+                  + ambiguousNames);
+        }
+      }
+    }
     final var platform = new JdkApiClassPoolReader().read(javaHome, release);
+    final var runtimePlatform =
+        runtimeRelease == release
+            ? platform
+            : new JdkApiClassPoolReader().read(javaHome, runtimeRelease);
     final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
+    final Set<String> allCandidateClasses = new HashSet<>(ownerByClass.keySet());
+    for (final SkippedProgram skippedProgram : skippedPrograms) {
+      for (final String className : skippedProgram.classNames()) {
+        if (!allCandidateClasses.add(className)) {
+          throw new IOException(
+              "Duplicate class across retained dependency JARs makes library order ambiguous: "
+                  + className);
+        }
+      }
+    }
     int analysisRuns = 0;
+    for (final SkippedProgram skippedProgram : skippedPrograms) {
+      final List<Path> siblings =
+          analysisLibraries.stream().filter(path -> !path.equals(skippedProgram.path())).toList();
+      final DependencyJarTrimmer.TrimAnalysis analysis =
+          trimmer.analyzeUnchangedPassThrough(
+              skippedProgram.path(),
+              siblings,
+              runtimePlatform,
+              skippedProgram.classNames(),
+              unchangedPassThroughClassNames);
+      analysisRuns++;
+      for (final String linkedName : analysis.reachableLibraryClasses()) {
+        final String dottedName = linkedName.replace('/', '.');
+        for (final CandidateWork owner : ownersByClass.getOrDefault(dottedName, List.of())) {
+          owner.roots().add(dottedName);
+        }
+      }
+    }
     boolean rootsChanged;
     do {
       rootsChanged = false;
       for (final CandidateWork candidate : work) {
         final List<Path> siblings =
-            retainedPaths.stream()
+            analysisLibraries.stream()
                 .filter(path -> !path.equals(candidate.snapshot().filePath()))
                 .toList();
         final DependencyJarTrimmer.TrimAnalysis analysis =
-            trimmer.analyze(candidate.snapshot().filePath(), siblings, platform, candidate.roots());
+            trimmer.analyzeWithUnchangedPassThroughLibraries(
+                candidate.snapshot().filePath(),
+                siblings,
+                platform,
+                candidate.roots(),
+                unchangedPassThroughClassNames);
         analysisRuns++;
         candidate.analysis(analysis);
         for (final String linkedName : analysis.reachableLibraryClasses()) {
@@ -239,7 +417,30 @@ final class MavenDependencyTrimmer {
       cacheEntries.add(cacheEntry(candidate, record));
     }
     storeCache(cacheManifestPath, new CacheManifest(completeFingerprint, cacheEntries));
-    return new TrimResult(records, 0, 0L, analysisRuns);
+    return new TrimResult(
+        records,
+        multiReleasePassthroughCoordinates,
+        moduleInfoPassthroughCoordinates,
+        configuredPassThroughCoordinates,
+        0,
+        0L,
+        analysisRuns);
+  }
+
+  private static Set<String> classNames(final Path archivePath) throws IOException {
+    final Set<String> classNames = new TreeSet<>();
+    try (JarFile archive = new JarFile(archivePath.toFile())) {
+      final var entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        final String name = entries.nextElement().getName();
+        if (name.endsWith(".class")
+            && !"module-info.class".equals(name)
+            && !name.endsWith("/module-info.class")) {
+          classNames.add(name.substring(0, name.length() - ".class".length()).replace('/', '.'));
+        }
+      }
+    }
+    return Set.copyOf(classNames);
   }
 
   private static Path outputPath(final MavenProject project, final ArtifactCoordinate coordinate) {
@@ -301,9 +502,17 @@ final class MavenDependencyTrimmer {
     }
   }
 
+  private record SkippedProgram(Path path, Set<String> classNames) {
+    private SkippedProgram {
+      classNames = Set.copyOf(classNames);
+    }
+  }
+
   private static String fingerprint(
       final List<CandidateWork> candidates,
-      final List<Path> orderedLibraries,
+      final List<Path> allRetainedInputs,
+      final Set<String> skippedArtifactIdentities,
+      final int runtimeRelease,
       final Path javaHome,
       final int release,
       final int schemaVersion,
@@ -318,14 +527,93 @@ final class MavenDependencyTrimmer {
               + candidate.snapshot().filePath().toAbsolutePath().normalize());
       roots.addAll(candidate.roots());
     }
+    candidateIdentities.addAll(
+        skippedArtifactIdentities.stream()
+            .sorted()
+            .map(identity -> "trim-skip:" + identity)
+            .toList());
+    candidateIdentities.add("runtime-release:" + runtimeRelease);
+    final Set<Path> platformInputs = new LinkedHashSet<>(platformInputs(javaHome, release));
+    if (runtimeRelease != release) {
+      platformInputs.addAll(platformInputs(javaHome, runtimeRelease));
+    }
     return fingerprintForInputs(
         candidateIdentities,
-        orderedLibraries,
+        allRetainedInputs,
         roots,
-        platformInputs(javaHome, release),
+        List.copyOf(platformInputs),
         release,
         schemaVersion,
         engineVersion);
+  }
+
+  private static String artifactIdentity(final ArtifactCoordinate coordinate) {
+    return coordinate.groupId()
+        + ":"
+        + coordinate.artifactId()
+        + ":"
+        + coordinate.version()
+        + ":"
+        + coordinate.type()
+        + ":"
+        + coordinate.classifier();
+  }
+
+  private static Set<String> identities(
+      final List<MavenElisionService.ArtifactSnapshot> snapshots) {
+    return snapshots.stream()
+        .map(snapshot -> artifactIdentity(snapshot.coordinate()))
+        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  private static List<MavenElisionService.ArtifactSnapshot> parsePassThroughArtifacts(
+      final List<String> requested,
+      final List<MavenElisionService.ArtifactSnapshot> retainedLibraries)
+      throws IOException {
+    final Set<String> requestedIdentities = new LinkedHashSet<>();
+    for (final String raw : requested) {
+      if (raw == null || raw.isBlank()) {
+        throw new IOException("elide.trimSkipArtifacts must not contain blank coordinates");
+      }
+      final String[] parts = raw.trim().split(":", -1);
+      if (parts.length < 3
+          || parts.length > 5
+          || parts[0].isBlank()
+          || parts[1].isBlank()
+          || parts[2].isBlank()) {
+        throw new IOException(
+            "Invalid elide.trimSkipArtifacts coordinate; expected "
+                + "group:artifact:version[:type[:classifier]]: "
+                + raw);
+      }
+      final String groupId = parts[0];
+      final String artifactId = parts[1];
+      final String version = parts[2];
+      final String type = parts.length > 3 && !parts[3].isBlank() ? parts[3] : "jar";
+      final String classifier = parts.length > 4 ? parts[4] : "";
+      final List<MavenElisionService.ArtifactSnapshot> matches =
+          retainedLibraries.stream()
+              .filter(
+                  snapshot -> {
+                    final ArtifactCoordinate coordinate = snapshot.coordinate();
+                    return coordinate.groupId().equals(groupId)
+                        && coordinate.artifactId().equals(artifactId)
+                        && coordinate.version().equals(version)
+                        && coordinate.type().equals(type)
+                        && coordinate.classifier().equals(classifier);
+                  })
+              .toList();
+      if (matches.isEmpty()) {
+        throw new IOException(
+            "elide.trimSkipArtifacts coordinate is not a retained compile/runtime JAR: " + raw);
+      }
+      matches.stream()
+          .map(snapshot -> artifactIdentity(snapshot.coordinate()))
+          .forEach(requestedIdentities::add);
+    }
+    return retainedLibraries.stream()
+        .filter(snapshot -> requestedIdentities.contains(artifactIdentity(snapshot.coordinate())))
+        .toList();
   }
 
   static String fingerprintForInputs(
@@ -425,6 +713,9 @@ final class MavenDependencyTrimmer {
       final Path manifestPath,
       final String fingerprint,
       final List<CandidateWork> candidates,
+      final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+      final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+      final List<ArtifactCoordinate> configuredPassThroughArtifacts,
       final long started)
       throws IOException {
     if (!Files.isRegularFile(manifestPath)) {
@@ -475,7 +766,14 @@ final class MavenDependencyTrimmer {
               entry.totalClasses(),
               entry.retainedClasses()));
     }
-    return new TrimResult(records, records.size(), System.nanoTime() - started, 0);
+    return new TrimResult(
+        records,
+        multiReleasePassthroughArtifacts,
+        moduleInfoPassthroughArtifacts,
+        configuredPassThroughArtifacts,
+        records.size(),
+        System.nanoTime() - started,
+        0);
   }
 
   private static boolean validCacheEntry(final CacheEntry entry, final CandidateWork candidate) {

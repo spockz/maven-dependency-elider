@@ -127,6 +127,9 @@ public final class ArchiveSanitizer {
           JarSignatureSanitizer.writeManifest(output, entry, manifest);
           continue;
         }
+        if (DependencyJarTrimmer.isVersionedModuleDescriptor(name)) {
+          continue;
+        }
         if (name.endsWith(".class")) {
           if ("module-info.class".equals(name) || name.startsWith("META-INF/versions/")) {
             throw new IOException("Unsupported modular or multi-release entry: " + name);

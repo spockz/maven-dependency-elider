@@ -14,8 +14,11 @@
     <Bug pattern="UI_INHERITANCE_UNSAFE_GETRESOURCE" />
     <Class name="io.github.spockz.dependency_elider_maven_plugin.HelpMojo" />
   </Match>
-  <!-- WHY: JMH generates harness classes whose synthetic benchmark fields trigger false positives. -->
+  <!-- WHY: JMH-generated harness fields are synthetic and trigger analyzer false positives. -->
   <Match>
     <Class name="~io\.github\.spockz\.elider\.benchmark\.jmh_generated\..*" />
+  </Match>
+  <Match>
+    <Class name="~io\.github\.spockz\.elider\.plugin\.jmh_generated\..*" />
   </Match>
 </FindBugsFilter>

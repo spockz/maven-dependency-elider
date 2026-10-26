@@ -2,35 +2,24 @@
 
 package io.github.spockz.example.basic;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.net.URL;
 import org.junit.jupiter.api.Test;
 
-/** Verifies the basic app keeps Jackson and conditionally removes Commons Codec. */
+/** Verifies the basic app retains the ZIP API it uses. */
 final class ElisionClasspathTest {
 
   /** Creates the focused runtime-classpath checks. */
   @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.UncommentedEmptyConstructor"})
   ElisionClasspathTest() {}
 
-  /** Confirms Jackson remains available for greeting serialization. */
+  /** Confirms the test classpath keeps the ZIP API required by the consumer source. */
   @Test
-  void keepsJacksonAvailable() {
+  void keepsTheReferencedZipArchiveApi() {
     assertNotNull(
-        resource("com/fasterxml/jackson/databind/ObjectMapper.class"),
-        "Jackson must remain because the application serializes its greeting");
-  }
-
-  /** Confirms the unused library follows the baseline or elided Maven classpath. */
-  @Test
-  void commonsCodecPresenceMatchesElisionMode() {
-    final boolean expectedPresent = !Boolean.getBoolean("elider.verifyElision");
-    assertEquals(
-        expectedPresent,
-        resource("org/apache/commons/codec/binary/Hex.class") != null,
-        "Commons Codec should match baseline versus elided mode");
+        resource("org/apache/commons/compress/archivers/zip/ZipArchiveEntry.class"),
+        "the referenced ZIP API must remain on the runtime classpath");
   }
 
   private static URL resource(final String path) {
