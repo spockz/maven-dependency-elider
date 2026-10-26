@@ -21,4 +21,10 @@
   <Match>
     <Class name="~io\.github\.spockz\.elider\.plugin\.jmh_generated\..*" />
   </Match>
+  <!-- WHY: Indexed visitor failures must retain their runtime type when reached. -->
+  <Match>
+    <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+    <Class name="io.github.spockz.elider.trimmer.PreparedAnalysisState$ClosureTraversal" />
+    <Method name="visit" />
+  </Match>
 </FindBugsFilter>

@@ -38,7 +38,8 @@ import proguard.classfile.ClassPool;
   "PMD.LawOfDemeter",
   "PMD.CyclomaticComplexity",
   "PMD.AvoidInstantiatingObjectsInLoops",
-  "PMD.CommentDefaultAccessModifier"
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.CouplingBetweenObjects"
 })
 class DependencyJarTrimmerTest {
   /** Test source package prefix. */
@@ -141,6 +142,166 @@ class DependencyJarTrimmerTest {
     assertThat(first.retainedClasses()).contains("fixture/A").doesNotContain("fixture/C");
     assertThat(second.retainedClasses()).containsExactly("fixture/C");
     assertThat(second.roots()).containsExactly("fixture/C");
+  }
+
+  @Test
+  @DisplayName("ADR-0003: prepared contexts preserve candidate and sibling class roles")
+  void preparedContextsPreserveCandidateAndSiblingClassRoles() throws Exception {
+    final Path candidateJar =
+        writeClassJar(
+            "library-body-candidate.jar",
+            Map.of(
+                "fixture/LibraryBodyRoot",
+                simpleClass("fixture/LibraryBodyRoot", "fixture/BodyOnly")));
+    final Path libraryWithMissingBodyType = compileFixtureJar(true);
+    final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
+    final DependencyJarTrimmer.PreparedAnalysis libraryContext =
+        session.prepareWithUnchangedPassThroughLibraries(
+            candidateJar, List.of(libraryWithMissingBodyType), jdkLibraryPool, Set.of());
+
+    final DependencyJarTrimmer.TrimAnalysis asLibrary =
+        libraryContext.analyze(List.of("fixture.LibraryBodyRoot"));
+    assertThat(asLibrary.reachableLibraryClasses()).contains("fixture/BodyOnly");
+
+    final DependencyJarTrimmer.PreparedAnalysis candidateContext =
+        session.prepareWithUnchangedPassThroughLibraries(
+            libraryWithMissingBodyType, List.of(), jdkLibraryPool, Set.of());
+    assertThatThrownBy(() -> candidateContext.analyze(List.of("fixture.BodyOnly")))
+        .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
+        .hasMessageContaining("fixture/BodyOnly -> class fixture/Ghost");
+  }
+
+  @Test
+  @DisplayName("ADR-0003: rootless analysis still validates candidate and sibling archives")
+  void rootlessAnalysisValidatesArchiveInputs() throws Exception {
+    final Path emptyCandidate = temporaryDirectory.resolve("empty-candidate.jar");
+    try (JarOutputStream ignored = new JarOutputStream(Files.newOutputStream(emptyCandidate))) {
+      ignored.finish();
+    }
+    assertThatThrownBy(
+            () ->
+                new DependencyJarTrimmer()
+                    .analyze(emptyCandidate, List.of(), jdkLibraryPool, List.of()))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("contains no classes");
+
+    final Path candidateJar = compileFixtureJar(false);
+    assertThatThrownBy(
+            () ->
+                new DependencyJarTrimmer()
+                    .analyze(
+                        candidateJar,
+                        List.of(temporaryDirectory.resolve("missing-sibling.jar")),
+                        jdkLibraryPool,
+                        List.of()))
+        .isInstanceOf(IOException.class);
+  }
+
+  @Test
+  @DisplayName("ADR-0003: prepared closure grows safely and recovers from failed root growth")
+  void preparedClosureGrowsAndRecoversAfterFailedRootGrowth() throws Exception {
+    final Path candidateJar = compileFixtureJar(true);
+    final List<Path> siblings = List.of(writeSiblingJar());
+    final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
+    final DependencyJarTrimmer.PreparedAnalysis prepared =
+        session.prepareWithUnchangedPassThroughLibraries(
+            candidateJar, siblings, jdkLibraryPool, Set.of());
+    assertThat(prepared.referenceGraphBuilt()).isFalse();
+    final DependencyJarTrimmer.TrimAnalysis rootlessBeforeGraph = prepared.analyze(List.of());
+    assertThat(rootlessBeforeGraph.retainedClasses()).containsAll(rootlessBeforeGraph.roots());
+    assertThat(prepared.referenceGraphBuilt()).isFalse();
+    assertThat(prepared.expandedNodeCount()).isZero();
+
+    final DependencyJarTrimmer.TrimAnalysis first = prepared.analyze(List.of("fixture.A"));
+    assertThat(prepared.referenceGraphBuilt()).isTrue();
+    final int expansionsAfterFirst = prepared.expandedNodeCount();
+
+    assertThatThrownBy(() -> prepared.analyze(List.of("fixture.A", "fixture.GhostUser")))
+        .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
+        .hasMessageContaining("fixture/GhostUser -> class fixture/Ghost");
+    assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterFirst);
+
+    final DependencyJarTrimmer.TrimAnalysis afterFailure =
+        prepared.analyze(List.of("fixture.A", "fixture.C"));
+    final DependencyJarTrimmer.TrimAnalysis fresh =
+        new DependencyJarTrimmer()
+            .analyze(candidateJar, siblings, jdkLibraryPool, List.of("fixture.A", "fixture.C"));
+    assertThat(afterFailure).isEqualTo(fresh);
+    assertThat(afterFailure.retainedClasses()).containsAll(first.retainedClasses());
+    final Set<String> newlyVisited = new java.util.HashSet<>(afterFailure.retainedClasses());
+    newlyVisited.removeAll(first.retainedClasses());
+    final Set<String> newlyVisitedLibraries =
+        new java.util.HashSet<>(afterFailure.reachableLibraryClasses());
+    newlyVisitedLibraries.removeAll(first.reachableLibraryClasses());
+    newlyVisited.addAll(newlyVisitedLibraries);
+    assertThat(prepared.expandedNodeCount() - expansionsAfterFirst).isEqualTo(newlyVisited.size());
+
+    final DependencyJarTrimmer.TrimAnalysis shrunk = prepared.analyze(List.of("fixture.C"));
+    final DependencyJarTrimmer.TrimAnalysis freshShrunk =
+        new DependencyJarTrimmer()
+            .analyze(candidateJar, siblings, jdkLibraryPool, List.of("fixture.C"));
+    assertThat(shrunk).isEqualTo(freshShrunk);
+    final int expansionsAfterShrink = prepared.expandedNodeCount();
+    final DependencyJarTrimmer.TrimAnalysis rootless = prepared.analyze(List.of());
+    assertThat(rootless.roots()).isEmpty();
+    assertThat(rootless.retainedClasses()).containsAll(shrunk.retainedClasses());
+    assertThat(rootless.reachableLibraryClasses()).isEmpty();
+    assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterShrink);
+    assertThat(prepared.analyze(List.of("fixture.C"))).isEqualTo(shrunk);
+    assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterShrink);
+  }
+
+  @Test
+  @DisplayName("ADR-0003: prepared contexts preserve candidate and ordered sibling precedence")
+  void preparedContextsPreserveCandidateAndOrderedSiblingPrecedence() throws Exception {
+    final Path candidateWithShared =
+        writeClassJar(
+            "candidate-precedence.jar",
+            Map.of(
+                "fixture/Root", simpleClass("fixture/Root", "fixture/Shared"),
+                "fixture/Shared", simpleClass("fixture/Shared", "fixture/CandidateOnly"),
+                "fixture/CandidateOnly", simpleClass("fixture/CandidateOnly", null)));
+    final Path siblingWithShared =
+        writeClassJar(
+            "sibling-precedence.jar",
+            Map.of(
+                "fixture/Shared", simpleClass("fixture/Shared", "fixture/SiblingOnly"),
+                "fixture/SiblingOnly", simpleClass("fixture/SiblingOnly", null)));
+    final DependencyJarTrimmer.TrimAnalysis candidateWins =
+        analyze(candidateWithShared, List.of(siblingWithShared), List.of("fixture.Root"));
+    assertThat(candidateWins.retainedClasses())
+        .contains("fixture/Shared", "fixture/CandidateOnly")
+        .doesNotContain("fixture/SiblingOnly");
+
+    final Path candidateWithoutShared =
+        writeClassJar(
+            "candidate-sibling-order.jar",
+            Map.of("fixture/Root", simpleClass("fixture/Root", "fixture/Shared")));
+    final Path firstSibling =
+        writeClassJar(
+            "first-sibling.jar",
+            Map.of(
+                "fixture/Shared", simpleClass("fixture/Shared", "fixture/FirstOnly"),
+                "fixture/FirstOnly", simpleClass("fixture/FirstOnly", null)));
+    final Path secondSibling =
+        writeClassJar(
+            "second-sibling.jar",
+            Map.of(
+                "fixture/Shared", simpleClass("fixture/Shared", "fixture/SecondOnly"),
+                "fixture/SecondOnly", simpleClass("fixture/SecondOnly", null)));
+    final DependencyJarTrimmer.TrimAnalysis firstWins =
+        analyze(
+            candidateWithoutShared, List.of(firstSibling, secondSibling), List.of("fixture.Root"));
+    final DependencyJarTrimmer.TrimAnalysis reversedOrderWins =
+        analyze(
+            candidateWithoutShared, List.of(secondSibling, firstSibling), List.of("fixture.Root"));
+
+    assertThat(firstWins.reachableLibraryClasses())
+        .contains("fixture/Shared", "fixture/FirstOnly")
+        .doesNotContain("fixture/SecondOnly");
+    assertThat(reversedOrderWins.reachableLibraryClasses())
+        .contains("fixture/Shared", "fixture/SecondOnly")
+        .doesNotContain("fixture/FirstOnly");
   }
 
   @Test
@@ -379,8 +540,10 @@ class DependencyJarTrimmerTest {
                     + "public LibChild create() { return new LibChild(); } }"),
             Map.entry(
                 "GhostUser.java",
-                SOURCE_ROOT
-                    + "public class GhostUser { public Ghost missing() { return null; } }"));
+                SOURCE_ROOT + "public class GhostUser { public Ghost missing() { return null; } }"),
+            Map.entry(
+                "BodyOnly.java",
+                SOURCE_ROOT + "public class BodyOnly { public void trigger() { new Ghost(); } }"));
     for (final Map.Entry<String, String> source : sources.entrySet()) {
       Files.writeString(sourceDirectory.resolve("fixture/" + source.getKey()), source.getValue());
     }
@@ -420,6 +583,7 @@ class DependencyJarTrimmerTest {
             sourceDirectory.resolve("fixture/lib/LibParent.java").toString(),
             sourceDirectory.resolve("fixture/lib/Creator.java").toString(),
             sourceDirectory.resolve("fixture/GhostUser.java").toString(),
+            sourceDirectory.resolve("fixture/BodyOnly.java").toString(),
             sourceDirectory.resolve("fixture/OptionalPack200.java").toString(),
             sourceDirectory.resolve("org/objectweb/asm/ClassVisitor.java").toString());
     if (compiler.run(null, null, null, arguments.toArray(String[]::new)) != 0) {
@@ -504,6 +668,31 @@ class DependencyJarTrimmerTest {
       output.closeEntry();
     }
     return candidateJar;
+  }
+
+  private Path writeClassJar(final String fileName, final Map<String, byte[]> classes)
+      throws IOException {
+    final Path jarPath = temporaryDirectory.resolve(fileName);
+    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jarPath))) {
+      for (final Map.Entry<String, byte[]> entry : classes.entrySet()) {
+        output.putNextEntry(new JarEntry(entry.getKey() + ".class"));
+        output.write(entry.getValue());
+        output.closeEntry();
+      }
+    }
+    return jarPath;
+  }
+
+  private static byte[] simpleClass(final String name, final String fieldType) {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+    if (fieldType != null) {
+      writer
+          .visitField(Opcodes.ACC_PUBLIC, "reference", "L" + fieldType + ";", null, null)
+          .visitEnd();
+    }
+    writer.visitEnd();
+    return writer.toByteArray();
   }
 
   private Path writeMultiReleaseSiblingJar() throws IOException {

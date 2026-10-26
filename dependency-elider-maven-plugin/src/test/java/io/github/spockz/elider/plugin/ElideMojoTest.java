@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
+import io.github.spockz.elider.trimmer.TrimAnalysisSession;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URL;
@@ -51,7 +52,8 @@ import org.objectweb.asm.Opcodes;
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
   "PMD.ShortVariable",
-  "PMD.AvoidInstantiatingObjectsInLoops"
+  "PMD.AvoidInstantiatingObjectsInLoops",
+  "PMD.CyclomaticComplexity"
 })
 final class ElideMojoTest {
   /** Root module descriptor entry used by projected fixture archives. */
@@ -238,19 +240,23 @@ final class ElideMojoTest {
             new ArtifactCoordinate("org.example", "mr-default-root", "1.0", "jar", "", "runtime"),
             projectionDirectory,
             21);
-    final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
-    final DependencyJarTrimmer.TrimAnalysis javaNineAnalysis =
-        trimmer.analyzeUnchangedPassThrough(
+    final TrimAnalysisSession analysisSession = new TrimAnalysisSession(new DependencyJarTrimmer());
+    final DependencyJarTrimmer.PreparedAnalysis javaNineContext =
+        analysisSession.prepareUnchangedPassThrough(
             javaNineProjection,
             List.of(fixture.candidatePath()),
             new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 9),
-            archiveClassNames(javaNineProjection));
-    final DependencyJarTrimmer.TrimAnalysis javaTwentyOneAnalysis =
-        trimmer.analyzeUnchangedPassThrough(
+            Set.of());
+    final DependencyJarTrimmer.PreparedAnalysis javaTwentyOneContext =
+        analysisSession.prepareUnchangedPassThrough(
             javaTwentyOneProjection,
             List.of(fixture.candidatePath()),
             new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 21),
-            archiveClassNames(javaTwentyOneProjection));
+            Set.of());
+    final DependencyJarTrimmer.TrimAnalysis javaNineAnalysis =
+        javaNineContext.analyze(archiveClassNames(javaNineProjection));
+    final DependencyJarTrimmer.TrimAnalysis javaTwentyOneAnalysis =
+        javaTwentyOneContext.analyze(archiveClassNames(javaTwentyOneProjection));
     assertThat(javaNineAnalysis.reachableLibraryClasses()).doesNotContain("candidate/Helper");
     assertThat(javaTwentyOneAnalysis.reachableLibraryClasses()).contains("candidate/Helper");
     final List<String> warnings = new ArrayList<>();
@@ -633,7 +639,7 @@ final class ElideMojoTest {
                 "chain.SpringAuto\n",
                 "META-INF/spring.factories",
                 "org.example.Factory=chain.Factory\n"));
-    final Path metadataJar =
+    final Path metadatfirstJar =
         rewriteJar(
             cjar,
             java.util.Map.of(
@@ -662,7 +668,7 @@ final class ElideMojoTest {
         descriptorJar("service-owner.jar", "META-INF/services/chain.End", "chain.Provider\n");
     final Artifact a = runtimeArtifact("chain-a", ajar);
     final Artifact b = runtimeArtifact("chain-b", bjar);
-    final Artifact c = runtimeArtifact("chain-c", metadataJar);
+    final Artifact c = runtimeArtifact("chain-c", metadatfirstJar);
     final Artifact serviceOwner = runtimeArtifact("service-owner", serviceJar);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(a, b, c, serviceOwner));
     final MavenProject project = new MavenProject();
@@ -698,6 +704,75 @@ final class ElideMojoTest {
     try (JarFile trimmed = new JarFile(c.getFile())) {
       assertThat(trimmed.getEntry("chain/Unused.class")).isNull();
     }
+  }
+
+  @Test
+  void trimRootsPropagateAcrossCyclicArtifactReferences()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Path compiled =
+        compileJarSources(
+            "cycle-all",
+            java.util.Map.of(
+                "cycle/Root.java", "package cycle; public class Root { public Bridge bridge; }",
+                "cycle/Bridge.java", "package cycle; public class Bridge { public End end; }",
+                "cycle/End.java", "package cycle; public class End { public Root root; }",
+                "cycle/BaselineB.java", "package cycle; public class BaselineB {}",
+                "cycle/BaselineC.java", "package cycle; public class BaselineC {}",
+                "cycle/UnusedA.java", "package cycle; public class UnusedA {}",
+                "cycle/UnusedB.java", "package cycle; public class UnusedB {}",
+                "cycle/UnusedC.java", "package cycle; public class UnusedC {}"),
+            null);
+    final Path firstJar =
+        selectJarEntries(
+            compiled, "cycle-a.jar", Set.of("cycle/Root.class", "cycle/UnusedA.class"));
+    final Path secondJar =
+        selectJarEntries(
+            compiled,
+            "cycle-b.jar",
+            Set.of("cycle/Bridge.class", "cycle/BaselineB.class", "cycle/UnusedB.class"));
+    final Path thirdJar =
+        selectJarEntries(
+            compiled,
+            "cycle-c.jar",
+            Set.of("cycle/End.class", "cycle/BaselineC.class", "cycle/UnusedC.class"));
+    final Artifact a = runtimeArtifact("cycle-a", firstJar);
+    final Artifact b = runtimeArtifact("cycle-b", secondJar);
+    final Artifact c = runtimeArtifact("cycle-c", thirdJar);
+    final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(a, b, c));
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(artifacts);
+    project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
+    project.setGroupId("org.example");
+    project.setArtifactId("cycle-consumer");
+    project.setVersion("1.0");
+    project.setName("Cyclic Consumer");
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Path productionSources = tempDir.resolve("cycle-sources");
+    Files.createDirectories(productionSources);
+    Files.writeString(productionSources.resolve("Seed.java"), "class Seed {}\n");
+    project.addCompileSourceRoot(productionSources.toString());
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("cycle-build").toString());
+    project.setBuild(build);
+    final ElideMojo mojo = new ElideMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("cycle.Root\n").toFile()));
+    set(mojo, "excludedArtifacts", List.of("org.example:cycle-b", "org.example:cycle-c"));
+    set(mojo, "reportFile", tempDir.resolve("cycle-report.json").toFile());
+    set(mojo, "sbomFile", tempDir.resolve("cycle-build/cycle-sbom.json").toFile());
+    set(mojo, "trimJars", true);
+    set(mojo, "sourceRootsComplete", true);
+    set(mojo, "trimRoots", List.of("cycle.BaselineB", "cycle.BaselineC"));
+
+    mojo.execute();
+
+    assertJarEntryPresent(a, "cycle/Root.class");
+    assertJarEntryPresent(b, "cycle/Bridge.class");
+    assertJarEntryPresent(c, "cycle/End.class");
+    assertJarOmits(a, "cycle/UnusedA.class");
+    assertJarOmits(b, "cycle/UnusedB.class");
+    assertJarOmits(c, "cycle/UnusedC.class");
   }
 
   private void assertClassMetadataRootsRetained(final Artifact artifact) throws IOException {
@@ -1543,6 +1618,27 @@ final class ElideMojoTest {
     return outputJar;
   }
 
+  private Path selectJarEntries(
+      final Path sourceJar, final String outputName, final Set<String> selectedEntries)
+      throws IOException {
+    final Path outputJar = tempDir.resolve(outputName);
+    try (JarFile inputJar = new JarFile(sourceJar.toFile());
+        ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(outputJar))) {
+      for (final String entryName : selectedEntries) {
+        final JarEntry entry = inputJar.getJarEntry(entryName);
+        if (entry == null) {
+          throw new IOException("Missing cycle fixture entry: " + entryName);
+        }
+        output.putNextEntry(new ZipEntry(entryName));
+        try (java.io.InputStream stream = inputJar.getInputStream(entry)) {
+          stream.transferTo(output);
+        }
+        output.closeEntry();
+      }
+    }
+    return outputJar;
+  }
+
   private Artifact runtimeArtifact(final String artifactId, final Path jar) {
     final Artifact artifact =
         new DefaultArtifact(
@@ -1562,6 +1658,19 @@ final class ElideMojoTest {
         .isNotEqualTo(tempDir.resolve(artifact.getArtifactId() + ".jar"));
     try (JarFile jar = new JarFile(artifact.getFile())) {
       assertThat(jar.getEntry(entry)).isNotNull();
+    }
+  }
+
+  private void assertJarEntryPresent(final Artifact artifact, final String entry)
+      throws IOException {
+    try (JarFile jar = new JarFile(artifact.getFile())) {
+      assertThat(jar.getEntry(entry)).isNotNull();
+    }
+  }
+
+  private void assertJarOmits(final Artifact artifact, final String entry) throws IOException {
+    try (JarFile jar = new JarFile(artifact.getFile())) {
+      assertThat(jar.getEntry(entry)).isNull();
     }
   }
 

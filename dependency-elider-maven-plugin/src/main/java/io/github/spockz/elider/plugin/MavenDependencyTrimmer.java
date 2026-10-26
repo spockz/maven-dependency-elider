@@ -369,13 +369,11 @@ final class MavenDependencyTrimmer {
     for (final SkippedProgram skippedProgram : skippedPrograms) {
       final List<Path> siblings =
           analysisLibraries.stream().filter(path -> !path.equals(skippedProgram.path())).toList();
+      final DependencyJarTrimmer.PreparedAnalysis prepared =
+          analysisSession.prepareUnchangedPassThrough(
+              skippedProgram.path(), siblings, runtimePlatform, unchangedPassThroughClassNames);
       final DependencyJarTrimmer.TrimAnalysis analysis =
-          analysisSession.analyzeUnchangedPassThrough(
-              skippedProgram.path(),
-              siblings,
-              runtimePlatform,
-              skippedProgram.classNames(),
-              unchangedPassThroughClassNames);
+          prepared.analyze(skippedProgram.classNames());
       analysisRuns++;
       for (final String linkedName : analysis.reachableLibraryClasses()) {
         final String dottedName = linkedName.replace('/', '.');
@@ -384,21 +382,24 @@ final class MavenDependencyTrimmer {
         }
       }
     }
+    final Map<CandidateWork, DependencyJarTrimmer.PreparedAnalysis> candidateAnalyses =
+        new java.util.HashMap<>();
+    for (final CandidateWork candidate : work) {
+      final List<Path> siblings =
+          analysisLibraries.stream()
+              .filter(path -> !path.equals(candidate.snapshot().filePath()))
+              .toList();
+      candidateAnalyses.put(
+          candidate,
+          analysisSession.prepareWithUnchangedPassThroughLibraries(
+              candidate.snapshot().filePath(), siblings, platform, unchangedPassThroughClassNames));
+    }
     boolean rootsChanged;
     do {
       rootsChanged = false;
       for (final CandidateWork candidate : work) {
-        final List<Path> siblings =
-            analysisLibraries.stream()
-                .filter(path -> !path.equals(candidate.snapshot().filePath()))
-                .toList();
         final DependencyJarTrimmer.TrimAnalysis analysis =
-            analysisSession.analyzeWithUnchangedPassThroughLibraries(
-                candidate.snapshot().filePath(),
-                siblings,
-                platform,
-                candidate.roots(),
-                unchangedPassThroughClassNames);
+            candidateAnalyses.get(candidate).analyze(candidate.roots());
         analysisRuns++;
         candidate.analysis(analysis);
         for (final String linkedName : analysis.reachableLibraryClasses()) {

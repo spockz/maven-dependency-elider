@@ -54,6 +54,40 @@ public final class TrimAnalysisSession {
         this::archive);
   }
 
+  /** Prepares an unchanged candidate with its supplied API context. */
+  public DependencyJarTrimmer.PreparedAnalysis prepareUnchangedPassThrough(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool platformLibraryPool,
+      final Collection<String> unchangedPassThroughClassNames)
+      throws IOException {
+    // The pool is read on the first non-empty query.
+    return trimmer.prepareInternal(
+        candidateJar,
+        libraryClassPath,
+        platformLibraryPool,
+        true,
+        normalizeClassNames(unchangedPassThroughClassNames),
+        this::archive);
+  }
+
+  /** Prepares a candidate with tolerated unchanged sibling classes. */
+  public DependencyJarTrimmer.PreparedAnalysis prepareWithUnchangedPassThroughLibraries(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool platformLibraryPool,
+      final Collection<String> unchangedPassThroughClassNames)
+      throws IOException {
+    // The pool is read on the first non-empty query.
+    return trimmer.prepareInternal(
+        candidateJar,
+        libraryClassPath,
+        platformLibraryPool,
+        false,
+        normalizeClassNames(unchangedPassThroughClassNames),
+        this::archive);
+  }
+
   /** Analyzes an unchanged pass-through candidate with cached sibling archive bytes. */
   public DependencyJarTrimmer.TrimAnalysis analyzeUnchangedPassThrough(
       final Path candidateJar,
