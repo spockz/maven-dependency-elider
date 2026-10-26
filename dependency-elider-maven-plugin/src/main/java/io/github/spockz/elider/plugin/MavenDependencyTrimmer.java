@@ -75,6 +75,9 @@ final class MavenDependencyTrimmer {
     }
   }
 
+  record ScanInputs(
+      ArtifactClassIndex classIndex, Map<Path, DependencyDynamicRoots.RootScan> dynamicRootScans) {}
+
   private record CacheManifest(String fingerprint, List<CacheEntry> entries) {}
 
   private record CacheEntry(
@@ -94,7 +97,7 @@ final class MavenDependencyTrimmer {
       MavenProject project,
       MavenSession session,
       List<MavenElisionService.ArtifactSnapshot> candidates,
-      ArtifactClassIndex classIndex,
+      ScanInputs scanInputs,
       Set<ArtifactCoordinate> retainedCoordinates,
       TraceData trace,
       Set<String> sourceRoots,
@@ -110,7 +113,7 @@ final class MavenDependencyTrimmer {
     final MavenProject project = request.project();
     final MavenSession session = request.session();
     final List<MavenElisionService.ArtifactSnapshot> candidates = request.candidates();
-    final ArtifactClassIndex classIndex = request.classIndex();
+    final ScanInputs scanInputs = request.scanInputs();
     final Set<ArtifactCoordinate> retainedCoordinates = request.retainedCoordinates();
     final TraceData trace = request.trace();
     final Set<String> sourceRoots = request.sourceRoots();
@@ -136,7 +139,7 @@ final class MavenDependencyTrimmer {
     allRoots.addAll(bytecodeRoots);
     allRoots.addAll(explicitRoots);
     final Map<io.github.spockz.elider.model.ArtifactFileRef, Set<String>> classesByArtifact =
-        classIndex.classesByArtifact();
+        scanInputs.classIndex().classesByArtifact();
     final List<MavenElisionService.ArtifactSnapshot> retainedLibraries =
         candidates.stream()
             .filter(
@@ -203,7 +206,13 @@ final class MavenDependencyTrimmer {
     final List<CandidateWork> work = new ArrayList<>();
     final Set<String> retainedDynamicRoots = new HashSet<>();
     for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
-      retainedDynamicRoots.addAll(DependencyDynamicRoots.scan(snapshot.filePath()).roots());
+      final DependencyDynamicRoots.RootScan scan =
+          scanInputs.dynamicRootScans().get(snapshot.filePath());
+      if (scan == null) {
+        throw new IOException(
+            "Missing dynamic-root scan for retained artifact " + snapshot.coordinate());
+      }
+      retainedDynamicRoots.addAll(scan.roots());
     }
     for (final MavenElisionService.ArtifactSnapshot candidate : retained) {
       final Set<String> candidateClasses =

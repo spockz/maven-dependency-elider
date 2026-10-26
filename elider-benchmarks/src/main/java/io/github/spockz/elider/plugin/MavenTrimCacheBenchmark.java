@@ -52,6 +52,7 @@ public class MavenTrimCacheBenchmark {
   private Path fixtureDirectory;
   private MavenProject project;
   private List<MavenElisionService.ArtifactSnapshot> candidates;
+  private List<ArtifactFileRef> artifactFiles;
   private ArtifactClassIndex classIndex;
   private ArtifactCoordinate coordinate;
   private TraceData trace;
@@ -87,6 +88,7 @@ public class MavenTrimCacheBenchmark {
     candidates =
         List.of(new MavenElisionService.ArtifactSnapshot(artifact, coordinate, originalJar));
     final ArtifactFileRef fileRef = ArtifactFileRef.fromPath(coordinate, originalJar);
+    artifactFiles = List.of(fileRef);
     classIndex = new JarIndexScanner().scan(List.of(fileRef));
     trace = TraceData.of(Set.of(ROOT_CLASS));
     final MavenDependencyTrimmer.TrimResult cold = trim();
@@ -120,12 +122,14 @@ public class MavenTrimCacheBenchmark {
 
   private MavenDependencyTrimmer.TrimResult trim()
       throws IOException, org.apache.maven.plugin.MojoFailureException {
+    final MavenElisionService.DynamicRootInputs dynamicRoots =
+        MavenElisionService.dynamicRoots(artifactFiles);
     return MavenDependencyTrimmer.trim(
         new MavenDependencyTrimmer.TrimRequest(
             project,
             null,
             candidates,
-            classIndex,
+            new MavenDependencyTrimmer.ScanInputs(classIndex, dynamicRoots.scansByPath()),
             Set.of(coordinate),
             trace,
             Set.of(ROOT_CLASS),

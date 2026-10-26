@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -167,7 +168,9 @@ final class MavenElisionService {
     final CompilerInputs compilerInputs =
         compilerInputs(project, session, scanCandidates, index, sourceRootsComplete);
     final DynamicRootInputs dynamicRootInputs =
-        trimJars ? dynamicRoots(scanCandidates) : new DynamicRootInputs(Set.of(), Set.of());
+        trimJars
+            ? dynamicRoots(scanCandidates)
+            : new DynamicRootInputs(Set.of(), Set.of(), Map.of());
     final Set<String> pruningRequiredClasses =
         requiredClassesForTrimming(
             compilerInputs.requiredClasses(),
@@ -203,7 +206,7 @@ final class MavenElisionService {
                     project,
                     session,
                     resolvedSnapshots,
-                    index,
+                    new MavenDependencyTrimmer.ScanInputs(index, dynamicRootInputs.scansByPath()),
                     new HashSet<>(decision.retainedArtifacts()),
                     trace,
                     pruningRequiredClasses,
@@ -401,19 +404,28 @@ final class MavenElisionService {
         jarDecision.elapsedNanos());
   }
 
-  private static DynamicRootInputs dynamicRoots(final List<ArtifactFileRef> candidates)
-      throws IOException {
+  static DynamicRootInputs dynamicRoots(final List<ArtifactFileRef> candidates) throws IOException {
+    return dynamicRoots(candidates, DependencyDynamicRoots::scan);
+  }
+
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  static DynamicRootInputs dynamicRoots(
+      final List<ArtifactFileRef> candidates, final DynamicRootScanner scanner) throws IOException {
     final Set<String> classNames = new HashSet<>();
     final Set<ArtifactCoordinate> declaringArtifacts = new HashSet<>();
+    final Map<Path, DependencyDynamicRoots.RootScan> scansByPath = new LinkedHashMap<>();
     for (final ArtifactFileRef candidate : candidates) {
-      final DependencyDynamicRoots.RootScan scan =
-          DependencyDynamicRoots.scan(candidate.filePath());
+      DependencyDynamicRoots.RootScan scan = scansByPath.get(candidate.filePath());
+      if (scan == null) {
+        scan = scanner.scan(candidate.filePath());
+        scansByPath.put(candidate.filePath(), scan);
+      }
       classNames.addAll(scan.roots());
       if (scan.declaresClassRoots()) {
         declaringArtifacts.add(candidate.coordinate());
       }
     }
-    return new DynamicRootInputs(classNames, declaringArtifacts);
+    return new DynamicRootInputs(classNames, declaringArtifacts, scansByPath);
   }
 
   private static Set<String> requiredClassesForTrimming(
@@ -594,11 +606,22 @@ final class MavenElisionService {
     }
   }
 
-  private record DynamicRootInputs(
-      Set<String> classNames, Set<ArtifactCoordinate> declaringArtifacts) {
-    private DynamicRootInputs {
+  /** Scans one dependency archive during an analysis invocation. */
+  @FunctionalInterface
+  interface DynamicRootScanner {
+    /** Returns the dynamic roots declared by the archive. */
+    DependencyDynamicRoots.RootScan scan(Path path) throws IOException;
+  }
+
+  /** Holds invocation roots and the scans reused by retained-JAR trimming. */
+  record DynamicRootInputs(
+      Set<String> classNames,
+      Set<ArtifactCoordinate> declaringArtifacts,
+      Map<Path, DependencyDynamicRoots.RootScan> scansByPath) {
+    DynamicRootInputs {
       classNames = Set.copyOf(classNames);
       declaringArtifacts = Set.copyOf(declaringArtifacts);
+      scansByPath = Map.copyOf(scansByPath);
     }
   }
 
@@ -648,7 +671,7 @@ final class MavenElisionService {
   @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.UseConcurrentHashMap"})
   private static void validateIdentityPaths(final List<ArtifactSnapshot> snapshots)
       throws IOException {
-    final Map<ArtifactIdentity, Path> paths = new java.util.LinkedHashMap<>();
+    final Map<ArtifactIdentity, Path> paths = new LinkedHashMap<>();
     for (final ArtifactSnapshot snapshot : snapshots) {
       if (!"jar".equals(snapshot.coordinate().type())) {
         continue;
@@ -675,7 +698,7 @@ final class MavenElisionService {
   private static void validateDirectPaths(
       final Collection<ArtifactSnapshot> resolved, final Collection<ArtifactSnapshot> direct)
       throws IOException {
-    final Map<ArtifactIdentity, Path> resolvedPaths = new java.util.LinkedHashMap<>();
+    final Map<ArtifactIdentity, Path> resolvedPaths = new LinkedHashMap<>();
     for (final ArtifactSnapshot snapshot : resolved) {
       if ("jar".equals(snapshot.coordinate().type()) && snapshot.filePath() != null) {
         resolvedPaths.put(ArtifactIdentity.from(snapshot.coordinate()), snapshot.filePath());

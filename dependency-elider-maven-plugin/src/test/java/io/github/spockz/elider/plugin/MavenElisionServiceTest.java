@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
 import java.io.File;
 import java.io.IOException;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
 /** Verifies Maven elision preparation without mutating Maven state. */
 @SuppressWarnings({
   "PMD.AvoidDuplicateLiterals",
+  "PMD.CouplingBetweenObjects",
   "PMD.LawOfDemeter",
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.TooManyMethods",
@@ -58,6 +60,31 @@ final class MavenElisionServiceTest {
             MavenElisionService.snapshots(ordered), false, List.of(), decision(Set.of(), Set.of()));
 
     assertThat(new ArrayList<>(analysis.resolvedArtifacts())).containsExactly(first, second);
+  }
+
+  @Test
+  void dynamicRootScanIsReusedForArtifactsSharingOneJarPath() throws IOException {
+    final Path jar = writeJar("shared-dynamic-roots.jar");
+    final ArtifactCoordinate first = coordinateFor("first", "compile");
+    final ArtifactCoordinate second = coordinateFor("second", "runtime");
+    final List<ArtifactFileRef> candidates =
+        List.of(ArtifactFileRef.fromPath(first, jar), ArtifactFileRef.fromPath(second, jar));
+    final List<Path> scannedPaths = new ArrayList<>();
+    final DependencyDynamicRoots.RootScan expectedScan =
+        new DependencyDynamicRoots.RootScan(Set.of("library.Provider"), true);
+
+    final MavenElisionService.DynamicRootInputs inputs =
+        MavenElisionService.dynamicRoots(
+            candidates,
+            path -> {
+              scannedPaths.add(path);
+              return expectedScan;
+            });
+
+    assertThat(scannedPaths).containsExactly(jar);
+    assertThat(inputs.classNames()).containsExactly("library.Provider");
+    assertThat(inputs.declaringArtifacts()).containsExactlyInAnyOrder(first, second);
+    assertThat(inputs.scansByPath()).containsEntry(jar, expectedScan);
   }
 
   @Test
