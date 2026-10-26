@@ -120,10 +120,7 @@ class MavenPlatformContextHolderTest {
         assertThat(result.get()).isSameAs(published);
       }
       assertThat(published.sourceIdentities()).hasSize(1);
-      try (JdkPlatformContext context =
-          MavenPlatformContextHolder.forOperation(session, javaHome)) {
-        assertThat(context.capturedStorageBytes()).isEqualTo(Files.size(ctSym));
-      }
+      assertThat(published.sourceIdentities().getFirst().sourcePath()).isEqualTo(ctSym);
     }
   }
 
@@ -138,10 +135,8 @@ class MavenPlatformContextHolderTest {
             session(new DefaultMavenExecutionRequest()), javaHome)) {
 
       assertThatThrownBy(() -> context.snapshot(RELEASE)).isInstanceOf(IOException.class);
-      assertThat(context.capturedStorageBytes()).isZero();
       writeCtSym(ctSym, CT_SYM_ENTRY, new byte[] {1});
       assertThat(context.snapshot(RELEASE).sourceIdentities()).hasSize(1);
-      assertThat(context.capturedStorageBytes()).isEqualTo(Files.size(ctSym));
     }
   }
 

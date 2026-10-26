@@ -1,10 +1,14 @@
-/* WHY: Builds a fresh library pool from captured ct.sym bytes. */
+/* WHY: Builds a fresh library pool from selected ct.sym entries after a cache miss. */
 
 package io.github.spockz.elider.trimmer;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.Enumeration;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipException;
+import java.util.zip.ZipFile;
 import org.objectweb.asm.ClassReader;
 import proguard.classfile.ClassPool;
 
@@ -13,35 +17,26 @@ import proguard.classfile.ClassPool;
 final class CtSymClassPoolReader {
   private CtSymClassPoolReader() {}
 
-  static ClassPool read(final JdkPlatformContext.CapturedFile source, final int release)
-      throws IOException {
+  static ClassPool read(final Path source, final int release) throws IOException {
     final String releaseCode = releaseCode(release);
     final ClassPool classPool = new ClassPool();
-    try (ZipInputStream archive = new ZipInputStream(source.openStream())) {
-      while (true) {
-        final ZipEntry entry = archive.getNextEntry();
-        if (entry == null) {
-          break;
-        }
-        readEntry(archive, entry, releaseCode, release, classPool);
-        archive.closeEntry();
+    try (ZipFile archive = new ZipFile(source.toFile())) {
+      final Enumeration<? extends ZipEntry> entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        readEntry(archive, entries.nextElement(), releaseCode, release, classPool);
       }
-    } catch (final java.util.zip.ZipException exception) {
-      throw new IOException(
-          "Could not read captured JDK API archive: " + source.sourcePath(), exception);
+    } catch (final ZipException exception) {
+      throw new IOException("Could not read JDK API archive: " + source, exception);
     }
     if (classPool.size() == 0) {
       throw new IOException(
-          "No captured JDK API signatures were found for --release "
-              + release
-              + " in "
-              + source.sourcePath());
+          "No JDK API signatures were found for --release " + release + " in " + source);
     }
     return classPool;
   }
 
   private static void readEntry(
-      final ZipInputStream archive,
+      final ZipFile archive,
       final ZipEntry entry,
       final String releaseCode,
       final int release,
@@ -84,10 +79,10 @@ final class CtSymClassPoolReader {
   }
 
   @SuppressWarnings("PMD.AvoidCatchingGenericException")
-  private static ClassReader readSignature(final ZipInputStream archive, final ZipEntry entry)
+  private static ClassReader readSignature(final ZipFile archive, final ZipEntry entry)
       throws IOException {
-    try {
-      return new ClassReader(archive);
+    try (InputStream signature = archive.getInputStream(entry)) {
+      return new ClassReader(signature);
     } catch (final RuntimeException exception) {
       throw new IOException("Could not read JDK API signature: " + entry.getName(), exception);
     }

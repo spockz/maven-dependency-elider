@@ -88,6 +88,47 @@ final class MavenDependencyTrimmerTest {
         .hasMessageContaining("Missing dynamic-root scan for retained artifact");
   }
 
+  @Test
+  void malformedSelectedPlatformClassOnCacheMissPublishesNoSuccessOutput() throws Exception {
+    final Path jar = compileJar();
+    final Path javaHome = Files.createDirectories(tempDir.resolve("malformed-jdk/lib")).getParent();
+    try (ZipOutputStream ctSym =
+        new ZipOutputStream(Files.newOutputStream(javaHome.resolve("lib/ct.sym")))) {
+      ctSym.putNextEntry(new java.util.zip.ZipEntry("L/java.base/sample/Broken.sig"));
+      ctSym.write(new byte[] {1, 2, 3});
+      ctSym.closeEntry();
+    }
+    final ArtifactCoordinate coordinate =
+        new ArtifactCoordinate(GROUP_ID, ARTIFACT_ID, VERSION, JAR_TYPE, "", ARTIFACT_ID);
+    final Artifact artifact = runtimeArtifact(jar);
+    final MavenProject project = project(artifact);
+    final Path normalizedJar = jar.toAbsolutePath().normalize();
+    final MavenElisionService.ArtifactSnapshot snapshot =
+        new MavenElisionService.ArtifactSnapshot(artifact, coordinate, normalizedJar);
+    final ArtifactFileRef artifactRef = ArtifactFileRef.fromPath(coordinate, normalizedJar);
+    final ArtifactClassIndex classIndex = new JarIndexScanner().scan(List.of(artifactRef));
+    final MavenDependencyTrimmer.ScanInputs scanInputs =
+        new MavenDependencyTrimmer.ScanInputs(
+            classIndex, Map.of(normalizedJar, new DependencyDynamicRoots.RootScan(Set.of(), true)));
+    final String previousJavaHome = System.getProperty("java.home");
+    final Path manifest = tempDir.resolve("build/elided-artifacts/.trim-analysis-cache.json");
+    final Path output =
+        tempDir.resolve("build/elided-artifacts/org.example-runtime-1.0-trimmed.jar");
+
+    System.setProperty("java.home", javaHome.toString());
+    try {
+      assertThatThrownBy(() -> trim(project, snapshot, scanInputs))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Could not read JDK API signature");
+    } finally {
+      System.setProperty("java.home", previousJavaHome);
+    }
+
+    assertThat(manifest).doesNotExist();
+    assertThat(output).doesNotExist();
+    assertThat(jar).isRegularFile();
+  }
+
   private MavenDependencyTrimmer.TrimResult trim(
       final MavenProject project,
       final MavenElisionService.ArtifactSnapshot snapshot,

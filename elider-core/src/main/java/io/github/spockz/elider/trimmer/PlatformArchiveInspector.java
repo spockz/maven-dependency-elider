@@ -1,48 +1,47 @@
-/* WHY: Validates captured platform inventories before publication.
- * It avoids parsing class declarations. */
+/* WHY: Determines platform source selection from ZIP central directories without retaining archive
+ * bytes or decompressing class entries just to form cache identity. */
 
 package io.github.spockz.elider.trimmer;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipException;
+import java.util.zip.ZipFile;
 
-/** Checks captured JDK archive selection and inventory metadata. */
+/** Checks JDK archive selection and release metadata. */
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CommentDefaultAccessModifier"})
 final class PlatformArchiveInspector {
+  /** JMOD's four-byte prefix before the ZIP structures. */
+  private static final byte[] JMOD_HEADER = {'J', 'M', 1, 0};
+
   private PlatformArchiveInspector() {}
 
-  static List<String> selectedSignatures(
-      final JdkPlatformContext.CapturedFile source, final int release) throws IOException {
+  static List<String> selectedSignatures(final Path source, final int release) throws IOException {
     final String releaseCode = releaseCode(release);
     final List<String> signatures = new ArrayList<>();
     final Set<String> selectedNames = new LinkedHashSet<>();
-    try (ZipInputStream archive = new ZipInputStream(source.openStream())) {
-      while (true) {
-        final ZipEntry entry = archive.getNextEntry();
-        if (entry == null) {
-          break;
-        }
-        final String entryName = entry.getName();
+    try (ZipFile archive = new ZipFile(source.toFile())) {
+      final Enumeration<? extends ZipEntry> entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        final String entryName = entries.nextElement().getName();
         final String[] pathParts = entryName.split("/", 3);
         if (pathParts.length != 3
             || !pathParts[0].contains(releaseCode)
             || !pathParts[2].endsWith(".sig")) {
-          archive.closeEntry();
           continue;
         }
         final String internalName = pathParts[2].substring(0, pathParts[2].length() - 4);
         if (internalName.endsWith("module-info")) {
-          archive.closeEntry();
           continue;
         }
         if (!selectedNames.add(internalName)) {
@@ -50,53 +49,25 @@ final class PlatformArchiveInspector {
               "Multiple ct.sym signatures match Java " + release + " for class " + internalName);
         }
         signatures.add(entryName);
-        archive.closeEntry();
       }
-    } catch (final java.util.zip.ZipException exception) {
-      throw new IOException(
-          "Could not read captured JDK API archive: " + source.sourcePath(), exception);
+    } catch (final ZipException exception) {
+      throw new IOException("Could not inspect JDK API archive: " + source, exception);
     }
     return List.copyOf(signatures);
   }
 
-  static int collectJmodClasses(
-      final JdkPlatformContext.CapturedFile module, final Set<String> knownClasses)
-      throws IOException {
-    int count = 0;
-    try (ZipInputStream archive = new ZipInputStream(module.openJmodStream())) {
-      while (true) {
-        final ZipEntry entry = archive.getNextEntry();
-        if (entry == null) {
-          break;
-        }
-        final String entryName = entry.getName();
-        if (!entryName.startsWith("classes/") || !entryName.endsWith(".class")) {
-          archive.closeEntry();
-          continue;
-        }
-        final String className =
-            entryName.substring("classes/".length(), entryName.length() - ".class".length());
-        if (className.endsWith("module-info")) {
-          archive.closeEntry();
-          continue;
-        }
-        if (!knownClasses.add(className)) {
-          throw new IOException("Duplicate runtime JDK class in captured jmods: " + className);
-        }
-        count++;
-        archive.closeEntry();
-      }
-    } catch (final java.util.zip.ZipException exception) {
-      throw new IOException(
-          "Could not read captured JDK module archive: " + module.sourcePath(), exception);
+  static void validateJmodHeader(final Path source) throws IOException {
+    final byte[] header;
+    try (InputStream input = Files.newInputStream(source)) {
+      header = input.readNBytes(JMOD_HEADER.length);
     }
-    return count;
+    if (!java.util.Arrays.equals(header, JMOD_HEADER)) {
+      throw new IOException("Invalid JMOD header: " + source);
+    }
   }
 
-  static int readJdkRelease(final JdkPlatformContext.CapturedFile releaseFile) throws IOException {
-    try (BufferedReader lines =
-        new BufferedReader(
-            new InputStreamReader(releaseFile.openStream(), StandardCharsets.UTF_8))) {
+  static int readJdkRelease(final Path releaseFile) throws IOException {
+    try (BufferedReader lines = Files.newBufferedReader(releaseFile, StandardCharsets.UTF_8)) {
       while (true) {
         final String line = lines.readLine();
         if (line == null) {
@@ -111,7 +82,7 @@ final class PlatformArchiveInspector {
         try {
           return Integer.parseInt(feature);
         } catch (final NumberFormatException exception) {
-          throw new IOException("Invalid JAVA_VERSION in captured release metadata", exception);
+          throw new IOException("Invalid JAVA_VERSION in JDK release metadata", exception);
         }
       }
     }

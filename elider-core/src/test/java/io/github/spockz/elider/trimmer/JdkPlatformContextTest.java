@@ -11,14 +11,15 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.stream.Stream;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -49,7 +50,7 @@ class JdkPlatformContextTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  @DisplayName("ADR-0003: changed source bytes get a fresh identity despite stable size and mtime")
+  @DisplayName("ADR-0004: changed source bytes get a fresh identity despite stable size and mtime")
   void exactIdentityChangesWithSameSizeRestoredTimestamp() throws Exception {
     final Path javaHome = javaHome("changed-content");
     final Path ctSym = javaHome.resolve("lib/ct.sym");
@@ -61,7 +62,11 @@ class JdkPlatformContextTest {
     try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
       final JdkPlatformContext.PlatformSnapshot snapshot = context.snapshot(RELEASE_17);
       firstIdentity = snapshot.identity();
-      assertThat(context.capturedStorageBytes()).isEqualTo(sourceSize);
+      assertThat(snapshot.sourceIdentities().getFirst().sha256())
+          .isEqualTo(
+              HexFormat.of()
+                  .formatHex(
+                      MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(ctSym))));
     }
 
     writeCtSym(
@@ -78,9 +83,8 @@ class JdkPlatformContextTest {
   }
 
   @Test
-  @DisplayName(
-      "ADR-0003: deferred parsing consumes the captured bytes after the live JDK file changes")
-  void deferredParseUsesCapturedArchiveBytes() throws Exception {
+  @DisplayName("ADR-0004: deferred parsing uses the selected live JDK archive path")
+  void deferredParseUsesSelectedArchivePath() throws Exception {
     final Path javaHome = javaHome("deferred-parse");
     final Path ctSym = javaHome.resolve("lib/ct.sym");
     writeCtSym(
@@ -88,9 +92,7 @@ class JdkPlatformContextTest {
 
     try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
       final JdkPlatformContext.PlatformSnapshot snapshot = context.snapshot(RELEASE_21);
-      writeCtSym(
-          ctSym, "L/java.base/fixture/After.sig", classBytes("fixture/After", Opcodes.ACC_PUBLIC));
-
+      assertThat(snapshot.sourceIdentities().getFirst().sourcePath()).isEqualTo(ctSym);
       final ClassPool classes = new JdkApiClassPoolReader().read(snapshot);
       assertThat(classes.getClass("fixture/Before")).isNotNull();
       assertThat(classes.getClass("fixture/After")).isNull();
@@ -98,7 +100,7 @@ class JdkPlatformContextTest {
   }
 
   @Test
-  @DisplayName("ADR-0003: release and JDK location are part of platform source identity")
+  @DisplayName("ADR-0004: release and JDK location are part of platform source identity")
   void releaseAndJdkLocationDoNotCollide() throws Exception {
     final Path javaHome = javaHome("release-identity");
     final Path ctSym = javaHome.resolve("lib/ct.sym");
@@ -117,13 +119,12 @@ class JdkPlatformContextTest {
       final JdkPlatformContext.PlatformSnapshot otherHome = second.snapshot(RELEASE_17);
       assertThat(release17.identity()).isNotEqualTo(release21.identity());
       assertThat(release17.identity()).isNotEqualTo(otherHome.identity());
-      assertThat(first.capturedStorageBytes()).isEqualTo(Files.size(ctSym));
     }
   }
 
   @Test
   @DisplayName(
-      "ADR-0003: JMOD fallback identity binds release evidence and the ordered module inventory")
+      "ADR-0004: JMOD fallback identity binds release evidence and the ordered module inventory")
   void jmodFallbackCapturesReleaseAndEveryModule() throws Exception {
     final Path firstHome = jmodHome("jmod-first", "fixture/First");
     final Path secondHome = jmodHome("jmod-second", "fixture/First", "fixture/Second");
@@ -138,18 +139,73 @@ class JdkPlatformContextTest {
       assertThat(firstSnapshot.identity()).isNotEqualTo(secondSnapshot.identity());
       assertThat(firstSnapshot.sourceIdentities()).hasSize(3);
       assertThat(secondSnapshot.sourceIdentities()).hasSize(4);
-      assertThat(first.capturedStorageBytes())
-          .isEqualTo(
-              firstSnapshot.sourceIdentities().stream()
-                  .mapToLong(JdkPlatformContext.SourceIdentity::size)
-                  .sum());
       final ClassPool classes = new JdkApiClassPoolReader().read(firstSnapshot);
       assertThat(classes.getClass("fixture/First")).isNotNull();
     }
   }
 
   @Test
-  @DisplayName("ADR-0003: concurrent same-key release requests publish one complete snapshot")
+  @DisplayName("ADR-0004: platform identity includes source mode and deterministic JMOD inventory")
+  void sourceModeAndJmodInventoryAreIdentityInputs() throws Exception {
+    final Path javaHome = jmodHome("selection-identity", "fixture/Runtime");
+    final String jmodIdentity;
+    try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
+      final JdkPlatformContext.PlatformSnapshot snapshot =
+          context.snapshot(Runtime.version().feature());
+      jmodIdentity = snapshot.identity();
+      assertThat(
+              snapshot.sourceIdentities().stream().map(source -> source.sourcePath().getFileName()))
+          .containsExactly(Path.of("ct.sym"), Path.of("release"), Path.of("module-0.jmod"));
+    }
+
+    final Path jmods = javaHome.resolve("jmods");
+    writeJmod(
+        jmods.resolve("module-extra.jmod"),
+        Map.of("classes/fixture/Extra.class", classBytes("fixture/Extra", Opcodes.ACC_PUBLIC)));
+    try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
+      final JdkPlatformContext.PlatformSnapshot expanded =
+          context.snapshot(Runtime.version().feature());
+      assertThat(expanded.identity()).isNotEqualTo(jmodIdentity);
+      assertThat(
+              expanded.sourceIdentities().stream().map(source -> source.sourcePath().getFileName()))
+          .containsExactly(
+              Path.of("ct.sym"),
+              Path.of("release"),
+              Path.of("module-0.jmod"),
+              Path.of("module-extra.jmod"));
+    }
+
+    final Path ctSym = javaHome.resolve("lib/ct.sym");
+    writeCtSym(
+        ctSym,
+        releaseSignatureEntry(Runtime.version().feature()),
+        classBytes("fixture/Selected", Opcodes.ACC_PUBLIC));
+    try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
+      final JdkPlatformContext.PlatformSnapshot signatureSource =
+          context.snapshot(Runtime.version().feature());
+      assertThat(signatureSource.sourceKind()).isEqualTo("ct.sym");
+      assertThat(signatureSource.identity()).isNotEqualTo(jmodIdentity);
+    }
+  }
+
+  @Test
+  @DisplayName("ADR-0004: malformed selected JMOD fails when a cache miss parses the source")
+  void malformedJmodFailsDuringDeferredParse() throws Exception {
+    final Path javaHome = jmodHome("malformed-jmod", "fixture/Runtime");
+    final Path module = javaHome.resolve("jmods/module-0.jmod");
+    Files.write(module, new byte[] {'J', 'M', 1, 0, 1, 2, 3});
+
+    try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
+      final JdkPlatformContext.PlatformSnapshot snapshot =
+          context.snapshot(Runtime.version().feature());
+      assertThat(snapshot.sourceKind()).isEqualTo("jmods");
+      assertThatThrownBy(() -> new JdkApiClassPoolReader().read(snapshot))
+          .isInstanceOf(IOException.class);
+    }
+  }
+
+  @Test
+  @DisplayName("ADR-0004: concurrent same-key release requests publish one complete snapshot")
   void concurrentCaptureReturnsOneSnapshot() throws Exception {
     final Path javaHome = javaHome("concurrent-capture");
     writeCtSym(
@@ -176,53 +232,26 @@ class JdkPlatformContextTest {
       for (final Future<JdkPlatformContext.PlatformSnapshot> result : results) {
         assertThat(result.get()).isSameAs(published);
       }
-      assertThat(context.capturedStorageBytes())
-          .isEqualTo(Files.size(javaHome.resolve("lib/ct.sym")));
     }
   }
 
   @Test
-  @DisplayName("ADR-0003: failed platform capture leaves no partial value and can be retried")
-  void failedCaptureCanRetryWithoutPartialStorage() throws Exception {
+  @DisplayName("ADR-0004: failed platform capture leaves no partial value and can be retried")
+  void failedCaptureCanRetry() throws Exception {
     final Path javaHome = javaHome("retry-capture");
     final Path ctSym = javaHome.resolve("lib/ct.sym");
     Files.writeString(ctSym, "not-a-zip");
 
     try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
       assertThatThrownBy(() -> context.snapshot(RELEASE_21)).isInstanceOf(IOException.class);
-      assertThat(context.capturedStorageBytes()).isZero();
       writeCtSym(
           ctSym, "L/java.base/" + CLASS_NAME + ".sig", classBytes(CLASS_NAME, Opcodes.ACC_PUBLIC));
       assertThat(context.snapshot(RELEASE_21).sourceIdentities()).hasSize(1);
-      assertThat(context.capturedStorageBytes()).isEqualTo(Files.size(ctSym));
     }
   }
 
   @Test
-  @DisplayName(
-      "ADR-0003: in-memory capture leaves no temporary snapshot files on success or failure")
-  void captureDoesNotLeaveTemporarySnapshotFiles() throws Exception {
-    final Path javaHome = javaHome("memory-capture");
-    final Path ctSym = javaHome.resolve("lib/ct.sym");
-    Files.writeString(ctSym, "not-a-zip");
-    assertThat(snapshotTemporaryFiles()).isEmpty();
-
-    try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
-      assertThatThrownBy(() -> context.snapshot(RELEASE_21)).isInstanceOf(IOException.class);
-      assertThat(context.capturedStorageBytes()).isZero();
-      assertThat(snapshotTemporaryFiles()).isEmpty();
-      writeCtSym(
-          ctSym, "L/java.base/" + CLASS_NAME + ".sig", classBytes(CLASS_NAME, Opcodes.ACC_PUBLIC));
-      assertThat(context.snapshot(RELEASE_21).sourceIdentities()).hasSize(1);
-      assertThat(context.capturedStorageBytes()).isEqualTo(Files.size(ctSym));
-      assertThat(snapshotTemporaryFiles()).isEmpty();
-    }
-    assertThat(snapshotTemporaryFiles()).isEmpty();
-  }
-
-  @Test
-  @DisplayName(
-      "ADR-0003: archive capture defers class declaration parsing and readers get isolated pools")
+  @DisplayName("ADR-0004: digest capture defers class parsing and readers get isolated pools")
   void captureDefersParsingAndReadersDoNotShareMutableClasses() throws Exception {
     final Path javaHome = javaHome("deferred-malformed-class");
     final Path ctSym = javaHome.resolve("lib/ct.sym");
@@ -264,12 +293,10 @@ class JdkPlatformContextTest {
     return home;
   }
 
-  private static List<Path> snapshotTemporaryFiles() throws IOException {
-    try (Stream<Path> files = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
-      return files
-          .filter(path -> path.getFileName().toString().startsWith("elider-platform-snapshot-"))
-          .toList();
-    }
+  private static String releaseSignatureEntry(final int release) {
+    final String releaseCode =
+        release <= 9 ? Integer.toString(release) : Character.toString((char) ('A' + release - 10));
+    return releaseCode + "/java.base/fixture/Selected.sig";
   }
 
   private Path jmodHome(final String name, final String... classNames) throws IOException {
