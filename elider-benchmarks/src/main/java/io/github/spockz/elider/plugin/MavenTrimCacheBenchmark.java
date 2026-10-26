@@ -23,8 +23,12 @@ import javax.tools.ToolProvider;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.toolchain.Toolchain;
+import org.apache.maven.toolchain.ToolchainManager;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Mode;
@@ -51,6 +55,7 @@ public class MavenTrimCacheBenchmark {
 
   private Path fixtureDirectory;
   private MavenProject project;
+  private MavenSession warmedSession;
   private List<MavenElisionService.ArtifactSnapshot> candidates;
   private List<ArtifactFileRef> artifactFiles;
   private ArtifactClassIndex classIndex;
@@ -91,11 +96,12 @@ public class MavenTrimCacheBenchmark {
     artifactFiles = List.of(fileRef);
     classIndex = new JarIndexScanner().scan(List.of(fileRef));
     trace = TraceData.of(Set.of(ROOT_CLASS));
-    final MavenDependencyTrimmer.TrimResult cold = trim();
+    warmedSession = newSession();
+    final MavenDependencyTrimmer.TrimResult cold = trim(warmedSession);
     if (cold.analysisRuns() == 0 || cold.cacheHits() != 0) {
       throw new IllegalStateException("Trim cache fixture did not populate via ProGuard analysis");
     }
-    final MavenDependencyTrimmer.TrimResult warm = trim();
+    final MavenDependencyTrimmer.TrimResult warm = trim(warmedSession);
     if (warm.analysisRuns() != 0 || warm.cacheHits() != 1) {
       throw new IllegalStateException("Trim cache fixture did not pass the production warm path");
     }
@@ -105,7 +111,14 @@ public class MavenTrimCacheBenchmark {
   @Benchmark
   public MavenDependencyTrimmer.TrimResult validatedMavenTrimCacheHit()
       throws IOException, org.apache.maven.plugin.MojoFailureException {
-    return trim();
+    return trim(warmedSession);
+  }
+
+  /** Runs the same cache hit with a fresh single-project Maven execution request. */
+  @Benchmark
+  public MavenDependencyTrimmer.TrimResult validatedFreshMavenTrimCacheHit()
+      throws IOException, org.apache.maven.plugin.MojoFailureException {
+    return trim(newSession());
   }
 
   /** Removes the trial JAR and cache outputs after measurement. */
@@ -120,14 +133,14 @@ public class MavenTrimCacheBenchmark {
     }
   }
 
-  private MavenDependencyTrimmer.TrimResult trim()
+  private MavenDependencyTrimmer.TrimResult trim(final MavenSession session)
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     final MavenElisionService.DynamicRootInputs dynamicRoots =
         MavenElisionService.dynamicRoots(artifactFiles);
     return MavenDependencyTrimmer.trim(
         new MavenDependencyTrimmer.TrimRequest(
             project,
-            null,
+            session,
             candidates,
             new MavenDependencyTrimmer.ScanInputs(classIndex, dynamicRoots.scansByPath()),
             Set.of(coordinate),
@@ -138,6 +151,39 @@ public class MavenTrimCacheBenchmark {
             false,
             List.of(),
             false));
+  }
+
+  private MavenSession newSession() {
+    return new BenchmarkSession(new DefaultMavenExecutionRequest(), project);
+  }
+
+  private static final class BenchmarkSession extends MavenSession {
+    private static final ToolchainManager TOOLCHAIN_MANAGER =
+        new ToolchainManager() {
+          @Override
+          public Toolchain getToolchainFromBuildContext(
+              final String type, final MavenSession session) {
+            return null;
+          }
+
+          @Override
+          public List<Toolchain> getToolchains(
+              final MavenSession session,
+              final String type,
+              final java.util.Map<String, String> requirements) {
+            return List.of();
+          }
+        };
+
+    @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+    BenchmarkSession(final DefaultMavenExecutionRequest request, final MavenProject project) {
+      super(null, request, null, project);
+    }
+
+    @Override
+    public Object lookup(final String role) {
+      return TOOLCHAIN_MANAGER;
+    }
   }
 
   private Path createFixtureJar(final Path fixtureRoot) throws IOException {

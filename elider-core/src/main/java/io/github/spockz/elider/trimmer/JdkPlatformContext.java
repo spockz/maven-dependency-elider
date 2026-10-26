@@ -1,17 +1,16 @@
 /* WHY: Captures exact JDK platform archives once for one analysis context so cache identity and
- * deferred ProGuard loading use the same bytes without sharing mutable class pools. */
+ * deferred ProGuard loading use identical bytes. */
 
 package io.github.spockz.elider.trimmer;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -19,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Owns exact JDK API source snapshots for one analysis operation. */
+/** Owns exact JDK API source snapshots for one Maven execution request. */
 @SuppressWarnings({
   "PMD.TooManyMethods",
   "PMD.UseConcurrentHashMap",
@@ -28,7 +27,7 @@ import java.util.Set;
 })
 public final class JdkPlatformContext implements AutoCloseable {
   /** Changes when platform source selection or class-pool interpretation changes. */
-  public static final String READER_POLICY_VERSION = "jdk-api-reader-v2";
+  public static final String READER_POLICY_VERSION = "jdk-api-reader-v3";
 
   /** The first Java release with a supported public API signature set. */
   private static final int MIN_SUPPORTED_RELEASE = 8;
@@ -36,38 +35,21 @@ public final class JdkPlatformContext implements AutoCloseable {
   /** Normalized JDK installation location used by this context. */
   private final Path jdkLocation;
 
-  /** Temporary storage that owns captured bytes until this context closes. */
-  private final Path snapshotDirectory;
-
-  /** WHY: Keep deterministic input order while publishing complete snapshots. */
+  /** WHY: Retain exact sources for trims sharing this request. */
   private final Map<Path, CapturedFile> capturedFiles = new LinkedHashMap<>();
 
   /** WHY: Pair cache identities and captured bytes under one monitor. */
   private final Map<Integer, PlatformSnapshot> snapshots = new LinkedHashMap<>();
 
-  /** Whether callers are prevented from using this context. */
+  /** Prevents snapshot use after an explicit owner releases its captured bytes. */
   private boolean closed;
 
-  /** Whether every temporary path was removed successfully. */
-  private boolean cleanupComplete;
-
-  /** Filesystem deletion used for temporary snapshot cleanup. */
-  private final PathDeleter pathDeleter;
-
-  /** Creates an invocation-local snapshot owner for the supplied JDK location. */
-  public JdkPlatformContext(final Path javaHome) throws IOException {
-    this(javaHome, Files::deleteIfExists);
-  }
-
-  /** Test seam for deterministic cleanup failures. */
-  JdkPlatformContext(final Path javaHome, final PathDeleter deleter) throws IOException {
+  /** Creates a snapshot owner for the supplied JDK location. */
+  public JdkPlatformContext(final Path javaHome) {
     this.jdkLocation = normalize(javaHome);
-    snapshotDirectory = Files.createTempDirectory("elider-platform-snapshot-");
-    pathDeleter = java.util.Objects.requireNonNull(deleter, "deleter");
   }
 
   /** Captures or returns a release snapshot; bytes remain until context close. */
-  @SuppressWarnings("PMD.AvoidCatchingGenericException")
   public synchronized PlatformSnapshot snapshot(final int effectiveRelease) throws IOException {
     ensureOpen();
     if (effectiveRelease < MIN_SUPPORTED_RELEASE) {
@@ -78,15 +60,10 @@ public final class JdkPlatformContext implements AutoCloseable {
       return previous;
     }
     final Map<Path, CapturedFile> pending = new LinkedHashMap<>();
-    try {
-      final PlatformSnapshot captured = captureRelease(effectiveRelease, pending);
-      capturedFiles.putAll(pending);
-      snapshots.put(effectiveRelease, captured);
-      return captured;
-    } catch (final IOException | RuntimeException exception) {
-      deletePending(pending, exception);
-      throw exception;
-    }
+    final PlatformSnapshot captured = captureRelease(effectiveRelease, pending);
+    capturedFiles.putAll(pending);
+    snapshots.put(effectiveRelease, captured);
+    return captured;
   }
 
   /** Returns this context's normalized JDK location. */
@@ -99,32 +76,12 @@ public final class JdkPlatformContext implements AutoCloseable {
     return capturedFiles.values().stream().mapToLong(file -> file.identity().size()).sum();
   }
 
-  /** Removes the invocation-owned source copies. */
+  /** Releases this context's in-memory snapshots for standalone owners. */
   @Override
-  public synchronized void close() throws IOException {
-    if (cleanupComplete) {
-      return;
-    }
+  public synchronized void close() {
     closed = true;
-    try (java.util.stream.Stream<Path> paths = Files.walk(snapshotDirectory)) {
-      IOException failure = null;
-      final List<Path> pathsToDelete = paths.sorted(Comparator.reverseOrder()).toList();
-      for (final Path path : pathsToDelete) {
-        try {
-          pathDeleter.deleteIfExists(path);
-        } catch (final IOException exception) {
-          if (failure == null) {
-            failure = exception;
-          } else {
-            failure.addSuppressed(exception);
-          }
-        }
-      }
-      if (failure != null) {
-        throw failure;
-      }
-    }
-    cleanupComplete = true;
+    snapshots.clear();
+    capturedFiles.clear();
   }
 
   private PlatformSnapshot captureRelease(final int release, final Map<Path, CapturedFile> pending)
@@ -134,8 +91,7 @@ public final class JdkPlatformContext implements AutoCloseable {
       throw new IOException("The selected JDK does not provide lib/ct.sym: " + ctSym);
     }
     final CapturedFile ctSymFile = capturedFile(ctSym, pending);
-    final List<String> signatures =
-        PlatformArchiveInspector.selectedSignatures(ctSymFile.snapshotPath(), release);
+    final List<String> signatures = PlatformArchiveInspector.selectedSignatures(ctSymFile, release);
     if (!signatures.isEmpty()) {
       return new PlatformSnapshot(
           jdkLocation,
@@ -160,8 +116,7 @@ public final class JdkPlatformContext implements AutoCloseable {
       throw new IOException("No JDK release metadata is available for fallback: " + releaseFile);
     }
     final CapturedFile releaseMetadata = capturedFile(releaseFile, pending);
-    final int runtimeRelease =
-        PlatformArchiveInspector.readJdkRelease(releaseMetadata.snapshotPath());
+    final int runtimeRelease = PlatformArchiveInspector.readJdkRelease(releaseMetadata);
     if (runtimeRelease != release) {
       throw new IOException(
           "No JDK API signatures were found for --release "
@@ -188,8 +143,7 @@ public final class JdkPlatformContext implements AutoCloseable {
     int classCount = 0;
     for (final Path module : modules) {
       final CapturedFile captured = capturedFile(module, pending);
-      classCount +=
-          PlatformArchiveInspector.collectJmodClasses(captured.snapshotPath(), classNames);
+      classCount += PlatformArchiveInspector.collectJmodClasses(captured, classNames);
       moduleFiles.add(captured);
     }
     if (classCount == 0) {
@@ -212,7 +166,6 @@ public final class JdkPlatformContext implements AutoCloseable {
         sources);
   }
 
-  @SuppressWarnings("PMD.AvoidCatchingGenericException")
   private CapturedFile capturedFile(final Path source, final Map<Path, CapturedFile> pending)
       throws IOException {
     final Path normalizedSource = normalize(source);
@@ -224,69 +177,35 @@ public final class JdkPlatformContext implements AutoCloseable {
     if (withinAttempt != null) {
       return withinAttempt;
     }
-    final Path target = Files.createTempFile(snapshotDirectory, "platform-", ".snapshot");
-    try {
-      final CapturedFile captured = copyAndDigest(normalizedSource, target);
-      pending.put(normalizedSource, captured);
-      return captured;
-    } catch (final IOException | RuntimeException exception) {
-      try {
-        Files.deleteIfExists(target);
-      } catch (final IOException cleanupException) {
-        exception.addSuppressed(cleanupException);
-      }
-      throw exception;
-    }
+    final CapturedFile captured = readAndDigest(normalizedSource);
+    pending.put(normalizedSource, captured);
+    return captured;
   }
 
-  private static CapturedFile copyAndDigest(final Path source, final Path target)
-      throws IOException {
+  private static CapturedFile readAndDigest(final Path source) throws IOException {
+    final byte[] content = Files.readAllBytes(source);
     final MessageDigest sha256 = digest("SHA-256");
     final MessageDigest sha1 = digest("SHA-1");
-    long size = 0;
-    try (InputStream input = Files.newInputStream(source);
-        OutputStream output = Files.newOutputStream(target)) {
-      final byte[] buffer = new byte[64 * 1024];
-      while (true) {
-        final int count = input.read(buffer);
-        if (count < 0) {
-          break;
-        }
-        output.write(buffer, 0, count);
-        sha256.update(buffer, 0, count);
-        sha1.update(buffer, 0, count);
-        size += count;
-      }
-    }
+    sha256.update(content);
+    sha1.update(content);
     return new CapturedFile(
         source,
-        target,
+        content,
         new SourceIdentity(
             source,
             HexFormat.of().formatHex(sha256.digest()),
             HexFormat.of().formatHex(sha1.digest()),
-            size));
+            content.length));
   }
 
-  private void deletePending(
-      final Map<Path, CapturedFile> pending, final Exception originalException) {
-    for (final CapturedFile captured : pending.values()) {
-      try {
-        Files.deleteIfExists(captured.snapshotPath());
-      } catch (final IOException cleanupException) {
-        originalException.addSuppressed(cleanupException);
-      }
-    }
+  private static Path normalize(final Path path) {
+    return java.util.Objects.requireNonNull(path, "javaHome").toAbsolutePath().normalize();
   }
 
   private void ensureOpen() {
     if (closed) {
       throw new IllegalStateException("JDK platform context is closed");
     }
-  }
-
-  private static Path normalize(final Path path) {
-    return java.util.Objects.requireNonNull(path, "javaHome").toAbsolutePath().normalize();
   }
 
   private static MessageDigest digest(final String algorithm) {
@@ -296,13 +215,6 @@ public final class JdkPlatformContext implements AutoCloseable {
       throw new IllegalStateException(
           "Required digest algorithm is unavailable: " + algorithm, exception);
     }
-  }
-
-  /** Deletes temporary paths and permits deterministic cleanup-failure tests. */
-  @FunctionalInterface
-  interface PathDeleter {
-    /** Deletes the path if present and reports whether it existed. */
-    boolean deleteIfExists(Path path) throws IOException;
   }
 
   /** Content identity for one captured source archive or release metadata file. */
@@ -400,5 +312,45 @@ public final class JdkPlatformContext implements AutoCloseable {
     }
   }
 
-  record CapturedFile(Path sourcePath, Path snapshotPath, SourceIdentity identity) {}
+  /** A captured platform source that exposes fresh read-only streams. */
+  static final class CapturedFile {
+    /** The normalized source path used for diagnostics. */
+    private final Path sourcePathValue;
+
+    /** Exact private bytes used by inventory and parsing. */
+    private final byte[] content;
+
+    /** Digest identity calculated from the captured bytes. */
+    private final SourceIdentity identityValue;
+
+    private CapturedFile(
+        final Path sourcePath, final byte[] content, final SourceIdentity identity) {
+      this.sourcePathValue = sourcePath;
+      this.content = content;
+      this.identityValue = identity;
+    }
+
+    Path sourcePath() {
+      return sourcePathValue;
+    }
+
+    SourceIdentity identity() {
+      return identityValue;
+    }
+
+    InputStream openStream() {
+      return new ByteArrayInputStream(content);
+    }
+
+    InputStream openJmodStream() throws IOException {
+      if (content.length < 4
+          || content[0] != 'J'
+          || content[1] != 'M'
+          || content[2] != 1
+          || content[3] != 0) {
+        throw new IOException("Invalid captured JMOD header: " + sourcePathValue);
+      }
+      return new ByteArrayInputStream(content, 4, content.length - 4);
+    }
+  }
 }

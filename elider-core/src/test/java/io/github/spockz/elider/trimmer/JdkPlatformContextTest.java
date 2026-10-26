@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -17,8 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -199,37 +199,25 @@ class JdkPlatformContextTest {
   }
 
   @Test
-  @DisplayName("ADR-0003: failed cleanup leaves the context closed and permits cleanup retry")
-  @SuppressWarnings("PMD.UseTryWithResources")
-  void failedCleanupCanRetry() throws Exception {
-    final AtomicBoolean failFirstDelete = new AtomicBoolean(true);
-    final AtomicReference<Path> snapshotDirectory = new AtomicReference<>();
-    final JdkPlatformContext context =
-        new JdkPlatformContext(
-            temporaryDirectory,
-            path -> {
-              snapshotDirectory.compareAndSet(null, path);
-              if (failFirstDelete.compareAndSet(true, false)) {
-                throw new IOException("injected deletion failure");
-              }
-              return Files.deleteIfExists(path);
-            });
-    try {
-      assertThatThrownBy(context::close)
-          .isInstanceOf(IOException.class)
-          .hasMessage("injected deletion failure");
-      final Path failedPath = snapshotDirectory.get();
-      assertThat(failedPath).isNotNull();
-      assertThat(Files.exists(failedPath)).isTrue();
-      assertThatThrownBy(() -> context.snapshot(RELEASE_21))
-          .isInstanceOf(IllegalStateException.class)
-          .hasMessage("JDK platform context is closed");
+  @DisplayName(
+      "ADR-0003: in-memory capture leaves no temporary snapshot files on success or failure")
+  void captureDoesNotLeaveTemporarySnapshotFiles() throws Exception {
+    final Path javaHome = javaHome("memory-capture");
+    final Path ctSym = javaHome.resolve("lib/ct.sym");
+    Files.writeString(ctSym, "not-a-zip");
+    assertThat(snapshotTemporaryFiles()).isEmpty();
 
-      context.close();
-      assertThat(Files.exists(failedPath)).isFalse();
-    } finally {
-      context.close();
+    try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
+      assertThatThrownBy(() -> context.snapshot(RELEASE_21)).isInstanceOf(IOException.class);
+      assertThat(context.capturedStorageBytes()).isZero();
+      assertThat(snapshotTemporaryFiles()).isEmpty();
+      writeCtSym(
+          ctSym, "L/java.base/" + CLASS_NAME + ".sig", classBytes(CLASS_NAME, Opcodes.ACC_PUBLIC));
+      assertThat(context.snapshot(RELEASE_21).sourceIdentities()).hasSize(1);
+      assertThat(context.capturedStorageBytes()).isEqualTo(Files.size(ctSym));
+      assertThat(snapshotTemporaryFiles()).isEmpty();
     }
+    assertThat(snapshotTemporaryFiles()).isEmpty();
   }
 
   @Test
@@ -276,6 +264,14 @@ class JdkPlatformContextTest {
     return home;
   }
 
+  private static List<Path> snapshotTemporaryFiles() throws IOException {
+    try (Stream<Path> files = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
+      return files
+          .filter(path -> path.getFileName().toString().startsWith("elider-platform-snapshot-"))
+          .toList();
+    }
+  }
+
   private Path jmodHome(final String name, final String... classNames) throws IOException {
     final Path home = javaHome(name);
     writeZip(
@@ -285,7 +281,7 @@ class JdkPlatformContextTest {
         home.resolve("release"), "JAVA_VERSION=\"" + Runtime.version().feature() + "\"\n");
     final Path jmods = Files.createDirectories(home.resolve("jmods"));
     for (int index = 0; index < classNames.length; index++) {
-      writeZip(
+      writeJmod(
           jmods.resolve("module-" + index + ".jmod"),
           Map.of(
               "classes/" + classNames[index] + ".class",
@@ -314,6 +310,28 @@ class JdkPlatformContextTest {
         output.putNextEntry(zipEntry);
         output.write(entry.getValue());
         output.closeEntry();
+      }
+    }
+  }
+
+  private static void writeJmod(final Path path, final Map<String, byte[]> entries)
+      throws IOException {
+    Files.createDirectories(path.getParent());
+    try (OutputStream file = Files.newOutputStream(path)) {
+      file.write(new byte[] {'J', 'M', 1, 0});
+      try (ZipOutputStream output = new ZipOutputStream(file)) {
+        for (final Map.Entry<String, byte[]> entry : entries.entrySet()) {
+          final CRC32 crc = new CRC32();
+          crc.update(entry.getValue());
+          final ZipEntry zipEntry = new ZipEntry(entry.getKey());
+          zipEntry.setMethod(ZipEntry.STORED);
+          zipEntry.setSize(entry.getValue().length);
+          zipEntry.setCompressedSize(entry.getValue().length);
+          zipEntry.setCrc(crc.getValue());
+          output.putNextEntry(zipEntry);
+          output.write(entry.getValue());
+          output.closeEntry();
+        }
       }
     }
   }

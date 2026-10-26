@@ -6,11 +6,10 @@ package io.github.spockz.elider.trimmer;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Objects;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Opcodes;
@@ -21,7 +20,7 @@ import proguard.classfile.LibraryField;
 import proguard.classfile.LibraryMethod;
 
 /** Reads explicit-release APIs from ct.sym or matching runtime jmods. */
-@SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+@SuppressWarnings({"PMD.AvoidInstantiatingObjectsInLoops", "PMD.CommentDefaultAccessModifier"})
 public final class JdkApiClassPoolReader {
   /** Minimum release accepted by the reader. */
   private static final int MIN_SUPPORTED_RELEASE = 8;
@@ -51,64 +50,13 @@ public final class JdkApiClassPoolReader {
           "Java release must be at least 8: " + snapshot.effectiveRelease());
     }
     if (CT_SYM.equals(snapshot.sourceKind())) {
-      return readCtSym(snapshot.capturedFiles().getFirst(), snapshot.effectiveRelease());
+      return CtSymClassPoolReader.read(
+          snapshot.capturedFiles().getFirst(), snapshot.effectiveRelease());
     }
     if (JMODS.equals(snapshot.sourceKind())) {
       return readJmods(snapshot.capturedFiles().subList(2, snapshot.capturedFiles().size()));
     }
     throw new IOException("Unsupported captured JDK platform source: " + snapshot.sourceKind());
-  }
-
-  @SuppressWarnings({
-    "PMD.CyclomaticComplexity",
-    "PMD.AvoidCatchingGenericException",
-    "PMD.ExceptionAsFlowControl"
-  })
-  private static ClassPool readCtSym(
-      final JdkPlatformContext.CapturedFile source, final int effectiveRelease) throws IOException {
-    final String releaseCode = releaseCode(effectiveRelease);
-    final ClassPool classPool = new ClassPool();
-    try (ZipFile archive = new ZipFile(source.snapshotPath().toFile())) {
-      final Enumeration<? extends ZipEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final ZipEntry entry = entries.nextElement();
-        final String[] pathParts = entry.getName().split("/", 3);
-        if (pathParts.length != 3
-            || !pathParts[0].contains(releaseCode)
-            || !pathParts[2].endsWith(".sig")) {
-          continue;
-        }
-        final String internalName =
-            pathParts[2].substring(0, pathParts[2].length() - ".sig".length());
-        if (internalName.endsWith("module-info")) {
-          continue;
-        }
-        if (classPool.getClass(internalName) != null) {
-          throw new IOException(
-              "Multiple ct.sym signatures match Java "
-                  + effectiveRelease
-                  + " for class "
-                  + internalName);
-        }
-        try (java.io.InputStream input = archive.getInputStream(entry)) {
-          final ClassReader reader = new ClassReader(input);
-          if (!internalName.equals(reader.getClassName())) {
-            throw new IllegalArgumentException("ct.sym class path does not match class name");
-          }
-          addLibraryClass(reader, classPool);
-        } catch (final RuntimeException exception) {
-          throw new IOException("Could not read JDK API signature: " + entry.getName(), exception);
-        }
-      }
-    }
-    if (classPool.size() == 0) {
-      throw new IOException(
-          "No captured JDK API signatures were found for --release "
-              + effectiveRelease
-              + " in "
-              + source.sourcePath());
-    }
-    return classPool;
   }
 
   @SuppressWarnings({
@@ -120,15 +68,18 @@ public final class JdkApiClassPoolReader {
       throws IOException {
     final ClassPool classPool = new ClassPool();
     for (final JdkPlatformContext.CapturedFile module : modules) {
-      try (ZipFile archive = new ZipFile(module.snapshotPath().toFile())) {
-        final Enumeration<? extends ZipEntry> entries = archive.entries();
-        while (entries.hasMoreElements()) {
-          final ZipEntry entry = entries.nextElement();
+      try (ZipInputStream archive = new ZipInputStream(module.openJmodStream())) {
+        while (true) {
+          final ZipEntry entry = archive.getNextEntry();
+          if (entry == null) {
+            break;
+          }
           if (!entry.getName().startsWith("classes/") || !entry.getName().endsWith(".class")) {
+            archive.closeEntry();
             continue;
           }
-          try (java.io.InputStream input = archive.getInputStream(entry)) {
-            final ClassReader reader = new ClassReader(input);
+          try {
+            final ClassReader reader = new ClassReader(archive);
             final String name = reader.getClassName();
             if (!name.endsWith("module-info")) {
               if (classPool.getClass(name) != null) {
@@ -140,7 +91,11 @@ public final class JdkApiClassPoolReader {
             throw new IOException(
                 "Could not read captured runtime JDK class: " + entry.getName(), exception);
           }
+          archive.closeEntry();
         }
+      } catch (final java.util.zip.ZipException exception) {
+        throw new IOException(
+            "Could not read captured runtime JDK module: " + module.sourcePath(), exception);
       }
     }
     if (classPool.size() == 0) {
@@ -149,7 +104,7 @@ public final class JdkApiClassPoolReader {
     return classPool;
   }
 
-  private static void addLibraryClass(final ClassReader reader, final ClassPool classPool) {
+  static void addLibraryClass(final ClassReader reader, final ClassPool classPool) {
     final List<LibraryField> fields = new ArrayList<>();
     final List<LibraryMethod> methods = new ArrayList<>();
     reader.accept(
@@ -190,11 +145,5 @@ public final class JdkApiClassPoolReader {
             fields.toArray(LibraryField[]::new),
             methods.toArray(LibraryMethod[]::new),
             null));
-  }
-
-  private static String releaseCode(final int release) {
-    return release <= 9
-        ? Integer.toString(release)
-        : Character.toString((char) ('A' + release - 10));
   }
 }

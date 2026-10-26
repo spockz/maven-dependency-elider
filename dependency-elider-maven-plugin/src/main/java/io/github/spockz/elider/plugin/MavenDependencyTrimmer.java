@@ -156,9 +156,9 @@ final class MavenDependencyTrimmer {
     final Path javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
     final int release = releaseFromOptions(compilerOptions, javaHome);
     final int runtimeRelease = Runtime.version().feature();
-    try (JdkPlatformContext platformContext = new JdkPlatformContext(javaHome)) {
-      return trim(request, release, runtimeRelease, platformContext);
-    }
+    final JdkPlatformContext platformContext =
+        MavenPlatformContextHolder.forOperation(session, javaHome);
+    return trim(request, release, runtimeRelease, platformContext);
   }
 
   private static TrimResult trim(
