@@ -12,8 +12,8 @@
 ## Rebase result
 
 - Rebase target: `main` at `817956fdc69886abb859f7fc168d555fc3f3a563`.
-- Rebased package HEAD before this closeout record: `3ba519ed68edf8562fe6511a03fd20aad8cd9ed5`.
-- The package branch contains 76 first-parent commits beyond the new base, spanning 115 changed files (`16384` insertions and `567` deletions before this closeout record).
+- Review-approved package HEAD before this closeout bookkeeping: `b76be312536a8e7b237f4d28f09aeba1084c2ac8`.
+- At that HEAD, the package branch contains 79 commits beyond the new base and changes 117 files (`16479` insertions and `620` deletions).
 - Conflicts were resolved in the RQ-0007 title/index, README, ADR-0004, and orchestration skill. The RQ-0007 title was renumbered while preserving the separate RQ-0006 question. README sections were reconciled to retain main's current material and package facts, including example summaries, the Analyze estimate, and the vulnerability evidence boundary. ADR-0004 kept the package's required rationale comment. The skill retained the requirement to record an initial prompt and create a named sibling closeout file.
 - No other conflicts remained. No main files were modified, and no merge was performed.
 
@@ -22,6 +22,8 @@
 - `JAVA_HOME=/workspace/sources/maven-dependency-elider/.scratch/toolchains/graalvm-jdk-21.0.12+7.1 MARKDOWNLINT=/workspace/sources/maven-dependency-elider/.scratch/tools/node_modules/.bin/markdownlint-cli2 make check` passed on 2026-10-26 at 22:15:06 UTC.
 - The gate includes formatting, Checkstyle, PMD, SpotBugs, Markdown lint, 149 core tests, and 82 Maven plugin tests; all reported success.
 - Full log: `/workspace/sources/maven-dependency-elider/.scratch/verification/wp-trim-main-rebase-make-check.log`.
+- Independent review approved the rebase documentation fixes through `b76be312536a8e7b237f4d28f09aeba1084c2ac8`; the reviewer confirmed that the package implementation remained unchanged and main was untouched.
+- `make site` passed after the final site-link edits. The generated `index.html` links to `usage.html` and GitHub repository documents; generated `usage.html` links to the repository FAQ and contributor register without local missing-page references. The pinned CycloneDX schema test passed (10 tests), README local-link checks passed, and Markdown lint passed on the modified documentation.
 - `make test-examples` was not rerun in this rebase session. Its prior verified evidence remains documented in the package handover and research notes.
 
 ## Remaining scope
