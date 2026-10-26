@@ -32,7 +32,7 @@ Set `elide.trimSkipArtifacts` to the exact resolved coordinate, such as `groupId
 
 ### What if a dependency JAR changes during or between Maven builds?
 
-The elider computes content digests for resolved inputs and uses them to identify cached results. It assumes those files stay stable during one Maven invocation; concurrent edits can make that invocation nondeterministic. Between invocations, changed content gets a different cache identity and is analyzed again. Maven's resolution-time checksum verification does not lock a file for the rest of the build. See [ADR 0004](adr/0004-assume-resolved-inputs-stable-during-build.md).
+The elider computes content digests for resolved inputs and uses them to identify cached results. Concurrent edits during a Maven invocation are unsupported. If a dependency changes mid-build, the current invocation may continue using decisions based on the earlier captured digest. A later invocation captures the new content, gets a different cache identity, and analyzes it again. Maven's resolution-time checksum verification does not lock a file for the rest of the build. See [ADR 0004](adr/0004-assume-resolved-inputs-stable-during-build.md).
 
 ### What happens if a dependency contains multi-release implementation classes?
 
@@ -66,4 +66,4 @@ No, not with the currently pinned ProGuard Core 9.1.10. The validated example to
 
 ### How much build time does elision add?
 
-Three baseline-first `clean verify` cycles with warm local Maven dependencies measured Basic at a median 2.244 seconds without elision and 4.286 seconds with it; Spring Boot measured 4.090 seconds and 26.752 seconds. These are descriptive observations, not stable performance guarantees. Spring still adds about 22.7 seconds end to end. Elision remains under active development and should not be used to remove dependencies from production builds.
+Three baseline-first `clean verify` cycles after the latest performance changes measured Basic at a median 2.251 seconds without elision and 4.236 seconds with it; Spring Boot measured 4.087 seconds and 24.424 seconds. These are descriptive observations, not stable performance guarantees. Elision still adds about 2 seconds for Basic and 20 seconds for Spring Boot. Elision remains under active development and should not be used to remove dependencies from production builds.
