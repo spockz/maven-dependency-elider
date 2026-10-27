@@ -1,0 +1,564 @@
+/* WHY: Exercises real Maven lifecycle resolution with artifact-view changes from test-only Mojos.
+ * The separate consumer and helper plugin stay outside the published plugin artifact.
+ */
+
+package io.github.spockz.elider.plugin;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
+import java.util.stream.Stream;
+import javax.xml.XMLConstants;
+import javax.xml.stream.XMLOutputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
+import org.junit.jupiter.api.Test;
+
+/** Verifies artifact-view changes across a real Maven lifecycle. */
+@SuppressWarnings({
+  "PMD.AddEmptyString",
+  "PMD.AtLeastOneConstructor",
+  "PMD.AvoidInstantiatingObjectsInLoops",
+  "PMD.AvoidLiteralsInIfCondition",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.CommentRequired",
+  "PMD.TooManyMethods",
+  "PMD.UnitTestContainsTooManyAsserts",
+  "PMD.UseConcurrentHashMap"
+})
+final class DependencyContextLifecycleIntegrationTest {
+  private static final String GROUP_ID = "io.github.spockz.elider.test";
+
+  private static final String VERSION = "1.0.0";
+
+  private static final String DROP = GROUP_ID + ":drop-library:" + VERSION + ":jar:";
+
+  private static final String KEEP = GROUP_ID + ":keep-library:" + VERSION + ":jar:";
+
+  private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(180);
+
+  @Test
+  void lifecycleSnapshotsShowDirectAndResolvedViewsHaveDifferentLaterResolutionBehavior()
+      throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot =
+        repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/fixtures/lifecycle-probe");
+    final Path evidenceDirectory =
+        repositoryRoot.resolve("dependency-elider-maven-plugin/target/lifecycle-probe-evidence");
+    deleteTree(evidenceDirectory);
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = Files.createDirectories(evidenceDirectory.resolve("repository"));
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve("mvnw");
+
+    final String versionOutput =
+        run(
+            repositoryRoot,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("maven-version.log"),
+            PROCESS_TIMEOUT,
+            "-version");
+    assertThat(versionOutput).contains("Apache Maven 3.9.11");
+
+    run(
+        repositoryRoot,
+        wrapper,
+        settings,
+        localRepository,
+        evidenceDirectory.resolve("fixture-bootstrap.log"),
+        PROCESS_TIMEOUT,
+        "-f",
+        fixtureRoot.resolve("bootstrap/pom.xml").toString(),
+        "clean",
+        "install");
+
+    final Path dropJar = repositoryArtifact(localRepository, "drop-library");
+    final Path keepJar = repositoryArtifact(localRepository, "keep-library");
+    final String dropHash = sha256(dropJar);
+    final String keepHash = sha256(keepJar);
+    final Path replacementJar =
+        fixtureRoot.resolve("consumer/target/replacement/keep-library-trimmed.jar");
+    writeReplacementJar(replacementJar);
+    final String replacementHash = sha256(replacementJar);
+    assertThat(replacementHash).isNotEqualTo(keepHash);
+
+    final Path consumerPom = fixtureRoot.resolve("consumer/pom.xml");
+    final Path consumerTarget = fixtureRoot.resolve("consumer/target");
+    deleteTree(consumerTarget.resolve("lifecycle-probe"));
+    final Map<String, PhaseSnapshots> runs = new HashMap<>();
+    for (final String mode : List.of("baseline", "resolved-only", "direct-and-resolved")) {
+      run(
+          repositoryRoot,
+          wrapper,
+          settings,
+          localRepository,
+          evidenceDirectory.resolve(mode + ".log"),
+          PROCESS_TIMEOUT,
+          "-X",
+          "-Dorg.slf4j.simpleLogger.showDateTime=true",
+          "-Dlifecycle.mode=" + mode,
+          "-Dlifecycle.replacementFile=" + replacementJar,
+          "-f",
+          consumerPom.toString(),
+          "prepare-package");
+      runs.put(mode, phaseSnapshots(consumerTarget.resolve("lifecycle-probe").resolve(mode), mode));
+    }
+
+    assertBaseline(runs.get("baseline"), dropJar, dropHash, keepJar, keepHash);
+    assertResolvedOnlyControl(
+        runs.get("resolved-only"),
+        dropJar,
+        dropHash,
+        keepJar,
+        keepHash,
+        replacementJar,
+        replacementHash);
+    assertDirectMutationPersistsAcrossLaterResolution(
+        runs.get("direct-and-resolved"),
+        dropJar,
+        dropHash,
+        keepJar,
+        keepHash,
+        replacementJar,
+        replacementHash);
+
+    final Path resolvedOnlySnapshotDirectory =
+        consumerTarget.resolve("lifecycle-probe/resolved-only");
+    final Map<Path, String> retainedResolvedOnlySnapshots = new HashMap<>();
+    for (final String phase : List.of("before", "immediate", "intermediate", "later")) {
+      final Path snapshot =
+          resolvedOnlySnapshotDirectory.resolve("resolved-only-" + phase + ".tsv");
+      retainedResolvedOnlySnapshots.put(snapshot, Files.readString(snapshot));
+    }
+
+    run(
+        repositoryRoot,
+        wrapper,
+        settings,
+        localRepository,
+        evidenceDirectory.resolve("dependency-tree.log"),
+        PROCESS_TIMEOUT,
+        "-Dlifecycle.mode=resolved-only",
+        "-Dlifecycle.replacementFile=" + replacementJar,
+        "-Dlifecycle.reportDirectory=" + evidenceDirectory.resolve("tree/lifecycle-probe"),
+        "-f",
+        consumerPom.toString(),
+        "initialize",
+        "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree");
+    final String treeOutput = Files.readString(evidenceDirectory.resolve("dependency-tree.log"));
+    assertThat(treeOutput).contains(GROUP_ID + ":drop-library:jar:" + VERSION);
+    assertThat(treeOutput).contains(GROUP_ID + ":keep-library:jar:" + VERSION);
+    for (final Map.Entry<Path, String> snapshot : retainedResolvedOnlySnapshots.entrySet()) {
+      assertThat(Files.readString(snapshot.getKey())).isEqualTo(snapshot.getValue());
+    }
+    assertThat(
+            Files.exists(
+                evidenceDirectory.resolve("tree/lifecycle-probe/resolved-only-before.tsv")))
+        .isTrue();
+    assertThat(sha256(dropJar)).isEqualTo(dropHash);
+    assertThat(sha256(keepJar)).isEqualTo(keepHash);
+  }
+
+  private static void assertBaseline(
+      final PhaseSnapshots phases,
+      final Path dropJar,
+      final String dropHash,
+      final Path keepJar,
+      final String keepHash) {
+    for (final Snapshot snapshot : List.of(phases.before(), phases.immediate(), phases.later())) {
+      assertArtifacts(snapshot.direct(), DROP, dropJar, dropHash, KEEP, keepJar, keepHash);
+      assertArtifacts(snapshot.resolved(), DROP, dropJar, dropHash, KEEP, keepJar, keepHash);
+    }
+    assertArtifacts(
+        phases.intermediate().direct(), DROP, dropJar, dropHash, KEEP, keepJar, keepHash);
+    assertThat(phases.intermediate().resolved().size()).isZero();
+    assertSameProject(phases);
+    assertThat(phases.before().direct().collectionIdentity())
+        .isEqualTo(phases.later().direct().collectionIdentity());
+  }
+
+  private static void assertResolvedOnlyControl(
+      final PhaseSnapshots phases,
+      final Path dropJar,
+      final String dropHash,
+      final Path keepJar,
+      final String keepHash,
+      final Path replacementJar,
+      final String replacementHash) {
+    assertArtifacts(phases.before().direct(), DROP, dropJar, dropHash, KEEP, keepJar, keepHash);
+    assertArtifacts(
+        phases.immediate().direct(),
+        DROP,
+        dropJar,
+        dropHash,
+        KEEP,
+        replacementJar,
+        replacementHash);
+    assertArtifacts(
+        phases.intermediate().direct(),
+        DROP,
+        dropJar,
+        dropHash,
+        KEEP,
+        replacementJar,
+        replacementHash);
+    assertArtifacts(
+        phases.later().direct(), DROP, dropJar, dropHash, KEEP, replacementJar, replacementHash);
+    assertThat(phases.immediate().direct().collectionIdentity())
+        .isEqualTo(phases.before().direct().collectionIdentity());
+    assertThat(phases.intermediate().direct().collectionIdentity())
+        .isEqualTo(phases.before().direct().collectionIdentity());
+    assertThat(phases.later().direct().collectionIdentity())
+        .isEqualTo(phases.before().direct().collectionIdentity());
+
+    assertArtifacts(phases.immediate().resolved(), KEEP, replacementJar, replacementHash);
+    assertThat(phases.intermediate().resolved().size()).isZero();
+    assertArtifacts(phases.later().resolved(), KEEP, replacementJar, replacementHash);
+    assertThat(phases.before().resolved().artifacts()).containsKey(DROP);
+    assertSameProject(phases);
+  }
+
+  private static void assertDirectMutationPersistsAcrossLaterResolution(
+      final PhaseSnapshots phases,
+      final Path dropJar,
+      final String dropHash,
+      final Path keepJar,
+      final String keepHash,
+      final Path replacementJar,
+      final String replacementHash) {
+    assertArtifacts(phases.before().direct(), DROP, dropJar, dropHash, KEEP, keepJar, keepHash);
+    assertArtifacts(phases.immediate().direct(), KEEP, replacementJar, replacementHash);
+    assertArtifacts(phases.intermediate().direct(), KEEP, replacementJar, replacementHash);
+    assertArtifacts(phases.immediate().resolved(), KEEP, replacementJar, replacementHash);
+    assertThat(phases.intermediate().resolved().size()).isZero();
+    assertThat(phases.immediate().resolved().artifacts().get(KEEP).sha256()).isNotEqualTo(keepHash);
+    assertThat(phases.before().direct().collectionIdentity())
+        .isNotEqualTo(phases.immediate().direct().collectionIdentity());
+    assertThat(phases.intermediate().direct().artifacts()).doesNotContainKey(DROP);
+
+    assertArtifacts(phases.later().direct(), KEEP, replacementJar, replacementHash);
+    assertArtifacts(phases.later().resolved(), KEEP, keepJar, keepHash);
+    assertSameProject(phases);
+  }
+
+  private static void assertSameProject(final PhaseSnapshots phases) {
+    final int projectIdentity = phases.before().projectIdentity();
+    assertThat(phases.all()).extracting(Snapshot::projectIdentity).containsOnly(projectIdentity);
+    assertThat(phases.all())
+        .extracting(Snapshot::projectCoordinate)
+        .containsOnly("" + GROUP_ID + ":lifecycle-probe-consumer");
+    assertThat(phases.before().resolutionScope()).isEqualTo("TEST");
+    assertThat(phases.immediate().resolutionScope()).isEqualTo("TEST");
+    assertThat(phases.intermediate().resolutionScope()).isEqualTo("NONE");
+    assertThat(phases.later().resolutionScope()).isEqualTo("TEST");
+  }
+
+  private static void assertArtifacts(
+      final View view, final String coordinate, final Path file, final String sha256) {
+    assertArtifacts(view, List.of(new ExpectedArtifact(coordinate, file, sha256)));
+  }
+
+  private static void assertArtifacts(
+      final View view,
+      final String firstCoordinate,
+      final Path firstFile,
+      final String firstSha256,
+      final String secondCoordinate,
+      final Path secondFile,
+      final String secondSha256) {
+    assertArtifacts(
+        view,
+        List.of(
+            new ExpectedArtifact(firstCoordinate, firstFile, firstSha256),
+            new ExpectedArtifact(secondCoordinate, secondFile, secondSha256)));
+  }
+
+  private static void assertArtifacts(
+      final View view, final List<ExpectedArtifact> expectedArtifacts) {
+    assertThat(view.size()).isEqualTo(expectedArtifacts.size());
+    assertThat(view.artifacts().keySet())
+        .containsExactlyInAnyOrder(
+            expectedArtifacts.stream().map(ExpectedArtifact::coordinate).toArray(String[]::new));
+    for (final ExpectedArtifact expected : expectedArtifacts) {
+      final ArtifactState artifact = view.artifacts().get(expected.coordinate());
+      assertThat(Path.of(artifact.file())).isEqualTo(expected.file());
+      assertThat(artifact.sha256()).isEqualTo(expected.sha256());
+    }
+  }
+
+  private static PhaseSnapshots phaseSnapshots(final Path directory, final String mode)
+      throws IOException {
+    return new PhaseSnapshots(
+        Snapshot.read(directory.resolve(mode + "-before.tsv")),
+        Snapshot.read(directory.resolve(mode + "-immediate.tsv")),
+        Snapshot.read(directory.resolve(mode + "-intermediate.tsv")),
+        Snapshot.read(directory.resolve(mode + "-later.tsv")));
+  }
+
+  private static Path repositoryRoot() {
+    Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
+    while (current != null && !Files.isRegularFile(current.resolve("mvnw"))) {
+      current = current.getParent();
+    }
+    if (current == null) {
+      throw new IllegalStateException(
+          "Could not find repository Maven wrapper from test directory");
+    }
+    return current;
+  }
+
+  private static Path writeSettings(final Path evidenceDirectory)
+      throws IOException, XMLStreamException {
+    final String repositoryUri =
+        Path.of(System.getProperty("user.home"), ".m2/repository").toUri().toASCIIString();
+    final Path settings = evidenceDirectory.resolve("settings.xml");
+    try (OutputStream output = Files.newOutputStream(settings)) {
+      final XMLStreamWriter xml =
+          XMLOutputFactory.newFactory().createXMLStreamWriter(output, "UTF-8");
+      try {
+        xml.writeStartDocument("UTF-8", "1.0");
+        xml.writeStartElement("settings");
+        xml.writeDefaultNamespace("http://maven.apache.org/SETTINGS/1.2.0");
+        xml.writeNamespace("xsi", XMLConstants.W3C_XML_SCHEMA_INSTANCE_NS_URI);
+        xml.writeAttribute(
+            "xsi",
+            XMLConstants.W3C_XML_SCHEMA_INSTANCE_NS_URI,
+            "schemaLocation",
+            "http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd");
+        writeRepositoryProfile(xml, repositoryUri);
+        xml.writeEndElement();
+        xml.writeEndDocument();
+      } finally {
+        xml.close();
+      }
+    }
+    return settings;
+  }
+
+  private static void writeRepositoryProfile(final XMLStreamWriter xml, final String repositoryUri)
+      throws XMLStreamException {
+    xml.writeStartElement("profiles");
+    xml.writeStartElement("profile");
+    writeTextElement(xml, "id", "cached-local-repository");
+    xml.writeStartElement("repositories");
+    writeRepository(xml, "repository", "cached-local-repository", repositoryUri);
+    xml.writeEndElement();
+    xml.writeStartElement("pluginRepositories");
+    writeRepository(xml, "pluginRepository", "cached-local-plugins", repositoryUri);
+    xml.writeEndElement();
+    xml.writeEndElement();
+    xml.writeEndElement();
+    xml.writeStartElement("activeProfiles");
+    writeTextElement(xml, "activeProfile", "cached-local-repository");
+    xml.writeEndElement();
+  }
+
+  private static void writeRepository(
+      final XMLStreamWriter xml,
+      final String element,
+      final String identifier,
+      final String repositoryUri)
+      throws XMLStreamException {
+    xml.writeStartElement(element);
+    writeTextElement(xml, "id", identifier);
+    writeTextElement(xml, "url", repositoryUri);
+    xml.writeEndElement();
+  }
+
+  private static void writeTextElement(
+      final XMLStreamWriter xml, final String name, final String value) throws XMLStreamException {
+    xml.writeStartElement(name);
+    xml.writeCharacters(value);
+    xml.writeEndElement();
+  }
+
+  @SuppressWarnings("PMD.DoNotUseThreads")
+  private static String run(
+      final Path repositoryRoot,
+      final Path wrapper,
+      final Path settings,
+      final Path localRepository,
+      final Path logFile,
+      final Duration timeout,
+      final String... arguments)
+      throws IOException, InterruptedException {
+    Files.createDirectories(logFile.getParent());
+    final List<String> command = new ArrayList<>();
+    command.add(wrapper.toString());
+    command.add("--batch-mode");
+    command.add("--no-transfer-progress");
+    command.add("-s");
+    command.add(settings.toString());
+    command.add("-Dmaven.repo.local=" + localRepository);
+    command.addAll(List.of(arguments));
+    final ProcessBuilder processBuilder =
+        new ProcessBuilder(command)
+            .directory(repositoryRoot.toFile())
+            .redirectErrorStream(true)
+            .redirectOutput(logFile.toFile());
+    processBuilder.environment().put("JAVA_HOME", System.getProperty("java.home"));
+    final Process process = processBuilder.start();
+    final boolean exited;
+    try {
+      exited = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (InterruptedException interrupted) {
+      terminate(process);
+      Thread.currentThread().interrupt();
+      throw interrupted;
+    }
+    if (!exited) {
+      terminate(process);
+      process.waitFor(10, TimeUnit.SECONDS);
+      fail("Maven subprocess exceeded " + timeout + "; log retained at " + logFile);
+    }
+    final String output = Files.readString(logFile);
+    if (process.exitValue() != 0) {
+      fail(
+          "Maven subprocess exited "
+              + process.exitValue()
+              + "; log retained at "
+              + logFile
+              + "\n"
+              + output);
+    }
+    return output;
+  }
+
+  private static void terminate(final Process process) {
+    process.descendants().forEach(ProcessHandle::destroyForcibly);
+    process.destroyForcibly();
+  }
+
+  private static Path repositoryArtifact(final Path localRepository, final String artifactId) {
+    return localRepository.resolve(
+        "io/github/spockz/elider/test/"
+            + artifactId
+            + "/"
+            + VERSION
+            + "/"
+            + artifactId
+            + "-"
+            + VERSION
+            + ".jar");
+  }
+
+  private static void writeReplacementJar(final Path output) throws IOException {
+    Files.createDirectories(output.getParent());
+    try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(output))) {
+      jar.putNextEntry(new JarEntry("fixture/transformed.txt"));
+      jar.write("transformed artifact bytes".getBytes(StandardCharsets.UTF_8));
+      jar.closeEntry();
+    }
+  }
+
+  private static String sha256(final Path file) throws IOException {
+    try {
+      return HexFormat.of()
+          .formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file)));
+    } catch (NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("Java runtime does not provide SHA-256", exception);
+    }
+  }
+
+  private static void deleteTree(final Path root) throws IOException {
+    if (!Files.exists(root)) {
+      return;
+    }
+    try (Stream<Path> paths = Files.walk(root)) {
+      for (final Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+        Files.delete(path);
+      }
+    }
+  }
+
+  private record ArtifactState(int identity, String coordinate, String file, String sha256) {}
+
+  private record ExpectedArtifact(String coordinate, Path file, String sha256) {}
+
+  private record View(int collectionIdentity, int size, Map<String, ArtifactState> artifacts) {}
+
+  private record Snapshot(
+      String resolutionScope,
+      int projectIdentity,
+      String projectCoordinate,
+      View direct,
+      View resolved) {
+    static Snapshot read(final Path path) throws IOException {
+      final Map<String, MutableView> views = new HashMap<>();
+      String resolutionScope = "";
+      int projectIdentity = -1;
+      String projectCoordinate = "";
+      for (final String line : Files.readAllLines(path)) {
+        final String[] values = line.split("\\t", -1);
+        if ("scope".equals(values[0])) {
+          resolutionScope = values[1];
+        } else if ("project".equals(values[0])) {
+          projectIdentity = Integer.parseInt(values[1]);
+          projectCoordinate = values[2];
+        } else if ("view".equals(values[0])) {
+          views.put(
+              values[1], new MutableView(Integer.parseInt(values[2]), Integer.parseInt(values[3])));
+        } else if ("artifact".equals(values[0])) {
+          views
+              .get(values[1])
+              .artifacts()
+              .put(
+                  values[3],
+                  new ArtifactState(
+                      Integer.parseInt(values[2]), values[3], decodePath(values[4]), values[5]));
+        }
+      }
+      return new Snapshot(
+          resolutionScope,
+          projectIdentity,
+          projectCoordinate,
+          views.get("DIRECT").toView(),
+          views.get("RESOLVED").toView());
+    }
+
+    private static String decodePath(final String encodedPath) {
+      if ("<missing>".equals(encodedPath)) {
+        return encodedPath;
+      }
+      return new String(Base64.getDecoder().decode(encodedPath), StandardCharsets.UTF_8);
+    }
+  }
+
+  private record MutableView(
+      int collectionIdentity, int size, Map<String, ArtifactState> artifacts) {
+    MutableView(final int collectionIdentity, final int size) {
+      this(collectionIdentity, size, new HashMap<>());
+    }
+
+    View toView() {
+      return new View(collectionIdentity, size, Map.copyOf(artifacts));
+    }
+  }
+
+  private record PhaseSnapshots(
+      Snapshot before, Snapshot immediate, Snapshot intermediate, Snapshot later) {
+    List<Snapshot> all() {
+      return List.of(before, immediate, intermediate, later);
+    }
+  }
+}
