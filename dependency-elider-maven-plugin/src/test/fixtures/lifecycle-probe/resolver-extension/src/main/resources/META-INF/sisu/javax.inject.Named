@@ -1,2 +1,3 @@
 io.github.spockz.elider.test.resolver.ResolverGraphProbe
 io.github.spockz.elider.test.resolver.ResolverRequestEventSpy
+io.github.spockz.elider.test.resolver.ResolverSessionProbe

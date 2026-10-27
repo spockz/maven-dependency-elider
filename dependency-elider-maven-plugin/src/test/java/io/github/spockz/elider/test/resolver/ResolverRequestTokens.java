@@ -8,8 +8,15 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.maven.project.DependencyResolutionRequest;
 
 /** Shares request identity tokens among test-only core extension components. */
-@SuppressWarnings({"PMD.CommentRequired", "PMD.UseConcurrentHashMap"})
+@SuppressWarnings({
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.CommentRequired",
+  "PMD.UseConcurrentHashMap"
+})
 public final class ResolverRequestTokens {
+  // Package access shares the token key between the fixture EventSpy and decorators.
+  static final String REQUEST_TOKEN_KEY = "io.github.spockz.elider.test.resolver.request-token";
+
   // Identity keys separate request instances that have equal values.
   private static final Map<DependencyResolutionRequest, Integer> TOKENS = new IdentityHashMap<>();
 

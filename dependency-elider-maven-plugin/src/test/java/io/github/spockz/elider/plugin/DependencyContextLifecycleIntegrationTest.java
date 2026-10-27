@@ -70,6 +70,10 @@ final class DependencyContextLifecycleIntegrationTest {
 
   private static final String RESOLVER_EVENT_PREFIX = "RESOLVER_PROBE ";
 
+  private static final String REQUEST_EVENT_PREFIX = "RESOLVER_REQUEST ";
+
+  private static final String LIFECYCLE_REPLACEMENT_FILE_PROPERTY = "-Dlifecycle.replacementFile=";
+
   private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(180);
 
   @Test
@@ -134,7 +138,7 @@ final class DependencyContextLifecycleIntegrationTest {
           "-X",
           "-Dorg.slf4j.simpleLogger.showDateTime=true",
           "-Dlifecycle.mode=" + mode,
-          "-Dlifecycle.replacementFile=" + replacementJar,
+          LIFECYCLE_REPLACEMENT_FILE_PROPERTY + replacementJar,
           "-f",
           consumerPom.toString(),
           "prepare-package");
@@ -176,7 +180,7 @@ final class DependencyContextLifecycleIntegrationTest {
         evidenceDirectory.resolve("dependency-tree.log"),
         PROCESS_TIMEOUT,
         "-Dlifecycle.mode=resolved-only",
-        "-Dlifecycle.replacementFile=" + replacementJar,
+        LIFECYCLE_REPLACEMENT_FILE_PROPERTY + replacementJar,
         "-Dlifecycle.reportDirectory=" + evidenceDirectory.resolve("tree/lifecycle-probe"),
         "-f",
         consumerPom.toString(),
@@ -289,7 +293,7 @@ final class DependencyContextLifecycleIntegrationTest {
             PROCESS_TIMEOUT,
             "-Dlifecycle.mode=direct-and-resolved",
             "-Dlifecycle.reportDirectory=" + lifecycleSnapshots,
-            "-Dlifecycle.replacementFile=" + replacementJar,
+            LIFECYCLE_REPLACEMENT_FILE_PROPERTY + replacementJar,
             "-Dresolver.probe.mode=active",
             "-f",
             consumerPom.toString(),
@@ -298,6 +302,31 @@ final class DependencyContextLifecycleIntegrationTest {
     final PhaseSnapshots phases = phaseSnapshots(lifecycleSnapshots, "direct-and-resolved");
     assertDirectMutationPersistsAcrossLaterResolution(
         phases, dropJar, dropHash, keepJar, keepHash, replacementJar, replacementHash);
+    assertSessionDecoratorCalls(lifecycleOutput, false);
+    assertThat(sha256(dropJar)).isEqualTo(dropHash);
+    assertThat(sha256(keepJar)).isEqualTo(keepHash);
+
+    final Path plannedSnapshots = evidenceDirectory.resolve("session-decorator-snapshots");
+    final String plannedLifecycleOutput =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("lifecycle-session-decorator.log"),
+            PROCESS_TIMEOUT,
+            "-Dlifecycle.mode=session-decorator",
+            "-Dlifecycle.reportDirectory=" + plannedSnapshots,
+            LIFECYCLE_REPLACEMENT_FILE_PROPERTY + replacementJar,
+            "-Dresolver.probe.mode=active",
+            "-f",
+            consumerPom.toString(),
+            "prepare-package");
+    assertSessionDecoratorCalls(plannedLifecycleOutput, true);
+    assertWorkspaceSubstitution(plannedLifecycleOutput, replacementJar);
+    final PhaseSnapshots plannedPhases = phaseSnapshots(plannedSnapshots, "session-decorator");
+    assertSessionDecoratorArtifactViews(
+        plannedPhases, dropJar, dropHash, keepJar, keepHash, replacementJar, replacementHash);
     assertThat(sha256(dropJar)).isEqualTo(dropHash);
     assertThat(sha256(keepJar)).isEqualTo(keepHash);
   }
@@ -318,7 +347,8 @@ final class DependencyContextLifecycleIntegrationTest {
       try (InputStream input = jar.getInputStream(componentIndex)) {
         assertThat(new String(input.readAllBytes(), StandardCharsets.UTF_8))
             .contains("io.github.spockz.elider.test.resolver.ResolverGraphProbe")
-            .contains("io.github.spockz.elider.test.resolver.ResolverRequestEventSpy");
+            .contains("io.github.spockz.elider.test.resolver.ResolverRequestEventSpy")
+            .contains("io.github.spockz.elider.test.resolver.ResolverSessionProbe");
       }
     }
   }
@@ -331,6 +361,9 @@ final class DependencyContextLifecycleIntegrationTest {
       assertThat(
               jar.getJarEntry(
                   "io/github/spockz/elider/test/resolver/ResolverRequestEventSpy.class"))
+          .isNull();
+      assertThat(
+              jar.getJarEntry("io/github/spockz/elider/test/resolver/ResolverSessionProbe.class"))
           .isNull();
       assertThat(jar.getJarEntry("io/github/spockz/elider/test/MutateArtifactViewsMojo.class"))
           .isNotNull();
@@ -365,7 +398,7 @@ final class DependencyContextLifecycleIntegrationTest {
   private static void assertTreeRequestPathsAreDistinct(
       final String output, final int expectedCalls) {
     final List<String> requestEvents =
-        output.lines().filter(line -> line.startsWith("RESOLVER_REQUEST ")).toList();
+        output.lines().filter(line -> line.startsWith(REQUEST_EVENT_PREFIX)).toList();
     final List<String> resolverEvents =
         output.lines().filter(line -> line.startsWith(RESOLVER_EVENT_PREFIX)).toList();
     assertThat(requestEvents).isNotEmpty();
@@ -387,7 +420,7 @@ final class DependencyContextLifecycleIntegrationTest {
     final List<String> lifecycleRequests =
         output
             .lines()
-            .filter(line -> line.startsWith("RESOLVER_REQUEST "))
+            .filter(line -> line.startsWith(REQUEST_EVENT_PREFIX))
             .filter(line -> line.contains("keep-library=true"))
             .toList();
     final List<String> resolverEvents =
@@ -404,6 +437,74 @@ final class DependencyContextLifecycleIntegrationTest {
           .as("the indexed decorator should not receive lifecycle request token %s", requestToken)
           .noneMatch(event -> requestToken(event).equals(requestToken));
     }
+  }
+
+  private static void assertSessionDecoratorCalls(final String output, final boolean planned) {
+    final List<String> requests =
+        output.lines().filter(line -> line.startsWith(REQUEST_EVENT_PREFIX)).toList();
+    final List<String> callbacks =
+        output.lines().filter(line -> line.startsWith("SESSION_DECORATOR ")).toList();
+    assertThat(requests).hasSize(2);
+    assertThat(callbacks).hasSize(2);
+    for (int index = 0; index < requests.size(); index++) {
+      final String request = requests.get(index);
+      final String callback = callbacks.get(index);
+      assertThat(requestToken(callback)).isEqualTo(requestToken(request));
+      assertThat(request)
+          .contains(
+              index == 0
+                  ? "filter=[drop-library=true, keep-library=true]"
+                  : "filter=[keep-library=true]");
+      final boolean planActive = planned && index == 1;
+      assertThat(callback).contains(planActive ? "plan=keep-library" : "plan=none");
+    }
+    final List<String> copyEvents =
+        output.lines().filter(line -> line.startsWith("SESSION_COPY ")).toList();
+    assertThat(copyEvents).hasSize(planned ? 1 : 0);
+    if (planned) {
+      assertThat(copyEvents.get(0))
+          .contains("requestToken=" + requestToken(requests.get(1)))
+          .contains("copied=true");
+    }
+  }
+
+  private static void assertWorkspaceSubstitution(final String output, final Path replacementJar) {
+    final List<String> events =
+        output.lines().filter(line -> line.startsWith("WORKSPACE_LOOKUP ")).toList();
+    assertThat(events).isNotEmpty();
+    for (final String event : events) {
+      assertThat(event)
+          .contains("artifact=" + GROUP_ID + ":keep-library:jar::" + VERSION)
+          .contains("file=" + replacementJar);
+      assertThat(requestToken(event))
+          .isEqualTo(
+              requestToken(
+                  output
+                      .lines()
+                      .filter(line -> line.startsWith(REQUEST_EVENT_PREFIX))
+                      .filter(line -> line.contains("filter=[keep-library=true]"))
+                      .findFirst()
+                      .orElseThrow()));
+    }
+  }
+
+  private static void assertSessionDecoratorArtifactViews(
+      final PhaseSnapshots phases,
+      final Path dropJar,
+      final String dropHash,
+      final Path keepJar,
+      final String keepHash,
+      final Path replacementJar,
+      final String replacementHash) {
+    assertArtifacts(phases.before().direct(), DROP, dropJar, dropHash, KEEP, keepJar, keepHash);
+    assertArtifacts(phases.before().resolved(), DROP, dropJar, dropHash, KEEP, keepJar, keepHash);
+    assertArtifacts(phases.immediate().direct(), KEEP, replacementJar, replacementHash);
+    assertArtifacts(phases.immediate().resolved(), KEEP, replacementJar, replacementHash);
+    assertArtifacts(phases.intermediate().direct(), KEEP, replacementJar, replacementHash);
+    assertThat(phases.intermediate().resolved().size()).isZero();
+    assertArtifacts(phases.later().direct(), KEEP, replacementJar, replacementHash);
+    assertArtifacts(phases.later().resolved(), KEEP, replacementJar, replacementHash);
+    assertSameProject(phases);
   }
 
   private static String requestToken(final String event) {

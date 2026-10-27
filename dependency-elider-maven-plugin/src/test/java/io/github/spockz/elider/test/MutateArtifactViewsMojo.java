@@ -7,12 +7,15 @@ import java.io.IOException;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import org.apache.maven.artifact.Artifact;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
+import org.eclipse.aether.RepositorySystemSession;
+import org.eclipse.aether.SessionData;
 
 /** Mutates project artifact views after Maven TEST resolution. */
 @SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.CommentRequired"})
@@ -30,8 +33,16 @@ public final class MutateArtifactViewsMojo extends AbstractMojo {
 
   private static final String DIRECT_AND_RESOLVED_MODE = "direct-and-resolved";
 
+  private static final String SESSION_DECORATOR_MODE = "session-decorator";
+
+  private static final String SESSION_PLAN_KEY =
+      "io.github.spockz.elider.test.resolver.workspace-plan";
+
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
+
+  @Parameter(defaultValue = "${session}", readonly = true, required = true)
+  private MavenSession mavenSession;
 
   @Parameter(defaultValue = "${lifecycle.reportDirectory}")
   private File reportDirectory;
@@ -43,16 +54,24 @@ public final class MutateArtifactViewsMojo extends AbstractMojo {
   private File replacementFile;
 
   @Override
+  @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.LawOfDemeter"})
   public void execute() throws MojoExecutionException {
     try {
       FixtureArtifactViews.write(project, reportDirectory, mode + "-before", "TEST");
-      if (RESOLVED_ONLY_MODE.equals(mode) || DIRECT_AND_RESOLVED_MODE.equals(mode)) {
+      if (RESOLVED_ONLY_MODE.equals(mode)
+          || DIRECT_AND_RESOLVED_MODE.equals(mode)
+          || SESSION_DECORATOR_MODE.equals(mode)) {
         mutateResolvedView();
       } else if (!BASELINE_MODE.equals(mode)) {
         throw new MojoExecutionException("Unknown lifecycle probe mode: " + mode);
       }
-      if (DIRECT_AND_RESOLVED_MODE.equals(mode)) {
+      if (DIRECT_AND_RESOLVED_MODE.equals(mode) || SESSION_DECORATOR_MODE.equals(mode)) {
         mutateDirectView();
+      }
+      if (SESSION_DECORATOR_MODE.equals(mode)) {
+        final RepositorySystemSession repositorySession = mavenSession.getRepositorySession();
+        final SessionData data = repositorySession.getData();
+        data.set(SESSION_PLAN_KEY, replacementFile.getAbsolutePath());
       }
       FixtureArtifactViews.write(project, reportDirectory, mode + "-immediate", "TEST");
     } catch (IOException | IllegalStateException exception) {

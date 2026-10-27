@@ -37,9 +37,14 @@ public final class ResolverRequestEventSpy implements EventSpy {
   public void onEvent(final Object event) {
     if (event instanceof DependencyResolutionRequest request
         && PROJECT_ARTIFACT.equals(request.getMavenProject().getArtifact().getArtifactId())) {
+      final int requestToken = ResolverRequestTokens.tokenFor(request);
+      request
+          .getRepositorySession()
+          .getData()
+          .set(ResolverRequestTokens.REQUEST_TOKEN_KEY, requestToken);
       System.out.println(
           "RESOLVER_REQUEST requestToken="
-              + ResolverRequestTokens.tokenFor(request)
+              + requestToken
               + " project="
               + PROJECT_ARTIFACT
               + " filter="
