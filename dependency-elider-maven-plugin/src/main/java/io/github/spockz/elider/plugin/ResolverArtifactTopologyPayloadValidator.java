@@ -31,7 +31,7 @@ final class ResolverArtifactTopologyPayloadValidator {
       }
       return null;
     }
-    final String rootId = ResolverArtifactGraphPayloadChecks.nodeId(rootValue, "root node ID");
+    final String rootId = ResolverArtifactGraphScalarChecks.nodeId(rootValue, "root node ID");
     final Map<?, ?> root = nodes.get(rootId);
     if (root == null
         || !Boolean.TRUE.equals(root.get(ResolverArtifactGraphSnapshotSchema.REACHABLE))) {
@@ -46,15 +46,20 @@ final class ResolverArtifactTopologyPayloadValidator {
       ResolverArtifactGraphPayloadChecks.fields(
           edge, ResolverArtifactGraphSnapshotSchema.EDGE_FIELDS, "edge");
       final String parentId =
-          ResolverArtifactGraphPayloadChecks.nodeId(
+          ResolverArtifactGraphScalarChecks.nodeId(
               edge.get(ResolverArtifactGraphSnapshotSchema.PARENT_NODE_ID), "edge parent ID");
       if (!reachableNode(parentId, nodes)) {
         throw ResolverArtifactGraphPayloadChecks.invalid("edge parent must be reachable");
       }
+      if (!Boolean.TRUE.equals(
+          nodes.get(parentId).get(ResolverArtifactGraphSnapshotSchema.CHILDREN_PRESENT))) {
+        throw ResolverArtifactGraphPayloadChecks.invalid(
+            "node with outgoing edges declares no children");
+      }
       final Object childValue = edge.get(ResolverArtifactGraphSnapshotSchema.CHILD_NODE_ID);
       if (childValue != null) {
         final String childId =
-            ResolverArtifactGraphPayloadChecks.nodeId(childValue, "edge child ID");
+            ResolverArtifactGraphScalarChecks.nodeId(childValue, "edge child ID");
         if (!reachableNode(childId, nodes)) {
           throw ResolverArtifactGraphPayloadChecks.invalid("edge child must be reachable");
         }

@@ -23,7 +23,7 @@ final class ResolverArtifactNodePayloadValidator {
       ResolverArtifactGraphPayloadChecks.fields(
           node, ResolverArtifactGraphSnapshotSchema.NODE_FIELDS, "node");
       final String nodeId =
-          ResolverArtifactGraphPayloadChecks.nodeId(
+          ResolverArtifactGraphScalarChecks.nodeId(
               node.get(ResolverArtifactGraphSnapshotSchema.NODE_ID), "node ID");
       if (!nodeId.equals("n" + index)) {
         throw ResolverArtifactGraphPayloadChecks.invalid("node IDs do not follow capture order");
@@ -32,23 +32,23 @@ final class ResolverArtifactNodePayloadValidator {
       if (nodes.put(nodeId, node) != null) {
         throw ResolverArtifactGraphPayloadChecks.invalid("duplicate graph node ID");
       }
-      ResolverArtifactGraphPayloadChecks.bool(
+      ResolverArtifactGraphScalarChecks.bool(
           node.get(ResolverArtifactGraphSnapshotSchema.REACHABLE), "node reachability");
       ResolverArtifactArtifactPayloadValidator.artifact(
           node.get(ResolverArtifactGraphSnapshotSchema.ARTIFACT), "node artifact");
       ResolverArtifactArtifactPayloadValidator.dependency(
           node.get(ResolverArtifactGraphSnapshotSchema.DEPENDENCY));
-      ResolverArtifactGraphPayloadChecks.string(
+      ResolverArtifactGraphScalarChecks.string(
           node.get(ResolverArtifactGraphSnapshotSchema.EFFECTIVE_SCOPE), "effective scope", true);
-      ResolverArtifactGraphPayloadChecks.integer(
+      ResolverArtifactGraphScalarChecks.integer(
           node.get(ResolverArtifactGraphSnapshotSchema.MANAGED_BITS), "managed bits");
-      ResolverArtifactGraphPayloadChecks.string(
+      ResolverArtifactGraphScalarChecks.string(
           node.get(ResolverArtifactGraphSnapshotSchema.VERSION_CONSTRAINT),
           "version constraint",
           true);
-      ResolverArtifactGraphPayloadChecks.string(
+      ResolverArtifactGraphScalarChecks.string(
           node.get(ResolverArtifactGraphSnapshotSchema.VERSION), "version", true);
-      ResolverArtifactGraphPayloadChecks.bool(
+      ResolverArtifactGraphScalarChecks.bool(
           node.get(ResolverArtifactGraphSnapshotSchema.CHILDREN_PRESENT), "children presence");
       ResolverArtifactArtifactPayloadValidator.list(
           node.get(ResolverArtifactGraphSnapshotSchema.ALIASES),
@@ -67,27 +67,47 @@ final class ResolverArtifactNodePayloadValidator {
   }
 
   private static void validateWinnerMetadata(final Map<?, ?> node) {
-    ResolverArtifactGraphPayloadChecks.bool(
+    ResolverArtifactGraphScalarChecks.bool(
         node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_PRESENT),
         "conflict winner presence");
-    ResolverArtifactGraphPayloadChecks.string(
+    ResolverArtifactGraphScalarChecks.string(
         node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_NODE_ID),
         "conflict winner node ID",
         true);
     ResolverArtifactArtifactPayloadValidator.artifact(
         node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_EXTERNAL_ARTIFACT),
         "external conflict winner");
-    ResolverArtifactGraphPayloadChecks.string(
+    ResolverArtifactGraphScalarChecks.string(
         node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_VALUE_TYPE),
         "conflict winner value type",
         true);
-    if (!Boolean.TRUE.equals(node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_PRESENT))
-        && (node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_NODE_ID) != null
-            || node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_EXTERNAL_ARTIFACT)
-                != null
-            || node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_VALUE_TYPE) != null)) {
+    final boolean winnerPresent =
+        Boolean.TRUE.equals(node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_PRESENT));
+    final boolean hasWinnerEncoding = hasWinnerEncoding(node);
+    if (!winnerPresent && hasWinnerEncoding) {
       throw ResolverArtifactGraphPayloadChecks.invalid("absent conflict winner has metadata");
     }
+    if (hasMutuallyExclusiveWinnerEncodings(node)) {
+      throw ResolverArtifactGraphPayloadChecks.invalid(
+          "conflict winner encodings are mutually exclusive");
+    }
+  }
+
+  private static boolean hasWinnerEncoding(final Map<?, ?> node) {
+    return node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_NODE_ID) != null
+        || node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_EXTERNAL_ARTIFACT) != null
+        || node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_VALUE_TYPE) != null;
+  }
+
+  private static boolean hasMutuallyExclusiveWinnerEncodings(final Map<?, ?> node) {
+    final boolean hasNodeId =
+        node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_NODE_ID) != null;
+    final boolean hasExternalArtifact =
+        node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_EXTERNAL_ARTIFACT) != null;
+    final boolean hasValueType =
+        node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_VALUE_TYPE) != null;
+    return (hasNodeId && (hasExternalArtifact || hasValueType))
+        || (hasExternalArtifact && hasValueType);
   }
 
   private static void validateOriginalMetadata(final Map<?, ?> node) {
@@ -96,10 +116,10 @@ final class ResolverArtifactNodePayloadValidator {
   }
 
   private static void validateOriginalScope(final Map<?, ?> node) {
-    ResolverArtifactGraphPayloadChecks.bool(
+    ResolverArtifactGraphScalarChecks.bool(
         node.get(ResolverArtifactGraphSnapshotSchema.ORIGINAL_SCOPE_PRESENT),
         "original scope presence");
-    ResolverArtifactGraphPayloadChecks.string(
+    ResolverArtifactGraphScalarChecks.string(
         node.get(ResolverArtifactGraphSnapshotSchema.ORIGINAL_SCOPE), "original scope", true);
     if (!Boolean.TRUE.equals(node.get(ResolverArtifactGraphSnapshotSchema.ORIGINAL_SCOPE_PRESENT))
         && node.get(ResolverArtifactGraphSnapshotSchema.ORIGINAL_SCOPE) != null) {
@@ -108,7 +128,7 @@ final class ResolverArtifactNodePayloadValidator {
   }
 
   private static void validateOriginalOptionality(final Map<?, ?> node) {
-    ResolverArtifactGraphPayloadChecks.bool(
+    ResolverArtifactGraphScalarChecks.bool(
         node.get(ResolverArtifactGraphSnapshotSchema.ORIGINAL_OPTIONALITY_PRESENT),
         "original optionality presence");
     final Object optionality = node.get(ResolverArtifactGraphSnapshotSchema.ORIGINAL_OPTIONALITY);

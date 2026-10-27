@@ -6,9 +6,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.assertj.core.api.Assertions;
 import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.graph.DefaultDependencyNode;
+import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.DependencyNode;
 
 /** Builds and mutates detached payloads for schema rejection tests. */
@@ -55,13 +55,14 @@ final class ResolverArtifactGraphSnapshotStoreTestSupport {
     ((Map<String, Object>) payload.get("generations")).put(PROJECT_KEY, generation);
   }
 
-  static void assertInvalid(final Map<String, Object> payload) {
-    Assertions.assertThatThrownBy(() -> ResolverArtifactGraphSnapshotStore.fromPayload(payload))
-        .isInstanceOf(IllegalStateException.class);
-  }
-
   static DependencyNode node(final String artifactId) {
     return new DefaultDependencyNode(new DefaultArtifact("fixture", artifactId, "", "jar", "1.0"));
+  }
+
+  static DependencyNode dependencyNode(final String artifactId, final Boolean optional) {
+    return new DefaultDependencyNode(
+        new Dependency(
+            new DefaultArtifact("fixture", artifactId, "", "jar", "1.0"), "compile", optional));
   }
 
   @SuppressWarnings("PMD.UseConcurrentHashMap")

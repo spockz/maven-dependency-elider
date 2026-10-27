@@ -17,17 +17,17 @@ final class ResolverArtifactGraphSnapshotPayloadValidator {
         snapshot, ResolverArtifactGraphSnapshotSchema.SNAPSHOT_FIELDS, "snapshot");
     validateProject(snapshot, expectedProjectKey);
     final String fingerprint =
-        ResolverArtifactGraphPayloadChecks.string(
+        ResolverArtifactGraphScalarChecks.string(
             snapshot.get(ResolverArtifactGraphSnapshotSchema.GRAPH_FINGERPRINT),
             "graph fingerprint",
             false);
-    ResolverArtifactGraphPayloadChecks.requireHash(fingerprint, "graph fingerprint");
+    ResolverArtifactGraphScalarChecks.requireHash(fingerprint, "graph fingerprint");
     validatePlanProvenance(snapshot);
-    ResolverArtifactGraphPayloadChecks.longValue(
+    ResolverArtifactGraphScalarChecks.longValue(
         snapshot.get(ResolverArtifactGraphSnapshotSchema.PLAN_GENERATION),
         "plan generation",
         false);
-    ResolverArtifactGraphPayloadChecks.longValue(
+    ResolverArtifactGraphScalarChecks.longValue(
         snapshot.get(ResolverArtifactGraphSnapshotSchema.CAPTURE_GENERATION),
         "capture generation",
         true);
@@ -48,7 +48,7 @@ final class ResolverArtifactGraphSnapshotPayloadValidator {
   private static void validateProject(
       final Map<String, Object> snapshot, final String expectedProjectKey) {
     final String projectKey =
-        ResolverArtifactGraphPayloadChecks.string(
+        ResolverArtifactGraphScalarChecks.string(
             snapshot.get(ResolverArtifactGraphSnapshotSchema.PROJECT_KEY),
             "snapshot project key",
             false);
@@ -60,13 +60,13 @@ final class ResolverArtifactGraphSnapshotPayloadValidator {
 
   private static void validatePlanProvenance(final Map<String, Object> snapshot) {
     final boolean present =
-        ResolverArtifactGraphPayloadChecks.bool(
+        ResolverArtifactGraphScalarChecks.bool(
             snapshot.get(ResolverArtifactGraphSnapshotSchema.PLAN_PRESENT), "plan presence");
     final Object fingerprint = snapshot.get(ResolverArtifactGraphSnapshotSchema.PLAN_FINGERPRINT);
     if (fingerprint != null) {
       final String value =
-          ResolverArtifactGraphPayloadChecks.string(fingerprint, "plan fingerprint", false);
-      ResolverArtifactGraphPayloadChecks.requireHash(value, "plan fingerprint");
+          ResolverArtifactGraphScalarChecks.string(fingerprint, "plan fingerprint", false);
+      ResolverArtifactGraphScalarChecks.requireHash(value, "plan fingerprint");
     }
     if (present != (fingerprint != null)) {
       throw ResolverArtifactGraphPayloadChecks.invalid("plan presence and fingerprint disagree");

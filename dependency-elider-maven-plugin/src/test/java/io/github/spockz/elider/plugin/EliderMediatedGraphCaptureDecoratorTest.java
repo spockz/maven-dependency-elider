@@ -146,30 +146,28 @@ final class EliderMediatedGraphCaptureDecoratorTest {
 
   @Test
   @SuppressWarnings({TOO_MANY_ASSERTS, "PMD.DoNotUseThreads"})
-  void appendsConcurrentProjectCapturesAndDeduplicatesRepeatedGraph() throws Exception {
-    final MavenProject firstProject =
-        EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "first");
-    final MavenProject secondProject =
-        EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "second");
+  void appendsDistinctConcurrentGraphsAndDeduplicatesRepeatedGraph() throws Exception {
+    final MavenProject project =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(
+            temporaryDirectory, "shared-project");
     final DefaultRepositorySystemSession session = new DefaultRepositorySystemSession();
-    final RepositorySystemSession firstDecorated =
-        new EliderMediatedGraphCaptureDecorator().decorate(firstProject, session);
-    final RepositorySystemSession secondDecorated =
-        new EliderMediatedGraphCaptureDecorator().decorate(secondProject, session);
-    final DependencyNode repeated = EliderMediatedGraphCaptureDecoratorTestSupport.node("same");
+    final RepositorySystemSession decorated =
+        new EliderMediatedGraphCaptureDecorator().decorate(project, session);
     final CountDownLatch start = new CountDownLatch(1);
     try (ExecutorService executor = Executors.newFixedThreadPool(4)) {
       final List<Future<?>> futures = new java.util.ArrayList<>();
       for (int index = 0; index < 4; index++) {
+        final int graphIndex = index;
         futures.add(
             executor.submit(
                 () -> {
                   start.await();
-                  firstDecorated
+                  decorated
                       .getDependencyGraphTransformer()
                       .transformGraph(
-                          repeated,
-                          EliderMediatedGraphCaptureDecoratorTestSupport.context(firstDecorated));
+                          EliderMediatedGraphCaptureDecoratorTestSupport.node(
+                              "distinct-" + graphIndex),
+                          EliderMediatedGraphCaptureDecoratorTestSupport.context(decorated));
                   return null;
                 }));
       }
@@ -179,33 +177,24 @@ final class EliderMediatedGraphCaptureDecoratorTest {
       }
       executor.shutdown();
       assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
-      secondDecorated
+      decorated
           .getDependencyGraphTransformer()
           .transformGraph(
-              EliderMediatedGraphCaptureDecoratorTestSupport.node("other"),
-              EliderMediatedGraphCaptureDecoratorTestSupport.context(secondDecorated));
+              EliderMediatedGraphCaptureDecoratorTestSupport.node("distinct-0"),
+              EliderMediatedGraphCaptureDecoratorTestSupport.context(decorated));
     }
 
     final ResolverArtifactGraphSnapshotStore store =
         EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(session);
-    assertThat(store.snapshots())
-        .containsKeys(
-            EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(firstProject),
-            EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(secondProject));
+    final String projectKey = EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project);
+    assertThat(store.snapshots()).containsKey(projectKey);
+    assertThat(store.snapshots().get(projectKey)).hasSize(4);
+    assertThat(store.generations()).containsEntry(projectKey, 4L);
     assertThat(
-            store
-                .snapshots()
-                .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(firstProject)))
-        .hasSize(1);
-    assertThat(
-            store
-                .snapshots()
-                .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(secondProject)))
-        .hasSize(1);
-    assertThat(store.generations())
-        .containsEntry(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(firstProject), 1L)
-        .containsEntry(
-            EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(secondProject), 1L);
+            store.snapshots().get(projectKey).stream()
+                .map(snapshot -> snapshot.get("graphFingerprint"))
+                .distinct())
+        .hasSize(4);
     assertThat(store.toPayload().values())
         .allSatisfy(EliderMediatedGraphCaptureDecoratorTestSupport::assertJdkValue);
   }

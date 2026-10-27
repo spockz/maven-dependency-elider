@@ -24,9 +24,9 @@ final class ResolverArtifactArtifactPayloadValidator {
         ResolverArtifactGraphSnapshotSchema.DEPENDENCY_FIELDS,
         ResolverArtifactGraphSnapshotSchema.DEPENDENCY);
     artifact(dependency.get(ResolverArtifactGraphSnapshotSchema.ARTIFACT), "dependency artifact");
-    ResolverArtifactGraphPayloadChecks.string(
+    ResolverArtifactGraphScalarChecks.string(
         dependency.get(ResolverArtifactGraphSnapshotSchema.SCOPE), "dependency scope", true);
-    ResolverArtifactGraphPayloadChecks.bool(
+    ResolverArtifactGraphScalarChecks.nullableBoolean(
         dependency.get(ResolverArtifactGraphSnapshotSchema.OPTIONAL), "dependency optionality");
     for (final Object valueEntry :
         ResolverArtifactGraphPayloadChecks.list(
@@ -60,7 +60,7 @@ final class ResolverArtifactArtifactPayloadValidator {
             ResolverArtifactGraphSnapshotSchema.BASE_VERSION,
             ResolverArtifactGraphSnapshotSchema.EXTENSION,
             ResolverArtifactGraphSnapshotSchema.CLASSIFIER)) {
-      ResolverArtifactGraphPayloadChecks.string(
+      ResolverArtifactGraphScalarChecks.string(
           artifact.get(coordinate), field + " " + coordinate, true);
     }
     final Object propertiesValue = artifact.get(ResolverArtifactGraphSnapshotSchema.PROPERTIES);
@@ -70,8 +70,8 @@ final class ResolverArtifactArtifactPayloadValidator {
               propertiesValue, ResolverArtifactGraphSnapshotSchema.PROPERTIES);
       properties.forEach(
           (key, property) -> {
-            ResolverArtifactGraphPayloadChecks.string(key, "artifact property key", false);
-            ResolverArtifactGraphPayloadChecks.string(property, "artifact property value", true);
+            ResolverArtifactGraphScalarChecks.string(key, "artifact property key", false);
+            ResolverArtifactGraphScalarChecks.string(property, "artifact property value", true);
           });
     }
   }
@@ -86,7 +86,7 @@ final class ResolverArtifactArtifactPayloadValidator {
             ResolverArtifactGraphSnapshotSchema.ARTIFACT_ID,
             ResolverArtifactGraphSnapshotSchema.CLASSIFIER,
             ResolverArtifactGraphSnapshotSchema.EXTENSION)) {
-      ResolverArtifactGraphPayloadChecks.string(
+      ResolverArtifactGraphScalarChecks.string(
           exclusion.get(coordinate), "exclusion " + coordinate, false);
     }
   }

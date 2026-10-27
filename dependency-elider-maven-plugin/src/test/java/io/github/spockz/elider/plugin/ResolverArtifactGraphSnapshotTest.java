@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings({"PMD.CommentRequired", "PMD.UnitTestContainsTooManyAsserts"})
 final class ResolverArtifactGraphSnapshotTest {
   private static final String ARTIFACT_KEY = "artifact";
+
+  private static final String ARTIFACT_ID_KEY = "artifactId";
 
   private static final String ROOT_ARTIFACT = "root";
 
@@ -58,7 +61,7 @@ final class ResolverArtifactGraphSnapshotTest {
         .isEqualTo(snapshot.nodes().get(4).get(ARTIFACT_KEY));
     final Map<?, ?> dependency = (Map<?, ?>) snapshot.nodes().get(3).get("dependency");
     final Map<?, ?> dependencyArtifact = (Map<?, ?>) dependency.get(ARTIFACT_KEY);
-    assertThat(dependencyArtifact.get("artifactId")).isEqualTo("shared");
+    assertThat(dependencyArtifact.get(ARTIFACT_ID_KEY)).isEqualTo("shared");
     assertThat(snapshot.nodes().get(3).get("id")).isNotEqualTo(snapshot.nodes().get(4).get("id"));
   }
 
@@ -111,6 +114,8 @@ final class ResolverArtifactGraphSnapshotTest {
   }
 
   @Test
+  // Linked maps retain null fields and key order in constructor input.
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
   void rejectsUnsupportedOriginalMetadataAndDeeplyFreezesNestedPayloads() {
     final DependencyNode unsupported = node("unsupported");
     unsupported.setData(ConflictResolver.NODE_DATA_ORIGINAL_SCOPE, new Object());
@@ -130,6 +135,31 @@ final class ResolverArtifactGraphSnapshotTest {
         ResolverArtifactGraphSnapshot.capture(node("immutable"), PROJECT_KEY, false, null, 0, 1);
     final Map<?, ?> artifact = (Map<?, ?>) snapshot.nodes().getFirst().get(ARTIFACT_KEY);
     assertThatThrownBy(artifact::clear).isInstanceOf(UnsupportedOperationException.class);
+
+    final Map<String, Object> mutableNode = new LinkedHashMap<>(snapshot.nodes().getFirst());
+    @SuppressWarnings("unchecked")
+    final Map<String, Object> mutableArtifact =
+        new LinkedHashMap<>((Map<String, Object>) mutableNode.get(ARTIFACT_KEY));
+    mutableNode.put(ARTIFACT_KEY, mutableArtifact);
+    final List<Map<String, Object>> mutableNodes = new ArrayList<>(List.of(mutableNode));
+    final ResolverArtifactGraphSnapshot constructed =
+        new ResolverArtifactGraphSnapshot(
+            snapshot.graphFingerprint(),
+            snapshot.projectKey(),
+            snapshot.planPresent(),
+            snapshot.planFingerprint(),
+            snapshot.planGeneration(),
+            snapshot.captureGeneration(),
+            snapshot.rootNodeId(),
+            mutableNodes,
+            new ArrayList<>(snapshot.edges()));
+
+    mutableArtifact.put(ARTIFACT_ID_KEY, "mutated-after-construction");
+    mutableNodes.clear();
+    assertThat(constructed.nodes()).hasSize(1);
+    final Map<?, ?> frozenArtifact = (Map<?, ?>) constructed.nodes().getFirst().get(ARTIFACT_KEY);
+    assertThat(frozenArtifact.get(ARTIFACT_ID_KEY)).isEqualTo("immutable");
+    assertThatThrownBy(frozenArtifact::clear).isInstanceOf(UnsupportedOperationException.class);
   }
 
   @Test

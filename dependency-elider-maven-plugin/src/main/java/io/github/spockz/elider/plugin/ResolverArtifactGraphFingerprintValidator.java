@@ -25,14 +25,7 @@ final class ResolverArtifactGraphFingerprintValidator {
 
   static void validate(
       final String expected, final Object rootNodeId, final List<?> nodes, final List<?> edges) {
-    final Map<String, Object> structure =
-        Map.of(
-            ResolverArtifactGraphSnapshotSchema.ROOT_NODE_ID,
-            rootNodeId,
-            ResolverArtifactGraphSnapshotSchema.NODES,
-            nodes,
-            ResolverArtifactGraphSnapshotSchema.EDGES,
-            edges);
+    final Map<String, Object> structure = structure(rootNodeId, nodes, edges);
     try {
       final String json = JSON.writeValueAsString(structure);
       final String actual = fingerprint(json);
@@ -43,6 +36,17 @@ final class ResolverArtifactGraphFingerprintValidator {
     } catch (JsonProcessingException exception) {
       throw new IllegalStateException("Cannot serialize graph snapshot fingerprint", exception);
     }
+  }
+
+  // A linked map keeps canonical field order and accepts a null root ID.
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  private static Map<String, Object> structure(
+      final Object rootNodeId, final List<?> nodes, final List<?> edges) {
+    final Map<String, Object> structure = new java.util.LinkedHashMap<>();
+    structure.put(ResolverArtifactGraphSnapshotSchema.ROOT_NODE_ID, rootNodeId);
+    structure.put(ResolverArtifactGraphSnapshotSchema.NODES, nodes);
+    structure.put(ResolverArtifactGraphSnapshotSchema.EDGES, edges);
+    return structure;
   }
 
   private static String fingerprint(final String value) {
