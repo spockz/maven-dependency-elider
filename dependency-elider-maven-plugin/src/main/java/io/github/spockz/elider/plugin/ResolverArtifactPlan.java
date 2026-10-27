@@ -52,6 +52,17 @@ record ResolverArtifactPlan(
       extension = requireText(extension, "extension");
       classifier = Objects.requireNonNull(classifier, "classifier");
     }
+
+    boolean hasFamily(
+        final String candidateGroupId,
+        final String candidateArtifactId,
+        final String candidateExtension,
+        final String candidateClassifier) {
+      return groupId.equals(candidateGroupId)
+          && artifactId.equals(candidateArtifactId)
+          && extension.equals(candidateExtension)
+          && classifier.equals(candidateClassifier);
+    }
   }
 
   /** Detached file location and expected output digest. */

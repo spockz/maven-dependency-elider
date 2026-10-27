@@ -100,13 +100,59 @@ final class ElideMojoTest {
     final MavenElisionReportSnapshot previous = previousSnapshot();
     MavenElisionReportWriter.write(snapshot, previous);
     final ElideMojo mojo = newMojo();
+    final MavenProject project = newProject();
+    set(mojo, "project", project);
     mojo.setLog(new SystemStreamLog());
     set(mojo, "skip", true);
     set(mojo, "summaryFile", snapshot.toFile());
+    seedResolverPlan(mojo, project, "stale-before-skip.jar");
 
     mojo.execute();
 
     assertLastSuccessfulSnapshotRemains(snapshot, previous);
+    assertThat(resolverPlan(mojo, project).replacements()).isEmpty();
+  }
+
+  @Test
+  void noTrimExecutionClearsThePriorResolverPlan()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Artifact used = artifact("used", "used/Entry.class");
+    final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
+    final ElideMojo mojo = newMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("used.Entry\n").toFile()));
+    set(mojo, "reportFile", tempDir.resolve("no-trim-report.json").toFile());
+    seedResolverPlan(mojo, project, "stale-before-no-trim.jar");
+
+    mojo.execute();
+
+    assertThat(resolverPlan(mojo, project).replacements()).isEmpty();
+  }
+
+  @Test
+  void failedReportWritePreservesThePreviousResolverPayload()
+      throws IOException, ReflectiveOperationException {
+    final Artifact used = artifact("used", "used/Entry.class");
+    final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
+    final ElideMojo mojo = newMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("used.Entry\n").toFile()));
+    set(mojo, "reportFile", tempDir.toFile());
+    seedResolverPlan(mojo, project, "stale-before-output-failure.jar");
+    final MavenSession session = (MavenSession) fieldValue(mojo, "session");
+    final Object previousPayload =
+        session
+            .getRepositorySession()
+            .getData()
+            .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
+
+    assertThatThrownBy(mojo::execute).isInstanceOf(MojoFailureException.class);
+    assertThat(
+            session
+                .getRepositorySession()
+                .getData()
+                .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
+        .isSameAs(previousPayload);
   }
 
   @Test
@@ -189,6 +235,14 @@ final class ElideMojoTest {
     set(mojo, "sbomFile", tempDir.resolve("build/dependency-elider-sbom.cdx.json").toFile());
 
     mojo.execute();
+
+    final ResolverArtifactPlan plan = resolverPlan(mojo, project);
+    assertThat(plan.replacements())
+        .containsEntry(
+            new ResolverArtifactPlan.ArtifactIdentity(
+                "org.example", "runtime-dependency", "1.0", "jar", ""),
+            new ResolverArtifactPlan.Replacement(
+                runtime.getFile().toPath(), ArtifactFileDigest.sha256(runtime.getFile().toPath())));
 
     assertThat(runtime.getFile().toPath()).isNotEqualTo(original).isRegularFile();
     assertThat(log.messages())
@@ -2073,5 +2127,56 @@ final class ElideMojoTest {
     final Field field = target.getClass().getDeclaredField(name);
     field.setAccessible(true);
     field.set(target, value);
+  }
+
+  private void seedResolverPlan(
+      final ElideMojo mojo, final MavenProject project, final String outputName)
+      throws IOException, ReflectiveOperationException {
+    final Path replacement = tempDir.resolve(outputName);
+    Files.writeString(replacement, outputName);
+    final ResolverArtifactPlan.ProjectIdentity projectIdentity =
+        new ResolverArtifactPlan.ProjectIdentity(
+            project.getBasedir().toPath(),
+            project.getGroupId(),
+            project.getArtifactId(),
+            project.getVersion());
+    final ResolverArtifactPlan plan =
+        new ResolverArtifactPlan(
+            projectIdentity,
+            java.util.Map.of(
+                new ResolverArtifactPlan.ArtifactIdentity("org.example", "stale", "1.0", "jar", ""),
+                new ResolverArtifactPlan.Replacement(
+                    replacement, ArtifactFileDigest.sha256(replacement))));
+    final MavenSession session = (MavenSession) fieldValue(mojo, "session");
+    session
+        .getRepositorySession()
+        .getData()
+        .set(
+            ResolverArtifactPlanPublisher.SESSION_DATA_KEY,
+            ResolverArtifactPlanStore.empty().withPlan(plan).toPayload());
+  }
+
+  private ResolverArtifactPlan resolverPlan(final ElideMojo mojo, final MavenProject project)
+      throws ReflectiveOperationException {
+    final MavenSession session = (MavenSession) fieldValue(mojo, "session");
+    final Object payload =
+        session
+            .getRepositorySession()
+            .getData()
+            .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
+    return ResolverArtifactPlanStore.fromPayload(payload)
+        .find(
+            new ResolverArtifactPlan.ProjectIdentity(
+                project.getBasedir().toPath(),
+                project.getGroupId(),
+                project.getArtifactId(),
+                project.getVersion()));
+  }
+
+  private static Object fieldValue(final Object target, final String name)
+      throws ReflectiveOperationException {
+    final Field field = target.getClass().getDeclaredField(name);
+    field.setAccessible(true);
+    return field.get(target);
   }
 }

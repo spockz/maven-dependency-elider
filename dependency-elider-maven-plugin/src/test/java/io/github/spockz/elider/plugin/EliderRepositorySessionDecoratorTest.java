@@ -48,6 +48,10 @@ final class EliderRepositorySessionDecoratorTest {
 
   private static final List<String> DELEGATED_VERSIONS = List.of("2.0", "2.1");
 
+  private static final List<String> PLANNED_VERSIONS = List.of("2.0", "2.1", VERSION);
+
+  private static final int VERSION_FAMILY_INDEX = 2;
+
   @TempDir Path temporaryDirectory;
 
   @Test
@@ -84,6 +88,8 @@ final class EliderRepositorySessionDecoratorTest {
         new EliderRepositorySessionDecorator().decorate(project, session);
     final WorkspaceReader reader = decorated.getWorkspaceReader();
     final Artifact keep = new DefaultArtifact(GROUP, ARTIFACT, CLASSIFIER, EXTENSION, VERSION);
+    final Artifact unresolvedVersion =
+        new DefaultArtifact(GROUP, ARTIFACT, CLASSIFIER, EXTENSION, "");
     final List<Artifact> nonMatches =
         List.of(
             new DefaultArtifact("other", ARTIFACT, CLASSIFIER, EXTENSION, VERSION),
@@ -91,19 +97,30 @@ final class EliderRepositorySessionDecoratorTest {
             new DefaultArtifact(GROUP, ARTIFACT, CLASSIFIER, EXTENSION, "1.1"),
             new DefaultArtifact(GROUP, ARTIFACT, "tests", EXTENSION, VERSION),
             new DefaultArtifact(GROUP, ARTIFACT, CLASSIFIER, "pom", VERSION));
+    final List<Artifact> expectedVersionQueries =
+        new ArrayList<>(List.of(keep, unresolvedVersion, nonMatches.get(2)));
+    expectedVersionQueries.add(nonMatches.get(0));
+    expectedVersionQueries.add(nonMatches.get(1));
+    expectedVersionQueries.add(nonMatches.get(3));
+    expectedVersionQueries.add(nonMatches.get(4));
 
     assertThat(decorated).isNotSameAs(session);
     assertThat(reader).isNotSameAs(delegate);
     assertThat(reader.getRepository()).isSameAs(delegate.repository);
     assertThat(reader.findArtifact(keep)).isEqualTo(replacement.toFile());
-    assertThat(reader.findVersions(keep)).containsExactly(VERSION);
+    assertThat(reader.findVersions(keep)).containsExactlyElementsOf(PLANNED_VERSIONS);
+    assertThat(reader.findVersions(unresolvedVersion)).containsExactlyElementsOf(PLANNED_VERSIONS);
+    assertThat(reader.findVersions(nonMatches.get(2))).containsExactlyElementsOf(PLANNED_VERSIONS);
     assertThat(((MavenWorkspaceReader) reader).findModel(keep)).isSameAs(delegate.model);
-    for (final Artifact artifact : nonMatches) {
+    for (int index = 0; index < nonMatches.size(); index++) {
+      final Artifact artifact = nonMatches.get(index);
       assertThat(reader.findArtifact(artifact)).isEqualTo(delegate.file);
-      assertThat(reader.findVersions(artifact)).containsExactlyElementsOf(DELEGATED_VERSIONS);
+      if (index != VERSION_FAMILY_INDEX) {
+        assertThat(reader.findVersions(artifact)).containsExactlyElementsOf(DELEGATED_VERSIONS);
+      }
     }
     assertThat(delegate.artifacts).containsExactlyElementsOf(nonMatches);
-    assertThat(delegate.versionQueries).containsExactlyElementsOf(nonMatches);
+    assertThat(delegate.versionQueries).containsExactlyElementsOf(expectedVersionQueries);
     Files.writeString(replacement, "changed artifact bytes");
     assertThatThrownBy(() -> reader.findArtifact(keep))
         .isInstanceOf(IllegalStateException.class)

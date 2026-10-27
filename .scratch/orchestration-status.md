@@ -1,47 +1,43 @@
-# Active Work Packages Orchestration Status
+# WP-RESOLVE-01 Orchestration Status
 
-* **Work packages**:
-  * **WP-RESOLVE-01**: Maven lifecycle & dependency graph consistency (`docs/handovers/2026-10-27-wp-resolve-01-maven-lifecycle-and-graph-consistency.md`).
-  * **WP-VEX-01**: Vulnerability assessment, SBOM comparison, OS-cached symbol index, and evidence-gated VEX (`docs/handovers/2026-10-27-wp-vex-01-vulnerability-assessment-and-vex-evidence.md`).
+* **Work package**: WP-RESOLVE-01, Maven lifecycle and dependency graph consistency.
 * **Owning session**: Primary coordinating session.
-* **Base**: `main` at `c8074ff`.
+* **Source**: `docs/handovers/2026-10-27-wp-resolve-01-maven-lifecycle-and-graph-consistency.md`.
+* **Base**: `main` at `10d8b9797a270ded3bd044db58cf804d13626786`.
 * **Initial baseline**: clean; `JAVA_HOME=$PWD/.scratch/toolchains/graalvm-jdk-21.0.12+7.1 make check` passed (149 core, 82 plugin tests; static analysis and Markdown lint clean).
+* **Scope**: measure Maven lifecycle resolver paths, implement a scoped retained-JAR session plan, and defer general graph transformation until its mediation and descendant policy are specified.
+* **Architectural constraints**: lifecycle TEST requests bypass the tested `ProjectDependenciesResolver` decorator; use `RepositorySessionDecorator` for the bounded replacement-path implementation; keep session payload to JDK structures; do not claim direct-view or tree consistency; preserve retained descendants.
+* **Acceptance**: plan publication after validated outputs, no-plan original-session behavior, exact GAVCE path substitution through copied session and delegated workspace reader, packaged production extension A/B consumer proof, focused tests, `make check`, and explicit documentation of graph-policy and broader compatibility limits.
+* **Architect review**: the packaged repository session decorator is discovered by Maven 3.9.11 and replaces a retained JAR for a seeded test-only JDK payload. Actual `ElideMojo` publication in a packaged consumer remains open. Whole-artifact graph pruning remains unsafe until descendant policy is proven; reactor, concurrency, package outputs, and other Maven versions need separate fixtures.
 
----
+## Track Ledger
 
-## 1. WP-RESOLVE-01 Track Ledger
+| Track | State | Worktree / branch | Slices |
+| :--- | :--- | :--- | :--- |
+| Maven resolver integration | IN PROGRESS | `.scratch/worktrees/track-maven-resolver` / `track/maven-resolver` | 1: lifecycle and resolver diagnostics approved; 2.1: production retained-JAR session plan and publisher/decorator tests; 2.2: packaged extension activation with a test-seeded plan; 2.3+: actual Mojo handoff, graph policy, tree/package, reactor and compatibility evidence |
 
-| Track | State | Scope |
-| :--- | :--- | :--- |
-| Track 1: Maven Lifecycle & Re-Resolution Harness | READY FOR IMPLEMENTATION | Diagnostic test harness proving re-resolution behavior. |
-| Track 2: `EliderProjectDependenciesResolver` Decoration | READY FOR IMPLEMENTATION | Post-download Aether result interception and root pruning. |
-| Track 3: Direct-View & Graph Handoff Synchronization | READY FOR IMPLEMENTATION | Consistent artifact-view mutation without cache invalidation. |
-| Track 4: Reporting and Path Preservation | READY FOR IMPLEMENTATION | Handoff mediated paths to audit report. |
-| Track 5: Example Fixtures & Verification Gates | READY FOR IMPLEMENTATION | `dependency:tree` and packaging verification on test examples. |
+## Specification Deviations and Architectural Choices
 
----
+* The handover's original unconditional “re-resolution immunity” and direct-view synchronization claims are invalidated by the Maven 3.9.11 lifecycle fixture and have been removed from current acceptance. A fresh resolution can restore an original repository artifact after direct-set pruning.
+* Keep Aether/Maven resolver types in the plugin integration module; `elider-core` remains Maven-independent and returns neutral elision decisions.
+* Preserve ancestors required to reach retained descendants or promote retained descendants according to a test-backed policy. Never drop a subtree solely because its root artifact is unused.
 
-## 2. WP-VEX-01 Track Ledger
+## Track 2.1 Production Plan Implementation
 
-| Track | State | Scope |
-| :--- | :--- | :--- |
-| Track 1: Baseline SBOM Generation & Inventory Model | READY FOR IMPLEMENTATION | Pre-elision baseline SBOM capture alongside post-elision SBOM. |
-| Track 2: CVE-to-Symbol Evidence Ingestion Model | READY FOR IMPLEMENTATION | Auto-refreshing OS cache (`~/.cache/...`), 24h TTL, POM overrides, and omitted-code proof engine. |
-| Track 3: Decoupled OSV SBOM Comparison Gate | READY FOR IMPLEMENTATION | CI script and Makefile target comparing pre/post elision inventories. |
-| Track 4: Evidence-Gated CycloneDX & OpenVEX Generation | READY FOR IMPLEMENTATION | Dual VEX emission, Spring Boot `META-INF/sbom/` and GraalVM staging. |
-| Track 5: Reference CVE Fixtures & End-to-End Gates | READY FOR IMPLEMENTATION | End-to-end verification against Logback/Janino and Compress fixtures. |
+* Added `ResolverArtifactPlan` and `ResolverArtifactPlanStore`. They encode normalized project base directory + GAV and exact retained JAR GAVCE-to-path+SHA-256 replacements; session payload is nested JDK maps/lists/strings/integers only.
+* Added `ResolverArtifactPlanPublisher`, called after class-usage/SBOM outputs, artifact-view update, and summary report writing succeed. It uses `SessionData.set(key, old, new)` compare-and-set and publishes an empty project plan to replace stale mappings on a later no-trim or skipped execution. Missing context is an explicit failure when a non-empty plan needs publishing.
+* Added indexed `EliderRepositorySessionDecorator`. A missing/empty project plan returns the same session. A plan returns a copied `DefaultRepositorySystemSession` with a reader that substitutes only exact GAVCE matches, validates expected SHA-256 before returning the replacement, and delegates all other artifact/version lookups. It implements Maven's `MavenWorkspaceReader` and forwards `findModel`. It does not mutate `MavenProject`, `ProjectArtifactsCache`, direct artifacts, or graph nodes.
+* Added focused unit tests for payload round-trip, project isolation/keying, JDK-only values, malformed schema/plan rejection, no-plan session identity, copied-session behavior, exact GAVCE matching, delegated artifact/version/model lookups, and post-plan output digest change detection.
+* Focused test command passed 29 tests: `ElideMojoTest`, `ResolverArtifactPlanStoreTest`, and `EliderRepositorySessionDecoratorTest`; log `target/wp-resolve-slice-2.1-focused.log`. Full `make check` passed with 149 core and 94 plugin tests plus formatting, Checkstyle, PMD, SpotBugs, and Markdown lint; log `target/wp-resolve-slice-2.1-make-check.log`.
+* Same-GAV reactor behavior is unverified even though plans include project identity and model lookups are forwarded. This slice does not drop whole artifacts, prune a graph, establish dependency-tree consistency, or prove package outputs or concurrency. Never drop a node subtree when retained descendants may remain necessary.
 
----
+## Track 2.1 Review Corrections and Track 2.2 Packaged Activation
 
-## Architectural Constraints & Invariants
-
-* **Maven Aether types remain in plugin integration**: `elider-core` remains pure Java / Maven-agnostic.
-* **Cache locations adhere to OS standards**: Shared cache in standard OS directories (XDG on Linux: `~/.cache/dependency-elider/`, macOS: `~/Library/Caches/...`, Windows: `%LOCALAPPDATA%`) or project `target/`—never `.m2`.
-* **Zero Hallucinated VEX**: Strict all-or-nothing policy on mapped symbols + inner classes (`Outer$*`).
-* **Zero Build Failure on Outage**: Network failure or cold cache outage falls back to bundled classpath seed catalog (`seed-mappings.json`).
-* **Clean Gates**: Every slice must pass `make check` and `make test-examples`.
-
----
+* Corrected the production `WorkspaceReader.findVersions` implementation to Maven's GACE-family contract: delegate existing versions, merge versions for planned identities matching group/artifact/extension/classifier, and support blank or different requested versions. Focused tests cover exact and unresolved version requests plus wrong group, artifact, classifier, and extension delegation.
+* Added direct publisher tests for successful publication, malformed/digest failure preserving prior payload, empty-plan clearing for one project while retaining another project's plan, and an `ElideMojoTest` proving actual goal publication. Mojo tests also prove skip and no-trim executions clear an existing same-project plan.
+* Added an isolated packaged consumer A/B gate. It installs the production plugin and fixture artifacts to a per-test repository, checks the production artifact's Sisu index/class and absence of test-only classes, and runs Maven wrapper CLI 3.9.11. A separate test-only EventSpy seeds a JDK-only payload before the first TEST-resolution request and asserts direct artifact file paths/hashes are unchanged by the seeding operation. The positive consumer loads the production extension and resolves keep-library from the replacement path/hash in both direct and resolved snapshots on that first request; the negative consumer loads only the plan seeder and retains the repository path/hash. Both original repository fixture hashes are rechecked. This is first-request activation evidence, not fresh re-resolution after Mojo publication.
+* Added `ElideMojoTest` coverage for output failure preserving the prior session payload. The combined focused command passed 33 plugin tests (3 lifecycle integration, 26 `ElideMojoTest`, 2 decorator, 2 publisher). Surefire evidence: `dependency-elider-maven-plugin/target/surefire-reports/TEST-io.github.spockz.elider.plugin.DependencyContextLifecycleIntegrationTest.xml`; A/B logs, snapshots, installed artifact, and isolated repository: `dependency-elider-maven-plugin/target/production-extension-evidence/`.
+* Actual `ElideMojo` publication followed by a separate TEST re-resolution in one consumer process is the next prerequisite. This test does not prove graph pruning, dependency-tree consistency, packager outputs, reactor isolation, concurrency, or compatibility beyond Maven 3.9.11. Final `make check` passed 149 core and 99 plugin tests plus formatting, Checkstyle, PMD, SpotBugs, and Markdown lint; log `dependency-elider-maven-plugin/target/wp-resolve-slice-2.2-make-check-final.log`.
 
 ## Track 1 Diagnostic Update
 
@@ -79,14 +75,3 @@
 * `ResolverSessionProbeTest` checks wrong group, artifact, classifier, extension, and version lookups delegate to the underlying workspace reader, including version lookup and repository identity. No `ProjectArtifactsCache` or graph transformer changes were made.
 * Focused verification passed 7 tests: `target/wp-resolve-slice-1.4-focused.log`. Evidence: `dependency-elider-maven-plugin/target/resolver-probe-evidence/lifecycle-session-decorator.log` and `session-decorator-snapshots/`.
 * Full validation passed: `target/wp-resolve-slice-1.4-focused.log` passed 7 focused tests; `target/wp-resolve-slice-1.4-make-check.log` passed `make check` with 149 core and 89 plugin tests plus formatting, Checkstyle, PMD, SpotBugs, and Markdown lint. This remains test-only, sequential, single-project evidence; production plan handoff, reactor isolation, concurrency, packaging consumers, and broader Maven compatibility remain unproven.
-
----
-
-## Track 2.1 Production Plan Implementation
-
-* Added `ResolverArtifactPlan` and `ResolverArtifactPlanStore`. They encode normalized project base directory + GAV and exact retained JAR GAVCE-to-path+SHA-256 replacements; session payload is nested JDK maps/lists/strings/integers only.
-* Added `ResolverArtifactPlanPublisher`, called after class-usage/SBOM outputs, artifact-view update, and summary report writing succeed. It uses `SessionData.set(key, old, new)` compare-and-set and publishes an empty project plan to replace stale mappings on a later no-trim or skipped execution. Missing context is an explicit failure when a non-empty plan needs publishing.
-* Added indexed `EliderRepositorySessionDecorator`. A missing/empty project plan returns the same session. A plan returns a copied `DefaultRepositorySystemSession` with a reader that substitutes only exact GAVCE matches, validates expected SHA-256 before returning the replacement, and delegates all other artifact/version lookups. It implements Maven's `MavenWorkspaceReader` and forwards `findModel`. It does not mutate `MavenProject`, `ProjectArtifactsCache`, direct artifacts, or graph nodes.
-* Added focused unit tests for payload round-trip, project isolation/keying, JDK-only values, malformed schema/plan rejection, no-plan session identity, copied-session behavior, exact GAVCE matching, delegated artifact/version/model lookups, and post-plan output digest change detection.
-* Focused test command passed 29 tests: `ElideMojoTest`, `ResolverArtifactPlanStoreTest`, and `EliderRepositorySessionDecoratorTest`; log `target/wp-resolve-slice-2.1-focused.log`. Full `make check` passed with 149 core and 94 plugin tests plus formatting, Checkstyle, PMD, SpotBugs, and Markdown lint; log `target/wp-resolve-slice-2.1-make-check.log`.
-* Production decorator activation from a real consumer core-extension package remains unverified. Same-GAV reactor behavior is also unverified even though plans include project identity and model lookups are forwarded. This slice does not drop whole artifacts, prune a graph, establish dependency-tree consistency, or prove package outputs or concurrency. Never drop a node subtree when retained descendants may remain necessary.

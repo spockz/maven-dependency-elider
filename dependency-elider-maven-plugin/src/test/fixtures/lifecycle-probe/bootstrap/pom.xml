@@ -52,6 +52,7 @@
     <modules>
         <module>../helper-plugin</module>
         <module>../resolver-extension</module>
+        <module>../plan-seed-extension</module>
         <module>../libraries</module>
     </modules>
 </project>

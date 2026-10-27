@@ -5,8 +5,10 @@ package io.github.spockz.elider.plugin;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import org.apache.maven.model.Model;
@@ -110,10 +112,20 @@ public final class EliderRepositorySessionDecorator implements RepositorySession
 
     @Override
     public List<String> findVersions(final Artifact artifact) {
-      if (replacements.containsKey(identityOf(artifact))) {
-        return List.of(artifact.getVersion());
+      final Set<String> versions = new LinkedHashSet<>();
+      if (delegate != null) {
+        versions.addAll(delegate.findVersions(artifact));
       }
-      return delegate == null ? List.of() : delegate.findVersions(artifact);
+      for (final ResolverArtifactPlan.ArtifactIdentity identity : replacements.keySet()) {
+        if (identity.hasFamily(
+            artifact.getGroupId(),
+            artifact.getArtifactId(),
+            artifact.getExtension(),
+            artifact.getClassifier() == null ? "" : artifact.getClassifier())) {
+          versions.add(identity.version());
+        }
+      }
+      return List.copyOf(versions);
     }
 
     private static ResolverArtifactPlan.ArtifactIdentity identityOf(final Artifact artifact) {

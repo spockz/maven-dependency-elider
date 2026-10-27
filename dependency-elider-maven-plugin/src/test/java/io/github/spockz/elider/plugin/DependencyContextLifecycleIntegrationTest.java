@@ -77,6 +77,7 @@ final class DependencyContextLifecycleIntegrationTest {
   private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(180);
 
   @Test
+  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
   void lifecycleSnapshotsShowDirectAndResolvedViewsHaveDifferentLaterResolutionBehavior()
       throws Exception {
     final Path repositoryRoot = repositoryRoot();
@@ -201,6 +202,7 @@ final class DependencyContextLifecycleIntegrationTest {
   }
 
   @Test
+  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
   void resolverDecoratorChangesEachRepeatedTreeOutput() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     final Path fixtureRoot =
@@ -329,6 +331,170 @@ final class DependencyContextLifecycleIntegrationTest {
         plannedPhases, dropJar, dropHash, keepJar, keepHash, replacementJar, replacementHash);
     assertThat(sha256(dropJar)).isEqualTo(dropHash);
     assertThat(sha256(keepJar)).isEqualTo(keepHash);
+  }
+
+  @Test
+  void packagedProductionExtensionSubstitutesOnlyThePositiveConsumerRetainedJar() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot =
+        repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/fixtures/lifecycle-probe");
+    final Path evidenceDirectory =
+        repositoryRoot.resolve(
+            "dependency-elider-maven-plugin/target/production-extension-evidence");
+    deleteTree(evidenceDirectory);
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = Files.createDirectories(evidenceDirectory.resolve("repository"));
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve("mvnw");
+
+    run(
+        repositoryRoot,
+        wrapper,
+        settings,
+        localRepository,
+        evidenceDirectory.resolve("production-install.log"),
+        PROCESS_TIMEOUT,
+        "-f",
+        repositoryRoot.resolve("pom.xml").toString(),
+        "-pl",
+        "dependency-elider-maven-plugin",
+        "-am",
+        "install",
+        "-DskipTests");
+    run(
+        repositoryRoot,
+        wrapper,
+        settings,
+        localRepository,
+        evidenceDirectory.resolve("fixture-bootstrap.log"),
+        PROCESS_TIMEOUT,
+        "-f",
+        fixtureRoot.resolve("bootstrap/pom.xml").toString(),
+        "clean",
+        "install");
+
+    final Path productionJar =
+        localRepository.resolve(
+            "io/github/spockz/dependency-elider-maven-plugin/0.1.0-SNAPSHOT/"
+                + "dependency-elider-maven-plugin-0.1.0-SNAPSHOT.jar");
+    assertProductionExtensionPackage(productionJar);
+
+    final Path dropJar = repositoryArtifact(localRepository, "drop-library");
+    final Path keepJar = repositoryArtifact(localRepository, "keep-library");
+    final String dropHash = sha256(dropJar);
+    final String keepHash = sha256(keepJar);
+    final Path replacementJar = evidenceDirectory.resolve("replacement/keep-library-trimmed.jar");
+    writeReplacementJar(replacementJar);
+    final String replacementHash = sha256(replacementJar);
+
+    final Map<String, PhaseSnapshots> consumerRuns = new HashMap<>();
+    for (final String mode : List.of("production-positive", "production-negative")) {
+      final Path consumer = evidenceDirectory.resolve(mode);
+      Files.createDirectories(consumer);
+      Files.copy(fixtureRoot.resolve("consumer/pom.xml"), consumer.resolve("pom.xml"));
+      final boolean extensionEnabled = "production-positive".equals(mode);
+      final Path extensionsDirectory = Files.createDirectories(consumer.resolve(".mvn"));
+      writeConsumerExtensions(extensionsDirectory.resolve("extensions.xml"), extensionEnabled);
+      final Path snapshots = evidenceDirectory.resolve(mode + "/snapshots");
+      final Path modeLog = evidenceDirectory.resolve(mode + ".log");
+      final List<String> properties =
+          List.of(
+              "-Dlifecycle.mode=baseline",
+              "-Dlifecycle.reportDirectory=" + snapshots,
+              LIFECYCLE_REPLACEMENT_FILE_PROPERTY + replacementJar,
+              "-f",
+              consumer.resolve("pom.xml").toString());
+      runFromDirectory(
+          consumer,
+          wrapper,
+          settings,
+          localRepository,
+          modeLog,
+          PROCESS_TIMEOUT,
+          Stream.concat(properties.stream(), Stream.of("prepare-package")).toArray(String[]::new));
+      assertThat(Files.readString(modeLog)).contains("BUILD SUCCESS");
+      assertThat(Files.readString(modeLog)).contains("PRODUCTION_PLAN_EVENT_SEEDED");
+      consumerRuns.put(mode, phaseSnapshots(snapshots, "baseline"));
+    }
+
+    final PhaseSnapshots positive = consumerRuns.get("production-positive");
+    assertArtifacts(
+        positive.later().direct(), DROP, dropJar, dropHash, KEEP, replacementJar, replacementHash);
+    assertArtifacts(
+        positive.later().resolved(),
+        DROP,
+        dropJar,
+        dropHash,
+        KEEP,
+        replacementJar,
+        replacementHash);
+    final PhaseSnapshots negative = consumerRuns.get("production-negative");
+    assertArtifacts(negative.later().direct(), DROP, dropJar, dropHash, KEEP, keepJar, keepHash);
+    assertArtifacts(negative.later().resolved(), DROP, dropJar, dropHash, KEEP, keepJar, keepHash);
+    assertThat(sha256(dropJar)).isEqualTo(dropHash);
+    assertThat(sha256(keepJar)).isEqualTo(keepHash);
+  }
+
+  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
+  private static void writeConsumerExtensions(
+      final Path descriptor, final boolean includeProduction)
+      throws IOException, XMLStreamException {
+    try (OutputStream output = Files.newOutputStream(descriptor)) {
+      final XMLStreamWriter xml =
+          XMLOutputFactory.newFactory().createXMLStreamWriter(output, "UTF-8");
+      try {
+        xml.writeStartDocument("UTF-8", "1.0");
+        xml.writeStartElement("extensions");
+        writeExtension(
+            xml, "io.github.spockz.elider.test", "production-plan-seed-extension", "1.0.0");
+        if (includeProduction) {
+          writeExtension(
+              xml, "io.github.spockz", "dependency-elider-maven-plugin", "0.1.0-SNAPSHOT");
+        }
+        xml.writeEndElement();
+        xml.writeEndDocument();
+      } finally {
+        xml.close();
+      }
+    }
+  }
+
+  private static void writeExtension(
+      final XMLStreamWriter xml,
+      final String groupId,
+      final String artifactId,
+      final String version)
+      throws XMLStreamException {
+    xml.writeStartElement("extension");
+    writeTextElement(xml, "groupId", groupId);
+    writeTextElement(xml, "artifactId", artifactId);
+    writeTextElement(xml, "version", version);
+    xml.writeEndElement();
+  }
+
+  private static void assertProductionExtensionPackage(final Path productionJar)
+      throws IOException {
+    assertThat(productionJar).isRegularFile();
+    try (JarFile jar = new JarFile(productionJar.toFile())) {
+      final JarEntry index = jar.getJarEntry("META-INF/sisu/javax.inject.Named");
+      assertThat(index).isNotNull();
+      try (InputStream input = jar.getInputStream(index)) {
+        assertThat(new String(input.readAllBytes(), StandardCharsets.UTF_8))
+            .contains("io.github.spockz.elider.plugin.EliderRepositorySessionDecorator");
+      }
+      assertThat(
+              jar.getJarEntry(
+                  "io/github/spockz/elider/plugin/EliderRepositorySessionDecorator.class"))
+          .isNotNull();
+      assertThat(
+              jar.getJarEntry("io/github/spockz/elider/test/resolver/ResolverSessionProbe.class"))
+          .isNull();
+      assertThat(jar.getJarEntry("io/github/spockz/elider/test/MutateArtifactViewsMojo.class"))
+          .isNull();
+      assertThat(
+              jar.getJarEntry("io/github/spockz/elider/test/resolver/seed/PlanSeedEventSpy.class"))
+          .isNull();
+    }
   }
 
   private static void assertResolverExtensionDescriptor(final Path extensionJar)
