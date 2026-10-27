@@ -574,6 +574,13 @@ final class DependencyContextLifecycleIntegrationTest {
       assertThat(sha256(originalDrop)).isEqualTo(originalDropHash);
       assertThat(sha256(originalKeep)).isEqualTo(originalKeepHash);
       assertMojoOutputReports(consumer, trimmedHash, originalKeepHash);
+      final Path initialGraph = reports.resolve("graph-initial.tsv");
+      final Path laterGraph = reports.resolve("graph-later.tsv");
+      if (extensionEnabled) {
+        assertInitialAndLaterGraphCaptures(initialGraph, laterGraph);
+      } else {
+        assertThat(Files.readString(laterGraph)).contains("missing\ttrue");
+      }
     }
   }
 
@@ -622,11 +629,16 @@ final class DependencyContextLifecycleIntegrationTest {
       assertThat(index).isNotNull();
       try (InputStream input = jar.getInputStream(index)) {
         assertThat(new String(input.readAllBytes(), StandardCharsets.UTF_8))
-            .contains("io.github.spockz.elider.plugin.EliderRepositorySessionDecorator");
+            .contains("io.github.spockz.elider.plugin.EliderRepositorySessionDecorator")
+            .contains("io.github.spockz.elider.plugin.EliderMediatedGraphCaptureDecorator");
       }
       assertThat(
               jar.getJarEntry(
                   "io/github/spockz/elider/plugin/EliderRepositorySessionDecorator.class"))
+          .isNotNull();
+      assertThat(
+              jar.getJarEntry(
+                  "io/github/spockz/elider/plugin/EliderMediatedGraphCaptureDecorator.class"))
           .isNotNull();
       assertThat(
               jar.getJarEntry("io/github/spockz/elider/test/resolver/ResolverSessionProbe.class"))
@@ -637,6 +649,37 @@ final class DependencyContextLifecycleIntegrationTest {
               jar.getJarEntry("io/github/spockz/elider/test/resolver/seed/PlanSeedEventSpy.class"))
           .isNull();
     }
+  }
+
+  private static void assertInitialAndLaterGraphCaptures(
+      final Path initialFile, final Path laterFile) throws IOException {
+    final List<String> initialLines = Files.readAllLines(initialFile);
+    final List<String> laterLines = Files.readAllLines(laterFile);
+    final List<String> initialCaptures = rowsWithPrefix(initialLines, "snapshot\t");
+    final List<String> laterCaptures = rowsWithPrefix(laterLines, "snapshot\t");
+    assertThat(initialCaptures).isNotEmpty();
+    assertThat(laterCaptures).contains(initialCaptures.getFirst());
+
+    final String[] initialFields = initialCaptures.getFirst().split("\\t", -1);
+    assertThat(initialFields[2]).isEqualTo("false");
+    assertThat(initialFields[3]).isEqualTo("<absent>");
+    final List<String> initialNodes = rowsWithPrefix(initialLines, "node\t0\t");
+    assertThat(initialNodes).anyMatch(line -> line.contains("drop-library"));
+    assertThat(initialNodes).anyMatch(line -> line.contains("keep-library"));
+
+    final List<String[]> laterWithPlan =
+        laterCaptures.stream()
+            .map(line -> line.split("\\t", -1))
+            .filter(fields -> "true".equals(fields[2]))
+            .toList();
+    assertThat(laterWithPlan).isNotEmpty();
+    assertThat(laterWithPlan.getFirst()[3]).isNotEqualTo("<absent>");
+    assertThat(Long.parseLong(laterWithPlan.getFirst()[4]))
+        .isGreaterThan(Long.parseLong(initialFields[4]));
+  }
+
+  private static List<String> rowsWithPrefix(final List<String> lines, final String prefix) {
+    return lines.stream().filter(line -> line.startsWith(prefix)).toList();
   }
 
   private static void assertJarEntries(final Path trimmedJar) throws IOException {

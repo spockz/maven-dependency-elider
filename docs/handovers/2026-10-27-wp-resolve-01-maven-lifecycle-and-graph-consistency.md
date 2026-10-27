@@ -20,6 +20,8 @@ The real Maven 3.9.11 fixture establishes that a priority-indexed `ProjectDepend
 
 The current production slice publishes validated retained-JAR GAVCE-to-path mappings and applies those exact mappings through a copied repository session with a wrapping `WorkspaceReader`. An isolated Maven 3.9.11 A/B consumer proves both test-seeded first-request activation and the production `elide` Mojo handoff to a distinct later TEST request. With the extension, the later resolved view uses the trimmed JAR; without it, Maven resolves the original repository JAR while the direct artifact keeps its transformed file pointer. This does not establish production direct-view consistency, remove whole artifacts from the graph, or prune graph nodes.
 
+A separate capture-only component now chains the existing Aether graph transformer and stores detached mediated-graph snapshots in repository session data. The packaged fixture proves an initial absent-plan snapshot contains both fixture dependencies and a later present-plan snapshot preserves the original capture. This does not choose or filter an effective graph.
+
 ### 1.2 Current invariants and open requirements
 
 1. Keep Maven Resolver objects and live Maven artifacts out of session data. Store detached maps, lists, strings, and integer schema versions only, because plugin and core-extension realms may load project classes separately.
@@ -98,16 +100,28 @@ The graph below records the original proposal. Tracks 2–5 are now gated by the
 
 **Goal**: Capture the full pre-elision dependency graph from the delegate resolver so `dependency-elider:report` can render complete path justifications for why each artifact was originally pulled into the project.
 
-* **Slice 3.1: Pre-Filter Graph Snapshot Model**
-  * Create immutable model `io.github.spockz.elider.model.MediatedDependencyGraph`:
-    * Records root nodes, parent-child edges, scope transitions, and conflict selections.
-  * Extract the graph directly from delegate resolver's `DependencyResolutionResult.getDependencyGraph()` before pruning occurs.
+* **Slice 3.1: Post-Mediation Capture-Only Prototype**
+  * Add a separate indexed `RepositorySessionDecorator` that copies the session, chains the existing `DependencyGraphTransformer`, calls it exactly once, snapshots its returned root, and returns that same root. Delegate exceptions propagate.
+  * Store project-scoped snapshots as immutable JDK-only maps/lists. Use traversal identity IDs and ordered edges so equal-coordinate nodes, repeated references, diamonds, and cycles remain distinct. Preserve dependency coordinates, effective dependency scope/optionality, exclusions, managed bits, aliases/relocations, and conflict winner/original-scope/original-optionality metadata. Represent winners outside reachable child edges as metadata-only nodes.
+  * Keep the structural graph fingerprint independent of plan provenance. Record decoration-time plan presence/fingerprint/generation and a separate capture generation; absent and present-empty plans remain distinct. Append with session-data compare-and-set and deduplicate identical project/graph/provenance captures.
+  * Prove the packaged decorator in the existing Maven 3.9.11 consumer: initial unplanned capture contains both fixture dependencies; later capture has published-plan provenance and leaves the original row unchanged. Keep this slice capture-only: no node filtering, direct-view changes, result-list adaptation, tree rendering, or report persistence.
 * **Slice 3.2: Path-Aware Elision Report Extension**
   * Update `MavenElisionReportSnapshot` and `MavenElisionReportWriter`:
     * Persist `MediatedDependencyGraph` into `dependency-elider-report.json`.
     * For each elided or trimmed artifact, record the shortest dependency path from project root (e.g., `example-spring-boot-app -> spring-boot-starter-web -> spring-webmvc`).
+  * Block report-path conclusions on a later policy slice that defines source/ancestor retention and handles external conflict winners; Slice 3.1 only proves detached capture.
 * **Slice 3.3: Report Goal Tree Rendering**
   * Update `dependency-elider:report` Mojo to format and print the tree of elided vs. retained artifacts with their dependency chains.
+
+#### Slice 3.1 implementation evidence
+
+* `EliderMediatedGraphCaptureDecorator` is a separate indexed production `RepositorySessionDecorator`. It copies the session, invokes the prior `DependencyGraphTransformer` exactly once with the original transformation context, captures its returned root, and returns that same node. Exceptions propagate. The artifact-path decorator's no-plan identity behavior is unchanged.
+* `ResolverArtifactGraphSnapshot` traverses by object identity with ordered edge records, preserving equal-coordinate nodes, repeated edges, diamonds, cycles, null child slots, and metadata-only conflict winners outside child reachability. It detaches coordinates, dependencies, scopes, optionality, exclusions, managed bits, aliases/relocations, and conflict metadata. Structural fingerprints exclude plan state, plan generation, and capture generation.
+* Snapshots carry normalized project identity, decoration-time plan presence/fingerprint/generation, and a separate per-project capture generation. Absent and present-empty plan states differ. The store recursively validates and freezes JDK-only maps/lists and uses `SessionData.set(key, old, new)` to append/dedupe atomically.
+* Focused unit tests passed 7/7: `ResolverArtifactGraphSnapshotTest` and `EliderMediatedGraphCaptureDecoratorTest`. The packaged Maven 3.9.11 consumer assertion passed 1/1 in `DependencyContextLifecycleIntegrationTest`. Positive fixture evidence is under `dependency-elider-maven-plugin/target/production-mojo-evidence/mojo-positive/reports/graph-{initial,later}.tsv`; the negative control's later graph report has `missing=true` because it does not load the production extension.
+* Initial capture records the reachable consumer, `drop-library`, and `keep-library` nodes with absent plan provenance. The later capture retains the initial fingerprint/provenance row and appends a present-plan row. Its graph contains consumer and keep-library after a test-only helper removes the known direct drop leaf. This helper only triggers a separate request; no production graph filtering occurs.
+* Final `make check` passed with 149 core and 107 plugin tests, formatting, Checkstyle, PMD, SpotBugs, and Markdown lint. Log: `dependency-elider-maven-plugin/target/wp-resolve-slice-3.1-make-check.log`.
+* Open: no graph node filtering, direct-view change, report persistence, path selection, descendant policy, general dependency-tree consistency, or reactor/concurrency/other-Maven-version guarantee is included. Never drop a node subtree without proving retained descendants remain reachable.
 
 ---
 

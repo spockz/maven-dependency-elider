@@ -4,6 +4,7 @@ package io.github.spockz.elider.test;
 
 import java.io.File;
 import java.io.IOException;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -18,6 +19,9 @@ public final class ProbeArtifactViewsMojo extends AbstractMojo {
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
 
+  @Parameter(defaultValue = "${session}", readonly = true, required = true)
+  private MavenSession session;
+
   @Parameter(defaultValue = "${lifecycle.reportDirectory}")
   private File reportDirectory;
 
@@ -28,6 +32,7 @@ public final class ProbeArtifactViewsMojo extends AbstractMojo {
   public void execute() throws MojoExecutionException {
     try {
       FixtureArtifactViews.write(project, reportDirectory, mode + "-later", "TEST");
+      FixtureGraphSnapshots.write(session, project, reportDirectory, mode);
     } catch (IOException | IllegalStateException exception) {
       throw new MojoExecutionException("Cannot record later artifact views", exception);
     }

@@ -1,1 +1,2 @@
 io.github.spockz.elider.plugin.EliderRepositorySessionDecorator
+io.github.spockz.elider.plugin.EliderMediatedGraphCaptureDecorator

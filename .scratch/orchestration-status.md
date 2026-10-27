@@ -14,7 +14,7 @@
 
 | Track | State | Worktree / branch | Slices |
 | :--- | :--- | :--- | :--- |
-| Maven resolver integration | IN PROGRESS | `.scratch/worktrees/track-maven-resolver` / `track/maven-resolver` | 1: lifecycle and resolver diagnostics approved; 2.1: production retained-JAR session plan and publisher/decorator tests; 2.2: packaged extension activation with a test-seeded plan; 2.3: actual Mojo publication followed by distinct TEST request; next: mediated graph policy, tree/package, reactor and compatibility evidence |
+| Maven resolver integration | IN PROGRESS | `.scratch/worktrees/track-maven-resolver` / `track/maven-resolver` | 1: lifecycle and resolver diagnostics approved; 2.1: production retained-JAR session plan; 2.2: packaged activation; 2.3: actual Mojo publication and later TEST request; 3.1: post-mediation detached capture-only snapshots approved by focused and packaged fixtures; next: path/report model and graph policy, then tree/package/reactor/compatibility evidence |
 
 ## Specification Deviations and Architectural Choices
 
@@ -59,7 +59,17 @@
 * Retained gate logs: `target/wp-resolve-slice-1.2-focused.log`, `target/wp-resolve-slice-1.2-lint.log`, `target/wp-resolve-slice-1.2-make-check.log`, and `target/wp-resolve-slice-1.2-test-examples.log`.
 * `JAVA_HOME=$PWD/.scratch/toolchains/graalvm-jdk-21.0.12+7.1 MARKDOWNLINT=$PWD/.scratch/tools/node_modules/.bin/markdownlint-cli2 make check` passed: 149 core tests and 86 plugin tests, plus formatting, Checkstyle, PMD, SpotBugs, and Markdown lint.
 * `JAVA_HOME=$PWD/.scratch/toolchains/graalvm-jdk-21.0.12+7.1 MARKDOWNLINT=$PWD/.scratch/tools/node_modules/.bin/markdownlint-cli2 make test-examples` passed; lifecycle checks passed for all 4 examples. The repository's example cycle installs the current SNAPSHOT into `/home/node/.m2/repository`; the standalone lifecycle fixture itself used only its isolated repository and file-repository fallback.
-* Remaining prerequisites before production resolver integration: real package consumer assertions for this transformed-view behavior, mediated graph/tree result adaptation, retained-descendant cases, and supported-version/reactor compatibility. Never drop a graph subtree solely because its root is unused.
+* Remaining prerequisites: mediated graph/tree result adaptation, retained-descendant cases, package outputs beyond the synthetic JAR, and supported-version/reactor compatibility. Slice 3.1 captures but does not filter. Never drop a graph subtree solely because its root is unused.
+
+## Track 3.1 Post-Mediation Graph Capture
+
+* Added a separate indexed `EliderMediatedGraphCaptureDecorator`. It copies the repository session, chains the existing `DependencyGraphTransformer`, delegates exactly once with the original context, snapshots the delegate's returned root, returns that same root, and propagates failures. It performs no graph or project-view filtering.
+* Added immutable `ResolverArtifactGraphSnapshot` and project-scoped `ResolverArtifactGraphSnapshotStore`. Snapshots carry identity-assigned nodes, ordered parent/child edges, repeated references/cycles, effective dependency scope and nullable dependency/ conflict optionality, exclusions, managed bits, aliases/relocations, and conflict winner/original metadata. External conflict winners are explicit metadata-only nodes.
+* The structural SHA-256 excludes plan/capture provenance. Decoration-time plan presence, fingerprint, and generation remain separate, so absent and present-empty plans do not collapse. A separate capture generation is kept. Store append/dedup is compare-and-set on session data; recursive payload validation and freezing allow only detached JDK maps/lists/strings/booleans/integers/longs/null.
+* Focused tests passed 7/7 (`ResolverArtifactGraphSnapshotTest`, `EliderMediatedGraphCaptureDecoratorTest`). Coverage includes diamond/repeated-coordinate/cycle graphs, replacement-root and exact-once delegate behavior, external winner references, nullable optionality, fingerprint/provenance separation, decoration-time delayed transform, exception propagation, concurrent append/dedupe, and two-project isolation.
+* The packaged Maven 3.9.11 consumer graph assertion passed 1/1. Positive `graph-initial.tsv` records absent plan generation 0 and reachable consumer/drop-library/keep-library nodes. `graph-later.tsv` preserves the original row and adds present-plan generation 1; the test-only helper removes the known direct drop leaf to trigger that later TEST request. The negative control records `missing=true` because it does not load the production extension. Evidence: `dependency-elider-maven-plugin/target/production-mojo-evidence/mojo-positive/reports/` and `mojo-negative/reports/`.
+* Final `make check` passed with 149 core and 107 plugin tests plus formatting, Checkstyle, PMD, SpotBugs, and Markdown lint. Log: `dependency-elider-maven-plugin/target/wp-resolve-slice-3.1-make-check.log`.
+* Open: no node pruning, direct-view changes, result-list/error remapping, path-aware report persistence, retained-descendant policy, dependency-tree consistency, packaging beyond the synthetic JAR, reactor/concurrency support, or Maven compatibility beyond 3.9.11 is established.
 
 ## Track 1 Resolver Decorator Feasibility Update
 
