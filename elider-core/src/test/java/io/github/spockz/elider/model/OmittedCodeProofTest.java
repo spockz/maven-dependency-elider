@@ -88,6 +88,17 @@ class OmittedCodeProofTest {
   }
 
   @Test
+  void rejectsMatchingNestedClassPresentOnlyInTrimmedArchive() throws Exception {
+    final ArtifactTrimRecord record =
+        record(
+            jar("original.jar", "org/example/Vulnerable.class"),
+            jar("trimmed.jar", "org/example/Vulnerable$Unexpected.class"));
+    assertThatThrownBy(() -> OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("nested class survives");
+  }
+
+  @Test
   void rejectsDigestMutationAfterTrimRecordWasCreated() throws Exception {
     final Path original = jar("original.jar", "org/example/Vulnerable.class");
     final Path trimmed = jar("trimmed.jar");

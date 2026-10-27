@@ -67,7 +67,7 @@ It fails before changing Maven artifact pointers rather than assuming unknown me
 
 ### Does removing classes make a vulnerability finding go away?
 
-Not necessarily. Many vulnerability tools report by artifact coordinates and version, even when some classes have been removed. The trimmer records removed artifacts/classes and provenance but has no CVE knowledge and does not generate VEX. A vulnerability/SBOM-aware scanner may use `vulnerable_code_not_present` only when vulnerability data maps the CVE to omitted code with sufficient precision; a package/version finding or unused artifact alone is insufficient. Inspect and scan the final packaged artifact, and assess the advisory's affected code and exploit conditions separately.
+Not necessarily. Many vulnerability tools report by artifact coordinates and version, even when some classes have been removed. The core has a mapping reader and archive-proof API, but the Maven plugin does not yet wire them into trimming or serialize VEX. The core accepts only HIGH-confidence mappings and verifies mapped classes and their nested classes against the actual original and trimmed archives. `versionRangeSpec` is currently stored as metadata; Maven version-range applicability is not evaluated. A package/version finding or unused artifact alone is insufficient. Inspect and scan the final packaged artifact, and assess the advisory's affected code and exploit conditions separately. See [RQ-0008](research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) for the implementation boundary.
 
 ## Compatibility and Performance
 

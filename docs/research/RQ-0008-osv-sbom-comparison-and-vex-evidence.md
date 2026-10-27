@@ -7,7 +7,7 @@ Open
 
 ## Current boundary
 
-The Maven plugin emits a post-elision CycloneDX SBOM when configured trimming runs. It records component and trim provenance, but has no OSV-Scanner integration, CVE-to-class mapping, or VEX generator. OSV-Scanner can match package coordinates from CycloneDX SBOMs against its vulnerability data ([official SBOM scanning usage](https://google.github.io/osv-scanner/usage/scan-source)); that package-level result does not identify which class or method a CVE affects.
+The Maven plugin emits a post-elision CycloneDX SBOM when configured trimming runs. The core now provides strict vulnerability-symbol mapping parsing/merging, an explicit-source cache with offline fallback, and a fail-closed omitted-code proof API that can create immutable attestation values from verified archive evidence. The Maven plugin does not yet load POM overrides or connect this proof API to trimming, and VEX serialization and OSV-Scanner integration remain pending. OSV-Scanner can match package coordinates from CycloneDX SBOMs against its vulnerability data ([official SBOM scanning usage](https://google.github.io/osv-scanner/usage/scan-source)); that package-level result does not identify which class or method a CVE affects.
 
 ## Research questions
 
@@ -33,6 +33,9 @@ Integration could make the tested post-elision inventory easier to assess and co
 - Label results as package-level findings; do not infer class-level status from an absent package finding or an elision decision.
 - Generate VEX only when vulnerability data maps the CVE to code with sufficient precision and verified trim evidence establishes that mapped code is absent from the final component. Ambiguous mappings, incomplete code evidence, or scanner findings alone must produce no VEX statement.
 - Test both positive and negative cases, including version-level findings that remain after trimming and imprecise vulnerability mappings that must not produce `code_not_present`.
+- Core proof requires exact group, artifact, version, type, and classifier identity, HIGH mapping confidence, matching archive digests, mapped classes present in the original, and mapped plus original nested classes absent from the trimmed archive. Scope is ignored for package identity. The mapping's `versionRangeSpec` is retained as metadata only; Maven `ComparableVersion` range evaluation and applicability matching are not implemented here.
+- Strict JSON input rejects unknown/duplicate fields and trailing documents. Cache refresh uses a caller-supplied HTTP(S) URI, bounded lock/body waits, streamed temporary files, atomic replacement, and cache/seed fallback. No remote feed is selected and the bundled seed is empty.
+- Plugin wiring, POM override loading, Maven version-range matching, scanner orchestration, and CycloneDX VEX serialization are pending.
 
 ## Decision requested
 

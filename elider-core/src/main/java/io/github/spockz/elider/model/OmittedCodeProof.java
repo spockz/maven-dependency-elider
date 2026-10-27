@@ -65,6 +65,7 @@ public final class OmittedCodeProof {
     return digests;
   }
 
+  @SuppressWarnings("PMD.CyclomaticComplexity")
   private static Set<String> verifySymbols(
       final VulnerabilitySymbolMapping mapping,
       final Set<String> originalClasses,
@@ -82,6 +83,13 @@ public final class OmittedCodeProof {
               "Vulnerable class survives trimmed archive: " + symbol.replace('/', '.'));
         }
         absent.add(symbol.replace('/', '.'));
+      }
+      final String nestedPrefix = binaryName + "$";
+      for (final String trimmed : trimmedClasses) {
+        if (trimmed.startsWith(nestedPrefix)) {
+          throw new IllegalArgumentException(
+              "Vulnerable nested class survives trimmed archive: " + trimmed.replace('/', '.'));
+        }
       }
     }
     return absent;
