@@ -24,8 +24,8 @@ final class EffectiveGraphInventoryProtection {
         reasons.put(node.identity(), "candidate node has incomplete child inventory");
       }
     }
-    final boolean preGraphIncomplete = hasIncompleteChildren(pair.before());
-    final boolean postGraphIncomplete = hasIncompleteChildren(pair.after());
+    final boolean preGraphIncomplete = hasIncompleteInventory(pair.before());
+    final boolean postGraphIncomplete = hasIncompleteInventory(pair.after());
     if (preGraphIncomplete || postGraphIncomplete) {
       final String reason =
           preGraphIncomplete
@@ -48,12 +48,21 @@ final class EffectiveGraphInventoryProtection {
     }
   }
 
-  private static boolean hasIncompleteChildren(final ResolverArtifactGraphSnapshot snapshot) {
+  private static boolean hasIncompleteInventory(final ResolverArtifactGraphSnapshot snapshot) {
+    return hasMissingChildLists(snapshot) || hasNullChildEdges(snapshot);
+  }
+
+  private static boolean hasMissingChildLists(final ResolverArtifactGraphSnapshot snapshot) {
     return snapshot.nodes().stream()
         .anyMatch(
             node ->
                 Boolean.TRUE.equals(node.get(ResolverArtifactGraphSnapshotSchema.REACHABLE))
                     && !Boolean.TRUE.equals(
                         node.get(ResolverArtifactGraphSnapshotSchema.CHILDREN_PRESENT)));
+  }
+
+  private static boolean hasNullChildEdges(final ResolverArtifactGraphSnapshot snapshot) {
+    return snapshot.edges().stream()
+        .anyMatch(edge -> edge.get(ResolverArtifactGraphSnapshotSchema.CHILD_NODE_ID) == null);
   }
 }
