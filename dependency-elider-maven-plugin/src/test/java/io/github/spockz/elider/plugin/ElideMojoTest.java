@@ -130,14 +130,16 @@ final class ElideMojoTest {
   }
 
   @Test
-  void failedReportWritePreservesThePreviousResolverPayload()
+  void failedSummaryWritePreservesThePreviousResolverPayload()
       throws IOException, ReflectiveOperationException {
     final Artifact used = artifact("used", "used/Entry.class");
     final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
     final ElideMojo mojo = newMojo();
+    final Path classUsageReport = tempDir.resolve("class-usage-report.json");
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("used.Entry\n").toFile()));
-    set(mojo, "reportFile", tempDir.toFile());
+    set(mojo, "reportFile", classUsageReport.toFile());
+    set(mojo, "summaryFile", tempDir.toFile());
     seedResolverPlan(mojo, project, "stale-before-output-failure.jar");
     final MavenSession session = (MavenSession) fieldValue(mojo, "session");
     final Object previousPayload =
@@ -147,6 +149,7 @@ final class ElideMojoTest {
             .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
 
     assertThatThrownBy(mojo::execute).isInstanceOf(MojoFailureException.class);
+    assertThat(classUsageReport).isRegularFile();
     assertThat(
             session
                 .getRepositorySession()
