@@ -83,14 +83,24 @@ function parseScanResult(result, label) {
   return parsed;
 }
 
-function hashFile(file) {
-  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+function hashBytes(bytes) {
+  return crypto.createHash('sha256').update(bytes).digest('hex');
 }
 
-function packageKey(pkg) {
-  if (typeof pkg.purl === 'string' && pkg.purl.length > 0) return purlComponentKey(pkg.purl);
-  if (pkg.name) return `${pkg.ecosystem ?? ''}:${pkg.name}`;
-  return null;
+function packageKey(pkg, inventory) {
+  const version = pkg.version ?? null;
+  if (typeof pkg.purl === 'string' && pkg.purl.length > 0) {
+    const key = purlComponentKey(pkg.purl);
+    const candidates = inventory.components.filter((component) => component.key === key && component.version === version);
+    return candidates.length === 1 ? key : null;
+  }
+  if (!pkg.name) return null;
+  const genericKey = `${pkg.ecosystem ?? ''}:${pkg.name}`;
+  const candidates = inventory.components.filter((component) => {
+    if (component.version !== version) return false;
+    return component.lookupKeys.has(genericKey);
+  });
+  return candidates.length === 1 ? candidates[0].key : null;
 }
 
 function purlComponentKey(purl) {
@@ -105,38 +115,44 @@ function purlComponentKey(purl) {
   return normalizedQualifiers ? `${pathWithoutVersion}?${normalizedQualifiers}` : pathWithoutVersion;
 }
 
-function inventoryComponentKeys(component) {
-  const keys = new Set();
+function inventoryComponent(component) {
+  const lookupKeys = new Set();
+  let key = null;
   if (typeof component.purl === 'string' && component.purl.length > 0) {
-    const key = purlComponentKey(component.purl);
-    keys.add(key);
-    const mavenPurl = /^pkg:maven\/([^/]+)\/([^/?#]+)$/.exec(key);
-    if (mavenPurl) keys.add(`Maven:${mavenPurl[1]}:${mavenPurl[2]}`);
+    key = purlComponentKey(component.purl);
+    const mavenPurl = /^pkg:maven\/([^/]+)\/([^/?#]+)(?:\?.*)?$/.exec(key);
+    if (mavenPurl) lookupKeys.add(`Maven:${decodeURIComponent(mavenPurl[1])}:${decodeURIComponent(mavenPurl[2])}`);
   } else if (component.group && component.name) {
-    keys.add(`Maven:${component.group}:${component.name}`);
+    key = `Maven:${component.group}:${component.name}`;
+    lookupKeys.add(key);
   } else if (component.name) {
-    keys.add(`${component.ecosystem ?? ''}:${component.name}`);
+    key = `${component.ecosystem ?? ''}:${component.name}`;
+    lookupKeys.add(key);
   }
-  return keys;
+  if (key && component.group && component.name) lookupKeys.add(`Maven:${component.group}:${component.name}`);
+  return key ? { key, version: component.version ?? null, lookupKeys } : null;
 }
 
-function loadInventory(file, label) {
+function loadInventoryBytes(bytes, label) {
   let bom;
   try {
-    bom = JSON.parse(fs.readFileSync(file, 'utf8'));
+    bom = JSON.parse(bytes.toString('utf8'));
   } catch (error) {
     fail(`${label} SBOM is not valid JSON: ${error.message}`);
   }
   if (!bom || !Array.isArray(bom.components)) fail(`${label} SBOM JSON is missing the CycloneDX components array`);
-  const components = new Set();
+  const components = [];
+  let count = 0;
   const visit = (entries) => {
     for (const component of entries) {
-      for (const key of inventoryComponentKeys(component)) components.add(key);
+      count += 1;
+      const inventoryEntry = inventoryComponent(component);
+      if (inventoryEntry) components.push(inventoryEntry);
       if (Array.isArray(component.components)) visit(component.components);
     }
   };
   visit(bom.components);
-  return components;
+  return { components, count };
 }
 
 function vulnerabilityIds(vulnerability) {
@@ -144,12 +160,12 @@ function vulnerabilityIds(vulnerability) {
     .filter((id) => typeof id === 'string' && id.length > 0))].sort();
 }
 
-function collectFindings(scan) {
+function collectFindings(scan, inventory) {
   const findings = [];
   for (const result of scan.results) {
     for (const packageResult of result.packages || []) {
       const pkg = packageResult.package || {};
-      const identity = packageKey(pkg);
+      const identity = packageKey(pkg, inventory);
       for (const vulnerability of packageResult.vulnerabilities || []) {
         const ids = vulnerabilityIds(vulnerability);
         if (ids.length === 0) fail(`OSV-Scanner returned a vulnerability without an identifier for ${identity}`);
@@ -173,7 +189,7 @@ function findingMatches(left, right) {
   return right.vulnerabilityIds.some((id) => ids.has(id));
 }
 
-function compareFindings(baseline, postElision, baselineInventory, postInventory) {
+function compareFindings(baseline, postElision, postInventory) {
   const remaining = [...postElision];
   const eliminated = [];
   const retained = [];
@@ -182,9 +198,9 @@ function compareFindings(baseline, postElision, baselineInventory, postInventory
   for (const finding of baseline) {
     const matchIndex = remaining.findIndex((candidate) => findingMatches(finding, candidate));
     if (matchIndex === -1) {
-      if (finding.package === null || !baselineInventory.has(finding.package)) {
+      if (finding.package === null) {
         unclassified.push(finding);
-      } else if (postInventory.has(finding.package)) {
+      } else if (postInventory.components.some((component) => component.key === finding.package)) {
         notObservedWithComponentRetained.push(finding);
       } else {
         eliminated.push(finding);
@@ -221,9 +237,11 @@ function formatTable(comparison) {
   return rows.map((row) => `| ${row.map(escapeTable).join(' | ')} |`).join('\n');
 }
 
-function scanOne(executable, file, label) {
+function scanOne(executable, file, label, expectedSha256) {
+  if (hashBytes(fs.readFileSync(file)) !== expectedSha256) fail(`${label} SBOM changed before its scan`);
   const startedAt = new Date().toISOString();
   const result = runScanner(executable, ['scan', 'source', '--offline-vulnerabilities', '--format', 'json', '-L', file]);
+  if (hashBytes(fs.readFileSync(file)) !== expectedSha256) fail(`${label} SBOM changed during its scan`);
   const scan = parseScanResult(result, label);
   return { scan, startedAt, completedAt: new Date().toISOString() };
 }
@@ -242,12 +260,23 @@ function main(args = process.argv.slice(2), env = process.env) {
   const scannerVersion = `${versionResult.stdout}${versionResult.stderr}`.trim();
   if (!scannerVersion) fail('OSV-Scanner returned an empty version string');
 
-  const baselineResult = scanOne(executable, baselinePath, 'baseline');
-  const postElisionResult = scanOne(executable, postElisionPath, 'post-elision');
+  const baselineBytes = fs.readFileSync(baselinePath);
+  const postElisionBytes = fs.readFileSync(postElisionPath);
+  const baselineHash = hashBytes(baselineBytes);
+  const postElisionHash = hashBytes(postElisionBytes);
+  const baselineInventory = loadInventoryBytes(baselineBytes, 'baseline');
+  const postInventory = loadInventoryBytes(postElisionBytes, 'post-elision');
+  const baselineResult = scanOne(executable, baselinePath, 'baseline', baselineHash);
+  const postElisionResult = scanOne(executable, postElisionPath, 'post-elision', postElisionHash);
+  if (hashBytes(fs.readFileSync(baselinePath)) !== baselineHash || hashBytes(fs.readFileSync(postElisionPath)) !== postElisionHash) {
+    fail('An SBOM changed after scanning and before comparison');
+  }
   const scannedAt = new Date().toISOString();
-  const baselineInventory = loadInventory(baselinePath, 'baseline');
-  const postInventory = loadInventory(postElisionPath, 'post-elision');
-  const comparison = compareFindings(collectFindings(baselineResult.scan), collectFindings(postElisionResult.scan), baselineInventory, postInventory);
+  const comparison = compareFindings(
+    collectFindings(baselineResult.scan, baselineInventory),
+    collectFindings(postElisionResult.scan, postInventory),
+    postInventory,
+  );
   const outputDirectory = path.resolve(options.outputDirectory);
   fs.mkdirSync(outputDirectory, { recursive: true });
   fs.writeFileSync(path.join(outputDirectory, 'baseline-scan.json'), `${JSON.stringify(baselineResult.scan, null, 2)}\n`);
@@ -265,10 +294,10 @@ function main(args = process.argv.slice(2), env = process.env) {
       note: 'OSV-Scanner did not expose a database revision in this run; matching local data is not independently verified.',
     },
     inventories: {
-      baseline: { path: baselinePath, sha256: hashFile(baselinePath) },
-      postElision: { path: postElisionPath, sha256: hashFile(postElisionPath) },
-      baselineComponentCount: baselineInventory.size,
-      postElisionComponentCount: postInventory.size,
+      baseline: { path: baselinePath, sha256: baselineHash },
+      postElision: { path: postElisionPath, sha256: postElisionHash },
+      baselineComponentCount: baselineInventory.count,
+      postElisionComponentCount: postInventory.count,
     },
     comparison: {
       scope: 'package-level findings matched to inventory components',
