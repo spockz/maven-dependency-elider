@@ -5,6 +5,8 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -41,6 +43,8 @@ import org.junit.jupiter.api.Test;
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.CouplingBetweenObjects",
+  "PMD.CyclomaticComplexity",
+  "PMD.ExcessiveImports",
   "PMD.GodClass",
   "PMD.TooManyMethods",
   "PMD.UnitTestContainsTooManyAsserts",
@@ -58,6 +62,10 @@ final class DependencyContextLifecycleIntegrationTest {
   private static final String DROP_AETHER = GROUP_ID + ":drop-library:jar:" + VERSION;
 
   private static final String KEEP_AETHER = GROUP_ID + ":keep-library:jar:" + VERSION;
+
+  private static final String TEST_RESOLUTION_SCOPE = "TEST";
+
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   private static final String TREE_GOAL =
       "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree";
@@ -435,6 +443,140 @@ final class DependencyContextLifecycleIntegrationTest {
     assertThat(sha256(keepJar)).isEqualTo(keepHash);
   }
 
+  @Test
+  @SuppressWarnings("PMD.NcssCount")
+  void packagedElideMojoPublishesTrimmedJarForLaterResolution() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot =
+        repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/fixtures/lifecycle-probe");
+    final Path evidenceDirectory =
+        repositoryRoot.resolve("dependency-elider-maven-plugin/target/production-mojo-evidence");
+    deleteTree(evidenceDirectory);
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = Files.createDirectories(evidenceDirectory.resolve("repository"));
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve("mvnw");
+
+    run(
+        repositoryRoot,
+        wrapper,
+        settings,
+        localRepository,
+        evidenceDirectory.resolve("production-install.log"),
+        PROCESS_TIMEOUT,
+        "-f",
+        repositoryRoot.resolve("pom.xml").toString(),
+        "-pl",
+        "dependency-elider-maven-plugin",
+        "-am",
+        "install",
+        "-DskipTests");
+    run(
+        repositoryRoot,
+        wrapper,
+        settings,
+        localRepository,
+        evidenceDirectory.resolve("fixture-bootstrap.log"),
+        PROCESS_TIMEOUT,
+        "-f",
+        fixtureRoot.resolve("bootstrap/pom.xml").toString(),
+        "clean",
+        "install");
+
+    final Path originalDrop = repositoryArtifact(localRepository, "drop-library");
+    final Path originalKeep = repositoryArtifact(localRepository, "keep-library");
+    final String originalDropHash = sha256(originalDrop);
+    final String originalKeepHash = sha256(originalKeep);
+    assertThat(originalKeepHash).isNotEqualTo(originalDropHash);
+
+    for (final String mode : List.of("mojo-positive", "mojo-negative")) {
+      final Path consumer = evidenceDirectory.resolve(mode);
+      Files.createDirectories(consumer);
+      Files.copy(fixtureRoot.resolve("consumer-elide/pom.xml"), consumer.resolve("pom.xml"));
+      final Path trace = consumer.resolve("trace.txt");
+      Files.writeString(trace, "io.github.spockz.elider.fixture.keep.KeepEntry\n");
+      final boolean extensionEnabled = "mojo-positive".equals(mode);
+      writeConsumerExtensions(
+          Files.createDirectories(consumer.resolve(".mvn")).resolve("extensions.xml"),
+          extensionEnabled);
+      final Path reports = evidenceDirectory.resolve(mode + "/reports");
+      final Path log = evidenceDirectory.resolve(mode + ".log");
+      runFromDirectory(
+          consumer,
+          wrapper,
+          settings,
+          localRepository,
+          log,
+          PROCESS_TIMEOUT,
+          "-Dlifecycle.seedPlan=false",
+          "-Dlifecycle.reportDirectory=" + reports,
+          "-Dlifecycle.traceFile=" + trace,
+          "-f",
+          consumer.resolve("pom.xml").toString(),
+          "prepare-package");
+
+      final String output = Files.readString(log);
+      assertThat(output).contains("BUILD SUCCESS").doesNotContain("PRODUCTION_PLAN_EVENT_SEEDED");
+      final int firstRequest =
+          output.indexOf(
+              "PRODUCTION_PLAN_EVENT_REQUEST ordinal=1 requestToken=1 planPresent=false");
+      final int elideSummary = output.indexOf("Dependency Elider summary");
+      final int postPublishRequest =
+          output.indexOf(
+              "PRODUCTION_PLAN_EVENT_REQUEST ordinal=2 requestToken=2 planPresent=true",
+              elideSummary);
+      assertThat(firstRequest).isGreaterThanOrEqualTo(0);
+      assertThat(elideSummary).isGreaterThan(firstRequest);
+      assertThat(postPublishRequest).isGreaterThan(elideSummary);
+      assertThat(output).doesNotContain("PRODUCTION_PLAN_EVENT_REQUEST ordinal=3");
+
+      final Snapshot initial = Snapshot.read(reports.resolve("initial-later.tsv"));
+      final Snapshot postElide = Snapshot.read(reports.resolve("post-elide.tsv"));
+      final Snapshot later = Snapshot.read(reports.resolve("later-later.tsv"));
+      assertThat(postElide.projectIdentity()).isEqualTo(initial.projectIdentity());
+      assertThat(later.projectIdentity()).isEqualTo(initial.projectIdentity());
+      assertThat(initial.resolutionScope()).isEqualTo(TEST_RESOLUTION_SCOPE);
+      assertThat(postElide.resolutionScope()).isEqualTo(TEST_RESOLUTION_SCOPE);
+      assertThat(later.resolutionScope()).isEqualTo(TEST_RESOLUTION_SCOPE);
+      assertArtifacts(
+          initial.direct(),
+          DROP,
+          originalDrop,
+          originalDropHash,
+          KEEP,
+          originalKeep,
+          originalKeepHash);
+      assertArtifacts(
+          initial.resolved(),
+          DROP,
+          originalDrop,
+          originalDropHash,
+          KEEP,
+          originalKeep,
+          originalKeepHash);
+      final ArtifactState postElideKeep = postElide.direct().artifacts().get(KEEP);
+      final Path trimmedJar = Path.of(postElideKeep.file());
+      final String trimmedHash = postElideKeep.sha256();
+      assertThat(Files.isRegularFile(trimmedJar)).isTrue();
+      assertThat(trimmedJar).isNotEqualTo(originalKeep);
+      assertThat(trimmedHash).isNotEqualTo(originalKeepHash);
+      assertJarEntries(trimmedJar);
+      assertArtifacts(
+          postElide.direct(), DROP, originalDrop, originalDropHash, KEEP, trimmedJar, trimmedHash);
+      assertArtifacts(postElide.resolved(), KEEP, trimmedJar, trimmedHash);
+
+      assertArtifacts(later.direct(), KEEP, trimmedJar, trimmedHash);
+      if (extensionEnabled) {
+        assertArtifacts(later.resolved(), KEEP, trimmedJar, trimmedHash);
+      } else {
+        assertArtifacts(later.resolved(), KEEP, originalKeep, originalKeepHash);
+      }
+      assertThat(sha256(originalDrop)).isEqualTo(originalDropHash);
+      assertThat(sha256(originalKeep)).isEqualTo(originalKeepHash);
+      assertMojoOutputReports(consumer, trimmedHash, originalKeepHash);
+    }
+  }
+
   @SuppressWarnings("PMD.AvoidDuplicateLiterals")
   private static void writeConsumerExtensions(
       final Path descriptor, final boolean includeProduction)
@@ -495,6 +637,72 @@ final class DependencyContextLifecycleIntegrationTest {
               jar.getJarEntry("io/github/spockz/elider/test/resolver/seed/PlanSeedEventSpy.class"))
           .isNull();
     }
+  }
+
+  private static void assertJarEntries(final Path trimmedJar) throws IOException {
+    try (JarFile jar = new JarFile(trimmedJar.toFile())) {
+      assertThat(jar.getJarEntry("io/github/spockz/elider/fixture/keep/KeepEntry.class"))
+          .isNotNull();
+      assertThat(jar.getJarEntry("io/github/spockz/elider/fixture/keep/UnusedEntry.class"))
+          .isNull();
+    }
+  }
+
+  private static void assertMojoOutputReports(
+      final Path consumer, final String trimmedHash, final String originalKeepHash)
+      throws IOException {
+    final Path target = consumer.resolve("target");
+    final Path classUsageReport = target.resolve("dependency-elider-class-usage.json");
+    final Path summary = target.resolve("lifecycle-elide-summary.json");
+    final Path sbom = target.resolve("dependency-elider-sbom.cdx.json");
+    assertThat(classUsageReport).isRegularFile();
+    final JsonNode report = JSON.readTree(summary.toFile());
+    assertThat(report.path("projectGroupId").asText()).isEqualTo(GROUP_ID);
+    assertThat(report.path("projectArtifactId").asText()).isEqualTo("lifecycle-elide-consumer");
+    assertThat(report.path("projectVersion").asText()).isEqualTo(VERSION);
+    assertThat(report.path("projectBaseDirectory").asText())
+        .isEqualTo(consumer.toAbsolutePath().normalize().toString());
+    assertThat(report.path("wholeArtifactsDropped").asInt()).isEqualTo(1);
+    assertThat(report.path("programClassesPruned").asInt()).isEqualTo(1);
+    assertThat(report.path("droppedArtifacts")).hasSize(1);
+    assertThat(report.path("droppedArtifacts").get(0).path("coordinate").asText())
+        .contains("drop-library");
+    assertThat(report.path("trimmedArtifacts")).hasSize(1);
+    assertThat(report.path("trimmedArtifacts").get(0).path("coordinate").asText())
+        .contains("keep-library");
+    assertThat(report.path("trimmedArtifacts").get(0).path("programClassesPruned").asInt())
+        .isEqualTo(1);
+
+    final JsonNode bom = JSON.readTree(sbom.toFile());
+    assertThat(bom.path("metadata").path("component").path("name").asText())
+        .isEqualTo("lifecycle-elide-consumer");
+    assertThat(bom.path("components")).hasSize(1);
+    final JsonNode component = bom.path("components").get(0);
+    assertThat(component.path("group").asText()).isEqualTo(GROUP_ID);
+    assertThat(component.path("name").asText()).isEqualTo("keep-library");
+    assertThat(component.path("version").asText()).isEqualTo(VERSION);
+    assertThat(component.path("hashes").get(0).path("content").asText()).isEqualTo(trimmedHash);
+    assertThat(
+            component
+                .path("pedigree")
+                .path("ancestors")
+                .get(0)
+                .path("hashes")
+                .get(0)
+                .path("content")
+                .asText())
+        .isEqualTo(originalKeepHash);
+    assertThat(componentProperty(component, "elider:retainedClasses")).isEqualTo("1");
+    assertThat(componentProperty(component, "elider:totalClasses")).isEqualTo("2");
+  }
+
+  private static String componentProperty(final JsonNode component, final String propertyName) {
+    for (final JsonNode property : component.path("properties")) {
+      if (propertyName.equals(property.path("name").asText())) {
+        return property.path("value").asText();
+      }
+    }
+    throw new AssertionError("Missing SBOM property: " + propertyName);
   }
 
   private static void assertResolverExtensionDescriptor(final Path extensionJar)
@@ -845,10 +1053,10 @@ final class DependencyContextLifecycleIntegrationTest {
     assertThat(phases.all())
         .extracting(Snapshot::projectCoordinate)
         .containsOnly("" + GROUP_ID + ":lifecycle-probe-consumer");
-    assertThat(phases.before().resolutionScope()).isEqualTo("TEST");
-    assertThat(phases.immediate().resolutionScope()).isEqualTo("TEST");
+    assertThat(phases.before().resolutionScope()).isEqualTo(TEST_RESOLUTION_SCOPE);
+    assertThat(phases.immediate().resolutionScope()).isEqualTo(TEST_RESOLUTION_SCOPE);
     assertThat(phases.intermediate().resolutionScope()).isEqualTo("NONE");
-    assertThat(phases.later().resolutionScope()).isEqualTo("TEST");
+    assertThat(phases.later().resolutionScope()).isEqualTo(TEST_RESOLUTION_SCOPE);
   }
 
   private static void assertArtifacts(

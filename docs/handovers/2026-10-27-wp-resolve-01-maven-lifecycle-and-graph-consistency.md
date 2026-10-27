@@ -18,7 +18,7 @@ Determine how Maven's separate direct dependency and resolved classpath views be
 
 The real Maven 3.9.11 fixture establishes that a priority-indexed `ProjectDependenciesResolver` decorator is selected for `dependency:tree`, while live lifecycle TEST requests bypass it. A test-only `RepositorySessionDecorator` does receive those requests and can substitute an exact retained JAR path after an initialize-phase plan is written to repository session data. The prior direct-plus-resolved mutation diagnostic also shows that later lifecycle resolution can load the retained artifact again from its original repository path.
 
-The current production slice publishes validated retained-JAR GAVCE-to-path mappings and applies those exact mappings through a copied repository session with a wrapping `WorkspaceReader`. An isolated Maven 3.9.11 A/B consumer proves the packaged production decorator is loaded and substitutes a retained JAR on the first TEST-resolution request when a test-only EventSpy seeds its JDK payload. This does not prove a fresh re-resolution after `ElideMojo` publishes the plan; actual Mojo-to-later-request handoff remains open. It does not remove whole artifacts or prune dependency graph nodes.
+The current production slice publishes validated retained-JAR GAVCE-to-path mappings and applies those exact mappings through a copied repository session with a wrapping `WorkspaceReader`. An isolated Maven 3.9.11 A/B consumer proves both test-seeded first-request activation and the production `elide` Mojo handoff to a distinct later TEST request. With the extension, the later resolved view uses the trimmed JAR; without it, Maven resolves the original repository JAR while the direct artifact keeps its transformed file pointer. This does not establish production direct-view consistency, remove whole artifacts from the graph, or prune graph nodes.
 
 ### 1.2 Current invariants and open requirements
 
@@ -27,7 +27,7 @@ The current production slice publishes validated retained-JAR GAVCE-to-path mapp
 3. Replace only exact retained JAR GAVCE matches and delegate all other workspace lookups.
 4. Forward Maven's `MavenWorkspaceReader.findModel` API to an existing Maven workspace reader. Same-GAV reactor behavior still requires a real integration test.
 5. Keep the existing direct/resolved project-view behavior and do not prune graph nodes in this slice. A graph node cannot be dropped with its subtree while a retained descendant may still be needed.
-6. Production component activation and first-request test-seeded retained-JAR replacement are proven for one Maven 3.9.11 consumer; verify that the production `elide` Mojo publishes a plan after initial resolution and that a later TEST request consumes it before claiming end-to-end goal support.
+6. Production component activation and actual Mojo publication followed by a distinct TEST request are proven for one Maven 3.9.11 consumer. Broader end-to-end behavior still requires graph, package, reactor, and compatibility evidence.
 7. Test package consumers, graph/list/error consistency, reactor isolation, concurrency, and supported Maven versions before expanding the behavior.
 8. Keep `dependency:tree` claims separate from binary-resolving lifecycle requests. A tree-only POM collection does not prove that a missing JAR is unused.
 
@@ -130,7 +130,8 @@ The graph below records the original proposal. Tracks 2–5 are now gated by the
 
 * **Slice 5.1: Binary Consumer Replacement Test**
   * **5.1a complete**: a real consumer loads the packaged production extension and consumes a test-seeded plan on its first TEST request; an otherwise identical consumer without the production extension retains original paths/hashes.
-  * **5.1b open**: preserve an initial original-path resolution, have the production `elide` Mojo publish the plan, then trigger a separate TEST request and assert the replacement path/hash plus unchanged repository originals.
+  * **5.1b complete for one Maven 3.9.11 project**: a TEST request first resolves the original JAR, the actual production `elide` Mojo trims keep-library and publishes a session plan, and a later TEST request sees that plan. With the production core extension, the resolved view has the trimmed path/hash; without it, the resolved view returns the original repository path/hash while the direct artifact pointer remains trimmed. Original repository bytes are unchanged. A test-only helper removes exactly one synthetic direct drop leaf to trigger the later request; this does not prove production direct-view consistency or graph policy.
+  * The isolated fixture asserts two distinct EventSpy request identity tokens: request 1 has no plan before the goal, request 2 has the plan after the elision summary. Parsed JSON confirms the consumer identity, one whole-artifact drop, one pruned class, the trimmed SBOM SHA-256, and the original SHA-256 in its pedigree ancestor. Logs, snapshots, reports, and repository: `dependency-elider-maven-plugin/target/production-mojo-evidence/`.
 * **Slice 5.2: Effective Graph Policy and Tree Verification**
   * Define mediated graph treatment for retained descendants before testing omitted tree nodes.
   * Assert each tree output independently; do not infer unused artifacts from tree-only artifact absence.
@@ -145,5 +146,5 @@ The graph below records the original proposal. Tracks 2–5 are now gated by the
 
 1. Run the plan store/decorator focused unit tests and assert no-plan session identity, project-key isolation, detached JDK-only payload values, exact GAVCE replacement, and delegated nonmatches.
 2. Run `make check` for formatting, static analysis, and repository tests.
-3. Packaged production extension activation and first-request substitution with a test-seeded plan are verified under Maven 3.9.11. Before claiming end-to-end `elide` lifecycle support, assert an initial original-path resolution, Mojo publication, and replacement consumption by a separate later TEST request in that same consumer process.
+3. Packaged production extension activation and first-request test-seeded substitution are verified under Maven 3.9.11. The actual production Mojo handoff is also verified: initial original-path request, Mojo plan publication, and replacement consumption by a distinct later TEST request in the same process. General graph and package behavior remain separate checkpoints.
 4. Keep dependency-tree, direct artifact membership, and binary package assertions separate. Do not assert whole-artifact omissions until a mediated graph and retained-descendant policy is in place.

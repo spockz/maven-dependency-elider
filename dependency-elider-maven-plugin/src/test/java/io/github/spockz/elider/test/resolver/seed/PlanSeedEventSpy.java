@@ -11,10 +11,13 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import org.apache.maven.eventspy.EventSpy;
@@ -32,13 +35,25 @@ public final class PlanSeedEventSpy implements EventSpy {
 
   private static final String PROJECT_ARTIFACT = "lifecycle-probe-consumer";
 
+  private static final String ELIDE_PROJECT_ARTIFACT = "lifecycle-elide-consumer";
+
   private static final String GROUP_ID = "io.github.spockz.elider.test";
 
   private static final String ARTIFACT_ID = "keep-library";
 
   private static final String VERSION = "1.0.0";
 
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  private static final Map<DependencyResolutionRequest, Integer> REQUEST_TOKENS =
+      new IdentityHashMap<>();
+
+  private static final ReentrantLock REQUEST_TOKEN_LOCK = new ReentrantLock();
+
+  private static int nextRequestToken = 1;
+
   private final AtomicBoolean seeded = new AtomicBoolean();
+
+  private final AtomicInteger requests = new AtomicInteger();
 
   @Override
   public void init(final Context context) {
@@ -49,9 +64,35 @@ public final class PlanSeedEventSpy implements EventSpy {
   @SuppressWarnings("PMD.LawOfDemeter")
   public void onEvent(final Object event) {
     if (event instanceof DependencyResolutionRequest request
-        && PROJECT_ARTIFACT.equals(request.getMavenProject().getArtifact().getArtifactId())
-        && seeded.compareAndSet(false, true)) {
-      seed(request.getRepositorySession().getData(), request.getMavenProject());
+        && isFixtureProject(request.getMavenProject().getArtifact().getArtifactId())) {
+      final boolean planPresent =
+          request.getRepositorySession().getData().get(SESSION_DATA_KEY) != null;
+      System.out.println(
+          "PRODUCTION_PLAN_EVENT_REQUEST ordinal="
+              + requests.incrementAndGet()
+              + " requestToken="
+              + requestToken(request)
+              + " planPresent="
+              + planPresent
+              + " project="
+              + request.getMavenProject().getArtifact().getArtifactId());
+      if (Boolean.parseBoolean(System.getProperty("lifecycle.seedPlan", "true"))
+          && seeded.compareAndSet(false, true)) {
+        seed(request.getRepositorySession().getData(), request.getMavenProject());
+      }
+    }
+  }
+
+  private static boolean isFixtureProject(final String artifactId) {
+    return PROJECT_ARTIFACT.equals(artifactId) || ELIDE_PROJECT_ARTIFACT.equals(artifactId);
+  }
+
+  private static int requestToken(final DependencyResolutionRequest request) {
+    REQUEST_TOKEN_LOCK.lock();
+    try {
+      return REQUEST_TOKENS.computeIfAbsent(request, ignored -> nextRequestToken++);
+    } finally {
+      REQUEST_TOKEN_LOCK.unlock();
     }
   }
 
