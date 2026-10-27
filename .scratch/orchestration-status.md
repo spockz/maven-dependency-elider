@@ -40,3 +40,12 @@
 * **Zero Hallucinated VEX**: Strict all-or-nothing policy on mapped symbols + inner classes (`Outer$*`).
 * **Zero Build Failure on Outage**: Network failure or cold cache outage falls back to bundled classpath seed catalog (`seed-mappings.json`).
 * **Clean Gates**: Every slice must pass `make check` and `make test-examples`.
+
+---
+
+## Track 1 Diagnostic Update
+
+* Implemented the component-level cache-key diagnostic. The test exercises Maven core 3.9.9, the Maven core dependency managed by the root POM; the wrapper CLI version is 3.9.11 and is not the test runtime.
+* Focused Surefire report: `dependency-elider-maven-plugin/target/surefire-reports/TEST-io.github.spockz.elider.plugin.DependencyContextReResolutionTest.xml` (3 tests, no failures/errors).
+* This test does not invoke `ProjectDependenciesResolver`, a later dependency-resolving Mojo, `dependency:tree`, or packaging. An actual lifecycle recorder and re-resolution/package reproduction remain prerequisites before production resolver integration. Preserve possible retained descendants; subtree pruning is not proven safe.
+* GraalVM JDK 21 `make check` passed (149 core tests and 85 plugin tests, static analysis, formatting, and Markdown lint). The worktree has no local `.scratch/tools`; the check used the pinned linter at `/workspace/sources/maven-dependency-elider/.scratch/tools/node_modules/.bin/markdownlint-cli2`.

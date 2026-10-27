@@ -4,7 +4,7 @@
 * **Status**: Open
 * **Category**: Maven Lifecycle & Resolver Integration
 * **Date**: 2026-10-25
-* **Last Updated**: 2026-10-26
+* **Last Updated**: 2026-10-27
 
 Abbreviations: Abstract Syntax Tree (AST), Build Extension (BE), Core Extension (CE), Dependency Elision (DE), Project Object Model (POM), Repository Session Decorator (RSD), Software Bill of Materials (SBOM).
 
@@ -68,6 +68,16 @@ The desired split is: standard `dependency:tree` displays the effective post-eli
 
 No specific plugin has yet been shown to produce an incorrect application result by consuming `getDependencyArtifacts()` while packaging uses `getArtifacts()`. The dependency-tree mismatch is now reproduced as a diagnostic/reporting difference, not an application or package failure. Direct-dependency analysis, publication, vulnerability reports, repeated goals, separate task segments, and fresh resolver calls remain candidates to investigate. A discrepancy in a report may be acceptable if that report intentionally describes the declared POM graph; reports must distinguish that graph from the actual post-elision classpath and package.
 
+### 2.5 Maven 3.9.9 Cache-Key Diagnostic
+
+[`DependencyContextReResolutionTest`](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextReResolutionTest.java) directly exercises the project's Maven core 3.9.9 `DependencyContext` with `MavenProject` fixtures and snapshots each direct and resolved artifact's object, coordinate, file path, and SHA-256. The focused Surefire result is at `dependency-elider-maven-plugin/target/surefire-reports/TEST-io.github.spockz.elider.plugin.DependencyContextReResolutionTest.xml`. This test uses the project dependency version (3.9.9); the wrapper CLI is Maven 3.9.11, which is a separate runtime and is not the core exercised by the test. It establishes three cache-key behaviors:
+
+* Replacing only `project.getArtifacts()` leaves the direct artifact collection untouched and does not make `DependencyContext.isResolutionRequiredForCurrentProject()` true.
+* Replacing `project.getDependencyArtifacts()` with a new collection invalidates the cache even when the collection has the same size and equal coordinates.
+* Mutating the direct collection's size in place invalidates the cache; calling `synchronizeWithProjectState()` records the new collection and size, after which the cache check is clean again.
+
+This is a focused test of Maven's lifecycle cache component, not an end-to-end lifecycle reproduction. It does not invoke `ProjectDependenciesResolver`, a later dependency-resolving Mojo, or packaging, and therefore does not prove that a later goal actually re-resolves or which artifact files it receives. The same-session `dependency:tree` and classpath/package observations in sections 2.1–2.3 remain separate fixture evidence. In particular, a resolver graph transformation must not assume that removing a node's entire subtree is safe: descendants can remain required through another mediated path. The lifecycle-level before/after recorder and a later Mojo or package assertion remain open work.
+
 ---
 
 ## 3. Integration Options
@@ -94,7 +104,7 @@ Do not implement the earlier hook solely to make the state look consistent. Firs
 
 ## 5. Evidence Plan and Decision Checkpoints
 
-1. Add a fixture diagnostic that records the Maven-mediated graph, direct and resolved artifact identities, and file hashes immediately before filtering and after each dependency-resolving goal.
+1. Extend the cache-key unit diagnostic with a fixture-level recorder that captures the Maven-mediated graph, direct and resolved artifact identities, and file hashes immediately before filtering and after a later dependency-resolving goal. The unit diagnostic alone does not close this checkpoint.
 2. Compare normal dependency resolution with a prototype graph transformer across `maven-compiler-plugin`, `maven-dependency-plugin` classpath/tree/copy goals, Surefire, Shade, and Spring Boot repackage. Verify `dependency:tree` excludes elided nodes while retained transitive artifacts stay visible with meaningful paths, and capture effective classpaths, package entries, and hashes.
 3. Preserve the pre-filter mediated graph with node identity, parent edges, scopes, conflict/selection metadata, and artifact coordinates. Join it with retained/elided outcomes and reasons; verify `mvn-dep-elider:report` reconstructs the original paths without treating the old graph as effective inventory.
 4. Test the report from the same Maven session and from a later invocation. Decide whether the extension hands off a session snapshot or writes a versioned report model; bind it to project identity and input graph so stale reports are detectable.
