@@ -70,3 +70,9 @@ With JMH 1.37 on GraalVM JDK 25.0.5, the command above measured:
 | Fingerprinting plus cache lookup | 1.078 ms/op | ±0.302 ms/op |
 
 The cache load result exceeds the research note's 0.5 ms component budget. The combined result measures the core cache API only; the cache is not integrated into the Maven plugin, so it does not prove lifecycle or whole-build overhead. The recorded environment was an AMD Ryzen 9 5900X 12-core processor (12 cores, 24 threads) and Linux 7.2.9-1-cachyos-bore-lto x86_64. Benchmark fixtures were created under `/tmp` on overlay storage; the workspace mount is Btrfs. The benchmark run used 2 forks, 3 warmup iterations, and 5 measurement iterations of 1 second each. The results are specific to this run and environment.
+
+### Production trim-cache benchmarks and build impact
+
+The production trim-cache benchmark uses exact content hashes. Its recorded warm hit is **93.038 ± 0.756 ms/op** on GraalVM JDK 21.0.12, above the <10 ms target; the per-artifact <1.5 ms target remains unmet. See [RQ-0003](docs/research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for methodology, limitations, and performance follow-ups.
+
+Paired example-build medians show about +1.977 s for Basic and +20.417 s for Spring Boot with elision enabled. These measurements include Maven startup, dependency resolution, compilation, tests, elision, and packaging; they are descriptive observations, not a whole-build performance guarantee.
