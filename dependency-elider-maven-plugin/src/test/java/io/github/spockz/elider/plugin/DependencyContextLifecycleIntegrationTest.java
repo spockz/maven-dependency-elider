@@ -657,25 +657,37 @@ final class DependencyContextLifecycleIntegrationTest {
     final List<String> laterLines = Files.readAllLines(laterFile);
     final List<String> initialCaptures = rowsWithPrefix(initialLines, "snapshot\t");
     final List<String> laterCaptures = rowsWithPrefix(laterLines, "snapshot\t");
-    assertThat(initialCaptures).isNotEmpty();
-    assertThat(laterCaptures).contains(initialCaptures.getFirst());
+    assertThat(initialCaptures).hasSize(1);
+    assertThat(laterCaptures).hasSize(2).contains(initialCaptures.getFirst());
 
     final String[] initialFields = initialCaptures.getFirst().split("\\t", -1);
     assertThat(initialFields[2]).isEqualTo("false");
     assertThat(initialFields[3]).isEqualTo("<absent>");
     final List<String> initialNodes = rowsWithPrefix(initialLines, "node\t0\t");
-    assertThat(initialNodes).anyMatch(line -> line.contains("drop-library"));
-    assertThat(initialNodes).anyMatch(line -> line.contains("keep-library"));
+    assertThat(initialNodes)
+        .containsExactly(
+            "node\t0\tn0\tio.github.spockz.elider.test:lifecycle-elide-consumer:1.0.0:pom:",
+            "node\t0\tn1\tio.github.spockz.elider.test:drop-library:1.0.0:jar:",
+            "node\t0\tn2\tio.github.spockz.elider.test:keep-library:1.0.0:jar:");
+    assertThat(rowsWithPrefix(initialLines, "edge\t0\t"))
+        .containsExactly("edge\t0\tn0\tn1", "edge\t0\tn0\tn2");
 
     final List<String[]> laterWithPlan =
         laterCaptures.stream()
             .map(line -> line.split("\\t", -1))
             .filter(fields -> "true".equals(fields[2]))
             .toList();
-    assertThat(laterWithPlan).isNotEmpty();
-    assertThat(laterWithPlan.getFirst()[3]).isNotEqualTo("<absent>");
+    assertThat(laterWithPlan).hasSize(1);
+    assertThat(laterWithPlan.getFirst()[3]).matches("[0-9a-f]{64}");
+    assertThat(laterWithPlan.getFirst()[4]).isEqualTo("1");
+    assertThat(laterWithPlan.getFirst()[5]).isEqualTo("2");
     assertThat(Long.parseLong(laterWithPlan.getFirst()[4]))
         .isGreaterThan(Long.parseLong(initialFields[4]));
+    assertThat(rowsWithPrefix(laterLines, "node\t1\t"))
+        .containsExactly(
+            "node\t1\tn0\tio.github.spockz.elider.test:lifecycle-elide-consumer:1.0.0:pom:",
+            "node\t1\tn1\tio.github.spockz.elider.test:keep-library:1.0.0:jar:");
+    assertThat(rowsWithPrefix(laterLines, "edge\t1\t")).containsExactly("edge\t1\tn0\tn1");
   }
 
   private static List<String> rowsWithPrefix(final List<String> lines, final String prefix) {

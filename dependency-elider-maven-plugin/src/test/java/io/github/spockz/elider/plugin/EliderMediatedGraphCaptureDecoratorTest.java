@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +21,6 @@ import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.collection.DependencyGraphTransformationContext;
 import org.eclipse.aether.collection.DependencyGraphTransformer;
-import org.eclipse.aether.graph.DefaultDependencyNode;
 import org.eclipse.aether.graph.DependencyNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,6 +28,9 @@ import org.junit.jupiter.api.io.TempDir;
 /** Exercises the separate post-mediation graph capture decorator. */
 @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.LawOfDemeter"})
 final class EliderMediatedGraphCaptureDecoratorTest {
+  /** PMD key reused in assertion annotations for multi-field session evidence. */
+  private static final String TOO_MANY_ASSERTS = "PMD.UnitTestContainsTooManyAsserts";
+
   /** Test-specific Maven project root. */
   @TempDir Path temporaryDirectory;
 
@@ -40,16 +41,18 @@ final class EliderMediatedGraphCaptureDecoratorTest {
   }
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
+  @SuppressWarnings(TOO_MANY_ASSERTS)
   void delegatesOnceReturnsReplacementRootAndCapturesDecorationTimeProvenance()
       throws IOException, org.eclipse.aether.RepositoryException {
-    final MavenProject project = project(temporaryDirectory, "consumer");
+    final MavenProject project =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "consumer");
     final DefaultRepositorySystemSession session = new DefaultRepositorySystemSession();
-    final DependencyNode input = node("input");
-    final DependencyNode replacement = node("replacement");
+    final DependencyNode input = EliderMediatedGraphCaptureDecoratorTestSupport.node("input");
+    final DependencyNode replacement =
+        EliderMediatedGraphCaptureDecoratorTestSupport.node("replacement");
     final AtomicInteger delegateCalls = new AtomicInteger();
     final AtomicReference<DependencyGraphTransformationContext> expectedContext =
-        new AtomicReference<>(context(session));
+        new AtomicReference<>(EliderMediatedGraphCaptureDecoratorTestSupport.context(session));
     final DependencyGraphTransformer delegate =
         (root, transformationContext) -> {
           delegateCalls.incrementAndGet();
@@ -60,7 +63,8 @@ final class EliderMediatedGraphCaptureDecoratorTest {
     session.setDependencyGraphTransformer(delegate);
     final RepositorySystemSession decorated =
         new EliderMediatedGraphCaptureDecorator().decorate(project, session);
-    final ResolverArtifactPlan plan = emptyPlan(project);
+    final ResolverArtifactPlan plan =
+        EliderMediatedGraphCaptureDecoratorTestSupport.emptyPlan(project);
     session
         .getData()
         .set(
@@ -69,44 +73,55 @@ final class EliderMediatedGraphCaptureDecoratorTest {
 
     final DependencyNode returned =
         decorated.getDependencyGraphTransformer().transformGraph(input, expectedContext.get());
-    final ResolverArtifactGraphSnapshotStore store = graphStore(decorated);
-    final Map<String, Object> snapshot = store.snapshots().get(projectKey(project)).getFirst();
+    final ResolverArtifactGraphSnapshotStore store =
+        EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(decorated);
+    final Map<String, Object> snapshot =
+        store
+            .snapshots()
+            .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project))
+            .getFirst();
 
     assertThat(decorated).isNotSameAs(session);
     assertThat(returned).isSameAs(replacement);
     assertThat(delegateCalls).hasValue(1);
     assertThat(snapshot)
-        .containsEntry("planPresent", false)
-        .containsEntry("planFingerprint", null)
-        .containsEntry("rootNodeId", "n0");
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_PRESENT, false)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_FINGERPRINT, null)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.ROOT_NODE_ID, "n0");
     assertThat((List<?>) snapshot.get("nodes")).hasSize(1);
+    final Map<?, ?> rootArtifact =
+        (Map<?, ?>) ((Map<?, ?>) ((List<?>) snapshot.get("nodes")).getFirst()).get("artifact");
+    assertThat(rootArtifact.get("artifactId")).isEqualTo("replacement");
 
     final RepositorySystemSession laterDecorated =
         new EliderMediatedGraphCaptureDecorator().decorate(project, session);
-    expectedContext.set(context(laterDecorated));
+    expectedContext.set(EliderMediatedGraphCaptureDecoratorTestSupport.context(laterDecorated));
     laterDecorated.getDependencyGraphTransformer().transformGraph(input, expectedContext.get());
     final List<Map<String, Object>> snapshots =
-        graphStore(session).snapshots().get(projectKey(project));
+        EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(session)
+            .snapshots()
+            .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project));
 
     assertThat(delegateCalls).hasValue(2);
     assertThat(snapshots).hasSize(2);
     assertThat(snapshots.get(0))
-        .containsEntry("planPresent", false)
-        .containsEntry("planGeneration", 0L)
-        .containsEntry("captureGeneration", 1L);
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_PRESENT, false)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_GENERATION, 0L)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.CAPTURE_GENERATION, 1L);
     assertThat(snapshots.get(1))
-        .containsEntry("planPresent", true)
-        .containsEntry("planGeneration", 1L)
-        .containsEntry("captureGeneration", 2L);
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_PRESENT, true)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_GENERATION, 1L)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.CAPTURE_GENERATION, 2L);
     assertThat(snapshots.get(1).get("planFingerprint")).isNotNull();
     assertThat(snapshots.get(0).get("graphFingerprint"))
         .isEqualTo(snapshots.get(1).get("graphFingerprint"));
   }
 
   @Test
-  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
+  @SuppressWarnings(TOO_MANY_ASSERTS)
   void propagatesDelegateFailureWithoutAppendingSnapshot() throws IOException {
-    final MavenProject project = project(temporaryDirectory, "failure");
+    final MavenProject project =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "failure");
     final DefaultRepositorySystemSession session = new DefaultRepositorySystemSession();
     final org.eclipse.aether.RepositoryException failure =
         new org.eclipse.aether.RepositoryException("delegate failure");
@@ -121,23 +136,27 @@ final class EliderMediatedGraphCaptureDecoratorTest {
             () ->
                 decorated
                     .getDependencyGraphTransformer()
-                    .transformGraph(node("input"), context(decorated)))
+                    .transformGraph(
+                        EliderMediatedGraphCaptureDecoratorTestSupport.node("input"),
+                        EliderMediatedGraphCaptureDecoratorTestSupport.context(decorated)))
         .isSameAs(failure);
-    assertThat(decorated.getData().get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY))
-        .isNull();
+    assertThat(EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(decorated).snapshots())
+        .isEmpty();
   }
 
   @Test
-  @SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.DoNotUseThreads"})
+  @SuppressWarnings({TOO_MANY_ASSERTS, "PMD.DoNotUseThreads"})
   void appendsConcurrentProjectCapturesAndDeduplicatesRepeatedGraph() throws Exception {
-    final MavenProject firstProject = project(temporaryDirectory, "first");
-    final MavenProject secondProject = project(temporaryDirectory, "second");
+    final MavenProject firstProject =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "first");
+    final MavenProject secondProject =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "second");
     final DefaultRepositorySystemSession session = new DefaultRepositorySystemSession();
     final RepositorySystemSession firstDecorated =
         new EliderMediatedGraphCaptureDecorator().decorate(firstProject, session);
     final RepositorySystemSession secondDecorated =
         new EliderMediatedGraphCaptureDecorator().decorate(secondProject, session);
-    final DependencyNode repeated = node("same");
+    final DependencyNode repeated = EliderMediatedGraphCaptureDecoratorTestSupport.node("same");
     final CountDownLatch start = new CountDownLatch(1);
     try (ExecutorService executor = Executors.newFixedThreadPool(4)) {
       final List<Future<?>> futures = new java.util.ArrayList<>();
@@ -148,7 +167,9 @@ final class EliderMediatedGraphCaptureDecoratorTest {
                   start.await();
                   firstDecorated
                       .getDependencyGraphTransformer()
-                      .transformGraph(repeated, context(firstDecorated));
+                      .transformGraph(
+                          repeated,
+                          EliderMediatedGraphCaptureDecoratorTestSupport.context(firstDecorated));
                   return null;
                 }));
       }
@@ -160,96 +181,116 @@ final class EliderMediatedGraphCaptureDecoratorTest {
       assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
       secondDecorated
           .getDependencyGraphTransformer()
-          .transformGraph(node("other"), context(secondDecorated));
+          .transformGraph(
+              EliderMediatedGraphCaptureDecoratorTestSupport.node("other"),
+              EliderMediatedGraphCaptureDecoratorTestSupport.context(secondDecorated));
     }
 
-    final ResolverArtifactGraphSnapshotStore store = graphStore(session);
-    assertThat(store.snapshots()).containsKeys(projectKey(firstProject), projectKey(secondProject));
-    assertThat(store.snapshots().get(projectKey(firstProject))).hasSize(1);
-    assertThat(store.snapshots().get(projectKey(secondProject))).hasSize(1);
-    assertThat(store.generations())
-        .containsEntry(projectKey(firstProject), 1L)
-        .containsEntry(projectKey(secondProject), 1L);
-    assertThat(store.toPayload().values())
-        .allSatisfy(EliderMediatedGraphCaptureDecoratorTest::assertJdkValue);
-  }
-
-  private static MavenProject project(final Path directory, final String artifactId)
-      throws IOException {
-    final Path projectDirectory = Files.createDirectory(directory.resolve(artifactId));
-    final MavenProject project = new MavenProject();
-    project.setFile(Files.createFile(projectDirectory.resolve("pom.xml")).toFile());
-    project.setGroupId("fixture");
-    project.setArtifactId(artifactId);
-    project.setVersion("1.0");
-    return project;
-  }
-
-  private static ResolverArtifactPlan emptyPlan(final MavenProject project) {
-    return new ResolverArtifactPlan(
-        new ResolverArtifactPlan.ProjectIdentity(
-            project.getBasedir().toPath(),
-            project.getGroupId(),
-            project.getArtifactId(),
-            project.getVersion()),
-        Map.of());
-  }
-
-  private static String projectKey(final MavenProject project) {
-    return ResolverArtifactPlanStore.projectKey(
-        new ResolverArtifactPlan.ProjectIdentity(
-            project.getBasedir().toPath(),
-            project.getGroupId(),
-            project.getArtifactId(),
-            project.getVersion()));
-  }
-
-  private static DependencyNode node(final String artifactId) {
-    return new DefaultDependencyNode(
-        new org.eclipse.aether.artifact.DefaultArtifact("fixture", artifactId, "", "jar", "1.0"));
-  }
-
-  private static DependencyGraphTransformationContext context(
-      final RepositorySystemSession session) {
-    return new DependencyGraphTransformationContext() {
-      @Override
-      public RepositorySystemSession getSession() {
-        return session;
-      }
-
-      @Override
-      public Object get(final Object key) {
-        return null;
-      }
-
-      @Override
-      public Object put(final Object key, final Object value) {
-        return null;
-      }
-    };
-  }
-
-  private static ResolverArtifactGraphSnapshotStore graphStore(
-      final RepositorySystemSession session) {
-    return ResolverArtifactGraphSnapshotStore.fromPayload(
-        session.getData().get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY));
-  }
-
-  private static void assertJdkValue(final Object value) {
-    if (value instanceof Map<?, ?> map) {
-      map.values().forEach(EliderMediatedGraphCaptureDecoratorTest::assertJdkValue);
-      return;
-    }
-    if (value instanceof List<?> list) {
-      list.forEach(EliderMediatedGraphCaptureDecoratorTest::assertJdkValue);
-      return;
-    }
+    final ResolverArtifactGraphSnapshotStore store =
+        EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(session);
+    assertThat(store.snapshots())
+        .containsKeys(
+            EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(firstProject),
+            EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(secondProject));
     assertThat(
-            value == null
-                || value instanceof String
-                || value instanceof Boolean
-                || value instanceof Integer
-                || value instanceof Long)
+            store
+                .snapshots()
+                .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(firstProject)))
+        .hasSize(1);
+    assertThat(
+            store
+                .snapshots()
+                .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(secondProject)))
+        .hasSize(1);
+    assertThat(store.generations())
+        .containsEntry(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(firstProject), 1L)
+        .containsEntry(
+            EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(secondProject), 1L);
+    assertThat(store.toPayload().values())
+        .allSatisfy(EliderMediatedGraphCaptureDecoratorTestSupport::assertJdkValue);
+  }
+
+  @Test
+  @SuppressWarnings({TOO_MANY_ASSERTS, "PMD.DoNotUseThreads"})
+  void isolatesPlanGenerationAcrossConcurrentSessionsForTheSameProject() throws Exception {
+    final MavenProject project =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(
+            temporaryDirectory, "shared-project");
+    final DefaultRepositorySystemSession absentSession = new DefaultRepositorySystemSession();
+    final DefaultRepositorySystemSession presentSession = new DefaultRepositorySystemSession();
+    presentSession
+        .getData()
+        .set(
+            ResolverArtifactPlanPublisher.SESSION_DATA_KEY,
+            ResolverArtifactPlanStore.empty()
+                .withPlan(EliderMediatedGraphCaptureDecoratorTestSupport.emptyPlan(project))
+                .toPayload());
+    final CountDownLatch start = new CountDownLatch(1);
+    final AtomicReference<RepositorySystemSession> absentDecorated = new AtomicReference<>();
+    final AtomicReference<RepositorySystemSession> presentDecorated = new AtomicReference<>();
+    try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+      final Future<?> absent =
+          executor.submit(
+              () -> {
+                start.await();
+                absentDecorated.set(
+                    new EliderMediatedGraphCaptureDecorator().decorate(project, absentSession));
+                return null;
+              });
+      final Future<?> present =
+          executor.submit(
+              () -> {
+                start.await();
+                presentDecorated.set(
+                    new EliderMediatedGraphCaptureDecorator().decorate(project, presentSession));
+                return null;
+              });
+      start.countDown();
+      absent.get();
+      present.get();
+    }
+    absentDecorated
+        .get()
+        .getDependencyGraphTransformer()
+        .transformGraph(
+            EliderMediatedGraphCaptureDecoratorTestSupport.node("absent"),
+            EliderMediatedGraphCaptureDecoratorTestSupport.context(absentDecorated.get()));
+    presentDecorated
+        .get()
+        .getDependencyGraphTransformer()
+        .transformGraph(
+            EliderMediatedGraphCaptureDecoratorTestSupport.node("present"),
+            EliderMediatedGraphCaptureDecoratorTestSupport.context(presentDecorated.get()));
+
+    final Map<String, Object> absentSnapshot =
+        EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(absentSession)
+            .snapshots()
+            .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project))
+            .getFirst();
+    final Map<String, Object> presentSnapshot =
+        EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(presentSession)
+            .snapshots()
+            .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project))
+            .getFirst();
+    assertThat(absentSnapshot)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_PRESENT, false)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_GENERATION, 0L)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.CAPTURE_GENERATION, 1L);
+    assertThat(presentSnapshot)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_PRESENT, true)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.PLAN_GENERATION, 1L)
+        .containsEntry(ResolverArtifactGraphSnapshotSchema.CAPTURE_GENERATION, 1L);
+    assertThat(
+            EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(absentSession)
+                .observations()
+                .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project))
+                .present())
+        .isFalse();
+    assertThat(
+            EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(presentSession)
+                .observations()
+                .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project))
+                .present())
         .isTrue();
   }
 }

@@ -9,8 +9,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import org.apache.maven.project.MavenProject;
@@ -31,9 +29,6 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static final String SESSION_DATA_KEY = "io.github.spockz.elider.resolver.graph-snapshots.v1";
 
-  /** Tracks decoration-time plan generations by normalized project key. */
-  private static final Map<String, PlanObservation> PLAN_OBSERVATIONS = new ConcurrentHashMap<>();
-
   /** Creates the indexed graph-capture session decorator. */
   public EliderMediatedGraphCaptureDecorator() {
     super();
@@ -50,7 +45,7 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
     final ResolverArtifactPlan plan = findPlan(session, identity);
     final boolean planPresent = plan != null;
     final String planFingerprint = planPresent ? planFingerprint(plan) : null;
-    final long planGeneration = planGeneration(projectKey, planPresent, planFingerprint);
+    final long planGeneration = observePlan(session, projectKey, planPresent, planFingerprint);
     final DependencyGraphTransformer delegate = session.getDependencyGraphTransformer();
     final DefaultRepositorySystemSession decorated = new DefaultRepositorySystemSession(session);
     decorated.setDependencyGraphTransformer(
@@ -121,21 +116,24 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
         .reduce("", String::concat);
   }
 
-  private static long planGeneration(
-      final String projectKey, final boolean planPresent, final String planFingerprint) {
-    return PLAN_OBSERVATIONS
-        .compute(
-            projectKey,
-            (key, prior) -> {
-              if (prior != null
-                  && prior.planPresent() == planPresent
-                  && Objects.equals(prior.planFingerprint(), planFingerprint)) {
-                return prior;
-              }
-              final long next = prior == null ? (planPresent ? 1L : 0L) : prior.generation() + 1L;
-              return new PlanObservation(planPresent, planFingerprint, next);
-            })
-        .generation();
+  private static long observePlan(
+      final RepositorySystemSession session,
+      final String projectKey,
+      final boolean planPresent,
+      final String planFingerprint) {
+    final org.eclipse.aether.SessionData data = session.getData();
+    while (true) {
+      final Object current = data.get(SESSION_DATA_KEY);
+      final ResolverArtifactGraphSnapshotStore store =
+          ResolverArtifactGraphSnapshotStore.fromPayload(current);
+      final ResolverArtifactGraphSnapshotStore.PlanObservation observation =
+          store.observePlan(projectKey, planPresent, planFingerprint);
+      final ResolverArtifactGraphSnapshotStore updated =
+          store.withObservation(projectKey, observation);
+      if (updated.equals(store) || data.set(SESSION_DATA_KEY, current, updated.toPayload())) {
+        return observation.generation();
+      }
+    }
   }
 
   private static void appendSnapshot(
@@ -167,6 +165,4 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
       }
     }
   }
-
-  private record PlanObservation(boolean planPresent, String planFingerprint, long generation) {}
 }

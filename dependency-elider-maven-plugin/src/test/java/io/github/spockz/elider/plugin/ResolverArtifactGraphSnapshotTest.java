@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -110,6 +111,28 @@ final class ResolverArtifactGraphSnapshotTest {
   }
 
   @Test
+  void rejectsUnsupportedOriginalMetadataAndDeeplyFreezesNestedPayloads() {
+    final DependencyNode unsupported = node("unsupported");
+    unsupported.setData(ConflictResolver.NODE_DATA_ORIGINAL_SCOPE, new Object());
+    assertThatThrownBy(
+            () ->
+                ResolverArtifactGraphSnapshot.capture(unsupported, PROJECT_KEY, false, null, 0, 1))
+        .isInstanceOf(IllegalArgumentException.class);
+    final DependencyNode unsupportedOptionality = node("unsupported-optionality");
+    unsupportedOptionality.setData(ConflictResolver.NODE_DATA_ORIGINAL_OPTIONALITY, new Object());
+    assertThatThrownBy(
+            () ->
+                ResolverArtifactGraphSnapshot.capture(
+                    unsupportedOptionality, PROJECT_KEY, false, null, 0, 1))
+        .isInstanceOf(IllegalArgumentException.class);
+
+    final ResolverArtifactGraphSnapshot snapshot =
+        ResolverArtifactGraphSnapshot.capture(node("immutable"), PROJECT_KEY, false, null, 0, 1);
+    final Map<?, ?> artifact = (Map<?, ?>) snapshot.nodes().getFirst().get(ARTIFACT_KEY);
+    assertThatThrownBy(artifact::clear).isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
   void structuralFingerprintExcludesPlanProvenance() {
     final DependencyNode root = node(ROOT_ARTIFACT);
 
@@ -122,6 +145,25 @@ final class ResolverArtifactGraphSnapshotTest {
     assertThat(absent.planPresent()).isFalse();
     assertThat(presentEmpty.planPresent()).isTrue();
     assertThat(presentEmpty.planFingerprint()).isEqualTo("empty-plan");
+  }
+
+  @Test
+  void preservesRelocationSequenceInStructuralFingerprint() {
+    final DefaultDependencyNode forward = (DefaultDependencyNode) node(ROOT_ARTIFACT);
+    forward.setRelocations(List.of(artifact("first"), artifact("second")));
+    final DefaultDependencyNode reverse = (DefaultDependencyNode) node(ROOT_ARTIFACT);
+    reverse.setRelocations(List.of(artifact("second"), artifact("first")));
+
+    final ResolverArtifactGraphSnapshot forwardSnapshot =
+        ResolverArtifactGraphSnapshot.capture(forward, PROJECT_KEY, false, null, 0, 1);
+    final ResolverArtifactGraphSnapshot reverseSnapshot =
+        ResolverArtifactGraphSnapshot.capture(reverse, PROJECT_KEY, false, null, 0, 1);
+
+    assertThat(forwardSnapshot.graphFingerprint()).isNotEqualTo(reverseSnapshot.graphFingerprint());
+    final List<?> relocations = (List<?>) forwardSnapshot.nodes().getFirst().get("relocations");
+    final List<String> artifactIds =
+        relocations.stream().map(value -> (String) ((Map<?, ?>) value).get("artifactId")).toList();
+    assertThat(artifactIds).containsExactly("first", "second");
   }
 
   private static DependencyNode node(final String artifactId) {

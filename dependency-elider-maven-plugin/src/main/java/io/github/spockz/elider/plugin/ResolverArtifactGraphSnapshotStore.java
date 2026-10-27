@@ -17,8 +17,10 @@ import java.util.Objects;
   "PMD.UseConcurrentHashMap"
 })
 record ResolverArtifactGraphSnapshotStore(
-    Map<String, List<Map<String, Object>>> snapshots, Map<String, Long> generations) {
-  private static final int SCHEMA_VERSION = 1;
+    Map<String, List<Map<String, Object>>> snapshots,
+    Map<String, Long> generations,
+    Map<String, PlanObservation> observations) {
+  private static final int SCHEMA_VERSION = 2;
 
   private static final String SCHEMA_FIELD = "schemaVersion";
 
@@ -26,9 +28,12 @@ record ResolverArtifactGraphSnapshotStore(
 
   private static final String GENERATIONS_FIELD = "generations";
 
+  private static final String OBSERVATIONS_FIELD = "planObservations";
+
   ResolverArtifactGraphSnapshotStore {
     Objects.requireNonNull(snapshots, "snapshots");
     Objects.requireNonNull(generations, "generations");
+    Objects.requireNonNull(observations, "observations");
     final Map<String, List<Map<String, Object>>> snapshotCopy = new LinkedHashMap<>();
     snapshots.forEach(
         (projectKey, values) ->
@@ -37,10 +42,11 @@ record ResolverArtifactGraphSnapshotStore(
                 values.stream().map(ResolverArtifactGraphSnapshotStore::immutableMap).toList()));
     snapshots = Collections.unmodifiableMap(snapshotCopy);
     generations = Collections.unmodifiableMap(new LinkedHashMap<>(generations));
+    observations = Collections.unmodifiableMap(new LinkedHashMap<>(observations));
   }
 
   static ResolverArtifactGraphSnapshotStore empty() {
-    return new ResolverArtifactGraphSnapshotStore(Map.of(), Map.of());
+    return new ResolverArtifactGraphSnapshotStore(Map.of(), Map.of(), Map.of());
   }
 
   static ResolverArtifactGraphSnapshotStore fromPayload(final Object payload) {
@@ -48,41 +54,138 @@ record ResolverArtifactGraphSnapshotStore(
       return empty();
     }
     final Map<?, ?> root = requireMap(payload, "graph snapshot store");
+    if (!root.keySet()
+        .equals(
+            java.util.Set.of(
+                SCHEMA_FIELD, SNAPSHOTS_FIELD, GENERATIONS_FIELD, OBSERVATIONS_FIELD))) {
+      throw new IllegalStateException("Graph snapshot store fields do not match the schema");
+    }
     if (!Integer.valueOf(SCHEMA_VERSION).equals(root.get(SCHEMA_FIELD))) {
       throw new IllegalStateException("Unsupported graph snapshot store schema");
     }
+    final ResolverArtifactGraphSnapshotStore store =
+        new ResolverArtifactGraphSnapshotStore(
+            parseSnapshots(root.get(SNAPSHOTS_FIELD)),
+            parseGenerations(root.get(GENERATIONS_FIELD)),
+            parseObservations(root.get(OBSERVATIONS_FIELD)));
+    store.validate();
+    return store;
+  }
+
+  private static Map<String, List<Map<String, Object>>> parseSnapshots(final Object value) {
     final Map<String, List<Map<String, Object>>> snapshots = new LinkedHashMap<>();
-    requireMap(root.get(SNAPSHOTS_FIELD), SNAPSHOTS_FIELD)
+    requireMap(value, SNAPSHOTS_FIELD)
         .forEach(
-            (projectKeyValue, entriesValue) -> {
-              final String projectKey = requireString(projectKeyValue, "project key");
+            (key, entriesValue) -> {
+              final String projectKey = requireString(key, "project key");
               final List<Map<String, Object>> entries =
                   requireList(entriesValue, "project snapshots").stream()
-                      .map(value -> immutableMap(requireObjectMap(value, "snapshot")))
+                      .map(entry -> immutableMap(requireObjectMap(entry, "snapshot")))
                       .toList();
               snapshots.put(projectKey, entries);
             });
+    return snapshots;
+  }
+
+  private static Map<String, Long> parseGenerations(final Object value) {
     final Map<String, Long> generations = new LinkedHashMap<>();
-    requireMap(root.get(GENERATIONS_FIELD), GENERATIONS_FIELD)
+    requireMap(value, GENERATIONS_FIELD)
         .forEach(
-            (projectKeyValue, generationValue) -> {
-              final String projectKey = requireString(projectKeyValue, "project key");
+            (key, generationValue) -> {
+              final String projectKey = requireString(key, "project key");
               if (!(generationValue instanceof Long generation) || generation < 0) {
                 throw new IllegalStateException("Invalid graph snapshot generation");
               }
               generations.put(projectKey, generation);
             });
-    return new ResolverArtifactGraphSnapshotStore(snapshots, generations);
+    return generations;
+  }
+
+  private static Map<String, PlanObservation> parseObservations(final Object value) {
+    final Map<String, PlanObservation> observations = new LinkedHashMap<>();
+    requireMap(value, OBSERVATIONS_FIELD)
+        .forEach(
+            (key, observationValue) -> {
+              final String projectKey = requireString(key, "observation project key");
+              final PlanObservation observation = parseObservation(observationValue);
+              observations.put(projectKey, observation);
+            });
+    return observations;
+  }
+
+  private static PlanObservation parseObservation(final Object value) {
+    final Map<?, ?> observation = requireMap(value, "plan observation");
+    final boolean present = parsePresence(observation.get("present"));
+    final String fingerprint = parseFingerprint(observation.get("fingerprint"));
+    final long generation = parsePlanGeneration(observation.get("generation"));
+    validateObservation(observation, present, fingerprint, generation);
+    return new PlanObservation(present, fingerprint, generation);
+  }
+
+  private static boolean parsePresence(final Object value) {
+    if (value instanceof Boolean result) {
+      return result;
+    }
+    throw new IllegalStateException("Invalid plan observation presence");
+  }
+
+  private static String parseFingerprint(final Object value) {
+    if (value == null || value instanceof String) {
+      return (String) value;
+    }
+    throw new IllegalStateException("Invalid plan observation fingerprint");
+  }
+
+  private static long parsePlanGeneration(final Object value) {
+    if (value instanceof Long generation && generation >= 0) {
+      return generation;
+    }
+    throw new IllegalStateException("Invalid plan observation generation");
+  }
+
+  private static void validateObservation(
+      final Map<?, ?> observation,
+      final boolean present,
+      final String fingerprint,
+      final long generation) {
+    if (present != (fingerprint != null)
+        || (fingerprint != null && !fingerprint.matches("[0-9a-f]{64}"))
+        || (present && generation == 0L)
+        || !observation.keySet().equals(java.util.Set.of("present", "fingerprint", "generation"))) {
+      throw new IllegalStateException("Inconsistent plan observation");
+    }
   }
 
   long nextGeneration(final String projectKey) {
     return generations.getOrDefault(Objects.requireNonNull(projectKey, "projectKey"), 0L) + 1L;
   }
 
+  PlanObservation observePlan(
+      final String projectKey, final boolean planPresent, final String planFingerprint) {
+    if (planPresent != (planFingerprint != null)) {
+      throw new IllegalArgumentException("Plan presence and fingerprint disagree");
+    }
+    final PlanObservation previous =
+        observations.getOrDefault(projectKey, new PlanObservation(false, null, 0L));
+    if (previous.present() == planPresent
+        && Objects.equals(previous.fingerprint(), planFingerprint)) {
+      return previous;
+    }
+    return new PlanObservation(planPresent, planFingerprint, previous.generation() + 1L);
+  }
+
+  ResolverArtifactGraphSnapshotStore withObservation(
+      final String projectKey, final PlanObservation observation) {
+    final Map<String, PlanObservation> nextObservations = new LinkedHashMap<>(observations);
+    nextObservations.put(projectKey, observation);
+    return new ResolverArtifactGraphSnapshotStore(snapshots, generations, nextObservations);
+  }
+
   ResolverArtifactGraphSnapshotStore append(final ResolverArtifactGraphSnapshot snapshot) {
     Objects.requireNonNull(snapshot, "snapshot");
     final String projectKey = snapshot.projectKey();
     final Map<String, Object> payload = snapshot.toPayload();
+    ResolverArtifactGraphSnapshotPayloadValidator.validate(payload, projectKey);
     final List<Map<String, Object>> current = snapshots.getOrDefault(projectKey, List.of());
     if (current.stream().anyMatch(existing -> sameCapture(existing, payload))) {
       return this;
@@ -93,7 +196,7 @@ record ResolverArtifactGraphSnapshotStore(
     nextSnapshots.put(projectKey, List.copyOf(updated));
     final Map<String, Long> nextGenerations = new LinkedHashMap<>(generations);
     nextGenerations.put(projectKey, snapshot.captureGeneration());
-    return new ResolverArtifactGraphSnapshotStore(nextSnapshots, nextGenerations);
+    return new ResolverArtifactGraphSnapshotStore(nextSnapshots, nextGenerations, observations);
   }
 
   Map<String, Object> toPayload() {
@@ -101,7 +204,41 @@ record ResolverArtifactGraphSnapshotStore(
     payload.put(SCHEMA_FIELD, SCHEMA_VERSION);
     payload.put(SNAPSHOTS_FIELD, snapshots);
     payload.put(GENERATIONS_FIELD, generations);
+    final Map<String, Object> observationPayloads = new LinkedHashMap<>();
+    observations.forEach(
+        (projectKey, observation) -> {
+          final Map<String, Object> observationPayload = new LinkedHashMap<>();
+          observationPayload.put("present", observation.present());
+          observationPayload.put("fingerprint", observation.fingerprint());
+          observationPayload.put("generation", observation.generation());
+          observationPayloads.put(projectKey, Collections.unmodifiableMap(observationPayload));
+        });
+    payload.put(OBSERVATIONS_FIELD, Collections.unmodifiableMap(observationPayloads));
     return Collections.unmodifiableMap(payload);
+  }
+
+  private void validate() {
+    snapshots.forEach(
+        (projectKey, entries) -> {
+          if (entries.isEmpty()) {
+            throw new IllegalStateException("Graph snapshot project has no captures");
+          }
+          long expectedGeneration = 0L;
+          for (final Map<String, Object> entry : entries) {
+            ResolverArtifactGraphSnapshotPayloadValidator.validate(entry, projectKey);
+            expectedGeneration++;
+            if (!Long.valueOf(expectedGeneration).equals(entry.get("captureGeneration"))) {
+              throw new IllegalStateException(
+                  "Graph snapshot capture generations are inconsistent");
+            }
+          }
+          if (!Long.valueOf(expectedGeneration).equals(generations.get(projectKey))) {
+            throw new IllegalStateException("Graph snapshot store generation is inconsistent");
+          }
+        });
+    if (!snapshots.keySet().equals(generations.keySet())) {
+      throw new IllegalStateException("Graph snapshot generations do not match projects");
+    }
   }
 
   private static boolean sameCapture(
@@ -177,4 +314,6 @@ record ResolverArtifactGraphSnapshotStore(
     }
     throw new IllegalStateException(field + " must be a string");
   }
+
+  record PlanObservation(boolean present, String fingerprint, long generation) {}
 }

@@ -81,10 +81,6 @@ final class FixtureGraphSnapshots {
   private static void appendSnapshot(
       final List<String> lines, final Map<?, ?> snapshot, final int captureIndex)
       throws IOException {
-    final Object nodesValue = snapshot.get("nodes");
-    if (!(nodesValue instanceof List<?> nodes)) {
-      throw new IOException("Graph snapshot nodes are not a list");
-    }
     lines.add(
         "snapshot\t"
             + captureIndex
@@ -98,11 +94,41 @@ final class FixtureGraphSnapshots {
             + snapshot.get("captureGeneration")
             + "\t"
             + snapshot.get("graphFingerprint"));
+    appendNodes(lines, snapshot.get("nodes"), captureIndex);
+    appendEdges(lines, snapshot.get("edges"), captureIndex);
+  }
+
+  private static void appendNodes(
+      final List<String> lines, final Object nodesValue, final int captureIndex)
+      throws IOException {
+    if (!(nodesValue instanceof List<?> nodes)) {
+      throw new IOException("Graph snapshot nodes are not a list");
+    }
     for (final Object nodeValue : nodes) {
       if (!(nodeValue instanceof Map<?, ?> node)) {
         throw new IOException("Graph snapshot node is not a map");
       }
       appendNode(lines, node, captureIndex);
+    }
+  }
+
+  private static void appendEdges(
+      final List<String> lines, final Object edgesValue, final int captureIndex)
+      throws IOException {
+    if (!(edgesValue instanceof List<?> edges)) {
+      throw new IOException("Graph snapshot edges are not a list");
+    }
+    for (final Object edgeValue : edges) {
+      if (!(edgeValue instanceof Map<?, ?> edge)) {
+        throw new IOException("Graph snapshot edge is not a map");
+      }
+      lines.add(
+          "edge\t"
+              + captureIndex
+              + "\t"
+              + value(edge.get("parentNodeId"))
+              + "\t"
+              + value(edge.get("childNodeId")));
     }
   }
 
