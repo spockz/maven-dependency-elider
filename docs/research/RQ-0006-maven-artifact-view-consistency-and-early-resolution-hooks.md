@@ -108,3 +108,9 @@ Do not implement the earlier hook solely to make the state look consistent. Firs
 * [ ] **Checkpoint 3 (Resolution Persistence)**: Establish which lifecycle transitions restore original artifacts after consistent `INITIALIZE` mutation and whether the early hook intercepts them.
 * [ ] **Checkpoint 4 (Earlier Hook Tradeoff)**: Compare the minimal lifecycle mutation with an early resolver hook using the same fixture, Maven versions, and verification artifacts.
 * [ ] **Checkpoint 5 (Adopt or Document)**: Decide whether the effective-tree product goal justifies implementing the earlier hook, based on compatibility, startup and build costs, graph correctness, and report handoff evidence.
+
+---
+
+## 6. Implementation Work Package
+
+This investigation is decomposed into executable implementation tracks in work package [WP-RESOLVE-01](../handovers/2026-10-27-wp-resolve-01-maven-lifecycle-and-graph-consistency.md).
