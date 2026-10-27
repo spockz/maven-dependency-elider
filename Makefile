@@ -6,6 +6,8 @@ MAVEN ?= ./mvnw
 MAVEN_ARGS ?= --batch-mode --no-transfer-progress
 MAVEN_THREADS ?= $(MAKE_JOBS)
 MARKDOWNLINT ?= .scratch/tools/node_modules/.bin/markdownlint-cli2
+NODE ?= node
+OSV_SCANNER ?= osv-scanner
 DEPENDENCY_CHECK_VERSION ?= 13.0.0
 SERVE_PORT ?= 8080
 MAKE_JOBS ?= 12
@@ -18,13 +20,13 @@ endif
 
 .DEFAULT_GOAL := check
 
-.PHONY: check check-parallel java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples verify-docs site serve
+.PHONY: check check-parallel java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-sbom-comparison scan-sbom verify-docs site serve
 
 check: ## Format, then run Java checks/tests and Markdown lint concurrently
 	$(MAKE) --no-print-directory fmt
 	$(MAKE) --no-print-directory -j$(MAKE_JOBS) check-parallel
 
-check-parallel: java-check lint-markdown
+check-parallel: java-check lint-markdown test-sbom-comparison
 
 java-check:
 	$(MAKE) --no-print-directory lint-java
@@ -77,6 +79,13 @@ test-all: ## Run the complete reactor verification suite
 
 test-examples: ## Run baseline, trace-driven elision, package, and runtime checks for all examples
 	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS) -T $(MAVEN_THREADS)" ./examples/run-elision-cycle.sh
+
+test-sbom-comparison: ## Test package-level OSV SBOM comparison behavior with a fake scanner
+	$(NODE) --test scripts/compare-sbom-inventories.test.js
+
+scan-sbom: test-examples ## Compare baseline and post-elision SBOM findings for the unused-artifact CVE example
+	command -v "$(OSV_SCANNER)" >/dev/null 2>&1 || { echo "Error: OSV-Scanner is required for scan-sbom. Set OSV_SCANNER to its executable." >&2; exit 1; }
+	OSV_SCANNER_BIN="$(OSV_SCANNER)" $(NODE) scripts/compare-sbom-inventories.js examples/example-cve-unused-app/target/baseline-sbom.cdx.json examples/example-cve-unused-app/target/dependency-elider-sbom.cdx.json --output-dir examples/example-cve-unused-app/target/sbom-comparison
 
 site: ## Build the Maven plugin documentation site locally
 	./scripts/generate-site-index.sh

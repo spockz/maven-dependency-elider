@@ -9,6 +9,12 @@ Open
 
 The Maven plugin emits a post-elision CycloneDX SBOM when configured trimming runs. The core now provides strict vulnerability-symbol mapping parsing/merging, an explicit-source cache with offline fallback, and a fail-closed omitted-code proof API that can create immutable attestation values from verified archive evidence. The Maven plugin does not yet load POM overrides or connect this proof API to trimming, and VEX serialization and OSV-Scanner integration remain pending. OSV-Scanner can match package coordinates from CycloneDX SBOMs against its vulnerability data ([official SBOM scanning usage](https://google.github.io/osv-scanner/usage/scan-source)); that package-level result does not identify which class or method a CVE affects.
 
+## Track 3 evidence status
+
+The external `make scan-sbom` harness compares machine-readable OSV-Scanner results for the example's baseline and post-elision CycloneDX inventories. It records a common scanner executable/version, separate start and completion timestamps for each scan, the SHA-256 of each input SBOM, the raw scan JSON, and the package-level delta. It requests offline vulnerability matching so both scans use the scanner's shared local cache. OSV-Scanner does not expose a database revision in this workflow, so identical database contents are not claimed or independently verified. The harness accepts exit status `1` only when valid JSON contains findings and accepts status `0` only when JSON has no findings; inconsistent output, other nonzero statuses, malformed JSON, and status `1` without findings are execution/result errors. A finding is called eliminated only if the associated component is absent from the post-elision SBOM; if that component remains but the finding is not returned, the report labels it separately.
+
+An eliminated finding means that the baseline package finding did not match a package finding in the post-elision inventory. It is not evidence that vulnerable code was removed or that a product is unaffected, and the harness emits no VEX. This resolves the decoupled CI workflow question in favor of an external comparison gate while leaving VEX eligibility subject to the separate symbol-evidence gates below.
+
 ## Research questions
 
 1. Should the plugin optionally invoke OSV-Scanner against both a baseline SBOM and the post-elision SBOM, or should scanning remain an external CI step?
