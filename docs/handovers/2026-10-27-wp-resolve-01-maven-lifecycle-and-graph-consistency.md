@@ -1,7 +1,7 @@
-<!-- WHY: Defines the work package specification, track decomposition, and committable slices for resolving Maven lifecycle re-resolution and dependency graph consistency (RQ-0006) via post-download ProjectDependenciesResolver decoration. -->
+<!-- WHY: Records the revised Maven resolver work package and measured lifecycle constraints from RQ-0006. -->
 # Work Package Handover: WP-RESOLVE-01 Maven Lifecycle & Dependency Graph Consistency
 
-* **Status**: Ready for Implementation
+* **Status**: In progress; design revision required
 * **Owning Thread / Session**: Primary Coordinating Session
 * **Date**: 2026-10-27
 * **Target Branch / Base**: `main`
@@ -12,33 +12,30 @@
 
 ## 1. Executive Summary & Non-Negotiable Invariants
 
-### 1.1 Objective
+### 1.1 Objective and measured boundary
 
-Resolve the architectural asymmetry between Maven's direct dependency view (`project.getDependencyArtifacts()`) and resolved classpath view (`project.getArtifacts()`), and solve the `DependencyContext` cache-invalidation trap in Maven 3.9+.
+Determine how Maven's separate direct dependency and resolved classpath views behave during lifecycle re-resolution, then support exact replacement paths for retained trimmed JARs without mutating Maven's project artifact cache. This work package no longer assumes that a `ProjectDependenciesResolver` decorator controls all Maven resolution paths.
 
-Rather than intercepting dependency collection before physical JARs are downloaded (which creates chicken-and-egg inspection dilemmas on cold builds), this work package decorates Maven's **`ProjectDependenciesResolver`** immediately **after** standard artifact resolution and download completes.
+The real Maven 3.9.11 fixture establishes that a priority-indexed `ProjectDependenciesResolver` decorator is selected for `dependency:tree`, while live lifecycle TEST requests bypass it. A test-only `RepositorySessionDecorator` does receive those requests and can substitute an exact retained JAR path after an initialize-phase plan is written to repository session data. The prior direct-plus-resolved mutation diagnostic also shows that later lifecycle resolution can load the retained artifact again from its original repository path.
 
-The primary goals are:
+The current production slice is limited to publishing validated retained-JAR GAVCE-to-path mappings and applying those exact mappings through a copied repository session with a wrapping `WorkspaceReader`. It does not remove whole artifacts, prune dependency graph nodes, update direct membership, or prove that the production plugin artifact is loaded as a core extension in consumer builds.
 
-1. **Zero Download Friction**: Maven downloads and resolves dependency JARs to `~/.m2/repository` exactly how, when, and where users expect.
-2. **Unified Effective Graph**: Intercept `DependencyResolutionResult` to prune unobserved `DependencyNode`s directly from the graph, ensuring `mvn dependency:tree` reflects true post-elision topology without declared bloat.
-3. **Re-Resolution Immunity**: Because the transformed artifacts and graph originate from the resolver itself, Maven's internal `DependencyContext` marks the cached resolution clean, preventing subsequent `@RequiresDependencyResolution` plugins (Shade, Spring Boot) from triggering POM re-resolution.
-4. **Path-Aware Audit Trail**: Capture the raw pre-elision dependency tree from the delegate resolver before filtering, persisting it to `target/dependency-elider-report.json` so `dependency-elider:report` can render exact dependency chain justifications.
-5. **Authoritative Core Extension Model**: Deliver integration via `.mvn/extensions.xml` as a first-class Maven Core Extension.
+### 1.2 Current invariants and open requirements
 
-### 1.2 Non-Negotiable Invariants & Architectural Consensus
-
-1. **Post-Download Resolution Hook**: The Core Extension decorates `ProjectDependenciesResolver`. Maven's native `DefaultProjectDependenciesResolver` executes first to resolve and download all candidate JARs naturally.
-2. **Authoritative Single Model**: The extension is registered via `.mvn/extensions.xml`, eliminating divergent plugin-only fallback modes.
-3. **Direct Root Pruning**: Completely unobserved direct dependencies are pruned directly from `rootNode.getChildren()` in the resolved graph, ensuring `getDependencyArtifacts()` and `getArtifacts()` naturally omit them from the start.
-4. **Pre-Elision Path Attribution & Session Handoff**: The raw unpruned graph from the delegate resolver is cached in `session.getRequest().getData()` and persisted to `target/dependency-elider-report.json` to provide full path justifications for `dependency-elider:report`.
-5. **Informative Pass-Through on Missing Traces**: If no trace files are supplied (or `-Delide.skip=true`), the extension operates as an efficient pass-through ($< 0.1\text{ ms}$ overhead) and logs an informative notice explaining that elision is inactive.
-6. **Per-Module Reactor Scoping with Shared Fallback**: In multi-module reactors, each submodule evaluates its own dependencies against module-specific trace files if defined, falling back to reactor-root aggregate trace files.
-7. **Verification Gates**: Every slice must pass `make check` (formatting, Spotless, Checkstyle, PMD, SpotBugs, Markdownlint, tests) and `make test-examples` across all fixtures.
+1. Keep Maven Resolver objects and live Maven artifacts out of session data. Store detached maps, lists, strings, and integer schema versions only, because plugin and core-extension realms may load project classes separately.
+2. A missing project plan or empty replacement map returns the original repository session. A malformed plan, missing replacement file, or changed expected SHA-256 digest fails explicitly.
+3. Replace only exact retained JAR GAVCE matches and delegate all other workspace lookups.
+4. Forward Maven's `MavenWorkspaceReader.findModel` API to an existing Maven workspace reader. Same-GAV reactor behavior still requires a real integration test.
+5. Keep the existing direct/resolved project-view behavior and do not prune graph nodes in this slice. A graph node cannot be dropped with its subtree while a retained descendant may still be needed.
+6. Establish activation of the production indexed decorator from a real consumer core-extension package before claiming lifecycle replacement support.
+7. Test package consumers, graph/list/error consistency, reactor isolation, concurrency, and supported Maven versions before expanding the behavior.
+8. Keep `dependency:tree` claims separate from binary-resolving lifecycle requests. A tree-only POM collection does not prove that a missing JAR is unused.
 
 ---
 
 ## 2. Track Decomposition & Directed Acyclic Graph (DAG)
+
+The graph below records the original proposal. Tracks 2–5 are now gated by the measured lifecycle boundary above; they are not authorization to prune dependency subtrees or claim general resolver consistency.
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -83,18 +80,12 @@ The primary goals are:
 
 ### Track 2: Core Graph & Resolution Result Pruning Engine (`elider-core`)
 
-**Goal**: Implement the graph and artifact collection transformation logic operating on `DependencyResolutionResult` after Maven downloads candidate JARs.
+**Goal**: Preserve the measured direct-tree resolver feasibility result and define safe graph policy before any production graph transformation.
 
-* **Slice 2.1: Post-Download Result Pruner**
-  * Create `io.github.spockz.elider.resolver.ElisionResolutionResultTransformer`:
-    * Operates on `org.eclipse.aether.graph.DependencyNode` and `Set<Artifact>`.
-    * Inspects downloaded JARs via `JarIndexScanner`.
-    * Matches against `TraceData` to compute whole-artifact and intra-JAR trimming decisions.
-    * Prunes unobserved direct dependencies from `rootNode.getChildren()` and drops unobserved transitive subtrees.
-    * Filters the artifact set and updates file pointers to `target/elided-artifacts/` for trimmed JARs.
-* **Slice 2.2: Aether Context & Metadata Preservation**
-  * Ensure that pruned `DependencyNode` trees preserve conflict resolution winner metadata, scope derivations, and optional flags for surviving nodes.
-  * Unit tests validating graph trimming with complex multi-level diamond and conflicting transitive dependencies.
+* **Slice 2.1: Retained JAR Session Plan**
+  * Publish detached exact retained-JAR path mappings only after trim outputs and reports validate.
+  * Apply matching paths from `RepositorySessionDecorator` through a copied session and `WorkspaceReader`.
+  * Do not prune whole-artifact graph nodes until a mediated graph and retained-descendant policy are defined and tested.
 
 ---
 
@@ -117,34 +108,28 @@ The primary goals are:
 
 ### Track 4: Post-Download `ProjectDependenciesResolver` Decorator & Core Extension Packaging
 
-**Goal**: Intercept Maven's dependency resolution by decorating `ProjectDependenciesResolver` as a high-priority Sisu component packaged in `.mvn/extensions.xml`.
+**Goal**: Package and activate the validated session-plan decorator in the appropriate Maven core-extension realm; retain the resolver/tree decorator only as a separately scoped tree feasibility path.
 
-* **Slice 4.1: `EliderProjectDependenciesResolver` Implementation**
-  * Create `io.github.spockz.elider.plugin.EliderProjectDependenciesResolver` implementing `org.apache.maven.project.ProjectDependenciesResolver`.
-  * Inject `DefaultProjectDependenciesResolver` as the delegate.
-  * In `resolve(request)`:
-    1. Call `delegate.resolve(request)` to let Maven naturally download and resolve all candidate JARs.
-    2. Check for active trace files; if absent or `-Delide.skip=true`, log an informative notice and return delegate result unchanged.
-    3. Snapshot raw pre-elision graph to `session.getRequest().getData()`.
-    4. Execute `ElisionResolutionResultTransformer` to prune nodes and update file pointers.
-    5. Return the transformed `DependencyResolutionResult`.
-* **Slice 4.2: Sisu & Core Extension Configuration**
-  * Annotate with `@Named @Priority(10)` (or Plexus component descriptor) to override default resolver.
-  * Configure `.mvn/extensions.xml` packaging in reference projects.
-  * Support per-module trace resolution with fallback to reactor-root traces.
+* **Slice 4.1: Production `RepositorySessionDecorator`**
+  * Add a uniquely named indexed decorator and prove that the package is discovered by Maven in a real consumer lifecycle.
+  * Publish only the detached per-project plan from `elide` after outputs and project views validate.
+  * Return the original session when no plan exists; copy and wrap the existing workspace reader for exact planned artifacts.
+* **Slice 4.2: Core Extension Packaging and Boundaries**
+  * Configure and verify `.mvn/extensions.xml` loading for the production component.
+  * Prove reactor isolation and supported Maven versions before claiming those guarantees.
 
 ---
 
 ### Track 5: Fixtures, Tree Verification & End-to-End Gates
 
-**Goal**: Validate the integrated resolver decorator and graph consistency across all reference applications and CLI commands.
+**Goal**: Validate replacement-path behavior in a real binary consumer; defer effective-tree and whole-artifact graph claims until graph policy is complete.
 
-* **Slice 5.1: `dependency:tree` Verification Test**
-  * Verify that running `mvn dependency:tree` on `example-basic-app` with elision active omits `commons-codec:commons-codec`.
-  * Verify that on `example-spring-boot-app`, unused starters (e.g. `commons-codec`, `snakeyaml`) are completely omitted from the tree, while `spring-webmvc` is retained.
-* **Slice 5.2: Re-Resolution Immunity Verification**
-  * Execute full packaging lifecycles (Shade, Spring Boot repackage) after running `dependency:tree` in the same Maven invocation.
-  * Assert that packages strictly contain trimmed JARs and that no original untrimmed JAR is reintroduced.
+* **Slice 5.1: Binary Consumer Replacement Test**
+  * Run a real dependency-resolving package consumer after the initialize plan is published.
+  * Assert exact retained replacement path/hash and re-hash repository originals.
+* **Slice 5.2: Effective Graph Policy and Tree Verification**
+  * Define mediated graph treatment for retained descendants before testing omitted tree nodes.
+  * Assert each tree output independently; do not infer unused artifacts from tree-only artifact absence.
 * **Slice 5.3: Path-Aware Audit Report Verification**
   * Verify `mvn dependency-elider:report` outputs exact dependency paths for all dropped artifacts in `example-basic-app` and `example-spring-boot-app`.
 * **Slice 5.4: Full Repository Gate Sweep**
@@ -154,33 +139,7 @@ The primary goals are:
 
 ## 4. Verification Protocol
 
-1. **Diagnostic Verification**:
-
-   ```sh
-   ./mvnw -pl dependency-elider-maven-plugin test -Dtest=DependencyContextReResolutionTest
-   ```
-
-2. **Effective Tree Verification**:
-
-   ```sh
-   ./mvnw -f examples/example-basic-app/pom.xml \
-     -Delide.mode=elision \
-     -Delide.traceFiles=target/classes.log \
-     dependency:tree
-   ```
-
-   *Assert*: `commons-codec` must NOT appear in output.
-
-3. **Packaging Integrity Verification**:
-
-   ```sh
-   make test-examples
-   ```
-
-   *Assert*: All four example fixtures build, package, trim, and pass runtime assertions without regression.
-
-4. **Final Gate Sweep**:
-
-   ```sh
-   make check
-   ```
+1. Run the plan store/decorator focused unit tests and assert no-plan session identity, project-key isolation, detached JDK-only payload values, exact GAVCE replacement, and delegated nonmatches.
+2. Run `make check` for formatting, static analysis, and repository tests.
+3. Before claiming production lifecycle support, package the production decorator in the consumer's actual core-extension realm and assert request token, replacement path/hash, and unchanged repository originals in a later TEST-resolution probe.
+4. Keep dependency-tree, direct artifact membership, and binary package assertions separate. Do not assert whole-artifact omissions until a mediated graph and retained-descendant policy is in place.

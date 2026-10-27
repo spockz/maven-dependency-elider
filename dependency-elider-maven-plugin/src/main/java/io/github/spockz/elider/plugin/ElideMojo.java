@@ -33,7 +33,7 @@ public final class ElideMojo extends AbstractMojo {
   private MavenProject project;
 
   /** Maven session used to detect an externally selected compiler toolchain. */
-  @Parameter(defaultValue = "${session}", readonly = true)
+  @Parameter(defaultValue = "${session}", readonly = true, required = true)
   private MavenSession session;
 
   /** User assertion that all production/generated sources exist before INITIALIZE. */
@@ -97,10 +97,11 @@ public final class ElideMojo extends AbstractMojo {
   /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
   @Override
   public void execute() throws MojoFailureException {
-    if (skip) {
-      return;
-    }
     try {
+      if (skip) {
+        ResolverArtifactPlanPublisher.publish(session, project, List.of());
+        return;
+      }
       final MavenElisionService service = new MavenElisionService();
       final MavenElisionService.Analysis analysis = service.analyze(project, analysisOptions());
       logPassThroughWarnings(analysis);
@@ -139,6 +140,7 @@ public final class ElideMojo extends AbstractMojo {
       }
       MavenElisionReportWriter.write(
           MavenElisionReportWriter.outputPath(summaryFile, project), reportSnapshot);
+      ResolverArtifactPlanPublisher.publish(session, project, analysis.trimRecords());
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency elision failed: " + exception.getMessage(), exception);

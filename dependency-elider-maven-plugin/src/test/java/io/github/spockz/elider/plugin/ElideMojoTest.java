@@ -15,6 +15,7 @@ import io.github.spockz.elider.trimmer.TrimAnalysisSession;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
@@ -35,11 +36,16 @@ import javax.tools.ToolProvider;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.toolchain.ToolchainManager;
+import org.codehaus.plexus.PlexusContainer;
+import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassReader;
@@ -55,6 +61,7 @@ import org.objectweb.asm.Opcodes;
   "PMD.AvoidAccessibilityAlteration",
   "PMD.AvoidDuplicateLiterals",
   "PMD.TooManyMethods",
+  "PMD.GodClass",
   "PMD.CouplingBetweenObjects",
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
@@ -63,6 +70,9 @@ import org.objectweb.asm.Opcodes;
   "PMD.CyclomaticComplexity"
 })
 final class ElideMojoTest {
+  /** Plexus method used by the Maven session fixture proxy. */
+  private static final String LOOKUP_METHOD = "lookup";
+
   /** Root module descriptor entry used by projected fixture archives. */
   private static final String MODULE_INFO_CLASS = "module-info.class";
 
@@ -75,7 +85,7 @@ final class ElideMojoTest {
 
   @Test
   void skipReturnsWithoutAccessingProjectState() throws ReflectiveOperationException {
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     final Field skip = ElideMojo.class.getDeclaredField("skip");
     skip.setAccessible(true);
     skip.setBoolean(mojo, true);
@@ -89,7 +99,7 @@ final class ElideMojoTest {
     final Path snapshot = tempDir.resolve("previous-report.json");
     final MavenElisionReportSnapshot previous = previousSnapshot();
     MavenElisionReportWriter.write(snapshot, previous);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "skip", true);
     set(mojo, "summaryFile", snapshot.toFile());
@@ -107,7 +117,7 @@ final class ElideMojoTest {
     MavenElisionReportWriter.write(snapshot, previous);
     final MavenProject project = newProject();
     project.setArtifacts(Set.of());
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(tempDir.resolve("missing-trace.lst").toFile()));
@@ -169,7 +179,7 @@ final class ElideMojoTest {
     build.setDirectory(tempDir.resolve("build").toString());
     project.setBuild(build);
     final Path original = runtime.getFile().toPath();
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     final RecordingMavenLog log = new RecordingMavenLog();
     mojo.setLog(log);
     set(mojo, "project", project);
@@ -322,7 +332,7 @@ final class ElideMojoTest {
     assertThat(javaNineAnalysis.reachableLibraryClasses()).doesNotContain("candidate/Helper");
     assertThat(javaTwentyOneAnalysis.reachableLibraryClasses()).contains("candidate/Helper");
     final List<String> warnings = new ArrayList<>();
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(recordingLog(warnings));
     set(mojo, "project", fixture.project());
     set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
@@ -431,7 +441,7 @@ final class ElideMojoTest {
     final MavenProject passThroughProject =
         projectForArtifacts("configured-pass-through", passThroughArtifacts);
     final List<String> warnings = new ArrayList<>();
-    final ElideMojo passThroughMojo = new ElideMojo();
+    final ElideMojo passThroughMojo = newMojo();
     passThroughMojo.setLog(recordingLog(warnings));
     set(passThroughMojo, "project", passThroughProject);
     set(
@@ -495,7 +505,7 @@ final class ElideMojoTest {
 
     final Set<Artifact> strictArtifacts = new LinkedHashSet<>(List.of(strictCandidate));
     final MavenProject strictProject = projectForArtifacts("strict-candidate", strictArtifacts);
-    final ElideMojo strictMojo = new ElideMojo();
+    final ElideMojo strictMojo = newMojo();
     strictMojo.setLog(new SystemStreamLog());
     set(strictMojo, "project", strictProject);
     set(strictMojo, "traceFiles", List.of(writeTrace("strictcandidate.Keep\n").toFile()));
@@ -512,7 +522,7 @@ final class ElideMojoTest {
   void failHardRejectsMultiReleaseTrimTargetBeforeMutation()
       throws IOException, ReflectiveOperationException {
     final MultiReleaseFixture fixture = multiReleaseFixture("mr-fail-hard");
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", fixture.project());
     set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
@@ -593,7 +603,7 @@ final class ElideMojoTest {
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("scope-build").toString());
     project.setBuild(build);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("sample.Keep\n").toFile()));
@@ -750,7 +760,7 @@ final class ElideMojoTest {
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("chain-build").toString());
     project.setBuild(build);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("chain.Root\n").toFile()));
@@ -822,7 +832,7 @@ final class ElideMojoTest {
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("cycle-build").toString());
     project.setBuild(build);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("cycle.Root\n").toFile()));
@@ -908,7 +918,7 @@ final class ElideMojoTest {
             "module-pass-through", new LinkedHashSet<>(List.of(passThrough, candidate)));
     final byte[] originalBytes = Files.readAllBytes(passThroughJar);
     final List<String> warnings = new ArrayList<>();
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(recordingLog(warnings));
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("candidate.Entry\npass.Root\n").toFile()));
@@ -955,7 +965,7 @@ final class ElideMojoTest {
     final Artifact artifact = runtimeArtifact("module-info-strict", modularJar);
     final MavenProject project = projectForArtifacts("module-info-strict", Set.of(artifact));
     final byte[] originalBytes = Files.readAllBytes(modularJar);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("pass.Root\n").toFile()));
@@ -1041,7 +1051,7 @@ final class ElideMojoTest {
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("rootless-build").toString());
     project.setBuild(build);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("callback.Independent\n").toFile()));
@@ -1084,7 +1094,7 @@ final class ElideMojoTest {
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("malformed-build").toString());
     project.setBuild(build);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
@@ -1118,7 +1128,7 @@ final class ElideMojoTest {
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("native-image-build").toString());
     project.setBuild(build);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
@@ -1152,7 +1162,7 @@ final class ElideMojoTest {
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("native-image-malformed-build").toString());
     project.setBuild(build);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
@@ -1390,7 +1400,7 @@ final class ElideMojoTest {
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("explicit-build").toString());
     project.setBuild(build);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
@@ -1443,7 +1453,7 @@ final class ElideMojoTest {
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("pom-sbom-build").toString());
     project.setBuild(build);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("sbom.Keep\n").toFile()));
@@ -1748,7 +1758,7 @@ final class ElideMojoTest {
   @SuppressWarnings("PMD.UseProperClassLoader")
   private static Log recordingLog(final List<String> warnings) {
     return (Log)
-        java.lang.reflect.Proxy.newProxyInstance(
+        Proxy.newProxyInstance(
             Log.class.getClassLoader(),
             new Class<?>[] {Log.class},
             (proxy, method, arguments) -> {
@@ -1918,7 +1928,7 @@ final class ElideMojoTest {
     final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
     final Set<Artifact> resolvedBefore = project.getArtifacts();
     final Set<Artifact> directBefore = project.getDependencyArtifacts();
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
 
@@ -1948,6 +1958,9 @@ final class ElideMojoTest {
   private MavenProject newProject() {
     final MavenProject project = new MavenProject();
     project.setFile(tempDir.resolve("pom.xml").toFile());
+    project.setGroupId("org.example");
+    project.setArtifactId("consumer");
+    project.setVersion("1.0");
     return project;
   }
 
@@ -1983,12 +1996,45 @@ final class ElideMojoTest {
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path trace = tempDir.resolve("runtime.lst");
     Files.writeString(trace, traceContent);
-    final ElideMojo mojo = new ElideMojo();
+    final ElideMojo mojo = newMojo();
     mojo.setLog(log);
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "reportFile", tempDir.resolve("elide-report.json").toFile());
     mojo.execute();
+  }
+
+  private static ElideMojo newMojo() {
+    final ElideMojo mojo = new ElideMojo();
+    final MavenSession session =
+        new MavenSession(
+            testContainer(),
+            new DefaultRepositorySystemSession(),
+            new DefaultMavenExecutionRequest(),
+            null);
+    try {
+      set(mojo, "session", session);
+    } catch (final ReflectiveOperationException exception) {
+      throw new IllegalStateException("Cannot initialize Maven session fixture", exception);
+    }
+    return mojo;
+  }
+
+  @SuppressWarnings("PMD.UseProperClassLoader")
+  private static PlexusContainer testContainer() {
+    return (PlexusContainer)
+        Proxy.newProxyInstance(
+            PlexusContainer.class.getClassLoader(),
+            new Class<?>[] {PlexusContainer.class},
+            (proxy, method, arguments) -> {
+              if (LOOKUP_METHOD.equals(method.getName())) {
+                return Proxy.newProxyInstance(
+                    ToolchainManager.class.getClassLoader(),
+                    new Class<?>[] {ToolchainManager.class},
+                    (manager, managerMethod, managerArguments) -> null);
+              }
+              return null;
+            });
   }
 
   private Artifact artifact(final String artifactId, final String classEntry) throws IOException {
