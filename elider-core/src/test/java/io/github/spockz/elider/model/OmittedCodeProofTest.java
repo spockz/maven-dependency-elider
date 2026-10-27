@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -41,7 +42,9 @@ class OmittedCodeProofTest {
   }
 
   @Test
-  void provesMappedClassAndAllOriginalNestedClassesAreAbsent() throws Exception {
+  @DisplayName(
+      "ADR-0003: attestation reports verified per-JAR source and trimmed artifact digests")
+  void adr0003AttestsVerifiedPerJarProvenanceAndOmittedClasses() throws Exception {
     final ArtifactTrimRecord record =
         record(
             jar(
@@ -53,6 +56,8 @@ class OmittedCodeProofTest {
     final VexAttestation result = OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record);
     assertThat(result.cveId()).isEqualTo("CVE-2025-12345");
     assertThat(result.coordinate()).isEqualTo(record.coordinate());
+    assertThat(result.originalSha256()).isEqualTo(record.originalSha256());
+    assertThat(result.trimmedSha256()).isEqualTo(record.trimmedSha256());
     assertThat(result.evidenceSymbols())
         .containsExactly("org.example.Vulnerable", "org.example.Vulnerable$Inner");
     assertThat(result.justification()).isEqualTo("vulnerable_code_not_present");
@@ -99,7 +104,8 @@ class OmittedCodeProofTest {
   }
 
   @Test
-  void rejectsDigestMutationAfterTrimRecordWasCreated() throws Exception {
+  @DisplayName("ADR-0003: changed original archive bytes violate recorded provenance")
+  void adr0003RejectsChangedOriginalBytesAgainstRecordedDigest() throws Exception {
     final Path original = jar("original.jar", "org/example/Vulnerable.class");
     final Path trimmed = jar("trimmed.jar");
     final ArtifactTrimRecord record = record(original, trimmed);
