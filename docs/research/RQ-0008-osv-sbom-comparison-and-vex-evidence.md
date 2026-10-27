@@ -43,6 +43,12 @@ Integration could make the tested post-elision inventory easier to assess and co
 - Strict JSON input rejects unknown/duplicate fields and trailing documents. Cache refresh uses a caller-supplied HTTP(S) URI, bounded lock/body waits, streamed temporary files, atomic replacement, and cache/seed fallback. No remote feed is selected and the bundled seed is empty.
 - Plugin wiring, POM override loading, Maven version-range matching, scanner orchestration, and CycloneDX VEX serialization are pending.
 
+## Implemented evidence and architectural alignment
+
+The proof API is constrained by the per-JAR provenance and original-artifact immutability invariants in [ADR-0003, Invariants](../adr/0003-proguard-core-intra-jar-trimming-and-cyclonedx-pedigree.md#invariants). [OmittedCodeProof.java](../../elider-core/src/main/java/io/github/spockz/elider/model/OmittedCodeProof.java) verifies exact artifact identity and recorded digests before and after inspecting each archive; [OmittedCodeProofTest.java](../../elider-core/src/test/java/io/github/spockz/elider/model/OmittedCodeProofTest.java) covers successful proof, surviving mapped and nested classes, digest mutation, identity mismatch, and a mapped class absent from the original.
+
+Mapping ingestion and refresh are implemented in [VulnerabilityMappingReader.java](../../elider-core/src/main/java/io/github/spockz/elider/scanner/VulnerabilityMappingReader.java) and [VulnerabilityCacheManager.java](../../elider-core/src/main/java/io/github/spockz/elider/scanner/VulnerabilityCacheManager.java). Their tests are [VulnerabilityMappingReaderTest.java](../../elider-core/src/test/java/io/github/spockz/elider/scanner/VulnerabilityMappingReaderTest.java) and [VulnerabilityCacheManagerTest.java](../../elider-core/src/test/java/io/github/spockz/elider/scanner/VulnerabilityCacheManagerTest.java); these cover strict JSON, override precedence, offline/cache fallback, bounded refresh, temporary-file cleanup, and replacement of an existing longer temporary file.
+
 ## Decision requested
 
 Determine whether optional scanner orchestration provides enough reproducibility and workflow value to justify its compute, network/database, and failure-policy costs. Keep package-level comparison and evidence-backed VEX generation as separate capabilities.
