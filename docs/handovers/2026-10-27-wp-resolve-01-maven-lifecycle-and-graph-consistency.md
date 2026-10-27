@@ -21,16 +21,16 @@ The primary goals are:
 1. **Unified Effective Graph**: Ensure that `mvn dependency:tree` and other dependency-inspection goals reflect the genuine post-elision effective graph rather than declared POM bloat.
 2. **Re-Resolution Immunity**: Guarantee that downstream goals declaring `@RequiresDependencyResolution` do not invalidate the resolver cache and re-populate untrimmed original artifacts from `~/.m2/repository`.
 3. **Path-Aware Audit Trail**: Capture the pre-filter Maven-mediated dependency tree (including scopes, conflict resolution, and parent-child edges) in `dependency-elider:report` so engineers can inspect the exact path that introduced each dropped or trimmed library.
-4. **Clean Maven 3.9 & Forward Compatibility**: Implement integration using supported Eclipse Aether / Maven Resolver extension points (`DependencyGraphTransformer` / `RepositorySessionDecorator`), with graceful fallback for standard plugin invocations.
+4. **Authoritative Core Extension Model**: Deliver early resolver integration as a first-class Maven Core Extension (`.mvn/extensions.xml`), unifying project and dependency resolution before execution starts.
 
-### 1.2 Non-Negotiable Invariants
+### 1.2 Non-Negotiable Invariants & Architectural Consensus
 
-1. **Zero Re-Resolution Regressions**: No downstream goal or phase transition may trigger re-resolution that silently restores elided dependencies or untrimmed original JARs into packaging.
-2. **Effective Graph Fidelity**: When elision is active, `mvn dependency:tree` must omit completely elided dependencies while displaying retained transitive dependencies with valid parentage.
-3. **Pre-Elision Path Attribution**: The pre-elision Maven-mediated dependency graph must be preserved in the elision report snapshot (`dependency-elider-report.json`) to explain *why* an artifact was on the classpath and *why* it was elided or trimmed.
-4. **Reactor Isolation**: Graph transformations and session state must be strictly scoped to each reactor project and must not leak across project boundaries or reactor iterations.
-5. **Fail-Closed Safety**: If trace files or configuration inputs are corrupt or invalid, resolution must fail closed or execute in an explicit pass-through mode without corrupting the Maven session.
-6. **Backward Compatibility**: If the early resolver extension is not installed (e.g. standard standalone plugin execution), the plugin must fall back to the existing `INITIALIZE` in-memory mutation with documented boundaries.
+1. **Core Extension as Single Invocation Standard**: Early resolver governance is packaged and activated via `.mvn/extensions.xml` rather than divergent plugin-only fallback modes.
+2. **Two-Phase Coordinated Architecture**: Eclipse Aether `DependencyGraphTransformer` prunes unobserved dependency nodes during graph collection; intra-JAR trimming and file pointer redirection execute once candidate JARs exist on disk, avoiding chicken-and-egg download dependencies.
+3. **Direct Root Pruning**: Completely unobserved direct dependencies are pruned directly from `rootNode.getChildren()` in Aether, ensuring `getDependencyArtifacts()` and `getArtifacts()` naturally omit them from the start.
+4. **Pre-Elision Path Attribution & Session Handoff**: The unpruned Aether graph is cached in `session.getRequest().getData()` during collection and persisted into `target/dependency-elider-report.json` to provide full path justifications for `dependency-elider:report`.
+5. **Informative Pass-Through on Missing Traces**: If no trace files are supplied (or `-Delide.skip=true`), the extension operates as an efficient pass-through and logs an informative notice explaining that elision is inactive.
+6. **Per-Module Reactor Scoping with Shared Fallback**: In multi-module reactors, each submodule evaluates its own dependencies against module-specific trace files if defined, falling back to reactor-root aggregate trace files.
 7. **Verification Gates**: Every slice must pass `make check` (formatting, Spotless, Checkstyle, PMD, SpotBugs, Markdownlint, tests) and `make test-examples` across all fixtures.
 
 ---
@@ -117,11 +117,12 @@ The primary goals are:
 * **Slice 4.1: Repository Session Decorator Implementation**
   * Implement `io.github.spockz.elider.plugin.EliderRepositorySessionDecorator` using `org.apache.maven.project.RepositorySessionDecorator` (Maven 3.9.4+ / Plexus component).
   * Wrap the existing `ChainedDependencyGraphTransformer` with `ElisionDependencyGraphTransformer`.
-* **Slice 4.2: Core / Build Extension Packaging**
-  * Configure the extension descriptor (`META-INF/plexus/components.xml` or Sisu `@Named`).
-  * Support loading via `.mvn/extensions.xml` for whole-session graph governance.
-* **Slice 4.3: Graceful Standalone Fallback**
-  * If the core extension is absent, `ElideMojo` continues operating at `INITIALIZE` via `MavenArtifactViewUpdater` with an informative warning regarding `dependency:tree` diagnostic limitations.
+* **Slice 4.2: Core Extension Packaging & Configuration**
+  * Configure Sisu `@Named` and Plexus component descriptors for `EliderRepositorySessionDecorator`.
+  * Support loading via `.mvn/extensions.xml` as the primary integration model.
+  * In multi-module reactors, resolve module-specific trace files when configured, falling back to reactor-root traces.
+* **Slice 4.3: Informative Pass-Through & Diagnostics**
+  * If no trace files are supplied or `-Delide.skip=true` is set, log an informative notice that elision is inactive and pass through dependency resolution untouched with near-zero latency.
 
 ---
 
