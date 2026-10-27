@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WHY: Gives the indexed decorator a separate real default resolver delegate. -->
+<component-set>
+    <components>
+        <component>
+            <role>org.apache.maven.project.ProjectDependenciesResolver</role>
+            <role-hint>resolver-probe-delegate</role-hint>
+            <implementation>org.apache.maven.project.DefaultProjectDependenciesResolver</implementation>
+        </component>
+    </components>
+</component-set>

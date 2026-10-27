@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WHY: Loads the test-only resolver decorator before this consumer's project resolution. -->
+<extensions>
+    <extension>
+        <groupId>io.github.spockz.elider.test</groupId>
+        <artifactId>resolver-probe-core-extension</artifactId>
+        <version>1.0.0</version>
+    </extension>
+</extensions>

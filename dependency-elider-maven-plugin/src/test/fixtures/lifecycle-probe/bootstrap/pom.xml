@@ -51,6 +51,7 @@
     </build>
     <modules>
         <module>../helper-plugin</module>
+        <module>../resolver-extension</module>
         <module>../libraries</module>
     </modules>
 </project>

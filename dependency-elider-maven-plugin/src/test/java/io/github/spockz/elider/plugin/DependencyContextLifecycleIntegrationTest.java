@@ -1,6 +1,4 @@
-/* WHY: Exercises real Maven lifecycle resolution with artifact-view changes from test-only Mojos.
- * The separate consumer and helper plugin stay outside the published plugin artifact.
- */
+/* WHY: Keeps real lifecycle probes outside the published plugin artifact. */
 
 package io.github.spockz.elider.plugin;
 
@@ -8,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -24,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
 import javax.xml.XMLConstants;
@@ -40,6 +40,8 @@ import org.junit.jupiter.api.Test;
   "PMD.AvoidLiteralsInIfCondition",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
+  "PMD.CouplingBetweenObjects",
+  "PMD.GodClass",
   "PMD.TooManyMethods",
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.UseConcurrentHashMap"
@@ -52,6 +54,21 @@ final class DependencyContextLifecycleIntegrationTest {
   private static final String DROP = GROUP_ID + ":drop-library:" + VERSION + ":jar:";
 
   private static final String KEEP = GROUP_ID + ":keep-library:" + VERSION + ":jar:";
+
+  private static final String DROP_AETHER = GROUP_ID + ":drop-library:jar:" + VERSION;
+
+  private static final String KEEP_AETHER = GROUP_ID + ":keep-library:jar:" + VERSION;
+
+  private static final String TREE_GOAL =
+      "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree";
+
+  private static final String TREE_HEADER = "[INFO] --- dependency:3.8.1:tree";
+
+  private static final String DEPENDENCIES_IN = "dependenciesIn=";
+
+  private static final String DEPENDENCIES_OUT = " dependenciesOut=";
+
+  private static final String RESOLVER_EVENT_PREFIX = "RESOLVER_PROBE ";
 
   private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(180);
 
@@ -164,7 +181,7 @@ final class DependencyContextLifecycleIntegrationTest {
         "-f",
         consumerPom.toString(),
         "initialize",
-        "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree");
+        TREE_GOAL);
     final String treeOutput = Files.readString(evidenceDirectory.resolve("dependency-tree.log"));
     assertThat(treeOutput).contains(GROUP_ID + ":drop-library:jar:" + VERSION);
     assertThat(treeOutput).contains(GROUP_ID + ":keep-library:jar:" + VERSION);
@@ -177,6 +194,296 @@ final class DependencyContextLifecycleIntegrationTest {
         .isTrue();
     assertThat(sha256(dropJar)).isEqualTo(dropHash);
     assertThat(sha256(keepJar)).isEqualTo(keepHash);
+  }
+
+  @Test
+  void resolverDecoratorChangesEachRepeatedTreeOutput() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot =
+        repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/fixtures/lifecycle-probe");
+    final Path evidenceDirectory =
+        repositoryRoot.resolve("dependency-elider-maven-plugin/target/resolver-probe-evidence");
+    deleteTree(evidenceDirectory);
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = Files.createDirectories(evidenceDirectory.resolve("repository"));
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve("mvnw");
+    final Path consumer = fixtureRoot.resolve("consumer");
+    final Path consumerPom = consumer.resolve("pom.xml");
+
+    final String versionOutput =
+        run(
+            repositoryRoot,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("maven-version.log"),
+            PROCESS_TIMEOUT,
+            "-version");
+    assertThat(versionOutput).contains("Apache Maven 3.9.11");
+    run(
+        repositoryRoot,
+        wrapper,
+        settings,
+        localRepository,
+        evidenceDirectory.resolve("fixture-bootstrap.log"),
+        PROCESS_TIMEOUT,
+        "-f",
+        fixtureRoot.resolve("bootstrap/pom.xml").toString(),
+        "clean",
+        "install");
+
+    assertResolverExtensionDescriptor(
+        repositoryArtifact(localRepository, "resolver-probe-core-extension"));
+    assertResolverProbeIsolatedFromHelperJar(
+        repositoryArtifact(localRepository, "lifecycle-probe-maven-plugin"));
+    final Path dropJar = repositoryArtifact(localRepository, "drop-library");
+    final Path keepJar = repositoryArtifact(localRepository, "keep-library");
+    final String dropHash = sha256(dropJar);
+    final String keepHash = sha256(keepJar);
+
+    final String baselineTree =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("tree-baseline.log"),
+            PROCESS_TIMEOUT,
+            "-f",
+            consumerPom.toString(),
+            TREE_GOAL);
+    assertTreeRows(baselineTree, 1, 1, 1);
+    assertResolverProbe(baselineTree, "mode=baseline", 1, false);
+    assertTreeRequestPathsAreDistinct(baselineTree, 1);
+
+    final String transformedTree =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("tree-repeated-active.log"),
+            PROCESS_TIMEOUT,
+            "-Dresolver.probe.mode=active",
+            "-f",
+            consumerPom.toString(),
+            TREE_GOAL,
+            TREE_GOAL);
+    assertTreeRows(transformedTree, 2, 0, 1);
+    assertResolverProbeFilters(transformedTree, List.of(false, false));
+    assertTreeRequestPathsAreDistinct(transformedTree, 2);
+
+    final Path replacementJar = consumer.resolve("target/replacement/keep-library-trimmed.jar");
+    writeReplacementJar(replacementJar);
+    final String replacementHash = sha256(replacementJar);
+    final Path lifecycleSnapshots = evidenceDirectory.resolve("direct-and-resolved-snapshots");
+    deleteTree(lifecycleSnapshots);
+    final String lifecycleOutput =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("lifecycle-direct-and-resolved.log"),
+            PROCESS_TIMEOUT,
+            "-Dlifecycle.mode=direct-and-resolved",
+            "-Dlifecycle.reportDirectory=" + lifecycleSnapshots,
+            "-Dlifecycle.replacementFile=" + replacementJar,
+            "-Dresolver.probe.mode=active",
+            "-f",
+            consumerPom.toString(),
+            "prepare-package");
+    assertLifecycleRequestBypassedDecorator(lifecycleOutput);
+    final PhaseSnapshots phases = phaseSnapshots(lifecycleSnapshots, "direct-and-resolved");
+    assertDirectMutationPersistsAcrossLaterResolution(
+        phases, dropJar, dropHash, keepJar, keepHash, replacementJar, replacementHash);
+    assertThat(sha256(dropJar)).isEqualTo(dropHash);
+    assertThat(sha256(keepJar)).isEqualTo(keepHash);
+  }
+
+  private static void assertResolverExtensionDescriptor(final Path extensionJar)
+      throws IOException {
+    try (JarFile jar = new JarFile(extensionJar.toFile())) {
+      final JarEntry descriptor = jar.getJarEntry("META-INF/plexus/components.xml");
+      assertThat(descriptor).isNotNull();
+      try (InputStream input = jar.getInputStream(descriptor)) {
+        final String contents = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(contents)
+            .contains("<role-hint>resolver-probe-delegate</role-hint>")
+            .contains("org.apache.maven.project.DefaultProjectDependenciesResolver");
+      }
+      final JarEntry componentIndex = jar.getJarEntry("META-INF/sisu/javax.inject.Named");
+      assertThat(componentIndex).isNotNull();
+      try (InputStream input = jar.getInputStream(componentIndex)) {
+        assertThat(new String(input.readAllBytes(), StandardCharsets.UTF_8))
+            .contains("io.github.spockz.elider.test.resolver.ResolverGraphProbe")
+            .contains("io.github.spockz.elider.test.resolver.ResolverRequestEventSpy");
+      }
+    }
+  }
+
+  private static void assertResolverProbeIsolatedFromHelperJar(final Path helperJar)
+      throws IOException {
+    try (JarFile jar = new JarFile(helperJar.toFile())) {
+      assertThat(jar.getJarEntry("io/github/spockz/elider/test/resolver/ResolverGraphProbe.class"))
+          .isNull();
+      assertThat(
+              jar.getJarEntry(
+                  "io/github/spockz/elider/test/resolver/ResolverRequestEventSpy.class"))
+          .isNull();
+      assertThat(jar.getJarEntry("io/github/spockz/elider/test/MutateArtifactViewsMojo.class"))
+          .isNotNull();
+    }
+  }
+
+  private static void assertTreeRows(
+      final String output,
+      final int expectedTreeRuns,
+      final long expectedDropRows,
+      final long expectedKeepRows) {
+    final List<String> treeRuns =
+        List.of(output.split("(?=\\[INFO\\] --- dependency:3\\.8\\.1:tree)")).stream()
+            .filter(run -> run.contains(TREE_HEADER))
+            .toList();
+    assertThat(treeRuns).hasSize(expectedTreeRuns);
+    for (final String treeRun : treeRuns) {
+      final List<String> rows =
+          treeRun
+              .lines()
+              .filter(
+                  line ->
+                      line.contains("[INFO]") && (line.contains("+- ") || line.contains("\\- ")))
+              .toList();
+      assertThat(rows.stream().filter(line -> line.contains("drop-library")).count())
+          .isEqualTo(expectedDropRows);
+      assertThat(rows.stream().filter(line -> line.contains("keep-library")).count())
+          .isEqualTo(expectedKeepRows);
+    }
+  }
+
+  private static void assertTreeRequestPathsAreDistinct(
+      final String output, final int expectedCalls) {
+    final List<String> requestEvents =
+        output.lines().filter(line -> line.startsWith("RESOLVER_REQUEST ")).toList();
+    final List<String> resolverEvents =
+        output.lines().filter(line -> line.startsWith(RESOLVER_EVENT_PREFIX)).toList();
+    assertThat(requestEvents).isNotEmpty();
+    assertThat(resolverEvents).hasSize(expectedCalls);
+    for (final String request : requestEvents) {
+      assertThat(request).contains("filter=[drop-library=false, keep-library=false]");
+      assertThat(resolverEvents)
+          .as("the lifecycle request is a separate resolver path from dependency:tree")
+          .noneMatch(event -> requestToken(event).equals(requestToken(request)));
+    }
+    for (final String resolverEvent : resolverEvents) {
+      assertThat(resolverEvent)
+          .contains("io.github.spockz.elider.test:drop-library:jar:1.0.0=false")
+          .contains("io.github.spockz.elider.test:keep-library:jar:1.0.0=false");
+    }
+  }
+
+  private static void assertLifecycleRequestBypassedDecorator(final String output) {
+    final List<String> lifecycleRequests =
+        output
+            .lines()
+            .filter(line -> line.startsWith("RESOLVER_REQUEST "))
+            .filter(line -> line.contains("keep-library=true"))
+            .toList();
+    final List<String> resolverEvents =
+        output.lines().filter(line -> line.startsWith(RESOLVER_EVENT_PREFIX)).toList();
+    assertThat(lifecycleRequests).hasSize(2);
+    assertThat(lifecycleRequests.get(0)).contains("filter=[drop-library=true, keep-library=true]");
+    assertThat(lifecycleRequests.get(1)).contains("filter=[keep-library=true]");
+    assertThat(resolverEvents)
+        .as("the TEST lifecycle requests are not delivered to the indexed resolver decorator")
+        .isEmpty();
+    for (final String request : lifecycleRequests) {
+      final String requestToken = requestToken(request);
+      assertThat(resolverEvents)
+          .as("the indexed decorator should not receive lifecycle request token %s", requestToken)
+          .noneMatch(event -> requestToken(event).equals(requestToken));
+    }
+  }
+
+  private static String requestToken(final String event) {
+    final String marker = "requestToken=";
+    final int start = event.indexOf(marker) + marker.length();
+    final int end = event.indexOf(' ', start);
+    return end < 0 ? event.substring(start) : event.substring(start, end);
+  }
+
+  private static void assertResolverProbe(
+      final String output,
+      final String mode,
+      final int expectedCalls,
+      final boolean expectBinaryFilter) {
+    final List<String> events =
+        output.lines().filter(line -> line.startsWith(RESOLVER_EVENT_PREFIX)).toList();
+    assertThat(events).hasSize(expectedCalls);
+    for (final String event : events) {
+      assertThat(event)
+          .contains(mode)
+          .contains("project=lifecycle-probe-consumer")
+          .contains("delegate=org.apache.maven.project.DefaultProjectDependenciesResolver")
+          .contains("delegateDistinct=true")
+          .contains("graphIn=[" + DROP_AETHER + ", " + KEEP_AETHER + "]")
+          .contains(DEPENDENCIES_IN)
+          .contains("dependenciesOut=");
+      if ("mode=active".equals(mode)) {
+        assertThat(event).contains("graphOut=[" + KEEP_AETHER + "]");
+      } else {
+        assertThat(event).contains("graphOut=[" + DROP_AETHER + ", " + KEEP_AETHER + "]");
+      }
+      if (expectBinaryFilter) {
+        assertThat(event).contains(DROP_AETHER + "=true").contains(KEEP_AETHER + "=true");
+      } else {
+        assertThat(event).contains(DROP_AETHER + "=false").contains(KEEP_AETHER + "=false");
+      }
+      final String dependenciesIn = event.substring(event.indexOf(DEPENDENCIES_IN));
+      final String dependenciesBefore =
+          dependenciesIn.substring(
+              DEPENDENCIES_IN.length(), dependenciesIn.indexOf(DEPENDENCIES_OUT));
+      final String dependenciesAfter =
+          dependenciesIn.substring(
+              dependenciesIn.indexOf(DEPENDENCIES_OUT) + DEPENDENCIES_OUT.length());
+      assertThat(dependenciesAfter).isEqualTo(dependenciesBefore);
+      if (!expectBinaryFilter) {
+        assertThat(dependenciesBefore).isEqualTo("[]");
+      }
+    }
+  }
+
+  private static void assertResolverProbeFilters(
+      final String output, final List<Boolean> expectedFilters) {
+    final List<String> events =
+        output.lines().filter(line -> line.startsWith(RESOLVER_EVENT_PREFIX)).toList();
+    assertThat(events).hasSize(expectedFilters.size());
+    for (int index = 0; index < events.size(); index++) {
+      final String event = events.get(index);
+      final boolean expectedBinaryFilter = expectedFilters.get(index);
+      assertThat(event)
+          .contains("mode=active")
+          .contains("project=lifecycle-probe-consumer")
+          .contains("delegate=org.apache.maven.project.DefaultProjectDependenciesResolver")
+          .contains("delegateDistinct=true")
+          .contains("graphIn=[" + DROP_AETHER + ", " + KEEP_AETHER + "]")
+          .contains("graphOut=[" + KEEP_AETHER + "]");
+      assertThat(event)
+          .contains(DROP_AETHER + "=" + expectedBinaryFilter)
+          .contains(KEEP_AETHER + "=" + expectedBinaryFilter);
+      final String dependencyViews = event.substring(event.indexOf(DEPENDENCIES_IN));
+      final String dependenciesBefore =
+          dependencyViews.substring(
+              DEPENDENCIES_IN.length(), dependencyViews.indexOf(DEPENDENCIES_OUT));
+      final String dependenciesAfter =
+          dependencyViews.substring(
+              dependencyViews.indexOf(DEPENDENCIES_OUT) + DEPENDENCIES_OUT.length());
+      assertThat(dependenciesAfter).isEqualTo(dependenciesBefore);
+      if (!expectedBinaryFilter) {
+        assertThat(dependenciesBefore).isEqualTo("[]");
+      }
+    }
   }
 
   private static void assertBaseline(
@@ -262,6 +569,10 @@ final class DependencyContextLifecycleIntegrationTest {
   }
 
   private static void assertSameProject(final PhaseSnapshots phases) {
+    assertSameProjectInstance(phases);
+  }
+
+  private static void assertSameProjectInstance(final PhaseSnapshots phases) {
     final int projectIdentity = phases.before().projectIdentity();
     assertThat(phases.all()).extracting(Snapshot::projectIdentity).containsOnly(projectIdentity);
     assertThat(phases.all())
@@ -392,9 +703,22 @@ final class DependencyContextLifecycleIntegrationTest {
     xml.writeEndElement();
   }
 
-  @SuppressWarnings("PMD.DoNotUseThreads")
   private static String run(
       final Path repositoryRoot,
+      final Path wrapper,
+      final Path settings,
+      final Path localRepository,
+      final Path logFile,
+      final Duration timeout,
+      final String... arguments)
+      throws IOException, InterruptedException {
+    return runFromDirectory(
+        repositoryRoot, wrapper, settings, localRepository, logFile, timeout, arguments);
+  }
+
+  @SuppressWarnings("PMD.DoNotUseThreads")
+  private static String runFromDirectory(
+      final Path workingDirectory,
       final Path wrapper,
       final Path settings,
       final Path localRepository,
@@ -413,7 +737,7 @@ final class DependencyContextLifecycleIntegrationTest {
     command.addAll(List.of(arguments));
     final ProcessBuilder processBuilder =
         new ProcessBuilder(command)
-            .directory(repositoryRoot.toFile())
+            .directory(workingDirectory.toFile())
             .redirectErrorStream(true)
             .redirectOutput(logFile.toFile());
     processBuilder.environment().put("JAVA_HOME", System.getProperty("java.home"));
