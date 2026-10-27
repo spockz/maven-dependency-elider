@@ -34,14 +34,16 @@ public final class ExampleSupport {
 
   private static void runSpringEndpoint(final String[] arguments)
       throws IOException, InterruptedException {
-    if (arguments.length != 5) {
+    if (arguments.length != 5 && arguments.length != 6) {
       throw new IllegalArgumentException(
-          "Usage: run-spring-endpoint JAVA JAR TRACE LOG");
+          "Usage: run-spring-endpoint JAVA JAR TRACE LOG [EXPECTED_SBOM]");
     }
     final Path java = requireAbsolutePath(arguments[1], "JAVA");
     final Path jar = requireAbsolutePath(arguments[2], "JAR");
     final Path trace = requireAbsolutePath(arguments[3], "TRACE");
     final Path log = requireAbsolutePath(arguments[4], "LOG");
+    final Path expectedSbom =
+        arguments.length == 6 ? requireAbsolutePath(arguments[5], "EXPECTED_SBOM") : null;
     final int port;
     try (ServerSocket socket = new ServerSocket(0)) {
       port = socket.getLocalPort();
@@ -78,6 +80,7 @@ public final class ExampleSupport {
               || !"{\"message\":\"hello\"}".equals(response.body())) {
             throw new IOException("Unexpected Spring Boot endpoint response: " + response.body());
           }
+          verifySpringSbom(client, port, expectedSbom);
           return;
         } catch (final ConnectException exception) {
           TimeUnit.MILLISECONDS.sleep(250);
@@ -93,6 +96,59 @@ public final class ExampleSupport {
         process.waitFor();
       }
     }
+  }
+
+  private static void verifySpringSbom(
+      final HttpClient client, final int port, final Path expectedSbom)
+      throws IOException, InterruptedException {
+    final HttpRequest indexRequest =
+        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/actuator/sbom"))
+            .timeout(Duration.ofSeconds(2))
+            .GET()
+            .build();
+    final HttpResponse<String> indexResponse =
+        client.send(indexRequest, HttpResponse.BodyHandlers.ofString());
+    if (indexResponse.statusCode() != 200) {
+      throw new IOException("Spring Boot SBOM index returned HTTP " + indexResponse.statusCode());
+    }
+    final JsonNode ids = JSON.readTree(indexResponse.body()).path("ids");
+    if (!ids.isArray()) {
+      throw new IOException("Spring Boot SBOM index response has no ids array");
+    }
+    final boolean hasApplication = containsText(ids, "application");
+    if (expectedSbom != null && !hasApplication) {
+      throw new IOException("Staged application SBOM is not available from the actuator endpoint");
+    }
+    if (hasApplication) {
+      final HttpRequest sbomRequest =
+          HttpRequest.newBuilder(
+                  URI.create("http://127.0.0.1:" + port + "/actuator/sbom/application"))
+              .timeout(Duration.ofSeconds(2))
+              .GET()
+              .build();
+      final HttpResponse<String> sbomResponse =
+          client.send(sbomRequest, HttpResponse.BodyHandlers.ofString());
+      if (sbomResponse.statusCode() != 200) {
+        throw new IOException("Spring Boot application SBOM returned HTTP " + sbomResponse.statusCode());
+      }
+      final JsonNode received = JSON.readTree(sbomResponse.body());
+      if (!"CycloneDX".equals(received.path("bomFormat").asText())) {
+        throw new IOException("Spring Boot application SBOM is not CycloneDX");
+      }
+      if (expectedSbom != null
+          && !received.equals(JSON.readTree(expectedSbom.toFile()))) {
+        throw new IOException("Actuator SBOM differs from the SBOM staged by the plugin");
+      }
+    }
+  }
+
+  private static boolean containsText(final JsonNode values, final String expected) {
+    for (final JsonNode value : values) {
+      if (value.isTextual() && expected.equals(value.textValue())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static void verifyClassReport(final String[] arguments) throws IOException {

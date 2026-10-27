@@ -23,12 +23,11 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.project.MavenProject;
 
 /** Writes an SBOM from Maven's post-trim retained dependency inventory. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.LawOfDemeter", "PMD.TooManyMethods"})
 final class MavenSbomWriter {
   private MavenSbomWriter() {}
 
   // Maven Artifact exposes its inventory path only through getFile().
-  @SuppressWarnings("PMD.LawOfDemeter")
   static void write(
       final MavenProject project,
       final Path output,
@@ -118,17 +117,28 @@ final class MavenSbomWriter {
   }
 
   static void stage(final MavenProject project, final Path sbomFile) throws IOException {
+    for (final Path stagedPath : stagedPaths(project)) {
+      copy(sbomFile, stagedPath);
+    }
+  }
+
+  static List<Path> stagedPaths(final MavenProject project) {
     if (project.getBuild() == null || project.getBuild().getOutputDirectory() == null) {
-      return;
+      return List.of();
     }
     final Path outputDirectory = Path.of(project.getBuild().getOutputDirectory());
-    copy(sbomFile, outputDirectory.resolve("META-INF/sbom/application.cdx.json"));
-    copy(sbomFile, outputDirectory.resolve("META-INF/native-image/sbom.json"));
+    return List.of(
+        outputDirectory.resolve("META-INF/sbom/application.cdx.json").toAbsolutePath().normalize(),
+        outputDirectory.resolve("META-INF/native-image/sbom.json").toAbsolutePath().normalize());
   }
 
   private static void copy(final Path source, final Path destination) throws IOException {
     final Path absolute = destination.toAbsolutePath();
-    Files.createDirectories(absolute.getParent());
+    final Path parent = absolute.getParent();
+    if (parent == null) {
+      throw new IOException("Staged SBOM destination must have a parent directory: " + absolute);
+    }
+    Files.createDirectories(parent);
     Files.copy(source, absolute, StandardCopyOption.REPLACE_EXISTING);
   }
 

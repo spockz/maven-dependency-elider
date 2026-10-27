@@ -42,8 +42,7 @@ class OmittedCodeProofTest {
   }
 
   @Test
-  @DisplayName(
-      "ADR-0003: attestation reports verified per-JAR source and trimmed artifact digests")
+  @DisplayName("ADR-0003: attestation reports verified per-JAR source and trimmed artifact digests")
   void adr0003AttestsVerifiedPerJarProvenanceAndOmittedClasses() throws Exception {
     final ArtifactTrimRecord record =
         record(

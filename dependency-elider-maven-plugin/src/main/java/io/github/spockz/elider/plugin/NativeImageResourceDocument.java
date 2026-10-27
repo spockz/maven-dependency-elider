@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
@@ -12,7 +13,8 @@ import java.util.Set;
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class NativeImageResourceDocument {
   /** Shared parser configured for native-image metadata JSON. */
-  private static final ObjectMapper JSON = new ObjectMapper();
+  private static final ObjectMapper JSON =
+      new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
   private NativeImageResourceDocument() {}
 
