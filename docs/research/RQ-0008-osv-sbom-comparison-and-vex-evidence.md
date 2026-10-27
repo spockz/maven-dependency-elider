@@ -37,3 +37,9 @@ Integration could make the tested post-elision inventory easier to assess and co
 ## Decision requested
 
 Determine whether optional scanner orchestration provides enough reproducibility and workflow value to justify its compute, network/database, and failure-policy costs. Keep package-level comparison and evidence-backed VEX generation as separate capabilities.
+
+---
+
+## Implementation Work Package
+
+This investigation is decomposed into actionable implementation tracks in work package [WP-VEX-01](../handovers/2026-10-27-wp-vex-01-vulnerability-assessment-and-vex-evidence.md).
