@@ -86,6 +86,7 @@ test-sbom-comparison: ## Test package-level OSV SBOM comparison behavior with a 
 scan-sbom: test-examples ## Compare baseline and post-elision SBOM findings for the unused-artifact CVE example
 	command -v "$(OSV_SCANNER)" >/dev/null 2>&1 || { echo "Error: OSV-Scanner is required for scan-sbom. Set OSV_SCANNER to its executable." >&2; exit 1; }
 	OSV_SCANNER_BIN="$(OSV_SCANNER)" $(NODE) scripts/compare-sbom-inventories.js examples/example-cve-unused-app/target/baseline-sbom.cdx.json examples/example-cve-unused-app/target/dependency-elider-sbom.cdx.json --output-dir examples/example-cve-unused-app/target/sbom-comparison
+	OSV_SCANNER_BIN="$(OSV_SCANNER)" $(NODE) scripts/compare-sbom-inventories.js examples/example-cve-safe-class-app/target/baseline-sbom.cdx.json examples/example-cve-safe-class-app/target/dependency-elider-sbom.cdx.json --output-dir examples/example-cve-safe-class-app/target/sbom-comparison
 
 site: ## Build the Maven plugin documentation site locally
 	./scripts/generate-site-index.sh

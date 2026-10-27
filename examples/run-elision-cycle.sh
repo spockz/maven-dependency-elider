@@ -139,6 +139,7 @@ main() {
     else
       elision_options+=(
         -Delide.sourceRootsComplete=true
+        -Delide.trimJars=true
         -Dmaven.compiler.proc=none
       )
     fi
@@ -190,6 +191,18 @@ main() {
     fi
 
     run_timed "$elision_seconds" run_fixture_maven "$fixture_dir" -f "$pom" clean verify "${elision_options[@]}"
+
+    if [[ $fixture == example-basic-app || $fixture == example-spring-boot-app ||
+      $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
+      test -f "$fixture_dir/target/classes/META-INF/sbom/application.cdx.json"
+      test -f "$fixture_dir/target/classes/META-INF/native-image/sbom.json"
+    fi
+
+    if [[ $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
+      verify_cve_sboms "$fixture" "$fixture_dir/target/baseline-sbom.cdx.json" \
+        "$fixture_dir/target/dependency-elider-sbom.cdx.json" \
+        "$fixture_dir/target/dependency-elider-vex.json"
+    fi
 
     if [[ $fixture == example-basic-app || $fixture == example-spring-boot-app ]]; then
       baseline_millis=$(( $(<"$baseline_seconds") / 1000000 ))
@@ -246,6 +259,42 @@ main() {
   done
 
   echo "Example elision lifecycle checks passed for ${#fixture_names[@]} fixtures."
+}
+
+verify_cve_sboms() {
+  local fixture=$1
+  local baseline=$2
+  local post_elision=$3
+  local vex=$4
+  node - "$fixture" "$baseline" "$post_elision" "$vex" <<'NODE'
+const fs = require('node:fs');
+const [fixture, baselinePath, postPath, vexPath] = process.argv.slice(2);
+const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+const post = JSON.parse(fs.readFileSync(postPath, 'utf8'));
+const names = bom => new Set((bom.components ?? []).map(component => component.name));
+const before = names(baseline);
+const after = names(post);
+const assert = (condition, message) => {
+  if (!condition) {
+    throw new Error(message);
+  }
+};
+if (fixture === 'example-cve-unused-app') {
+  assert(before.has('logback-classic') && before.has('logback-core'),
+    'baseline inventory must contain Logback');
+  assert(!after.has('logback-classic') && !after.has('logback-core'),
+    'post-elision inventory must omit Logback');
+  assert(!fs.existsSync(vexPath),
+    'whole-artifact Logback removal without symbol evidence must not produce VEX');
+} else {
+  assert(before.has('janino') && before.has('logback-classic') && before.has('logback-core'),
+    'baseline inventory must contain Janino and Logback');
+  assert(!after.has('janino'), 'post-elision inventory must omit Janino');
+  assert(after.has('logback-classic') && after.has('logback-core'),
+    'post-elision inventory must retain Logback');
+  assert(!fs.existsSync(vexPath), 'unmapped retained Logback CVE must not produce VEX');
+}
+NODE
 }
 
 run_spring_boot_endpoint() {
@@ -603,8 +652,10 @@ verify_archive() {
     example-spring-boot-app)
       verify_no_spring_whole_artifact_drops "$fixture_dir"
       has_pattern "$entries" 'BOOT-INF/lib/spring-webmvc-[^/]+\.jar'
-      has_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
-      has_pattern "$entries" 'BOOT-INF/lib/snakeyaml-[^/]+\.jar'
+      has_entry "$entries" 'BOOT-INF/classes/META-INF/sbom/application.cdx.json'
+      has_entry "$entries" 'BOOT-INF/classes/META-INF/native-image/sbom.json'
+      lacks_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
+      lacks_pattern "$entries" 'BOOT-INF/lib/snakeyaml-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/jakarta.mail-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/jakarta.activation-api-[^/]+\.jar'

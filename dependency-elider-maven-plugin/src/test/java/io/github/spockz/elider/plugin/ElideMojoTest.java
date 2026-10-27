@@ -298,6 +298,7 @@ final class ElideMojoTest {
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("build").toString());
+    build.setOutputDirectory(tempDir.resolve("build/classes").toString());
     project.setBuild(build);
     final Path original = runtime.getFile().toPath();
     final ElideMojo mojo = newMojo();
@@ -308,6 +309,36 @@ final class ElideMojoTest {
     set(mojo, "reportFile", tempDir.resolve("trim-report.json").toFile());
     set(mojo, "trimJars", true);
     set(mojo, "sbomFile", tempDir.resolve("build/dependency-elider-sbom.cdx.json").toFile());
+    set(mojo, "baselineSbomFile", tempDir.resolve("build/baseline-sbom.cdx.json").toFile());
+    set(mojo, "cveCacheDirectory", tempDir.resolve("vulnerability-cache").toFile());
+    final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
+    mapping.setCveId("CVE-2026-10001");
+    mapping.setGroupId("org.example");
+    mapping.setArtifactId("runtime-dependency");
+    mapping.setVersion("1.0");
+    mapping.setVersionRangeSpec("[1.0,2.0)");
+    mapping.setVulnerableClasses(List.of("sample.Drop"));
+    mapping.setConfidenceLevel("HIGH");
+    set(mojo, "vulnerabilityMappings", List.of(mapping));
+    final ObjectMapper cacheMapper = new ObjectMapper();
+    final ObjectNode cachedMapping = cacheMapper.createObjectNode();
+    final ObjectNode cacheCoordinate = cachedMapping.putObject("affectedCoordinate");
+    cacheCoordinate.put("groupId", "org.example");
+    cacheCoordinate.put("artifactId", "runtime-dependency");
+    cacheCoordinate.put("version", "1.0");
+    cacheCoordinate.put("type", "jar");
+    cacheCoordinate.put("classifier", "");
+    cacheCoordinate.put("scope", "runtime");
+    cachedMapping.put("cveId", "CVE-2026-10001");
+    cachedMapping.put("versionRangeSpec", "[1.0]");
+    cachedMapping.putArray("vulnerableClasses").add("sample.Helper");
+    cachedMapping.putNull("sourceAdvisoryUrl");
+    cachedMapping.put("confidenceLevel", "HIGH");
+    Files.createDirectories(tempDir.resolve("vulnerability-cache"));
+    final ObjectNode cacheDocument = cacheMapper.createObjectNode();
+    cacheDocument.putArray("mappings").add(cachedMapping);
+    cacheMapper.writeValue(
+        tempDir.resolve("vulnerability-cache/index.json").toFile(), cacheDocument);
 
     mojo.execute();
 
@@ -328,6 +359,10 @@ final class ElideMojoTest {
                     classEntrySize(original, "sample/Drop.class"))
                 + "; excludes module descriptors and archive sanitation metadata)");
     assertThat(log.messages()).doesNotContain("  Classes removed: 0 / N/A (N/A; stage not run)");
+    assertThat(log.messages())
+        .contains(
+            "POM vulnerability mapping overrides cached mapping for CVE-2026-10001 org.example:runtime-dependency:jar:1.0")
+        .noneMatch(message -> message.contains("sample.Drop"));
     assertThat(directRuntime.getFile().toPath()).isEqualTo(runtime.getFile().toPath());
     assertThat(project.getArtifacts()).contains(runtime);
     assertThat(project.getArtifacts()).contains(unusedRuntime);
@@ -343,6 +378,32 @@ final class ElideMojoTest {
       assertThat(trimmed.getEntry("sample/Drop.class")).isNull();
     }
     assertThat(tempDir.resolve("build/dependency-elider-sbom.cdx.json")).isRegularFile();
+    assertThat(tempDir.resolve("build/baseline-sbom.cdx.json")).isRegularFile();
+    assertThat(tempDir.resolve("build/dependency-elider-vex.json")).isRegularFile();
+    assertThat(tempDir.resolve("build/classes/META-INF/sbom/application.cdx.json")).isRegularFile();
+    assertThat(tempDir.resolve("build/classes/META-INF/native-image/sbom.json")).isRegularFile();
+    final ObjectMapper sbomMapper = new ObjectMapper();
+    assertThat(
+            sbomMapper
+                .readTree(tempDir.resolve("build/baseline-sbom.cdx.json").toFile())
+                .path("components")
+                .toString())
+        .contains("runtime-dependency", "unused-runtime");
+    assertThat(
+            sbomMapper
+                .readTree(tempDir.resolve("build/dependency-elider-sbom.cdx.json").toFile())
+                .path("components")
+                .toString())
+        .contains("runtime-dependency")
+        .doesNotContain("unused-runtime");
+    assertThat(
+            sbomMapper
+                .readTree(tempDir.resolve("build/dependency-elider-sbom.cdx.json").toFile())
+                .path("vulnerabilities")
+                .get(0)
+                .path("id")
+                .asText())
+        .isEqualTo("CVE-2026-10001");
     assertThat(original).isRegularFile();
   }
 
