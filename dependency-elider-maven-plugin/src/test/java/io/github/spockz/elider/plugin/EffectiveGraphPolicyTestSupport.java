@@ -103,11 +103,12 @@ public final class EffectiveGraphPolicyTestSupport {
 
   /** Creates a compile-scoped node at an explicit version. */
   public static DependencyNode node(final String artifactId, final String version) {
-    return new DefaultDependencyNode(
-        new Dependency(
-            new DefaultArtifact("fixture", artifactId, "", JAR_EXTENSION, version),
-            COMPILE_SCOPE,
-            null));
+    return completeNode(
+        new DefaultDependencyNode(
+            new Dependency(
+                new DefaultArtifact("fixture", artifactId, "", JAR_EXTENSION, version),
+                COMPILE_SCOPE,
+                null)));
   }
 
   /** Creates a node with explicit scope and optionality. */
@@ -122,11 +123,17 @@ public final class EffectiveGraphPolicyTestSupport {
       final String scope,
       final Boolean optional,
       final List<Exclusion> exclusions) {
-    return new DefaultDependencyNode(
-        new Dependency(
-            new DefaultArtifact("fixture", artifactId, "", JAR_EXTENSION, TEST_VERSION),
-            scope,
-            optional,
-            exclusions));
+    return completeNode(
+        new DefaultDependencyNode(
+            new Dependency(
+                new DefaultArtifact("fixture", artifactId, "", JAR_EXTENSION, TEST_VERSION),
+                scope,
+                optional,
+                exclusions)));
+  }
+
+  private static DependencyNode completeNode(final DependencyNode node) {
+    node.setChildren(List.of());
+    return node;
   }
 }

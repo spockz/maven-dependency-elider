@@ -28,9 +28,10 @@ final class EffectiveGraphClosure {
       final GraphIndex graph,
       final DecisionIndex decisions,
       final Map<Gavce, String> protectedReasons) {
-    final Map<Gavce, List<String>> candidates = candidateNodes(graph, decisions, protectedReasons);
+    final Map<Gavce, List<String>> candidates = candidateNodes(graph, decisions);
     final Set<String> retainedSeeds = retainedSeeds(graph, candidates, protectedReasons);
-    final Set<Gavce> promoted = promoteRepeatedOccurrences(graph, candidates, retainedSeeds);
+    final Set<Gavce> promoted =
+        promoteRepeatedOccurrences(graph, candidates, retainedSeeds, protectedReasons.keySet());
     final Set<Gavce> safeDrops = new LinkedHashSet<>(candidates.keySet());
     safeDrops.removeAll(promoted);
     safeDrops.removeAll(protectedReasons.keySet());
@@ -44,13 +45,10 @@ final class EffectiveGraphClosure {
   // WHY: Preserve first-seen node order for stable whole-identity decisions.
   @SuppressWarnings("PMD.UseConcurrentHashMap")
   private static Map<Gavce, List<String>> candidateNodes(
-      final GraphIndex graph,
-      final DecisionIndex decisions,
-      final Map<Gavce, String> protectedReasons) {
+      final GraphIndex graph, final DecisionIndex decisions) {
     final Map<Gavce, List<String>> candidates = new LinkedHashMap<>();
     graph.reachableNodes().values().stream()
         .filter(node -> decisions.isElided(node.identity()))
-        .filter(node -> !protectedReasons.containsKey(node.identity()))
         .forEach(
             node ->
                 candidates
@@ -80,13 +78,18 @@ final class EffectiveGraphClosure {
   }
 
   private static Set<Gavce> promoteRepeatedOccurrences(
-      final GraphIndex graph, final Map<Gavce, List<String>> candidates, final Set<String> seeds) {
+      final GraphIndex graph,
+      final Map<Gavce, List<String>> candidates,
+      final Set<String> seeds,
+      final Set<Gavce> protectedIdentities) {
     final Set<String> retainedNodes = new LinkedHashSet<>(seeds);
     final Set<Gavce> promoted = new LinkedHashSet<>();
     boolean changed;
     do {
       final Set<String> ancestorClosure = graph.ancestorsOf(retainedNodes);
-      changed = promoteIdentities(candidates, ancestorClosure, promoted, retainedNodes);
+      changed =
+          promoteIdentities(
+              candidates, ancestorClosure, promoted, retainedNodes, protectedIdentities);
     } while (changed);
     return promoted;
   }
@@ -95,10 +98,12 @@ final class EffectiveGraphClosure {
       final Map<Gavce, List<String>> candidates,
       final Set<String> ancestorClosure,
       final Set<Gavce> promoted,
-      final Set<String> retainedNodes) {
+      final Set<String> retainedNodes,
+      final Set<Gavce> protectedIdentities) {
     boolean changed = false;
     for (final Map.Entry<Gavce, List<String>> candidate : candidates.entrySet()) {
-      if (candidate.getValue().stream().anyMatch(ancestorClosure::contains)
+      if (!protectedIdentities.contains(candidate.getKey())
+          && candidate.getValue().stream().anyMatch(ancestorClosure::contains)
           && promoted.add(candidate.getKey())) {
         retainedNodes.addAll(candidate.getValue());
         changed = true;

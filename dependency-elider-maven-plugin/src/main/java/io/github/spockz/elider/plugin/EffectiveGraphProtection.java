@@ -31,7 +31,7 @@ final class EffectiveGraphProtection {
     decisions.ambiguous().forEach(key -> reasons.put(key, "raw outcome or scope is ambiguous"));
     protectConflictedFamilies(pair, decisions, reasons);
     protectPathMetadata(graph, decisions, reasons);
-    protectNullChildren(graph, decisions, reasons);
+    EffectiveGraphInventoryProtection.protectUnknownChildren(pair, graph, decisions, reasons);
     return reasons;
   }
 
@@ -75,15 +75,19 @@ final class EffectiveGraphProtection {
       if (source != null && decisions.isElided(source)) {
         protectedReasons.put(source, "conflict winner metadata is present");
       }
-      protectWinnerNodeReference(node, snapshot, decisions, protectedReasons);
-      protectExternalWinner(node, decisions, protectedReasons);
-      if (source != null && decisions.isElided(source)) {
+      final boolean mappedNodeWinner =
+          protectWinnerNodeReference(node, snapshot, decisions, protectedReasons);
+      final boolean mappedExternalWinner = protectExternalWinner(node, decisions, protectedReasons);
+      if (source != null
+          && decisions.isElided(source)
+          && !mappedNodeWinner
+          && !mappedExternalWinner) {
         protectedReasons.put(source, "conflict winner value has no mapped identity");
       }
     }
   }
 
-  private static void protectWinnerNodeReference(
+  private static boolean protectWinnerNodeReference(
       final Map<String, Object> node,
       final ResolverArtifactGraphSnapshot snapshot,
       final EffectiveGraphDecisionIndex.DecisionIndex decisions,
@@ -91,18 +95,25 @@ final class EffectiveGraphProtection {
     final Object winnerValue =
         node.get(ResolverArtifactGraphSnapshotSchema.CONFLICT_WINNER_NODE_ID);
     if (!(winnerValue instanceof String winnerNodeId)) {
-      return;
+      return false;
     }
-    snapshot.nodes().stream()
-        .filter(
-            candidate ->
-                winnerNodeId.equals(candidate.get(ResolverArtifactGraphSnapshotSchema.NODE_ID)))
-        .map(EffectiveGraphDecisionIndex::gavce)
-        .filter(decisions::isElided)
-        .forEach(identity -> protectedReasons.put(identity, "referenced as a conflict winner"));
+    for (final Map<String, Object> candidate : snapshot.nodes()) {
+      if (winnerNodeId.equals(candidate.get(ResolverArtifactGraphSnapshotSchema.NODE_ID))) {
+        final EffectiveGraphDecisionIndex.Gavce identity =
+            EffectiveGraphDecisionIndex.gavce(candidate);
+        if (identity == null) {
+          return false;
+        }
+        if (decisions.isElided(identity)) {
+          protectedReasons.put(identity, "referenced as a conflict winner");
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
-  private static void protectExternalWinner(
+  private static boolean protectExternalWinner(
       final Map<String, Object> node,
       final EffectiveGraphDecisionIndex.DecisionIndex decisions,
       final Map<EffectiveGraphDecisionIndex.Gavce, String> protectedReasons) {
@@ -112,6 +123,7 @@ final class EffectiveGraphProtection {
     if (external != null && decisions.isElided(external)) {
       protectedReasons.put(external, "referenced as an external conflict winner");
     }
+    return external != null;
   }
 
   @SuppressWarnings(ORDERED_MAP_SUPPRESSION)
@@ -168,18 +180,5 @@ final class EffectiveGraphProtection {
             || dependency.get(ResolverArtifactGraphSnapshotSchema.OPTIONAL) instanceof Boolean)
         && dependency.get(ResolverArtifactGraphSnapshotSchema.EXCLUSIONS)
             instanceof java.util.List<?>;
-  }
-
-  private static void protectNullChildren(
-      final EffectiveGraphGraphIndex.GraphIndex graph,
-      final EffectiveGraphDecisionIndex.DecisionIndex decisions,
-      final Map<EffectiveGraphDecisionIndex.Gavce, String> reasons) {
-    for (final Map<String, Object> edge : graph.nullChildEdges()) {
-      final EffectiveGraphGraphIndex.Node parent =
-          graph.reachableNodes().get(edge.get(ResolverArtifactGraphSnapshotSchema.PARENT_NODE_ID));
-      if (parent != null && decisions.isElided(parent.identity())) {
-        reasons.put(parent.identity(), "graph contains an unknown null child edge");
-      }
-    }
   }
 }

@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.assertj.core.api.Assertions;
 
@@ -16,11 +17,14 @@ final class ResolverArtifactGraphSnapshotStoreTestAssertions {
     throw new AssertionError("No instances");
   }
 
-  // Linked maps preserve the null root and stable fingerprint field order.
-  @SuppressWarnings("PMD.UseConcurrentHashMap")
   static void recomputeFingerprint(final Map<String, Object> payload) {
-    final Map<String, Object> snapshot =
-        ResolverArtifactGraphSnapshotStoreTestSupport.payloadSnapshot(payload);
+    recomputeFingerprint(payload, ResolverArtifactGraphSnapshotStoreTestSupport.PROJECT_KEY);
+  }
+
+  // WHY: Linked maps preserve null roots and stable fingerprint field order.
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  static void recomputeFingerprint(final Map<String, Object> payload, final String projectKey) {
+    final Map<String, Object> snapshot = snapshotPayload(payload, projectKey);
     final Map<String, Object> structure = new LinkedHashMap<>();
     structure.put("rootNodeId", snapshot.get("rootNodeId"));
     structure.put("nodes", snapshot.get("nodes"));
@@ -35,6 +39,14 @@ final class ResolverArtifactGraphSnapshotStoreTestAssertions {
     } catch (NoSuchAlgorithmException exception) {
       throw new AssertionError("SHA-256 is unavailable", exception);
     }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> snapshotPayload(
+      final Map<String, Object> payload, final String projectKey) {
+    final Map<?, ?> snapshots = (Map<?, ?>) payload.get("snapshots");
+    final List<?> values = (List<?>) snapshots.get(projectKey);
+    return (Map<String, Object>) values.getFirst();
   }
 
   static void assertInvalidWithMessage(final Map<String, Object> payload, final String message) {

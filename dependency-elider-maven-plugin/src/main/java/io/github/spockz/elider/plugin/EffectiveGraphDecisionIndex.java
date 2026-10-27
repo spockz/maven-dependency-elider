@@ -141,6 +141,17 @@ final class EffectiveGraphDecisionIndex {
       return ambiguousIdentities;
     }
 
+    Set<Gavce> elided() {
+      final Set<Gavce> result = new LinkedHashSet<>();
+      outcomesByIdentity.forEach(
+          (identity, outcome) -> {
+            if (outcome == DecisionOutcome.ELIDED) {
+              result.add(identity);
+            }
+          });
+      return result;
+    }
+
     boolean isElided(final Gavce identity) {
       return outcomesByIdentity.get(identity) == DecisionOutcome.ELIDED;
     }

@@ -161,7 +161,7 @@ final class EliderMediatedGraphCaptureDecoratorTest {
 
   @Test
   @SuppressWarnings({TOO_MANY_ASSERTS, "PMD.DoNotUseThreads"})
-  void appendsDistinctConcurrentGraphsAndDeduplicatesRepeatedGraph() throws Exception {
+  void appendsConcurrentGraphInvocationsAndPreservesRepeatedGraph() throws Exception {
     final MavenProject project =
         EliderMediatedGraphCaptureDecoratorTestSupport.project(
             temporaryDirectory, "shared-project");

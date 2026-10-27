@@ -11,6 +11,7 @@ import java.util.Set;
 import org.eclipse.aether.graph.DefaultDependencyNode;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.graph.Exclusion;
+import org.eclipse.aether.util.graph.transformer.ConflictResolver;
 import org.junit.jupiter.api.Test;
 
 /** Covers fail-closed graph metadata and conflict safeguards. */
@@ -45,8 +46,9 @@ final class EffectiveGraphPolicySafetyTest {
     assertThat(result.elidedArtifacts()).isEmpty();
     assertThat(result.protectedReasons())
         .containsEntry(same, "repeated artifact paths have different metadata");
-    assertThat(result.nodeDispositions().values())
-        .containsOnly(EffectiveGraphPolicy.NodeDisposition.RETAINED);
+    assertThat(result.nodeDispositions())
+        .containsEntry("n1", EffectiveGraphPolicy.NodeDisposition.PROTECTED)
+        .containsEntry("n2", EffectiveGraphPolicy.NodeDisposition.PROTECTED);
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
@@ -78,6 +80,70 @@ final class EffectiveGraphPolicySafetyTest {
 
     assertThat(result.elidedArtifacts()).isEmpty();
     assertThat(result.protectedReasons()).containsKey(same);
+    assertThat(result.nodeDispositions())
+        .containsEntry("n1", EffectiveGraphPolicy.NodeDisposition.PROTECTED);
+  }
+
+  // WHY: A missing child list cannot establish that an elided artifact is a leaf.
+  @SuppressWarnings(MULTI_ASSERTS)
+  @Test
+  void protectsCandidateWithIncompleteChildInventory() {
+    final DependencyNode root =
+        EffectiveGraphPolicyTestSupport.node(EffectiveGraphPolicyTestSupport.ROOT_ID);
+    root.setChildren(
+        List.of(EffectiveGraphPolicyTestSupport.node(EffectiveGraphPolicyTestSupport.DROP_ID)));
+    final ArtifactCoordinate drop =
+        EffectiveGraphPolicyTestSupport.coordinate(
+            EffectiveGraphPolicyTestSupport.DROP_ID, EffectiveGraphPolicyTestSupport.COMPILE_SCOPE);
+
+    final EffectiveGraphPolicy.Evaluation result =
+        EffectiveGraphPolicy.evaluate(
+            List.of(
+                EffectiveGraphPolicySafetyTestSupport.withModifiedAfter(
+                    root,
+                    "missing-children",
+                    snapshot ->
+                        EffectiveGraphPolicySafetyTestSupport.nodePayload(snapshot, 1)
+                            .put("childrenPresent", false))),
+            EffectiveGraphPolicyTestSupport.PROJECT_KEY,
+            EffectiveGraphPolicyTestSupport.decision(Set.of(), Set.of(drop)));
+
+    assertThat(result.elidedArtifacts()).isEmpty();
+    assertThat(result.protectedReasons())
+        .containsEntry(drop, "candidate node has incomplete child inventory");
+    assertThat(result.nodeDispositions())
+        .containsEntry("n1", EffectiveGraphPolicy.NodeDisposition.PROTECTED);
+  }
+
+  @SuppressWarnings(MULTI_ASSERTS)
+  @Test
+  void protectsCandidatesWhenPremediationInventoryIsIncomplete() {
+    final DependencyNode root =
+        EffectiveGraphPolicyTestSupport.node(EffectiveGraphPolicyTestSupport.ROOT_ID);
+    root.setChildren(
+        List.of(EffectiveGraphPolicyTestSupport.node(EffectiveGraphPolicyTestSupport.DROP_ID)));
+    final ArtifactCoordinate drop =
+        EffectiveGraphPolicyTestSupport.coordinate(
+            EffectiveGraphPolicyTestSupport.DROP_ID, EffectiveGraphPolicyTestSupport.COMPILE_SCOPE);
+    final ResolverArtifactGraphCapturePair pair =
+        EffectiveGraphPolicySafetyTestSupport.withModifiedBefore(
+            root,
+            "incomplete-before",
+            snapshot ->
+                EffectiveGraphPolicySafetyTestSupport.nodePayload(snapshot, 1)
+                    .put("childrenPresent", false));
+
+    final EffectiveGraphPolicy.Evaluation result =
+        EffectiveGraphPolicy.evaluate(
+            List.of(pair),
+            EffectiveGraphPolicyTestSupport.PROJECT_KEY,
+            EffectiveGraphPolicyTestSupport.decision(Set.of(), Set.of(drop)));
+
+    assertThat(result.elidedArtifacts()).isEmpty();
+    assertThat(result.protectedReasons())
+        .containsEntry(drop, "pre-mediation graph has incomplete conflict visibility");
+    assertThat(result.nodeDispositions())
+        .containsEntry("n1", EffectiveGraphPolicy.NodeDisposition.PROTECTED);
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
@@ -113,6 +179,53 @@ final class EffectiveGraphPolicySafetyTest {
     assertThat(result.elidedArtifacts()).isEmpty();
     assertThat(result.protectedReasons())
         .containsEntry(candidate, "pre-mediation graph contains a competing version");
+    assertThat(result.nodeDispositions())
+        .containsEntry("n1", EffectiveGraphPolicy.NodeDisposition.PROTECTED);
+  }
+
+  @Test
+  void preservesMappedNodeWinnerProtectionReason() {
+    final DependencyNode root =
+        EffectiveGraphPolicyTestSupport.node(EffectiveGraphPolicyTestSupport.ROOT_ID);
+    final DependencyNode candidate =
+        EffectiveGraphPolicyTestSupport.node(EffectiveGraphPolicyTestSupport.DROP_ID);
+    candidate.setData(
+        ConflictResolver.NODE_DATA_WINNER,
+        EffectiveGraphPolicyTestSupport.node(EffectiveGraphPolicyTestSupport.KEEP_ID));
+    root.setChildren(List.of(candidate));
+    final ArtifactCoordinate drop =
+        EffectiveGraphPolicyTestSupport.coordinate(
+            EffectiveGraphPolicyTestSupport.DROP_ID, EffectiveGraphPolicyTestSupport.COMPILE_SCOPE);
+
+    final EffectiveGraphPolicy.Evaluation result =
+        EffectiveGraphPolicyTestSupport.evaluate(
+            root, root, EffectiveGraphPolicyTestSupport.decision(Set.of(), Set.of(drop)));
+
+    assertThat(result.protectedReasons())
+        .containsEntry(drop, "conflict winner metadata is present");
+  }
+
+  @Test
+  void preservesExternalWinnerProtectionReason() {
+    final DependencyNode root =
+        EffectiveGraphPolicyTestSupport.node(EffectiveGraphPolicyTestSupport.ROOT_ID);
+    final DependencyNode candidate =
+        EffectiveGraphPolicyTestSupport.node(EffectiveGraphPolicyTestSupport.DROP_ID);
+    root.setChildren(List.of(candidate));
+    final ArtifactCoordinate drop =
+        EffectiveGraphPolicyTestSupport.coordinate(
+            EffectiveGraphPolicyTestSupport.DROP_ID, EffectiveGraphPolicyTestSupport.COMPILE_SCOPE);
+
+    final ResolverArtifactGraphCapturePair externalWinnerPair =
+        EffectiveGraphPolicySafetyTestSupport.externalWinnerPair(root, "external-winner");
+    final EffectiveGraphPolicy.Evaluation result =
+        EffectiveGraphPolicy.evaluate(
+            List.of(externalWinnerPair),
+            EffectiveGraphPolicyTestSupport.PROJECT_KEY,
+            EffectiveGraphPolicyTestSupport.decision(Set.of(), Set.of(drop)));
+
+    assertThat(result.protectedReasons())
+        .containsEntry(drop, "conflict winner metadata is present");
   }
 
   // WHY: This scenario checks several independent outputs of one semantic case.
