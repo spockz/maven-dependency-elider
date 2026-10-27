@@ -91,6 +91,50 @@ record ResolverArtifactGraphSnapshot(
     return Collections.unmodifiableMap(payload);
   }
 
+  ResolverArtifactGraphSnapshot withCaptureGeneration(final long generation) {
+    return new ResolverArtifactGraphSnapshot(
+        graphFingerprint,
+        projectKey,
+        planPresent,
+        planFingerprint,
+        planGeneration,
+        generation,
+        rootNodeId,
+        nodes,
+        edges);
+  }
+
+  static ResolverArtifactGraphSnapshot fromPayload(
+      final Object rawPayload, final String expectedProjectKey) {
+    if (!(rawPayload instanceof Map<?, ?> raw)) {
+      throw new IllegalStateException("Graph snapshot must be an object");
+    }
+    final Map<String, Object> payload = new LinkedHashMap<>();
+    raw.forEach(
+        (key, value) -> {
+          if (!(key instanceof String stringKey)) {
+            throw new IllegalStateException("Graph snapshot field must be a string");
+          }
+          payload.put(stringKey, value);
+        });
+    ResolverArtifactGraphSnapshotPayloadValidator.validate(payload, expectedProjectKey);
+    return new ResolverArtifactGraphSnapshot(
+        (String) payload.get(ResolverArtifactGraphSnapshotSchema.GRAPH_FINGERPRINT),
+        (String) payload.get(ResolverArtifactGraphSnapshotSchema.PROJECT_KEY),
+        (Boolean) payload.get(ResolverArtifactGraphSnapshotSchema.PLAN_PRESENT),
+        (String) payload.get(ResolverArtifactGraphSnapshotSchema.PLAN_FINGERPRINT),
+        (Long) payload.get(ResolverArtifactGraphSnapshotSchema.PLAN_GENERATION),
+        (Long) payload.get(ResolverArtifactGraphSnapshotSchema.CAPTURE_GENERATION),
+        (String) payload.get(ResolverArtifactGraphSnapshotSchema.ROOT_NODE_ID),
+        castMaps(payload.get(ResolverArtifactGraphSnapshotSchema.NODES)),
+        castMaps(payload.get(ResolverArtifactGraphSnapshotSchema.EDGES)));
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<Map<String, Object>> castMaps(final Object value) {
+    return (List<Map<String, Object>>) value;
+  }
+
   private static List<Map<String, Object>> immutableMaps(final List<Map<String, Object>> values) {
     return values.stream().map(ResolverArtifactGraphSnapshot::immutableMap).toList();
   }

@@ -98,19 +98,31 @@ The graph below records the original proposal. Tracks 2–5 are now gated by the
 
 ### Track 3: Path-Aware Mediated Graph Capture (`elider-core` & `dependency-elider-maven-plugin`)
 
-**Goal**: Capture the full pre-elision dependency graph from the delegate resolver so `dependency-elider:report` can render complete path justifications for why each artifact was originally pulled into the project.
+**Goal**: Capture the mediated graph and define a conservative effective-artifact policy before any production filtering or artifact-view mutation.
 
 * **Slice 3.1: Post-Mediation Capture-Only Prototype**
   * Add a separate indexed `RepositorySessionDecorator` that copies the session, chains the existing `DependencyGraphTransformer`, calls it exactly once, snapshots its returned root, and returns that same root. Delegate exceptions propagate.
   * Store project-scoped snapshots as immutable JDK-only maps/lists. Use traversal identity IDs and ordered edges so equal-coordinate nodes, repeated references, diamonds, and cycles remain distinct. Preserve dependency coordinates, effective dependency scope/optionality, exclusions, managed bits, aliases/relocations, and conflict winner/original-scope/original-optionality metadata. Represent winners outside reachable child edges as metadata-only nodes.
   * Keep the structural graph fingerprint independent of plan provenance. Record decoration-time plan presence/fingerprint/generation and a separate capture generation; absent and present-empty plans remain distinct. Append with session-data compare-and-set and deduplicate identical project/graph/provenance captures.
   * Prove the packaged decorator in the existing Maven 3.9.11 consumer: initial unplanned capture contains both fixture dependencies; later capture has published-plan provenance and leaves the original row unchanged. Keep this slice capture-only: no node filtering, direct-view changes, result-list adaptation, tree rendering, or report persistence.
-* **Slice 3.2: Path-Aware Elision Report Extension**
+* **Slice 3.2a: Pure Effective-Graph Policy**
+  * Atomically capture the graph before and after Maven's transformer within one resolver call, with shared request token, project identity, plan provenance, and structural inventory.
+  * Accept only a unique plan-absent pair whose post-transform artifact GAVCE+scope inventory exactly matches the caller's raw decision; otherwise retain every raw elision.
+  * Promote all occurrences of a retained GAVCE and repeatedly retain every ancestor occurrence until stable. Protect identity groups with conflicting path scope/optionality/exclusions, pre-mediation competing versions, winner references, unknown edges, or ambiguous raw outcomes.
+  * Keep this pure: no `MavenProject`, report, file, session-plan, dependency tree, or artifact mutation. Pair selection here does not prove TEST scope or match artifact paths/hashes to the actual `ElideMojo` inventory; later integration must establish a unique context match or fail closed.
+* **3.2a complete**: 11 pure policy cases plus 4 decorator and 6 store tests pass. Full `make check` passes with 149 core and 134 plugin tests, formatting, Checkstyle, PMD, SpotBugs, and Markdown lint.
+* **Slice 3.2b: Prepare/Finish and Bytecode Closure**
+  * Refactor analysis ordering so raw decisions are combined with graph promotions before final trim closure. Analyze promoted unchanged JARs and referenced raw-dropped JARs as program roots against the full inventory until both bytecode reachability and graph ancestor promotion reach a fixed point; fail closed on unresolved or unsupported references.
+  * Test A→B, A→raw-dropped B→C, cycles, promoted scoped ancestors, and cache fingerprints that include the effective promoted inventory. Keep direct declarations untouched.
+* **Slice 3.2c: Resolver Views and Later-Resolution Proof**
+  * Apply only exact safe graph removals in the transformed graph after validating the predicted projection against a later TEST-resolution graph. Keep transitive direct artifact views unchanged; evaluate direct-leaf changes in a separate gate only after mediation invariance is proven.
+  * Stage reports and replacement outputs before publication; document best-effort rollback limits for process crashes/concurrent executions.
+* **Slice 3.3: Path-Aware Elision Report Extension**
   * Update `MavenElisionReportSnapshot` and `MavenElisionReportWriter`:
     * Persist `MediatedDependencyGraph` into `dependency-elider-report.json`.
     * For each elided or trimmed artifact, record the shortest dependency path from project root (e.g., `example-spring-boot-app -> spring-boot-starter-web -> spring-webmvc`).
   * Block report-path conclusions on a later policy slice that defines source/ancestor retention and handles external conflict winners; Slice 3.1 only proves detached capture.
-* **Slice 3.3: Report Goal Tree Rendering**
+* **Slice 3.4: Report Goal Tree Rendering**
   * Update `dependency-elider:report` Mojo to format and print the tree of elided vs. retained artifacts with their dependency chains.
 
 #### Slice 3.1 implementation evidence
@@ -123,6 +135,15 @@ The graph below records the original proposal. Tracks 2–5 are now gated by the
 * The packaged assertion checks exact topology: initial capture is consumer/drop/keep at `n0` with edges `n0→n1,n2`; later capture preserves the first row and is consumer/keep at `n0` with edge `n0→n1`. The test-only helper removes the known direct drop leaf solely to trigger a second request; no production graph filtering occurs.
 * Review-fix validation passed: `make check` reported 149 core and 123 plugin tests, with formatting, Checkstyle, PMD, SpotBugs, and Markdown lint clean. The worktree used the cached Markdown linter via `MARKDOWNLINT=../../tools/node_modules/.bin/markdownlint-cli2` because `.scratch/tools` is not provisioned in this linked checkout. Log: `dependency-elider-maven-plugin/target/wp-resolve-3.1-review-fix-null-and-validator-make-check.log`. The two remaining PMD LawOfDemeter suppressions are method-scoped in test fixture helpers for MavenProject identity access and RepositorySystemSession payload access.
 * Open: no graph node filtering, direct-view change, report persistence, path selection, descendant policy, general dependency-tree consistency, or reactor/concurrency/other-Maven-version guarantee is included. Never drop a node subtree without proving retained descendants remain reachable.
+
+#### Slice 3.2a policy evidence and limits
+
+* `ResolverArtifactGraphCapturePair` stores pre/post snapshots from the same transformer invocation with one token and consistent project/plan provenance. One session-data compare-and-set appends both snapshots and the pair with the same capture generation.
+* `EffectiveGraphPolicy` selects a unique planless pair only when its post graph has the same GAVCE+scope inventory as the raw `ElisionDecision`; missing, duplicate, plan-present, unknown, or unmatched cases return zero removals. This is a pure selector API and does not claim to bind the pair to the Mojo's TEST request, paths, or file hashes.
+* `EffectiveGraphClosure` promotes all occurrences of a required artifact identity, then recomputes reverse ancestor closure until stable. A repeated artifact can therefore promote a second parent on another path. Protection preserves identities with different scope/optional/exclusion path metadata, pre-mediation competing versions even without a winner marker, explicit winner references, and null child edges.
+* Focused command passed 21 tests: `EffectiveGraphPolicyRetentionTest` (5), `EffectiveGraphPolicySafetyTest` (6), `EliderMediatedGraphCaptureDecoratorTest` (4), and `ResolverArtifactGraphSnapshotStoreTest` (6). Log: `dependency-elider-maven-plugin/target/wp-resolve-3.2a-focused.log`.
+* `compile spotless:check checkstyle:check pmd:check spotbugs:check` passed with PMD 0 and SpotBugs 0. Log: `dependency-elider-maven-plugin/target/wp-resolve-3.2a-lint.log`. Full `make check` passed with 149 core and 134 plugin tests plus formatting, Checkstyle, PMD, SpotBugs, and Markdown lint. Log: `dependency-elider-maven-plugin/target/wp-resolve-3.2a-make-check.log`.
+* This slice cannot prove graph-policy selection for the actual Mojo inventory/context. It does not mutate nodes or views, compute bytecode pass-through closure, produce reports, prove a later dependency tree, or establish safe direct-view mutation. Keep raw effective policy advisory until the later context/path binding and re-resolution gates pass.
 
 ---
 

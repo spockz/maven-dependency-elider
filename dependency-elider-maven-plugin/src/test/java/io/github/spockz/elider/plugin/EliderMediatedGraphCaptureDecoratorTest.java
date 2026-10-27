@@ -80,6 +80,10 @@ final class EliderMediatedGraphCaptureDecoratorTest {
             .snapshots()
             .get(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project))
             .getFirst();
+    final ResolverArtifactGraphCapturePair pair =
+        store
+            .capturePairs(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project))
+            .getFirst();
 
     assertThat(decorated).isNotSameAs(session);
     assertThat(returned).isSameAs(replacement);
@@ -92,6 +96,12 @@ final class EliderMediatedGraphCaptureDecoratorTest {
     final Map<?, ?> rootArtifact =
         (Map<?, ?>) ((Map<?, ?>) ((List<?>) snapshot.get("nodes")).getFirst()).get("artifact");
     assertThat(rootArtifact.get("artifactId")).isEqualTo("replacement");
+    assertThat(((Map<?, ?>) pair.before().nodes().getFirst().get("artifact")).get("artifactId"))
+        .isEqualTo("input");
+    assertThat(((Map<?, ?>) pair.after().nodes().getFirst().get("artifact")).get("artifactId"))
+        .isEqualTo("replacement");
+    assertThat(pair.before().captureGeneration()).isEqualTo(pair.after().captureGeneration());
+    assertThat(pair.captureToken()).isNotBlank();
 
     final RepositorySystemSession laterDecorated =
         new EliderMediatedGraphCaptureDecorator().decorate(project, session);
@@ -115,6 +125,11 @@ final class EliderMediatedGraphCaptureDecoratorTest {
     assertThat(snapshots.get(1).get("planFingerprint")).isNotNull();
     assertThat(snapshots.get(0).get("graphFingerprint"))
         .isEqualTo(snapshots.get(1).get("graphFingerprint"));
+    assertThat(
+            EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(session)
+                .capturePairs(EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project)))
+        .extracting(ResolverArtifactGraphCapturePair::captureToken)
+        .doesNotHaveDuplicates();
   }
 
   @Test
@@ -188,13 +203,16 @@ final class EliderMediatedGraphCaptureDecoratorTest {
         EliderMediatedGraphCaptureDecoratorTestSupport.graphStore(session);
     final String projectKey = EliderMediatedGraphCaptureDecoratorTestSupport.projectKey(project);
     assertThat(store.snapshots()).containsKey(projectKey);
-    assertThat(store.snapshots().get(projectKey)).hasSize(4);
-    assertThat(store.generations()).containsEntry(projectKey, 4L);
+    assertThat(store.snapshots().get(projectKey)).hasSize(5);
+    assertThat(store.generations()).containsEntry(projectKey, 5L);
     assertThat(
             store.snapshots().get(projectKey).stream()
                 .map(snapshot -> snapshot.get("graphFingerprint"))
                 .distinct())
         .hasSize(4);
+    assertThat(store.capturePairs(projectKey))
+        .extracting(ResolverArtifactGraphCapturePair::captureToken)
+        .doesNotHaveDuplicates();
     assertThat(store.toPayload().values())
         .allSatisfy(EliderMediatedGraphCaptureDecoratorTestSupport::assertJdkValue);
   }

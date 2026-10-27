@@ -19,8 +19,9 @@ import java.util.Objects;
 record ResolverArtifactGraphSnapshotStore(
     Map<String, List<Map<String, Object>>> snapshots,
     Map<String, Long> generations,
-    Map<String, PlanObservation> observations) {
-  private static final int SCHEMA_VERSION = 2;
+    Map<String, PlanObservation> observations,
+    Map<String, List<Map<String, Object>>> capturePairs) {
+  private static final int SCHEMA_VERSION = 3;
 
   private static final String SCHEMA_FIELD = "schemaVersion";
 
@@ -30,10 +31,13 @@ record ResolverArtifactGraphSnapshotStore(
 
   private static final String OBSERVATIONS_FIELD = "planObservations";
 
+  private static final String CAPTURE_PAIRS_FIELD = "capturePairs";
+
   ResolverArtifactGraphSnapshotStore {
     Objects.requireNonNull(snapshots, "snapshots");
     Objects.requireNonNull(generations, "generations");
     Objects.requireNonNull(observations, "observations");
+    Objects.requireNonNull(capturePairs, "capturePairs");
     final Map<String, List<Map<String, Object>>> snapshotCopy = new LinkedHashMap<>();
     snapshots.forEach(
         (projectKey, values) ->
@@ -43,10 +47,17 @@ record ResolverArtifactGraphSnapshotStore(
     snapshots = Collections.unmodifiableMap(snapshotCopy);
     generations = Collections.unmodifiableMap(new LinkedHashMap<>(generations));
     observations = Collections.unmodifiableMap(new LinkedHashMap<>(observations));
+    final Map<String, List<Map<String, Object>>> pairCopy = new LinkedHashMap<>();
+    capturePairs.forEach(
+        (projectKey, values) ->
+            pairCopy.put(
+                projectKey,
+                values.stream().map(ResolverArtifactGraphSnapshotStore::immutableMap).toList()));
+    capturePairs = Collections.unmodifiableMap(pairCopy);
   }
 
   static ResolverArtifactGraphSnapshotStore empty() {
-    return new ResolverArtifactGraphSnapshotStore(Map.of(), Map.of(), Map.of());
+    return new ResolverArtifactGraphSnapshotStore(Map.of(), Map.of(), Map.of(), Map.of());
   }
 
   static ResolverArtifactGraphSnapshotStore fromPayload(final Object payload) {
@@ -57,7 +68,11 @@ record ResolverArtifactGraphSnapshotStore(
     if (!root.keySet()
         .equals(
             java.util.Set.of(
-                SCHEMA_FIELD, SNAPSHOTS_FIELD, GENERATIONS_FIELD, OBSERVATIONS_FIELD))) {
+                SCHEMA_FIELD,
+                SNAPSHOTS_FIELD,
+                GENERATIONS_FIELD,
+                OBSERVATIONS_FIELD,
+                CAPTURE_PAIRS_FIELD))) {
       throw new IllegalStateException("Graph snapshot store fields do not match the schema");
     }
     if (!Integer.valueOf(SCHEMA_VERSION).equals(root.get(SCHEMA_FIELD))) {
@@ -67,8 +82,9 @@ record ResolverArtifactGraphSnapshotStore(
         new ResolverArtifactGraphSnapshotStore(
             parseSnapshots(root.get(SNAPSHOTS_FIELD)),
             parseGenerations(root.get(GENERATIONS_FIELD)),
-            parseObservations(root.get(OBSERVATIONS_FIELD)));
-    store.validate();
+            parseObservations(root.get(OBSERVATIONS_FIELD)),
+            parseCapturePairs(root.get(CAPTURE_PAIRS_FIELD)));
+    ResolverArtifactGraphSnapshotStoreValidator.validate(store);
     return store;
   }
 
@@ -111,6 +127,21 @@ record ResolverArtifactGraphSnapshotStore(
               observations.put(projectKey, observation);
             });
     return observations;
+  }
+
+  private static Map<String, List<Map<String, Object>>> parseCapturePairs(final Object value) {
+    final Map<String, List<Map<String, Object>>> pairs = new LinkedHashMap<>();
+    requireMap(value, CAPTURE_PAIRS_FIELD)
+        .forEach(
+            (key, pairValues) -> {
+              final String projectKey = requireString(key, "capture pair project key");
+              final List<Map<String, Object>> decoded =
+                  requireList(pairValues, "project capture pairs").stream()
+                      .map(entry -> immutableMap(requireObjectMap(entry, "capture pair")))
+                      .toList();
+              pairs.put(projectKey, decoded);
+            });
+    return pairs;
   }
 
   private static PlanObservation parseObservation(final Object value) {
@@ -178,25 +209,62 @@ record ResolverArtifactGraphSnapshotStore(
       final String projectKey, final PlanObservation observation) {
     final Map<String, PlanObservation> nextObservations = new LinkedHashMap<>(observations);
     nextObservations.put(projectKey, observation);
-    return new ResolverArtifactGraphSnapshotStore(snapshots, generations, nextObservations);
+    return new ResolverArtifactGraphSnapshotStore(
+        snapshots, generations, nextObservations, capturePairs);
   }
 
   ResolverArtifactGraphSnapshotStore append(final ResolverArtifactGraphSnapshot snapshot) {
     Objects.requireNonNull(snapshot, "snapshot");
-    final String projectKey = snapshot.projectKey();
-    final Map<String, Object> payload = snapshot.toPayload();
-    ResolverArtifactGraphSnapshotPayloadValidator.validate(payload, projectKey);
-    final List<Map<String, Object>> current = snapshots.getOrDefault(projectKey, List.of());
-    if (current.stream().anyMatch(existing -> sameCapture(existing, payload))) {
-      return this;
+    final String token =
+        "single-"
+            + snapshot.projectKey().length()
+            + ":"
+            + snapshot.projectKey()
+            + "-"
+            + snapshot.captureGeneration();
+    return append(
+        new ResolverArtifactGraphCapturePair(
+            snapshot.projectKey(),
+            token,
+            snapshot.captureGeneration(),
+            snapshot.planPresent(),
+            snapshot.planFingerprint(),
+            snapshot.planGeneration(),
+            snapshot,
+            snapshot));
+  }
+
+  ResolverArtifactGraphSnapshotStore append(final ResolverArtifactGraphCapturePair pair) {
+    Objects.requireNonNull(pair, "pair");
+    final String projectKey = pair.projectKey();
+    final Map<String, Object> beforePayload = pair.before().toPayload();
+    final Map<String, Object> afterPayload = pair.after().toPayload();
+    ResolverArtifactGraphSnapshotPayloadValidator.validate(beforePayload, projectKey);
+    ResolverArtifactGraphSnapshotPayloadValidator.validate(afterPayload, projectKey);
+    if (pair.captureGeneration() != nextGeneration(projectKey)) {
+      throw new IllegalArgumentException("Capture pair generation is not the next project value");
     }
+    final List<Map<String, Object>> current = snapshots.getOrDefault(projectKey, List.of());
+    final List<Map<String, Object>> currentPairs = capturePairs.getOrDefault(projectKey, List.of());
+    final Map<String, Object> pairPayload = pair.toPayload();
     final Map<String, List<Map<String, Object>>> nextSnapshots = new LinkedHashMap<>(snapshots);
-    final List<Map<String, Object>> updated = new ArrayList<>(current);
-    updated.add(payload);
-    nextSnapshots.put(projectKey, List.copyOf(updated));
+    final List<Map<String, Object>> updatedSnapshots = new ArrayList<>(current);
+    updatedSnapshots.add(afterPayload);
+    nextSnapshots.put(projectKey, List.copyOf(updatedSnapshots));
+    final Map<String, List<Map<String, Object>>> nextPairs = new LinkedHashMap<>(capturePairs);
+    final List<Map<String, Object>> updatedPairs = new ArrayList<>(currentPairs);
+    updatedPairs.add(pairPayload);
+    nextPairs.put(projectKey, List.copyOf(updatedPairs));
     final Map<String, Long> nextGenerations = new LinkedHashMap<>(generations);
-    nextGenerations.put(projectKey, snapshot.captureGeneration());
-    return new ResolverArtifactGraphSnapshotStore(nextSnapshots, nextGenerations, observations);
+    nextGenerations.put(projectKey, pair.captureGeneration());
+    return new ResolverArtifactGraphSnapshotStore(
+        nextSnapshots, nextGenerations, observations, nextPairs);
+  }
+
+  List<ResolverArtifactGraphCapturePair> capturePairs(final String projectKey) {
+    return capturePairs.getOrDefault(projectKey, List.of()).stream()
+        .map(ResolverArtifactGraphCapturePair::fromPayload)
+        .toList();
   }
 
   Map<String, Object> toPayload() {
@@ -214,39 +282,8 @@ record ResolverArtifactGraphSnapshotStore(
           observationPayloads.put(projectKey, Collections.unmodifiableMap(observationPayload));
         });
     payload.put(OBSERVATIONS_FIELD, Collections.unmodifiableMap(observationPayloads));
+    payload.put(CAPTURE_PAIRS_FIELD, capturePairs);
     return Collections.unmodifiableMap(payload);
-  }
-
-  private void validate() {
-    snapshots.forEach(
-        (projectKey, entries) -> {
-          if (entries.isEmpty()) {
-            throw new IllegalStateException("Graph snapshot project has no captures");
-          }
-          long expectedGeneration = 0L;
-          for (final Map<String, Object> entry : entries) {
-            ResolverArtifactGraphSnapshotPayloadValidator.validate(entry, projectKey);
-            expectedGeneration++;
-            if (!Long.valueOf(expectedGeneration).equals(entry.get("captureGeneration"))) {
-              throw new IllegalStateException(
-                  "Graph snapshot capture generations are inconsistent");
-            }
-          }
-          if (!Long.valueOf(expectedGeneration).equals(generations.get(projectKey))) {
-            throw new IllegalStateException("Graph snapshot store generation is inconsistent");
-          }
-        });
-    if (!snapshots.keySet().equals(generations.keySet())) {
-      throw new IllegalStateException("Graph snapshot generations do not match projects");
-    }
-  }
-
-  private static boolean sameCapture(
-      final Map<String, Object> left, final Map<String, Object> right) {
-    return Objects.equals(left.get("graphFingerprint"), right.get("graphFingerprint"))
-        && Objects.equals(left.get("planPresent"), right.get("planPresent"))
-        && Objects.equals(left.get("planFingerprint"), right.get("planFingerprint"))
-        && Objects.equals(left.get("planGeneration"), right.get("planGeneration"));
   }
 
   private static Map<String, Object> immutableMap(final Map<String, Object> value) {

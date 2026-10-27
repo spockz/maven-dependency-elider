@@ -14,7 +14,7 @@
 
 | Track | State | Worktree / branch | Slices |
 | :--- | :--- | :--- | :--- |
-| Maven resolver integration | IN PROGRESS | `.scratch/worktrees/track-maven-resolver` / `track/maven-resolver` | 1: lifecycle and resolver diagnostics approved; 2.1: production retained-JAR session plan; 2.2: packaged activation; 2.3: actual Mojo publication and later TEST request; 3.1: post-mediation detached capture-only snapshots approved by focused and packaged fixtures; next: path/report model and graph policy, then tree/package/reactor/compatibility evidence |
+| Maven resolver integration | IN PROGRESS | `.scratch/worktrees/track-maven-resolver` / `track/maven-resolver` | 1: lifecycle and resolver diagnostics approved; 2.1: production retained-JAR session plan; 2.2: packaged activation; 2.3: actual Mojo publication and later TEST request; 3.1: detached capture-only snapshots; 3.2a: pure graph policy and atomic pre/post pairs implemented and full check passes; next: independent review, then bytecode/ancestor closure and context/path binding |
 
 ## Specification Deviations and Architectural Choices
 
@@ -102,3 +102,12 @@
 * PMD is clean. Two method-scoped test-helper `PMD.LawOfDemeter` suppressions remain, each with a local reason: MavenProject identity getter access and RepositorySystemSession payload access. No broad suppression was added.
 * Full `make check` passed with 149 core and 123 plugin tests, formatting, Checkstyle, PMD, SpotBugs, and Markdown lint (35 files, 0 issues). Log: `dependency-elider-maven-plugin/target/wp-resolve-3.1-review-fix-null-and-validator-make-check.log`. Since this linked worktree has no local `.scratch/tools` installation, the command set `MARKDOWNLINT=../../tools/node_modules/.bin/markdownlint-cli2` to use the existing cached tool.
 * Scope remains capture-only: no graph pruning, direct/resolved artifact view mutation, report-path policy, dependency-tree consistency, reactor support, or non-3.9.11 compatibility is established.
+
+## Track 3.2a Pure Effective-Graph Policy
+
+* Added `ResolverArtifactGraphCapturePair` so the pre-transform and post-transform snapshots from one resolver call share a capture token, project identity, plan provenance, and generation. `ResolverArtifactGraphSnapshotStore` validates and appends both sides atomically through one session-data CAS.
+* Added `EffectiveGraphPolicySelection`, which accepts only a unique plan-absent pair whose post-transform GAVCE+scope inventory matches the raw decision inventory; otherwise it returns zero removals. It does not bind the pair to TEST resolution or to actual Mojo paths/hashes.
+* Added `EffectiveGraphProtection` and `EffectiveGraphClosure`. The fixed point promotes every occurrence of a required GAVCE, recomputes reverse ancestor closure, and repeats until stable. Unknown paths, differing effective scope/optionality/exclusions, competing pre-mediation versions, winner references, ambiguous decisions, and null-child edges protect or fail closed.
+* Focused tests pass 21/21: 11 policy tests, 4 paired-capture decorator tests, and 6 store tests. Log: `dependency-elider-maven-plugin/target/wp-resolve-3.2a-focused.log`.
+* `compile spotless:check checkstyle:check pmd:check spotbugs:check` passes with Checkstyle clean, PMD 0, and SpotBugs 0. Log: `dependency-elider-maven-plugin/target/wp-resolve-3.2a-lint.log`. Full `make check` passes with 149 core and 134 plugin tests plus Markdown lint. Log: `dependency-elider-maven-plugin/target/wp-resolve-3.2a-make-check.log`.
+* This slice is pure policy only: it does not prune the graph, change Maven project views, modify reports/files/session plans, or prove TEST/path binding, bytecode pass-through closure, dependency-tree consistency, or direct artifact membership. The next integration must compare a unique pair with the actual Mojo inventory, paths, hashes, and compatible resolution context or fail closed.

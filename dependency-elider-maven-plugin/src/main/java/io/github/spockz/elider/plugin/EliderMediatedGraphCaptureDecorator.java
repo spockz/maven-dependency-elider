@@ -50,10 +50,16 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
     final DefaultRepositorySystemSession decorated = new DefaultRepositorySystemSession(session);
     decorated.setDependencyGraphTransformer(
         (root, context) -> {
+          final String captureToken = java.util.UUID.randomUUID().toString();
+          final ResolverArtifactGraphSnapshot before =
+              ResolverArtifactGraphSnapshot.capture(
+                  root, projectKey, planPresent, planFingerprint, planGeneration, 0L);
           final DependencyNode transformed =
               delegate == null ? root : delegate.transformGraph(root, context);
-          appendSnapshot(
-              decorated, transformed, projectKey, planPresent, planFingerprint, planGeneration);
+          final ResolverArtifactGraphSnapshot after =
+              ResolverArtifactGraphSnapshot.capture(
+                  transformed, projectKey, planPresent, planFingerprint, planGeneration, 0L);
+          appendPair(decorated, before, after, projectKey, captureToken);
           return transformed;
         });
     return decorated;
@@ -136,33 +142,45 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
     }
   }
 
-  private static void appendSnapshot(
+  private static void appendPair(
       final RepositorySystemSession session,
-      final DependencyNode root,
+      final ResolverArtifactGraphSnapshot beforeSnapshot,
+      final ResolverArtifactGraphSnapshot afterSnapshot,
       final String projectKey,
-      final boolean planPresent,
-      final String planFingerprint,
-      final long planGeneration) {
+      final String captureToken) {
     final org.eclipse.aether.SessionData data = session.getData();
     while (true) {
       final Object current = data.get(SESSION_DATA_KEY);
-      final ResolverArtifactGraphSnapshotStore store =
-          ResolverArtifactGraphSnapshotStore.fromPayload(current);
-      final ResolverArtifactGraphSnapshot snapshot =
-          ResolverArtifactGraphSnapshot.capture(
-              root,
-              projectKey,
-              planPresent,
-              planFingerprint,
-              planGeneration,
-              store.nextGeneration(projectKey));
-      final ResolverArtifactGraphSnapshotStore updated = store.append(snapshot);
-      if (updated.equals(store)) {
-        return;
-      }
-      if (data.set(SESSION_DATA_KEY, current, updated.toPayload())) {
+      if (appendCaptureAttempt(
+          data, current, beforeSnapshot, afterSnapshot, projectKey, captureToken)) {
         return;
       }
     }
+  }
+
+  private static boolean appendCaptureAttempt(
+      final org.eclipse.aether.SessionData data,
+      final Object current,
+      final ResolverArtifactGraphSnapshot beforeSnapshot,
+      final ResolverArtifactGraphSnapshot afterSnapshot,
+      final String projectKey,
+      final String captureToken) {
+    final ResolverArtifactGraphSnapshotStore store =
+        ResolverArtifactGraphSnapshotStore.fromPayload(current);
+    final long generation = store.nextGeneration(projectKey);
+    final ResolverArtifactGraphSnapshot before = beforeSnapshot.withCaptureGeneration(generation);
+    final ResolverArtifactGraphSnapshot after = afterSnapshot.withCaptureGeneration(generation);
+    final ResolverArtifactGraphCapturePair pair =
+        new ResolverArtifactGraphCapturePair(
+            projectKey,
+            captureToken,
+            generation,
+            before.planPresent(),
+            before.planFingerprint(),
+            before.planGeneration(),
+            before,
+            after);
+    final ResolverArtifactGraphSnapshotStore updated = store.append(pair);
+    return updated.equals(store) || data.set(SESSION_DATA_KEY, current, updated.toPayload());
   }
 }
