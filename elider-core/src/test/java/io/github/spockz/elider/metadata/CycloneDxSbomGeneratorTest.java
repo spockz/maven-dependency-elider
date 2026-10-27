@@ -87,6 +87,93 @@ class CycloneDxSbomGeneratorTest {
   }
 
   @Test
+  void generatesBaselineInventoryWithoutAnElisionDecision() throws Exception {
+    Path retained = temp.resolve("baseline-retained.jar");
+    Path elided = temp.resolve("baseline-elided.jar");
+    Files.writeString(retained, "retained bytes");
+    Files.writeString(elided, "pre-elision bytes");
+    ArtifactCoordinate retainedCoordinate = ArtifactCoordinate.of("org.example", "retained", "1.0");
+    ArtifactCoordinate laterElidedCoordinate =
+        ArtifactCoordinate.of("org.example", "elided", "2.0");
+
+    JsonNode bom =
+        JSON.readTree(
+            GENERATOR.generateBaseline(
+                ROOT,
+                List.of(
+                    ArtifactFileRef.fromPath(retainedCoordinate, retained),
+                    ArtifactFileRef.fromPath(laterElidedCoordinate, elided)),
+                METADATA));
+
+    assertThat(bom.path("components").findValuesAsText("bom-ref"))
+        .containsExactly("pkg:maven/org.example/elided@2.0", "pkg:maven/org.example/retained@1.0");
+    assertSchemaValid(readPinnedSchema(), bom);
+  }
+
+  @Test
+  void emitsSchemaValidEmbeddedVexOnlyForProofBackedTrimmedComponents() throws Exception {
+    VexTestFixture fixture = VexTestFixture.proven(temp);
+    ElisionDecision decision =
+        new ElisionDecision(Set.of(fixture.coordinate()), Set.of(), Map.of(), Map.of(), 0);
+
+    byte[] bytes =
+        GENERATOR.generate(
+            ROOT,
+            List.of(fixture.inventory()),
+            decision,
+            METADATA,
+            List.of(fixture.trimRecord()),
+            List.of(fixture.attestation(), fixture.attestation()));
+
+    JsonNode bom = JSON.readTree(bytes);
+    JsonNode component = bom.path("components").get(0);
+    JsonNode vulnerability = bom.path("vulnerabilities").get(0);
+    assertThat(bom.path("vulnerabilities")).hasSize(1);
+    assertThat(vulnerability.path("id").asText()).isEqualTo("CVE-2025-12345");
+    assertThat(vulnerability.path("analysis").path("state").asText()).isEqualTo("not_affected");
+    assertThat(vulnerability.path("analysis").path("justification").asText())
+        .isEqualTo("code_not_present");
+    assertThat(vulnerability.path("affects").get(0).path("ref").asText())
+        .isEqualTo(component.path("bom-ref").asText());
+    assertThat(component.path("hashes").get(0).path("content").asText())
+        .isEqualTo(fixture.attestation().trimmedSha256());
+    assertThat(
+            component
+                .path("pedigree")
+                .path("ancestors")
+                .get(0)
+                .path("hashes")
+                .get(0)
+                .path("content")
+                .asText())
+        .isEqualTo(fixture.attestation().originalSha256());
+    assertSchemaValid(readPinnedSchema(), bom);
+  }
+
+  @Test
+  void rejectsVexAttestationWhenTrimEvidenceDoesNotMatchThePostInventory() throws Exception {
+    VexTestFixture fixture = VexTestFixture.proven(temp);
+    Path changedTrimmed = temp.resolve("changed-trimmed.jar");
+    Files.writeString(changedTrimmed, "not the proven trimmed artifact");
+    ArtifactFileRef changedInventory =
+        ArtifactFileRef.fromPath(fixture.coordinate(), changedTrimmed);
+    ElisionDecision decision =
+        new ElisionDecision(Set.of(fixture.coordinate()), Set.of(), Map.of(), Map.of(), 0);
+
+    assertThatThrownBy(
+            () ->
+                GENERATOR.generate(
+                    ROOT,
+                    List.of(changedInventory),
+                    decision,
+                    METADATA,
+                    List.of(fixture.trimRecord()),
+                    List.of(fixture.attestation())))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("output path does not match");
+  }
+
+  @Test
   void writesSchemaValidTrimPedigreeWithOriginalAndTrimmedDigests() throws Exception {
     final Path original = temp.resolve("original.jar");
     final Path trimmed = temp.resolve("trimmed.jar");

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.model.VexAttestation;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -20,8 +21,10 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -36,6 +39,7 @@ import java.util.UUID;
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.CommentSize",
+  "PMD.CouplingBetweenObjects",
   "PMD.CyclomaticComplexity",
   "PMD.GodClass",
   "PMD.ConsecutiveAppendsShouldReuse",
@@ -119,6 +123,45 @@ public final class CycloneDxSbomGenerator {
       throws IOException {
     Objects.requireNonNull(output, "output must not be null");
     byte[] bytes = generate(root, appliedRetainedInventory, decision, metadata, trimRecords);
+    writeBytes(output, bytes);
+  }
+
+  /** Writes a retained inventory with evidence-backed CycloneDX VEX statements. */
+  public void write(
+      Path output,
+      RootIdentity root,
+      Collection<ArtifactFileRef> appliedRetainedInventory,
+      ElisionDecision decision,
+      DocumentMetadata metadata,
+      Collection<ArtifactTrimRecord> trimRecords,
+      Collection<VexAttestation> attestations)
+      throws IOException {
+    Objects.requireNonNull(output, "output must not be null");
+    writeBytes(
+        output,
+        generate(root, appliedRetainedInventory, decision, metadata, trimRecords, attestations));
+  }
+
+  /** Writes a baseline inventory before whole-artifact elision has been applied. */
+  public void writeBaseline(
+      Path output,
+      RootIdentity root,
+      Collection<ArtifactFileRef> baselineInventory,
+      DocumentMetadata metadata)
+      throws IOException {
+    Objects.requireNonNull(output, "output must not be null");
+    writeBytes(output, generateBaseline(root, baselineInventory, metadata));
+  }
+
+  /** Generates a baseline inventory before whole-artifact elision has been applied. */
+  public byte[] generateBaseline(
+      RootIdentity root, Collection<ArtifactFileRef> baselineInventory, DocumentMetadata metadata)
+      throws IOException {
+    return generateInventory(
+        root, baselineInventory, metadata, Set.of(), List.of(), Optional.empty());
+  }
+
+  private void writeBytes(Path output, byte[] bytes) throws IOException {
     Path absolute = output.toAbsolutePath();
     Path parent = absolute.getParent();
     if (parent == null) {
@@ -151,48 +194,37 @@ public final class CycloneDxSbomGenerator {
       DocumentMetadata metadata,
       Collection<ArtifactTrimRecord> trimRecords)
       throws IOException {
+    return generate(root, inventory, decision, metadata, trimRecords, List.of());
+  }
+
+  byte[] generate(
+      RootIdentity root,
+      Collection<ArtifactFileRef> inventory,
+      ElisionDecision decision,
+      DocumentMetadata metadata,
+      Collection<ArtifactTrimRecord> trimRecords,
+      Collection<VexAttestation> attestations)
+      throws IOException {
+    Objects.requireNonNull(decision, "decision must not be null");
+    return generateInventory(
+        root, inventory, metadata, trimRecords, attestations, Optional.of(decision));
+  }
+
+  private byte[] generateInventory(
+      RootIdentity root,
+      Collection<ArtifactFileRef> inventory,
+      DocumentMetadata metadata,
+      Collection<ArtifactTrimRecord> trimRecords,
+      Collection<VexAttestation> attestations,
+      Optional<ElisionDecision> decision)
+      throws IOException {
     Objects.requireNonNull(root, "root must not be null");
     Objects.requireNonNull(inventory, "inventory must not be null");
-    Objects.requireNonNull(decision, "decision must not be null");
     Objects.requireNonNull(metadata, "metadata must not be null");
     Objects.requireNonNull(trimRecords, "trimRecords must not be null");
-    TreeMap<String, ComponentEntry> components = new TreeMap<>();
-    Set<ArtifactCoordinate> inventoryCoordinates = new HashSet<>();
-    for (ArtifactFileRef ref : inventory) {
-      Objects.requireNonNull(ref, "inventory item must not be null");
-      ArtifactCoordinate coordinate = ref.coordinate();
-      if (coordinate.version() == null || coordinate.version().isBlank()) {
-        throw new IllegalArgumentException("Cannot emit unresolved version for " + coordinate);
-      }
-      if (!decision.isRetained(coordinate) || decision.isElided(coordinate)) {
-        throw new IllegalArgumentException(
-            "Applied retained inventory conflicts with decision for " + coordinate);
-      }
-      inventoryCoordinates.add(coordinate);
-      String key = identity(coordinate);
-      ComponentEntry previous = components.get(key);
-      if (previous != null
-          && (!previous.ref.filePath().equals(ref.filePath())
-              || !previous.ref.coordinate().version().equals(coordinate.version()))) {
-        throw new IllegalArgumentException(
-            "Conflicting scope variants for artifact identity " + key);
-      }
-      if (previous == null) {
-        components.put(key, new ComponentEntry(ref));
-      }
-      components.get(key).addScope(coordinate.scope());
-    }
-    for (ArtifactCoordinate retained : decision.retainedArtifacts()) {
-      if (!inventoryCoordinates.contains(retained)) {
-        throw new IllegalArgumentException(
-            "Decision retains scope variant missing from applied inventory: " + retained);
-      }
-    }
-    for (ArtifactCoordinate elided : decision.elidedArtifacts()) {
-      if (components.containsKey(identity(elided))) {
-        throw new IllegalArgumentException("Applied inventory contains elided artifact: " + elided);
-      }
-    }
+    Objects.requireNonNull(attestations, "attestations must not be null");
+    Objects.requireNonNull(decision, "decision must not be null");
+    TreeMap<String, ComponentEntry> components = componentEntries(inventory, decision);
     final Map<String, ArtifactTrimRecord> trimsByIdentity =
         validateTrimRecords(trimRecords, components);
 
@@ -211,14 +243,7 @@ public final class CycloneDxSbomGenerator {
         .put("version", metadata.toolVersion());
     ObjectNode rootComponent = meta.putObject("component");
     rootComponent.put("type", "application");
-    rootComponent.put(
-        "bom-ref",
-        "pkg:maven/"
-            + purl(root.groupId())
-            + "/"
-            + purl(root.artifactId())
-            + "@"
-            + purl(root.version()));
+    rootComponent.put("bom-ref", rootBomRef(root));
     rootComponent.put("group", root.groupId());
     rootComponent.put("name", root.name());
     rootComponent.put("version", root.version());
@@ -227,7 +252,110 @@ public final class CycloneDxSbomGenerator {
     for (ComponentEntry entry : components.values()) {
       outComponents.add(component(entry, trimsByIdentity.get(identity(entry.ref.coordinate()))));
     }
+    if (!attestations.isEmpty()) {
+      bom.set("vulnerabilities", vulnerabilities(attestations, components, trimsByIdentity));
+    }
     return JSON.writeValueAsBytes(bom);
+  }
+
+  private static TreeMap<String, ComponentEntry> componentEntries(
+      Collection<ArtifactFileRef> inventory, Optional<ElisionDecision> decision) {
+    TreeMap<String, ComponentEntry> components = new TreeMap<>();
+    Set<ArtifactCoordinate> coordinates = new HashSet<>();
+    for (ArtifactFileRef ref : inventory) {
+      Objects.requireNonNull(ref, "inventory item must not be null");
+      ArtifactCoordinate coordinate = ref.coordinate();
+      if (coordinate.version() == null || coordinate.version().isBlank()) {
+        throw new IllegalArgumentException("Cannot emit unresolved version for " + coordinate);
+      }
+      if (decision.isPresent()
+          && (!decision.get().isRetained(coordinate) || decision.get().isElided(coordinate))) {
+        throw new IllegalArgumentException(
+            "Applied retained inventory conflicts with decision for " + coordinate);
+      }
+      coordinates.add(coordinate);
+      String key = identity(coordinate);
+      ComponentEntry previous = components.get(key);
+      if (previous != null
+          && (!previous.ref.filePath().equals(ref.filePath())
+              || !previous.ref.coordinate().version().equals(coordinate.version()))) {
+        throw new IllegalArgumentException(
+            "Conflicting scope variants for artifact identity " + key);
+      }
+      if (previous == null) {
+        components.put(key, new ComponentEntry(ref));
+      }
+      components.get(key).addScope(coordinate.scope());
+    }
+    decision.ifPresent(value -> validateDecisionInventory(value, coordinates, components));
+    return components;
+  }
+
+  private static void validateDecisionInventory(
+      ElisionDecision decision,
+      Set<ArtifactCoordinate> inventoryCoordinates,
+      Map<String, ComponentEntry> components) {
+    for (ArtifactCoordinate retained : decision.retainedArtifacts()) {
+      if (!inventoryCoordinates.contains(retained)) {
+        throw new IllegalArgumentException(
+            "Decision retains scope variant missing from applied inventory: " + retained);
+      }
+    }
+    for (ArtifactCoordinate elided : decision.elidedArtifacts()) {
+      if (components.containsKey(identity(elided))) {
+        throw new IllegalArgumentException("Applied inventory contains elided artifact: " + elided);
+      }
+    }
+  }
+
+  private static ArrayNode vulnerabilities(
+      Collection<VexAttestation> attestations,
+      Map<String, ComponentEntry> components,
+      Map<String, ArtifactTrimRecord> trimsByIdentity) {
+    TreeMap<String, VexAttestation> unique = new TreeMap<>();
+    for (VexAttestation attestation : attestations) {
+      Objects.requireNonNull(attestation, "VEX attestation must not be null");
+      requireText(attestation.cveId(), "VEX vulnerability id");
+      requireText(attestation.impactDetail(), "VEX impact detail");
+      if (!"vulnerable_code_not_present".equals(attestation.justification())) {
+        throw new IllegalArgumentException(
+            "VEX attestation justification must be vulnerable_code_not_present");
+      }
+      if (attestation.evidenceSymbols() == null || attestation.evidenceSymbols().isEmpty()) {
+        throw new IllegalArgumentException("VEX attestation has no purged symbol evidence");
+      }
+      String identity = identity(attestation.coordinate());
+      ComponentEntry component = components.get(identity);
+      ArtifactTrimRecord trim = trimsByIdentity.get(identity);
+      if (component == null || trim == null) {
+        throw new IllegalArgumentException(
+            "VEX attestation does not match a trimmed retained component: " + identity);
+      }
+      if (!trim.originalSha256().equals(attestation.originalSha256())
+          || !trim.trimmedSha256().equals(attestation.trimmedSha256())) {
+        throw new IllegalArgumentException(
+            "VEX attestation digests do not match trim record: " + identity);
+      }
+      String key = attestation.cveId() + "\u0000" + componentPurl(attestation.coordinate());
+      VexAttestation prior = unique.putIfAbsent(key, attestation);
+      if (prior != null && !OpenVexGenerator.sameEvidence(prior, attestation)) {
+        throw new IllegalArgumentException("Conflicting duplicate VEX attestation for " + key);
+      }
+    }
+    ArrayNode result = JSON.createArrayNode();
+    for (VexAttestation attestation : unique.values()) {
+      ObjectNode vulnerability = result.addObject();
+      vulnerability.put("id", attestation.cveId());
+      ObjectNode analysis = vulnerability.putObject("analysis");
+      analysis.put("state", "not_affected");
+      analysis.put("justification", "code_not_present");
+      analysis.put("detail", attestation.impactDetail());
+      vulnerability
+          .putArray("affects")
+          .addObject()
+          .put("ref", componentPurl(attestation.coordinate()));
+    }
+    return result;
   }
 
   private static ObjectNode component(ComponentEntry entry, ArtifactTrimRecord trimRecord)
@@ -353,7 +481,7 @@ public final class CycloneDxSbomGenerator {
     return ancestor;
   }
 
-  private static String componentPurl(ArtifactCoordinate coordinate) {
+  static String componentPurl(ArtifactCoordinate coordinate) {
     return "pkg:maven/"
         + purl(coordinate.groupId())
         + "/"
@@ -361,6 +489,15 @@ public final class CycloneDxSbomGenerator {
         + "@"
         + purl(coordinate.version())
         + purlQualifiers(coordinate);
+  }
+
+  static String rootBomRef(RootIdentity root) {
+    return "pkg:maven/"
+        + purl(root.groupId())
+        + "/"
+        + purl(root.artifactId())
+        + "@"
+        + purl(root.version());
   }
 
   private static void atomicReplace(Path temporary, Path destination) throws IOException {
@@ -376,7 +513,7 @@ public final class CycloneDxSbomGenerator {
     void replace(Path temporary, Path destination) throws IOException;
   }
 
-  private static String sha256(Path file) throws IOException {
+  static String sha256(Path file) throws IOException {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
       try (var input = Files.newInputStream(file)) {
