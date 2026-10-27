@@ -1,4 +1,4 @@
-<!-- WHY: Defines the work package specification, track decomposition, and committable slices for resolving Maven lifecycle re-resolution and dependency graph consistency (RQ-0006). -->
+<!-- WHY: Defines the work package specification, track decomposition, and committable slices for resolving Maven lifecycle re-resolution and dependency graph consistency (RQ-0006) via post-download ProjectDependenciesResolver decoration. -->
 # Work Package Handover: WP-RESOLVE-01 Maven Lifecycle & Dependency Graph Consistency
 
 * **Status**: Ready for Implementation
@@ -16,20 +16,23 @@
 
 Resolve the architectural asymmetry between Maven's direct dependency view (`project.getDependencyArtifacts()`) and resolved classpath view (`project.getArtifacts()`), and solve the `DependencyContext` cache-invalidation trap in Maven 3.9+.
 
+Rather than intercepting dependency collection before physical JARs are downloaded (which creates chicken-and-egg inspection dilemmas on cold builds), this work package decorates Maven's **`ProjectDependenciesResolver`** immediately **after** standard artifact resolution and download completes.
+
 The primary goals are:
 
-1. **Unified Effective Graph**: Ensure that `mvn dependency:tree` and other dependency-inspection goals reflect the genuine post-elision effective graph rather than declared POM bloat.
-2. **Re-Resolution Immunity**: Guarantee that downstream goals declaring `@RequiresDependencyResolution` do not invalidate the resolver cache and re-populate untrimmed original artifacts from `~/.m2/repository`.
-3. **Path-Aware Audit Trail**: Capture the pre-filter Maven-mediated dependency tree (including scopes, conflict resolution, and parent-child edges) in `dependency-elider:report` so engineers can inspect the exact path that introduced each dropped or trimmed library.
-4. **Authoritative Core Extension Model**: Deliver early resolver integration as a first-class Maven Core Extension (`.mvn/extensions.xml`), unifying project and dependency resolution before execution starts.
+1. **Zero Download Friction**: Maven downloads and resolves dependency JARs to `~/.m2/repository` exactly how, when, and where users expect.
+2. **Unified Effective Graph**: Intercept `DependencyResolutionResult` to prune unobserved `DependencyNode`s directly from the graph, ensuring `mvn dependency:tree` reflects true post-elision topology without declared bloat.
+3. **Re-Resolution Immunity**: Because the transformed artifacts and graph originate from the resolver itself, Maven's internal `DependencyContext` marks the cached resolution clean, preventing subsequent `@RequiresDependencyResolution` plugins (Shade, Spring Boot) from triggering POM re-resolution.
+4. **Path-Aware Audit Trail**: Capture the raw pre-elision dependency tree from the delegate resolver before filtering, persisting it to `target/dependency-elider-report.json` so `dependency-elider:report` can render exact dependency chain justifications.
+5. **Authoritative Core Extension Model**: Deliver integration via `.mvn/extensions.xml` as a first-class Maven Core Extension.
 
 ### 1.2 Non-Negotiable Invariants & Architectural Consensus
 
-1. **Core Extension as Single Invocation Standard**: Early resolver governance is packaged and activated via `.mvn/extensions.xml` rather than divergent plugin-only fallback modes.
-2. **Two-Phase Coordinated Architecture**: Eclipse Aether `DependencyGraphTransformer` prunes unobserved dependency nodes during graph collection; intra-JAR trimming and file pointer redirection execute once candidate JARs exist on disk, avoiding chicken-and-egg download dependencies.
-3. **Direct Root Pruning**: Completely unobserved direct dependencies are pruned directly from `rootNode.getChildren()` in Aether, ensuring `getDependencyArtifacts()` and `getArtifacts()` naturally omit them from the start.
-4. **Pre-Elision Path Attribution & Session Handoff**: The unpruned Aether graph is cached in `session.getRequest().getData()` during collection and persisted into `target/dependency-elider-report.json` to provide full path justifications for `dependency-elider:report`.
-5. **Informative Pass-Through on Missing Traces**: If no trace files are supplied (or `-Delide.skip=true`), the extension operates as an efficient pass-through and logs an informative notice explaining that elision is inactive.
+1. **Post-Download Resolution Hook**: The Core Extension decorates `ProjectDependenciesResolver`. Maven's native `DefaultProjectDependenciesResolver` executes first to resolve and download all candidate JARs naturally.
+2. **Authoritative Single Model**: The extension is registered via `.mvn/extensions.xml`, eliminating divergent plugin-only fallback modes.
+3. **Direct Root Pruning**: Completely unobserved direct dependencies are pruned directly from `rootNode.getChildren()` in the resolved graph, ensuring `getDependencyArtifacts()` and `getArtifacts()` naturally omit them from the start.
+4. **Pre-Elision Path Attribution & Session Handoff**: The raw unpruned graph from the delegate resolver is cached in `session.getRequest().getData()` and persisted to `target/dependency-elider-report.json` to provide full path justifications for `dependency-elider:report`.
+5. **Informative Pass-Through on Missing Traces**: If no trace files are supplied (or `-Delide.skip=true`), the extension operates as an efficient pass-through ($< 0.1\text{ ms}$ overhead) and logs an informative notice explaining that elision is inactive.
 6. **Per-Module Reactor Scoping with Shared Fallback**: In multi-module reactors, each submodule evaluates its own dependencies against module-specific trace files if defined, falling back to reactor-root aggregate trace files.
 7. **Verification Gates**: Every slice must pass `make check` (formatting, Spotless, Checkstyle, PMD, SpotBugs, Markdownlint, tests) and `make test-examples` across all fixtures.
 
@@ -44,14 +47,14 @@ The primary goals are:
                            │
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│ Track 2: Eclipse Aether DependencyGraphTransformer     │
+│ Track 2: Core Graph & Resolution Result Pruning Engine │
 └──────────────────────────┬─────────────────────────────┘
                            │
              ┌─────────────┴─────────────┐
              ▼                           ▼
 ┌──────────────────────────┐┌──────────────────────────┐
-│ Track 3: Path-Aware      ││ Track 4: Resolver Session│
-│ Mediated Graph Capture   ││ Lifecycle Hook Injection │
+│ Track 3: Path-Aware      ││ Track 4: Post-Download   │
+│ Mediated Graph Capture   ││ Resolver Decorator Hook  │
 └────────────┬─────────────┘└────────────┬─────────────┘
              │                           │
              └─────────────┬─────────────┘
@@ -78,29 +81,31 @@ The primary goals are:
 
 ---
 
-### Track 2: Eclipse Aether `DependencyGraphTransformer`
+### Track 2: Core Graph & Resolution Result Pruning Engine (`elider-core`)
 
-**Goal**: Implement a custom Aether `DependencyGraphTransformer` that operates during dependency collection to prune unneeded nodes from the `DependencyNode` graph before Maven caches the resolved project.
+**Goal**: Implement the graph and artifact collection transformation logic operating on `DependencyResolutionResult` after Maven downloads candidate JARs.
 
-* **Slice 2.1: Core Node Transformation Engine (`elider-core`)**
-  * Create `io.github.spockz.elider.resolver.ElisionDependencyGraphTransformer` implementing `org.eclipse.aether.collection.DependencyGraphTransformer`.
-  * Ingest the elision decision and trace evidence.
-  * Prune unobserved dependency subtrees while preserving transitive ancestors of retained nodes.
-  * Unit tests validating graph trimming with complex multi-level diamond and conflicting transitive dependencies.
+* **Slice 2.1: Post-Download Result Pruner**
+  * Create `io.github.spockz.elider.resolver.ElisionResolutionResultTransformer`:
+    * Operates on `org.eclipse.aether.graph.DependencyNode` and `Set<Artifact>`.
+    * Inspects downloaded JARs via `JarIndexScanner`.
+    * Matches against `TraceData` to compute whole-artifact and intra-JAR trimming decisions.
+    * Prunes unobserved direct dependencies from `rootNode.getChildren()` and drops unobserved transitive subtrees.
+    * Filters the artifact set and updates file pointers to `target/elided-artifacts/` for trimmed JARs.
 * **Slice 2.2: Aether Context & Metadata Preservation**
   * Ensure that pruned `DependencyNode` trees preserve conflict resolution winner metadata, scope derivations, and optional flags for surviving nodes.
-  * Verify that surviving nodes preserve standard Maven artifact coordinates.
+  * Unit tests validating graph trimming with complex multi-level diamond and conflicting transitive dependencies.
 
 ---
 
 ### Track 3: Path-Aware Mediated Graph Capture (`elider-core` & `dependency-elider-maven-plugin`)
 
-**Goal**: Capture the full pre-elision dependency graph so `dependency-elider:report` can render complete path justifications for why each artifact was originally pulled into the project.
+**Goal**: Capture the full pre-elision dependency graph from the delegate resolver so `dependency-elider:report` can render complete path justifications for why each artifact was originally pulled into the project.
 
 * **Slice 3.1: Pre-Filter Graph Snapshot Model**
   * Create immutable model `io.github.spockz.elider.model.MediatedDependencyGraph`:
     * Records root nodes, parent-child edges, scope transitions, and conflict selections.
-  * Extract the graph directly from Aether's root `DependencyNode` before pruning occurs.
+  * Extract the graph directly from delegate resolver's `DependencyResolutionResult.getDependencyGraph()` before pruning occurs.
 * **Slice 3.2: Path-Aware Elision Report Extension**
   * Update `MavenElisionReportSnapshot` and `MavenElisionReportWriter`:
     * Persist `MediatedDependencyGraph` into `dependency-elider-report.json`.
@@ -110,25 +115,29 @@ The primary goals are:
 
 ---
 
-### Track 4: Resolver Session Lifecycle Hook Injection
+### Track 4: Post-Download `ProjectDependenciesResolver` Decorator & Core Extension Packaging
 
-**Goal**: Inject the `ElisionDependencyGraphTransformer` into Maven's resolver session using standard, supported extension points.
+**Goal**: Intercept Maven's dependency resolution by decorating `ProjectDependenciesResolver` as a high-priority Sisu component packaged in `.mvn/extensions.xml`.
 
-* **Slice 4.1: Repository Session Decorator Implementation**
-  * Implement `io.github.spockz.elider.plugin.EliderRepositorySessionDecorator` using `org.apache.maven.project.RepositorySessionDecorator` (Maven 3.9.4+ / Plexus component).
-  * Wrap the existing `ChainedDependencyGraphTransformer` with `ElisionDependencyGraphTransformer`.
-* **Slice 4.2: Core Extension Packaging & Configuration**
-  * Configure Sisu `@Named` and Plexus component descriptors for `EliderRepositorySessionDecorator`.
-  * Support loading via `.mvn/extensions.xml` as the primary integration model.
-  * In multi-module reactors, resolve module-specific trace files when configured, falling back to reactor-root traces.
-* **Slice 4.3: Informative Pass-Through & Diagnostics**
-  * If no trace files are supplied or `-Delide.skip=true` is set, log an informative notice that elision is inactive and pass through dependency resolution untouched with near-zero latency.
+* **Slice 4.1: `EliderProjectDependenciesResolver` Implementation**
+  * Create `io.github.spockz.elider.plugin.EliderProjectDependenciesResolver` implementing `org.apache.maven.project.ProjectDependenciesResolver`.
+  * Inject `DefaultProjectDependenciesResolver` as the delegate.
+  * In `resolve(request)`:
+    1. Call `delegate.resolve(request)` to let Maven naturally download and resolve all candidate JARs.
+    2. Check for active trace files; if absent or `-Delide.skip=true`, log an informative notice and return delegate result unchanged.
+    3. Snapshot raw pre-elision graph to `session.getRequest().getData()`.
+    4. Execute `ElisionResolutionResultTransformer` to prune nodes and update file pointers.
+    5. Return the transformed `DependencyResolutionResult`.
+* **Slice 4.2: Sisu & Core Extension Configuration**
+  * Annotate with `@Named @Priority(10)` (or Plexus component descriptor) to override default resolver.
+  * Configure `.mvn/extensions.xml` packaging in reference projects.
+  * Support per-module trace resolution with fallback to reactor-root traces.
 
 ---
 
 ### Track 5: Fixtures, Tree Verification & End-to-End Gates
 
-**Goal**: Validate the integrated resolver and graph consistency across all reference applications and CLI commands.
+**Goal**: Validate the integrated resolver decorator and graph consistency across all reference applications and CLI commands.
 
 * **Slice 5.1: `dependency:tree` Verification Test**
   * Verify that running `mvn dependency:tree` on `example-basic-app` with elision active omits `commons-codec:commons-codec`.
