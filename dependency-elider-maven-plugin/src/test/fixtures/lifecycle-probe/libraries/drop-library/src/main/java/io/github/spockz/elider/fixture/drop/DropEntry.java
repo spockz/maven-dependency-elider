@@ -1,8 +1,8 @@
-/* WHY: Keeps the second synthetic dependency in the consumer graph while testing retained-JAR substitution. */
+/* WHY: Supplies unused bytecode in the synthetic direct dependency that elide can drop. */
 
 package io.github.spockz.elider.fixture.drop;
 
-/** Class included in the lifecycle probe's trace to avoid testing whole-artifact pruning here. */
+/** Untraced class that makes the synthetic direct dependency eligible for removal. */
 public final class DropEntry {
   private DropEntry() {}
 
