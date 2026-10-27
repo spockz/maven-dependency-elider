@@ -184,7 +184,7 @@ function collectFindings(scan, inventory) {
 }
 
 function findingMatches(left, right) {
-  if (left.package !== right.package) return false;
+  if (left.package === null || right.package === null || left.package !== right.package) return false;
   const ids = new Set(left.vulnerabilityIds);
   return right.vulnerabilityIds.some((id) => ids.has(id));
 }

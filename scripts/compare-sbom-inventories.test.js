@@ -3,6 +3,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -74,6 +75,16 @@ test('does not call a finding eliminated when its component remains at another v
   const delta = compareFindings(before, [], postInventory);
   assert.equal(delta.eliminated.length, 0);
   assert.equal(delta.notObservedWithComponentRetained.length, 1);
+});
+
+test('does not match findings whose package identity is missing', () => {
+  const scan = { results: [{ packages: [{ package: null, vulnerabilities: [{ id: 'OSV-1' }] }] }] };
+  const before = collectFindings(scan, inventory([]));
+  const after = collectFindings(scan, inventory([]));
+  const delta = compareFindings(before, after, inventory([]));
+  assert.equal(delta.unclassified.length, 1);
+  assert.equal(delta.retained.length, 0);
+  assert.equal(delta.postElisionOnly.length, 1);
 });
 
 test('CLI marks legacy Maven findings ambiguous across ordinary and classifier PURLs, and preserves changed-version components', (t) => {
@@ -148,8 +159,10 @@ test('runs both scans against one executable and writes hash-backed audit eviden
   const postElision = path.join(directory, 'post-elision.cdx.json');
   const output = path.join(directory, 'report');
   const argumentLog = path.join(directory, 'scanner-arguments.jsonl');
-  fs.writeFileSync(baseline, '{"bomFormat":"CycloneDX","components":[{"group":"org.example","name":"removed","version":"1"}]}\n');
-  fs.writeFileSync(postElision, '{"bomFormat":"CycloneDX","components":[]}\n');
+  const baselineBytes = Buffer.from('{"bomFormat":"CycloneDX","components":[{"group":"org.example","name":"removed","version":"1"}]}\n');
+  const postElisionBytes = Buffer.from('{"bomFormat":"CycloneDX","components":[]}\n');
+  fs.writeFileSync(baseline, baselineBytes);
+  fs.writeFileSync(postElision, postElisionBytes);
   const result = runCli({
     directory,
     scanner,
@@ -166,7 +179,8 @@ test('runs both scans against one executable and writes hash-backed audit eviden
   assert.equal(report.scanner.version, 'osv-scanner fake 1.2.3');
   assert.equal(report.comparison.eliminatedPackageFindings.length, 1);
   assert.match(report.comparison.note, /not VEX/);
-  assert.equal(report.inventories.baseline.sha256.length, 64);
+  assert.equal(report.inventories.baseline.sha256, crypto.createHash('sha256').update(baselineBytes).digest('hex'));
+  assert.equal(report.inventories.postElision.sha256, crypto.createHash('sha256').update(postElisionBytes).digest('hex'));
   assert.equal(report.inventories.baselineComponentCount, 1);
   assert.equal(report.inventories.postElisionComponentCount, 0);
   assert.equal(report.vulnerabilityDatabase.revision, null);
