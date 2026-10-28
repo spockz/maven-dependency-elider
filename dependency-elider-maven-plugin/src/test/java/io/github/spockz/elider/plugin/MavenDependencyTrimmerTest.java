@@ -144,6 +144,7 @@ final class MavenDependencyTrimmerTest {
             TraceData.of(Set.of("sample.Keep")),
             Set.of(),
             Set.of(),
+            Set.of(),
             List.of(),
             false,
             List.of(),

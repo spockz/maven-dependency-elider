@@ -99,6 +99,10 @@ final class MavenDependencyTrimmer {
       Map<String, List<CandidateWork>> ownersByClass,
       Map<String, Path> ownerByClass) {}
 
+  private record CommonRootOwners(
+      Map<MavenElisionService.ArtifactSnapshot, Set<String>> byArtifact,
+      Set<ArtifactCoordinate> droppedArtifacts) {}
+
   private record PassThroughPlan(
       List<MavenElisionService.ArtifactSnapshot> retainedLibraries,
       List<MavenElisionService.ArtifactSnapshot> retained,
@@ -135,6 +139,7 @@ final class MavenDependencyTrimmer {
       TraceData trace,
       Set<String> sourceRoots,
       Set<String> bytecodeRoots,
+      Set<String> projectOutputClasses,
       List<String> explicitRoots,
       boolean failOnUnsupportedMultiRelease,
       List<String> explicitPassThroughCoordinates,
@@ -260,6 +265,15 @@ final class MavenDependencyTrimmer {
     final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
     final TrimAnalysisSession analysisSession = new TrimAnalysisSession(trimmer);
     final Set<String> commonRoots = commonRoots(request);
+    final Set<String> platformClasses = platformClasses(pools);
+    final CommonRootOwners commonRootOwners =
+        commonRootOwners(
+            commonRoots,
+            ownerByClass,
+            request,
+            retainedCoordinates,
+            classesByPath,
+            platformClasses);
     final Map<MavenElisionService.ArtifactSnapshot, Set<String>> dynamicRootsByOwner =
         new java.util.LinkedHashMap<>();
     final Set<ArtifactCoordinate> dynamicRootsInDroppedArtifacts = new LinkedHashSet<>();
@@ -267,7 +281,10 @@ final class MavenDependencyTrimmer {
       for (final String root : dynamicRoots(request, snapshot.filePath())) {
         final MavenElisionService.ArtifactSnapshot owner = ownerByClass.get(root);
         if (owner == null) {
-          continue;
+          if (request.projectOutputClasses().contains(root) || platformClasses.contains(root)) {
+            continue;
+          }
+          throw new IOException("Dynamic class root has no recognized owner: " + root);
         }
         if (retainedCoordinates.contains(owner.coordinate())) {
           if (eligible.contains(owner)) {
@@ -285,8 +302,7 @@ final class MavenDependencyTrimmer {
     for (final MavenElisionService.ArtifactSnapshot candidate : candidates) {
       final Path path = candidate.filePath().toAbsolutePath().normalize();
       final Set<String> roots = new TreeSet<>(requestedRoots.getOrDefault(candidate, Set.of()));
-      final Set<String> candidateClasses = classesByPath.get(path);
-      addPresentRoots(roots, commonRoots, candidateClasses);
+      roots.addAll(commonRootOwners.byArtifact().getOrDefault(candidate, Set.of()));
       roots.addAll(dynamicRootsByOwner.getOrDefault(candidate, Set.of()));
       if (roots.isEmpty()) {
         roots.addAll(classesByPath.get(path));
@@ -313,7 +329,8 @@ final class MavenDependencyTrimmer {
     final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> finalAnalyses =
         new java.util.LinkedHashMap<>();
     final Set<ArtifactCoordinate> reachableArtifacts =
-        new LinkedHashSet<>(dynamicRootsInDroppedArtifacts);
+        new LinkedHashSet<>(commonRootOwners.droppedArtifacts());
+    reachableArtifacts.addAll(dynamicRootsInDroppedArtifacts);
     int analysisRuns = 0;
     boolean rootsChanged;
     do {
@@ -420,6 +437,45 @@ final class MavenDependencyTrimmer {
     roots.addAll(request.bytecodeRoots());
     request.explicitRoots().forEach(roots::add);
     return roots;
+  }
+
+  private static CommonRootOwners commonRootOwners(
+      final Set<String> roots,
+      final Map<String, MavenElisionService.ArtifactSnapshot> ownerByClass,
+      final TrimRequest request,
+      final Set<ArtifactCoordinate> retainedCoordinates,
+      final Map<Path, Set<String>> classesByPath,
+      final Set<String> platformClasses)
+      throws IOException {
+    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> rootsByArtifact =
+        new java.util.LinkedHashMap<>();
+    final Set<ArtifactCoordinate> droppedArtifacts = new LinkedHashSet<>();
+    for (final String rawRoot : roots) {
+      final String root = rawRoot.replace('/', '.');
+      final MavenElisionService.ArtifactSnapshot owner = ownerByClass.get(root);
+      if (owner == null) {
+        if (request.projectOutputClasses().contains(root) || platformClasses.contains(root)) {
+          continue;
+        }
+        throw new IOException("Common class root has no recognized owner: " + root);
+      }
+      if (!retainedCoordinates.contains(owner.coordinate())) {
+        droppedArtifacts.add(owner.coordinate());
+        continue;
+      }
+      final Path path = owner.filePath().toAbsolutePath().normalize();
+      if (classesByPath.getOrDefault(path, Set.of()).contains(root)) {
+        rootsByArtifact.computeIfAbsent(owner, ignored -> new TreeSet<>()).add(root);
+      }
+    }
+    return new CommonRootOwners(rootsByArtifact, droppedArtifacts);
+  }
+
+  private static Set<String> platformClasses(final PlatformPools pools) {
+    final Set<String> result = new HashSet<>();
+    pools.compiler().classNames().forEachRemaining(name -> result.add(name.replace('/', '.')));
+    pools.runtime().classNames().forEachRemaining(name -> result.add(name.replace('/', '.')));
+    return Set.copyOf(result);
   }
 
   private static Set<String> dynamicRoots(final TrimRequest request, final Path path)

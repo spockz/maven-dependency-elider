@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
@@ -174,6 +175,10 @@ final class MavenElisionService {
     final List<Artifact> direct = directPresent ? new ArrayList<>(directView) : List.of();
     final List<ArtifactSnapshot> directSnapshots = snapshots(direct);
     validateIdentityPaths(directSnapshots);
+    final String directInputFingerprint =
+        directPresent
+            ? ResolvedArtifactInventoryFingerprint.fingerprint(directSnapshots)
+            : "missing";
     final List<ArtifactFileRef> scanCandidates = new ArrayList<>();
     for (final ArtifactSnapshot snapshot : resolvedSnapshots) {
       if (isJarCandidate(snapshot)) {
@@ -195,6 +200,7 @@ final class MavenElisionService {
     final Set<ArtifactCoordinate> keepForPruning =
         new HashSet<>(compilerInputs.compileVisibleCoordinates());
     keepForPruning.addAll(dynamicRootInputs.declaringArtifacts());
+    keepForPruning.addAll(dynamicRootArtifactOwners(dynamicRootInputs, index, scanCandidates));
     if (trimJars) {
       keepForPruning.addAll(
           parsePassThroughCoordinates(explicitPassThroughArtifacts, resolvedSnapshots));
@@ -203,7 +209,10 @@ final class MavenElisionService {
         productionOutput == null
             ? Optional.empty()
             : Optional.of(new ProductionBytecodeReferenceScanner().scan(productionOutput.toPath()));
+    final Set<String> projectOutputClasses =
+        bytecodeScan.isEmpty() ? Set.of() : classNamesInOutput(bytecodeScan.orElseThrow().scope());
     final ClassUsageReport classUsageReport = ClassUsageReport.classify(index, trace, bytecodeScan);
+    verifyProjectInventory(project, directPresent, inputFingerprint, directInputFingerprint);
     MavenElisionGraphBinding.verifyInventoryFingerprint(resolvedSnapshots, inputFingerprint);
     final ElisionDecision jarDecision =
         new DependencyPruner()
@@ -222,6 +231,7 @@ final class MavenElisionService {
     if (!inputFingerprint.equals(graphBinding.inventoryFingerprint())) {
       throw new IOException("Resolved artifact inventory changed during analysis preparation");
     }
+    verifyProjectInventory(project, directPresent, inputFingerprint, directInputFingerprint);
     return new PreparedAnalysis(
         project,
         options,
@@ -235,8 +245,10 @@ final class MavenElisionService {
         trace,
         index,
         dynamicRootInputs,
+        projectOutputClasses,
         pruningRequiredClasses,
         inputFingerprint,
+        directInputFingerprint,
         graphBinding);
   }
 
@@ -265,6 +277,7 @@ final class MavenElisionService {
                         .bytecodeScan()
                         .map(BytecodeReferenceScan::referencedClasses)
                         .orElse(Set.of()),
+                    prepared.projectOutputClasses(),
                     explicitTrimRoots,
                     failOnUnsupportedMultiRelease,
                     explicitPassThroughArtifacts,
@@ -336,8 +349,36 @@ final class MavenElisionService {
   }
 
   private static void verifyPreparedInventory(final PreparedAnalysis prepared) throws IOException {
-    MavenElisionGraphBinding.verifyInventoryFingerprint(
-        prepared.resolvedSnapshots(), prepared.inputFingerprint());
+    verifyProjectInventory(
+        prepared.project(),
+        prepared.directArtifactsPresent(),
+        prepared.inputFingerprint(),
+        prepared.directInputFingerprint());
+  }
+
+  private static void verifyProjectInventory(
+      final MavenProject project,
+      final boolean directPresent,
+      final String expectedResolvedFingerprint,
+      final String expectedDirectFingerprint)
+      throws IOException {
+    final List<ArtifactSnapshot> resolvedSnapshots =
+        snapshots(new ArrayList<>(project.getArtifacts()));
+    if (!expectedResolvedFingerprint.equals(
+        ResolvedArtifactInventoryFingerprint.fingerprint(resolvedSnapshots))) {
+      throw new IOException("Live Maven resolved artifact view changed during analysis");
+    }
+    final Set<Artifact> directView = project.getDependencyArtifacts();
+    if (directView != null != directPresent) {
+      throw new IOException("Live Maven direct artifact view presence changed during analysis");
+    }
+    if (directPresent) {
+      final List<ArtifactSnapshot> directSnapshots = snapshots(new ArrayList<>(directView));
+      if (!expectedDirectFingerprint.equals(
+          ResolvedArtifactInventoryFingerprint.fingerprint(directSnapshots))) {
+        throw new IOException("Live Maven direct artifact view changed during analysis");
+      }
+    }
   }
 
   private static MavenDependencyTrimmer.TrimRequest trimRequest(
@@ -353,6 +394,7 @@ final class MavenElisionService {
         prepared.trace(),
         prepared.pruningRequiredClasses(),
         prepared.bytecodeScan().map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
+        prepared.projectOutputClasses(),
         options.explicitTrimRoots(),
         options.failOnUnsupportedMultiRelease(),
         options.explicitPassThroughArtifacts(),
@@ -620,12 +662,12 @@ final class MavenElisionService {
       final boolean trimJars)
       throws IOException {
     final Set<String> required = new HashSet<>(sourceClasses);
+    required.addAll(dynamicClasses);
     if (!trimJars) {
       return required;
     }
     final Set<String> indexedNames = new HashSet<>();
     index.classesByArtifact().values().forEach(indexedNames::addAll);
-    required.addAll(dynamicClasses);
     if (explicitRoots != null) {
       for (final String root : explicitRoots) {
         if (root == null || root.isBlank()) {
@@ -640,6 +682,55 @@ final class MavenElisionService {
       }
     }
     return Set.copyOf(required);
+  }
+
+  private static Set<ArtifactCoordinate> dynamicRootArtifactOwners(
+      final DynamicRootInputs dynamicRoots,
+      final ArtifactClassIndex index,
+      final List<ArtifactFileRef> inventory) {
+    final Map<String, Set<ArtifactCoordinate>> ownersByClass = new ConcurrentHashMap<>();
+    index
+        .classesByArtifact()
+        .forEach(
+            (artifact, classes) ->
+                classes.forEach(
+                    className ->
+                        ownersByClass
+                            .computeIfAbsent(
+                                className.replace('/', '.'),
+                                ignored -> ConcurrentHashMap.newKeySet())
+                            .add(artifact.coordinate())));
+    final Set<ArtifactCoordinate> result = new HashSet<>();
+    boolean unresolvedOwner = false;
+    for (final String rawRoot : dynamicRoots.classNames()) {
+      final Set<ArtifactCoordinate> owners =
+          ownersByClass.getOrDefault(rawRoot.replace('/', '.'), Set.of());
+      if (owners.isEmpty()) {
+        unresolvedOwner = true;
+      } else {
+        result.addAll(owners);
+      }
+    }
+    if (unresolvedOwner) {
+      inventory.stream().map(ArtifactFileRef::coordinate).forEach(result::add);
+    }
+    return Set.copyOf(result);
+  }
+
+  private static Set<String> classNamesInOutput(final Path output) throws IOException {
+    final Set<String> names = new LinkedHashSet<>();
+    try (java.util.stream.Stream<Path> paths = Files.walk(output)) {
+      for (final Path path : paths.filter(Files::isRegularFile).toList()) {
+        final String name = output.relativize(path).toString().replace('\\', '/');
+        if (!name.endsWith(".class")
+            || "module-info.class".equals(name)
+            || name.endsWith("/module-info.class")) {
+          continue;
+        }
+        names.add(TraceData.normalizeToDot(name.substring(0, name.length() - 6)));
+      }
+    }
+    return Set.copyOf(names);
   }
 
   /** Resolves source roots or retains all compiler-visible classes. */
@@ -911,13 +1002,16 @@ final class MavenElisionService {
       TraceData trace,
       ArtifactClassIndex index,
       DynamicRootInputs dynamicRootInputs,
+      Set<String> projectOutputClasses,
       Set<String> pruningRequiredClasses,
       String inputFingerprint,
+      String directInputFingerprint,
       MavenElisionGraphBinding.Result graphBinding) {
     PreparedAnalysis {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);
       scanCandidates = List.copyOf(scanCandidates);
+      projectOutputClasses = Set.copyOf(projectOutputClasses);
       pruningRequiredClasses = Set.copyOf(pruningRequiredClasses);
     }
   }

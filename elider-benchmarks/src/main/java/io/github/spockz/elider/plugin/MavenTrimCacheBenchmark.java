@@ -147,6 +147,7 @@ public class MavenTrimCacheBenchmark {
             trace,
             Set.of(ROOT_CLASS),
             Set.of(),
+            Set.of(),
             List.of(),
             false,
             List.of(),

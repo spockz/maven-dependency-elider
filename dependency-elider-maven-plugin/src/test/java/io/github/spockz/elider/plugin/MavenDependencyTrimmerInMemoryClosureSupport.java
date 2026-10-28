@@ -256,9 +256,10 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
               TraceData.of(Set.of("closure.a.Entry")),
               Set.of(),
               Set.of(),
-              passThroughCoordinates,
-              false,
+              Set.of(),
               List.of(),
+              false,
+              passThroughCoordinates,
               false),
           roots,
           unchanged);

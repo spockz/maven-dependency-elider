@@ -97,7 +97,7 @@ final class MavenDependencyTrimmerInMemoryClosureTest
             Set.of(fixture.coordinate("a")),
             Map.of(),
             Map.of(),
-            List.of(fixture.coordinate("a").toString()));
+            List.of("fixture:a:1.0"));
 
     assertThat(result.reachableArtifacts()).contains(fixture.coordinate("b"));
   }

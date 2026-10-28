@@ -40,7 +40,11 @@ public final class ElideMojo extends AbstractMojo {
   @Parameter(property = "elide.sourceRootsComplete", defaultValue = DEFAULT_FALSE)
   private boolean sourceRootsComplete;
 
-  /** Enables per-JAR trimming for retained dependency archives. */
+  /**
+   * Enables per-JAR class trimming.
+   *
+   * <p>Metadata roots protect declaring and provider JARs when disabled.
+   */
   @Parameter(property = "elide.trimJars", defaultValue = DEFAULT_FALSE)
   private boolean trimJars;
 
