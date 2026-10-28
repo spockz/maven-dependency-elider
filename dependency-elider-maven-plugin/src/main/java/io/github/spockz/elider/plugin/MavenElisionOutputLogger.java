@@ -27,10 +27,14 @@ final class MavenElisionOutputLogger {
     }
     if (request.files().trimJars()) {
       ElisionSummary.reportTrimmed(
-          log, analysis.effectiveDecision(), analysis.resolvedSnapshots().size(), reportSnapshot);
+          log, analysis, reportSnapshot, request.vulnerabilityAssessment());
     } else {
       ElisionSummary.report(
-          log, analysis.effectiveDecision(), analysis.resolvedSnapshots().size(), reportSnapshot);
+          log,
+          analysis.effectiveDecision(),
+          analysis.resolvedSnapshots().size(),
+          reportSnapshot,
+          request.vulnerabilityAssessment());
     }
     if (log.isInfoEnabled()) {
       log.info(

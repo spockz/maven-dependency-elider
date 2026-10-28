@@ -3,7 +3,7 @@
 set -euo pipefail
 
 configured_passthrough_names=(
-  groovy-templates-4.0.23.jar micrometer-commons-1.13.6.jar
+  groovy-templates-4.0.23.jar micrometer-commons-1.13.6.jar micrometer-jakarta9-1.13.6.jar
   micrometer-observation-1.13.6.jar spring-aop-6.1.14.jar
   spring-beans-6.1.14.jar spring-boot-3.3.5.jar
   spring-boot-autoconfigure-3.3.5.jar spring-context-6.1.14.jar
@@ -14,6 +14,7 @@ automatic_passthrough_names=(
   jakarta.activation-api-2.1.3.jar jakarta.annotation-api-2.1.1.jar jakarta.mail-2.0.3.jar
   jakarta.servlet.jsp.jstl-api-3.0.2.jar jakarta.validation-api-3.0.2.jar log4j-api-2.23.1.jar
   log4j-to-slf4j-2.23.1.jar logback-classic-1.5.11.jar logback-core-1.5.11.jar
+  micrometer-core-1.13.6.jar
   reactor-core-3.6.11.jar snakeyaml-2.2.jar spring-core-6.1.14.jar tomcat-embed-core-10.1.31.jar
   tomcat-embed-el-10.1.31.jar tomcat-embed-websocket-10.1.31.jar
 )
@@ -128,13 +129,14 @@ main() {
         -Delide.sourceRootsComplete=true
         -Dmaven.compiler.proc=none
         -Delide.trimRoots=freemarker.template.Configuration,groovy.text.markup.MarkupTemplateEngine,jakarta.validation.Validation,org.webjars.WebJarAssetLocator,org.reactivestreams.Publisher,io.micrometer.context.ContextSnapshot,reactor.core.publisher.Flux,reactor.core.publisher.Mono,reactor.util.context.Context,jakarta.servlet.jsp.jstl.core.Config,javax.annotation.Nonnull,edu.umd.cs.findbugs.annotations.SuppressFBWarnings,com.thoughtworks.xstream.XStream,com.thoughtworks.xstream.io.xml.StaxDriver
-        -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:
+        -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework.boot:spring-boot-actuator:3.3.5:jar:,org.springframework.boot:spring-boot-actuator-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,io.micrometer:micrometer-jakarta9:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:
       )
     elif [[ $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
       elision_options+=(
+        -Delide.trimJars=true
         -Delide.sourceRootsComplete=true
         -Dmaven.compiler.proc=none
-        -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:
+        -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar:
       )
     else
       elision_options+=(
@@ -201,7 +203,7 @@ main() {
     if [[ $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
       verify_cve_sboms "$fixture" "$fixture_dir/target/baseline-sbom.cdx.json" \
         "$fixture_dir/target/dependency-elider-sbom.cdx.json" \
-        "$fixture_dir/target/dependency-elider-vex.json"
+        "$fixture_dir/target/dependency-elider.openvex.json"
     fi
 
     if [[ $fixture == example-basic-app || $fixture == example-spring-boot-app ]]; then
@@ -268,9 +270,11 @@ verify_cve_sboms() {
   local vex=$4
   node - "$fixture" "$baseline" "$post_elision" "$vex" <<'NODE'
 const fs = require('node:fs');
+const path = require('node:path');
 const [fixture, baselinePath, postPath, vexPath] = process.argv.slice(2);
 const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
 const post = JSON.parse(fs.readFileSync(postPath, 'utf8'));
+const report = JSON.parse(fs.readFileSync(path.join(path.dirname(postPath), 'dependency-elider-report.json'), 'utf8'));
 const names = bom => new Set((bom.components ?? []).map(component => component.name));
 const before = names(baseline);
 const after = names(post);
@@ -280,18 +284,21 @@ const assert = (condition, message) => {
   }
 };
 if (fixture === 'example-cve-unused-app') {
-  assert(before.has('logback-classic') && before.has('logback-core'),
-    'baseline inventory must contain Logback');
-  assert(!after.has('logback-classic') && !after.has('logback-core'),
-    'post-elision inventory must omit Logback');
+  assert(before.has('logback-classic') && before.has('logback-core') && before.has('janino'),
+    'baseline inventory must contain Logback and its Janino prerequisite');
+  assert(after.has('logback-classic') && after.has('logback-core') && after.has('janino'),
+    'post-elision inventory must retain components whose code was not removed as a whole artifact');
+  assert(report.trimmedArtifacts.some(item => item.coordinate.includes('org.codehaus.janino:janino:')),
+    'unused fixture must prove Janino code was trimmed');
   assert(!fs.existsSync(vexPath),
-    'whole-artifact Logback removal without symbol evidence must not produce VEX');
+    'retained Logback without vulnerable-symbol proof must not produce VEX');
 } else {
   assert(before.has('janino') && before.has('logback-classic') && before.has('logback-core'),
     'baseline inventory must contain Janino and Logback');
-  assert(!after.has('janino'), 'post-elision inventory must omit Janino');
-  assert(after.has('logback-classic') && after.has('logback-core'),
-    'post-elision inventory must retain Logback');
+  assert(after.has('janino') && after.has('logback-classic') && after.has('logback-core'),
+    'post-elision inventory must retain components whose code was not removed as a whole artifact');
+  assert(report.trimmedArtifacts.some(item => item.coordinate.includes('org.codehaus.janino:janino:')),
+    'safe-class fixture must prove Janino code was trimmed');
   assert(!fs.existsSync(vexPath), 'unmapped retained Logback CVE must not produce VEX');
 }
 NODE
@@ -652,10 +659,10 @@ verify_archive() {
     example-spring-boot-app)
       verify_no_spring_whole_artifact_drops "$fixture_dir"
       has_pattern "$entries" 'BOOT-INF/lib/spring-webmvc-[^/]+\.jar'
-      has_entry "$entries" 'BOOT-INF/classes/META-INF/sbom/application.cdx.json'
-      has_entry "$entries" 'BOOT-INF/classes/META-INF/native-image/sbom.json'
-      lacks_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
-      lacks_pattern "$entries" 'BOOT-INF/lib/snakeyaml-[^/]+\.jar'
+      has_entry "$entries" 'META-INF/sbom/application.cdx.json'
+      has_entry "$entries" 'META-INF/native-image/sbom.json'
+      has_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/snakeyaml-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/jakarta.mail-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/jakarta.activation-api-[^/]+\.jar'
@@ -728,8 +735,12 @@ with open(sys.argv[1], encoding="utf-8") as report_file:
     report = json.load(report_file)
 if report["rawDroppedCoordinates"] or report["droppedArtifacts"]:
     raise SystemExit("CVE fixture expects the graph-backed analysis to retain all whole artifacts")
-if report["mediatedGraph"]["artifactPaths"]:
-    raise SystemExit("CVE fixture without class trimming must not invent artifact paths")
+drop_paths = [
+    path for path in report["mediatedGraph"]["artifactPaths"]
+    if path["kind"] == "WHOLE_ARTIFACT_DROPPED"
+]
+if drop_paths:
+    raise SystemExit("CVE fixture must not report whole-artifact removal paths")
 PY
 }
 

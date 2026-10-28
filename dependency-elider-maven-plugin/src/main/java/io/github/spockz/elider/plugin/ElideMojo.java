@@ -2,8 +2,15 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
+import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
+import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
@@ -21,7 +28,7 @@ import org.apache.maven.project.MavenProject;
     defaultPhase = LifecyclePhase.INITIALIZE,
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
-@SuppressWarnings("PMD.TooManyFields")
+@SuppressWarnings({"PMD.TooManyFields", "PMD.CouplingBetweenObjects"})
 public final class ElideMojo extends AbstractMojo {
   /** Maven's annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
@@ -90,6 +97,37 @@ public final class ElideMojo extends AbstractMojo {
       defaultValue = "${project.build.directory}/dependency-elider-sbom.cdx.json")
   private File sbomFile;
 
+  /** Baseline inventory SBOM written before whole-artifact removal. */
+  @Parameter(
+      property = "elide.baselineSbomFile",
+      defaultValue = "${project.build.directory}/baseline-sbom.cdx.json")
+  private File baselineSbomFile;
+
+  /** OpenVEX output written only when omitted-code proof succeeds. */
+  @Parameter(
+      property = "elide.vexFile",
+      defaultValue = "${project.build.directory}/dependency-elider.openvex.json")
+  private File vexFile;
+
+  /** Optional local vulnerability-index cache directory. */
+  @Parameter(property = "elide.cveCacheDirectory")
+  private File cveCacheDirectory;
+
+  /** Vulnerability-index cache freshness in hours. */
+  @Parameter(property = "elide.cveCacheTtlHours", defaultValue = "24")
+  private int cveCacheTtlHours;
+
+  /** Forces refresh of the vulnerability-index cache. */
+  @Parameter(property = "elide.cveForceSync", defaultValue = DEFAULT_FALSE)
+  private boolean cveForceSync;
+
+  /** Optional remote vulnerability-index URI. */
+  @Parameter(property = "elide.cveIndexUri")
+  private String cveIndexUri;
+
+  /** Explicit POM vulnerability mappings override cache entries. */
+  @Parameter private List<VulnerabilityMappingConfig> vulnerabilityMappings;
+
   /**
    * Persisted elision snapshot for {@code report}, defaulting to
    * target/dependency-elider-report.json.
@@ -151,11 +189,15 @@ public final class ElideMojo extends AbstractMojo {
   }
 
   private void executeAnalysis() throws IOException, MojoFailureException {
+    final List<ArtifactFileRef> baselineInventory =
+        trimJars ? MavenSbomWriter.captureOriginalInventory(project) : List.of();
     final MavenElisionService service = new MavenElisionService();
     final MavenElisionService.PreparedAnalysis prepared =
         service.prepare(project, analysisOptions());
     final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
     final MavenElisionService.Analysis analysis = service.finishEffectiveOutputs(effective);
+    final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
+        assessVulnerabilities(analysis);
     try (TrimOutputGenerationCommitHandle generation = analysis.generationCommit()) {
       MavenElisionOutputPublisher.publish(
           new MavenElisionOutputPublisher.Request(
@@ -165,10 +207,43 @@ public final class ElideMojo extends AbstractMojo {
               analysis,
               generation,
               new MavenElisionOutputPublisher.ReportFiles(
-                  reportFile, sbomFile, summaryFile, trimJars),
+                  reportFile,
+                  MavenGeneratedOutputs.outputFile(
+                      sbomFile, project, "dependency-elider-sbom.cdx.json"),
+                  MavenGeneratedOutputs.outputFile(
+                      baselineSbomFile, project, "baseline-sbom.cdx.json"),
+                  MavenGeneratedOutputs.outputFile(
+                      vexFile, project, "dependency-elider.openvex.json"),
+                  summaryFile,
+                  trimJars),
               getLog(),
-              planPublication));
+              planPublication,
+              baselineInventory,
+              vulnerabilityAssessment));
     }
+  }
+
+  private MavenVulnerabilityAssessment.Result assessVulnerabilities(
+      final MavenElisionService.Analysis analysis) throws IOException {
+    final Path cacheDirectory =
+        cveCacheDirectory == null
+            ? VulnerabilityCacheManager.defaultCacheDirectory()
+            : cveCacheDirectory.toPath();
+    final URI source =
+        cveIndexUri == null || cveIndexUri.isBlank() ? null : URI.create(cveIndexUri);
+    final CacheConfig config =
+        new CacheConfig(
+            cacheDirectory,
+            source,
+            Duration.ofHours(cveCacheTtlHours),
+            cveForceSync,
+            session != null && session.isOffline(),
+            VulnerabilityCacheManager.bundledEmptySeed());
+    final List<VulnerabilitySymbolMapping> manualMappings =
+        vulnerabilityMappings == null
+            ? List.of()
+            : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
+    return new MavenVulnerabilityAssessment(getLog()).assess(config, manualMappings, analysis);
   }
 
   private MavenElisionService.AnalysisOptions analysisOptions() {

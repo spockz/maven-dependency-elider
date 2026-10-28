@@ -8,7 +8,12 @@ import java.util.Locale;
 import org.apache.maven.plugin.logging.Log;
 
 /** Emits Maven summaries for predicted and applied elision results. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.TooManyMethods",
+  "PMD.GuardLogStatement"
+})
 final class ElisionSummary {
   /** Prevents instances of this static-only writer. */
   private ElisionSummary() {
@@ -32,6 +37,15 @@ final class ElisionSummary {
       final Log log,
       final ElisionDecision decision,
       final int inputCount,
+      final MavenElisionReportSnapshot reportSnapshot,
+      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment) {
+    report(log, decision, inputCount, reportSnapshot, vulnerabilityAssessment, true);
+  }
+
+  static void report(
+      final Log log,
+      final ElisionDecision decision,
+      final int inputCount,
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment) {
     report(log, decision, inputCount, null, vulnerabilityAssessment);
   }
@@ -41,7 +55,8 @@ final class ElisionSummary {
       final ElisionDecision decision,
       final int inputCount,
       final MavenElisionReportSnapshot reportSnapshot,
-      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment) {
+      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment,
+      final boolean includeCacheStatus) {
     if (!log.isInfoEnabled()) {
       return;
     }
@@ -50,7 +65,9 @@ final class ElisionSummary {
     log.info("  Classes removed: 0 / N/A (N/A; stage not run)");
     log.info("  Methods removed: 0 / N/A (N/A; stage not run)");
     log.info("  Fields removed: 0 / N/A (N/A; stage not run)");
-    log.info("  JAR trim cache: unavailable (trim stage not run)");
+    if (includeCacheStatus) {
+      log.info("  JAR trim cache: unavailable (trim stage not run)");
+    }
     reportCves(log, vulnerabilityAssessment, false);
   }
 
@@ -114,7 +131,7 @@ final class ElisionSummary {
     }
     reportHeader(log, analysis.decision(), analysis.resolvedSnapshots().size());
     log.info(
-        "  Program classes removed: "
+        "  Program classes pruned from retained JARs: "
             + reportSnapshot.programClassesPruned()
             + " (uncompressed omitted .class entry payload bytes: "
             + MavenElisionReportWriter.formatBytes(

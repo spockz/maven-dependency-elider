@@ -121,7 +121,8 @@ public final class AnalyzeMojo extends AbstractMojo {
                       trimRoots == null ? List.of() : trimRoots,
                       failOnUnsupportedMultiRelease,
                       trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
-                      failOnUnsupportedModuleInfo));
+                      failOnUnsupportedModuleInfo,
+                      true));
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =

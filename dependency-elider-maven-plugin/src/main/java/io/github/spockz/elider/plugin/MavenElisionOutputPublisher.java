@@ -19,7 +19,7 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 
 /** Publishes all effective-analysis views through the goal's rollback boundary. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 final class MavenElisionOutputPublisher {
   private MavenElisionOutputPublisher() {
     throw new AssertionError("No instances");
@@ -43,21 +43,28 @@ final class MavenElisionOutputPublisher {
     final Path summary =
         MavenElisionReportWriter.outputPath(request.files().summary(), request.project());
     try (MavenOutputTransaction outputs =
-        MavenOutputTransaction.forTargets(outputTargets(request.files(), summary))) {
+        MavenOutputTransaction.forTargets(outputTargets(request, summary))) {
       writeStagedReports(outputs, request, plan, reportSnapshot, summary);
       outputs.publish();
       publishViewsAndPlan(request, plan);
       commitBoth(outputs, request.generation());
+      recordGeneratedOutputs(request);
       cleanupCommitted(outputs, request.generation());
     }
   }
 
-  private static List<Path> outputTargets(final ReportFiles files, final Path summary) {
+  private static List<Path> outputTargets(final Request request, final Path summary) {
+    final ReportFiles files = request.files();
     final List<Path> targets = new ArrayList<>();
     targets.add(files.classUsage().toPath());
     targets.add(summary);
     if (files.trimJars()) {
       targets.add(files.sbom().toPath());
+      targets.add(files.baselineSbom().toPath());
+      targets.addAll(MavenSbomWriter.stagedPaths(request.project()));
+      if (hasVex(request)) {
+        targets.add(files.vex().toPath());
+      }
     }
     return targets;
   }
@@ -75,10 +82,56 @@ final class MavenElisionOutputPublisher {
         analysis.classUsageReport(),
         analysis.bytecodeScan());
     if (request.files().trimJars()) {
-      MavenSbomWriter.write(
-          request.project(), outputs.stagedPath(request.files().sbom().toPath()), plan, analysis);
+      final MavenVulnerabilityAssessment.Result assessment = request.vulnerabilityAssessment();
+      final List<io.github.spockz.elider.model.VexAttestation> attestations =
+          assessment == null ? List.of() : assessment.attestations();
+      final Path sbom = outputs.stagedPath(request.files().sbom().toPath());
+      MavenSbomWriter.write(request.project(), sbom, plan, analysis, attestations);
+      MavenSbomWriter.writeBaseline(
+          request.project(),
+          outputs.stagedPath(request.files().baselineSbom().toPath()),
+          request.baselineInventory(),
+          analysis);
+      if (hasVex(request)) {
+        MavenSbomWriter.writeOpenVex(
+            request.project(),
+            outputs.stagedPath(request.files().vex().toPath()),
+            plan,
+            analysis,
+            attestations);
+      }
+      final List<Path> stagedSboms = MavenSbomWriter.stagedPaths(request.project());
+      for (final Path stagedSbom : stagedSboms) {
+        MavenSbomWriter.stage(sbom, outputs.stagedPath(stagedSbom));
+      }
     }
     MavenElisionReportWriter.write(outputs.stagedPath(summary), reportSnapshot);
+  }
+
+  private static boolean hasVex(final Request request) {
+    return request.vulnerabilityAssessment() != null
+        && !request.vulnerabilityAssessment().attestations().isEmpty();
+  }
+
+  private static void recordGeneratedOutputs(final Request request) throws IOException {
+    if (!request.files().trimJars()) {
+      return;
+    }
+    final List<Path> current =
+        MavenGeneratedOutputs.generatedOutputPaths(
+            request.project(),
+            request.files().sbom(),
+            request.files().baselineSbom(),
+            request.files().vex(),
+            hasVex(request));
+    MavenGeneratedOutputs.clearPrevious(
+        request.project(),
+        MavenGeneratedOutputs.currentOutputPaths(
+            request.project(),
+            request.files().sbom(),
+            request.files().baselineSbom(),
+            request.files().vex()));
+    MavenGeneratedOutputs.record(request.project(), current);
   }
 
   @SuppressWarnings(
@@ -156,7 +209,8 @@ final class MavenElisionOutputPublisher {
     }
   }
 
-  record ReportFiles(File classUsage, File sbom, File summary, boolean trimJars) {}
+  record ReportFiles(
+      File classUsage, File sbom, File baselineSbom, File vex, File summary, boolean trimJars) {}
 
   record Request(
       MavenProject project,
@@ -166,5 +220,7 @@ final class MavenElisionOutputPublisher {
       TrimOutputGenerationCommitHandle generation,
       ReportFiles files,
       Log log,
-      ElideMojo.PlanPublication planPublication) {}
+      ElideMojo.PlanPublication planPublication,
+      List<io.github.spockz.elider.model.ArtifactFileRef> baselineInventory,
+      MavenVulnerabilityAssessment.Result vulnerabilityAssessment) {}
 }

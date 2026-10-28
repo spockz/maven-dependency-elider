@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
@@ -65,7 +67,8 @@ import org.objectweb.asm.Opcodes;
   "PMD.LawOfDemeter",
   "PMD.ShortVariable",
   "PMD.AvoidInstantiatingObjectsInLoops",
-  "PMD.CyclomaticComplexity"
+  "PMD.CyclomaticComplexity",
+  "PMD.NcssCount"
 })
 final class ElideMojoTest {
   /** Plexus method used by the Maven session fixture proxy. */
@@ -361,7 +364,8 @@ final class ElideMojoTest {
     assertThat(log.messages()).doesNotContain("  Classes removed: 0 / N/A (N/A; stage not run)");
     assertThat(log.messages())
         .contains(
-            "POM vulnerability mapping overrides cached mapping for CVE-2026-10001 org.example:runtime-dependency:jar:1.0")
+            "POM vulnerability mapping overrides cached mapping for "
+                + "CVE-2026-10001 org.example:runtime-dependency:jar:1.0")
         .noneMatch(message -> message.contains("sample.Drop"));
     assertThat(log.messages())
         .anyMatch(line -> line.startsWith("  CVEs with vulnerable code proven absent by trimming:"))
@@ -382,7 +386,7 @@ final class ElideMojoTest {
     }
     assertThat(tempDir.resolve("build/dependency-elider-sbom.cdx.json")).isRegularFile();
     assertThat(tempDir.resolve("build/baseline-sbom.cdx.json")).isRegularFile();
-    assertThat(tempDir.resolve("build/dependency-elider-vex.json")).isRegularFile();
+    assertThat(tempDir.resolve("build/dependency-elider.openvex.json")).isRegularFile();
     assertThat(tempDir.resolve("build/classes/META-INF/sbom/application.cdx.json")).isRegularFile();
     assertThat(tempDir.resolve("build/classes/META-INF/native-image/sbom.json")).isRegularFile();
     final ObjectMapper sbomMapper = new ObjectMapper();
@@ -397,8 +401,7 @@ final class ElideMojoTest {
                 .readTree(tempDir.resolve("build/dependency-elider-sbom.cdx.json").toFile())
                 .path("components")
                 .toString())
-        .contains("runtime-dependency")
-        .doesNotContain("unused-runtime");
+        .contains("runtime-dependency", "unused-runtime");
     assertThat(
             sbomMapper
                 .readTree(tempDir.resolve("build/dependency-elider-sbom.cdx.json").toFile())

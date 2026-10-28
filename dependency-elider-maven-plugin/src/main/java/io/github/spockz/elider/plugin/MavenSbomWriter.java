@@ -118,8 +118,12 @@ final class MavenSbomWriter {
 
   static void stage(final MavenProject project, final Path sbomFile) throws IOException {
     for (final Path stagedPath : stagedPaths(project)) {
-      copy(sbomFile, stagedPath);
+      stage(sbomFile, stagedPath);
     }
+  }
+
+  static void stage(final Path sbomFile, final Path stagedPath) throws IOException {
+    copy(sbomFile, stagedPath);
   }
 
   static List<Path> stagedPaths(final MavenProject project) {
