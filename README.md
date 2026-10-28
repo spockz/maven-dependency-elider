@@ -112,6 +112,42 @@ To see the effective dependency graph, run a bare tree goal with the active elis
 
 The Basic tree omits `commons-codec:commons-codec` and retains `org.apache.commons:commons-compress:1.28.0`.
 
+### Permanent POM Configuration
+
+To make elision part of routine developer builds without passing goal prefixes or CLI flags on every invocation, declare the plugin under `<build><plugins>` in your `pom.xml`:
+
+```xml
+<build>
+  <plugins>
+    <plugin>
+      <groupId>io.github.spockz</groupId>
+      <artifactId>dependency-elider-maven-plugin</artifactId>
+      <version>0.1.0-SNAPSHOT</version>
+      <executions>
+        <execution>
+          <!-- Binds automatically to the initialize lifecycle phase -->
+          <goals>
+            <goal>elide</goal>
+          </goals>
+        </execution>
+      </executions>
+      <configuration>
+        <traceFiles>
+          <traceFile>target/classes.log</traceFile>
+        </traceFiles>
+        <trimJars>true</trimJars>
+      </configuration>
+    </plugin>
+  </plugins>
+</build>
+```
+
+With this POM declaration and `.mvn/extensions.xml` in place:
+
+* Ordinary lifecycle commands such as `./mvnw clean package` automatically execute elision during `initialize`, pruning unused JARs and intra-JAR classes transparently before downstream packaging plugins run.
+* Diagnostic commands such as `./mvnw dependency:tree` automatically reflect the post-elision dependency graph.
+* When telemetry traces are absent (or during clean builds before tests run), the plugin safely falls back or passes through unchanged unless configured otherwise.
+
 For complete configuration options and multi-source telemetry merging, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md), the [User FAQ](docs/faq.md), and the [Contributor Decision Register and Engineering FAQ](docs/contributor-decisions-and-faq.md).
 
 The `elide` goal writes two different JSON files because they contain different records: `elide.reportFile` defaults to `target/dependency-elider-class-usage.json` for class-usage analysis evidence, while `elide.summaryFile` defaults to `target/dependency-elider-report.json` for the persisted elision snapshot read by `dependency-elider:report`. Each persisted format has its own schema version 1: the elision report, graph-capture store, resolver-plan store, class-usage report, and trim cache. The format names and exact field shapes identify the records; these schema numbers are independent of the plugin release version. Incompatible pre-release drafts and unsupported schema values are rejected; no migration or backward-compatibility promise is provided.
