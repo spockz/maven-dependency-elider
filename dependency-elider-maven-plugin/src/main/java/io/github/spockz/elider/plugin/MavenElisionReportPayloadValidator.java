@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Validates schema-one JSON types and row shapes before snapshot deserialization. */
+@SuppressWarnings({"PMD.GodClass", "PMD.AvoidDuplicateLiterals", "PMD.TooManyMethods"})
 final class MavenElisionReportPayloadValidator {
   /** Count of classes pruned from retained artifacts. */
   private static final String PROGRAM_CLASSES_PRUNED = "programClassesPruned";
@@ -35,7 +36,12 @@ final class MavenElisionReportPayloadValidator {
           PROGRAM_CLASSES_PRUNED,
           UNCOMPRESSED_PROGRAM_CLASS_BYTES_PRUNED,
           "trimmedArtifacts",
+          "removedCveComponents",
+          "provenAbsentCves",
           "mediatedGraph");
+
+  /** Exact fields for CVE finding rows. */
+  private static final Set<String> CVE_FIELDS = Set.of("cveId", "coordinate");
 
   /** Whole-artifact rows retain original-JAR and removed-class metrics. */
   private static final Map<String, Long> DROPPED_METRICS =
@@ -90,7 +96,46 @@ final class MavenElisionReportPayloadValidator {
     validateMetrics(payload, SNAPSHOT_METRICS, "Elision report metric");
     validateRows(payload.get("droppedArtifacts"), DROPPED_FIELDS, DROPPED_METRICS);
     validateRows(payload.get("trimmedArtifacts"), TRIMMED_FIELDS, TRIMMED_METRICS);
+    validateCveRows(payload.get("removedCveComponents"));
+    validateCveRows(payload.get("provenAbsentCves"));
     MavenElisionReportGraphPayloadValidator.validate(payload.get("mediatedGraph"));
+  }
+
+  private static void validateCveRows(final JsonNode rows) throws IOException {
+    if (rows == null || !rows.isArray()) {
+      throw new IOException("Elision report CVE rows must be arrays");
+    }
+    for (final JsonNode row : rows) {
+      validateCveRow(row);
+    }
+  }
+
+  private static void validateCveRow(final JsonNode row) throws IOException {
+    if (!row.isObject()) {
+      throw new IOException("Elision report CVE rows must be objects");
+    }
+    if (!fieldNames(row).equals(CVE_FIELDS)) {
+      throw new IOException(
+          "Elision report CVE row fields do not match schema version "
+              + MavenElisionReportSnapshot.SCHEMA_VERSION
+              + "; run dependency-elider:elide to write a current report");
+    }
+    validateCveId(row.get("cveId"));
+    validateCoordinateField(row.get("coordinate"));
+  }
+
+  private static void validateCveId(final JsonNode cveId) throws IOException {
+    if (cveId == null
+        || !cveId.isTextual()
+        || !cveId.textValue().matches("CVE-[0-9]{4}-[0-9]{4,}")) {
+      throw new IOException("Elision report CVE row cveId must be a valid CVE identifier");
+    }
+  }
+
+  private static void validateCoordinateField(final JsonNode coordinate) throws IOException {
+    if (coordinate == null || !coordinate.isTextual() || coordinate.textValue().isBlank()) {
+      throw new IOException("Elision report CVE row coordinate must be nonblank text");
+    }
   }
 
   private static void validateSchemaVersion(final JsonNode payload) throws IOException {

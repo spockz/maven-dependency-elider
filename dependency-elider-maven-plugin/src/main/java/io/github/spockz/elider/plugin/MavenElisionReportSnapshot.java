@@ -33,6 +33,8 @@ record MavenElisionReportSnapshot(
     int programClassesPruned,
     long uncompressedProgramClassBytesPruned,
     List<TrimmedArtifact> trimmedArtifacts,
+    List<CveFinding> removedCveComponents,
+    List<CveFinding> provenAbsentCves,
     MediatedGraphReport mediatedGraph) {
   /** Current persisted JSON format version. */
   static final int SCHEMA_VERSION = 1;
@@ -52,6 +54,9 @@ record MavenElisionReportSnapshot(
     rawDroppedCoordinates =
         List.copyOf(Objects.requireNonNull(rawDroppedCoordinates, "rawDroppedCoordinates"));
     trimmedArtifacts = List.copyOf(Objects.requireNonNull(trimmedArtifacts, "trimmedArtifacts"));
+    removedCveComponents =
+        List.copyOf(Objects.requireNonNull(removedCveComponents, "removedCveComponents"));
+    provenAbsentCves = List.copyOf(Objects.requireNonNull(provenAbsentCves, "provenAbsentCves"));
     Objects.requireNonNull(mediatedGraph, "mediatedGraph");
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
@@ -150,12 +155,60 @@ record MavenElisionReportSnapshot(
         programClassesPruned,
         uncompressedProgramClassBytesPruned,
         trimmedArtifacts,
+        List.of(),
+        List.of(),
+        mediatedGraph);
+  }
+
+  MavenElisionReportSnapshot(
+      final int schemaVersion,
+      final String projectGroupId,
+      final String projectArtifactId,
+      final String projectVersion,
+      final String projectBaseDirectory,
+      final String generatedAt,
+      final int wholeArtifactsDropped,
+      final long originalJarBytesDropped,
+      final List<DroppedArtifact> droppedArtifacts,
+      final List<String> rawDroppedCoordinates,
+      final int programClassesPruned,
+      final long uncompressedProgramClassBytesPruned,
+      final List<TrimmedArtifact> trimmedArtifacts,
+      final List<CveFinding> removedCveComponents,
+      final List<CveFinding> provenAbsentCves,
+      final MediatedGraphReport mediatedGraph) {
+    this(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        sumDroppedArtifactClassCounts(droppedArtifacts),
+        sumDroppedArtifactClassBytes(droppedArtifacts),
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        removedCveComponents,
+        provenAbsentCves,
         mediatedGraph);
   }
 
   static MavenElisionReportSnapshot from(
       final org.apache.maven.project.MavenProject project,
       final MavenElisionService.Analysis analysis)
+      throws IOException {
+    return from(project, analysis, null);
+  }
+
+  static MavenElisionReportSnapshot from(
+      final org.apache.maven.project.MavenProject project,
+      final MavenElisionService.Analysis analysis,
+      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment)
       throws IOException {
     final DroppedArtifactSummary droppedSummary =
         droppedArtifactSummary(analysis, analysis.effectiveDecision());
@@ -174,6 +227,22 @@ record MavenElisionReportSnapshot(
     final int prunedClasses = sumPrunedClassCounts(trimmed);
     final long prunedBytes = sumPrunedClassBytes(trimmed);
     final Path projectBaseDirectory = canonicalProjectDirectory(project);
+    final List<CveFinding> removedCveComponents =
+        vulnerabilityAssessment == null
+            ? List.of()
+            : vulnerabilityAssessment.removedComponents().stream()
+                .map(finding -> new CveFinding(finding.cveId(), finding.coordinate().toId()))
+                .sorted(
+                    Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
+                .toList();
+    final List<CveFinding> provenAbsentCves =
+        vulnerabilityAssessment == null
+            ? List.of()
+            : vulnerabilityAssessment.provenVulnerableCodeAbsent().stream()
+                .map(finding -> new CveFinding(finding.cveId(), finding.coordinate().toId()))
+                .sorted(
+                    Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
+                .toList();
     return new MavenElisionReportSnapshot(
         SCHEMA_VERSION,
         project.getGroupId(),
@@ -193,6 +262,8 @@ record MavenElisionReportSnapshot(
         prunedClasses,
         prunedBytes,
         trimmed,
+        removedCveComponents,
+        provenAbsentCves,
         analysis.mediatedGraph() == null
             ? MediatedGraphReport.unavailable(
                 "Mediated graph data is unavailable for this analysis")
@@ -387,6 +458,15 @@ record MavenElisionReportSnapshot(
       require(
           uncompressedProgramClassBytesPruned >= 0,
           "uncompressedProgramClassBytesPruned must not be negative");
+    }
+  }
+
+  /** Vulnerability finding associated with a dependency coordinate. */
+  record CveFinding(String cveId, String coordinate) {
+    CveFinding {
+      requireNonBlank(cveId, "cveId");
+      require(cveId.matches("CVE-[0-9]{4}-[0-9]{4,}"), "Invalid CVE format: " + cveId);
+      requireNonBlank(coordinate, "coordinate");
     }
   }
 }

@@ -28,6 +28,9 @@ final class MavenElisionReportWriter {
   /** Binary units used for the report's byte totals. */
   private static final String[] BYTE_UNITS = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"};
 
+  /** Bullet prefix for indented report items. */
+  private static final String BULLET = "  - ";
+
   private MavenElisionReportWriter() {}
 
   static Path outputPath(final File configuredPath, final MavenProject project) {
@@ -107,7 +110,7 @@ final class MavenElisionReportWriter {
         "Raw trace decision drops before graph safety: " + snapshot.rawDroppedCoordinates().size());
     for (final MavenElisionReportSnapshot.DroppedArtifact artifact : snapshot.droppedArtifacts()) {
       lines.add(
-          "  - "
+          BULLET
               + artifact.coordinate()
               + ": "
               + formatBytes(artifact.originalJarBytes())
@@ -124,12 +127,32 @@ final class MavenElisionReportWriter {
             + "; excludes module descriptors and archive metadata)");
     for (final MavenElisionReportSnapshot.TrimmedArtifact artifact : snapshot.trimmedArtifacts()) {
       lines.add(
-          "  - "
+          BULLET
               + artifact.coordinate()
               + ": "
               + artifact.programClassesPruned()
               + " classes, "
               + formatBytes(artifact.uncompressedProgramClassBytesPruned()));
+    }
+    if (snapshot.removedCveComponents().isEmpty()) {
+      lines.add(
+          "CVE components removed from inventory: "
+              + "none matched the available vulnerability mappings");
+    } else {
+      lines.add("CVE components removed from inventory:");
+      for (final MavenElisionReportSnapshot.CveFinding finding : snapshot.removedCveComponents()) {
+        lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
+      }
+    }
+    if (snapshot.provenAbsentCves().isEmpty()) {
+      lines.add(
+          "CVEs with vulnerable code proven absent by trimming: none matched the available"
+              + " vulnerability mappings");
+    } else {
+      lines.add("CVEs with vulnerable code proven absent by trimming:");
+      for (final MavenElisionReportSnapshot.CveFinding finding : snapshot.provenAbsentCves()) {
+        lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
+      }
     }
     lines.addAll(
         MediatedGraphReportRenderer.render(snapshot.mediatedGraph(), snapshot.projectGav()));

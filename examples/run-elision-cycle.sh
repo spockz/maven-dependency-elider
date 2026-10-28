@@ -226,7 +226,7 @@ main() {
     run_fixture_maven "$fixture_dir" -f "$pom" \
       io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report >"$report_output" 2>&1
     printf '\n%s report:\n' "$fixture"
-    grep -E '^\[INFO\] (Project:|Snapshot:|Whole artifacts dropped:|Program classes removed with dropped JARs:|Program classes pruned from retained JARs:|  - )' \
+    grep -E '^\[INFO\] (Project:|Snapshot:|Whole artifacts dropped:|Program classes removed with dropped JARs:|Program classes pruned from retained JARs:|CVE components removed from inventory:|CVEs with vulnerable code proven absent by trimming:|  - )' \
       "$report_output"
 
     entries="$test_dir/$fixture.jar-entries"

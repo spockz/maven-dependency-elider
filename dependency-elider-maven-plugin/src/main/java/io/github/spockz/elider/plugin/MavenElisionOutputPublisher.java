@@ -30,7 +30,8 @@ final class MavenElisionOutputPublisher {
     final MavenElisionService.ApplyPlan plan =
         request.service().plan(request.project(), request.analysis());
     final MavenElisionReportSnapshot reportSnapshot =
-        MavenElisionReportSnapshot.from(request.project(), request.analysis());
+        MavenElisionReportSnapshot.from(
+            request.project(), request.analysis(), request.vulnerabilityAssessment());
     publishReportsAndViews(request, plan, reportSnapshot);
     MavenElisionOutputLogger.completion(request, reportSnapshot);
   }

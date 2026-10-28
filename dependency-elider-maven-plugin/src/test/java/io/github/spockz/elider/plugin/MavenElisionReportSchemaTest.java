@@ -12,7 +12,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Covers report schema-version and exact-field rejection. */
-@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.CommentDefaultAccessModifier"})
+@SuppressWarnings({
+  "PMD.AtLeastOneConstructor",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.TooManyMethods",
+  "PMD.AvoidDuplicateLiterals"
+})
 final class MavenElisionReportSchemaTest {
   /** Dropped-row collection key. */
   private static final String DROPPED_ROWS = "droppedArtifacts";
@@ -146,6 +151,50 @@ final class MavenElisionReportSchemaTest {
         .hasMessageContaining("artifact coordinate must be nonblank text");
   }
 
+  @Test
+  void rejectsNonArrayCveComponents() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("removedCveComponents", "not-an-array");
+    final Path previous = temporaryDirectory.resolve("non-array-cve.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Elision report CVE rows must be arrays");
+  }
+
+  @Test
+  void rejectsMalformedCveId() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload
+        .withArray("removedCveComponents")
+        .addObject()
+        .put("cveId", "INVALID-CVE")
+        .put("coordinate", "example:dep:jar:1.0");
+    final Path previous = temporaryDirectory.resolve("malformed-cve-id.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("cveId must be a valid CVE identifier");
+  }
+
+  @Test
+  void rejectsBlankCveCoordinate() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload
+        .withArray("provenAbsentCves")
+        .addObject()
+        .put("cveId", "CVE-2026-10001")
+        .put("coordinate", "   ");
+    final Path previous = temporaryDirectory.resolve("blank-cve-coordinate.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("coordinate must be nonblank text");
+  }
+
   private static ObjectNode currentReportShapeWithLegacyDroppedRow() {
     final ObjectNode payload = JSON.createObjectNode();
     payload.put("schemaVersion", 1);
@@ -167,6 +216,8 @@ final class MavenElisionReportSchemaTest {
     payload.put("programClassesPruned", 0);
     payload.put("uncompressedProgramClassBytesPruned", 0);
     payload.putArray("trimmedArtifacts");
+    payload.putArray("removedCveComponents");
+    payload.putArray("provenAbsentCves");
     final ObjectNode graph = payload.putObject("mediatedGraph");
     graph.put("available", false);
     graph.put("unavailableReason", "No graph was provided");

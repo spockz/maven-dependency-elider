@@ -159,6 +159,10 @@ final class MavenElisionReportWriterTest {
             "Program classes pruned from retained JARs: 4 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "3.02 KiB; excludes module descriptors and archive metadata)",
+            "CVE components removed from inventory: "
+                + "none matched the available vulnerability mappings",
+            "CVEs with vulnerable code proven absent by trimming: none matched the available"
+                + " vulnerability mappings",
             "Mediated TEST dependency graph (captured and saved by the elide goal):");
     assertThat(MavenElisionReportWriter.render(reread))
         .anySatisfy(message -> assertThat(message).contains("[EFFECTIVE_DROP]"));
@@ -198,7 +202,58 @@ final class MavenElisionReportWriterTest {
                 + "archive sanitation metadata)",
             "Program classes pruned from retained JARs: 0 (uncompressed omitted"
                 + " .class payload bytes: "
-                + "0 B; excludes module descriptors and archive metadata)");
+                + "0 B; excludes module descriptors and archive metadata)",
+            "CVE components removed from inventory: "
+                + "none matched the available vulnerability mappings",
+            "CVEs with vulnerable code proven absent by trimming: none matched the available"
+                + " vulnerability mappings");
+  }
+
+  @Test
+  void writesReadsAndRendersPopulatedCveFindings() throws IOException {
+    final MavenElisionReportSnapshot base = snapshot();
+    final MavenElisionReportSnapshot populated =
+        new MavenElisionReportSnapshot(
+            base.schemaVersion(),
+            base.projectGroupId(),
+            base.projectArtifactId(),
+            base.projectVersion(),
+            base.projectBaseDirectory(),
+            base.generatedAt(),
+            base.wholeArtifactsDropped(),
+            base.originalJarBytesDropped(),
+            base.droppedArtifacts(),
+            base.rawDroppedCoordinates(),
+            base.programClassesPruned(),
+            base.uncompressedProgramClassBytesPruned(),
+            base.trimmedArtifacts(),
+            List.of(
+                new MavenElisionReportSnapshot.CveFinding(
+                    "CVE-2026-10001", "org.example:removed:jar:1.0")),
+            List.of(
+                new MavenElisionReportSnapshot.CveFinding(
+                    "CVE-2025-11226", "org.example:trimmed:jar:2.0")),
+            base.mediatedGraph());
+    final Path output = temporaryDirectory.resolve("target/cve-report.json");
+
+    MavenElisionReportWriter.write(output, populated);
+    final MavenElisionReportSnapshot reread = MavenElisionReportWriter.read(output);
+
+    assertThat(reread).isEqualTo(populated);
+    assertThat(reread.removedCveComponents())
+        .containsExactly(
+            new MavenElisionReportSnapshot.CveFinding(
+                "CVE-2026-10001", "org.example:removed:jar:1.0"));
+    assertThat(reread.provenAbsentCves())
+        .containsExactly(
+            new MavenElisionReportSnapshot.CveFinding(
+                "CVE-2025-11226", "org.example:trimmed:jar:2.0"));
+    assertThat(MavenElisionReportWriter.render(reread))
+        .contains(
+            "CVE components removed from inventory:",
+            "  - CVE-2026-10001 org.example:removed:jar:1.0",
+            "CVEs with vulnerable code proven absent by trimming:",
+            "  - CVE-2025-11226 org.example:trimmed:jar:2.0");
   }
 
   @Test

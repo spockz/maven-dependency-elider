@@ -315,42 +315,50 @@ Each example project has a `.mvn/extensions.xml` entry for the installed product
 
 ### Sample elision report output
 
-`make test-examples` invokes `dependency-elider:report` after each successful elision build. The report counts whole artifacts removed using original on-disk JAR sizes and classes removed using uncompressed `.class` entry sizes; class metrics exclude module descriptors and archive sanitation metadata. These summaries and graph rows came from the final schema-1 run on 2026-10-28; timestamps vary between runs:
+`make test-examples` invokes `dependency-elider:report` after each successful elision build. The report counts whole artifacts removed using original on-disk JAR sizes and classes removed using uncompressed `.class` entry sizes; class metrics exclude module descriptors and archive sanitation metadata. It also reports avoided or removed CVEs matched against configured vulnerability symbol mappings. These summaries and graph rows came from the schema-1 run on 2026-10-28; timestamps vary between runs:
 
 ```text
 example-basic-app
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T13:44:11.573187007Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T19:06:09.829119247Z
 [INFO] Whole artifacts dropped: 1 (original JAR file bytes: 365.93 KiB)
 [INFO] Program classes removed with dropped JARs: 115 (uncompressed .class entry payload bytes: 413.65 KiB; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
+[INFO] CVE components removed from inventory: none matched the available vulnerability mappings
+[INFO] CVEs with vulnerable code proven absent by trimming: none matched the available vulnerability mappings
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> commons-codec:commons-codec:jar:1.19.0 (compile) {nodeId=n1} [EFFECTIVE_DROP]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
 
 example-spring-boot-app
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T13:44:50.982702846Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T19:06:52.318873216Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
-[INFO] Program classes pruned from retained JARs: 3374 (uncompressed omitted .class payload bytes: 8.38 MiB; excludes module descriptors and archive metadata)
+[INFO] Program classes pruned from retained JARs: 3409 (uncompressed omitted .class payload bytes: 8.49 MiB; excludes module descriptors and archive metadata)
+[INFO] CVE components removed from inventory: none matched the available vulnerability mappings
+[INFO] CVEs with vulnerable code proven absent by trimming: none matched the available vulnerability mappings
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework.boot:spring-boot-starter-web:jar:3.3.5 (compile) {nodeId=n1} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.1.14 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
 
 example-cve-unused-app
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T13:45:14.920629777Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T19:07:17.484130531Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
-[INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
+[INFO] Program classes pruned from retained JARs: 178 (uncompressed omitted .class payload bytes: 597.13 KiB; excludes module descriptors and archive metadata)
+[INFO] CVE components removed from inventory: none matched the available vulnerability mappings
+[INFO] CVEs with vulnerable code proven absent by trimming: none matched the available vulnerability mappings
 
 example-cve-safe-class-app
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T13:45:27.064920128Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T19:07:29.961779741Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
-[INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
+[INFO] Program classes pruned from retained JARs: 108 (uncompressed omitted .class payload bytes: 433.66 KiB; excludes module descriptors and archive metadata)
+[INFO] CVE components removed from inventory: none matched the available vulnerability mappings
+[INFO] CVEs with vulnerable code proven absent by trimming: none matched the available vulnerability mappings
 ```
 
 The report goal reads this persisted schema-1 snapshot and fails if its mediated TEST graph is unavailable. Unsupported schema values and incompatible schema-1 field shapes are rejected with rerun guidance. It reports dropped-JAR class entries separately from class entries pruned from retained JARs; the two totals never overlap, and the report rejects any coordinate listed in both categories. It does not resolve a new graph or call `maven-dependency-plugin:tree`.
