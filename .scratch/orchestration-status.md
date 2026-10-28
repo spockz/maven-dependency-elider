@@ -14,7 +14,7 @@
 
 | Track | State | Worktree / branch | Slices |
 | :--- | :--- | :--- | :--- |
-| Maven resolver integration | IMPLEMENTED, REVIEWED, VERIFIED; AWAITING INTEGRATION SIGN-OFF | `.scratch/worktrees/track-maven-resolver` / `track/maven-resolver` | Slices 3.3 and 3.4 committed as `6b53bebdc37bd4cd4bbb08343592c3b333c4f734`, after 3.2d `b2137fa8ac3bbcae041fc33bb433d25ceab0cf51`. Focused 64/64; `make check` 149 core + 221 plugin; all four production-extension fixtures pass. Review approved. No merge or teardown. General `dependency:tree` behavior remains explicitly unclaimed. |
+| Maven resolver integration | IMPLEMENTED, REVIEWED, VERIFIED; AWAITING INTEGRATION SIGN-OFF | `.scratch/worktrees/track-maven-resolver` / `track/maven-resolver` | 3.2d `b2137fa8ac3bbcae041fc33bb433d25ceab0cf51`, 3.3/3.4 `6b53bebdc37bd4cd4bbb08343592c3b333c4f734`, and report-metric follow-up `4d3d411ab6f30f4c222b2b1d2628a41a345c6801`. Focused 54/54; `make check` 149 core + 223 plugin; all four production-extension fixtures pass. Review approved. No merge or teardown. General `dependency:tree` behavior remains explicitly unclaimed. |
 
 ## Specification Deviations and Architectural Choices
 
@@ -24,10 +24,10 @@
 
 ## Track 3.3/3.4 Closeout
 
-* `MavenElisionReportSnapshot` schema 3 is the top-level persisted elision report read by `dependency-elider:report`. Schema 2 is rejected; no migration or backward compatibility is supported. Separate formats are graph-capture session store schema 3, resolver-plan session store schema 2, class-usage report schema 1, and effective-output cache schema 13. These are not plugin release versions.
+* `MavenElisionReportSnapshot` schema 4 is the top-level persisted elision report read by `dependency-elider:report`. Schema 3 and other unsupported report schemas are rejected; no migration or backward compatibility is supported. Separate formats are graph-capture session store schema 3, resolver-plan session store schema 2, class-usage report schema 1, and effective-output cache schema 13. These are not plugin release versions.
 * `elide.reportFile` writes class-usage evidence; `elide.summaryFile` writes the persisted elision snapshot. The files remain separate because they contain different data for different consumers.
 * Final review approved saved-only graph rendering, occurrence paths, output consistency, root handling, and schema rejection. Gemini review bridge was unavailable in the tool catalog; the required fail-open notice is in `.scratch/reviews/maven-resolver-slices-3.3-3.4.md`.
-* Final focused run passed 64/64. `make check` passed with 149 core and 221 plugin tests; Checkstyle, PMD, SpotBugs, formatting, and Markdown lint passed (35 files, 0 issues). `make test-examples` passed all four fixtures with the production core extension enabled in each project's `.mvn/extensions.xml`. Full receipts and hashes are in the handover and `.scratch/handover-closeout.md`.
+* Final report-metric focused run passed 54/54. `make check` passed with 149 core and 223 plugin tests; Checkstyle, PMD, SpotBugs, formatting, and Markdown lint passed (35 files, 0 issues). `make test-examples` passed all four fixtures with the production core extension enabled in each project's `.mvn/extensions.xml`. Basic reports 115 dropped-JAR class entries / 413.65 KiB and separately 535 retained-JAR classes / 1.93 MiB. Full receipts and hashes are in the handover and `.scratch/handover-closeout.md`.
 * Final implementation is committed on `track/maven-resolver`; branch integration into `main` and worktree teardown await user sign-off.
 
 ## Track 3.2d Review Receipt and Final Gates
