@@ -205,12 +205,13 @@ final class MavenElisionService {
       keepForPruning.addAll(
           parsePassThroughCoordinates(explicitPassThroughArtifacts, resolvedSnapshots));
     }
-    final Optional<BytecodeReferenceScan> bytecodeScan =
-        productionOutput == null
-            ? Optional.empty()
-            : Optional.of(new ProductionBytecodeReferenceScanner().scan(productionOutput.toPath()));
-    final Set<String> projectOutputClasses =
-        bytecodeScan.isEmpty() ? Set.of() : classNamesInOutput(bytecodeScan.orElseThrow().scope());
+    final ProductionBytecodeInputs productionInputs = productionBytecodeInputs(productionOutput);
+    final String productionOutputFingerprint = productionInputs.fingerprint();
+    final Optional<BytecodeReferenceScan> bytecodeScan = productionInputs.scan();
+    final Set<String> projectOutputClasses = new HashSet<>(compilerInputs.declaredClasses());
+    if (bytecodeScan.isPresent()) {
+      projectOutputClasses.addAll(classNamesInOutput(bytecodeScan.orElseThrow().scope()));
+    }
     final ClassUsageReport classUsageReport = ClassUsageReport.classify(index, trace, bytecodeScan);
     verifyProjectInventory(project, directPresent, inputFingerprint, directInputFingerprint);
     MavenElisionGraphBinding.verifyInventoryFingerprint(resolvedSnapshots, inputFingerprint);
@@ -246,7 +247,9 @@ final class MavenElisionService {
         index,
         dynamicRootInputs,
         projectOutputClasses,
+        compilerInputs.requiredClasses(),
         pruningRequiredClasses,
+        productionOutputFingerprint,
         inputFingerprint,
         directInputFingerprint,
         graphBinding);
@@ -332,9 +335,14 @@ final class MavenElisionService {
             evaluation,
             rawDecision,
             effectiveDecision,
+            forcedUnchanged,
             analysis,
             binding.inventoryFingerprint(),
-            binding.operationFingerprint());
+            binding.operationFingerprint(),
+            binding.pair() == null || evaluation.failClosed()
+                ? null
+                : ResolverArtifactGraphProjection.create(
+                    binding.pair(), evaluation.nodeDispositions()));
       }
       if (binding.pair() == null) {
         throw new IOException("Reachability found a raw drop without a bound graph pair");
@@ -348,7 +356,31 @@ final class MavenElisionService {
     }
   }
 
-  private static void verifyPreparedInventory(final PreparedAnalysis prepared) throws IOException {
+  Analysis finishEffectiveOutputs(final EffectiveAnalysis effective)
+      throws IOException, MojoFailureException {
+    final MavenDependencyTrimmer.TrimResult trimResult =
+        MavenDependencyTrimmer.stageEffectiveOutputs(effective);
+    final PreparedAnalysis prepared = effective.prepared();
+    return new Analysis(
+        prepared.resolvedSnapshots(),
+        prepared.directArtifactsPresent(),
+        prepared.directSnapshots(),
+        effective.rawDecision(),
+        effective.effectiveDecision(),
+        prepared.classUsageReport(),
+        prepared.bytecodeScan(),
+        trimResult.records(),
+        trimResult.multiReleasePassthroughArtifacts(),
+        trimResult.moduleInfoPassthroughArtifacts(),
+        trimResult.configuredPassThroughArtifacts(),
+        trimResult.cacheHits(),
+        trimResult.maximumCacheHitNanos(),
+        trimResult.analysisRuns(),
+        effective.graphProjection(),
+        trimResult.generationCommit());
+  }
+
+  static void verifyPreparedInventory(final PreparedAnalysis prepared) throws IOException {
     verifyProjectInventory(
         prepared.project(),
         prepared.directArtifactsPresent(),
@@ -392,7 +424,7 @@ final class MavenElisionService {
             prepared.index(), prepared.dynamicRootInputs().scansByPath()),
         new HashSet<>(effectiveDecision.retainedArtifacts()),
         prepared.trace(),
-        prepared.pruningRequiredClasses(),
+        prepared.sourceRequiredClasses(),
         prepared.bytecodeScan().map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
         prepared.projectOutputClasses(),
         options.explicitTrimRoots(),
@@ -405,9 +437,6 @@ final class MavenElisionService {
       final EffectiveGraphPolicy.Evaluation evaluation, final Set<ArtifactCoordinate> unchanged) {
     unchanged.addAll(evaluation.ancestorPromotedArtifacts());
     unchanged.addAll(evaluation.protectedReasons().keySet());
-    if (evaluation.failClosed()) {
-      unchanged.addAll(evaluation.retainedArtifacts());
-    }
   }
 
   private static ElisionDecision promoteForBytecode(
@@ -461,8 +490,9 @@ final class MavenElisionService {
 
   /** Prepares Maven artifact views without mutating project state. */
   ApplyPlan plan(final MavenProject project, final Analysis analysis) throws IOException {
-    final Set<ArtifactIdentity> elided = identities(analysis.decision().elidedArtifacts());
-    final Set<ArtifactIdentity> retained = identities(analysis.decision().retainedArtifacts());
+    final Set<ArtifactIdentity> elided = identities(analysis.effectiveDecision().elidedArtifacts());
+    final Set<ArtifactIdentity> retained =
+        identities(analysis.effectiveDecision().retainedArtifacts());
     retained.retainAll(elided);
     if (!retained.isEmpty()) {
       throw new IOException("Contradictory retained and elided artifact identities: " + retained);
@@ -482,7 +512,7 @@ final class MavenElisionService {
     return new ApplyPlan(
         retained(resolvedInput, elided),
         analysis.directArtifactsPresent(),
-        retained(directInput, elided));
+        new LinkedHashSet<>(directInput));
   }
 
   static List<ArtifactSnapshot> snapshots(final Collection<Artifact> artifacts) {
@@ -767,10 +797,17 @@ final class MavenElisionService {
         throw new IOException("Source attribution does not support Java module descriptors");
       }
       final List<String> options = MavenCompilerSettings.options(project, session, classpath);
-      requiredClasses.addAll(
-          new JavaSourceReferenceScanner().scanFiles(sources, classpath, options));
+      final JavaSourceReferenceScanner.SourceScan sourceScan =
+          new JavaSourceReferenceScanner().scanFilesDetailed(sources, classpath, options);
+      requiredClasses.addAll(sourceScan.referencedTypes());
       compileVisibleArtifacts.removeIf(
           artifact -> !sourceClassesByArtifact(artifact, requiredClasses, indexedClasses));
+      return new CompilerInputs(
+          compileVisibleArtifacts.stream()
+              .map(ArtifactFileRef::coordinate)
+              .collect(java.util.stream.Collectors.toSet()),
+          requiredClasses,
+          sourceScan.declaredTypes());
     } else {
       compileVisibleArtifacts.forEach(
           artifact -> requiredClasses.addAll(indexedClasses.getOrDefault(artifact, Set.of())));
@@ -778,7 +815,7 @@ final class MavenElisionService {
     final Set<ArtifactCoordinate> compileVisibleCoordinates = new HashSet<>();
     compileVisibleArtifacts.forEach(
         artifact -> compileVisibleCoordinates.add(artifact.coordinate()));
-    return new CompilerInputs(compileVisibleCoordinates, requiredClasses);
+    return new CompilerInputs(compileVisibleCoordinates, requiredClasses, Set.of());
   }
 
   private static boolean sourceClassesByArtifact(
@@ -874,11 +911,32 @@ final class MavenElisionService {
   }
 
   private record CompilerInputs(
-      Set<ArtifactCoordinate> compileVisibleCoordinates, Set<String> requiredClasses) {
+      Set<ArtifactCoordinate> compileVisibleCoordinates,
+      Set<String> requiredClasses,
+      Set<String> declaredClasses) {
     private CompilerInputs {
       compileVisibleCoordinates = Set.copyOf(compileVisibleCoordinates);
       requiredClasses = Set.copyOf(requiredClasses);
+      declaredClasses = Set.copyOf(declaredClasses);
     }
+  }
+
+  private record ProductionBytecodeInputs(
+      String fingerprint, Optional<BytecodeReferenceScan> scan) {}
+
+  private static ProductionBytecodeInputs productionBytecodeInputs(final File output)
+      throws IOException {
+    if (output == null) {
+      return new ProductionBytecodeInputs("none", Optional.empty());
+    }
+    final Path path = output.toPath();
+    final String before = ProductionOutputFingerprint.fingerprint(path);
+    final BytecodeReferenceScan scan = new ProductionBytecodeReferenceScanner().scan(path);
+    final String after = ProductionOutputFingerprint.fingerprint(path);
+    if (!before.equals(after)) {
+      throw new IOException("Production output changed during bytecode analysis");
+    }
+    return new ProductionBytecodeInputs(before, Optional.of(scan));
   }
 
   /** Scans one dependency archive during an analysis invocation. */
@@ -1003,7 +1061,9 @@ final class MavenElisionService {
       ArtifactClassIndex index,
       DynamicRootInputs dynamicRootInputs,
       Set<String> projectOutputClasses,
+      Set<String> sourceRequiredClasses,
       Set<String> pruningRequiredClasses,
+      String productionOutputFingerprint,
       String inputFingerprint,
       String directInputFingerprint,
       MavenElisionGraphBinding.Result graphBinding) {
@@ -1012,7 +1072,9 @@ final class MavenElisionService {
       directSnapshots = List.copyOf(directSnapshots);
       scanCandidates = List.copyOf(scanCandidates);
       projectOutputClasses = Set.copyOf(projectOutputClasses);
+      sourceRequiredClasses = Set.copyOf(sourceRequiredClasses);
       pruningRequiredClasses = Set.copyOf(pruningRequiredClasses);
+      java.util.Objects.requireNonNull(productionOutputFingerprint, "productionOutputFingerprint");
     }
   }
 
@@ -1021,15 +1083,22 @@ final class MavenElisionService {
       EffectiveGraphPolicy.Evaluation graphEvaluation,
       ElisionDecision rawDecision,
       ElisionDecision effectiveDecision,
+      Set<ArtifactCoordinate> forcedUnchangedCoordinates,
       MavenDependencyTrimmer.InMemoryAnalysis trimAnalysis,
       String inventoryFingerprint,
-      String operationFingerprint) {}
+      String operationFingerprint,
+      ResolverArtifactGraphProjection graphProjection) {
+    EffectiveAnalysis {
+      forcedUnchangedCoordinates = Set.copyOf(forcedUnchangedCoordinates);
+    }
+  }
 
   record Analysis(
       List<ArtifactSnapshot> resolvedSnapshots,
       boolean directArtifactsPresent,
       List<ArtifactSnapshot> directSnapshots,
       ElisionDecision decision,
+      ElisionDecision effectiveDecision,
       ClassUsageReport classUsageReport,
       Optional<BytecodeReferenceScan> bytecodeScan,
       List<ArtifactTrimRecord> trimRecords,
@@ -1038,7 +1107,44 @@ final class MavenElisionService {
       List<ArtifactCoordinate> configuredPassThroughArtifacts,
       int trimCacheHits,
       long maximumTrimCacheHitNanos,
-      int trimAnalysisRuns) {
+      int trimAnalysisRuns,
+      ResolverArtifactGraphProjection graphProjection,
+      TrimOutputGenerationCommitHandle generationCommit) {
+    @SuppressWarnings("PMD.ExcessiveParameterList")
+    // Keeps the legacy adapter while the result fields stay named.
+    Analysis(
+        final List<ArtifactSnapshot> resolvedSnapshots,
+        final boolean directArtifactsPresent,
+        final List<ArtifactSnapshot> directSnapshots,
+        final ElisionDecision decision,
+        final ClassUsageReport classUsageReport,
+        final Optional<BytecodeReferenceScan> bytecodeScan,
+        final List<ArtifactTrimRecord> trimRecords,
+        final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+        final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+        final List<ArtifactCoordinate> configuredPassThroughArtifacts,
+        final int trimCacheHits,
+        final long maximumCacheHitNanos,
+        final int trimAnalysisRuns) {
+      this(
+          resolvedSnapshots,
+          directArtifactsPresent,
+          directSnapshots,
+          decision,
+          decision,
+          classUsageReport,
+          bytecodeScan,
+          trimRecords,
+          multiReleasePassthroughArtifacts,
+          moduleInfoPassthroughArtifacts,
+          configuredPassThroughArtifacts,
+          trimCacheHits,
+          maximumCacheHitNanos,
+          trimAnalysisRuns,
+          null,
+          null);
+    }
+
     Analysis(
         final List<ArtifactSnapshot> resolvedSnapshots,
         final boolean directArtifactsPresent,
@@ -1051,6 +1157,7 @@ final class MavenElisionService {
           directArtifactsPresent,
           directSnapshots,
           decision,
+          decision,
           classUsageReport,
           bytecodeScan,
           List.of(),
@@ -1059,7 +1166,9 @@ final class MavenElisionService {
           List.of(),
           0,
           0L,
-          0);
+          0,
+          null,
+          null);
     }
 
     Analysis(
@@ -1072,6 +1181,7 @@ final class MavenElisionService {
           directArtifactsPresent,
           directSnapshots,
           decision,
+          decision,
           new ClassUsageReport(List.of()),
           Optional.empty(),
           List.of(),
@@ -1080,7 +1190,9 @@ final class MavenElisionService {
           List.of(),
           0,
           0L,
-          0);
+          0,
+          null,
+          null);
     }
 
     Analysis {

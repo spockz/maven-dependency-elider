@@ -4,10 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
-import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
@@ -17,13 +14,13 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
 
-/** Removes unobserved dependency JARs from Maven's in-memory artifact views. */
+/** Applies graph-verified dependency changes during Maven initialization. */
 @Mojo(
     name = "elide",
     defaultPhase = LifecyclePhase.INITIALIZE,
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
-@SuppressWarnings({"PMD.CollapsibleIfStatements", "PMD.GuardLogStatement"})
+@SuppressWarnings("PMD.TooManyFields")
 public final class ElideMojo extends AbstractMojo {
   /** Maven's annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
@@ -94,60 +91,64 @@ public final class ElideMojo extends AbstractMojo {
       defaultValue = "${project.build.directory}/dependency-elider-report.json")
   private File summaryFile;
 
+  /** Mutable for tests that inject plan publication failure. */
+  @SuppressWarnings("PMD.ImmutableField")
+  private PlanPublication planPublication = ResolverArtifactPlanPublisher::publish;
+
   /** Maven switch that skips analysis and mutation. */
   @Parameter(property = "elide.skip", defaultValue = DEFAULT_FALSE)
   private boolean skip;
+
+  /** Package callback used to test publication ordering. */
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  @FunctionalInterface
+  interface PlanPublication {
+    /** Installs the resolver plan after report and view staging succeeds. */
+    void publish(
+        MavenSession session,
+        MavenProject project,
+        List<io.github.spockz.elider.trimmer.ArtifactTrimRecord> trimRecords,
+        ResolverArtifactGraphProjection graphProjection)
+        throws IOException;
+  }
 
   /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
   @Override
   public void execute() throws MojoFailureException {
     try {
       if (skip) {
-        ResolverArtifactPlanPublisher.publish(session, project, List.of());
+        publishEmptyPlan();
         return;
       }
-      final MavenElisionService service = new MavenElisionService();
-      final MavenElisionService.Analysis analysis = service.analyze(project, analysisOptions());
-      logPassThroughWarnings(analysis);
-      final MavenElisionService.ApplyPlan plan = service.plan(project, analysis);
-      final MavenElisionReportSnapshot reportSnapshot =
-          MavenElisionReportSnapshot.from(project, analysis);
-      MavenClassUsageReportWriter.write(
-          reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
-      if (trimJars) {
-        MavenSbomWriter.write(project, sbomFile.toPath(), plan, analysis);
-      }
-      MavenArtifactViewUpdater.apply(plan, analysis.trimRecords());
-      final Set<Artifact> retainedResolvedArtifacts = new LinkedHashSet<>(plan.resolvedArtifacts());
-      project.setResolvedArtifacts(retainedResolvedArtifacts);
-      project.setArtifacts(retainedResolvedArtifacts);
-      if (trimJars) {
-        if (analysis.trimCacheHits() > 0) {
-          final double milliseconds = analysis.maximumTrimCacheHitNanos() / 1_000_000.0;
-          getLog()
-              .info(
-                  "  JAR trim cache: "
-                      + analysis.trimCacheHits()
-                      + " hit(s), maximum validated hit "
-                      + milliseconds
-                      + " ms (target < 1.5 ms)");
-        }
-      }
-      if (trimJars) {
-        ElisionSummary.reportTrimmed(
-            getLog(), analysis.decision(), analysis.resolvedSnapshots().size(), reportSnapshot);
-      } else {
-        ElisionSummary.report(getLog(), analysis.decision(), analysis.resolvedSnapshots().size());
-      }
-      if (getLog().isInfoEnabled()) {
-        getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
-      }
-      MavenElisionReportWriter.write(
-          MavenElisionReportWriter.outputPath(summaryFile, project), reportSnapshot);
-      ResolverArtifactPlanPublisher.publish(session, project, analysis.trimRecords());
+      executeAnalysis();
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency elision failed: " + exception.getMessage(), exception);
+    }
+  }
+
+  private void publishEmptyPlan() throws IOException {
+    ResolverArtifactPlanPublisher.publish(session, project, List.of());
+  }
+
+  private void executeAnalysis() throws IOException, MojoFailureException {
+    final MavenElisionService service = new MavenElisionService();
+    final MavenElisionService.PreparedAnalysis prepared =
+        service.prepare(project, analysisOptions());
+    final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
+    final MavenElisionService.Analysis analysis = service.finishEffectiveOutputs(effective);
+    try (TrimOutputGenerationCommitHandle generation = analysis.generationCommit()) {
+      MavenElisionOutputPublisher.publish(
+          new MavenElisionOutputPublisher.Request(
+              project,
+              session,
+              service,
+              analysis,
+              generation,
+              new MavenElisionOutputPublisher.ReportFiles(
+                  reportFile, sbomFile, summaryFile, trimJars),
+              getLog(),
+              planPublication));
     }
   }
 
@@ -164,38 +165,6 @@ public final class ElideMojo extends AbstractMojo {
         trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
         failOnUnsupportedModuleInfo,
         true);
-  }
-
-  private void logPassThroughWarnings(final MavenElisionService.Analysis analysis) {
-    analysis
-        .multiReleasePassthroughArtifacts()
-        .forEach(
-            coordinate ->
-                getLog()
-                    .warn(
-                        "Keeping multi-release dependency unchanged with Java "
-                            + Runtime.version().feature()
-                            + " effective classes for closure; unchanged external links are "
-                            + "tolerated: "
-                            + coordinate));
-    analysis
-        .moduleInfoPassthroughArtifacts()
-        .forEach(
-            coordinate ->
-                getLog()
-                    .warn(
-                        "Keeping root-module-info dependency unchanged; its class-only projection "
-                            + "covers classpath closure, not module-path closure: "
-                            + coordinate));
-    analysis
-        .configuredPassThroughArtifacts()
-        .forEach(
-            coordinate ->
-                getLog()
-                    .warn(
-                        "Keeping configured dependency unchanged; external links from unchanged "
-                            + "classes are tolerated: "
-                            + coordinate));
   }
 
   /** Creates a Mojo instance for Maven injection. */

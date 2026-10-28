@@ -184,7 +184,7 @@ final class MavenElisionServiceTest {
 
     assertThat(plan.resolvedArtifacts()).isEmpty();
     assertThat(plan.directArtifactsPresent()).isTrue();
-    assertThat(plan.directArtifacts()).containsExactly(unrepresented);
+    assertThat(plan.directArtifacts()).containsExactly(direct, unrepresented);
     assertThat(project.getDependencyArtifacts()).containsExactlyInAnyOrder(direct, unrepresented);
   }
 

@@ -25,11 +25,12 @@ record MavenElisionReportSnapshot(
     int wholeArtifactsDropped,
     long originalJarBytesDropped,
     List<DroppedArtifact> droppedArtifacts,
+    List<String> rawDroppedCoordinates,
     int programClassesPruned,
     long uncompressedProgramClassBytesPruned,
     List<TrimmedArtifact> trimmedArtifacts) {
   /** Current persisted JSON format version. */
-  static final int SCHEMA_VERSION = 1;
+  static final int SCHEMA_VERSION = 2;
 
   MavenElisionReportSnapshot {
     require(schemaVersion == SCHEMA_VERSION, "Unsupported report snapshot schema version");
@@ -43,6 +44,8 @@ record MavenElisionReportSnapshot(
       throw new IllegalArgumentException("generatedAt must be an ISO-8601 instant", exception);
     }
     droppedArtifacts = List.copyOf(Objects.requireNonNull(droppedArtifacts, "droppedArtifacts"));
+    rawDroppedCoordinates =
+        List.copyOf(Objects.requireNonNull(rawDroppedCoordinates, "rawDroppedCoordinates"));
     trimmedArtifacts = List.copyOf(Objects.requireNonNull(trimmedArtifacts, "trimmedArtifacts"));
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
@@ -67,7 +70,8 @@ record MavenElisionReportSnapshot(
       final org.apache.maven.project.MavenProject project,
       final MavenElisionService.Analysis analysis)
       throws IOException {
-    final DroppedArtifactSummary droppedSummary = droppedArtifactSummary(analysis);
+    final DroppedArtifactSummary droppedSummary =
+        droppedArtifactSummary(analysis, analysis.effectiveDecision());
     final List<DroppedArtifact> dropped = droppedSummary.artifacts();
 
     final List<TrimmedArtifact> trimmed =
@@ -93,6 +97,10 @@ record MavenElisionReportSnapshot(
         dropped.size(),
         droppedSummary.originalJarBytes(),
         dropped,
+        analysis.decision().elidedArtifacts().stream()
+            .map(ArtifactCoordinate::toString)
+            .sorted()
+            .toList(),
         prunedClasses,
         prunedBytes,
         trimmed);
@@ -100,8 +108,15 @@ record MavenElisionReportSnapshot(
 
   static DroppedArtifactSummary droppedArtifactSummary(final MavenElisionService.Analysis analysis)
       throws IOException {
+    return droppedArtifactSummary(analysis, analysis.effectiveDecision());
+  }
+
+  private static DroppedArtifactSummary droppedArtifactSummary(
+      final MavenElisionService.Analysis analysis,
+      final io.github.spockz.elider.model.ElisionDecision decision)
+      throws IOException {
     final List<DroppedArtifact> dropped = new ArrayList<>();
-    for (final ArtifactCoordinate coordinate : analysis.decision().elidedArtifacts()) {
+    for (final ArtifactCoordinate coordinate : decision.elidedArtifacts()) {
       final MavenElisionService.ArtifactSnapshot artifact =
           snapshotForCoordinate(analysis, coordinate);
       final Path path = artifact.filePath();

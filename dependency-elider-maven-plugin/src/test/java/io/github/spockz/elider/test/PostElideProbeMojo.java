@@ -1,48 +1,63 @@
-/* WHY: Proves the real trim at TEST resolution before removing one known leaf. */
+/* WHY: Captures the post-goal views and explicitly resolves the unchanged TEST dependencies. */
 
 package io.github.spockz.elider.test;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import org.apache.maven.artifact.Artifact;
+import javax.inject.Inject;
+import javax.inject.Named;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
+import org.apache.maven.project.DefaultDependencyResolutionRequest;
+import org.apache.maven.project.DependencyResolutionException;
+import org.apache.maven.project.DependencyResolutionResult;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.ProjectDependenciesResolver;
+import org.eclipse.aether.util.artifact.JavaScopes;
+import org.eclipse.aether.util.filter.DependencyFilterUtils;
 
-/** Captures the post-elide view and removes one direct fixture leaf. */
+/** Captures the post-elide view and resolves unchanged project declarations again. */
 @SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.CommentRequired"})
 @Mojo(name = "post-elide-probe", requiresDependencyResolution = ResolutionScope.TEST)
 public final class PostElideProbeMojo extends AbstractMojo {
-  private static final String DROP_ARTIFACT_ID = "drop-library";
-
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
+
+  @Parameter(defaultValue = "${session}", readonly = true, required = true)
+  private MavenSession session;
 
   @Parameter(defaultValue = "${lifecycle.reportDirectory}")
   private File reportDirectory;
 
+  @Inject
+  @Named("default")
+  private ProjectDependenciesResolver resolver;
+
   @Override
   public void execute() throws MojoExecutionException {
+    if (resolver == null || session == null || session.getRepositorySession() == null) {
+      throw new MojoExecutionException(
+          "Cannot capture a fresh TEST dependency graph",
+          new IllegalStateException("Maven TEST resolver context was not injected"));
+    }
     try {
       FixtureArtifactViews.write(project, reportDirectory, "post-elide", "TEST");
-      final Set<Artifact> retained = new LinkedHashSet<>();
-      for (final Artifact artifact : project.getDependencyArtifacts()) {
-        if (!("io.github.spockz.elider.test".equals(artifact.getGroupId())
-            && DROP_ARTIFACT_ID.equals(artifact.getArtifactId()))) {
-          retained.add(artifact);
-        }
+      final DefaultDependencyResolutionRequest request =
+          new DefaultDependencyResolutionRequest(project, session.getRepositorySession());
+      request.setResolutionFilter(DependencyFilterUtils.classpathFilter(JavaScopes.TEST));
+      final DependencyResolutionResult result = resolver.resolve(request);
+      if (getLog().isInfoEnabled()) {
+        getLog().info("EXPLICIT_TEST_RESOLUTION filter=TEST project=" + project.getArtifactId());
       }
-      if (retained.size() != project.getDependencyArtifacts().size() - 1) {
-        throw new IllegalStateException("Expected exactly one synthetic direct drop leaf");
-      }
-      project.setDependencyArtifacts(retained);
-    } catch (IOException exception) {
-      throw new MojoExecutionException("Cannot record post-elide artifact views", exception);
+      FixtureResolvedGraphSnapshot.writeGraph(reportDirectory, result.getDependencyGraph());
+      FixtureResolvedGraphSnapshot.writeDependencies(
+          reportDirectory, result.getResolvedDependencies());
+    } catch (IOException | DependencyResolutionException exception) {
+      throw new MojoExecutionException("Cannot capture a fresh TEST dependency graph", exception);
     }
   }
 }

@@ -6,8 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
@@ -130,16 +128,40 @@ final class ElideMojoTest {
   }
 
   @Test
-  void failedSummaryWritePreservesThePreviousResolverPayload()
+  void failedPlanPublicationRestoresPriorOutputsViewsAndResolverPayload()
       throws IOException, ReflectiveOperationException {
-    final Artifact used = artifact("used", "used/Entry.class");
+    final Path originalJar =
+        compileJarSources(
+            "publication-rollback",
+            java.util.Map.of("used/Entry.java", "package used; public class Entry {}"),
+            null);
+    final Artifact used = runtimeArtifact("used", originalJar);
     final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("publication-rollback-build").toString());
+    project.setBuild(build);
     final ElideMojo mojo = newMojo();
     final Path classUsageReport = tempDir.resolve("class-usage-report.json");
+    final Path summaryReport = tempDir.resolve("summary-report.json");
+    final Path sbomReport = tempDir.resolve("sbom-report.json");
+    final byte[] previousReport =
+        "previous class report".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    final byte[] previousSummary =
+        "previous summary".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    final byte[] previousSbom = "previous SBOM".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    Files.write(classUsageReport, previousReport);
+    Files.write(summaryReport, previousSummary);
+    Files.write(sbomReport, previousSbom);
+    final Set<Artifact> previousResolved = project.getArtifacts();
+    final Set<Artifact> previousDirect = project.getDependencyArtifacts();
+    final java.io.File previousArtifactFile = used.getFile();
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("used.Entry\n").toFile()));
+    set(mojo, "trimJars", true);
     set(mojo, "reportFile", classUsageReport.toFile());
-    set(mojo, "summaryFile", tempDir.toFile());
+    set(mojo, "summaryFile", summaryReport.toFile());
+    set(mojo, "sbomFile", sbomReport.toFile());
     seedResolverPlan(mojo, project, "stale-before-output-failure.jar");
     final MavenSession session = (MavenSession) fieldValue(mojo, "session");
     final Object previousPayload =
@@ -147,9 +169,26 @@ final class ElideMojoTest {
             .getRepositorySession()
             .getData()
             .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
+    set(
+        mojo,
+        "planPublication",
+        (ElideMojo.PlanPublication)
+            (ignoredSession, ignoredProject, ignoredRecords, ignoredProjection) -> {
+              throw new IOException("injected resolver plan publication failure");
+            });
 
-    assertThatThrownBy(mojo::execute).isInstanceOf(MojoFailureException.class);
-    assertThat(classUsageReport).isRegularFile();
+    assertThatThrownBy(mojo::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("injected resolver plan publication failure");
+    assertThat(Files.readAllBytes(classUsageReport)).isEqualTo(previousReport);
+    assertThat(Files.readAllBytes(summaryReport)).isEqualTo(previousSummary);
+    assertThat(Files.readAllBytes(sbomReport)).isEqualTo(previousSbom);
+    assertThat(project.getArtifacts()).containsExactlyElementsOf(previousResolved);
+    assertThat(project.getArtifacts().iterator().next()).isSameAs(used);
+    assertThat(project.getDependencyArtifacts()).containsExactlyElementsOf(previousDirect);
+    assertThat(project.getDependencyArtifacts().iterator().next()).isSameAs(used);
+    assertThat(used.getFile()).isEqualTo(previousArtifactFile);
+    assertThat(EffectiveOutputCacheTestFiles.cacheManifest(project)).doesNotExist();
     assertThat(
             session
                 .getRepositorySession()
@@ -186,7 +225,13 @@ final class ElideMojoTest {
                 "used",
                 java.util.Map.of("Sample.java", "package used; public class Sample {}"),
                 null));
-    final Artifact unused = artifact("unused", "unused/Idle.class");
+    final Artifact unused =
+        runtimeArtifact(
+            "unused",
+            compileJarSources(
+                "unused-valid-jar",
+                java.util.Map.of("unused/Idle.java", "package unused; public class Idle {}"),
+                null));
     final Set<Artifact> resolved = new LinkedHashSet<>(List.of(used, unused));
     final Set<Artifact> direct = new LinkedHashSet<>(List.of(used, unused));
     final MavenProject project = newProject();
@@ -208,14 +253,37 @@ final class ElideMojoTest {
   }
 
   @Test
-  @SuppressWarnings("PMD.NcssCount")
+  void traceApplicationClassWithoutProductionOutputDoesNotBlockElision()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Artifact used =
+        runtimeArtifact(
+            "used-app-trace",
+            compileJarSources(
+                "used-app-trace-jar",
+                java.util.Map.of("used/Entry.java", "package used; public class Entry {}"),
+                null));
+    final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
+    final RecordingMavenLog log = new RecordingMavenLog();
+
+    execute(project, "sample.App\nused.Entry\n", log);
+
+    assertThat(project.getArtifacts()).contains(used);
+    assertThat(log.messages()).contains("  Whole artifacts: 0 / 1 (0.0%)");
+  }
+
+  @Test
   void trimJarsRedirectsTheArtifactAndWritesPedigreeSbom()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact runtime = compiledArtifact();
     final Artifact directRuntime =
         runtimeArtifact("runtime-dependency", runtime.getFile().toPath());
-    final Artifact unusedRuntime = artifact("unused-runtime", "unused/Entry.class");
-    unusedRuntime.setScope("runtime");
+    final Artifact unusedRuntime =
+        runtimeArtifact(
+            "unused-runtime",
+            compileJarSources(
+                "unused-runtime-valid-jar",
+                java.util.Map.of("unused/Entry.java", "package unused; public class Entry {}"),
+                null));
     final MavenProject project =
         project(runtime, new LinkedHashSet<>(List.of(directRuntime)), unusedRuntime);
     final Set<Artifact> directBefore = project.getDependencyArtifacts();
@@ -257,8 +325,13 @@ final class ElideMojoTest {
     assertThat(log.messages()).doesNotContain("  Classes removed: 0 / N/A (N/A; stage not run)");
     assertThat(directRuntime.getFile().toPath()).isEqualTo(runtime.getFile().toPath());
     assertThat(project.getArtifacts()).contains(runtime);
-    assertThat(project.getArtifacts()).doesNotContain(unusedRuntime);
+    assertThat(project.getArtifacts()).contains(unusedRuntime);
     assertThat(project.getDependencyArtifacts()).isSameAs(directBefore).contains(directRuntime);
+    final MavenElisionReportSnapshot report =
+        MavenElisionReportWriter.read(tempDir.resolve("build/dependency-elider-report.json"));
+    assertThat(report.wholeArtifactsDropped()).isZero();
+    assertThat(report.rawDroppedCoordinates())
+        .contains("org.example:unused-runtime:jar:1.0 (runtime)");
     try (JarFile trimmed = new JarFile(runtime.getFile())) {
       assertThat(trimmed.getEntry("sample/Keep.class")).isNotNull();
       assertThat(trimmed.getEntry("sample/Helper.class")).isNotNull();
@@ -266,89 +339,6 @@ final class ElideMojoTest {
     }
     assertThat(tempDir.resolve("build/dependency-elider-sbom.cdx.json")).isRegularFile();
     assertThat(original).isRegularFile();
-
-    runtime.setFile(original.toFile());
-    directRuntime.setFile(original.toFile());
-    final MavenElisionService.Analysis cachedAnalysis =
-        new MavenElisionService()
-            .analyze(
-                project,
-                List.of(writeTrace("sample.Keep\n").toFile()),
-                List.of(),
-                null,
-                null,
-                false,
-                true,
-                List.of());
-    assertThat(cachedAnalysis.trimAnalysisRuns()).isZero();
-    assertThat(cachedAnalysis.trimCacheHits()).isPositive();
-    assertThat(cachedAnalysis.trimRecords())
-        .singleElement()
-        .satisfies(
-            record ->
-                assertThat(record.prunedClassBytes())
-                    .isEqualTo(classEntrySize(original, "sample/Drop.class")));
-    final Path expectedTrimmedPath =
-        tempDir.resolve("build/elided-artifacts/org.example-runtime-dependency-1.0-trimmed.jar");
-    assertThat(cachedAnalysis.trimRecords())
-        .singleElement()
-        .satisfies(record -> assertThat(record.trimmedPath()).isEqualTo(expectedTrimmedPath));
-    final Path cacheManifest = tempDir.resolve("build/elided-artifacts/.trim-analysis-cache.json");
-    final ObjectMapper mapper = new ObjectMapper();
-    final ObjectNode manifest = (ObjectNode) mapper.readTree(cacheManifest.toFile());
-    ((ObjectNode) manifest.path("entries").get(0)).putNull("trimmedSha256");
-    mapper.writeValue(cacheManifest.toFile(), manifest);
-    final String fingerprint = manifest.path("fingerprint").asText();
-    final MavenElisionService.Analysis malformedCacheAnalysis = analyzeTrim(project);
-    assertThat(malformedCacheAnalysis.trimAnalysisRuns()).isPositive();
-
-    final ObjectNode incorrectSourceDigest = (ObjectNode) mapper.readTree(cacheManifest.toFile());
-    ((ObjectNode) incorrectSourceDigest.path("entries").get(0)).put("originalSha1", "0".repeat(40));
-    mapper.writeValue(cacheManifest.toFile(), incorrectSourceDigest);
-    assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
-
-    for (final String field : List.of("roots", "retainedClassNames", "reachableLibraryClasses")) {
-      final ObjectNode withNullMember = (ObjectNode) mapper.readTree(cacheManifest.toFile());
-      final ObjectNode entry = (ObjectNode) withNullMember.path("entries").get(0);
-      final com.fasterxml.jackson.databind.node.ArrayNode values =
-          (com.fasterxml.jackson.databind.node.ArrayNode) entry.path(field);
-      if (values.isEmpty()) {
-        values.addNull();
-      } else {
-        values.set(0, com.fasterxml.jackson.databind.node.NullNode.getInstance());
-      }
-      mapper.writeValue(cacheManifest.toFile(), withNullMember);
-      assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
-    }
-
-    Files.writeString(cacheManifest, "null");
-    assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
-
-    final ObjectNode nullEntries = mapper.createObjectNode();
-    nullEntries.put("fingerprint", fingerprint);
-    nullEntries.putNull("entries");
-    mapper.writeValue(cacheManifest.toFile(), nullEntries);
-    assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
-
-    final ObjectNode nullEntry = mapper.createObjectNode();
-    nullEntry.put("fingerprint", fingerprint);
-    nullEntry.putArray("entries").addNull();
-    mapper.writeValue(cacheManifest.toFile(), nullEntry);
-    assertThat(analyzeTrim(project).trimAnalysisRuns()).isPositive();
-
-    Files.writeString(expectedTrimmedPath, "tampered output");
-    final MavenElisionService.Analysis repairedAnalysis = analyzeTrim(project);
-    assertThat(repairedAnalysis.trimAnalysisRuns()).isPositive();
-    assertThat(expectedTrimmedPath).isRegularFile();
-    mojo.execute();
-    assertThat(runtime.getFile().toPath()).isEqualTo(expectedTrimmedPath);
-
-    runtime.setFile(original.toFile());
-    directRuntime.setFile(original.toFile());
-    Files.delete(expectedTrimmedPath);
-    final MavenElisionService.Analysis missingOutputAnalysis = analyzeTrim(project);
-    assertThat(missingOutputAnalysis.trimAnalysisRuns()).isPositive();
-    assertThat(expectedTrimmedPath).isRegularFile();
   }
 
   @Test
@@ -592,11 +582,6 @@ final class ElideMojoTest {
         .hasMessageContaining("Unsupported multi-release implementation classes");
     assertThat(fixture.multiRelease().getFile().toPath()).isEqualTo(fixture.multiReleasePath());
     assertThat(fixture.candidate().getFile().toPath()).isEqualTo(fixture.candidatePath());
-  }
-
-  private MavenElisionService.Analysis analyzeTrim(final MavenProject project)
-      throws IOException, MojoFailureException {
-    return analyzeTrim(project, "sample.Keep\n");
   }
 
   private MavenElisionService.Analysis analyzeTrim(
@@ -2018,6 +2003,7 @@ final class ElideMojoTest {
     project.setGroupId("org.example");
     project.setArtifactId("consumer");
     project.setVersion("1.0");
+    project.getProperties().setProperty("maven.compiler.release", "21");
     return project;
   }
 
@@ -2031,6 +2017,7 @@ final class ElideMojoTest {
         "2026-10-25T12:00:00Z",
         0,
         0,
+        List.of(),
         List.of(),
         0,
         0,
@@ -2117,9 +2104,13 @@ final class ElideMojoTest {
 
   private Path writeJar(final String name, final String classEntry) throws IOException {
     final Path jar = tempDir.resolve(name);
+    final String internalName = classEntry.substring(0, classEntry.length() - ".class".length());
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
+    writer.visitEnd();
     try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(jar))) {
       output.putNextEntry(new ZipEntry(classEntry));
-      output.write(new byte[] {0});
+      output.write(writer.toByteArray());
       output.closeEntry();
     }
     return jar;

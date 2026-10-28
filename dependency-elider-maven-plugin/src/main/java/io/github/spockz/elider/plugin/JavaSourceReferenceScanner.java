@@ -3,6 +3,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.util.JavacTask;
@@ -34,6 +35,8 @@ import javax.tools.ToolProvider;
   "PMD.CommentRequired"
 })
 final class JavaSourceReferenceScanner {
+  record SourceScan(Set<String> referencedTypes, Set<String> declaredTypes) {}
+
   /** Resolves source symbols and fails when javac cannot complete attribution. */
   Set<String> scan(
       final Collection<String> sourceRoots,
@@ -48,8 +51,16 @@ final class JavaSourceReferenceScanner {
       final Collection<String> classpath,
       final List<String> compilerOptions)
       throws IOException {
+    return scanFilesDetailed(sources, classpath, compilerOptions).referencedTypes();
+  }
+
+  SourceScan scanFilesDetailed(
+      final List<Path> sources,
+      final Collection<String> classpath,
+      final List<String> compilerOptions)
+      throws IOException {
     if (sources.isEmpty()) {
-      return Set.of();
+      return new SourceScan(Set.of(), Set.of());
     }
     final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     if (compiler == null) {
@@ -82,11 +93,12 @@ final class JavaSourceReferenceScanner {
       }
       final Trees trees = Trees.instance(task);
       final Set<String> references = new TreeSet<>();
-      final ReferenceVisitor visitor = new ReferenceVisitor(trees, task);
+      final Set<String> declarations = new TreeSet<>();
+      final ReferenceVisitor visitor = new ReferenceVisitor(trees, task, declarations);
       for (final com.sun.source.tree.CompilationUnitTree unit : parsed) {
         visitor.scan(unit, references);
       }
-      return Set.copyOf(references);
+      return new SourceScan(Set.copyOf(references), Set.copyOf(declarations));
     }
   }
 
@@ -117,11 +129,22 @@ final class JavaSourceReferenceScanner {
   private static final class ReferenceVisitor extends TreePathScanner<Void, Set<String>> {
     private final Trees trees;
     private final javax.lang.model.util.Elements elements;
+    private final Set<String> declarations;
 
-    ReferenceVisitor(final Trees trees, final JavacTask task) {
+    ReferenceVisitor(final Trees trees, final JavacTask task, final Set<String> declarations) {
       super();
       this.trees = trees;
       this.elements = task.getElements();
+      this.declarations = declarations;
+    }
+
+    @Override
+    public Void visitClass(final ClassTree tree, final Set<String> references) {
+      final Element element = trees.getElement(getCurrentPath());
+      if (element instanceof TypeElement type) {
+        declarations.add(elements.getBinaryName(type).toString());
+      }
+      return super.visitClass(tree, references);
     }
 
     @Override

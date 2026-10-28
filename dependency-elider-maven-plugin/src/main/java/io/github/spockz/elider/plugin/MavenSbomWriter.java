@@ -55,7 +55,13 @@ final class MavenSbomWriter {
             "dependency-elider-maven-plugin",
             "0.1.0-SNAPSHOT");
     new CycloneDxSbomGenerator()
-        .write(output, root, inventory, analysis.decision(), metadata, analysis.trimRecords());
+        .write(
+            output,
+            root,
+            inventory,
+            analysis.effectiveDecision(),
+            metadata,
+            analysis.trimRecords());
   }
 
   private static ArtifactCoordinate coordinate(final Artifact artifact) {

@@ -28,6 +28,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 import javax.xml.XMLConstants;
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -51,6 +52,7 @@ import org.junit.jupiter.api.Test;
   "PMD.UseConcurrentHashMap"
 })
 final class DependencyContextLifecycleIntegrationTest {
+  private static final String NAME_FIELD = "name";
   private static final String GROUP_ID = "io.github.spockz.elider.test";
 
   private static final String VERSION = "1.0.0";
@@ -523,12 +525,12 @@ final class DependencyContextLifecycleIntegrationTest {
       final int elideSummary = output.indexOf("Dependency Elider summary");
       final int postPublishRequest =
           output.indexOf(
-              "PRODUCTION_PLAN_EVENT_REQUEST ordinal=2 requestToken=2 planPresent=true",
+              "EXPLICIT_TEST_RESOLUTION filter=TEST project=lifecycle-elide-consumer",
               elideSummary);
       assertThat(firstRequest).isGreaterThanOrEqualTo(0);
       assertThat(elideSummary).isGreaterThan(firstRequest);
       assertThat(postPublishRequest).isGreaterThan(elideSummary);
-      assertThat(output).doesNotContain("PRODUCTION_PLAN_EVENT_REQUEST ordinal=3");
+      assertThat(output).doesNotContain("PRODUCTION_PLAN_EVENT_REQUEST ordinal=2");
 
       final Snapshot initial = Snapshot.read(reports.resolve("initial-later.tsv"));
       final Snapshot postElide = Snapshot.read(reports.resolve("post-elide.tsv"));
@@ -538,6 +540,7 @@ final class DependencyContextLifecycleIntegrationTest {
       assertThat(initial.resolutionScope()).isEqualTo(TEST_RESOLUTION_SCOPE);
       assertThat(postElide.resolutionScope()).isEqualTo(TEST_RESOLUTION_SCOPE);
       assertThat(later.resolutionScope()).isEqualTo(TEST_RESOLUTION_SCOPE);
+      assertDirectMembershipUnchanged(postElide, later);
       assertArtifacts(
           initial.direct(),
           DROP,
@@ -563,23 +566,62 @@ final class DependencyContextLifecycleIntegrationTest {
       assertJarEntries(trimmedJar);
       assertArtifacts(
           postElide.direct(), DROP, originalDrop, originalDropHash, KEEP, trimmedJar, trimmedHash);
-      assertArtifacts(postElide.resolved(), KEEP, trimmedJar, trimmedHash);
+      if (extensionEnabled) {
+        assertArtifacts(postElide.resolved(), KEEP, trimmedJar, trimmedHash);
+      } else {
+        assertArtifacts(
+            postElide.resolved(),
+            DROP,
+            originalDrop,
+            originalDropHash,
+            KEEP,
+            trimmedJar,
+            trimmedHash);
+      }
 
-      assertArtifacts(later.direct(), KEEP, trimmedJar, trimmedHash);
+      assertArtifacts(
+          later.direct(), DROP, originalDrop, originalDropHash, KEEP, trimmedJar, trimmedHash);
       if (extensionEnabled) {
         assertArtifacts(later.resolved(), KEEP, trimmedJar, trimmedHash);
       } else {
-        assertArtifacts(later.resolved(), KEEP, originalKeep, originalKeepHash);
+        assertArtifacts(
+            later.resolved(), DROP, originalDrop, originalDropHash, KEEP, trimmedJar, trimmedHash);
       }
       assertThat(sha256(originalDrop)).isEqualTo(originalDropHash);
       assertThat(sha256(originalKeep)).isEqualTo(originalKeepHash);
-      assertMojoOutputReports(consumer, trimmedHash, originalKeepHash);
+      assertMojoOutputReports(consumer, trimmedHash, originalKeepHash, extensionEnabled);
       final Path initialGraph = reports.resolve("graph-initial.tsv");
       final Path laterGraph = reports.resolve("graph-later.tsv");
+      final List<String> explicitGraph =
+          Files.readAllLines(reports.resolve("graph-explicit-test-resolver.tsv"));
+      final List<String> resolvedDependencies =
+          Files.readAllLines(reports.resolve("graph-explicit-test-resolved-dependencies.tsv"));
       if (extensionEnabled) {
         assertInitialAndLaterGraphCaptures(initialGraph, laterGraph);
+        assertThat(rowsWithPrefix(explicitGraph, "node\t"))
+            .containsExactly(
+                "node\tn0\tio.github.spockz.elider.test:lifecycle-elide-consumer:1.0.0:pom:",
+                "node\tn1\tio.github.spockz.elider.test:keep-library:1.0.0:jar:");
+        assertThat(rowsWithPrefix(explicitGraph, "edge\t")).containsExactly("edge\tn0\tn1");
+        assertThat(rowsWithPrefix(explicitGraph, "resolved-artifact\t"))
+            .containsExactly(resolvedArtifactRow("n1", KEEP, trimmedJar, trimmedHash));
+        assertThat(rowsWithPrefix(resolvedDependencies, "resolved-dependency\t"))
+            .containsExactly(resolvedDependencyRow(KEEP, trimmedJar, trimmedHash));
       } else {
         assertThat(Files.readString(laterGraph)).contains("missing\ttrue");
+        assertThat(rowsWithPrefix(explicitGraph, "node\t"))
+            .containsExactly(
+                "node\tn0\tio.github.spockz.elider.test:lifecycle-elide-consumer:1.0.0:pom:",
+                "node\tn1\tio.github.spockz.elider.test:drop-library:1.0.0:jar:",
+                "node\tn2\tio.github.spockz.elider.test:keep-library:1.0.0:jar:");
+        assertThat(rowsWithPrefix(explicitGraph, "resolved-artifact\t"))
+            .containsExactly(
+                resolvedArtifactRow("n1", DROP, originalDrop, originalDropHash),
+                resolvedArtifactRow("n2", KEEP, originalKeep, originalKeepHash));
+        assertThat(rowsWithPrefix(resolvedDependencies, "resolved-dependency\t"))
+            .containsExactly(
+                resolvedDependencyRow(DROP, originalDrop, originalDropHash),
+                resolvedDependencyRow(KEEP, originalKeep, originalKeepHash));
       }
     }
   }
@@ -694,6 +736,26 @@ final class DependencyContextLifecycleIntegrationTest {
     return lines.stream().filter(line -> line.startsWith(prefix)).toList();
   }
 
+  private static String resolvedArtifactRow(
+      final String nodeId, final String coordinate, final Path path, final String digest) {
+    final String encodedPath =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(
+                path.toAbsolutePath().normalize().toString().getBytes(StandardCharsets.UTF_8));
+    return "resolved-artifact\t" + nodeId + "\t" + coordinate + "\t" + encodedPath + "\t" + digest;
+  }
+
+  private static String resolvedDependencyRow(
+      final String coordinate, final Path path, final String digest) {
+    final String encodedPath =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(
+                path.toAbsolutePath().normalize().toString().getBytes(StandardCharsets.UTF_8));
+    return "resolved-dependency\t" + coordinate + "\t" + encodedPath + "\t" + digest;
+  }
+
   private static void assertJarEntries(final Path trimmedJar) throws IOException {
     try (JarFile jar = new JarFile(trimmedJar.toFile())) {
       assertThat(jar.getJarEntry("io/github/spockz/elider/fixture/keep/KeepEntry.class"))
@@ -704,7 +766,10 @@ final class DependencyContextLifecycleIntegrationTest {
   }
 
   private static void assertMojoOutputReports(
-      final Path consumer, final String trimmedHash, final String originalKeepHash)
+      final Path consumer,
+      final String trimmedHash,
+      final String originalKeepHash,
+      final boolean extensionEnabled)
       throws IOException {
     final Path target = consumer.resolve("target");
     final Path classUsageReport = target.resolve("dependency-elider-class-usage.json");
@@ -717,11 +782,14 @@ final class DependencyContextLifecycleIntegrationTest {
     assertThat(report.path("projectVersion").asText()).isEqualTo(VERSION);
     assertThat(report.path("projectBaseDirectory").asText())
         .isEqualTo(consumer.toAbsolutePath().normalize().toString());
-    assertThat(report.path("wholeArtifactsDropped").asInt()).isEqualTo(1);
+    assertThat(report.path("wholeArtifactsDropped").asInt()).isEqualTo(extensionEnabled ? 1 : 0);
+    assertThat(report.path("rawDroppedCoordinates")).hasSize(1);
     assertThat(report.path("programClassesPruned").asInt()).isEqualTo(1);
-    assertThat(report.path("droppedArtifacts")).hasSize(1);
-    assertThat(report.path("droppedArtifacts").get(0).path("coordinate").asText())
-        .contains("drop-library");
+    assertThat(report.path("droppedArtifacts")).hasSize(extensionEnabled ? 1 : 0);
+    if (extensionEnabled) {
+      assertThat(report.path("droppedArtifacts").get(0).path("coordinate").asText())
+          .contains("drop-library");
+    }
     assertThat(report.path("trimmedArtifacts")).hasSize(1);
     assertThat(report.path("trimmedArtifacts").get(0).path("coordinate").asText())
         .contains("keep-library");
@@ -729,12 +797,16 @@ final class DependencyContextLifecycleIntegrationTest {
         .isEqualTo(1);
 
     final JsonNode bom = JSON.readTree(sbom.toFile());
-    assertThat(bom.path("metadata").path("component").path("name").asText())
+    assertThat(bom.path("metadata").path("component").path(NAME_FIELD).asText())
         .isEqualTo("lifecycle-elide-consumer");
-    assertThat(bom.path("components")).hasSize(1);
-    final JsonNode component = bom.path("components").get(0);
+    assertThat(bom.path("components")).hasSize(extensionEnabled ? 1 : 2);
+    final JsonNode component =
+        StreamSupport.stream(bom.path("components").spliterator(), false)
+            .filter(item -> "keep-library".equals(item.path(NAME_FIELD).asText()))
+            .findFirst()
+            .orElseThrow();
     assertThat(component.path("group").asText()).isEqualTo(GROUP_ID);
-    assertThat(component.path("name").asText()).isEqualTo("keep-library");
+    assertThat(component.path(NAME_FIELD).asText()).isEqualTo("keep-library");
     assertThat(component.path("version").asText()).isEqualTo(VERSION);
     assertThat(component.path("hashes").get(0).path("content").asText()).isEqualTo(trimmedHash);
     assertThat(
@@ -753,7 +825,7 @@ final class DependencyContextLifecycleIntegrationTest {
 
   private static String componentProperty(final JsonNode component, final String propertyName) {
     for (final JsonNode property : component.path("properties")) {
-      if (propertyName.equals(property.path("name").asText())) {
+      if (propertyName.equals(property.path(NAME_FIELD).asText())) {
         return property.path("value").asText();
       }
     }
@@ -1145,6 +1217,21 @@ final class DependencyContextLifecycleIntegrationTest {
       assertThat(Path.of(artifact.file())).isEqualTo(expected.file());
       assertThat(artifact.sha256()).isEqualTo(expected.sha256());
     }
+  }
+
+  private static void assertDirectMembershipUnchanged(
+      final Snapshot beforeResolverRequest, final Snapshot afterResolverRequest) {
+    assertThat(afterResolverRequest.direct().collectionIdentity())
+        .isEqualTo(beforeResolverRequest.direct().collectionIdentity());
+    assertThat(afterResolverRequest.direct().artifacts().keySet())
+        .containsExactlyInAnyOrderElementsOf(beforeResolverRequest.direct().artifacts().keySet());
+    beforeResolverRequest
+        .direct()
+        .artifacts()
+        .forEach(
+            (coordinate, artifact) ->
+                assertThat(afterResolverRequest.direct().artifacts().get(coordinate).identity())
+                    .isEqualTo(artifact.identity()));
   }
 
   private static PhaseSnapshots phaseSnapshots(final Path directory, final String mode)

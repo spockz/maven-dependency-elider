@@ -14,12 +14,13 @@ import javax.inject.Singleton;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.RepositorySessionDecorator;
 import org.eclipse.aether.DefaultRepositorySystemSession;
+import org.eclipse.aether.RepositoryException;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.collection.DependencyGraphTransformer;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.sisu.Priority;
 
-/** Snapshots mediated graphs without changing the graph returned to Resolver. */
+/** Captures mediated graphs and applies fingerprint-bound node projections. */
 @SuppressWarnings("PMD.LawOfDemeter")
 @Named("elider-mediated-graph-capture")
 @Priority(9)
@@ -56,6 +57,7 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
                   root, projectKey, planPresent, planFingerprint, planGeneration, 0L);
           final DependencyNode transformed =
               delegate == null ? root : delegate.transformGraph(root, context);
+          applyPlanProjection(transformed, plan);
           final ResolverArtifactGraphSnapshot after =
               ResolverArtifactGraphSnapshot.capture(
                   transformed, projectKey, planPresent, planFingerprint, planGeneration, 0L);
@@ -63,6 +65,27 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
           return transformed;
         });
     return decorated;
+  }
+
+  private static void applyPlanProjection(
+      final DependencyNode root, final ResolverArtifactPlan plan) throws RepositoryException {
+    if (plan == null || plan.graphProjection() == null) {
+      return;
+    }
+    final ResolverArtifactGraphProjection projection = plan.graphProjection();
+    final String actualSource =
+        ResolverArtifactGraphSnapshot.capture(root, "projection-source", false, null, 0L, 0L)
+            .graphFingerprint();
+    if (!projection.sourceFingerprint().equals(actualSource)) {
+      throw new RepositoryException(
+          "Resolver graph does not match the elision projection source fingerprint");
+    }
+    try {
+      ResolverArtifactGraphProjection.apply(root, projection);
+    } catch (final IllegalArgumentException exception) {
+      throw new RepositoryException(
+          "Cannot apply the validated elision graph projection", exception);
+    }
   }
 
   private static ResolverArtifactPlan.ProjectIdentity projectIdentity(final MavenProject project) {
@@ -98,6 +121,12 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
               fields.add(replacement.path().toString());
               fields.add(replacement.sha256());
             });
+    if (plan.graphProjection() != null) {
+      fields.add(plan.graphProjection().captureToken());
+      fields.add(plan.graphProjection().sourceFingerprint());
+      fields.add(plan.graphProjection().projectedFingerprint());
+      fields.addAll(plan.graphProjection().removedNodeIds());
+    }
     final StringBuilder canonical = new StringBuilder();
     fields.forEach(field -> canonical.append(field.length()).append(':').append(field));
     try {

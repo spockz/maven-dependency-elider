@@ -60,14 +60,43 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
   /** Builds a fixture with optional duplicate ownership or service metadata. */
   protected Fixture fixture(final boolean duplicateClass, final boolean serviceRootInA)
       throws IOException {
+    return fixture(duplicateClass, serviceRootInA, false);
+  }
+
+  /** Builds a fixture with a resource-only second artifact when requested. */
+  protected Fixture fixture(
+      final boolean duplicateClass, final boolean serviceRootInA, final boolean resourceOnlyB)
+      throws IOException {
+    return fixture(duplicateClass, serviceRootInA, resourceOnlyB, false);
+  }
+
+  private Fixture fixture(
+      final boolean duplicateClass,
+      final boolean serviceRootInA,
+      final boolean resourceOnlyB,
+      final boolean optionalAsmReference)
+      throws IOException {
     final Path sourceDirectory = Files.createDirectories(temporaryDirectory.resolve("sources"));
     final Path classes = Files.createDirectories(temporaryDirectory.resolve("classes"));
     final Path firstSource =
         writeSource(
             sourceDirectory,
             "closure/a/Entry.java",
-            "package closure.a; public class Entry { "
-                + "public Object make() { return new closure.b.Middle(); } }");
+            resourceOnlyB
+                ? "package closure.a; public class Entry {}"
+                : optionalAsmReference
+                    ? "package closure.a; public class Entry { "
+                        + "public org.objectweb.asm.Label optional; "
+                        + "public Object make() { return new closure.b.Middle(); } }"
+                    : "package closure.a; public class Entry { "
+                        + "public Object make() { return new closure.b.Middle(); } }");
+    final Path optionalAsmSource =
+        optionalAsmReference
+            ? writeSource(
+                sourceDirectory,
+                "org/objectweb/asm/Label.java",
+                "package org.objectweb.asm; public class Label {}")
+            : null;
     final Path extraSource =
         writeSource(
             sourceDirectory, "closure/a/Extra.java", "package closure.a; public class Extra {}");
@@ -89,24 +118,32 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     final Path fifthSource =
         writeSource(
             sourceDirectory, "closure/e/Leaf.java", "package closure.e; public class Leaf {}");
-    compile(
-        classes,
-        List.of(firstSource, extraSource, secondSource, thirdSource, fourthSource, fifthSource));
+    final List<Path> sources =
+        new ArrayList<>(
+            List.of(
+                firstSource, extraSource, secondSource, thirdSource, fourthSource, fifthSource));
+    if (optionalAsmSource != null) {
+      sources.add(optionalAsmSource);
+    }
+    compile(classes, sources);
     final Path firstArtifactPath =
         jar(
             "a.jar",
             classes,
             List.of("closure/a/Entry.class", "closure/a/Extra.class"),
-            serviceRootInA
-                ? Map.of("META-INF/services/closure.a.Entry", "closure.b.Middle\n")
-                : Map.of());
+            firstArtifactResources(serviceRootInA));
+    final List<String> secondClasses =
+        resourceOnlyB
+            ? List.of()
+            : duplicateClass
+                ? List.of("closure/a/Extra.class", "closure/b/Middle.class")
+                : List.of("closure/b/Middle.class");
     final Path secondArtifactPath =
         jar(
             "b.jar",
             classes,
-            duplicateClass
-                ? List.of("closure/a/Extra.class", "closure/b/Middle.class")
-                : List.of("closure/b/Middle.class"));
+            secondClasses,
+            Map.of("data/fixture.txt", "preserve this resource\n"));
     final Path thirdArtifactPath = jar("c.jar", classes, List.of("closure/c/Leaf.class"));
     final Path fourthArtifactPath = jar("d.jar", classes, List.of("closure/d/Ancestor.class"));
     final Path fifthArtifactPath = jar("e.jar", classes, List.of("closure/e/Leaf.class"));
@@ -116,6 +153,20 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         thirdArtifactPath,
         fourthArtifactPath,
         fifthArtifactPath);
+  }
+
+  /** Builds a fixture whose entry class has an unresolved optional ASM type. */
+  protected Fixture fixtureWithOptionalAsmReference() throws IOException {
+    return fixture(false, false, false, true);
+  }
+
+  private static Map<String, String> firstArtifactResources(final boolean serviceRootInA) {
+    if (serviceRootInA) {
+      return Map.of(
+          "data/fixture.txt", "preserve this resource\n",
+          "META-INF/services/closure.a.Entry", "closure.b.Middle\n");
+    }
+    return Map.of("data/fixture.txt", "preserve this resource\n");
   }
 
   private Path writeSource(final Path root, final String relative, final String content)

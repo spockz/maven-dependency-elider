@@ -92,6 +92,8 @@ final class MavenElisionReportWriter {
             + " (original JAR file bytes: "
             + formatBytes(snapshot.originalJarBytesDropped())
             + ")");
+    lines.add(
+        "Raw trace decision drops before graph safety: " + snapshot.rawDroppedCoordinates().size());
     for (final MavenElisionReportSnapshot.DroppedArtifact artifact : snapshot.droppedArtifacts()) {
       lines.add("  - " + artifact.coordinate() + ": " + formatBytes(artifact.originalJarBytes()));
     }

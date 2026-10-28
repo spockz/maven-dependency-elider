@@ -39,14 +39,10 @@ class HelloControllerTest {
         .andExpect(content().json("{\"message\":\"hello\"}"));
   }
 
-  /** Confirms the unused, BOM-managed Commons Codec dependency follows elision mode. */
+  /** Confirms graphless elision retains the raw Commons Codec candidate. */
   @Test
-  void commonsCodecIsAvailableOnlyInBaselineBuilds() {
-    final boolean expectedPresent = !Boolean.getBoolean("elider.verifyElision");
-    final URL codecClass = resource("org/apache/commons/codec/binary/Hex.class");
-    assertThat(codecClass != null)
-        .as("Commons Codec should match baseline versus elided mode")
-        .isEqualTo(expectedPresent);
+  void commonsCodecRemainsAvailableWithoutGraphEvidence() {
+    assertThat(resource("org/apache/commons/codec/binary/Hex.class")).isNotNull();
   }
 
   /** Confirms mail remains available because the runtime trace observes mail classes. */

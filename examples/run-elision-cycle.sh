@@ -14,7 +14,7 @@ automatic_passthrough_names=(
   jakarta.activation-api-2.1.3.jar jakarta.annotation-api-2.1.1.jar jakarta.mail-2.0.3.jar
   jakarta.servlet.jsp.jstl-api-3.0.2.jar jakarta.validation-api-3.0.2.jar log4j-api-2.23.1.jar
   log4j-to-slf4j-2.23.1.jar logback-classic-1.5.11.jar logback-core-1.5.11.jar
-  reactor-core-3.6.11.jar spring-core-6.1.14.jar tomcat-embed-core-10.1.31.jar
+  reactor-core-3.6.11.jar snakeyaml-2.2.jar spring-core-6.1.14.jar tomcat-embed-core-10.1.31.jar
   tomcat-embed-el-10.1.31.jar tomcat-embed-websocket-10.1.31.jar
 )
 
@@ -124,6 +124,12 @@ main() {
         -Delide.trimRoots=freemarker.template.Configuration,groovy.text.markup.MarkupTemplateEngine,jakarta.validation.Validation,org.webjars.WebJarAssetLocator,org.reactivestreams.Publisher,io.micrometer.context.ContextSnapshot,reactor.core.publisher.Flux,reactor.core.publisher.Mono,reactor.util.context.Context,jakarta.servlet.jsp.jstl.core.Config,javax.annotation.Nonnull,edu.umd.cs.findbugs.annotations.SuppressFBWarnings,com.thoughtworks.xstream.XStream,com.thoughtworks.xstream.io.xml.StaxDriver
         -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:
       )
+    elif [[ $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
+      elision_options+=(
+        -Delide.sourceRootsComplete=true
+        -Dmaven.compiler.proc=none
+        -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:
+      )
     else
       elision_options+=(
         -Delide.sourceRootsComplete=true
@@ -200,7 +206,7 @@ main() {
 
     entries="$test_dir/$fixture.jar-entries"
     "$jar" tf "$jar_file" >"$entries"
-    verify_archive "$fixture" "$entries"
+    verify_archive "$fixture" "$entries" "$fixture_dir"
     if [[ $fixture == example-spring-boot-app ]]; then
       compare_spring_mail_artifacts "$jar_file" "$mail_artifacts"
     fi
@@ -543,16 +549,18 @@ verify_baseline_archive() {
 verify_archive() {
   local fixture=$1
   local entries=$2
+  local fixture_dir=$3
+  verify_no_whole_artifact_drops "$fixture_dir"
   case $fixture in
     example-basic-app)
-      lacks_entry "$entries" 'org/apache/commons/codec/binary/Hex.class'
+      has_entry "$entries" 'org/apache/commons/codec/binary/Hex.class'
       has_entry "$entries" 'org/apache/commons/compress/archivers/zip/ZipArchiveEntry.class'
       lacks_entry "$entries" 'org/apache/commons/compress/archivers/tar/TarArchiveEntry.class'
       ;;
     example-spring-boot-app)
       has_pattern "$entries" 'BOOT-INF/lib/spring-webmvc-[^/]+\.jar'
-      lacks_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
-      lacks_pattern "$entries" 'BOOT-INF/lib/snakeyaml-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
+      has_pattern "$entries" 'BOOT-INF/lib/snakeyaml-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/jakarta.mail-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/jakarta.activation-api-[^/]+\.jar'
@@ -560,17 +568,31 @@ verify_archive() {
       ;;
     example-cve-unused-app)
       has_entry "$entries" 'com/fasterxml/jackson/databind/ObjectMapper.class'
-      lacks_prefix "$entries" 'ch/qos/logback/'
-      lacks_prefix "$entries" 'org/codehaus/janino/'
-      lacks_prefix "$entries" 'org/codehaus/commons/compiler/'
-      lacks_prefix "$entries" 'org/springframework/'
+      has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
+      has_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
+      has_prefix "$entries" 'org/codehaus/commons/compiler/'
+      has_prefix "$entries" 'org/springframework/'
       ;;
     example-cve-safe-class-app)
       has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
-      lacks_prefix "$entries" 'org/codehaus/janino/'
-      lacks_prefix "$entries" 'org/codehaus/commons/compiler/'
+      has_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
+      has_prefix "$entries" 'org/codehaus/commons/compiler/'
       ;;
   esac
+}
+
+verify_no_whole_artifact_drops() {
+  local fixture_dir=$1
+  local report="$fixture_dir/target/dependency-elider-report.json"
+  test -f "$report"
+  grep -Fq -- '"wholeArtifactsDropped" : 0' "$report" || {
+    echo "The example run without the core graph extension must retain whole-artifact candidates: $report" >&2
+    exit 1
+  }
+  grep -Fq -- '"droppedArtifacts" : [ ]' "$report" || {
+    echo "The effective report must list no whole-artifact removals: $report" >&2
+    exit 1
+  }
 }
 
 verify_basic_trimmed_artifacts() {
@@ -578,7 +600,8 @@ verify_basic_trimmed_artifacts() {
   local shaded_jar=$2
   local original_compress=$3
   local baseline_package_bytes=$4
-  local trimmed_compress="$fixture_dir/target/elided-artifacts/org.apache.commons-commons-compress-1.28.0-trimmed.jar"
+  local trimmed_compress
+  trimmed_compress=$(basic_trimmed_compress_path "$fixture_dir")
   local trimmed_entries="$test_dir/basic-compress-entries"
   local trimmed_package_bytes
   local original_compress_bytes
@@ -603,19 +626,48 @@ verify_basic_trimmed_artifacts() {
   echo "Commons Compress JAR shrank from $original_compress_bytes to $trimmed_compress_bytes bytes; shaded JAR shrank from $baseline_package_bytes to $trimmed_package_bytes bytes."
 }
 
+basic_trimmed_compress_path() {
+  local fixture_dir=$1
+  local generations="$fixture_dir/target/elided-artifacts/.generations"
+  local -a matches=()
+  if [[ -d $generations ]]; then
+    mapfile -t matches < <(
+      find "$generations" -mindepth 2 -maxdepth 2 -type f \
+        -name 'org.apache.commons-commons-compress-1.28.0-trimmed.jar' -print
+    )
+  fi
+  if [[ ${#matches[@]} -ne 1 ]]; then
+    echo "Expected one committed Commons Compress generation under $generations" >&2
+    return 1
+  fi
+  printf '%s\n' "${matches[0]}"
+}
+
 verify_basic_shade_input_paths() {
   local fixture_dir=$1
   local observed="$fixture_dir/target/dependency-elider-shade-inputs.txt"
-  local trimmed="$fixture_dir/target/elided-artifacts/org.apache.commons-commons-compress-1.28.0-trimmed.jar"
+  local report="$fixture_dir/target/dependency-elider-report.json"
+  local trimmed
+  trimmed=$(basic_trimmed_compress_path "$fixture_dir")
   test -f "$observed"
+  test -f "$report"
+  test -f "$trimmed"
   grep -Fq -- "$trimmed" "$observed" || {
     echo "The same-session MavenProject classpath before Shade does not contain trimmed Compress: $observed" >&2
     exit 1
   }
-  if grep -Fq -- '/commons-codec/commons-codec/' "$observed"; then
-    echo "The same-session MavenProject classpath before Shade still contains elided Commons Codec: $observed" >&2
+  grep -Fq -- '"wholeArtifactsDropped" : 0' "$report" || {
+    echo "The effective report must show zero whole-artifact drops without a graph extension: $report" >&2
     exit 1
-  fi
+  }
+  grep -Fq -- 'commons-codec:commons-codec:jar:1.19.0 (compile)' "$report" || {
+    echo "The report must preserve the raw Commons Codec candidate for comparison: $report" >&2
+    exit 1
+  }
+  grep -Fq -- '/commons-codec/commons-codec/' "$observed" || {
+    echo "The no-extension Maven classpath should retain raw Commons Codec: $observed" >&2
+    exit 1
+  }
 }
 
 verify_runtime() {

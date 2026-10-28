@@ -128,7 +128,7 @@ public final class PlanSeedEventSpy implements EventSpy {
                     replacement.toString(),
                     outputHash)));
     final Map<String, Object> payload =
-        Map.of("schemaVersion", 1, "plans", Map.of(projectKey, plan));
+        Map.of("schemaVersion", 2, "plans", Map.of(projectKey, plan));
     final Map<String, String> directArtifactsBefore = directArtifactFiles(project);
     data.set(SESSION_DATA_KEY, payload);
     if (!directArtifactsBefore.equals(directArtifactFiles(project))) {

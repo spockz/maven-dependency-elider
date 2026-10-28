@@ -61,12 +61,8 @@ record ResolverArtifactGraphSnapshot(
     final GraphTraversal traversal = GraphTraversal.of(root);
     final List<Map<String, Object>> nodePayloads = traversal.nodePayloads();
     final List<Map<String, Object>> edgePayloads = traversal.edgePayloads();
-    final Map<String, Object> structure = new LinkedHashMap<>();
-    structure.put("rootNodeId", traversal.rootNodeId());
-    structure.put("nodes", nodePayloads);
-    structure.put("edges", edgePayloads);
     return new ResolverArtifactGraphSnapshot(
-        sha256(canonicalJson(structure)),
+        structuralFingerprint(traversal.rootNodeId(), nodePayloads, edgePayloads),
         projectKey,
         planPresent,
         planFingerprint,
@@ -75,6 +71,17 @@ record ResolverArtifactGraphSnapshot(
         traversal.rootNodeId(),
         nodePayloads,
         edgePayloads);
+  }
+
+  static String structuralFingerprint(
+      final String rootNodeId,
+      final List<Map<String, Object>> nodes,
+      final List<Map<String, Object>> edges) {
+    final Map<String, Object> structure = new LinkedHashMap<>();
+    structure.put("rootNodeId", rootNodeId);
+    structure.put("nodes", nodes);
+    structure.put("edges", edges);
+    return sha256(canonicalJson(structure));
   }
 
   Map<String, Object> toPayload() {

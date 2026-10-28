@@ -6,7 +6,7 @@
 [![Java 21](https://img.shields.io/badge/Java-21-blue.svg)](https://openjdk.org/projects/jdk/21/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Software Composition Analysis floods engineering teams with vulnerability alerts because over 97% of reported Java CVEs reside in bloated, dormant code that never executes in production. Maven Dependency Elider eliminates this security impedance mismatch by automatically purging unused transitive libraries and trimming unreferenced classes directly inside your Maven build. By leveraging concrete JVM runtime telemetry (CDS, JFR, JaCoCo) to validate lean classpaths during compile and test phases, it catches regressions before packaging while emitting verifiable CycloneDX 1.6 pedigree provenance to eliminate bloat-driven vulnerability noise.
+Software Composition Analysis can surface findings in code that a build never uses. Maven Dependency Elider combines runtime evidence with static closure to identify removable dependencies and trim unreferenced classes in a Maven build. Whole-artifact removal is applied only when a unique compatible mediated-graph capture proves the exact safe nodes; otherwise raw candidates remain retained. Trimmed outputs include CycloneDX 1.6 pedigree provenance.
 
 ```text
   Runtime Evidence                 Maven Build Lifecycle               Lean Distribution
@@ -61,6 +61,22 @@ Run the non-mutating `analyze` goal to inspect bloat and trimming potential:
 ### 4. Build with Elision
 
 Run `elide` before the consumer's package lifecycle in the same Maven invocation. Intra-JAR trimming is opt-in; this example enables it:
+
+Whole-artifact graph projection also requires the production core extension in the consumer project. After installing the plugin, create `.mvn/extensions.xml` in the consumer:
+
+```xml
+<extensions>
+  <extension>
+    <groupId>io.github.spockz</groupId>
+    <artifactId>dependency-elider-maven-plugin</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </extension>
+</extensions>
+```
+
+Without this extension, whole-artifact candidates remain in the effective dependency set; retained-JAR trimming can still run.
+
+Before publication commits, a failed goal restores the prior report and output generation. If backup cleanup fails after commit, Maven reports the cleanup error while the newly published outputs remain active.
 
 ```sh
 ./mvnw io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:elide package \
@@ -133,7 +149,7 @@ After `make test-examples`, OSV-Scanner can check the Spring example's generated
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Whole-Artifact Elision**: Eligible dependencies without runtime evidence can be removed from the Maven artifact views used by the verified example consumers. The direct dependency-artifact set is preserved in the supported Maven 3 context to avoid triggering a second resolution, so not every Maven view reflects the same decision.
+1. **Whole-Artifact Elision**: Eligible dependencies without runtime evidence are reported as raw candidates. A unique compatible pre-elision graph capture is required before the effective decision removes exact safe graph nodes and resolved artifacts. If the production core extension or compatible graph evidence is unavailable, whole-artifact removals fail closed to zero. The direct dependency-artifact membership is preserved.
 2. **Intra-JAR Trimming**: For retained dependencies, ProGuard Core computes the transitive link closure of all required internal types, superclasses, interfaces, and annotations. Unreferenced classes are purged while preserving resource files, licenses, and SPI service providers.
 3. **In-Memory Redirection**: Retained dependencies are redirected in-memory (`artifact.setFile(trimmedJar)`), allowing standard packagers to assemble the trimmed JARs without bespoke glue code.
 
@@ -141,11 +157,11 @@ After `make test-examples`, OSV-Scanner can check the Spring example's generated
 
 The `elide.sourceRootsComplete` setting defaults to `false`. In that mode, all effective compile-classpath JARs and their classes are conservatively retained for class trimming. Setting it to `true` asserts that all production and generated sources exist before `INITIALIZE` and that no later processor or generator adds compile references. Detectable unsupported compiler settings still fail closed. Source scanning covers compile-time references that may not appear in class files, including inlined constants, source-retained annotations, and generic bounds. The independent runtime-evidence match remains required before whole-artifact pruning.
 
-Supported service, Spring, and native-image metadata roots also protect their declaring JARs and provider JARs from whole-artifact elision when `elide.trimJars=false`. A uniquely indexed provider is kept by coordinate; if a root has multiple scanned owners, all matching JARs are kept, and if no owner is found, the plugin conservatively keeps the scanned JAR inventory. With trimming enabled, those roots also participate in intra-JAR closure. Unknown metadata, unresolved references in candidate JARs, and unsupported archive layouts fail closed. Retained multi-release JARs with implementation classes and retained root-module-info JARs pass through unchanged by default; the analysis covers classpath behavior for the current runtime feature, not JPMS module-path linkage. Set `elide.failOnUnsupportedMultiRelease=true` or `elide.failOnUnsupportedModuleInfo=true` to fail on those layouts. `elide.trimSkipArtifacts` explicitly keeps named JARs unchanged and analyzes their classes as roots; unresolved external references from unchanged pass-through code are tolerated.
+Supported service, Spring, and native-image metadata roots also protect their declaring JARs and provider JARs from whole-artifact elision when `elide.trimJars=false`. A uniquely indexed provider is kept by coordinate; if a root has multiple scanned owners, all matching JARs are kept, and if no owner is found, the plugin conservatively keeps the scanned JAR inventory. With trimming enabled, those roots also participate in intra-JAR closure. Unknown metadata, unresolved references in candidate JARs, and unsupported archive layouts fail closed. Retained multi-release JARs with implementation classes and retained root-module-info JARs are not eligible for whole-artifact removal; module-path linkage is not covered. Set `elide.failOnUnsupportedMultiRelease=true` or `elide.failOnUnsupportedModuleInfo=true` to fail on those layouts. `elide.trimSkipArtifacts` explicitly keeps named JARs unchanged and analyzes their classes as roots; unresolved external references from unchanged pass-through code are tolerated.
 
-The analysis fingerprints Maven's resolved and direct artifact views, including membership, coordinates, scopes, file paths, and file contents. A change detected while preparation or the analysis-only effective-closure pass is running fails closed. The effective-closure pass is diagnostic and does not write trimmed JARs or change Maven views; wiring its discovered roots into output generation remains a separate work item.
+The analysis fingerprints Maven's resolved and direct artifact views, including membership, coordinates, scopes, file paths, and file contents. A change detected during preparation or effective closure fails before publication. The `elide` goal stages trimmed outputs and reports, applies effective resolved membership while preserving direct dependency membership, and publishes the resolver plan last. Reports distinguish raw elision candidates from effective whole-artifact drops. A production core extension is required for later resolver graph projection; `dependency:tree` behavior is not currently guaranteed.
 
-The examples verify the Basic Shade and Spring Boot nested-JAR paths. Maven's direct dependency-artifact set is preserved in the supported Maven 3 context to avoid triggering a second resolution; resolved/project views and matching artifact file pointers are updated. Other downstream mojos and Maven 4 remain unverified. See [ADR-0002](docs/adr/0002-in-memory-artifact-mutation-for-downstream-packaging-transparency.md) and [RQ-0006](docs/research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+The examples verify the Basic Shade and Spring Boot nested-JAR paths. The Maven 3.9.11 packaged fixture verifies exact graph projection through a distinct direct TEST resolver call; it does not establish a second lifecycle request or `dependency:tree` consistency. Other downstream mojos, reactor behavior, and Maven 4 remain unverified. See [ADR-0002](docs/adr/0002-in-memory-artifact-mutation-for-downstream-packaging-transparency.md) and [RQ-0006](docs/research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
 
 ## Provenance: CycloneDX 1.6
 

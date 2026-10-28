@@ -13,9 +13,14 @@ import java.util.regex.Pattern;
 /** Immutable JDK-only replacement plan for one Maven project. */
 @SuppressWarnings("PMD.UseConcurrentHashMap")
 record ResolverArtifactPlan(
-    ProjectIdentity project, Map<ArtifactIdentity, Replacement> replacements) {
+    ProjectIdentity project,
+    Map<ArtifactIdentity, Replacement> replacements,
+    ResolverArtifactGraphProjection graphProjection) {
   /** Validates expected digests before they enter the detached plan. */
   private static final Pattern SHA_256 = Pattern.compile("[0-9a-f]{64}");
+
+  /** Keeps package-scope suppression consistent across internal value constructors. */
+  private static final String PACKAGE_SCOPE_SUPPRESSION = "PMD.CommentDefaultAccessModifier";
 
   ResolverArtifactPlan {
     Objects.requireNonNull(project, "project");
@@ -29,8 +34,15 @@ record ResolverArtifactPlan(
     replacements = Collections.unmodifiableMap(normalized);
   }
 
+  @SuppressWarnings(PACKAGE_SCOPE_SUPPRESSION)
+  // Package scope keeps this constructor inside the resolver-plan adapter.
+  ResolverArtifactPlan(
+      final ProjectIdentity project, final Map<ArtifactIdentity, Replacement> replacements) {
+    this(project, replacements, null);
+  }
+
   /** Project identity that keeps plans isolated across reactor modules and versions. */
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  @SuppressWarnings(PACKAGE_SCOPE_SUPPRESSION)
   record ProjectIdentity(Path baseDirectory, String groupId, String artifactId, String version) {
     ProjectIdentity {
       baseDirectory =
@@ -42,7 +54,7 @@ record ResolverArtifactPlan(
   }
 
   /** Maven Resolver GAVCE key. */
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  @SuppressWarnings(PACKAGE_SCOPE_SUPPRESSION)
   record ArtifactIdentity(
       String groupId, String artifactId, String version, String extension, String classifier) {
     ArtifactIdentity {
@@ -66,7 +78,7 @@ record ResolverArtifactPlan(
   }
 
   /** Detached file location and expected output digest. */
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  @SuppressWarnings(PACKAGE_SCOPE_SUPPRESSION)
   record Replacement(Path path, String sha256) {
     Replacement {
       path = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();

@@ -84,6 +84,7 @@ final class ReportMojoTest {
         1,
         2048,
         List.of(new MavenElisionReportSnapshot.DroppedArtifact("org.example:unused:jar:1.0", 2048)),
+        List.of("org.example:unused:jar:1.0"),
         3,
         1536,
         List.of(

@@ -7,7 +7,7 @@ This page covers user-facing configuration, outcomes, compatibility limits, and 
 
 ### What does the plugin remove?
 
-Elision can remove unused dependency artifacts from the current Maven build and can optionally remove unused classes from retained dependency JARs. It does not edit your POM or rewrite dependency declarations.
+Elision can remove unused dependency artifacts from a compatible Maven resolver graph and can optionally remove unused classes from retained dependency JARs. It does not edit your POM or rewrite dependency declarations. Whole-artifact removal requires the production core extension and a unique compatible TEST graph capture; if either is unavailable, the goal keeps the whole-artifact candidates and reports them separately from effective drops.
 
 ### How do I enable elision?
 
@@ -24,7 +24,11 @@ Run the lifecycle phase and tree goal in one invocation if you want the elider t
   initialize org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree
 ```
 
-The goal is for Maven's standard `dependency:tree` to show the post-elision effective dependencies. The current integration does not do that yet: the Basic example's tree lists Commons Codec although the elided classpath and package omit it. Until resolver integration changes, inspect the effective classpath or final package for the actual inventory. The `dependency-elider:report` goal exists and reports saved elision totals, but its snapshot does not retain Maven's mediated original graph paths. The early resolver question therefore remains open. See [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+The production extension can project exact safe nodes in a compatible later TEST resolver graph. This behavior is verified for one Maven 3.9.11 single-project fixture. The standard `dependency:tree` goal uses a separate POM-only context and is not guaranteed to show the projected graph; inspect the supported lifecycle classpath or final package for its actual inventory. The `dependency-elider:report` goal reports saved raw candidates and effective drops. Broader reactor and Maven-version behavior remains unverified. See [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+
+### Why did a raw dependency candidate remain in my build?
+
+The goal removes a whole artifact only when it can bind one unambiguous initial TEST graph to the Maven artifact inventory and later validate the exact source graph before projection. Install and load the production core extension from `.mvn/extensions.xml`; missing, ambiguous, or changed graph evidence leaves raw candidates retained. The report lists raw candidates separately from effective whole-artifact drops. Retained JAR class trimming can still run when whole-artifact removal fails closed.
 
 ### What does the nonmutating `analyze` summary mean?
 
@@ -41,6 +45,10 @@ The elider uses exact content digests to identify dependency and JDK platform in
 ### What happens if a dependency contains multi-release implementation classes?
 
 That JAR is kept byte-identical and skipped as a trim target with a warning. Other supported JARs can still be trimmed. Set `-Delide.failOnUnsupportedMultiRelease=true` if encountering such a JAR should fail the build.
+
+### What happens to reports and outputs if publication fails?
+
+A failure before the publication commit restores the previous reports, output generation, Maven artifact views, and resolver plan. If backup cleanup fails after publication commits, Maven reports that cleanup error while the new reports and outputs remain active.
 
 ### What if my application runs on a different JDK than Maven?
 

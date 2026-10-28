@@ -119,6 +119,26 @@ final class MavenDependencyTrimmerInMemoryClosureTest
   }
 
   @Test
+  void forcedUnchangedProgramToleratesAnUnresolvedOptionalClassReference() throws Exception {
+    final Fixture fixture = fixtureWithOptionalAsmReference();
+
+    final MavenDependencyTrimmer.InMemoryAnalysis result =
+        fixture.analyze(Set.of(fixture.coordinate("a")), Set.of(fixture.coordinate("a")), Map.of());
+
+    assertThat(result.reachableArtifacts()).contains(fixture.coordinate("b"));
+    assertThat(result.candidateAnalyses()).doesNotContainKey(fixture.coordinate("a"));
+  }
+
+  @Test
+  void trimCandidateStillRejectsTheSameUnresolvedOptionalClassReference() throws Exception {
+    final Fixture fixture = fixtureWithOptionalAsmReference();
+
+    assertThatThrownBy(() -> fixture.analyze(Set.of(fixture.coordinate("a")), Set.of(), Map.of()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("org/objectweb/asm/Label");
+  }
+
+  @Test
   void rejectsDuplicateClassOwnersAcrossCompleteInventory() throws Exception {
     final Fixture fixture = fixture(true);
 
@@ -128,13 +148,16 @@ final class MavenDependencyTrimmerInMemoryClosureTest
   }
 
   @Test
-  void rejectsUnsupportedMultiReleaseProjectionBeforeAnalysis() throws Exception {
+  void keepsRetainedMultiReleaseJarAsUnchangedPassThrough() throws Exception {
     final Fixture fixture = fixture(false);
     final Path multiRelease = fixture.addVersionedClassToC();
 
     assertThat(multiRelease).isRegularFile();
-    assertThatThrownBy(() -> fixture.analyze(Set.of(fixture.coordinate("a")), Set.of(), Map.of()))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("does not support multi-release");
+    final MavenDependencyTrimmer.InMemoryAnalysis analysis =
+        fixture.analyze(
+            Set.of(fixture.coordinate("a"), fixture.coordinate("c")), Set.of(), Map.of());
+
+    assertThat(analysis.candidateAnalyses()).doesNotContainKey(fixture.coordinate("c"));
+    assertThat(analysis.candidateRoots()).doesNotContainKey(fixture.coordinate("c"));
   }
 }

@@ -30,10 +30,21 @@ final class ResolverArtifactPlanPublisher {
       final MavenProject project,
       final List<ArtifactTrimRecord> trimRecords)
       throws IOException {
+    publish(session, project, trimRecords, null);
+  }
+
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  // Package scope keeps publication inside the Maven resolver adapter.
+  static void publish(
+      final MavenSession session,
+      final MavenProject project,
+      final List<ArtifactTrimRecord> trimRecords,
+      final ResolverArtifactGraphProjection graphProjection)
+      throws IOException {
     if (trimRecords.isEmpty() && !hasPublishingContext(session, project)) {
       return;
     }
-    final ResolverArtifactPlan plan = createPlan(project, trimRecords);
+    final ResolverArtifactPlan plan = createPlan(project, trimRecords, graphProjection);
     if (session == null || session.getRepositorySession() == null) {
       throw new IOException("Cannot publish resolver plan without a repository session");
     }
@@ -56,7 +67,10 @@ final class ResolverArtifactPlanPublisher {
   }
 
   private static ResolverArtifactPlan createPlan(
-      final MavenProject project, final List<ArtifactTrimRecord> trimRecords) throws IOException {
+      final MavenProject project,
+      final List<ArtifactTrimRecord> trimRecords,
+      final ResolverArtifactGraphProjection graphProjection)
+      throws IOException {
     if (project == null || project.getBasedir() == null) {
       throw new IOException("Cannot publish resolver plan without project base directory");
     }
@@ -70,7 +84,7 @@ final class ResolverArtifactPlanPublisher {
             "Duplicate retained artifact replacement identity: " + entry.identity());
       }
     }
-    return new ResolverArtifactPlan(projectIdentity, replacements);
+    return new ResolverArtifactPlan(projectIdentity, replacements, graphProjection);
   }
 
   private static PlanEntry replacement(final ArtifactTrimRecord record) throws IOException {

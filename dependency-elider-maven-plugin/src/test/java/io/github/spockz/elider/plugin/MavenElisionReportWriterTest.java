@@ -147,6 +147,7 @@ final class MavenElisionReportWriterTest {
             0,
             0,
             List.of(),
+            List.of(),
             0,
             0,
             List.of());
@@ -181,6 +182,7 @@ final class MavenElisionReportWriterTest {
         2048,
         List.of(
             new MavenElisionReportSnapshot.DroppedArtifact(GROUP_ID + ":removed:jar:1.0", 2048)),
+        List.of(GROUP_ID + ":removed:jar:1.0"),
         4,
         3096,
         List.of(

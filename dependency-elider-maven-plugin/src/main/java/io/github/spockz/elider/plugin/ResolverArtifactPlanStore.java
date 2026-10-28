@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /** Immutable collection of project-specific resolver plans. */
 @SuppressWarnings({
@@ -26,7 +27,10 @@ record ResolverArtifactPlanStore(
 
   private static final int REPLACEMENT_FIELD_COUNT = 7;
 
-  private static final int SCHEMA_VERSION = 1;
+  private static final int SCHEMA_VERSION = 2;
+
+  private static final Set<String> PROJECTION_FIELDS =
+      Set.of("captureToken", "sourceFingerprint", "projectedFingerprint", "removedNodeIds");
 
   private static final String SCHEMA_FIELD = "schemaVersion";
 
@@ -120,6 +124,19 @@ record ResolverArtifactPlanStore(
             plan.project().artifactId(),
             plan.project().version()));
     result.put("replacements", List.copyOf(replacements));
+    result.put("graphProjection", encodeProjection(plan.graphProjection()));
+    return Collections.unmodifiableMap(result);
+  }
+
+  private static Object encodeProjection(final ResolverArtifactGraphProjection projection) {
+    if (projection == null) {
+      return null;
+    }
+    final Map<String, Object> result = new LinkedHashMap<>();
+    result.put("captureToken", projection.captureToken());
+    result.put("sourceFingerprint", projection.sourceFingerprint());
+    result.put("projectedFingerprint", projection.projectedFingerprint());
+    result.put("removedNodeIds", projection.removedNodeIds());
     return Collections.unmodifiableMap(result);
   }
 
@@ -158,7 +175,26 @@ record ResolverArtifactPlanStore(
         throw new IllegalStateException("Duplicate resolver artifact identity: " + identity);
       }
     }
-    return new ResolverArtifactPlan(project, replacements);
+    return new ResolverArtifactPlan(
+        project, replacements, decodeProjection(encoded.get("graphProjection")));
+  }
+
+  private static ResolverArtifactGraphProjection decodeProjection(final Object value) {
+    if (value == null) {
+      return null;
+    }
+    final Map<?, ?> encoded = requireMap(value, "graph projection");
+    if (!encoded.keySet().equals(PROJECTION_FIELDS)) {
+      throw new IllegalStateException("Resolver graph projection fields do not match the schema");
+    }
+    final List<?> rawNodeIds = requireList(encoded.get("removedNodeIds"), "removed node IDs");
+    final List<String> nodeIds =
+        rawNodeIds.stream().map(item -> requireString(item, "removed node ID")).toList();
+    return new ResolverArtifactGraphProjection(
+        requireString(encoded.get("captureToken"), "graph capture token"),
+        requireString(encoded.get("sourceFingerprint"), "source graph fingerprint"),
+        requireString(encoded.get("projectedFingerprint"), "projected graph fingerprint"),
+        nodeIds);
   }
 
   private static String encodeTuple(final List<String> fields) {
