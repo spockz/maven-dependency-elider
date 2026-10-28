@@ -406,7 +406,7 @@ Before declaring implementation complete:
 * [ ] **Basic App Verification**: `commons-codec` is physically pruned from `example-basic-app` shaded JAR while Jackson-based execution continues to succeed.
 * [ ] **Spring Boot Verification**: Unobserved Commons Codec is omitted from `BOOT-INF/lib`; runtime-observed mail classes without direct application references are classified in the report, and the exact mail runtime JAR bytes remain in `BOOT-INF/lib` while the web endpoint passes.
 * [ ] **Provenance Output**: CycloneDX 1.6 inventory matches the applied retained-artifact set and validates against the pinned schema. Audit POM, OpenVEX, and Dependency-Check suppressions are emitted only when their required resolved-graph, product, vulnerability, digest, and slicing evidence is supplied.
-* [ ] **Elision Summary**: Each run reports whole-dropped JAR classes/payload separately from retained-JAR trimmed classes/payload. Dropped-artifact classes never enter retained-JAR trim totals or denominators; module descriptors and archive metadata are excluded.
+* [ ] **Elision Summary**: Each run reports whole-artifact removals as a count and percentage of eligible artifacts, original on-disk JAR bytes, and the program `.class` entry count and uncompressed class-entry payload bytes discarded with those artifacts. It reports retained-JAR trimmed class counts and payload bytes separately. Dropped-artifact classes never enter retained-JAR trim totals or denominators; both class metrics exclude root/versioned `module-info.class` entries and archive sanitation metadata.
 * [ ] **Documentation & Indexing**: ADR and RQ registers updated with completed checkpoints.
 
 ## 6. Design Follow-Ups and Unresolved Boundaries

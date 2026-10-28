@@ -785,10 +785,22 @@ final class DependencyContextLifecycleIntegrationTest {
     assertThat(report.path("wholeArtifactsDropped").asInt()).isEqualTo(extensionEnabled ? 1 : 0);
     assertThat(report.path("rawDroppedCoordinates")).hasSize(1);
     assertThat(report.path("programClassesPruned").asInt()).isEqualTo(1);
+    final int classesInDroppedArtifacts = report.path("droppedProgramClassEntries").asInt();
+    final long droppedArtifactClassBytes = report.path("droppedProgramClassBytes").asLong();
+    assertThat(classesInDroppedArtifacts).isEqualTo(extensionEnabled ? 1 : 0);
+    if (extensionEnabled) {
+      assertThat(droppedArtifactClassBytes).isPositive();
+    } else {
+      assertThat(droppedArtifactClassBytes).isZero();
+    }
     assertThat(report.path("droppedArtifacts")).hasSize(extensionEnabled ? 1 : 0);
     if (extensionEnabled) {
-      assertThat(report.path("droppedArtifacts").get(0).path("coordinate").asText())
-          .contains("drop-library");
+      final JsonNode droppedArtifact = report.path("droppedArtifacts").get(0);
+      assertThat(droppedArtifact.path("coordinate").asText()).contains("drop-library");
+      assertThat(droppedArtifact.path("programClassesRemoved").asInt()).isEqualTo(1);
+      assertThat(droppedArtifact.path("uncompressedProgramClassBytesRemoved").asLong())
+          .isEqualTo(droppedArtifactClassBytes)
+          .isPositive();
     }
     assertThat(report.path("trimmedArtifacts")).hasSize(1);
     assertThat(report.path("trimmedArtifacts").get(0).path("coordinate").asText())

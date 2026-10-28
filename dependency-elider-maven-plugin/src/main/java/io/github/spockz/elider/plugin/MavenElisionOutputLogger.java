@@ -29,7 +29,8 @@ final class MavenElisionOutputLogger {
       ElisionSummary.reportTrimmed(
           log, analysis.effectiveDecision(), analysis.resolvedSnapshots().size(), reportSnapshot);
     } else {
-      ElisionSummary.report(log, analysis.effectiveDecision(), analysis.resolvedSnapshots().size());
+      ElisionSummary.report(
+          log, analysis.effectiveDecision(), analysis.resolvedSnapshots().size(), reportSnapshot);
     }
     if (log.isInfoEnabled()) {
       log.info(

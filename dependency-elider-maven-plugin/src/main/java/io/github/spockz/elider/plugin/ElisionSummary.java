@@ -16,11 +16,16 @@ final class ElisionSummary {
 
   /** Prints whole-artifact counts and explicitly marks unsupported stages. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static void report(final Log log, final ElisionDecision decision, final int inputCount) {
+  static void report(
+      final Log log,
+      final ElisionDecision decision,
+      final int inputCount,
+      final MavenElisionReportSnapshot reportSnapshot) {
     if (!log.isInfoEnabled()) {
       return;
     }
     reportHeader(log, decision, inputCount);
+    reportDroppedClassMetrics(log, reportSnapshot);
     log.info("  Classes removed: 0 / N/A (N/A; stage not run)");
     log.info("  Methods removed: 0 / N/A (N/A; stage not run)");
     log.info("  Fields removed: 0 / N/A (N/A; stage not run)");
@@ -55,6 +60,13 @@ final class ElisionSummary {
         "  Estimated original JAR bytes for those artifacts: "
             + MavenElisionReportWriter.formatBytes(droppedArtifacts.originalJarBytes())
             + " (sum of original on-disk input JAR sizes; final package delta may differ)");
+    log.info(
+        "  Program class entries in JARs that would be dropped: "
+            + droppedArtifacts.programClassesRemoved()
+            + " (uncompressed .class entry payload bytes: "
+            + MavenElisionReportWriter.formatBytes(
+                droppedArtifacts.uncompressedProgramClassBytesRemoved())
+            + "; excludes module descriptors and archive sanitation metadata)");
     log.info("  Cache: unavailable");
   }
 
@@ -69,8 +81,9 @@ final class ElisionSummary {
       return;
     }
     reportHeader(log, decision, inputCount);
+    reportDroppedClassMetrics(log, reportSnapshot);
     log.info(
-        "  Program classes removed: "
+        "  Program classes pruned from retained JARs: "
             + reportSnapshot.programClassesPruned()
             + " (uncompressed omitted .class entry payload bytes: "
             + MavenElisionReportWriter.formatBytes(
@@ -91,6 +104,18 @@ final class ElisionSummary {
     if (log.isInfoEnabled()) {
       log.info("Dependency Elider summary");
       log.info("  Whole artifacts: " + removed + " / " + inputCount + " (" + percentage + ")");
+    }
+  }
+
+  private static void reportDroppedClassMetrics(
+      final Log log, final MavenElisionReportSnapshot reportSnapshot) {
+    if (log.isInfoEnabled()) {
+      log.info(
+          "  Program classes removed with dropped JARs: "
+              + reportSnapshot.droppedProgramClassEntries()
+              + " (uncompressed .class entry payload bytes: "
+              + MavenElisionReportWriter.formatBytes(reportSnapshot.droppedProgramClassBytes())
+              + "; excludes module descriptors and archive sanitation metadata)");
     }
   }
 }

@@ -242,7 +242,11 @@ final class ElideMojoTest {
 
     assertThat(project.getArtifacts()).isNotSameAs(resolved);
     assertThat(project.getArtifacts()).containsExactlyInAnyOrder(used, unused);
-    assertThat(log.messages()).contains("  Classes removed: 0 / N/A (N/A; stage not run)");
+    assertThat(log.messages())
+        .contains(
+            "  Classes removed: 0 / N/A (N/A; stage not run)",
+            "  Program classes removed with dropped JARs: 0 (uncompressed .class entry payload"
+                + " bytes: 0 B; excludes module descriptors and archive sanitation metadata)");
     assertThat(project.getDependencyArtifacts()).isSameAs(direct);
     assertThat(project.getDependencyArtifacts()).containsExactlyInAnyOrder(used, unused);
     final Artifact addedLater = artifact("later", "later/Added.class");
@@ -318,7 +322,8 @@ final class ElideMojoTest {
     assertThat(runtime.getFile().toPath()).isNotEqualTo(original).isRegularFile();
     assertThat(log.messages())
         .contains(
-            "  Program classes removed: 1 (uncompressed omitted .class entry payload bytes: "
+            "  Program classes pruned from retained JARs: 1 (uncompressed omitted .class "
+                + "entry payload bytes: "
                 + MavenElisionReportWriter.formatBytes(
                     classEntrySize(original, "sample/Drop.class"))
                 + "; excludes module descriptors and archive sanitation metadata)");

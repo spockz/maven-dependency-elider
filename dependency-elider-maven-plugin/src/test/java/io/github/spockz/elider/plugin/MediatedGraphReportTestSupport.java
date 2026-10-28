@@ -62,6 +62,13 @@ final class MediatedGraphReportTestSupport {
         root, decision(Set.of(trimmed), Set.of(dropped)), List.of(trimRecord(trimmed)), projectGav);
   }
 
+  static MediatedGraphReport reportForDroppedOutput(
+      final ArtifactCoordinate dropped, final String projectGav) throws java.io.IOException {
+    final DependencyNode root = projectNode(projectGav);
+    root.setChildren(List.of(node(dropped)));
+    return report(root, decision(Set.of(), Set.of(dropped)), List.of(), projectGav);
+  }
+
   static MediatedGraphReport emptyGraph(final String projectGav) throws java.io.IOException {
     return report(projectNode(projectGav), decision(Set.of(), Set.of()), List.of(), projectGav);
   }

@@ -87,7 +87,7 @@ Before publication commits, a failed goal restores the prior report and output g
 
 For complete configuration options and multi-source telemetry merging, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md), the [User FAQ](docs/faq.md), and the [Contributor Decision Register and Engineering FAQ](docs/contributor-decisions-and-faq.md).
 
-The `elide` goal writes two different JSON files because they contain different records: `elide.reportFile` defaults to `target/dependency-elider-class-usage.json` for class-usage analysis evidence, while `elide.summaryFile` defaults to `target/dependency-elider-report.json` for the persisted elision snapshot read by `dependency-elider:report`. The top-level elision report uses schema version 3; older report schema versions are rejected with rerun guidance because graph paths and dispositions cannot be reconstructed. These document schema numbers are independent of the plugin version and of the graph-capture and resolver-plan store schemas.
+The `elide` goal writes two different JSON files because they contain different records: `elide.reportFile` defaults to `target/dependency-elider-class-usage.json` for class-usage analysis evidence, while `elide.summaryFile` defaults to `target/dependency-elider-report.json` for the persisted elision snapshot read by `dependency-elider:report`. The top-level elision report uses schema version 4; schema-v3 and other unsupported reports are rejected with rerun guidance because they do not contain separate dropped-JAR class metrics. These document schema numbers are independent of the plugin version and of the graph-capture and resolver-plan store schemas.
 
 ## Vulnerability findings and code evidence
 
@@ -227,13 +227,14 @@ Each example project has a `.mvn/extensions.xml` entry for the installed product
 
 ### Sample elision report output
 
-`make test-examples` invokes `dependency-elider:report` after each successful elision build. The report counts whole artifacts removed using original on-disk JAR sizes and classes removed using uncompressed `.class` entry sizes; class metrics exclude module descriptors and archive sanitation metadata. These summaries and graph rows came from the final schema-v3 run on 2026-10-28; timestamps vary between runs:
+`make test-examples` invokes `dependency-elider:report` after each successful elision build. The report counts whole artifacts removed using original on-disk JAR sizes and classes removed using uncompressed `.class` entry sizes; class metrics exclude module descriptors and archive sanitation metadata. These summaries and graph rows came from the final schema-v4 run on 2026-10-28; timestamps vary between runs:
 
 ```text
 example-basic-app
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T08:09:49.307297018Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T09:09:55.318015313Z
 [INFO] Whole artifacts dropped: 1 (original JAR file bytes: 365.93 KiB)
+[INFO] Program classes removed with dropped JARs: 115 (uncompressed .class entry payload bytes: 413.65 KiB; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> commons-codec:commons-codec:jar:1.19.0 (compile) {nodeId=n1} [EFFECTIVE_DROP]
@@ -241,8 +242,9 @@ example-basic-app
 
 example-spring-boot-app
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T08:10:28.457911311Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T09:10:34.336152374Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
+[INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 3374 (uncompressed omitted .class payload bytes: 8.38 MiB; excludes module descriptors and archive metadata)
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework.boot:spring-boot-starter-web:jar:3.3.5 (compile) {nodeId=n1} [RETAINED]
@@ -250,18 +252,20 @@ example-spring-boot-app
 
 example-cve-unused-app
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T08:10:52.061609794Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T09:10:58.049477635Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
+[INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
 
 example-cve-safe-class-app
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T08:11:04.233159324Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T09:11:10.245962217Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
+[INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
 ```
 
-The report goal reads this persisted schema-v3 snapshot and fails if its mediated TEST graph is unavailable. It does not resolve a new graph or call `maven-dependency-plugin:tree`.
+The report goal reads this persisted schema-v4 snapshot and fails if its mediated TEST graph is unavailable. It reports dropped-JAR class entries separately from class entries pruned from retained JARs; the two totals never overlap, and the report rejects any coordinate listed in both categories. It does not resolve a new graph or call `maven-dependency-plugin:tree`.
 
 Example POMs use `-Delide.mode=baseline` or `-Delide.mode=elision` to select the named baseline and elision behaviors. The plugin's internal skip parameter remains `elide.skip`; the mode property activates the example's Maven profile.
 

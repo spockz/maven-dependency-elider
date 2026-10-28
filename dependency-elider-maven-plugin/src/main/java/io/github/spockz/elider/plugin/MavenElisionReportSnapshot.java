@@ -10,8 +10,10 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /** Immutable result snapshot used by the Maven {@code report} goal. */
 @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.ExcessiveParameterList"})
@@ -24,6 +26,8 @@ record MavenElisionReportSnapshot(
     String generatedAt,
     int wholeArtifactsDropped,
     long originalJarBytesDropped,
+    int droppedProgramClassEntries,
+    long droppedProgramClassBytes,
     List<DroppedArtifact> droppedArtifacts,
     List<String> rawDroppedCoordinates,
     int programClassesPruned,
@@ -31,7 +35,7 @@ record MavenElisionReportSnapshot(
     List<TrimmedArtifact> trimmedArtifacts,
     MediatedGraphReport mediatedGraph) {
   /** Current persisted JSON format version. */
-  static final int SCHEMA_VERSION = 3;
+  static final int SCHEMA_VERSION = 4;
 
   MavenElisionReportSnapshot {
     require(schemaVersion == SCHEMA_VERSION, "Unsupported report snapshot schema version");
@@ -51,6 +55,8 @@ record MavenElisionReportSnapshot(
     Objects.requireNonNull(mediatedGraph, "mediatedGraph");
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
+    require(droppedProgramClassEntries >= 0, "droppedProgramClassEntries must not be negative");
+    require(droppedProgramClassBytes >= 0, "droppedProgramClassBytes must not be negative");
     require(programClassesPruned >= 0, "programClassesPruned must not be negative");
     require(
         uncompressedProgramClassBytesPruned >= 0,
@@ -61,11 +67,20 @@ record MavenElisionReportSnapshot(
         originalJarBytesDropped == sumDroppedArtifactBytes(droppedArtifacts),
         "Dropped artifact byte total is inconsistent");
     require(
+        droppedProgramClassEntries == sumDroppedArtifactClassCounts(droppedArtifacts),
+        "Dropped artifact class count is inconsistent");
+    require(
+        droppedProgramClassBytes == sumDroppedArtifactClassBytes(droppedArtifacts),
+        "Dropped artifact class byte total is inconsistent");
+    require(
         programClassesPruned == sumPrunedClassCounts(trimmedArtifacts),
         "Class count is inconsistent");
     require(
         uncompressedProgramClassBytesPruned == sumPrunedClassBytes(trimmedArtifacts),
         "Pruned class byte total is inconsistent");
+    require(
+        droppedAndTrimmedArtifactsAreDisjoint(droppedArtifacts, trimmedArtifacts),
+        "An artifact cannot be both dropped and class-trimmed");
     MediatedGraphReportCoverageValidator.validateSnapshotOutputs(
         mediatedGraph,
         droppedArtifacts,
@@ -104,6 +119,40 @@ record MavenElisionReportSnapshot(
         MediatedGraphReport.unavailable("No mediated graph data was provided to this report"));
   }
 
+  MavenElisionReportSnapshot(
+      final int schemaVersion,
+      final String projectGroupId,
+      final String projectArtifactId,
+      final String projectVersion,
+      final String projectBaseDirectory,
+      final String generatedAt,
+      final int wholeArtifactsDropped,
+      final long originalJarBytesDropped,
+      final List<DroppedArtifact> droppedArtifacts,
+      final List<String> rawDroppedCoordinates,
+      final int programClassesPruned,
+      final long uncompressedProgramClassBytesPruned,
+      final List<TrimmedArtifact> trimmedArtifacts,
+      final MediatedGraphReport mediatedGraph) {
+    this(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        sumDroppedArtifactClassCounts(droppedArtifacts),
+        sumDroppedArtifactClassBytes(droppedArtifacts),
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        mediatedGraph);
+  }
+
   static MavenElisionReportSnapshot from(
       final org.apache.maven.project.MavenProject project,
       final MavenElisionService.Analysis analysis)
@@ -134,6 +183,8 @@ record MavenElisionReportSnapshot(
         Instant.now().toString(),
         dropped.size(),
         droppedSummary.originalJarBytes(),
+        droppedSummary.programClassesRemoved(),
+        droppedSummary.uncompressedProgramClassBytesRemoved(),
         dropped,
         analysis.decision().elidedArtifacts().stream()
             .map(ArtifactCoordinate::toString)
@@ -165,10 +216,20 @@ record MavenElisionReportSnapshot(
       if (path == null || !Files.isRegularFile(path)) {
         throw new IOException("Elided artifact has no regular input JAR: " + coordinate);
       }
-      dropped.add(new DroppedArtifact(coordinate.toString(), Files.size(path)));
+      final ProgramClassEntryMetrics classMetrics = ProgramClassEntryMetrics.scan(path);
+      dropped.add(
+          new DroppedArtifact(
+              coordinate.toString(),
+              Files.size(path),
+              classMetrics.entries(),
+              classMetrics.uncompressedBytes()));
     }
     dropped.sort(Comparator.comparing(DroppedArtifact::coordinate));
-    return new DroppedArtifactSummary(dropped, sumDroppedArtifactBytes(dropped));
+    return new DroppedArtifactSummary(
+        dropped,
+        sumDroppedArtifactBytes(dropped),
+        sumDroppedArtifactClassCounts(dropped),
+        sumDroppedArtifactClassBytes(dropped));
   }
 
   @SuppressWarnings("PMD.LawOfDemeter")
@@ -226,6 +287,40 @@ record MavenElisionReportSnapshot(
     return total;
   }
 
+  private static int sumDroppedArtifactClassCounts(final List<DroppedArtifact> artifacts) {
+    int total = 0;
+    try {
+      for (final DroppedArtifact artifact : artifacts) {
+        total = Math.addExact(total, artifact.programClassesRemoved());
+      }
+    } catch (final ArithmeticException exception) {
+      throw new IllegalArgumentException("Dropped artifact class count overflowed", exception);
+    }
+    return total;
+  }
+
+  private static long sumDroppedArtifactClassBytes(final List<DroppedArtifact> artifacts) {
+    long total = 0;
+    try {
+      for (final DroppedArtifact artifact : artifacts) {
+        total = Math.addExact(total, artifact.uncompressedProgramClassBytesRemoved());
+      }
+    } catch (final ArithmeticException exception) {
+      throw new IllegalArgumentException("Dropped artifact class byte total overflowed", exception);
+    }
+    return total;
+  }
+
+  private static boolean droppedAndTrimmedArtifactsAreDisjoint(
+      final List<DroppedArtifact> droppedArtifacts, final List<TrimmedArtifact> trimmedArtifacts) {
+    final Set<String> droppedCoordinates = new HashSet<>();
+    for (final DroppedArtifact artifact : droppedArtifacts) {
+      droppedCoordinates.add(artifact.coordinate());
+    }
+    return trimmedArtifacts.stream()
+        .noneMatch(artifact -> droppedCoordinates.contains(artifact.coordinate()));
+  }
+
   private static long sumPrunedClassBytes(final List<TrimmedArtifact> artifacts) {
     long total = 0;
     try {
@@ -249,17 +344,37 @@ record MavenElisionReportSnapshot(
   }
 
   /** One whole artifact removed from Maven's resolved input set. */
-  record DroppedArtifact(String coordinate, long originalJarBytes) {
+  record DroppedArtifact(
+      String coordinate,
+      long originalJarBytes,
+      int programClassesRemoved,
+      long uncompressedProgramClassBytesRemoved) {
     DroppedArtifact {
       requireNonBlank(coordinate, "coordinate");
       require(originalJarBytes >= 0, "originalJarBytes must not be negative");
+      require(programClassesRemoved >= 0, "programClassesRemoved must not be negative");
+      require(
+          uncompressedProgramClassBytesRemoved >= 0,
+          "uncompressedProgramClassBytesRemoved must not be negative");
+    }
+
+    DroppedArtifact(final String coordinate, final long originalJarBytes) {
+      this(coordinate, originalJarBytes, 0, 0);
     }
   }
 
-  record DroppedArtifactSummary(List<DroppedArtifact> artifacts, long originalJarBytes) {
+  record DroppedArtifactSummary(
+      List<DroppedArtifact> artifacts,
+      long originalJarBytes,
+      int programClassesRemoved,
+      long uncompressedProgramClassBytesRemoved) {
     DroppedArtifactSummary {
       artifacts = List.copyOf(Objects.requireNonNull(artifacts, "artifacts"));
       require(originalJarBytes >= 0, "originalJarBytes must not be negative");
+      require(programClassesRemoved >= 0, "programClassesRemoved must not be negative");
+      require(
+          uncompressedProgramClassBytesRemoved >= 0,
+          "uncompressedProgramClassBytesRemoved must not be negative");
     }
   }
 

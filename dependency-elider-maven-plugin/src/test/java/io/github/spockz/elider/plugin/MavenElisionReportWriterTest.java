@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
@@ -55,7 +57,7 @@ final class MavenElisionReportWriterTest {
         ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION);
     final ArtifactCoordinate trimmedCoordinate = ArtifactCoordinate.of(GROUP_ID, "trimmed", "2.0");
     final Path removedJar = temporaryDirectory.resolve(REMOVED_ARTIFACT + ".jar");
-    Files.write(removedJar, new byte[2048]);
+    final long originalDroppedJarBytes = writeDroppedJar(removedJar);
     final Path originalTrimmedJar = temporaryDirectory.resolve("trimmed.jar");
     Files.write(originalTrimmedJar, new byte[4096]);
     final Artifact removedArtifact = artifact(removedCoordinate, removedJar);
@@ -107,11 +109,14 @@ final class MavenElisionReportWriterTest {
         MavenElisionReportSnapshot.droppedArtifactSummary(analysis);
 
     assertThat(snapshot.wholeArtifactsDropped()).isOne();
-    assertThat(snapshot.originalJarBytesDropped()).isEqualTo(2048);
+    assertThat(snapshot.originalJarBytesDropped()).isEqualTo(originalDroppedJarBytes);
+    assertThat(snapshot.droppedProgramClassEntries()).isEqualTo(2);
+    assertThat(snapshot.droppedProgramClassBytes()).isEqualTo(18);
     assertThat(droppedArtifacts.artifacts()).isEqualTo(snapshot.droppedArtifacts());
     assertThat(droppedArtifacts.originalJarBytes()).isEqualTo(snapshot.originalJarBytesDropped());
     assertThat(snapshot.programClassesPruned()).isEqualTo(4);
     assertThat(snapshot.uncompressedProgramClassBytesPruned()).isEqualTo(3096);
+    assertThat(snapshot.droppedProgramClassEntries()).isNotEqualTo(snapshot.programClassesPruned());
     assertThat(snapshot.droppedArtifacts())
         .singleElement()
         .satisfies(row -> assertThat(row.coordinate()).contains(REMOVED_ARTIFACT));
@@ -121,6 +126,13 @@ final class MavenElisionReportWriterTest {
             row -> {
               assertThat(row.programClassesPruned()).isEqualTo(4);
               assertThat(row.uncompressedProgramClassBytesPruned()).isEqualTo(3096);
+            });
+    assertThat(snapshot.droppedArtifacts())
+        .singleElement()
+        .satisfies(
+            row -> {
+              assertThat(row.programClassesRemoved()).isEqualTo(2);
+              assertThat(row.uncompressedProgramClassBytesRemoved()).isEqualTo(18);
             });
   }
 
@@ -139,6 +151,11 @@ final class MavenElisionReportWriterTest {
             "Snapshot: last successful elide run at " + GENERATED_AT,
             "The snapshot does not revalidate changed inputs when this goal runs.",
             "Whole artifacts dropped: 1 (original JAR file bytes: 2.00 KiB)",
+            "Program classes removed with dropped JARs: 2 (uncompressed .class entry"
+                + " payload bytes: 18 B; excludes module descriptors and "
+                + "archive sanitation metadata)",
+            "  - org.example:removed:jar:1.0 (compile): "
+                + "2.00 KiB original JAR, 2 class entries, 18 B",
             "Program classes pruned from retained JARs: 4 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "3.02 KiB; excludes module descriptors and archive metadata)",
@@ -176,6 +193,9 @@ final class MavenElisionReportWriterTest {
     assertThat(MavenElisionReportWriter.render(empty))
         .contains(
             "Whole artifacts dropped: 0 (original JAR file bytes: 0 B)",
+            "Program classes removed with dropped JARs: 0 (uncompressed .class entry"
+                + " payload bytes: 0 B; excludes module descriptors and "
+                + "archive sanitation metadata)",
             "Program classes pruned from retained JARs: 0 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "0 B; excludes module descriptors and archive metadata)");
@@ -192,13 +212,13 @@ final class MavenElisionReportWriterTest {
   }
 
   @Test
-  void rejectsVersionTwoSnapshotsWithRerunGuidance() throws IOException {
-    final Path legacy = temporaryDirectory.resolve("legacy-report.json");
-    Files.writeString(legacy, "{\"schemaVersion\":2}");
+  void rejectsVersionThreeSnapshotsWithRerunGuidance() throws IOException {
+    final Path previous = temporaryDirectory.resolve("previous-report.json");
+    Files.writeString(previous, "{\"schemaVersion\":3}");
 
-    assertThatThrownBy(() -> MavenElisionReportWriter.read(legacy))
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("Unsupported elision report schema version 2")
+        .hasMessageContaining("Unsupported elision report schema version 3")
         .hasMessageContaining("run dependency-elider:elide");
   }
 
@@ -215,7 +235,9 @@ final class MavenElisionReportWriterTest {
         List.of(
             new MavenElisionReportSnapshot.DroppedArtifact(
                 ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION).toString(),
-                2048)),
+                2048,
+                2,
+                18)),
         List.of(ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION).toString()),
         4,
         3096,
@@ -226,6 +248,24 @@ final class MavenElisionReportWriterTest {
             ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION),
             ArtifactCoordinate.of(GROUP_ID, "trimmed", "2.0"),
             GROUP_ID + ":consumer:1.0"));
+  }
+
+  private static long writeDroppedJar(final Path path) throws IOException {
+    try (JarOutputStream archive = new JarOutputStream(Files.newOutputStream(path))) {
+      writeEntry(archive, "sample/First.class", 7);
+      writeEntry(archive, "sample/Second.class", 11);
+      writeEntry(archive, "module-info.class", 13);
+      writeEntry(archive, "META-INF/versions/11/module-info.class", 17);
+      writeEntry(archive, "META-INF/example.txt", 19);
+    }
+    return Files.size(path);
+  }
+
+  private static void writeEntry(
+      final JarOutputStream archive, final String name, final int payloadBytes) throws IOException {
+    archive.putNextEntry(new JarEntry(name));
+    archive.write(new byte[payloadBytes]);
+    archive.closeEntry();
   }
 
   private MavenProject project() {

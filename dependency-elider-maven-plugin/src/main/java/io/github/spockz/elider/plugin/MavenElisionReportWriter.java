@@ -109,9 +109,23 @@ final class MavenElisionReportWriter {
             + formatBytes(snapshot.originalJarBytesDropped())
             + ")");
     lines.add(
+        "Program classes removed with dropped JARs: "
+            + snapshot.droppedProgramClassEntries()
+            + " (uncompressed .class entry payload bytes: "
+            + formatBytes(snapshot.droppedProgramClassBytes())
+            + "; excludes module descriptors and archive sanitation metadata)");
+    lines.add(
         "Raw trace decision drops before graph safety: " + snapshot.rawDroppedCoordinates().size());
     for (final MavenElisionReportSnapshot.DroppedArtifact artifact : snapshot.droppedArtifacts()) {
-      lines.add("  - " + artifact.coordinate() + ": " + formatBytes(artifact.originalJarBytes()));
+      lines.add(
+          "  - "
+              + artifact.coordinate()
+              + ": "
+              + formatBytes(artifact.originalJarBytes())
+              + " original JAR, "
+              + artifact.programClassesRemoved()
+              + " class entries, "
+              + formatBytes(artifact.uncompressedProgramClassBytesRemoved()));
     }
     lines.add(
         "Program classes pruned from retained JARs: "
