@@ -4,16 +4,31 @@ SHELL := /bin/bash
 
 MAVEN ?= ./mvnw
 MAVEN_ARGS ?= --batch-mode --no-transfer-progress
+MAVEN_THREADS ?= $(MAKE_JOBS)
 MARKDOWNLINT ?= .scratch/tools/node_modules/.bin/markdownlint-cli2
 DEPENDENCY_CHECK_VERSION ?= 13.0.0
 SERVE_PORT ?= 8080
+MAKE_JOBS ?= 12
+# Bound test JVMs separately because reactor -T can run multiple modules at once.
+TEST_FORKS ?= 4
+
+ifeq ($(MAKELEVEL),0)
+.NOTPARALLEL:
+endif
 
 .DEFAULT_GOAL := check
-.NOTPARALLEL: check check-ci
 
-.PHONY: check check-ci tools fix fmt lint lint-check lint-java lint-markdown vuln test-core test-plugin test-all test-examples verify-docs site serve
+.PHONY: check check-parallel java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples verify-docs site serve
 
-check: lint-check test-core test-plugin ## Run formatter, static analysis, and core and plugin tests
+check: ## Format, then run Java checks/tests and Markdown lint concurrently
+	$(MAKE) --no-print-directory fmt
+	$(MAKE) --no-print-directory -j$(MAKE_JOBS) check-parallel
+
+check-parallel: java-check lint-markdown
+
+java-check:
+	$(MAKE) --no-print-directory lint-java
+	$(MAKE) --no-print-directory test-plugin
 
 check-ci: lint vuln test-all verify-docs ## Run all lint, vulnerability, test, and documentation checks
 
@@ -24,17 +39,21 @@ tools: ## Download the Markdown linter used by repository documentation checks
 fix: fmt ## Apply repository formatters
 
 fmt: ## Format Java sources and remove unused imports
-	$(MAVEN) $(MAVEN_ARGS) spotless:apply
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) spotless:apply
 
 lint: lint-java lint-markdown ## Run all Java and documentation linters
 
-lint-check: fmt lint-java lint-markdown ## Apply safe formatting, then run blocking linters
+lint-check: ## Apply formatting, then run Java and Markdown linters concurrently
+	$(MAKE) --no-print-directory fmt
+	$(MAKE) --no-print-directory -j$(MAKE_JOBS) lint-parallel
+
+lint-parallel: lint-java lint-markdown
 
 lint-java: ## Run Checkstyle, PMD, and SpotBugs
-	$(MAVEN) $(MAVEN_ARGS) compile spotless:check checkstyle:check pmd:check spotbugs:check
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) compile spotless:check checkstyle:check pmd:check spotbugs:check
 
 lint-markdown: ## Lint Markdown documentation
-	command -v "$(MARKDOWNLINT)" >/dev/null
+	test -x "$(MARKDOWNLINT)"
 	"$(MARKDOWNLINT)" "docs/**/*.md" "*.md" "dependency-elider-maven-plugin/src/site/**/*.md"
 
 lint-vale: ## Run prose checks on documentation
@@ -42,23 +61,26 @@ lint-vale: ## Run prose checks on documentation
 	"$(VALE)" docs
 
 vuln: ## Check dependencies against the OWASP vulnerability database
-	$(MAVEN) $(MAVEN_ARGS) org.owasp:dependency-check-maven:$(DEPENDENCY_CHECK_VERSION):check
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) org.owasp:dependency-check-maven:$(DEPENDENCY_CHECK_VERSION):check
 
 test-core: ## Run core library unit tests
-	$(MAVEN) $(MAVEN_ARGS) -pl elider-core test
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl elider-core -DforkCount=$(TEST_FORKS) -DreuseForks=true test
 
-test-plugin: ## Run Maven plugin unit tests with required core dependencies
-	$(MAVEN) $(MAVEN_ARGS) -pl dependency-elider-maven-plugin -am test
+# Nested Maven installs write reactor targets, so the lifecycle test follows the forked unit suite.
+test-plugin: test-core ## Run core and plugin tests, isolating nested lifecycle builds
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -am install -DskipTests
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -Dtest='!DependencyContextLifecycleIntegrationTest' -DforkCount=$(TEST_FORKS) -DreuseForks=true test
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -Dtest=DependencyContextLifecycleIntegrationTest -DforkCount=1 -DreuseForks=true test
 
 test-all: ## Run the complete reactor verification suite
-	$(MAVEN) $(MAVEN_ARGS) verify
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) verify
 
 test-examples: ## Run baseline, trace-driven elision, package, and runtime checks for all examples
-	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS)" ./examples/run-elision-cycle.sh
+	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS) -T $(MAVEN_THREADS)" ./examples/run-elision-cycle.sh
 
 site: ## Build the Maven plugin documentation site locally
 	./scripts/generate-site-index.sh
-	$(MAVEN) $(MAVEN_ARGS) -pl dependency-elider-maven-plugin -am compile site -DskipTests
+	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -am compile site -DskipTests
 
 serve: site ## Build the documentation site and serve it using Caddy
 	command -v caddy >/dev/null 2>&1 || { echo "Error: caddy is not installed or not in PATH. Please install Caddy: https://caddyserver.com" >&2; exit 1; }

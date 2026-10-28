@@ -18,6 +18,24 @@ final class ResolverArtifactPlanStoreTest {
   /** Payload key containing project-scoped plans. */
   private static final String PLANS_KEY = "plans";
 
+  /** Schema key used by detached session payloads. */
+  private static final String SCHEMA_KEY = "schemaVersion";
+
+  /** Stable Maven project group for payload fixtures. */
+  private static final String PROJECT_GROUP = "example";
+
+  /** Stable Maven project version for payload fixtures. */
+  private static final String PROJECT_VERSION = "1.0";
+
+  /** Name of the plan's project tuple field. */
+  private static final String PROJECT_FIELD = "project";
+
+  /** Name of the plan's replacement rows field. */
+  private static final String REPLACEMENTS_FIELD = "replacements";
+
+  /** Name of the plan's optional validated graph projection field. */
+  private static final String GRAPH_PROJECTION_FIELD = "graphProjection";
+
   /** Temporary location used to distinguish project identities. */
   @TempDir Path temporaryDirectory;
 
@@ -27,10 +45,10 @@ final class ResolverArtifactPlanStoreTest {
   void roundTripsOnlyJdkPayloadAndKeepsPlansIsolatedByProject() {
     final ResolverArtifactPlan.ProjectIdentity firstProject =
         new ResolverArtifactPlan.ProjectIdentity(
-            temporaryDirectory.resolve("one"), "example", "one", "1.0");
+            temporaryDirectory.resolve("one"), PROJECT_GROUP, "one", PROJECT_VERSION);
     final ResolverArtifactPlan.ProjectIdentity secondProject =
         new ResolverArtifactPlan.ProjectIdentity(
-            temporaryDirectory.resolve("two"), "example", "one", "1.0");
+            temporaryDirectory.resolve("two"), PROJECT_GROUP, "one", PROJECT_VERSION);
     final ResolverArtifactPlan.ArtifactIdentity artifact =
         new ResolverArtifactPlan.ArtifactIdentity("lib", "keep", "2.0", "jar", "");
     final Path firstReplacement = temporaryDirectory.resolve("one.jar");
@@ -57,7 +75,7 @@ final class ResolverArtifactPlanStoreTest {
     final Map<String, Object> payload = store.toPayload();
     final ResolverArtifactPlanStore restored = ResolverArtifactPlanStore.fromPayload(payload);
 
-    assertThat(payload.get("schemaVersion")).isEqualTo(2);
+    assertThat(payload.get(SCHEMA_KEY)).isEqualTo(1);
     assertThat(payload.values()).allSatisfy(ResolverArtifactPlanStoreTest::assertJdkPayloadValue);
     assertThat(restored.find(firstProject).replacements().get(artifact).path())
         .isEqualTo(firstReplacement.toAbsolutePath().normalize());
@@ -73,11 +91,26 @@ final class ResolverArtifactPlanStoreTest {
   @Test
   void rejectsUnknownPayloadSchema() {
     assertThatThrownBy(
-            () ->
-                ResolverArtifactPlanStore.fromPayload(
-                    Map.of("schemaVersion", 9, PLANS_KEY, Map.of())))
+            () -> ResolverArtifactPlanStore.fromPayload(Map.of(SCHEMA_KEY, 2, PLANS_KEY, Map.of())))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("Unsupported");
+  }
+
+  @Test
+  void rejectsSchemaOneDraftWithoutCurrentPlanFields() {
+    final Map<String, Object> preReleasePlan =
+        Map.of(
+            PROJECT_FIELD,
+            List.of(temporaryDirectory.toString(), PROJECT_GROUP, "old", PROJECT_VERSION),
+            REPLACEMENTS_FIELD,
+            List.of());
+
+    assertThatThrownBy(
+            () ->
+                ResolverArtifactPlanStore.fromPayload(
+                    Map.of(SCHEMA_KEY, 1, PLANS_KEY, Map.of("old-plan", preReleasePlan))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("project plan fields do not match");
   }
 
   @Test
@@ -85,7 +118,16 @@ final class ResolverArtifactPlanStoreTest {
     assertThatThrownBy(
             () ->
                 ResolverArtifactPlanStore.fromPayload(
-                    Map.of("schemaVersion", 2, PLANS_KEY, Map.of("invalid", Map.of()))))
+                    Map.of(
+                        SCHEMA_KEY,
+                        1,
+                        PLANS_KEY,
+                        Map.of(
+                            "invalid",
+                            Map.of(
+                                PROJECT_FIELD, "not a list",
+                                REPLACEMENTS_FIELD, List.of(),
+                                GRAPH_PROJECTION_FIELD, "reserved")))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("not a list");
   }
@@ -96,7 +138,7 @@ final class ResolverArtifactPlanStoreTest {
   void rejectsUnexpectedGraphProjectionFields() {
     final ResolverArtifactPlan.ProjectIdentity project =
         new ResolverArtifactPlan.ProjectIdentity(
-            temporaryDirectory.resolve("malformed"), "example", "malformed", "1.0");
+            temporaryDirectory.resolve("malformed"), PROJECT_GROUP, "malformed", PROJECT_VERSION);
     final ResolverArtifactGraphProjection projection =
         new ResolverArtifactGraphProjection(
             "capture-token", "a".repeat(64), "b".repeat(64), List.of("n1"));
@@ -110,7 +152,7 @@ final class ResolverArtifactPlanStoreTest {
     final Map<String, Object> encodedPlan =
         new HashMap<>((Map<String, Object>) plans.get(projectKey));
     final Map<String, Object> encodedProjection =
-        new HashMap<>((Map<String, Object>) encodedPlan.get("graphProjection"));
+        new HashMap<>((Map<String, Object>) encodedPlan.get(GRAPH_PROJECTION_FIELD));
     encodedProjection.put("unexpected", "not allowed");
     encodedPlan.put("graphProjection", encodedProjection);
     plans.put(projectKey, encodedPlan);

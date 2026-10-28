@@ -21,7 +21,7 @@ record ResolverArtifactGraphSnapshotStore(
     Map<String, Long> generations,
     Map<String, PlanObservation> observations,
     Map<String, List<Map<String, Object>>> capturePairs) {
-  private static final int SCHEMA_VERSION = 3;
+  private static final int SCHEMA_VERSION = 1;
 
   private static final String SCHEMA_FIELD = "schemaVersion";
 

@@ -3,6 +3,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.TraceData;
@@ -66,8 +67,15 @@ final class MavenDependencyTrimmer {
   private static final Set<String> TRIMMABLE_SCOPES = Set.of("compile", "runtime");
   private static final Set<String> ANALYSIS_LIBRARY_SCOPES =
       Set.of("compile", "runtime", "provided", "system");
-  private static final ObjectMapper JSON = new ObjectMapper();
-  private static final int CACHE_SCHEMA_VERSION = 13;
+  private static final ObjectMapper JSON =
+      new ObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+
+  /** Cache schema used in the entry fingerprint and manifest envelope. */
+  static final int CACHE_SCHEMA_VERSION = 1;
+
+  /** Domain marker distinguishes this cache from incompatible pre-release drafts. */
+  static final String CACHE_FORMAT_ID = "maven-dependency-elider-effective-output-cache";
+
   private static final String ENGINE_VERSION = "proguard-core-9.1.10";
 
   record TrimResult(
@@ -109,7 +117,8 @@ final class MavenDependencyTrimmer {
   record ScanInputs(
       ArtifactClassIndex classIndex, Map<Path, DependencyDynamicRoots.RootScan> dynamicRootScans) {}
 
-  private record CacheManifest(String fingerprint, List<CacheEntry> entries) {}
+  private record CacheManifest(
+      int schemaVersion, String formatId, String fingerprint, List<CacheEntry> entries) {}
 
   private record FingerprintSnapshot(
       String value,
@@ -1219,7 +1228,10 @@ final class MavenDependencyTrimmer {
       }
       cacheEntries.add(entry);
     }
-    storeCache(cacheManifestPath, new CacheManifest(completeFingerprint, cacheEntries));
+    storeCache(
+        cacheManifestPath,
+        new CacheManifest(
+            CACHE_SCHEMA_VERSION, CACHE_FORMAT_ID, completeFingerprint, cacheEntries));
     return new TrimResult(
         records,
         multiReleasePassthroughCoordinates,
@@ -1272,7 +1284,9 @@ final class MavenDependencyTrimmer {
           }
           entries.add(entry);
         }
-        JSON.writeValue(stagedManifest.toFile(), new CacheManifest(completeFingerprint, entries));
+        JSON.writeValue(
+            stagedManifest.toFile(),
+            new CacheManifest(CACHE_SCHEMA_VERSION, CACHE_FORMAT_ID, completeFingerprint, entries));
         verifyEffectiveInputs(effectiveOutput, fingerprint);
         generationCommit =
             TrimOutputGenerationPublisher.publish(
@@ -2239,6 +2253,8 @@ final class MavenDependencyTrimmer {
       return null;
     }
     if (manifest == null
+        || manifest.schemaVersion() != CACHE_SCHEMA_VERSION
+        || !CACHE_FORMAT_ID.equals(manifest.formatId())
         || manifest.entries() == null
         || !fingerprint.equals(manifest.fingerprint())
         || manifest.entries().size() != candidates.size()) {

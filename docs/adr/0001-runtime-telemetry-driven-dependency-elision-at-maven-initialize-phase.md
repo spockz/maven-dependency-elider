@@ -3,7 +3,7 @@
 
 * **Status**: Accepted
 * **Date**: 2026-10-24
-* **Last Updated**: 2026-10-25
+* **Last Updated**: 2026-10-28
 
 <!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
 | Key | Value |
@@ -25,10 +25,10 @@ Ground automated dependency elision in an external usage oracle, including runti
 
 For source-aware trimming, combine oracle roots, resolved source compilation roots, and framework/resource roots, then compute their required dependency closure. Static analysis complements external evidence; neither source references nor observed execution alone establish arbitrary dynamic usage. Current source attribution covers Java type references, constant owners, generic bounds, and annotation types when the user explicitly asserts complete source availability. It does not activate member deletion.
 
-Bind the core `elide` Mojo to the Maven `INITIALIZE` lifecycle phase (supporting Maven 3.x and 4.x), declaring `requiresDependencyResolution = ResolutionScope.TEST`. By resolving the dependency graph at `INITIALIZE`:
+Bind the core `elide` Mojo to the Maven `INITIALIZE` lifecycle phase, declaring `requiresDependencyResolution = ResolutionScope.TEST`. Current end-to-end evidence covers single-project Maven CLI 3.9.11 builds. Other Maven 3 releases, Maven 4, and active multi-module consumer reactors remain unverified. By resolving the dependency graph at `INITIALIZE`:
 
-1. All direct and transitive JARs are downloaded and present in the local repository for indexing.
-2. Unused dependencies are purged before `maven-compiler-plugin:compile` and `maven-surefire-plugin:test` assemble their classpaths.
+1. Maven resolves the project's TEST dependency context before the goal indexes eligible local JAR files.
+2. The goal publishes validated decisions before compilation and testing. Each downstream consumer's actual inputs require independent verification.
 3. Compilation and testing expose missing dependencies on the source and execution paths they cover. Passing them is useful validation, not a proof of completeness for unexercised paths.
 
 `INITIALIZE` is the current whole-artifact integration target. Generated-source completeness cannot generally be established before lifecycle generators and compiler processors run. The plugin therefore exposes `elide.sourceRootsComplete`, defaulting to `false`. In that mode it skips source attribution and retains all effective compile-classpath JARs and their indexed classes, so those artifacts remain available for later intra-JAR trimming. Setting it to `true` is an explicit assertion that all production and generated sources are present before `INITIALIZE` and no later processor or generator adds compile references. With that assertion, the plugin uses supported effective Maven compiler settings and fails closed on unsupported compiler/toolchain modes, unknown source-generation executions, and missing or empty source roots. Runtime evidence still must match at least one supplied dependency class; source-only matches cannot authorize pruning. The conservative default can limit elision, but avoids treating current roots as proof that future generated sources do not exist.

@@ -211,17 +211,6 @@ final class MavenElisionReportWriterTest {
         .hasMessageContaining("run a Maven lifecycle build");
   }
 
-  @Test
-  void rejectsVersionThreeSnapshotsWithRerunGuidance() throws IOException {
-    final Path previous = temporaryDirectory.resolve("previous-report.json");
-    Files.writeString(previous, "{\"schemaVersion\":3}");
-
-    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("Unsupported elision report schema version 3")
-        .hasMessageContaining("run dependency-elider:elide");
-  }
-
   private MavenElisionReportSnapshot snapshot() throws IOException {
     return new MavenElisionReportSnapshot(
         MavenElisionReportSnapshot.SCHEMA_VERSION,

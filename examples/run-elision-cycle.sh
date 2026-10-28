@@ -181,6 +181,10 @@ main() {
         "$java" "-Xlog:class+load=info:file=$trace" -jar "$jar_file" >"$baseline_output"
       if [[ $fixture == example-basic-app ]]; then
         verify_basic_unused_trace "$trace"
+        tree_output="$test_dir/$fixture-elided-tree.out"
+        run_fixture_maven "$fixture_dir" -f "$pom" "${elision_options[@]}" dependency:tree \
+          >"$tree_output"
+        verify_basic_elided_tree "$tree_output"
         verify_source_root_compiler_visibility "$repo_root" "$test_dir" "$trace"
       fi
     fi
@@ -520,6 +524,29 @@ verify_basic_unused_trace() {
       exit "$status"
     fi
   fi
+}
+
+verify_basic_elided_tree() {
+  local output=$1
+  local tree_output="$test_dir/basic-elided-tree-section.out"
+  awk '/--- dependency:.*:tree / { in_tree=1 } in_tree { print }' "$output" >"$tree_output"
+  if ! grep -Fq 'org.apache.commons:commons-compress:jar:1.28.0' "$tree_output"; then
+    echo "Bare Basic dependency:tree did not retain Commons Compress: $output" >&2
+    cat "$tree_output" >&2
+    exit 1
+  fi
+  if grep -Fq 'commons-codec:commons-codec' "$tree_output"; then
+    echo "Bare Basic dependency:tree still contains Commons Codec: $output" >&2
+    cat "$tree_output" >&2
+    exit 1
+  else
+    local status=$?
+    if [[ $status -ne 1 ]]; then
+      echo "Could not read Basic dependency:tree output $output" >&2
+      exit "$status"
+    fi
+  fi
+  printf 'Bare Basic dependency:tree omitted Commons Codec and retained Commons Compress\n'
 }
 
 verify_baseline_archive() {

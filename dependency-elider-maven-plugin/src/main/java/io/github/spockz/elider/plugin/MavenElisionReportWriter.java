@@ -21,7 +21,9 @@ import org.apache.maven.project.MavenProject;
 final class MavenElisionReportWriter {
   /** JSON serializer shared by report snapshot reads and writes. */
   private static final ObjectMapper JSON =
-      new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+      new ObjectMapper()
+          .enable(SerializationFeature.INDENT_OUTPUT)
+          .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
   /** Binary units used for the report's byte totals. */
   private static final String[] BYTE_UNITS = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"};
@@ -74,26 +76,13 @@ final class MavenElisionReportWriter {
               + "; run a Maven lifecycle build with dependency elision enabled first");
     }
     final JsonNode payload = JSON.readTree(absolute.toFile());
-    validateSchemaVersion(payload);
+    MavenElisionReportPayloadValidator.validate(payload);
     final MavenElisionReportSnapshot snapshot =
         JSON.treeToValue(payload, MavenElisionReportSnapshot.class);
     if (snapshot == null) {
       throw new IOException("Elision report snapshot is empty: " + absolute);
     }
     return snapshot;
-  }
-
-  private static void validateSchemaVersion(final JsonNode payload) throws IOException {
-    final JsonNode version = payload == null ? null : payload.get("schemaVersion");
-    if (version == null
-        || !version.isInt()
-        || version.intValue() != MavenElisionReportSnapshot.SCHEMA_VERSION) {
-      final String actual = version == null ? "missing" : version.asText();
-      throw new IOException(
-          "Unsupported elision report schema version "
-              + actual
-              + "; run dependency-elider:elide to write a current report before using this goal");
-    }
   }
 
   static List<String> render(final MavenElisionReportSnapshot snapshot) {

@@ -32,6 +32,11 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+            </plugin>
+            <plugin>
                 <groupId>io.github.spockz.elider.test</groupId>
                 <artifactId>lifecycle-probe-maven-plugin</artifactId>
                 <version>1.0.0</version>

@@ -20,3 +20,9 @@ This turn updated README, FAQ, research-register/RQs, orchestration skill, work-
 ## 2026-10-27: WP-TRIM-01 final integration wrap-up
 
 The closeout was updated with repository-native `apply_patch`; no source-code file was changed and no manual source-edit fallback was needed. No semantic editing operation was invoked. The wrap-up command history available to this delegated turn contains only repository reads, Git inspection, and documentation/check commands; earlier package implementation edits are covered by existing session and track records.
+
+## 2026-10-28: WP-RESOLVE-01 implementation and README rerun
+
+Implementation and documentation edits used repository-native `apply_patch` and file reads because no semantic editing or refactoring operation was available/invoked in this session. The lifecycle participant was split into focused package helpers, tests were expanded for bare-tree ordering and fail-fast boundaries, persisted report formats and docs were updated, and the README's Quick Start was replaced with commands executed against `example-basic-app`. The original README elide command did not include the fixture's source-completeness, annotation-processing, and excluded-artifact settings; a run against Basic failed on unresolved optional XZ references. The documented fixture settings now match the successful example invocation. Spotless, Java checks, lifecycle tests, example verification, and Markdownlint were used to validate edits.
+
+No semantic edit failure or automated-edit fallback is recorded. This is a workflow/capability note, not evidence that repository-native edits were inferior; no equivalent semantic workflow was run.

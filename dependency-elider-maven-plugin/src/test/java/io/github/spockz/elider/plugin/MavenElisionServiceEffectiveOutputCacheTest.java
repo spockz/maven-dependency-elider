@@ -82,37 +82,49 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     final Fixture fixture = fixture(false);
     final ServiceOperation operation =
         operation(fixture, trace(temporaryDirectory, ENTRY_TRACE), null);
-    outputRecord(trimEffective(operation), fixture);
+    final MavenElisionService.EffectiveAnalysis effective =
+        operation.service().finishAnalysis(operation.prepared());
+    outputRecord(MavenDependencyTrimmer.trimEffectiveOutputs(effective), fixture);
     final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
     final ObjectMapper mapper = new ObjectMapper();
     final JsonNode original = mapper.readTree(manifest.toFile());
     final String fingerprint = original.path("fingerprint").asText();
 
+    final ObjectNode unsupportedVersion = original.deepCopy();
+    unsupportedVersion.put("schemaVersion", 13);
+    EffectiveOutputCacheTestFiles.writeManifest(manifest, unsupportedVersion);
+    assertCacheMiss(effective);
+
+    final ObjectNode incompatibleVersionOneDraft = mapper.readTree(manifest.toFile()).deepCopy();
+    incompatibleVersionOneDraft.remove("formatId");
+    EffectiveOutputCacheTestFiles.writeManifest(manifest, incompatibleVersionOneDraft);
+    assertCacheMiss(effective);
+
     Files.writeString(manifest, "null");
-    assertCacheMiss(operation);
+    assertCacheMiss(effective);
 
     final ObjectNode missingEntries = EffectiveOutputCacheTestFiles.manifestNode(fingerprint);
     missingEntries.putNull("entries");
     EffectiveOutputCacheTestFiles.writeManifest(manifest, missingEntries);
-    assertCacheMiss(operation);
+    assertCacheMiss(effective);
 
     final ObjectNode nullEntry = EffectiveOutputCacheTestFiles.manifestNode(fingerprint);
     nullEntry.putArray("entries").addNull();
     EffectiveOutputCacheTestFiles.writeManifest(manifest, nullEntry);
-    assertCacheMiss(operation);
+    assertCacheMiss(effective);
 
     EffectiveOutputCacheTestFiles.mutateCacheEntry(
         manifest, entry -> entry.putNull("trimmedSha256"));
-    assertCacheMiss(operation);
+    assertCacheMiss(effective);
 
     EffectiveOutputCacheTestFiles.mutateCacheEntry(
         manifest, entry -> entry.put("originalSha1", "0".repeat(40)));
-    assertCacheMiss(operation);
+    assertCacheMiss(effective);
 
     for (final String field : List.of("roots", "retainedClassNames", "reachableLibraryClasses")) {
       EffectiveOutputCacheTestFiles.mutateCacheEntry(
           manifest, entry -> entry.putArray(field).addNull());
-      assertCacheMiss(operation);
+      assertCacheMiss(effective);
     }
   }
 
@@ -121,8 +133,8 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     return EffectiveOutputCacheTestFiles.record(result.records(), fixture.coordinate("a"));
   }
 
-  private void assertCacheMiss(final ServiceOperation operation)
+  private void assertCacheMiss(final MavenElisionService.EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
-    assertThat(trimEffective(operation).cacheHits()).isZero();
+    assertThat(MavenDependencyTrimmer.trimEffectiveOutputs(effective).cacheHits()).isZero();
   }
 }

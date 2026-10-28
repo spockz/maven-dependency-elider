@@ -33,7 +33,10 @@ import javax.xml.XMLConstants;
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies artifact-view changes across a real Maven lifecycle. */
 @SuppressWarnings({
@@ -52,6 +55,28 @@ import org.junit.jupiter.api.Test;
   "PMD.UseConcurrentHashMap"
 })
 final class DependencyContextLifecycleIntegrationTest {
+  private static final String MAVEN_WRAPPER = "mvnw";
+  private static final String POM_XML = "pom.xml";
+  private static final String CLEAN_GOAL = "clean";
+  private static final String MVN_DIRECTORY = ".mvn";
+  private static final String EXTENSIONS_XML = "extensions.xml";
+  private static final String BUILD_SUCCESS = "BUILD SUCCESS";
+  private static final String CONSUMER_ELIDE_POM = "consumer-elide/pom.xml";
+  private static final String TRACE_FILE = "trace.txt";
+  private static final String KEEP_ENTRY_ROOT = "io.github.spockz.elider.fixture.keep.KeepEntry\n";
+  private static final String SEED_PLAN_DISABLED = "-Dlifecycle.seedPlan=false";
+  private static final String ELIDER_SUMMARY = "Dependency Elider summary";
+
+  /** Builds immutable fixture artifacts once; failures retain the evidence directory. */
+  @TempDir(cleanup = CleanupMode.ON_SUCCESS)
+  private static Path seedDirectory;
+
+  private static Path seedRepository;
+
+  /** Isolates fixture builds and retains subprocess evidence when a test fails. */
+  @TempDir(cleanup = CleanupMode.ON_SUCCESS)
+  private Path temporaryDirectory;
+
   private static final String NAME_FIELD = "name";
   private static final String GROUP_ID = "io.github.spockz.elider.test";
 
@@ -72,6 +97,8 @@ final class DependencyContextLifecycleIntegrationTest {
   private static final String TREE_GOAL =
       "org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree";
 
+  private static final String SHORT_TREE_GOAL = "dependency:tree";
+
   private static final String TREE_HEADER = "[INFO] --- dependency:3.8.1:tree";
 
   private static final String DEPENDENCIES_IN = "dependenciesIn=";
@@ -86,43 +113,64 @@ final class DependencyContextLifecycleIntegrationTest {
 
   private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(180);
 
-  @Test
-  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
-  void lifecycleSnapshotsShowDirectAndResolvedViewsHaveDifferentLaterResolutionBehavior()
-      throws Exception {
+  @BeforeAll
+  static void installBootstrapSeed() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     final Path fixtureRoot =
-        repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/fixtures/lifecycle-probe");
+        copyLifecycleFixture(repositoryRoot, seedDirectory.resolve("lifecycle-probe-fixture"));
     final Path evidenceDirectory =
-        repositoryRoot.resolve("dependency-elider-maven-plugin/target/lifecycle-probe-evidence");
-    deleteTree(evidenceDirectory);
-    Files.createDirectories(evidenceDirectory);
-    final Path localRepository = Files.createDirectories(evidenceDirectory.resolve("repository"));
+        Files.createDirectories(seedDirectory.resolve("bootstrap-evidence"));
+    seedRepository = Files.createDirectories(seedDirectory.resolve("repository"));
     final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve("mvnw");
-
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
     final String versionOutput =
         run(
             repositoryRoot,
             wrapper,
             settings,
-            localRepository,
+            seedRepository,
             evidenceDirectory.resolve("maven-version.log"),
             PROCESS_TIMEOUT,
             "-version");
     assertThat(versionOutput).contains("Apache Maven 3.9.11");
-
     run(
         repositoryRoot,
         wrapper,
         settings,
-        localRepository,
+        seedRepository,
+        evidenceDirectory.resolve("production-install.log"),
+        PROCESS_TIMEOUT,
+        "-f",
+        repositoryRoot.resolve(POM_XML).toString(),
+        "-pl",
+        "dependency-elider-maven-plugin",
+        "-am",
+        "install",
+        "-DskipTests");
+    run(
+        repositoryRoot,
+        wrapper,
+        settings,
+        seedRepository,
         evidenceDirectory.resolve("fixture-bootstrap.log"),
         PROCESS_TIMEOUT,
         "-f",
         fixtureRoot.resolve("bootstrap/pom.xml").toString(),
-        "clean",
+        CLEAN_GOAL,
         "install");
+  }
+
+  @Test
+  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
+  void lifecycleSnapshotsShowDirectAndResolvedViewsHaveDifferentLaterResolutionBehavior()
+      throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("lifecycle-probe-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
 
     final Path dropJar = repositoryArtifact(localRepository, "drop-library");
     final Path keepJar = repositoryArtifact(localRepository, "keep-library");
@@ -212,42 +260,16 @@ final class DependencyContextLifecycleIntegrationTest {
   }
 
   @Test
-  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
   void resolverDecoratorChangesEachRepeatedTreeOutput() throws Exception {
     final Path repositoryRoot = repositoryRoot();
-    final Path fixtureRoot =
-        repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/fixtures/lifecycle-probe");
-    final Path evidenceDirectory =
-        repositoryRoot.resolve("dependency-elider-maven-plugin/target/resolver-probe-evidence");
-    deleteTree(evidenceDirectory);
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("resolver-probe-evidence");
     Files.createDirectories(evidenceDirectory);
-    final Path localRepository = Files.createDirectories(evidenceDirectory.resolve("repository"));
+    final Path localRepository = copySeedRepository(evidenceDirectory);
     final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve("mvnw");
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
     final Path consumer = fixtureRoot.resolve("consumer");
-    final Path consumerPom = consumer.resolve("pom.xml");
-
-    final String versionOutput =
-        run(
-            repositoryRoot,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("maven-version.log"),
-            PROCESS_TIMEOUT,
-            "-version");
-    assertThat(versionOutput).contains("Apache Maven 3.9.11");
-    run(
-        repositoryRoot,
-        wrapper,
-        settings,
-        localRepository,
-        evidenceDirectory.resolve("fixture-bootstrap.log"),
-        PROCESS_TIMEOUT,
-        "-f",
-        fixtureRoot.resolve("bootstrap/pom.xml").toString(),
-        "clean",
-        "install");
+    final Path consumerPom = consumer.resolve(POM_XML);
 
     assertResolverExtensionDescriptor(
         repositoryArtifact(localRepository, "resolver-probe-core-extension"));
@@ -346,42 +368,12 @@ final class DependencyContextLifecycleIntegrationTest {
   @Test
   void packagedProductionExtensionSubstitutesOnlyThePositiveConsumerRetainedJar() throws Exception {
     final Path repositoryRoot = repositoryRoot();
-    final Path fixtureRoot =
-        repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/fixtures/lifecycle-probe");
-    final Path evidenceDirectory =
-        repositoryRoot.resolve(
-            "dependency-elider-maven-plugin/target/production-extension-evidence");
-    deleteTree(evidenceDirectory);
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("production-extension-evidence");
     Files.createDirectories(evidenceDirectory);
-    final Path localRepository = Files.createDirectories(evidenceDirectory.resolve("repository"));
+    final Path localRepository = copySeedRepository(evidenceDirectory);
     final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve("mvnw");
-
-    run(
-        repositoryRoot,
-        wrapper,
-        settings,
-        localRepository,
-        evidenceDirectory.resolve("production-install.log"),
-        PROCESS_TIMEOUT,
-        "-f",
-        repositoryRoot.resolve("pom.xml").toString(),
-        "-pl",
-        "dependency-elider-maven-plugin",
-        "-am",
-        "install",
-        "-DskipTests");
-    run(
-        repositoryRoot,
-        wrapper,
-        settings,
-        localRepository,
-        evidenceDirectory.resolve("fixture-bootstrap.log"),
-        PROCESS_TIMEOUT,
-        "-f",
-        fixtureRoot.resolve("bootstrap/pom.xml").toString(),
-        "clean",
-        "install");
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
 
     final Path productionJar =
         localRepository.resolve(
@@ -401,10 +393,10 @@ final class DependencyContextLifecycleIntegrationTest {
     for (final String mode : List.of("production-positive", "production-negative")) {
       final Path consumer = evidenceDirectory.resolve(mode);
       Files.createDirectories(consumer);
-      Files.copy(fixtureRoot.resolve("consumer/pom.xml"), consumer.resolve("pom.xml"));
+      Files.copy(fixtureRoot.resolve("consumer/pom.xml"), consumer.resolve(POM_XML));
       final boolean extensionEnabled = "production-positive".equals(mode);
-      final Path extensionsDirectory = Files.createDirectories(consumer.resolve(".mvn"));
-      writeConsumerExtensions(extensionsDirectory.resolve("extensions.xml"), extensionEnabled);
+      final Path extensionsDirectory = Files.createDirectories(consumer.resolve(MVN_DIRECTORY));
+      writeConsumerExtensions(extensionsDirectory.resolve(EXTENSIONS_XML), extensionEnabled);
       final Path snapshots = evidenceDirectory.resolve(mode + "/snapshots");
       final Path modeLog = evidenceDirectory.resolve(mode + ".log");
       final List<String> properties =
@@ -413,7 +405,7 @@ final class DependencyContextLifecycleIntegrationTest {
               "-Dlifecycle.reportDirectory=" + snapshots,
               LIFECYCLE_REPLACEMENT_FILE_PROPERTY + replacementJar,
               "-f",
-              consumer.resolve("pom.xml").toString());
+              consumer.resolve(POM_XML).toString());
       runFromDirectory(
           consumer,
           wrapper,
@@ -422,7 +414,7 @@ final class DependencyContextLifecycleIntegrationTest {
           modeLog,
           PROCESS_TIMEOUT,
           Stream.concat(properties.stream(), Stream.of("prepare-package")).toArray(String[]::new));
-      assertThat(Files.readString(modeLog)).contains("BUILD SUCCESS");
+      assertThat(Files.readString(modeLog)).contains(BUILD_SUCCESS);
       assertThat(Files.readString(modeLog)).contains("PRODUCTION_PLAN_EVENT_SEEDED");
       consumerRuns.put(mode, phaseSnapshots(snapshots, "baseline"));
     }
@@ -449,41 +441,12 @@ final class DependencyContextLifecycleIntegrationTest {
   @SuppressWarnings("PMD.NcssCount")
   void packagedElideMojoPublishesTrimmedJarForLaterResolution() throws Exception {
     final Path repositoryRoot = repositoryRoot();
-    final Path fixtureRoot =
-        repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/fixtures/lifecycle-probe");
-    final Path evidenceDirectory =
-        repositoryRoot.resolve("dependency-elider-maven-plugin/target/production-mojo-evidence");
-    deleteTree(evidenceDirectory);
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("production-mojo-evidence");
     Files.createDirectories(evidenceDirectory);
-    final Path localRepository = Files.createDirectories(evidenceDirectory.resolve("repository"));
+    final Path localRepository = copySeedRepository(evidenceDirectory);
     final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve("mvnw");
-
-    run(
-        repositoryRoot,
-        wrapper,
-        settings,
-        localRepository,
-        evidenceDirectory.resolve("production-install.log"),
-        PROCESS_TIMEOUT,
-        "-f",
-        repositoryRoot.resolve("pom.xml").toString(),
-        "-pl",
-        "dependency-elider-maven-plugin",
-        "-am",
-        "install",
-        "-DskipTests");
-    run(
-        repositoryRoot,
-        wrapper,
-        settings,
-        localRepository,
-        evidenceDirectory.resolve("fixture-bootstrap.log"),
-        PROCESS_TIMEOUT,
-        "-f",
-        fixtureRoot.resolve("bootstrap/pom.xml").toString(),
-        "clean",
-        "install");
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
 
     final Path originalDrop = repositoryArtifact(localRepository, "drop-library");
     final Path originalKeep = repositoryArtifact(localRepository, "keep-library");
@@ -494,12 +457,12 @@ final class DependencyContextLifecycleIntegrationTest {
     for (final String mode : List.of("mojo-positive", "mojo-negative")) {
       final Path consumer = evidenceDirectory.resolve(mode);
       Files.createDirectories(consumer);
-      Files.copy(fixtureRoot.resolve("consumer-elide/pom.xml"), consumer.resolve("pom.xml"));
-      final Path trace = consumer.resolve("trace.txt");
-      Files.writeString(trace, "io.github.spockz.elider.fixture.keep.KeepEntry\n");
+      Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), consumer.resolve(POM_XML));
+      final Path trace = consumer.resolve(TRACE_FILE);
+      Files.writeString(trace, KEEP_ENTRY_ROOT);
       final boolean extensionEnabled = "mojo-positive".equals(mode);
       writeConsumerExtensions(
-          Files.createDirectories(consumer.resolve(".mvn")).resolve("extensions.xml"),
+          Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML),
           extensionEnabled);
       final Path reports = evidenceDirectory.resolve(mode + "/reports");
       final Path log = evidenceDirectory.resolve(mode + ".log");
@@ -510,19 +473,19 @@ final class DependencyContextLifecycleIntegrationTest {
           localRepository,
           log,
           PROCESS_TIMEOUT,
-          "-Dlifecycle.seedPlan=false",
+          SEED_PLAN_DISABLED,
           "-Dlifecycle.reportDirectory=" + reports,
           "-Dlifecycle.traceFile=" + trace,
           "-f",
-          consumer.resolve("pom.xml").toString(),
+          consumer.resolve(POM_XML).toString(),
           "prepare-package");
 
       final String output = Files.readString(log);
-      assertThat(output).contains("BUILD SUCCESS").doesNotContain("PRODUCTION_PLAN_EVENT_SEEDED");
+      assertThat(output).contains(BUILD_SUCCESS).doesNotContain("PRODUCTION_PLAN_EVENT_SEEDED");
       final int firstRequest =
           output.indexOf(
               "PRODUCTION_PLAN_EVENT_REQUEST ordinal=1 requestToken=1 planPresent=false");
-      final int elideSummary = output.indexOf("Dependency Elider summary");
+      final int elideSummary = output.indexOf(ELIDER_SUMMARY);
       final int postPublishRequest =
           output.indexOf(
               "EXPLICIT_TEST_RESOLUTION filter=TEST project=lifecycle-elide-consumer",
@@ -626,6 +589,472 @@ final class DependencyContextLifecycleIntegrationTest {
     }
   }
 
+  @Test
+  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
+  void packagedElideMojoProjectsSameInvocationDependencyTree() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("production-tree-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+
+    assertProductionExtensionPackage(
+        localRepository.resolve(
+            "io/github/spockz/dependency-elider-maven-plugin/0.1.0-SNAPSHOT/"
+                + "dependency-elider-maven-plugin-0.1.0-SNAPSHOT.jar"));
+    final Path originalDrop = repositoryArtifact(localRepository, "drop-library");
+    final Path originalKeep = repositoryArtifact(localRepository, "keep-library");
+    final String originalDropHash = sha256(originalDrop);
+    final String originalKeepHash = sha256(originalKeep);
+
+    for (final boolean skipElide : List.of(true, false)) {
+      final Path consumer = evidenceDirectory.resolve(skipElide ? "tree-skipped" : "tree-elided");
+      Files.createDirectories(consumer);
+      Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), consumer.resolve(POM_XML));
+      final Path trace = consumer.resolve(TRACE_FILE);
+      Files.writeString(trace, KEEP_ENTRY_ROOT);
+      writeConsumerExtensions(
+          Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+      final String output =
+          runFromDirectory(
+              consumer,
+              wrapper,
+              settings,
+              localRepository,
+              evidenceDirectory.resolve(skipElide ? "tree-skipped.log" : "tree-elided.log"),
+              PROCESS_TIMEOUT,
+              "--show-version",
+              SEED_PLAN_DISABLED,
+              "-Delide.skip=" + skipElide,
+              "-Dlifecycle.traceFile=" + trace,
+              "-f",
+              consumer.resolve(POM_XML).toString(),
+              SHORT_TREE_GOAL,
+              SHORT_TREE_GOAL);
+
+      assertThat(output)
+          .contains("Apache Maven 3.9.11", BUILD_SUCCESS)
+          .doesNotContain("PRODUCTION_PLAN_EVENT_SEEDED", RESOLVER_EVENT_PREFIX);
+      assertTreeRows(output, 2, skipElide ? 1 : 0, 1);
+      assertThat(countOccurrences(output, ELIDER_SUMMARY)).isEqualTo(skipElide ? 0 : 1);
+      final Path summary = consumer.resolve("target/lifecycle-elide-summary.json");
+      if (skipElide) {
+        assertThat(summary).doesNotExist();
+      } else {
+        final int elideSummary = output.indexOf(ELIDER_SUMMARY);
+        assertThat(elideSummary).isGreaterThanOrEqualTo(0);
+        assertThat(output.indexOf(TREE_HEADER)).isGreaterThan(elideSummary);
+        final JsonNode report = JSON.readTree(summary.toFile());
+        assertThat(report.path("wholeArtifactsDropped").asInt()).isOne();
+        assertThat(report.path("droppedArtifacts")).hasSize(1);
+        assertThat(report.path("droppedArtifacts").get(0).path("coordinate").asText())
+            .isEqualTo(DROP_AETHER + " (runtime)");
+        assertThat(report.path("trimmedArtifacts")).hasSize(1);
+        assertThat(report.path("trimmedArtifacts").get(0).path("coordinate").asText())
+            .isEqualTo(KEEP_AETHER + " (runtime)");
+        assertThat(report.path("mediatedGraph").path("available").asBoolean()).isTrue();
+      }
+      assertThat(sha256(originalDrop)).isEqualTo(originalDropHash);
+      assertThat(sha256(originalKeep)).isEqualTo(originalKeepHash);
+    }
+  }
+
+  @Test
+  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
+  void bareTreeBeforePackageDoesNotRunElideTwice() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("production-tree-package-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = evidenceDirectory.resolve("tree-package");
+    Files.createDirectories(consumer);
+    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), consumer.resolve(POM_XML));
+    final Path trace = consumer.resolve(TRACE_FILE);
+    Files.writeString(trace, KEEP_ENTRY_ROOT);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("tree-package.log"),
+            PROCESS_TIMEOUT,
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-Dlifecycle.traceFile=" + trace,
+            "-f",
+            consumer.resolve(POM_XML).toString(),
+            SHORT_TREE_GOAL,
+            "package");
+
+    assertThat(output).contains("Apache Maven 3.9.11", BUILD_SUCCESS);
+    assertThat(countOccurrences(output, ELIDER_SUMMARY)).isOne();
+    assertTreeRows(output, 1, 0, 1);
+    final JsonNode report =
+        JSON.readTree(consumer.resolve("target/lifecycle-elide-summary.json").toFile());
+    assertThat(report.path("wholeArtifactsDropped").asInt()).isOne();
+    assertThat(report.path("droppedArtifacts")).hasSize(1);
+    assertThat(report.path("mediatedGraph").path("available").asBoolean()).isTrue();
+  }
+
+  @Test
+  void laterExplicitElideGoalRunsAfterAutomaticTreePreparation() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("tree-explicit-elide-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = evidenceDirectory.resolve("tree-explicit-elide");
+    Files.createDirectories(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
+    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("tree-explicit-elide.log"),
+            PROCESS_TIMEOUT,
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-f",
+            pom.toString(),
+            SHORT_TREE_GOAL,
+            "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:elide@run-elider");
+
+    assertThat(output).contains(BUILD_SUCCESS, TREE_HEADER);
+    assertThat(countOccurrences(output, ELIDER_SUMMARY)).isEqualTo(2);
+    assertTreeRows(output, 1, 0, 1);
+  }
+
+  @Test
+  void repeatedLifecyclePhaseAfterTreeRunsAfterSingleDuplicateIsConsumed() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("tree-repeated-phase-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = evidenceDirectory.resolve("tree-repeated-phase");
+    Files.createDirectories(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
+    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("tree-repeated-phase.log"),
+            PROCESS_TIMEOUT,
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-f",
+            pom.toString(),
+            SHORT_TREE_GOAL,
+            "package",
+            "initialize");
+
+    assertThat(output).contains(BUILD_SUCCESS, TREE_HEADER);
+    assertThat(countOccurrences(output, ELIDER_SUMMARY)).isEqualTo(2);
+    assertTreeRows(output, 1, 0, 1);
+  }
+
+  @Test
+  void cleanAfterEarlierPackageFailsInsteadOfReusingInvalidatedOutputs() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("package-clean-tree-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = evidenceDirectory.resolve("package-clean-tree");
+    Files.createDirectories(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
+    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("package-clean-tree.log"),
+            PROCESS_TIMEOUT,
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-f",
+            pom.toString(),
+            "package",
+            CLEAN_GOAL,
+            SHORT_TREE_GOAL);
+
+    assertThat(output)
+        .contains(
+            "Cannot prepare dependency:tree after clean invalidated earlier lifecycle outputs")
+        .doesNotContain(TREE_HEADER);
+  }
+
+  @Test
+  void cleanAfterEarlierTreeIsRejectedEvenWhenPackagePrecedesTree() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory =
+        temporaryDirectory.resolve("package-tree-clean-package-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = evidenceDirectory.resolve("package-tree-clean-package");
+    Files.createDirectories(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("package-tree-clean-package.log"),
+            PROCESS_TIMEOUT,
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-f",
+            pom.toString(),
+            "package",
+            SHORT_TREE_GOAL,
+            CLEAN_GOAL,
+            "package");
+
+    assertThat(output)
+        .contains("Cannot combine automatic dependency:tree preparation with a later clean goal");
+  }
+
+  @Test
+  void treeAutoPreparationRejectsAnyMultiProjectReactor() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("multi-project-tree-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path reactor = evidenceDirectory.resolve("multi-project");
+    final Path consumer = reactor.resolve("consumer");
+    Files.createDirectories(consumer);
+    Files.writeString(
+        reactor.resolve(POM_XML),
+        "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">"
+            + "<modelVersion>4.0.0</modelVersion><groupId>fixture</groupId>"
+            + "<artifactId>reactor</artifactId><version>1</version><packaging>pom</packaging>"
+            + "<modules><module>consumer</module></modules></project>");
+    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), consumer.resolve(POM_XML));
+    writeConsumerExtensions(
+        Files.createDirectories(reactor.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runExpectingFailure(
+            reactor,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("multi-project-tree.log"),
+            PROCESS_TIMEOUT,
+            "-T2",
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-f",
+            reactor.resolve(POM_XML).toString(),
+            SHORT_TREE_GOAL);
+
+    assertThat(output)
+        .contains(
+            "Automatic dependency:tree preparation does not support multi-project Maven reactors")
+        .doesNotContain(TREE_HEADER);
+  }
+
+  @Test
+  void alreadyPreparedTreeRequestDoesNotAddAnotherElideExecution() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("prepared-tree-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = evidenceDirectory.resolve("prepared-tree");
+    Files.createDirectories(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
+    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("prepared-tree.log"),
+            PROCESS_TIMEOUT,
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-f",
+            pom.toString(),
+            "initialize",
+            SHORT_TREE_GOAL);
+
+    assertThat(output).contains(BUILD_SUCCESS);
+    assertThat(countOccurrences(output, ELIDER_SUMMARY)).isOne();
+    assertTreeRows(output, 1, 0, 1);
+  }
+
+  @Test
+  void ordinaryTestLifecycleDoesNotTriggerTreePreparation() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("ordinary-test-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = evidenceDirectory.resolve("ordinary-test");
+    Files.createDirectories(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
+    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("ordinary-test.log"),
+            PROCESS_TIMEOUT,
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-f",
+            pom.toString(),
+            "test");
+
+    assertThat(output).contains(BUILD_SUCCESS).doesNotContain(":tree");
+    assertThat(countOccurrences(output, ELIDER_SUMMARY)).isOne();
+  }
+
+  @Test
+  void explicitPomSkipWinsOverUserPropertyForAutoPreparedTree() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("pom-skip-tree-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = evidenceDirectory.resolve("pom-skip-tree");
+    Files.createDirectories(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    final String pomContents =
+        Files.readString(fixtureRoot.resolve(CONSUMER_ELIDE_POM))
+            .replace("<trimJars>true</trimJars>", "<skip>true</skip><trimJars>true</trimJars>");
+    Files.writeString(pom, pomContents);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("pom-skip-tree.log"),
+            PROCESS_TIMEOUT,
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-f",
+            pom.toString(),
+            SHORT_TREE_GOAL);
+
+    assertThat(output).contains(BUILD_SUCCESS, TREE_HEADER).doesNotContain(ELIDER_SUMMARY);
+    assertThat(consumer.resolve("target/lifecycle-elide-summary.json")).doesNotExist();
+  }
+
+  @Test
+  void cleanAfterTreeBeforePackageFailsBeforeGoalRewrite() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("tree-clean-package-evidence");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = evidenceDirectory.resolve("tree-clean-package");
+    Files.createDirectories(consumer);
+    final Path pom = consumer.resolve(POM_XML);
+    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runExpectingFailure(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("tree-clean-package.log"),
+            PROCESS_TIMEOUT,
+            "--show-version",
+            SEED_PLAN_DISABLED,
+            "-Delide.skip=false",
+            "-f",
+            pom.toString(),
+            SHORT_TREE_GOAL,
+            CLEAN_GOAL,
+            "package");
+
+    assertThat(output)
+        .contains("Cannot combine automatic dependency:tree preparation with a later clean goal");
+  }
+
   @SuppressWarnings("PMD.AvoidDuplicateLiterals")
   private static void writeConsumerExtensions(
       final Path descriptor, final boolean includeProduction)
@@ -672,7 +1101,8 @@ final class DependencyContextLifecycleIntegrationTest {
       try (InputStream input = jar.getInputStream(index)) {
         assertThat(new String(input.readAllBytes(), StandardCharsets.UTF_8))
             .contains("io.github.spockz.elider.plugin.EliderRepositorySessionDecorator")
-            .contains("io.github.spockz.elider.plugin.EliderMediatedGraphCaptureDecorator");
+            .contains("io.github.spockz.elider.plugin.EliderMediatedGraphCaptureDecorator")
+            .contains("io.github.spockz.elider.plugin.EliderLifecycleParticipant");
       }
       assertThat(
               jar.getJarEntry(
@@ -681,6 +1111,8 @@ final class DependencyContextLifecycleIntegrationTest {
       assertThat(
               jar.getJarEntry(
                   "io/github/spockz/elider/plugin/EliderMediatedGraphCaptureDecorator.class"))
+          .isNotNull();
+      assertThat(jar.getJarEntry("io/github/spockz/elider/plugin/EliderLifecycleParticipant.class"))
           .isNotNull();
       assertThat(
               jar.getJarEntry("io/github/spockz/elider/test/resolver/ResolverSessionProbe.class"))
@@ -905,6 +1337,19 @@ final class DependencyContextLifecycleIntegrationTest {
           .isEqualTo(expectedDropRows);
       assertThat(rows.stream().filter(line -> line.contains("keep-library")).count())
           .isEqualTo(expectedKeepRows);
+    }
+  }
+
+  private static int countOccurrences(final String value, final String token) {
+    int count = 0;
+    int next = 0;
+    while (true) {
+      next = value.indexOf(token, next);
+      if (next < 0) {
+        return count;
+      }
+      count++;
+      next += token.length();
     }
   }
 
@@ -1257,7 +1702,7 @@ final class DependencyContextLifecycleIntegrationTest {
 
   private static Path repositoryRoot() {
     Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
-    while (current != null && !Files.isRegularFile(current.resolve("mvnw"))) {
+    while (current != null && !Files.isRegularFile(current.resolve(MAVEN_WRAPPER))) {
       current = current.getParent();
     }
     if (current == null) {
@@ -1265,6 +1710,49 @@ final class DependencyContextLifecycleIntegrationTest {
           "Could not find repository Maven wrapper from test directory");
     }
     return current;
+  }
+
+  private Path copyLifecycleFixture(final Path repositoryRoot) throws IOException {
+    return copyLifecycleFixture(
+        repositoryRoot, temporaryDirectory.resolve("lifecycle-probe-fixture"));
+  }
+
+  private static Path copyLifecycleFixture(final Path repositoryRoot, final Path destination)
+      throws IOException {
+    final Path source =
+        repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/fixtures/lifecycle-probe");
+    copyDirectoryTree(source, destination);
+    final Path testSources = repositoryRoot.resolve("dependency-elider-maven-plugin/src/test/java");
+    for (final String module :
+        List.of("helper-plugin", "resolver-extension", "plan-seed-extension")) {
+      final Path pom = destination.resolve(module).resolve(POM_XML);
+      final String contents = Files.readString(pom);
+      Files.writeString(
+          pom,
+          contents.replace(
+              "${project.basedir}/../../../java", testSources.toString().replace('\\', '/')));
+    }
+    return destination;
+  }
+
+  private static Path copySeedRepository(final Path evidenceDirectory) throws IOException {
+    final Path repository = evidenceDirectory.resolve("repository");
+    copyDirectoryTree(seedRepository, repository);
+    return repository;
+  }
+
+  private static void copyDirectoryTree(final Path source, final Path destination)
+      throws IOException {
+    try (Stream<Path> paths = Files.walk(source)) {
+      for (final Path path : paths.toList()) {
+        final Path copiedPath = destination.resolve(source.relativize(path));
+        if (Files.isDirectory(path)) {
+          Files.createDirectories(copiedPath);
+        } else {
+          Files.copy(path, copiedPath);
+        }
+      }
+    }
   }
 
   private static Path writeSettings(final Path evidenceDirectory)
@@ -1393,6 +1881,52 @@ final class DependencyContextLifecycleIntegrationTest {
               + logFile
               + "\n"
               + output);
+    }
+    return output;
+  }
+
+  @SuppressWarnings("PMD.DoNotUseThreads")
+  private static String runExpectingFailure(
+      final Path workingDirectory,
+      final Path wrapper,
+      final Path settings,
+      final Path localRepository,
+      final Path logFile,
+      final Duration timeout,
+      final String... arguments)
+      throws IOException, InterruptedException {
+    Files.createDirectories(logFile.getParent());
+    final List<String> command = new ArrayList<>();
+    command.add(wrapper.toString());
+    command.add("--batch-mode");
+    command.add("--no-transfer-progress");
+    command.add("-s");
+    command.add(settings.toString());
+    command.add("-Dmaven.repo.local=" + localRepository);
+    command.addAll(List.of(arguments));
+    final ProcessBuilder processBuilder =
+        new ProcessBuilder(command)
+            .directory(workingDirectory.toFile())
+            .redirectErrorStream(true)
+            .redirectOutput(logFile.toFile());
+    processBuilder.environment().put("JAVA_HOME", System.getProperty("java.home"));
+    final Process process = processBuilder.start();
+    final boolean exited;
+    try {
+      exited = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (InterruptedException interrupted) {
+      terminate(process);
+      Thread.currentThread().interrupt();
+      throw interrupted;
+    }
+    if (!exited) {
+      terminate(process);
+      process.waitFor(10, TimeUnit.SECONDS);
+      fail("Maven subprocess exceeded " + timeout + "; log retained at " + logFile);
+    }
+    final String output = Files.readString(logFile);
+    if (process.exitValue() == 0) {
+      fail("Maven subprocess unexpectedly succeeded; log retained at " + logFile + "\n" + output);
     }
     return output;
   }

@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -32,6 +33,10 @@ public final class ElideMojo extends AbstractMojo {
   /** Maven session used to detect an externally selected compiler toolchain. */
   @Parameter(defaultValue = "${session}", readonly = true, required = true)
   private MavenSession session;
+
+  /** Current execution source and ID for the injected preparation duplicate guard. */
+  @Parameter(defaultValue = "${mojoExecution}", readonly = true, required = true)
+  private MojoExecution mojoExecution;
 
   /** User assertion that all production/generated sources exist before INITIALIZE. */
   @Parameter(property = "elide.sourceRootsComplete", defaultValue = DEFAULT_FALSE)
@@ -118,12 +123,23 @@ public final class ElideMojo extends AbstractMojo {
   /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
   @Override
   public void execute() throws MojoFailureException {
+    final String executionId = mojoExecution == null ? null : mojoExecution.getExecutionId();
+    final String projectId = project == null ? null : project.getId();
+    final MojoExecution.Source executionSource = EliderPreparationState.source(mojoExecution);
+    if (EliderPreparationState.consumePreparedLifecycleDuplicate(
+        session, executionId, projectId, executionSource)) {
+      return;
+    }
     try {
       if (skip) {
         publishEmptyPlan();
+        EliderPreparationState.completeInjectedCliPreparation(
+            session, executionId, projectId, executionSource);
         return;
       }
       executeAnalysis();
+      EliderPreparationState.completeInjectedCliPreparation(
+          session, executionId, projectId, executionSource);
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency elision failed: " + exception.getMessage(), exception);

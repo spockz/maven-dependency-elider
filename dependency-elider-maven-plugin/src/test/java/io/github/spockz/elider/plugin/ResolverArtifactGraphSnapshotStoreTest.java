@@ -26,6 +26,27 @@ final class ResolverArtifactGraphSnapshotStoreTest {
   }
 
   @Test
+  void rejectsNonOneStoreSchema() {
+    final Map<String, Object> payload =
+        ResolverArtifactGraphSnapshotStoreTestSupport.mutablePayload();
+    payload.put("schemaVersion", 3);
+
+    ResolverArtifactGraphSnapshotStoreTestAssertions.assertInvalidWithMessage(
+        payload, "Unsupported graph snapshot store schema");
+  }
+
+  @Test
+  void rejectsSchemaOneDraftWithPreReleaseRootFields() {
+    final Map<String, Object> payload =
+        ResolverArtifactGraphSnapshotStoreTestSupport.mutablePayload();
+    payload.remove("planObservations");
+    payload.remove("capturePairs");
+
+    ResolverArtifactGraphSnapshotStoreTestAssertions.assertInvalidWithMessage(
+        payload, "Graph snapshot store fields do not match the schema");
+  }
+
+  @Test
   void rejectsProjectKeyMismatch() {
     final Map<String, Object> wrongProject =
         ResolverArtifactGraphSnapshotStoreTestSupport.mutablePayload();

@@ -17,14 +17,13 @@ For the repository examples, use `-Delide.mode=baseline` or `-Delide.mode=elisio
 
 ### How can I see the dependencies effective after elision?
 
-Run the lifecycle phase and tree goal in one invocation if you want the elider to execute before the report:
+With the core extension in `.mvn/extensions.xml` and an active, initialize-bound elider execution in the POM, run the bare tree goal:
 
 ```sh
-./mvnw -Delide.skip=false -Delide.traceFiles=/path/to/trace.log \
-  initialize org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree
+./mvnw -Delide.skip=false -Delide.traceFiles=/path/to/trace.log dependency:tree
 ```
 
-The production extension can project exact safe nodes in a compatible later TEST resolver graph. This behavior is verified for one Maven 3.9.11 single-project fixture. The standard `dependency:tree` goal uses a separate POM-only context and is not guaranteed to show the projected graph; inspect the supported lifecycle classpath or final package for its actual inventory. The `dependency-elider:report` goal reports saved raw candidates and effective drops. Broader reactor and Maven-version behavior remains unverified. See [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+The production sequence is fixture-verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1: the extension schedules the configured elider before a bare `dependency:tree` request, and repeated tree goals show the dropped leaf absent while retaining the used dependency. The test includes a skipped-elision control that shows both dependencies. The verified case is a single-project leaf graph; automatic preparation rejects multi-project reactors. If you run `mvn test`, Maven reaches `INITIALIZE` through its normal lifecycle, so no separate `initialize` goal is needed. A later Maven invocation computes a fresh plan; it does not restore the prior session's plan from the report. See [the integration tests](../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIntegrationTest.java#L583) and [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
 
 ### Why did a raw dependency candidate remain in my build?
 

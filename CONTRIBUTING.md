@@ -37,7 +37,7 @@ make tools
 make check
 ```
 
-`make check` formats Java sources, runs Checkstyle, PMD, SpotBugs, lints Markdown, and runs the core and Maven plugin tests. Run individual checks with:
+`make check` formats Java sources first, then runs Java checks/tests alongside Markdown linting. Top-level Make goals are serialized; `check` and `lint-check` explicitly parallelize only their independent Java and Markdown branches using `MAKE_JOBS` (default 12). `MAVEN_THREADS` defaults to `MAKE_JOBS` and is passed to Maven as `-T` for eligible reactor modules. `TEST_FORKS` defaults to 4 and runs test classes in separate Surefire JVMs; methods within a class remain sequential. The plugin lifecycle integration class runs afterward in one fork because it launches nested Maven builds that write reactor targets. Run individual checks with:
 
 - `make lint-java` — Run Checkstyle, PMD, and SpotBugs.
 - `make lint-markdown` — Run `markdownlint-cli2` across all documentation.

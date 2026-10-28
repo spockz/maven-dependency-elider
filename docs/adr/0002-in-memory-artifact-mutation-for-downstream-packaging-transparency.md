@@ -3,7 +3,7 @@
 
 * **Status**: Accepted
 * **Date**: 2026-10-24
-* **Last Updated**: 2026-10-25
+* **Last Updated**: 2026-10-28
 
 <!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
 | Key | Value |
@@ -21,10 +21,10 @@ Maven consumers may obtain dependencies from project artifact collections, cache
 
 ## Decision
 
-Prune dependencies directly within the active `MavenProject` model during Mojo execution:
+Apply validated effective decisions during Mojo execution:
 
-1. **Whole-Artifact Elision**: Remove completely unused dependencies from `project.setArtifacts(...)` and `project.setDependencyArtifacts(...)`.
-2. **Future Artifact Replacement**: If the deferred trimming research is activated, write a separate output JAR per input dependency and investigate `artifact.setFile(transformedJarFile)` for file replacement. Do not merge the application into one JAR as a prerequisite.
+1. **Whole-Artifact Elision**: Filter the resolved artifact view using graph-backed effective decisions. Preserve direct dependency-artifact membership and POM declarations. A core extension applies exact validated graph projections to compatible later resolver calls.
+2. **Retained Artifact Replacement**: Write separate transformed JARs and update retained artifact file pointers. Publish validated replacement paths for later compatible resolution without modifying repository originals.
 
 For each supported plugin/version combination, verify the intended outcomes:
 
@@ -34,12 +34,12 @@ For each supported plugin/version combination, verify the intended outcomes:
 
 ## Invariants
 
-* **In-Memory State Consistency**: Any artifact purged from `project.getArtifacts()` must also be purged from `project.getDependencyArtifacts()` if it was a direct dependency.
+* **Explicit View Semantics**: Preserve direct dependency membership while applying effective decisions to resolved artifacts and compatible resolver graphs. Verify each consumer independently; the direct view is not an effective-inventory guarantee.
 * **Deterministic Filtering**: Given identical runtime traces and dependency sets, the mutated artifact set must be strictly deterministic across builds.
 * **Original Immutability**: Never modify original artifacts in the shared Maven repository. Write outputs under the build directory or an isolated transformation cache with traceable input/output identities and hashes.
 * **Consumer Consistency**: Verify compile, test, runtime, packaging, and reporting inventories independently; mutation surviving one consumer does not prove the others.
 * **Compilation Contract**: A single compile/runtime output must retain all compilation requirements. Separate compilation/runtime outputs are an unresolved design option, not an implicit optimization.
-* **Dual Maven Compatibility**: Artifact mutation logic must function identically on Maven 3.8+/3.9+ and Maven 4.0+.
+* **Compatibility Evidence**: Limit compatibility claims to verified Maven, JDK, consumer-plugin, and project configurations. Maven CLI 3.9.11 single-project fixtures are verified; other Maven releases and active multi-module consumer reactors remain unverified.
 
 ## Consequences
 

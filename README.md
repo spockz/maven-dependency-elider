@@ -43,20 +43,28 @@ cd maven-dependency-elider
 
 ### 2. Capture Runtime Telemetry
 
-Run your application with standard JVM class-loading logs:
+The following commands run against the repository's Basic example. Run a baseline build, then capture the classes loaded by the application:
 
 ```sh
-java -Xlog:class+load=info:file=target/classes.log -jar target/my-app.jar
+cd examples/example-basic-app
+../../mvnw clean package -Delide.mode=baseline
+java -Xlog:class+load=info:file=target/classes.log \
+  -jar target/example-basic-app-0.1.0-SNAPSHOT.jar
 ```
 
 ### 3. Analyze Dependencies
 
-Run the non-mutating `analyze` goal to inspect bloat and trimming potential:
+Run the non-mutating `analyze` goal from the consumer project. The Basic example has complete production sources before `INITIALIZE` and disables annotation processing; those flags are specific to this fixture:
 
 ```sh
-./mvnw io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
-  -Delide.traceFiles=target/classes.log
+../../mvnw io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
+  -Delide.traceFiles=target/classes.log \
+  -Delide.sourceRootsComplete=true \
+  -Dmaven.compiler.proc=none \
+  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
 ```
+
+On this fixture, `analyze` identifies one whole-artifact candidate out of twelve (365.93 KiB of original JAR bytes).
 
 ### 4. Build with Elision
 
@@ -79,15 +87,34 @@ Without this extension, whole-artifact candidates remain in the effective depend
 Before publication commits, a failed goal restores the prior report and output generation. If backup cleanup fails after commit, Maven reports the cleanup error while the newly published outputs remain active.
 
 ```sh
-./mvnw io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:elide package \
+../../mvnw io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:elide package \
   -Delide.skip=false \
   -Delide.traceFiles=target/classes.log \
-  -Delide.trimJars=true
+  -Delide.trimJars=true \
+  -Delide.sourceRootsComplete=true \
+  -Dmaven.compiler.proc=none \
+  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
 ```
+
+The successful run drops Commons Codec and trims classes from retained Commons Compress. The reported class totals are 115 classes / 413.65 KiB with the dropped JAR and 535 classes / 1.93 MiB from retained JARs.
+
+To see the effective dependency graph, run a bare tree goal with the active elision profile. The core extension from the example's `.mvn/extensions.xml` schedules its configured `elide` execution before tree collection:
+
+```sh
+../../mvnw -Delide.mode=elision \
+  -Delide.traceFiles=target/classes.log \
+  -Delide.trimJars=true \
+  -Delide.sourceRootsComplete=true \
+  -Dmaven.compiler.proc=none \
+  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3 \
+  dependency:tree
+```
+
+The Basic tree omits `commons-codec:commons-codec` and retains `org.apache.commons:commons-compress:1.28.0`.
 
 For complete configuration options and multi-source telemetry merging, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md), the [User FAQ](docs/faq.md), and the [Contributor Decision Register and Engineering FAQ](docs/contributor-decisions-and-faq.md).
 
-The `elide` goal writes two different JSON files because they contain different records: `elide.reportFile` defaults to `target/dependency-elider-class-usage.json` for class-usage analysis evidence, while `elide.summaryFile` defaults to `target/dependency-elider-report.json` for the persisted elision snapshot read by `dependency-elider:report`. The top-level elision report uses schema version 4; schema-v3 and other unsupported reports are rejected with rerun guidance because they do not contain separate dropped-JAR class metrics. These document schema numbers are independent of the plugin version and of the graph-capture and resolver-plan store schemas.
+The `elide` goal writes two different JSON files because they contain different records: `elide.reportFile` defaults to `target/dependency-elider-class-usage.json` for class-usage analysis evidence, while `elide.summaryFile` defaults to `target/dependency-elider-report.json` for the persisted elision snapshot read by `dependency-elider:report`. Each persisted format has its own schema version 1: the elision report, graph-capture store, resolver-plan store, class-usage report, and trim cache. The format names and exact field shapes identify the records; these schema numbers are independent of the plugin release version. Incompatible pre-release drafts and unsupported schema values are rejected; no migration or backward-compatibility promise is provided.
 
 ## Vulnerability findings and code evidence
 
@@ -157,13 +184,38 @@ After `make test-examples`, OSV-Scanner can check the Spring example's generated
 
 ## Source roots and support limits
 
+### Feature support and verification status
+
+These statuses describe evidence currently in this repository. Fixture and unit-test results are scoped to the named cases and versions; they are not general compatibility guarantees.
+
+| Feature or environment | Status | Evidence and boundary |
+| --- | --- | --- |
+| Single-project Maven elision lifecycle | Fixture verified | Packaged Maven CLI 3.9.11 [integration fixture](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIntegrationTest.java#L446) runs `elide`, trims an unused class, and verifies a distinct direct TEST resolver call. This covers one Maven CLI version and one project at a time. |
+| Shade and Spring Boot packaging | Fixture verified | Basic Shade 3.6.0 and Spring Boot 3.3.5 [example builds](examples/run-elision-cycle.sh#L658) verify trimmed packaging and runtime behavior in the configured JDK 21 environment. |
+| Resolver extension and mediated artifact graph | Required; fixture verified | Graph-aware decisions require `.mvn/extensions.xml`. The fixture checks a later explicit TEST resolver request with the extension; without it, original repository artifacts remain visible. |
+| Bare production `dependency:tree` | Example and fixture verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1 | With `.mvn/extensions.xml` and one active, initialize-bound elider execution, a bare tree request automatically runs elision first. The Basic example omits Commons Codec and retains Commons Compress; the fixture checks repeated output, skip behavior, explicit later elider execution, lifecycle behavior, and multi-project fail-fast when insertion is needed. See the [production lifecycle tests](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIntegrationTest.java#L583), the [example invocation](examples/run-elision-cycle.sh#L185), and its [tree assertions](examples/run-elision-cycle.sh#L529). |
+| Class reachability and safe dependency removal | Unit tested; fixture verified | Tests cover explicit roots, source references, selected framework metadata, and graph leaves with retention across ancestors, cycles, and diamonds. Dynamic reflection depends on complete user-provided configuration or traces. |
+| Multi-release dependency JARs | Conservative pass-through | Retained implementation JARs stay byte-for-byte unchanged; candidate multi-release archives are not trimmed. Optional strict mode can reject them. |
+| JARs with root `module-info.class` | Conservative pass-through on the classpath | Such JARs are not trimmed. JPMS module-path linkage and execution are unsupported. |
+| Persisted report and CycloneDX pedigree | Unit tested; fixture verified | Report structure, graph data, class and byte metrics, and example pedigree output are checked. This does not establish scanner findings, CVE mapping, or VEX outcomes. |
+| Maven multi-module reactor with active elision | Bare-tree auto-preparation fails fast, including with `-T2`; active reactor elision unverified | The fixture verifies that automatic preparation rejects a multi-project reactor before rendering the tree. It does not prove per-module elision or concurrent consumer-module safety. |
+| Other Maven CLI versions | Unverified | The packaged lifecycle fixture pins Maven 3.9.11. Other Maven 3 releases and Maven 4 have not been verified. |
+| Java 25 class files | Unsupported | The pinned ProGuard Core version cannot analyze Java 25 class files. |
+| Process crash during publication or concurrent builds writing the same project output | Unverified | Tests cover ordinary failure rollback and isolated test fixtures, not crash recovery or competing writers for one project. |
+
 The `elide.sourceRootsComplete` setting defaults to `false`. In that mode, all effective compile-classpath JARs and their classes are conservatively retained for class trimming. Setting it to `true` asserts that all production and generated sources exist before `INITIALIZE` and that no later processor or generator adds compile references. Detectable unsupported compiler settings still fail closed. Source scanning covers compile-time references that may not appear in class files, including inlined constants, source-retained annotations, and generic bounds. The independent runtime-evidence match remains required before whole-artifact pruning.
 
 Supported service, Spring, and native-image metadata roots also protect their declaring JARs and provider JARs from whole-artifact elision when `elide.trimJars=false`. A uniquely indexed provider is kept by coordinate; if a root has multiple scanned owners, all matching JARs are kept, and if no owner is found, the plugin conservatively keeps the scanned JAR inventory. With trimming enabled, those roots also participate in intra-JAR closure. Unknown metadata, unresolved references in candidate JARs, and unsupported archive layouts fail closed. Retained multi-release JARs with implementation classes and retained root-module-info JARs are not eligible for whole-artifact removal; module-path linkage is not covered. Set `elide.failOnUnsupportedMultiRelease=true` or `elide.failOnUnsupportedModuleInfo=true` to fail on those layouts. `elide.trimSkipArtifacts` explicitly keeps named JARs unchanged and analyzes their classes as roots; unresolved external references from unchanged pass-through code are tolerated.
 
-The analysis fingerprints Maven's resolved and direct artifact views, including membership, coordinates, scopes, file paths, and file contents. A change detected during preparation or effective closure fails before publication. The `elide` goal stages trimmed outputs and reports, applies effective resolved membership while preserving direct dependency membership, and publishes the resolver plan last. Reports distinguish raw elision candidates from effective whole-artifact drops. A production core extension is required for later resolver graph projection; `dependency:tree` behavior is not currently guaranteed.
+The analysis fingerprints Maven's resolved and direct artifact views, including membership, coordinates, scopes, file paths, and file contents. A change detected during preparation or effective closure fails before publication. The `elide` goal stages trimmed outputs and reports, applies effective resolved membership while preserving direct dependency membership, and publishes the resolver plan last. Reports distinguish raw elision candidates from effective whole-artifact drops. Later resolver graph projection requires the production core extension and a matching source graph fingerprint.
 
-The examples verify the Basic Shade and Spring Boot nested-JAR paths. The Maven 3.9.11 packaged fixture verifies exact graph projection through a distinct direct TEST resolver call; it does not establish a second lifecycle request or `dependency:tree` consistency. Other downstream mojos, reactor behavior, and Maven 4 remain unverified. See [ADR-0002](docs/adr/0002-in-memory-artifact-mutation-for-downstream-packaging-transparency.md) and [RQ-0006](docs/research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+The examples verify the Basic Shade and Spring Boot nested-JAR paths. Packaged Maven CLI 3.9.11 fixtures separately verify a distinct direct TEST resolver call and bare production `dependency:tree` behavior with Dependency Plugin 3.8.1. In the tested leaf graph, tree output omits the dropped dependency and retains the used dependency; skipped elision shows both. A later Maven invocation computes a fresh plan when the extension and active elider configuration are present; the previous session plan is not restored. `mvn test` naturally runs the elider at `INITIALIZE`, so it needs no separate `initialize` goal. Broader graph shapes, other downstream mojos, active reactor elision, and Maven 4 remain unverified. See [ADR-0002](docs/adr/0002-in-memory-artifact-mutation-for-downstream-packaging-transparency.md) and [RQ-0006](docs/research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+
+### Remaining verification work
+
+* Add a parallel reactor integration fixture with two independent consumer modules and active elision. Verify per-module outputs, graph plans, reports, SBOM pedigree, unchanged direct dependency declarations, and unchanged repository artifacts under `mvn -T2`. Until it passes, active multi-module and concurrent reactor elision is not verified.
+* Extend production tree coverage beyond the tested leaf graph to transitive paths, conflicts, and mediated scope variants; retain an assertion that a source-fingerprint mismatch fails explicitly.
+* Expand compatibility testing beyond Maven CLI 3.9.11 and the configured JDK 21 fixtures before making broader Maven or Java compatibility claims.
 
 ## Provenance: CycloneDX 1.6
 
@@ -227,12 +279,12 @@ Each example project has a `.mvn/extensions.xml` entry for the installed product
 
 ### Sample elision report output
 
-`make test-examples` invokes `dependency-elider:report` after each successful elision build. The report counts whole artifacts removed using original on-disk JAR sizes and classes removed using uncompressed `.class` entry sizes; class metrics exclude module descriptors and archive sanitation metadata. These summaries and graph rows came from the final schema-v4 run on 2026-10-28; timestamps vary between runs:
+`make test-examples` invokes `dependency-elider:report` after each successful elision build. The report counts whole artifacts removed using original on-disk JAR sizes and classes removed using uncompressed `.class` entry sizes; class metrics exclude module descriptors and archive sanitation metadata. These summaries and graph rows came from the final schema-1 run on 2026-10-28; timestamps vary between runs:
 
 ```text
 example-basic-app
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T09:09:55.318015313Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T13:44:11.573187007Z
 [INFO] Whole artifacts dropped: 1 (original JAR file bytes: 365.93 KiB)
 [INFO] Program classes removed with dropped JARs: 115 (uncompressed .class entry payload bytes: 413.65 KiB; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
@@ -242,7 +294,7 @@ example-basic-app
 
 example-spring-boot-app
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T09:10:34.336152374Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T13:44:50.982702846Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 3374 (uncompressed omitted .class payload bytes: 8.38 MiB; excludes module descriptors and archive metadata)
@@ -252,20 +304,20 @@ example-spring-boot-app
 
 example-cve-unused-app
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T09:10:58.049477635Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T13:45:14.920629777Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
 
 example-cve-safe-class-app
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-28T09:11:10.245962217Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T13:45:27.064920128Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
 ```
 
-The report goal reads this persisted schema-v4 snapshot and fails if its mediated TEST graph is unavailable. It reports dropped-JAR class entries separately from class entries pruned from retained JARs; the two totals never overlap, and the report rejects any coordinate listed in both categories. It does not resolve a new graph or call `maven-dependency-plugin:tree`.
+The report goal reads this persisted schema-1 snapshot and fails if its mediated TEST graph is unavailable. Unsupported schema values and incompatible schema-1 field shapes are rejected with rerun guidance. It reports dropped-JAR class entries separately from class entries pruned from retained JARs; the two totals never overlap, and the report rejects any coordinate listed in both categories. It does not resolve a new graph or call `maven-dependency-plugin:tree`.
 
 Example POMs use `-Delide.mode=baseline` or `-Delide.mode=elision` to select the named baseline and elision behaviors. The plugin's internal skip parameter remains `elide.skip`; the mode property activates the example's Maven profile.
 

@@ -12,6 +12,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -101,7 +102,7 @@ public final class PlanSeedEventSpy implements EventSpy {
     // The extension owns no resources.
   }
 
-  @SuppressWarnings("PMD.LawOfDemeter")
+  @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UseConcurrentHashMap"})
   private static void seed(final SessionData data, final MavenProject project) {
     final Path replacement =
         Path.of(System.getProperty("lifecycle.replacementFile")).toAbsolutePath().normalize();
@@ -113,22 +114,16 @@ public final class PlanSeedEventSpy implements EventSpy {
         List.of(basedir, project.getGroupId(), project.getArtifactId(), project.getVersion());
     final String projectKey = encodeTuple(projectIdentity);
     final String outputHash = sha256(replacement);
-    final Map<String, Object> plan =
-        Map.of(
-            "project",
-            projectIdentity,
-            "replacements",
+    final Map<String, Object> plan = new LinkedHashMap<>();
+    plan.put("project", projectIdentity);
+    plan.put(
+        "replacements",
+        List.of(
             List.of(
-                List.of(
-                    GROUP_ID,
-                    ARTIFACT_ID,
-                    VERSION,
-                    "jar",
-                    "",
-                    replacement.toString(),
-                    outputHash)));
+                GROUP_ID, ARTIFACT_ID, VERSION, "jar", "", replacement.toString(), outputHash)));
+    plan.put("graphProjection", null);
     final Map<String, Object> payload =
-        Map.of("schemaVersion", 2, "plans", Map.of(projectKey, plan));
+        Map.of("schemaVersion", 1, "plans", Map.of(projectKey, plan));
     final Map<String, String> directArtifactsBefore = directArtifactFiles(project);
     data.set(SESSION_DATA_KEY, payload);
     if (!directArtifactsBefore.equals(directArtifactFiles(project))) {

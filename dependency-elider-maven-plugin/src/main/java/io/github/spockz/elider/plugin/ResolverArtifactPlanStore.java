@@ -27,14 +27,25 @@ record ResolverArtifactPlanStore(
 
   private static final int REPLACEMENT_FIELD_COUNT = 7;
 
-  private static final int SCHEMA_VERSION = 2;
+  private static final String PROJECT_FIELD = "project";
 
-  private static final Set<String> PROJECTION_FIELDS =
-      Set.of("captureToken", "sourceFingerprint", "projectedFingerprint", "removedNodeIds");
+  private static final String REPLACEMENTS_FIELD = "replacements";
+
+  private static final String GRAPH_PROJECTION_FIELD = "graphProjection";
 
   private static final String SCHEMA_FIELD = "schemaVersion";
 
   private static final String PLANS_FIELD = "plans";
+
+  private static final Set<String> PLAN_FIELDS =
+      Set.of(PROJECT_FIELD, REPLACEMENTS_FIELD, GRAPH_PROJECTION_FIELD);
+
+  private static final Set<String> STORE_FIELDS = Set.of(SCHEMA_FIELD, PLANS_FIELD);
+
+  private static final int SCHEMA_VERSION = 1;
+
+  private static final Set<String> PROJECTION_FIELDS =
+      Set.of("captureToken", "sourceFingerprint", "projectedFingerprint", "removedNodeIds");
 
   ResolverArtifactPlanStore {
     Objects.requireNonNull(plans, "plans");
@@ -49,11 +60,22 @@ record ResolverArtifactPlanStore(
     if (payload == null) {
       return empty();
     }
+    return new ResolverArtifactPlanStore(decodePlans(validateStorePayload(payload)));
+  }
+
+  private static Map<?, ?> validateStorePayload(final Object payload) {
     final Map<?, ?> root = requireMap(payload, "resolver plan store");
+    if (!root.keySet().equals(STORE_FIELDS)) {
+      throw new IllegalStateException("Resolver plan store fields do not match the schema");
+    }
     if (!Integer.valueOf(SCHEMA_VERSION).equals(root.get(SCHEMA_FIELD))) {
       throw new IllegalStateException("Unsupported resolver plan store schema");
     }
-    final Map<?, ?> encodedPlans = requireMap(root.get(PLANS_FIELD), PLANS_FIELD);
+    return requireMap(root.get(PLANS_FIELD), PLANS_FIELD);
+  }
+
+  private static Map<ResolverArtifactPlan.ProjectIdentity, ResolverArtifactPlan> decodePlans(
+      final Map<?, ?> encodedPlans) {
     final Map<ResolverArtifactPlan.ProjectIdentity, ResolverArtifactPlan> decoded =
         new LinkedHashMap<>();
     for (final Map.Entry<?, ?> entry : encodedPlans.entrySet()) {
@@ -66,7 +88,7 @@ record ResolverArtifactPlanStore(
         throw new IllegalStateException("Duplicate project resolver plan: " + projectKey);
       }
     }
-    return new ResolverArtifactPlanStore(decoded);
+    return decoded;
   }
 
   @SuppressWarnings("PMD.UseConcurrentHashMap")
@@ -117,14 +139,14 @@ record ResolverArtifactPlanStore(
                         replacement.sha256())));
     final Map<String, Object> result = new LinkedHashMap<>();
     result.put(
-        "project",
+        PROJECT_FIELD,
         List.of(
             plan.project().baseDirectory().toString(),
             plan.project().groupId(),
             plan.project().artifactId(),
             plan.project().version()));
-    result.put("replacements", List.copyOf(replacements));
-    result.put("graphProjection", encodeProjection(plan.graphProjection()));
+    result.put(REPLACEMENTS_FIELD, List.copyOf(replacements));
+    result.put(GRAPH_PROJECTION_FIELD, encodeProjection(plan.graphProjection()));
     return Collections.unmodifiableMap(result);
   }
 
@@ -142,17 +164,32 @@ record ResolverArtifactPlanStore(
 
   private static ResolverArtifactPlan decodePlan(final Object value) {
     final Map<?, ?> encoded = requireMap(value, "project plan");
-    final List<?> projectFields = requireList(encoded.get("project"), "project identity");
+    if (!encoded.keySet().equals(PLAN_FIELDS)) {
+      throw new IllegalStateException("Resolver project plan fields do not match the schema");
+    }
+    final ResolverArtifactPlan.ProjectIdentity project = decodeProject(encoded);
+    final Map<ResolverArtifactPlan.ArtifactIdentity, ResolverArtifactPlan.Replacement>
+        replacements = decodeReplacements(encoded);
+    return new ResolverArtifactPlan(
+        project, replacements, decodeProjection(encoded.get(GRAPH_PROJECTION_FIELD)));
+  }
+
+  private static ResolverArtifactPlan.ProjectIdentity decodeProject(final Map<?, ?> encoded) {
+    final List<?> projectFields = requireList(encoded.get(PROJECT_FIELD), "project identity");
     if (projectFields.size() != PROJECT_FIELD_COUNT) {
       throw new IllegalStateException("Project identity must have four fields");
     }
-    final ResolverArtifactPlan.ProjectIdentity project =
-        new ResolverArtifactPlan.ProjectIdentity(
-            Path.of(requireString(projectFields.get(0), "project base directory")),
-            requireString(projectFields.get(1), "project groupId"),
-            requireString(projectFields.get(2), "project artifactId"),
-            requireString(projectFields.get(3), "project version"));
-    final List<?> encodedReplacements = requireList(encoded.get("replacements"), "replacements");
+    return new ResolverArtifactPlan.ProjectIdentity(
+        Path.of(requireString(projectFields.get(0), "project base directory")),
+        requireString(projectFields.get(1), "project groupId"),
+        requireString(projectFields.get(2), "project artifactId"),
+        requireString(projectFields.get(3), "project version"));
+  }
+
+  private static Map<ResolverArtifactPlan.ArtifactIdentity, ResolverArtifactPlan.Replacement>
+      decodeReplacements(final Map<?, ?> encoded) {
+    final List<?> encodedReplacements =
+        requireList(encoded.get(REPLACEMENTS_FIELD), REPLACEMENTS_FIELD);
     final Map<ResolverArtifactPlan.ArtifactIdentity, ResolverArtifactPlan.Replacement>
         replacements = new LinkedHashMap<>();
     for (final Object rowValue : encodedReplacements) {
@@ -175,8 +212,7 @@ record ResolverArtifactPlanStore(
         throw new IllegalStateException("Duplicate resolver artifact identity: " + identity);
       }
     }
-    return new ResolverArtifactPlan(
-        project, replacements, decodeProjection(encoded.get("graphProjection")));
+    return replacements;
   }
 
   private static ResolverArtifactGraphProjection decodeProjection(final Object value) {

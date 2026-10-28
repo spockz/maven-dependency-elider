@@ -35,7 +35,7 @@ record MavenElisionReportSnapshot(
     List<TrimmedArtifact> trimmedArtifacts,
     MediatedGraphReport mediatedGraph) {
   /** Current persisted JSON format version. */
-  static final int SCHEMA_VERSION = 4;
+  static final int SCHEMA_VERSION = 1;
 
   MavenElisionReportSnapshot {
     require(schemaVersion == SCHEMA_VERSION, "Unsupported report snapshot schema version");
