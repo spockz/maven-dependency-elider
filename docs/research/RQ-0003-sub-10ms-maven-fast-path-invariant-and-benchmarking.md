@@ -24,6 +24,7 @@ $$\Delta t_{\text{overhead}} < 10\text{ ms on cached/routine builds}$$
 * **RQ-0003.3**: On cold cache misses (when dependencies change), what is the minimal latency achievable for scanning the ZIP Central Directory of 50–100 JAR files using Java 21 Virtual Threads?
 * **RQ-0003.4**: How should automated CI benchmarks be structured to fail the build if fast-path overhead exceeds 10ms?
 * **RQ-0003.5**: What size reduction and configuration-effort savings justify the added source analysis, shrinking, archive rewriting, and cache validation costs compared with a distribution-only shrinker?
+* **RQ-0003.6**: How can concurrent execution across CPU cores (e.g., using Java 21 Virtual Threads or bounded worker pools) be applied to CPU-intensive and I/O-bound phases—such as concurrent intra-JAR trimming across candidate dependencies, parallel ZIP entry decompression, parallel SHA-256 digesting, and concurrent archive rewriting—to drastically reduce end-to-end wall-clock time without thrashing disk I/O, breaking deterministic build outputs, or exceeding process memory caps in large reactor builds?
 
 ---
 
@@ -39,6 +40,23 @@ $$\Delta t_{\text{overhead}} < 10\text{ ms on cached/routine builds}$$
 | **ZIP Central Directory Scan** | $0\text{ ms}$ (Skipped) | $10\text{--}25\text{ ms}$ | JDK 21 Virtual Threads reading CEN headers |
 | **Trace Ingestion** | $0\text{ ms}$ (Skipped) | $1\text{--}5\text{ ms}$ | Memory-mapped buffer newline scanning |
 | **Total Expected Latency** | **$< 1.0\text{ ms}$** | **$15\text{--}30\text{ ms}$** | Strict pass of $< 10\text{ ms}$ budget on fast-path |
+
+### 2.2 Parallel Work Scheduling for Wall-Clock Time Reduction
+
+While the `< 10 ms` invariant governs cached and fast-path execution, non-cached execution and large-scale intra-JAR trimming (e.g. on Spring Boot, currently measuring $+20.4\text{ s}$ overhead) must minimize wall-clock latency through parallelization across available CPU cores:
+
+1. **Concurrent Candidate JAR Trimming**:
+   * *Opportunity*: In `MavenDependencyTrimmer.trim`, candidate dependencies are currently evaluated and trimmed sequentially. Because each candidate JAR's link-closure analysis, bytecode rewriting, and output packaging operate on disjoint input and output paths, candidate trimming tasks are embarrassingly parallel.
+   * *Objective*: Transform candidate loop execution from linear sum latency $\sum_{i=1}^n t_i$ toward the single largest candidate latency $\max_{1 \le i \le n}(t_i)$, dramatically dropping wall-clock duration on multi-core systems.
+
+2. **Parallel I/O, Decompression, and Hashing Pipeline**:
+   * *Opportunity*: Reading Central Directory headers across $50\text{--}100$ dependency JARs, decompressing bytecode, computing SHA-256 digests for platform/dependency archives, and re-packing sanitized output archives can saturate high-throughput NVMe SSDs when executed via Java 21 Virtual Threads (`Executors.newVirtualThreadPerTaskExecutor()`).
+   * *Objective*: Decouple I/O wait states from CPU-bound link-closure analysis.
+
+3. **Concurrency Constraints & Resource Bounding**:
+   * *Memory Bounding (Heap/RSS Ceiling)*: ProGuard `ClassPool` instances and in-memory archive buffers consume significant memory (Spring Boot elision already peaks at $\approx 3.1\text{ GB}$ RSS). Unbounded concurrency risks JVM OutOfMemory errors. Concurrency must be bounded via worker limits (e.g. `Math.min(availableProcessors, 4)`) or memory-sensitive semaphores.
+   * *Maven Reactor Coordination (`mvn -T`)*: When Maven builds multi-module reactor projects in parallel, intra-plugin parallelism must avoid thread oversubscription and thrashing.
+   * *Strict Determinism*: Regardless of thread scheduling, candidate output files, cache manifest entries, SBOM component arrays, and log traces must maintain strictly deterministic order (e.g. sorted by canonical coordinate).
 
 ---
 
@@ -110,6 +128,7 @@ The profiles show what to investigate first; they do not prove that every listed
 * [ ] Checkpoint 3: Validate $< 1\text{ ms}$ fast-path execution in real Maven lifecycle execution.
 * [ ] Checkpoint 4: Define a statistically defensible lifecycle overhead measurement and compare total build cost, package size, and setup effort with baseline workflows.
 * [ ] Checkpoint 5: Specify complete transformation cache keys, output validation, and concurrent/partial-write behavior before caching source-aware trimming.
+* [ ] Checkpoint 6: Benchmark and implement bounded parallel candidate trimming and archive I/O using Java 21 Virtual Threads to reduce non-cached wall-clock time on multi-core builds.
 
 ### 5.1 Follow-up Implementation Slices (2026-10-26)
 
@@ -130,6 +149,7 @@ The source audit and JFR findings are assigned to the Maven-trimming, ProGuard-e
 | **7.5 Request-owned platform byte snapshots** | Plugin/cache performance | Reuse complete snapshots through Maven request data with atomic same-key publication, retry after failed capture, and fresh mutable pools. | 7.4 | Implemented; review pending; design superseded by 7.6. Warm/fresh JMH and end-to-end evidence below |
 | **7.6 Digest-only invocation-owned platform identity** | Core platform reader + Maven plugin cache | Record normalized selected paths, effective releases, selection evidence, sorted JMOD inventory, and one exact SHA-256 per selected source. Use central-directory selection, parse recorded live paths on misses, and rely on ADR 0004's stable-platform-input assumption. Do not retain archive bytes, compute platform SHA-1, or rescan JMOD declarations for cache identity. | 7.5 | Implemented and reviewed as `4cc9a7b`/`5b5edd2`; `make fmt check` passed (149 core, 72 plugin); fresh and warmed JMH/JFR and memory evidence below |
 | **7.7 Bounded parallel platform-digest experiment** | Plugin/cache performance | Measure sequential against CPU-bounded 2/4/8-worker hashing of independent selected platform files, including executor construction in fresh-context latency and separate invocation-scoped reuse. Measure digest time separately from source discovery, inventory, cache validation, and executor cost; cover warm, controlled cold/less-cached, and parallel reactor workloads. Preserve deterministic identity assembly, same-key single-owner capture, failure propagation, and retry in any prototype. | 7.6 | Deferred until feature acceptance is complete. Performance improvements are lower priority than completing and verifying product behavior. Keep this experiment as a revisit candidate; proceed only for ≥20% fresh-context latency reduction with separated confidence intervals and ≤10% aggregate-throughput regression under representative reactor concurrency. |
+| **7.8 Parallel candidate trimming & archive pipeline** | Maven plugin trimming + engine | Evaluate bounded concurrent candidate JAR analysis, parallel bytecode extraction/writing, and asynchronous hashing. Benchmark wall-clock reduction on Spring Boot fixture; enforce memory upper bound (max concurrent workers) and verify strict output determinism. | Feature completeness / WP-RESOLVE-01 & WP-VEX-01 | Open investigation candidate |
 | **6.4 Post-optimization example profiling** | Fixtures and verification | Run matched baseline and elision `clean verify` measurements for Basic and Spring Boot, then profile elided Maven processes separately with JFR. Report timing distributions, process RSS, allocation/CPU hotspots, and artifact-size effects; distinguish JFR overhead from unprofiled timing. | 2.4, 2.5, 5.4, 7.1, 7.2 | Complete; three matched cycles per example, plus separate Basic/Spring JFR profiles |
 | **6.6 Post-2.6c and 7.3 example profiling** | Fixtures and verification | Repeat three matched warm-dependency baseline-first `clean verify` cycles for Basic and Spring Boot after 2.6c and 7.3; run JFR/RSS separately and retain runtime/package checks. | 2.6c, 7.3 | Complete; see post-2.6c/7.3 evidence below |
 
