@@ -100,7 +100,7 @@ final class AnalyzeMojoTest {
             "  Artifacts that would be elided by this analysis: 0 / 5 (0.0%)",
             "  Estimated original JAR bytes for those artifacts: 0 B "
                 + "(sum of original on-disk input JAR sizes; final package delta may differ)",
-            "  Cache: unavailable");
+            "  JAR trim cache: unavailable (trim stage not run)");
     assertThat(log.messages())
         .noneMatch(
             line ->
@@ -136,6 +136,14 @@ final class AnalyzeMojoTest {
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "reportFile", tempDir.resolve("predicted-elisions.json").toFile());
+    set(mojo, "cveCacheDirectory", tempDir.resolve("analysis-cve-cache").toFile());
+    final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
+    mapping.setCveId("CVE-2026-19001");
+    mapping.setGroupId("org.example");
+    mapping.setArtifactId("unused-runtime");
+    mapping.setVersion("1.0");
+    mapping.setVulnerableClasses(List.of("unused.Idle"));
+    set(mojo, "vulnerabilityMappings", List.of(mapping));
     final RecordingMavenLog log = new RecordingMavenLog();
     mojo.setLog(log);
 
@@ -146,7 +154,11 @@ final class AnalyzeMojoTest {
             "  Artifacts that would be elided by this analysis: 1 / 2 (50.0%)",
             "  Estimated original JAR bytes for those artifacts: "
                 + MavenElisionReportWriter.formatBytes(Files.size(unused.getFile().toPath()))
-                + " (sum of original on-disk input JAR sizes; final package delta may differ)");
+                + " (sum of original on-disk input JAR sizes; final package delta may differ)",
+            "  CVE components that would be removed from inventory: ",
+            "    CVE-2026-19001 org.example:unused-runtime:jar:1.0",
+            "  CVEs whose vulnerable code would be proven absent by trimming: "
+                + "none matched the available vulnerability mappings");
     assertThat(project.getArtifacts()).isSameAs(artifacts).containsExactlyInAnyOrder(used, unused);
     assertThat(unused.getFile()).isSameAs(unusedFile);
     assertThat(log.messages())
@@ -155,6 +167,46 @@ final class AnalyzeMojoTest {
                 line.startsWith("  Classes removed:")
                     || line.startsWith("  Methods removed:")
                     || line.startsWith("  Fields removed:"));
+  }
+
+  @Test
+  void predictsCvesWhoseClassesWouldBeProvenAbsentByDryRunTrimming()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Artifact runtime = artifactWithClasses("runtime-cve", "runtime-cve.jar");
+    final File original = runtime.getFile();
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(new LinkedHashSet<>(List.of(runtime)));
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final org.apache.maven.model.Build build = new org.apache.maven.model.Build();
+    build.setDirectory(tempDir.resolve("trim-analysis-target").toString());
+    project.setBuild(build);
+    final Path trace = tempDir.resolve("trim-analysis.lst");
+    Files.writeString(trace, "sample.Keep\n");
+    final AnalyzeMojo mojo = new AnalyzeMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "trimJars", true);
+    set(mojo, "reportFile", tempDir.resolve("trim-analysis.json").toFile());
+    set(mojo, "cveCacheDirectory", tempDir.resolve("trim-analysis-cache").toFile());
+    final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
+    mapping.setCveId("CVE-2026-19002");
+    mapping.setGroupId("org.example");
+    mapping.setArtifactId("runtime-cve");
+    mapping.setVersion("1.0");
+    mapping.setVulnerableClasses(List.of("sample.Drop"));
+    set(mojo, "vulnerabilityMappings", List.of(mapping));
+    final RecordingMavenLog log = new RecordingMavenLog();
+    mojo.setLog(log);
+
+    mojo.execute();
+
+    assertThat(log.messages())
+        .anyMatch(
+            line ->
+                line.startsWith("  CVEs whose vulnerable code would be proven absent by trimming:"))
+        .contains("    CVE-2026-19002 org.example:runtime-cve:jar:1.0");
+    assertThat(project.getArtifacts()).containsExactly(runtime);
+    assertThat(runtime.getFile()).isSameAs(original);
   }
 
   @Test
@@ -313,6 +365,36 @@ final class AnalyzeMojoTest {
             new DefaultArtifactHandler(type));
     artifact.setFile(file.toFile());
     return artifact;
+  }
+
+  private Artifact artifactWithClasses(final String artifactId, final String fileName)
+      throws IOException {
+    final Path file = fileFor(fileName);
+    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(file))) {
+      writeClassEntry(output, "sample/Keep");
+      writeClassEntry(output, "sample/Drop");
+    }
+    final Artifact artifact =
+        new DefaultArtifact(
+            "org.example",
+            artifactId,
+            "1.0",
+            "runtime",
+            "jar",
+            null,
+            new DefaultArtifactHandler("jar"));
+    artifact.setFile(file.toFile());
+    return artifact;
+  }
+
+  private static void writeClassEntry(final ZipOutputStream output, final String className)
+      throws IOException {
+    output.putNextEntry(new ZipEntry(className + ".class"));
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, className, null, "java/lang/Object", null);
+    writer.visitEnd();
+    output.write(writer.toByteArray());
+    output.closeEntry();
   }
 
   private Path fileFor(final String fileName) {

@@ -3,8 +3,14 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
+import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
+import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
@@ -18,7 +24,11 @@ import org.apache.maven.project.MavenProject;
     name = "analyze",
     requiresDependencyResolution = org.apache.maven.plugins.annotations.ResolutionScope.TEST,
     threadSafe = true)
+@SuppressWarnings("PMD.TooManyFields")
 public final class AnalyzeMojo extends AbstractMojo {
+  /** Maven annotation representation for disabled boolean options. */
+  private static final String DEFAULT_FALSE = "false";
+
   /** Maven project whose resolved artifacts are analyzed. */
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
@@ -28,8 +38,28 @@ public final class AnalyzeMojo extends AbstractMojo {
   private MavenSession session;
 
   /** User assertion that all production/generated sources exist before INITIALIZE. */
-  @Parameter(property = "elide.sourceRootsComplete", defaultValue = "false")
+  @Parameter(property = "elide.sourceRootsComplete", defaultValue = DEFAULT_FALSE)
   private boolean sourceRootsComplete;
+
+  /** Enables dry-run intra-JAR trimming prediction. */
+  @Parameter(property = "elide.trimJars", defaultValue = DEFAULT_FALSE)
+  private boolean trimJars;
+
+  /** Additional class names that must remain available for dynamic loading. */
+  @Parameter(property = "elide.trimRoots")
+  private List<String> trimRoots;
+
+  /** Retained artifact coordinates to analyze as unchanged pass-through libraries. */
+  @Parameter(property = "elide.trimSkipArtifacts")
+  private List<String> trimSkipArtifacts;
+
+  /** Fails instead of retaining multi-release implementation JARs without trimming. */
+  @Parameter(property = "elide.failOnUnsupportedMultiRelease", defaultValue = DEFAULT_FALSE)
+  private boolean failOnUnsupportedMultiRelease;
+
+  /** Rejects retained classpath JARs with a root module descriptor. */
+  @Parameter(property = "elide.failOnUnsupportedModuleInfo", defaultValue = DEFAULT_FALSE)
+  private boolean failOnUnsupportedModuleInfo;
 
   /** Explicit trace files that supply runtime observations. */
   @Parameter(property = "elide.traceFiles", required = true)
@@ -42,6 +72,25 @@ public final class AnalyzeMojo extends AbstractMojo {
   /** Optional production class output for static references. */
   @Parameter(property = "elide.productionOutput")
   private File productionOutput;
+
+  /** Optional local vulnerability index directory. */
+  @Parameter(property = "elide.cveCacheDirectory")
+  private File cveCacheDirectory;
+
+  /** Cache freshness interval in hours. */
+  @Parameter(property = "elide.cveCacheTtlHours", defaultValue = "24")
+  private int cveCacheTtlHours;
+
+  /** Forces refresh of the vulnerability mapping index. */
+  @Parameter(property = "elide.cveForceSync", defaultValue = DEFAULT_FALSE)
+  private boolean cveForceSync;
+
+  /** Optional remote mapping index URI. */
+  @Parameter(property = "elide.cveIndexUri")
+  private String cveIndexUri;
+
+  /** Explicit project vulnerability mappings override cached mappings. */
+  @Parameter private List<VulnerabilityMappingConfig> vulnerabilityMappings;
 
   /** Class-usage evidence; default: target/dependency-elider-class-usage.json. */
   @Parameter(
@@ -62,14 +111,22 @@ public final class AnalyzeMojo extends AbstractMojo {
           new MavenElisionService()
               .analyze(
                   project,
-                  traceFiles,
-                  excludedArtifacts,
-                  productionOutput,
-                  session,
-                  sourceRootsComplete);
+                  new MavenElisionService.AnalysisOptions(
+                      traceFiles,
+                      excludedArtifacts,
+                      productionOutput,
+                      session,
+                      sourceRootsComplete,
+                      trimJars,
+                      trimRoots == null ? List.of() : trimRoots,
+                      failOnUnsupportedMultiRelease,
+                      trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
+                      failOnUnsupportedModuleInfo));
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
-      ElisionSummary.reportAnalysis(getLog(), analysis);
+      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
+          assessVulnerabilities(analysis);
+      ElisionSummary.reportAnalysis(getLog(), analysis, vulnerabilityAssessment, trimJars);
       if (getLog().isInfoEnabled()) {
         getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
       }
@@ -77,5 +134,28 @@ public final class AnalyzeMojo extends AbstractMojo {
       throw new MojoFailureException(
           "Dependency analysis failed closed: " + exception.getMessage(), exception);
     }
+  }
+
+  private MavenVulnerabilityAssessment.Result assessVulnerabilities(
+      final MavenElisionService.Analysis analysis) throws IOException {
+    final Path cacheDirectory =
+        cveCacheDirectory == null
+            ? VulnerabilityCacheManager.defaultCacheDirectory()
+            : cveCacheDirectory.toPath();
+    final URI source =
+        cveIndexUri == null || cveIndexUri.isBlank() ? null : URI.create(cveIndexUri);
+    final CacheConfig config =
+        new CacheConfig(
+            cacheDirectory,
+            source,
+            Duration.ofHours(cveCacheTtlHours),
+            cveForceSync,
+            session != null && session.isOffline(),
+            VulnerabilityCacheManager.bundledEmptySeed());
+    final List<VulnerabilitySymbolMapping> manualMappings =
+        vulnerabilityMappings == null
+            ? List.of()
+            : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
+    return new MavenVulnerabilityAssessment(getLog()).assess(config, manualMappings, analysis);
   }
 }
