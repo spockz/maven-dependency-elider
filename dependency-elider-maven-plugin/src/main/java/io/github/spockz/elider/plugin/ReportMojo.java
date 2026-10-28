@@ -31,6 +31,12 @@ public final class ReportMojo extends AbstractMojo {
   /** Reads and renders the last successful project report snapshot. */
   @Override
   public void execute() throws MojoFailureException {
+    final MavenElisionReportSnapshot snapshot = readSnapshot();
+    validateProject(snapshot);
+    renderSnapshot(snapshot);
+  }
+
+  private MavenElisionReportSnapshot readSnapshot() throws MojoFailureException {
     final MavenElisionReportSnapshot snapshot;
     try {
       snapshot = MavenElisionReportWriter.read(summaryFile.toPath());
@@ -38,6 +44,11 @@ public final class ReportMojo extends AbstractMojo {
       throw new MojoFailureException(
           "Could not display dependency elision report: " + exception.getMessage(), exception);
     }
+    return snapshot;
+  }
+
+  private void validateProject(final MavenElisionReportSnapshot snapshot)
+      throws MojoFailureException {
     final String currentGav =
         project.getGroupId() + ":" + project.getArtifactId() + ":" + project.getVersion();
     if (!snapshot.projectGav().equals(currentGav)) {
@@ -63,6 +74,15 @@ public final class ReportMojo extends AbstractMojo {
               + " but the current project directory is "
               + currentBaseDirectory);
     }
-    MavenElisionReportWriter.render(snapshot).forEach(getLog()::info);
+  }
+
+  private void renderSnapshot(final MavenElisionReportSnapshot snapshot)
+      throws MojoFailureException {
+    try {
+      MavenElisionReportWriter.render(snapshot).forEach(getLog()::info);
+    } catch (final IllegalArgumentException exception) {
+      throw new MojoFailureException(
+          "Could not display dependency elision report: " + exception.getMessage(), exception);
+    }
   }
 }

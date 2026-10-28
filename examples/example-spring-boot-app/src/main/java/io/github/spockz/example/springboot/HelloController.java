@@ -1,5 +1,5 @@
 /* WHY: Exposes a small HTTP behavior that remains observable when the application is packaged
- * with graphless raw dependency candidates retained.
+ * with graph-backed dependency decisions and intra-JAR trimming.
  */
 
 package io.github.spockz.example.springboot;

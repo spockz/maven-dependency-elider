@@ -43,7 +43,7 @@ public final class AnalyzeMojo extends AbstractMojo {
   @Parameter(property = "elide.productionOutput")
   private File productionOutput;
 
-  /** Structured report path, defaulting to the Maven build directory. */
+  /** Class-usage evidence; default: target/dependency-elider-class-usage.json. */
   @Parameter(
       property = "elide.reportFile",
       defaultValue = "${project.build.directory}/dependency-elider-class-usage.json")

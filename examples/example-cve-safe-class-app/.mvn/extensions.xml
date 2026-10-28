@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WHY: Loads the production graph extension needed to prove safe whole-artifact decisions. -->
+<extensions>
+    <extension>
+        <groupId>io.github.spockz</groupId>
+        <artifactId>dependency-elider-maven-plugin</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </extension>
+</extensions>

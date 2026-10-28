@@ -356,28 +356,60 @@ final class MavenElisionService {
     }
   }
 
+  @SuppressWarnings(
+      "PMD.AvoidCatchingGenericException") // Restore the generation for any report-construction
+  // failure.
   Analysis finishEffectiveOutputs(final EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
     final MavenDependencyTrimmer.TrimResult trimResult =
         MavenDependencyTrimmer.stageEffectiveOutputs(effective);
-    final PreparedAnalysis prepared = effective.prepared();
-    return new Analysis(
-        prepared.resolvedSnapshots(),
-        prepared.directArtifactsPresent(),
-        prepared.directSnapshots(),
-        effective.rawDecision(),
-        effective.effectiveDecision(),
-        prepared.classUsageReport(),
-        prepared.bytecodeScan(),
-        trimResult.records(),
-        trimResult.multiReleasePassthroughArtifacts(),
-        trimResult.moduleInfoPassthroughArtifacts(),
-        trimResult.configuredPassThroughArtifacts(),
-        trimResult.cacheHits(),
-        trimResult.maximumCacheHitNanos(),
-        trimResult.analysisRuns(),
-        effective.graphProjection(),
-        trimResult.generationCommit());
+    try {
+      final PreparedAnalysis prepared = effective.prepared();
+      final MediatedGraphReport mediatedGraph =
+          MediatedGraphReport.create(
+              prepared.graphBinding().pair(),
+              effective.graphEvaluation(),
+              effective.effectiveDecision().elidedArtifacts(),
+              trimResult.records(),
+              prepared.project().getGroupId()
+                  + ":"
+                  + prepared.project().getArtifactId()
+                  + ":"
+                  + prepared.project().getVersion());
+      return new Analysis(
+          prepared.resolvedSnapshots(),
+          prepared.directArtifactsPresent(),
+          prepared.directSnapshots(),
+          effective.rawDecision(),
+          effective.effectiveDecision(),
+          prepared.classUsageReport(),
+          prepared.bytecodeScan(),
+          trimResult.records(),
+          trimResult.multiReleasePassthroughArtifacts(),
+          trimResult.moduleInfoPassthroughArtifacts(),
+          trimResult.configuredPassThroughArtifacts(),
+          trimResult.cacheHits(),
+          trimResult.maximumCacheHitNanos(),
+          trimResult.analysisRuns(),
+          effective.graphProjection(),
+          trimResult.generationCommit(),
+          mediatedGraph);
+    } catch (final IOException | RuntimeException failure) {
+      closeGenerationAfterFailure(trimResult.generationCommit(), failure);
+      throw failure;
+    }
+  }
+
+  private static void closeGenerationAfterFailure(
+      final TrimOutputGenerationCommitHandle generationCommit, final Throwable failure) {
+    if (generationCommit == null) {
+      return;
+    }
+    try {
+      generationCommit.close();
+    } catch (final IOException cleanupFailure) {
+      failure.addSuppressed(cleanupFailure);
+    }
   }
 
   static void verifyPreparedInventory(final PreparedAnalysis prepared) throws IOException {
@@ -1109,7 +1141,8 @@ final class MavenElisionService {
       long maximumTrimCacheHitNanos,
       int trimAnalysisRuns,
       ResolverArtifactGraphProjection graphProjection,
-      TrimOutputGenerationCommitHandle generationCommit) {
+      TrimOutputGenerationCommitHandle generationCommit,
+      MediatedGraphReport mediatedGraph) {
     @SuppressWarnings("PMD.ExcessiveParameterList")
     // Keeps the legacy adapter while the result fields stay named.
     Analysis(
@@ -1142,6 +1175,7 @@ final class MavenElisionService {
           maximumCacheHitNanos,
           trimAnalysisRuns,
           null,
+          null,
           null);
     }
 
@@ -1168,6 +1202,7 @@ final class MavenElisionService {
           0L,
           0,
           null,
+          null,
           null);
     }
 
@@ -1191,6 +1226,7 @@ final class MavenElisionService {
           0,
           0L,
           0,
+          null,
           null,
           null);
     }

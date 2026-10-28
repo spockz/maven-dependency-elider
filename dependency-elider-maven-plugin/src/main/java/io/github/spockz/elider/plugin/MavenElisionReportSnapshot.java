@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** Immutable result snapshot used by the Maven {@code report} goal. */
-@SuppressWarnings({"PMD.CommentDefaultAccessModifier"})
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.ExcessiveParameterList"})
 record MavenElisionReportSnapshot(
     int schemaVersion,
     String projectGroupId,
@@ -28,9 +28,10 @@ record MavenElisionReportSnapshot(
     List<String> rawDroppedCoordinates,
     int programClassesPruned,
     long uncompressedProgramClassBytesPruned,
-    List<TrimmedArtifact> trimmedArtifacts) {
+    List<TrimmedArtifact> trimmedArtifacts,
+    MediatedGraphReport mediatedGraph) {
   /** Current persisted JSON format version. */
-  static final int SCHEMA_VERSION = 2;
+  static final int SCHEMA_VERSION = 3;
 
   MavenElisionReportSnapshot {
     require(schemaVersion == SCHEMA_VERSION, "Unsupported report snapshot schema version");
@@ -47,6 +48,7 @@ record MavenElisionReportSnapshot(
     rawDroppedCoordinates =
         List.copyOf(Objects.requireNonNull(rawDroppedCoordinates, "rawDroppedCoordinates"));
     trimmedArtifacts = List.copyOf(Objects.requireNonNull(trimmedArtifacts, "trimmedArtifacts"));
+    Objects.requireNonNull(mediatedGraph, "mediatedGraph");
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
     require(programClassesPruned >= 0, "programClassesPruned must not be negative");
@@ -64,6 +66,42 @@ record MavenElisionReportSnapshot(
     require(
         uncompressedProgramClassBytesPruned == sumPrunedClassBytes(trimmedArtifacts),
         "Pruned class byte total is inconsistent");
+    MediatedGraphReportCoverageValidator.validateSnapshotOutputs(
+        mediatedGraph,
+        droppedArtifacts,
+        trimmedArtifacts,
+        projectGroupId + ":" + projectArtifactId + ":" + projectVersion);
+  }
+
+  MavenElisionReportSnapshot(
+      final int schemaVersion,
+      final String projectGroupId,
+      final String projectArtifactId,
+      final String projectVersion,
+      final String projectBaseDirectory,
+      final String generatedAt,
+      final int wholeArtifactsDropped,
+      final long originalJarBytesDropped,
+      final List<DroppedArtifact> droppedArtifacts,
+      final List<String> rawDroppedCoordinates,
+      final int programClassesPruned,
+      final long uncompressedProgramClassBytesPruned,
+      final List<TrimmedArtifact> trimmedArtifacts) {
+    this(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        MediatedGraphReport.unavailable("No mediated graph data was provided to this report"));
   }
 
   static MavenElisionReportSnapshot from(
@@ -103,7 +141,11 @@ record MavenElisionReportSnapshot(
             .toList(),
         prunedClasses,
         prunedBytes,
-        trimmed);
+        trimmed,
+        analysis.mediatedGraph() == null
+            ? MediatedGraphReport.unavailable(
+                "Mediated graph data is unavailable for this analysis")
+            : analysis.mediatedGraph());
   }
 
   static DroppedArtifactSummary droppedArtifactSummary(final MavenElisionService.Analysis analysis)

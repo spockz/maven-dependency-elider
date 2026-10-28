@@ -39,9 +39,9 @@ class HelloControllerTest {
         .andExpect(content().json("{\"message\":\"hello\"}"));
   }
 
-  /** Confirms graphless elision retains the raw Commons Codec candidate. */
+  /** Confirms policy retains Codec when no whole-artifact drop is safe. */
   @Test
-  void commonsCodecRemainsAvailableWithoutGraphEvidence() {
+  void commonsCodecRemainsAvailableWithNoEffectiveDrop() {
     assertThat(resource("org/apache/commons/codec/binary/Hex.class")).isNotNull();
   }
 

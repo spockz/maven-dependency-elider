@@ -76,6 +76,12 @@ main() {
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
     -pl dependency-elider-maven-plugin -am install
 
+  run_fixture_maven() {
+    local fixture_dir=$1
+    shift
+    (cd -- "$fixture_dir" && "$maven" "${maven_options[@]}" "$@")
+  }
+
   dependency_classpath="$test_dir/example-support.classpath"
   "$maven" "${maven_options[@]}" -f "$repo_root/dependency-elider-maven-plugin/pom.xml" \
     dependency:build-classpath -DincludeScope=test "-Dmdep.outputFile=$dependency_classpath"
@@ -137,14 +143,14 @@ main() {
       )
     fi
 
-    run_timed "$baseline_seconds" "$maven" "${maven_options[@]}" -f "$pom" clean verify \
+    run_timed "$baseline_seconds" run_fixture_maven "$fixture_dir" -f "$pom" clean verify \
       -Delide.mode=baseline -Delider.verifyElision=false
     test -f "$jar_file"
     if [[ $fixture == example-basic-app ]]; then
       baseline_package_bytes=$(wc -c <"$jar_file")
       original_compress_dir="$test_dir/basic-original"
       mkdir -p -- "$original_compress_dir"
-      "$maven" "${maven_options[@]}" -f "$pom" dependency:copy \
+      run_fixture_maven "$fixture_dir" -f "$pom" dependency:copy \
         -Dartifact=org.apache.commons:commons-compress:1.28.0 \
         "-DoutputDirectory=$original_compress_dir"
     elif [[ $fixture == example-spring-boot-app ]]; then
@@ -179,7 +185,7 @@ main() {
       fi
     fi
 
-    run_timed "$elision_seconds" "$maven" "${maven_options[@]}" -f "$pom" clean verify "${elision_options[@]}"
+    run_timed "$elision_seconds" run_fixture_maven "$fixture_dir" -f "$pom" clean verify "${elision_options[@]}"
 
     if [[ $fixture == example-basic-app || $fixture == example-spring-boot-app ]]; then
       baseline_millis=$(( $(<"$baseline_seconds") / 1000000 ))
@@ -198,7 +204,7 @@ main() {
     fi
 
     report_output="$test_dir/$fixture-elision-report.out"
-    "$maven" "${maven_options[@]}" -f "$pom" \
+    run_fixture_maven "$fixture_dir" -f "$pom" \
       io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report >"$report_output" 2>&1
     printf '\n%s report:\n' "$fixture"
     grep -E '^\[INFO\] (Project:|Snapshot:|Whole artifacts dropped:|Program classes pruned from retained JARs:|  - )' \
@@ -462,6 +468,8 @@ verify_source_root_compiler_visibility() {
   cp -- "$repo_root/examples/pom.xml" "$probe_examples/pom.xml"
   cp -- "$repo_root/examples/example-basic-app/pom.xml" "$probe_fixture/pom.xml"
   cp -a -- "$repo_root/examples/example-basic-app/src" "$probe_fixture/src"
+  mkdir -p "$probe_fixture/.mvn"
+  cp -- "$repo_root/examples/example-basic-app/.mvn/extensions.xml" "$probe_fixture/.mvn/extensions.xml"
   mkdir -p "$probe_fixture/src/main/java/io/github/spockz/example/basic"
   cat >"$probe_fixture/src/main/java/io/github/spockz/example/basic/ElidedCodecReference.java" <<'JAVA'
 /* WHY: Provides a compile-time reference to the dependency removed by the recorded runtime trace. */
@@ -479,9 +487,9 @@ final class ElidedCodecReference {
 }
 JAVA
 
-  "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
+  (cd -- "$probe_fixture" && "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
     -Delide.mode=elision -Delide.traceFiles="$trace" -Delider.verifyElision=false \
-    -Delide.sourceRootsComplete=true -Dmaven.compiler.proc=none \
+    -Delide.sourceRootsComplete=true -Dmaven.compiler.proc=none) \
     >"$active_log" 2>&1
   if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedCodecReference.class ]]; then
     echo "Compiler did not produce the source-root probe class when elision was enabled" >&2
@@ -489,8 +497,8 @@ JAVA
     exit 1
   fi
 
-  "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
-    -Delide.mode=baseline -Delide.traceFiles="$trace" -Delider.verifyElision=false \
+  (cd -- "$probe_fixture" && "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
+    -Delide.mode=baseline -Delide.traceFiles="$trace" -Delider.verifyElision=false) \
     >"$skipped_log" 2>&1
   if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedCodecReference.class ]]; then
     echo "Compiler did not produce the probe class when elision was skipped" >&2
@@ -550,14 +558,23 @@ verify_archive() {
   local fixture=$1
   local entries=$2
   local fixture_dir=$3
-  verify_no_whole_artifact_drops "$fixture_dir"
+  case $fixture in
+    example-basic-app) verify_effective_graph_report "$fixture_dir" 1 ;;
+    example-spring-boot-app) verify_effective_graph_report "$fixture_dir" 0 ;;
+    example-cve-unused-app|example-cve-safe-class-app)
+      verify_effective_graph_report "$fixture_dir" 0
+      verify_no_cve_whole_artifact_drops "$fixture_dir"
+      ;;
+    *) verify_effective_graph_report "$fixture_dir" ;;
+  esac
   case $fixture in
     example-basic-app)
-      has_entry "$entries" 'org/apache/commons/codec/binary/Hex.class'
+      lacks_entry "$entries" 'org/apache/commons/codec/binary/Hex.class'
       has_entry "$entries" 'org/apache/commons/compress/archivers/zip/ZipArchiveEntry.class'
       lacks_entry "$entries" 'org/apache/commons/compress/archivers/tar/TarArchiveEntry.class'
       ;;
     example-spring-boot-app)
+      verify_no_spring_whole_artifact_drops "$fixture_dir"
       has_pattern "$entries" 'BOOT-INF/lib/spring-webmvc-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/snakeyaml-[^/]+\.jar'
@@ -581,18 +598,61 @@ verify_archive() {
   esac
 }
 
-verify_no_whole_artifact_drops() {
+verify_effective_graph_report() {
   local fixture_dir=$1
+  local expected_drops=${2:-}
   local report="$fixture_dir/target/dependency-elider-report.json"
   test -f "$report"
-  grep -Fq -- '"wholeArtifactsDropped" : 0' "$report" || {
-    echo "The example run without the core graph extension must retain whole-artifact candidates: $report" >&2
-    exit 1
-  }
-  grep -Fq -- '"droppedArtifacts" : [ ]' "$report" || {
-    echo "The effective report must list no whole-artifact removals: $report" >&2
-    exit 1
-  }
+  python3 - "$report" "$expected_drops" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as report_file:
+    report = json.load(report_file)
+graph = report["mediatedGraph"]
+if graph["available"] is not True:
+    raise SystemExit("Example did not capture the configured core-extension graph")
+drops = report["droppedArtifacts"]
+drop_paths = [path for path in graph["artifactPaths"] if path["kind"] == "WHOLE_ARTIFACT_DROPPED"]
+if len(drop_paths) != len(drops) or report["wholeArtifactsDropped"] != len(drops):
+    raise SystemExit("Effective whole-artifact drops lack occurrence-specific graph paths")
+if sys.argv[2] and len(drops) != int(sys.argv[2]):
+    raise SystemExit(f"Expected {sys.argv[2]} effective whole-artifact drops, found {len(drops)}")
+trim_paths = [path for path in graph["artifactPaths"] if path["kind"] == "CLASS_TRIMMED"]
+if len(trim_paths) != len(report["trimmedArtifacts"]):
+    raise SystemExit("Trimmed artifacts lack occurrence-specific graph paths")
+statuses = {item["nodeId"]: item["disposition"] for item in graph["nodeStatuses"]}
+if any(statuses.get(path["nodeId"]) != "SAFE_ELIDED" for path in drop_paths):
+    raise SystemExit("Effective graph drop path is not marked SAFE_ELIDED")
+PY
+}
+
+verify_no_spring_whole_artifact_drops() {
+  local report="$1/target/dependency-elider-report.json"
+  python3 - "$report" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as report_file:
+    report = json.load(report_file)
+if report["rawDroppedCoordinates"] or report["droppedArtifacts"]:
+    raise SystemExit("Spring fixture expects no raw or effective whole-artifact drops")
+PY
+}
+
+verify_no_cve_whole_artifact_drops() {
+  local report="$1/target/dependency-elider-report.json"
+  python3 - "$report" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as report_file:
+    report = json.load(report_file)
+if report["rawDroppedCoordinates"] or report["droppedArtifacts"]:
+    raise SystemExit("CVE fixture expects the graph-backed analysis to retain all whole artifacts")
+if report["mediatedGraph"]["artifactPaths"]:
+    raise SystemExit("CVE fixture without class trimming must not invent artifact paths")
+PY
 }
 
 verify_basic_trimmed_artifacts() {
@@ -656,18 +716,25 @@ verify_basic_shade_input_paths() {
     echo "The same-session MavenProject classpath before Shade does not contain trimmed Compress: $observed" >&2
     exit 1
   }
-  grep -Fq -- '"wholeArtifactsDropped" : 0' "$report" || {
-    echo "The effective report must show zero whole-artifact drops without a graph extension: $report" >&2
-    exit 1
-  }
+  verify_effective_graph_report "$fixture_dir"
+  python3 - "$report" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as report_file:
+    report = json.load(report_file)
+expected = "commons-codec:commons-codec:jar:1.19.0 (compile)"
+if [artifact["coordinate"] for artifact in report["droppedArtifacts"]] != [expected]:
+    raise SystemExit("Basic graph report must contain exactly the safe Commons Codec drop")
+PY
   grep -Fq -- 'commons-codec:commons-codec:jar:1.19.0 (compile)' "$report" || {
-    echo "The report must preserve the raw Commons Codec candidate for comparison: $report" >&2
+    echo "The report must record the raw Commons Codec candidate for comparison: $report" >&2
     exit 1
   }
-  grep -Fq -- '/commons-codec/commons-codec/' "$observed" || {
-    echo "The no-extension Maven classpath should retain raw Commons Codec: $observed" >&2
+  if grep -Fq -- '/commons-codec/commons-codec/' "$observed"; then
+    echo "The same-session Maven classpath still contains effectively dropped Commons Codec: $observed" >&2
     exit 1
-  }
+  fi
 }
 
 verify_runtime() {

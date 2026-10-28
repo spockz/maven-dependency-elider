@@ -73,7 +73,7 @@ public final class ElideMojo extends AbstractMojo {
   @Parameter(property = "elide.productionOutput")
   private File productionOutput;
 
-  /** Structured report path, defaulting to the Maven build directory. */
+  /** Class-usage evidence; default: target/dependency-elider-class-usage.json. */
   @Parameter(
       property = "elide.reportFile",
       defaultValue = "${project.build.directory}/dependency-elider-class-usage.json")
@@ -85,7 +85,10 @@ public final class ElideMojo extends AbstractMojo {
       defaultValue = "${project.build.directory}/dependency-elider-sbom.cdx.json")
   private File sbomFile;
 
-  /** Persisted totals consumed by the separate Maven {@code report} goal. */
+  /**
+   * Persisted elision snapshot for {@code report}, defaulting to
+   * target/dependency-elider-report.json.
+   */
   @Parameter(
       property = "elide.summaryFile",
       defaultValue = "${project.build.directory}/dependency-elider-report.json")

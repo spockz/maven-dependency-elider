@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import java.io.File;
@@ -72,12 +73,27 @@ final class MavenElisionReportWriter {
               + absolute
               + "; run a Maven lifecycle build with dependency elision enabled first");
     }
+    final JsonNode payload = JSON.readTree(absolute.toFile());
+    validateSchemaVersion(payload);
     final MavenElisionReportSnapshot snapshot =
-        JSON.readValue(absolute.toFile(), MavenElisionReportSnapshot.class);
+        JSON.treeToValue(payload, MavenElisionReportSnapshot.class);
     if (snapshot == null) {
       throw new IOException("Elision report snapshot is empty: " + absolute);
     }
     return snapshot;
+  }
+
+  private static void validateSchemaVersion(final JsonNode payload) throws IOException {
+    final JsonNode version = payload == null ? null : payload.get("schemaVersion");
+    if (version == null
+        || !version.isInt()
+        || version.intValue() != MavenElisionReportSnapshot.SCHEMA_VERSION) {
+      final String actual = version == null ? "missing" : version.asText();
+      throw new IOException(
+          "Unsupported elision report schema version "
+              + actual
+              + "; run dependency-elider:elide to write a current report before using this goal");
+    }
   }
 
   static List<String> render(final MavenElisionReportSnapshot snapshot) {
@@ -112,6 +128,8 @@ final class MavenElisionReportWriter {
               + " classes, "
               + formatBytes(artifact.uncompressedProgramClassBytesPruned()));
     }
+    lines.addAll(
+        MediatedGraphReportRenderer.render(snapshot.mediatedGraph(), snapshot.projectGav()));
     return List.copyOf(lines);
   }
 

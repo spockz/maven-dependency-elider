@@ -87,6 +87,8 @@ Before publication commits, a failed goal restores the prior report and output g
 
 For complete configuration options and multi-source telemetry merging, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md), the [User FAQ](docs/faq.md), and the [Contributor Decision Register and Engineering FAQ](docs/contributor-decisions-and-faq.md).
 
+The `elide` goal writes two different JSON files because they contain different records: `elide.reportFile` defaults to `target/dependency-elider-class-usage.json` for class-usage analysis evidence, while `elide.summaryFile` defaults to `target/dependency-elider-report.json` for the persisted elision snapshot read by `dependency-elider:report`. The top-level elision report uses schema version 3; older report schema versions are rejected with rerun guidance because graph paths and dispositions cannot be reconstructed. These document schema numbers are independent of the plugin version and of the graph-capture and resolver-plan store schemas.
+
 ## Vulnerability findings and code evidence
 
 Software Composition Analysis (SCA) suffers from a severe **four-tier granularity mismatch**:
@@ -210,10 +212,10 @@ The repository includes end-to-end integration fixtures under `examples/`:
 
 | Fixture | Architecture | Target Demonstration |
 | :--- | :--- | :--- |
-| **`example-basic-app`** | Plain Java + Shade | Keeps whole-artifact candidates when graph evidence is unavailable, trims Commons Compress classes, and packages the committed trimmed generation. |
-| **`example-spring-boot-app`** | Spring Boot 3 Web | Keeps whole-artifact candidates without graph evidence, trims supported retained JARs, preserves mail JAR bytes, and tests the HTTP endpoint. |
-| **`example-cve-unused-app`** | Standalone CVE test | Reports raw whole-artifact candidates and verifies fail-closed retention when graph evidence is unavailable. |
-| **`example-cve-safe-class-app`** | Standalone CVE test | Verifies runtime behavior and fail-closed whole-artifact retention without graph evidence. |
+| **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec`; produces a shrunken shaded JAR. |
+| **`example-spring-boot-app`** | Spring Boot 3 Web | Captures the graph, retains whole-artifact candidates when no safe drop is available, trims Spring MVC under `BOOT-INF/lib`, preserves mail JAR bytes, and tests the HTTP endpoint. |
+| **`example-cve-unused-app`** | Standalone CVE test | Captures the graph and currently records no raw or effective whole-artifact drops; package inventory can still be scanned separately. |
+| **`example-cve-safe-class-app`** | Standalone CVE test | Captures the graph and currently records no raw or effective whole-artifact drops while preserving Logback/Spring behavior. |
 
 Run the full end-to-end verification suite across all fixtures:
 
@@ -221,37 +223,45 @@ Run the full end-to-end verification suite across all fixtures:
 make test-examples
 ```
 
-The example script does not load the production core extension, so its reports and archive checks exercise fail-closed whole-artifact retention while still covering supported class trimming. Consumers must load the core extension through `.mvn/extensions.xml` to enable whole-artifact removal from a validated resolver graph. The script uses the Maven Wrapper, a JDK 21 toolchain, Bash, and `timeout`; temporary traces, logs, and verification staging stay under `.scratch/`. It does not run OSV-Scanner or generate VEX. The Spring fixture checks trimmed `spring-webmvc` bytes and class entries and verifies the packaged HTTP endpoint; its runtime-only mail classification is evidence, not an explanation of why Spring loaded those classes.
+Each example project has a `.mvn/extensions.xml` entry for the installed production `dependency-elider-maven-plugin`; the script runs Maven from each fixture directory so Maven loads that core extension. Checks validate graph-backed outcomes, including zero-drop dispositions when no raw candidate is produced. Basic is the positive graph-removal case for Commons Codec. The example script uses the Maven Wrapper, a JDK 21 toolchain, Bash, and `timeout`. It places temporary traces, logs, and verification staging under the repository `.scratch/` directory. It does not run OSV-Scanner or generate VEX. The Spring fixture checks trimmed `spring-webmvc` bytes and class entries and verifies the packaged HTTP endpoint; its runtime-only mail classification is evidence, not an explanation of why Spring loaded those classes.
 
 ### Sample elision report output
 
-`make test-examples` invokes `dependency-elider:report` after each successful elision build. The report counts whole artifacts removed using original on-disk JAR sizes and classes removed using uncompressed `.class` entry sizes; class metrics exclude module descriptors and archive sanitation metadata. These representative summaries came from one captured run; timestamps vary between runs:
+`make test-examples` invokes `dependency-elider:report` after each successful elision build. The report counts whole artifacts removed using original on-disk JAR sizes and classes removed using uncompressed `.class` entry sizes; class metrics exclude module descriptors and archive sanitation metadata. These summaries and graph rows came from the final schema-v3 run on 2026-10-28; timestamps vary between runs:
 
 ```text
 example-basic-app
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-26T16:35:10.573567220Z
+[INFO] Snapshot: last successful elide run at 2026-10-28T08:09:49.307297018Z
 [INFO] Whole artifacts dropped: 1 (original JAR file bytes: 365.93 KiB)
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> commons-codec:commons-codec:jar:1.19.0 (compile) {nodeId=n1} [EFFECTIVE_DROP]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
 
 example-spring-boot-app
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-26T16:35:47.614372810Z
-[INFO] Whole artifacts dropped: 2 (original JAR file bytes: 683.41 KiB)
+[INFO] Snapshot: last successful elide run at 2026-10-28T08:10:28.457911311Z
+[INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes pruned from retained JARs: 3374 (uncompressed omitted .class payload bytes: 8.38 MiB; excludes module descriptors and archive metadata)
+[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
+[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework.boot:spring-boot-starter-web:jar:3.3.5 (compile) {nodeId=n1} [RETAINED]
+[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.1.14 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
 
 example-cve-unused-app
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-26T16:36:05.417027340Z
-[INFO] Whole artifacts dropped: 13 (original JAR file bytes: 6.89 MiB)
+[INFO] Snapshot: last successful elide run at 2026-10-28T08:10:52.061609794Z
+[INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
 
 example-cve-safe-class-app
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-26T16:36:11.688187181Z
-[INFO] Whole artifacts dropped: 5 (original JAR file bytes: 1.50 MiB)
+[INFO] Snapshot: last successful elide run at 2026-10-28T08:11:04.233159324Z
+[INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload bytes: 0 B; excludes module descriptors and archive metadata)
 ```
+
+The report goal reads this persisted schema-v3 snapshot and fails if its mediated TEST graph is unavailable. It does not resolve a new graph or call `maven-dependency-plugin:tree`.
 
 Example POMs use `-Delide.mode=baseline` or `-Delide.mode=elision` to select the named baseline and elision behaviors. The plugin's internal skip parameter remains `elide.skip`; the mode property activates the example's Maven profile.
 

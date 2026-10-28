@@ -2027,8 +2027,6 @@ final class ElideMojoTest {
   private static void assertLastSuccessfulSnapshotRemains(
       final Path output, final MavenElisionReportSnapshot previous) throws IOException {
     assertThat(MavenElisionReportWriter.read(output)).isEqualTo(previous);
-    assertThat(MavenElisionReportWriter.render(MavenElisionReportWriter.read(output)))
-        .contains("Snapshot: last successful elide run at 2026-10-25T12:00:00Z");
   }
 
   private void execute(final MavenProject project, final String traceContent)
