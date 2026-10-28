@@ -3,7 +3,7 @@
 * **Work package**: WP-RESOLVE-01, Maven lifecycle and dependency graph consistency.
 * **Owning session**: Primary coordinating session.
 * **Source**: `docs/handovers/2026-10-27-wp-resolve-01-maven-lifecycle-and-graph-consistency.md`.
-* **Base**: `main` at `10d8b9797a270ded3bd044db58cf804d13626786`.
+* **Base**: `main` at `6b95cda9e8d5192fccde2e8263dc86d88933e845`.
 * **Initial baseline**: clean; `JAVA_HOME=$PWD/.scratch/toolchains/graalvm-jdk-21.0.12+7.1 make check` passed (149 core, 82 plugin tests; static analysis and Markdown lint clean).
 * **Scope**: measure Maven resolver paths and implement graph-bound whole-artifact elision, effective-output trimming, transactional reporting, and a retained-JAR session plan within the tested single-project Maven 3.9.11 boundary.
 * **Architectural constraints**: direct artifact membership and the POM remain unchanged; only exact effective resolved-view removals are published; session payloads use JDK structures; the later TEST evidence is a distinct direct resolver call, not a second lifecycle request. No general `dependency:tree` consistency claim is made.
@@ -14,7 +14,17 @@
 
 | Track | State | Worktree / branch | Slices |
 | :--- | :--- | :--- | :--- |
-| Maven resolver integration | IMPLEMENTED, REVIEWED, VERIFIED; AWAITING INTEGRATION SIGN-OFF | `.scratch/worktrees/track-maven-resolver` / `track/maven-resolver` | 3.2d `b2137fa8ac3bbcae041fc33bb433d25ceab0cf51`, 3.3/3.4 `6b53bebdc37bd4cd4bbb08343592c3b333c4f734`, and report-metric follow-up `4d3d411ab6f30f4c222b2b1d2628a41a345c6801`. Focused 54/54; `make check` 149 core + 223 plugin; all four production-extension fixtures pass. Review approved. No merge or teardown. General `dependency:tree` behavior remains explicitly unclaimed. |
+| Maven resolver integration | IMPLEMENTED, REVIEWED, VERIFIED; PENDING FAST-FORWARD | `.scratch/worktrees/track-maven-resolver` / `track/maven-resolver` | All implementation slices and report-metric follow-up are committed. Final combined-tree `make check` passes with 149 core, 242 plugin, and 15 lifecycle tests; all four production-extension fixtures passed. Review approved. Direct `dependency:tree` behavior remains unclaimed. |
+
+## WP-VEX-01 Track Ledger
+
+| Track | State | Scope |
+| :--- | :--- | :--- |
+| Track 1: Baseline SBOM Generation & Inventory Model | READY FOR IMPLEMENTATION | Pre-elision baseline SBOM capture alongside post-elision SBOM. |
+| Track 2: CVE-to-Symbol Evidence Ingestion Model | READY FOR IMPLEMENTATION | Auto-refreshing OS cache, POM overrides, and omitted-code proof engine. |
+| Track 3: Decoupled OSV SBOM Comparison Gate | READY FOR IMPLEMENTATION | CI script and Makefile target comparing pre/post elision inventories. |
+| Track 4: Evidence-Gated CycloneDX & OpenVEX Generation | READY FOR IMPLEMENTATION | Dual VEX emission and downstream packaging integration. |
+| Track 5: Reference CVE Fixtures & End-to-End Gates | READY FOR IMPLEMENTATION | End-to-end verification against reference CVE fixtures. |
 
 ## Specification Deviations and Architectural Choices
 
@@ -24,11 +34,11 @@
 
 ## Track 3.3/3.4 Closeout
 
-* `MavenElisionReportSnapshot` schema 4 is the top-level persisted elision report read by `dependency-elider:report`. Schema 3 and other unsupported report schemas are rejected; no migration or backward compatibility is supported. Separate formats are graph-capture session store schema 3, resolver-plan session store schema 2, class-usage report schema 1, and effective-output cache schema 13. These are not plugin release versions.
+* Persisted formats are independently versioned and currently use schema version 1. These are not plugin release versions. Incompatible payloads are rejected; no migration or backward compatibility is supported before a format has been released.
 * `elide.reportFile` writes class-usage evidence; `elide.summaryFile` writes the persisted elision snapshot. The files remain separate because they contain different data for different consumers.
 * Final review approved saved-only graph rendering, occurrence paths, output consistency, root handling, and schema rejection. Gemini review bridge was unavailable in the tool catalog; the required fail-open notice is in `.scratch/reviews/maven-resolver-slices-3.3-3.4.md`.
 * Final report-metric focused run passed 54/54. `make check` passed with 149 core and 223 plugin tests; Checkstyle, PMD, SpotBugs, formatting, and Markdown lint passed (35 files, 0 issues). `make test-examples` passed all four fixtures with the production core extension enabled in each project's `.mvn/extensions.xml`. Basic reports 115 dropped-JAR class entries / 413.65 KiB and separately 535 retained-JAR classes / 1.93 MiB. Full receipts and hashes are in the handover and `.scratch/handover-closeout.md`.
-* Final implementation is committed on `track/maven-resolver`; branch integration into `main` and worktree teardown await user sign-off.
+* Final implementation is committed on `track/maven-resolver`; the rebased branch is ready for fast-forward after the final verification gate. Worktree teardown follows successful integration.
 
 ## Track 3.2d Review Receipt and Final Gates
 
@@ -36,7 +46,7 @@
 * The post-elide fixture performs a distinct direct `ProjectDependenciesResolver.resolve` call with a TEST filter and the same project/session. It records the resolver result list paths and digests separately from EventSpy lifecycle requests. With the production extension, graph root→keep and trimmed keep bytes are returned; without it, root→drop+keep and original bytes remain. This is not a second Maven lifecycle request and does not establish `dependency:tree` behavior.
 * Focused projection tests cover repeated equal-coordinate occurrences, shared topology, conflict-winner remapping, and source/projected mismatch without changing child-list references. Injected output/report/view/plan failures verify synchronous rollback of prior generation, reports, views/file pointers, and session plan. Process crashes and concurrent goal writers are outside the transaction guarantee.
 * `make lint-java` passes with Checkstyle, PMD, and SpotBugs clean. `make test-plugin` and `make check` each pass 149 core and 198 plugin tests; Markdown lint covers 35 files with 0 issues. Final `make check`: `/tmp/wp-resolve-3.2d-make-check-final2.log`, SHA-256 `7ef1be42b99b76a546a1a042aa9742ccba1fcf1f770560179fed3cc25f328fd3`; identical copy at `dependency-elider-maven-plugin/target/wp-resolve-3.2d-make-check-final2.log`.
-* `make test-examples` passes all four fixtures (Basic, Spring Boot, CVE unused, CVE safe-class); core 149/149 and plugin 198/198. Graphless examples intentionally expect zero whole-artifact removals; the packaged extension fixture is the positive graph-removal proof. Final log: `/tmp/wp-resolve-3.2d-test-examples-final6.log`, SHA-256 `21385ca8bbaeb896d8395aac7062b3944a74ab9db05be504c53d838fc481f0d2`; identical copy at `dependency-elider-maven-plugin/target/wp-resolve-3.2d-test-examples-final6.log`.
+* `make test-examples` passes all four fixtures (Basic, Spring Boot, CVE unused, CVE safe-class) with the production extension configured in each project. Basic is the positive graph-removal case; all four exercise graph-backed reporting. Core 149/149 and plugin 198/198. Final log: `/tmp/wp-resolve-3.2d-test-examples-final6.log`, SHA-256 `21385ca8bbaeb896d8395aac7062b3944a74ab9db05be504c53d838fc481f0d2`; identical copy at `dependency-elider-maven-plugin/target/wp-resolve-3.2d-test-examples-final6.log`.
 
 ## Track 2.1 Production Plan Implementation
 
