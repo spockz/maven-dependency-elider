@@ -10,7 +10,9 @@ Abbreviations: Architecture Decision Record (ADR), Abstract Syntax Tree (AST), B
 
 This document provides the complete engineering handover for a Luna agent to implement the runtime telemetry-driven dependency elision engine, the Maven 3.x/4.x plugin, and the empirical test harness for `maven-dependency-elider`.
 
-Implementation snapshot (2026-10-25): the whole-artifact elision, evidence-reporting, and four-example lifecycle follow-ups are integrated. The original plan remains partially complete: Maven cache/provenance integration and Maven 4 verification remain pending, and intra-JAR trimming is deferred. The [session closeout](../handovers/2026-10-25-session-closeout.md) records verified behavior, test evidence, and the next session's priorities; specification sketches below are not declarations that every feature is implemented.
+Implementation snapshot (2026-10-25): the whole-artifact elision, evidence-reporting, and four-example lifecycle follow-ups are integrated. The original plan remains partially complete: Maven cache/provenance integration and Maven 4 verification remain pending. The [session closeout](../handovers/2026-10-25-session-closeout.md) records verified behavior, test evidence, and the next session's priorities; specification sketches below are not declarations that every feature is implemented.
+
+Current report metric contract (2026-10-28): the persisted elision snapshot is schema v4. It reports whole-JAR drops with artifact count, original on-disk JAR bytes, program `.class` entry count, and uncompressed class-entry payload bytes. Retained-JAR class trimming has its own class and payload-byte totals; classes in whole-dropped JARs are never included in retained-JAR trim totals. Both class metrics exclude root/versioned `module-info.class` entries and archive metadata. Schema v3 and other unsupported report versions require rerunning `elide`; no migration is provided. `elide.reportFile` remains class-usage evidence, while `elide.summaryFile` is the elision snapshot consumed by `dependency-elider:report`. The current schema, rendering, and verification receipt is maintained in [RQ-0006](RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md#215-effective-output-and-resolver-projection-slices-32c32d).
 
 ---
 
@@ -270,7 +272,7 @@ Later slices may add:
      ```
 
    * Emit only provenance artifacts supported by the available product, resolved-inventory, digest, slicing, and vulnerability evidence; report omitted unsupported formats explicitly.
-   * Print a concise Maven build summary after every elision run, including cache hits. Report whole-artifact elisions as `elided / input dependency artifacts` and a percentage. Report surgical removals separately: classes removed / classes considered and bytecode symbols (methods and fields) removed / symbols considered, each with a percentage. Whole-artifact removals must not be double-counted in the surgical denominators. When slicing is not run, report surgical counts as zero and mark the stage as not run; never present a missing denominator as 0%.
+   * Print a concise Maven build summary after every elision run, including cache hits. Report whole-artifact elisions as `elided / input dependency artifacts` and a percentage. For dropped JARs, separately report their artifact count, original on-disk bytes, number of program `.class` entries, and uncompressed class-entry payload bytes. For retained-JAR trimming, report program classes removed and uncompressed omitted `.class` entry payload bytes using only retained JARs; exclude whole-dropped JARs from both trim totals and any trim denominator. Do not combine the drop and trim class totals. Both categories exclude root/versioned `module-info.class` and archive sanitation metadata. Report bytecode symbols (methods and fields) removed / symbols considered, each with a percentage, only when that stage runs. When retained-JAR trimming is not run, report its counts as zero and mark that stage as not run; never present a missing denominator as 0%.
 
 ---
 
@@ -404,7 +406,7 @@ Before declaring implementation complete:
 * [ ] **Basic App Verification**: `commons-codec` is physically pruned from `example-basic-app` shaded JAR while Jackson-based execution continues to succeed.
 * [ ] **Spring Boot Verification**: Unobserved Commons Codec is omitted from `BOOT-INF/lib`; runtime-observed mail classes without direct application references are classified in the report, and the exact mail runtime JAR bytes remain in `BOOT-INF/lib` while the web endpoint passes.
 * [ ] **Provenance Output**: CycloneDX 1.6 inventory matches the applied retained-artifact set and validates against the pinned schema. Audit POM, OpenVEX, and Dependency-Check suppressions are emitted only when their required resolved-graph, product, vulnerability, digest, and slicing evidence is supplied.
-* [ ] **Elision Summary**: Each run prints absolute counts and percentages for whole artifacts elided and, when slicing runs, classes and bytecode symbols removed; denominators are explicit and exclude whole-artifact removals from surgical metrics.
+* [ ] **Elision Summary**: Each run reports whole-dropped JAR classes/payload separately from retained-JAR trimmed classes/payload. Dropped-artifact classes never enter retained-JAR trim totals or denominators; module descriptors and archive metadata are excluded.
 * [ ] **Documentation & Indexing**: ADR and RQ registers updated with completed checkpoints.
 
 ## 6. Design Follow-Ups and Unresolved Boundaries

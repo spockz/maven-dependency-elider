@@ -192,10 +192,10 @@ The repository includes end-to-end integration fixtures under `examples/`:
 
 | Fixture | Architecture | Target Demonstration |
 | :--- | :--- | :--- |
-| **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec`; produces a shrunken shaded JAR. |
-| **`example-spring-boot-app`** | Spring Boot 3 Web | Removes unused Commons Codec and SnakeYAML, trims Spring MVC under `BOOT-INF/lib`, preserves mail JAR bytes, and tests the HTTP endpoint. |
-| **`example-cve-unused-app`** | Standalone CVE test | Removes its unused Logback and Janino tree; package inventory can then be scanned separately. |
-| **`example-cve-safe-class-app`** | Standalone CVE test | Retains Logback while removing Janino; demonstrates that a package-version finding may remain after one exploit prerequisite is removed. |
+| **`example-basic-app`** | Plain Java + Shade | Keeps whole-artifact candidates when graph evidence is unavailable, trims Commons Compress classes, and packages the committed trimmed generation. |
+| **`example-spring-boot-app`** | Spring Boot 3 Web | Keeps whole-artifact candidates without graph evidence, trims supported retained JARs, preserves mail JAR bytes, and tests the HTTP endpoint. |
+| **`example-cve-unused-app`** | Standalone CVE test | Reports raw whole-artifact candidates and verifies fail-closed retention when graph evidence is unavailable. |
+| **`example-cve-safe-class-app`** | Standalone CVE test | Verifies runtime behavior and fail-closed whole-artifact retention without graph evidence. |
 
 Run the full end-to-end verification suite across all fixtures:
 
@@ -203,7 +203,7 @@ Run the full end-to-end verification suite across all fixtures:
 make test-examples
 ```
 
-The example script uses the Maven Wrapper, a JDK 21 toolchain, Bash, and `timeout`. It places temporary traces, logs, and verification staging under the repository `.scratch/` directory. It does not run OSV-Scanner or generate VEX. The Spring fixture checks trimmed `spring-webmvc` bytes and class entries and verifies the packaged HTTP endpoint; its runtime-only mail classification is evidence, not an explanation of why Spring loaded those classes.
+The example script does not load the production core extension, so its reports and archive checks exercise fail-closed whole-artifact retention while still covering supported class trimming. Consumers must load the core extension through `.mvn/extensions.xml` to enable whole-artifact removal from a validated resolver graph. The script uses the Maven Wrapper, a JDK 21 toolchain, Bash, and `timeout`; temporary traces, logs, and verification staging stay under `.scratch/`. It does not run OSV-Scanner or generate VEX. The Spring fixture checks trimmed `spring-webmvc` bytes and class entries and verifies the packaged HTTP endpoint; its runtime-only mail classification is evidence, not an explanation of why Spring loaded those classes.
 
 ### Sample elision report output
 
