@@ -119,7 +119,7 @@ The graph below records the original proposal. Tracks 2–5 are now gated by the
   * The binding regression represents retained Maven `test-jar` (`tests` classifier, resolver extension `jar`) as the parent of raw-dropped `drop-library`; because the current analyzer scans only Maven type `jar`, pair matching fails closed and returns zero effective removals.
 * **Slice 3.2c: Output-Producing Trim Integration**
   * Refactor final output production so exactly one trim consumes the effective per-artifact roots/pass-throughs. Verify cold and cache-hit outputs, digest changes, and that no legacy raw-decision path can publish stale outputs. Keep staging/rollback semantics explicit.
-* **Slice 3.2c: Resolver Views and Later-Resolution Proof**
+* **Slice 3.2d: Resolver Views and Later-Resolution Proof**
   * Apply only exact safe graph removals in the transformed graph after validating the predicted projection against a later TEST-resolution graph. Keep transitive direct artifact views unchanged; evaluate direct-leaf changes in a separate gate only after mediation invariance is proven.
   * Stage reports and replacement outputs before publication; document best-effort rollback limits for process crashes/concurrent executions.
 * **Slice 3.3: Path-Aware Elision Report Extension**
