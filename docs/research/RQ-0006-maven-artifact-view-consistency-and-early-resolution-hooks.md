@@ -169,6 +169,16 @@ The follow-up also treats any explicit null-child edge in either pre- or post-me
 
 This is pure policy only. It does not prune graph nodes, mutate project artifact views, publish plans, write reports, establish TEST/path binding, compute bytecode pass-through closure, or prove `dependency:tree` consistency. Direct declarations remain unchanged. Do not treat the result as production filtering until the actual Mojo inventory/context is bound and subsequent resolution/tree behavior is tested.
 
+### 2.14 Analysis-only effective closure (Slice 3.2b)
+
+`MavenElisionService.prepare` now records a stable resolved-artifact inventory fingerprint before scanning and checks it after scanning and graph binding. It binds only a unique plan-absent graph pair whose post-graph GAVCE/scope inventory matches the complete Maven inventory and requires an explicit TEST-resolution context. Missing, ambiguous, unsupported, or changed inputs fail closed. Maven artifact types that map to the `jar` resolver extension but are not scanned as plain `jar` (covered by a retained `test-jar` ancestor of a raw-dropped JAR) produce zero effective drops.
+
+`finishAnalysis` computes an in-memory fixed point between strict bytecode roots and graph ancestor promotion. Unchanged retained JARs, configured pass-through JARs, and dynamically rooted artifacts contribute roots against the full scanned inventory. Newly reached raw-dropped JARs are analyzed as program inputs, and repeated GAVCE occurrences can promote additional ancestors before the next iteration. The final in-memory `TrimAnalysis` is checked against the resulting per-artifact roots. It does not write trimmed JARs or cache manifests, and it does not mutate the Maven project, repository session, reports, artifact views, or resolver graph. The existing output-producing `finish(prepared)` still uses the original raw decision and writes outputs; it is not wired to consume discovered roots. `finishAnalysis` is therefore advisory evidence, not proof that produced artifacts or later dependency trees reflect this closure.
+
+Focused tests passed 38/38, including A→raw-dropped B→C, raw-retained B method→C, graph re-closure of B's distinct ancestor, dynamic-root promotion with `trimJars=false`, changed-input rejection, unsupported Maven `test-jar` fail-closed behavior, and no/ambiguous/incompatible graph-pair cases. Log: `/tmp/wp-resolve-3.2b-focused.log` and `dependency-elider-maven-plugin/target/wp-resolve-3.2b-focused.log` (SHA-256 `fe686f4270a83bda927256e61f7809230fa6689bd2f9855f2f411b69793d81a7`). Full `make check` passed with 149 core and 159 plugin tests, PMD/Checkstyle/SpotBugs clean, and Markdown lint reporting 0 issues. Log: `/tmp/wp-resolve-3.2b-make-check.log` and `dependency-elider-maven-plugin/target/wp-resolve-3.2b-make-check.log` (SHA-256 `befd00378e66056cd0532221dd4125fd834e7147e7f3ba7f2413a526fef87776`).
+
+The next gate must connect the effective root map to the actual output-producing trim path, including cold and cache-hit results. It must keep staged output/report publication separate, validate the graph projection through later TEST resolution and `dependency:tree`, and establish direct-view safety independently. No claim of whole-artifact or dependency-tree consistency follows from this analysis-only slice.
+
 ---
 
 ## 3. Integration Options

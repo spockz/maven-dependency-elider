@@ -140,6 +140,24 @@ final class MavenDependencyTrimmer {
       List<String> explicitPassThroughCoordinates,
       boolean failOnUnsupportedModuleInfo) {}
 
+  record ArtifactRootKey(ArtifactCoordinate coordinate, Path path, String sha256) {
+    ArtifactRootKey {
+      path = path.toAbsolutePath().normalize();
+    }
+  }
+
+  record InMemoryAnalysis(
+      Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> candidateAnalyses,
+      Map<ArtifactCoordinate, Set<String>> candidateRoots,
+      Set<ArtifactCoordinate> reachableArtifacts,
+      int analysisRuns) {
+    InMemoryAnalysis {
+      candidateAnalyses = Map.copyOf(candidateAnalyses);
+      candidateRoots = immutableSetMap(candidateRoots);
+      reachableArtifacts = Set.copyOf(reachableArtifacts);
+    }
+  }
+
   private MavenDependencyTrimmer() {}
 
   static TrimResult trim(final TrimRequest request) throws IOException, MojoFailureException {
@@ -159,10 +177,307 @@ final class MavenDependencyTrimmer {
     final int runtimeRelease = Runtime.version().feature();
     final JdkPlatformContext platformContext =
         MavenPlatformContextHolder.forOperation(session, javaHome);
-    return trim(request, release, runtimeRelease, platformContext);
+    return trimPrepared(request, release, runtimeRelease, platformContext);
   }
 
-  private static TrimResult trim(
+  static InMemoryAnalysis analyzeInMemory(
+      final TrimRequest request,
+      final Map<ArtifactRootKey, Set<String>> discoveredRoots,
+      final Set<ArtifactCoordinate> forcedUnchanged)
+      throws IOException, MojoFailureException {
+    final List<MavenElisionService.ArtifactSnapshot> inventory =
+        request.candidates().stream()
+            .filter(snapshot -> "jar".equals(snapshot.coordinate().type()))
+            .toList();
+    validateAnalysisInventory(inventory);
+    final Map<Path, Set<String>> classesByPath = new java.util.LinkedHashMap<>();
+    final Map<String, MavenElisionService.ArtifactSnapshot> ownerByClass =
+        new java.util.HashMap<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : inventory) {
+      final Path path = snapshot.filePath().toAbsolutePath().normalize();
+      final Set<String> classes = classNames(path);
+      classesByPath.put(path, classes);
+      for (final String name : classes) {
+        final MavenElisionService.ArtifactSnapshot previous =
+            ownerByClass.putIfAbsent(name, snapshot);
+        if (previous != null && !previous.filePath().equals(path)) {
+          throw new IOException("Duplicate class owner in complete JAR inventory: " + name);
+        }
+      }
+    }
+    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> requestedRoots =
+        validateDiscoveredRoots(discoveredRoots, inventory, classesByPath);
+    final List<MavenElisionService.ArtifactSnapshot> retainedLibraries =
+        inventory.stream()
+            .filter(snapshot -> request.retainedCoordinates().contains(snapshot.coordinate()))
+            .toList();
+    final List<MavenElisionService.ArtifactSnapshot> eligible =
+        retainedLibraries.stream()
+            .filter(snapshot -> TRIMMABLE_SCOPES.contains(snapshot.coordinate().scope()))
+            .toList();
+    final List<MavenElisionService.ArtifactSnapshot> configuredPassThrough =
+        parsePassThroughArtifacts(request.explicitPassThroughCoordinates(), eligible);
+    final Set<String> passThroughIdentities = identities(configuredPassThrough);
+    final Set<ArtifactCoordinate> unchangedCoordinates = new LinkedHashSet<>(forcedUnchanged);
+    configuredPassThrough.stream()
+        .map(MavenElisionService.ArtifactSnapshot::coordinate)
+        .forEach(unchangedCoordinates::add);
+    final Set<ArtifactCoordinate> retainedCoordinates = request.retainedCoordinates();
+    if (!retainedCoordinates.containsAll(unchangedCoordinates)) {
+      throw new IOException("Unchanged analysis set contains an elided artifact");
+    }
+    final List<MavenElisionService.ArtifactSnapshot> candidates =
+        eligible.stream()
+            .filter(snapshot -> !unchangedCoordinates.contains(snapshot.coordinate()))
+            .filter(
+                snapshot ->
+                    !passThroughIdentities.contains(artifactIdentity(snapshot.coordinate())))
+            .toList();
+    final List<MavenElisionService.ArtifactSnapshot> unchangedPrograms =
+        retainedLibraries.stream().filter(snapshot -> !candidates.contains(snapshot)).toList();
+    final List<Path> fullClasspath =
+        inventory.stream().map(MavenElisionService.ArtifactSnapshot::filePath).toList();
+    final List<String> compileClasspath;
+    try {
+      compileClasspath = request.project().getCompileClasspathElements();
+    } catch (final DependencyResolutionRequiredException exception) {
+      throw new IOException(
+          "Cannot resolve the effective compile classpath for analysis", exception);
+    }
+    final List<String> compilerOptions =
+        MavenCompilerSettings.options(request.project(), request.session(), compileClasspath);
+    final Path javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
+    final int release = releaseFromOptions(compilerOptions, javaHome);
+    final int runtimeRelease = Runtime.version().feature();
+    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots = new ArrayList<>(2);
+    try (JdkPlatformContext platformContext = new JdkPlatformContext(javaHome)) {
+      platformSnapshots.add(platformContext.snapshot(release));
+      if (runtimeRelease != release) {
+        platformSnapshots.add(platformContext.snapshot(runtimeRelease));
+      }
+    }
+    final PlatformPools pools = readPlatformPools(platformSnapshots, release, runtimeRelease);
+    final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
+    final TrimAnalysisSession analysisSession = new TrimAnalysisSession(trimmer);
+    final Set<String> commonRoots = commonRoots(request);
+    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> dynamicRootsByOwner =
+        new java.util.LinkedHashMap<>();
+    final Set<ArtifactCoordinate> dynamicRootsInDroppedArtifacts = new LinkedHashSet<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
+      for (final String root : dynamicRoots(request, snapshot.filePath())) {
+        final MavenElisionService.ArtifactSnapshot owner = ownerByClass.get(root);
+        if (owner == null) {
+          continue;
+        }
+        if (retainedCoordinates.contains(owner.coordinate())) {
+          if (eligible.contains(owner)) {
+            dynamicRootsByOwner.computeIfAbsent(owner, ignored -> new TreeSet<>()).add(root);
+          }
+        } else {
+          dynamicRootsInDroppedArtifacts.add(owner.coordinate());
+        }
+      }
+    }
+    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> candidateRoots =
+        new java.util.LinkedHashMap<>();
+    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        preparedCandidates = new java.util.LinkedHashMap<>();
+    for (final MavenElisionService.ArtifactSnapshot candidate : candidates) {
+      final Path path = candidate.filePath().toAbsolutePath().normalize();
+      final Set<String> roots = new TreeSet<>(requestedRoots.getOrDefault(candidate, Set.of()));
+      final Set<String> candidateClasses = classesByPath.get(path);
+      addPresentRoots(roots, commonRoots, candidateClasses);
+      roots.addAll(dynamicRootsByOwner.getOrDefault(candidate, Set.of()));
+      if (roots.isEmpty()) {
+        roots.addAll(classesByPath.get(path));
+      }
+      candidateRoots.put(candidate, roots);
+      final List<Path> siblings =
+          fullClasspath.stream().filter(value -> !value.equals(path)).toList();
+      preparedCandidates.put(
+          candidate,
+          analysisSession.prepareWithUnchangedPassThroughLibraries(
+              path, siblings, pools.compiler(), Set.of()));
+    }
+    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        preparedPrograms = new java.util.LinkedHashMap<>();
+    for (final MavenElisionService.ArtifactSnapshot program : unchangedPrograms) {
+      final Path path = program.filePath().toAbsolutePath().normalize();
+      final List<Path> siblings =
+          fullClasspath.stream().filter(value -> !value.equals(path)).toList();
+      preparedPrograms.put(
+          program,
+          analysisSession.prepareWithUnchangedPassThroughLibraries(
+              path, siblings, pools.runtime(), Set.of()));
+    }
+    final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> finalAnalyses =
+        new java.util.LinkedHashMap<>();
+    final Set<ArtifactCoordinate> reachableArtifacts =
+        new LinkedHashSet<>(dynamicRootsInDroppedArtifacts);
+    int analysisRuns = 0;
+    boolean rootsChanged;
+    do {
+      rootsChanged = false;
+      for (final Map.Entry<
+              MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+          entry : preparedPrograms.entrySet()) {
+        final Set<String> roots =
+            classesByPath.get(entry.getKey().filePath().toAbsolutePath().normalize());
+        final DependencyJarTrimmer.TrimAnalysis analysis = entry.getValue().analyze(roots);
+        analysisRuns++;
+        rootsChanged |=
+            collectReachableClasses(
+                analysis.reachableLibraryClasses(),
+                ownerByClass,
+                candidates,
+                candidateRoots,
+                reachableArtifacts,
+                retainedCoordinates,
+                entry.getKey());
+      }
+      finalAnalyses.clear();
+      for (final Map.Entry<
+              MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+          entry : preparedCandidates.entrySet()) {
+        final MavenElisionService.ArtifactSnapshot candidate = entry.getKey();
+        final DependencyJarTrimmer.TrimAnalysis analysis =
+            entry.getValue().analyze(candidateRoots.get(candidate));
+        analysisRuns++;
+        finalAnalyses.put(candidate.coordinate(), analysis);
+        rootsChanged |=
+            collectReachableClasses(
+                analysis.reachableLibraryClasses(),
+                ownerByClass,
+                candidates,
+                candidateRoots,
+                reachableArtifacts,
+                retainedCoordinates,
+                candidate);
+      }
+    } while (rootsChanged);
+    return inMemoryResult(finalAnalyses, candidateRoots, reachableArtifacts, analysisRuns);
+  }
+
+  private static void validateAnalysisInventory(
+      final List<MavenElisionService.ArtifactSnapshot> inventory) throws IOException {
+    final Set<ArtifactCoordinate> coordinates = new HashSet<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : inventory) {
+      if (!coordinates.add(snapshot.coordinate())) {
+        throw new IOException(
+            "Duplicate JAR identity in analysis inventory: " + snapshot.coordinate());
+      }
+      if (snapshot.filePath() == null || !Files.isRegularFile(snapshot.filePath())) {
+        throw new IOException("Incomplete JAR analysis inventory: " + snapshot.coordinate());
+      }
+      if (MultiReleaseLibraryProjection.hasUnsupportedVersionedClasses(snapshot.filePath())
+          || MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath())) {
+        throw new IOException(
+            "In-memory closure does not support multi-release or module-info JARs: "
+                + snapshot.coordinate());
+      }
+    }
+  }
+
+  private static Map<MavenElisionService.ArtifactSnapshot, Set<String>> validateDiscoveredRoots(
+      final Map<ArtifactRootKey, Set<String>> discoveredRoots,
+      final List<MavenElisionService.ArtifactSnapshot> inventory,
+      final Map<Path, Set<String>> classesByPath)
+      throws IOException {
+    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> result =
+        new java.util.LinkedHashMap<>();
+    for (final Map.Entry<ArtifactRootKey, Set<String>> entry : discoveredRoots.entrySet()) {
+      final ArtifactRootKey key = entry.getKey();
+      if (key.sha256() == null || !key.sha256().matches("[0-9a-f]{64}")) {
+        throw new IOException("Invalid discovered-root artifact digest: " + key.coordinate());
+      }
+      final MavenElisionService.ArtifactSnapshot snapshot =
+          inventory.stream()
+              .filter(candidate -> candidate.coordinate().equals(key.coordinate()))
+              .filter(
+                  candidate -> candidate.filePath().toAbsolutePath().normalize().equals(key.path()))
+              .findFirst()
+              .orElseThrow(
+                  () ->
+                      new IOException(
+                          "Discovered roots do not match an inventory artifact: "
+                              + key.coordinate()));
+      if (!ArtifactDigests.read(key.path()).sha256().equals(key.sha256())) {
+        throw new IOException("Discovered-root input digest changed: " + key.coordinate());
+      }
+      final Set<String> classes = classesByPath.get(key.path());
+      if (classes == null || !classes.containsAll(entry.getValue())) {
+        throw new IOException(
+            "Discovered root is not indexed in its owning JAR: " + key.coordinate());
+      }
+      result.computeIfAbsent(snapshot, ignored -> new TreeSet<>()).addAll(entry.getValue());
+    }
+    return result;
+  }
+
+  private static Set<String> commonRoots(final TrimRequest request) {
+    final Set<String> roots = new LinkedHashSet<>(request.trace().loadedClassesDotFormat());
+    roots.addAll(request.sourceRoots());
+    roots.addAll(request.bytecodeRoots());
+    request.explicitRoots().forEach(roots::add);
+    return roots;
+  }
+
+  private static Set<String> dynamicRoots(final TrimRequest request, final Path path)
+      throws IOException {
+    final DependencyDynamicRoots.RootScan scan = request.scanInputs().dynamicRootScans().get(path);
+    if (scan == null) {
+      throw new IOException("Missing dynamic-root scan for full inventory JAR: " + path);
+    }
+    return scan.roots().stream()
+        .map(name -> name.replace('/', '.'))
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
+  private static boolean collectReachableClasses(
+      final Set<String> reachable,
+      final Map<String, MavenElisionService.ArtifactSnapshot> ownerByClass,
+      final List<MavenElisionService.ArtifactSnapshot> candidates,
+      final Map<MavenElisionService.ArtifactSnapshot, Set<String>> candidateRoots,
+      final Set<ArtifactCoordinate> reachableArtifacts,
+      final Set<ArtifactCoordinate> retainedCoordinates,
+      final MavenElisionService.ArtifactSnapshot source) {
+    boolean changed = false;
+    for (final String reachableName : reachable) {
+      final String name = reachableName.replace('/', '.');
+      final MavenElisionService.ArtifactSnapshot owner = ownerByClass.get(name);
+      if (owner == null || owner.equals(source)) {
+        continue;
+      }
+      final ArtifactCoordinate coordinate = owner.coordinate();
+      if (retainedCoordinates.contains(coordinate)) {
+        if (candidates.contains(owner)) {
+          changed |= candidateRoots.get(owner).add(name);
+        }
+      } else {
+        reachableArtifacts.add(coordinate);
+      }
+    }
+    return changed;
+  }
+
+  private static InMemoryAnalysis inMemoryResult(
+      final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> analyses,
+      final Map<MavenElisionService.ArtifactSnapshot, Set<String>> roots,
+      final Set<ArtifactCoordinate> reachableArtifacts,
+      final int analysisRuns) {
+    final Map<ArtifactCoordinate, Set<String>> rootsByCoordinate = new java.util.LinkedHashMap<>();
+    roots.forEach((snapshot, values) -> rootsByCoordinate.put(snapshot.coordinate(), values));
+    return new InMemoryAnalysis(analyses, rootsByCoordinate, reachableArtifacts, analysisRuns);
+  }
+
+  private static Map<ArtifactCoordinate, Set<String>> immutableSetMap(
+      final Map<ArtifactCoordinate, Set<String>> values) {
+    final Map<ArtifactCoordinate, Set<String>> result = new java.util.LinkedHashMap<>();
+    values.forEach((coordinate, roots) -> result.put(coordinate, Set.copyOf(roots)));
+    return java.util.Collections.unmodifiableMap(result);
+  }
+
+  private static TrimResult trimPrepared(
       final TrimRequest request,
       final int release,
       final int runtimeRelease,

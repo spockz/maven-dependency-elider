@@ -14,6 +14,7 @@ import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.scanner.JarIndexScanner;
 import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
 import io.github.spockz.elider.trace.CompositeTraceReader;
+import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.File;
 import java.io.IOException;
@@ -23,6 +24,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -66,7 +68,8 @@ final class MavenElisionService {
       List<String> explicitTrimRoots,
       boolean failOnUnsupportedMultiRelease,
       List<String> explicitPassThroughArtifacts,
-      boolean failOnUnsupportedModuleInfo) {}
+      boolean failOnUnsupportedModuleInfo,
+      boolean testResolutionContext) {}
 
   /** Creates the stateless Maven adapter. */
   MavenElisionService() {
@@ -134,10 +137,24 @@ final class MavenElisionService {
             explicitTrimRoots,
             false,
             List.of(),
+            false,
             false));
   }
 
   Analysis analyze(final MavenProject project, final AnalysisOptions options)
+      throws IOException, MojoFailureException {
+    return finish(prepare(project, options));
+  }
+
+  PreparedAnalysis prepare(final MavenProject project, final AnalysisOptions options)
+      throws IOException, MojoFailureException {
+    return prepare(project, options, DependencyDynamicRoots::scan);
+  }
+
+  PreparedAnalysis prepare(
+      final MavenProject project,
+      final AnalysisOptions options,
+      final DynamicRootScanner dynamicRootScanner)
       throws IOException, MojoFailureException {
     final List<File> traceFiles = options.traceFiles();
     final List<String> excludedArtifacts = options.excludedArtifacts();
@@ -146,12 +163,12 @@ final class MavenElisionService {
     final boolean sourceRootsComplete = options.sourceRootsComplete();
     final boolean trimJars = options.trimJars();
     final List<String> explicitTrimRoots = options.explicitTrimRoots();
-    final boolean failOnUnsupportedMultiRelease = options.failOnUnsupportedMultiRelease();
     final List<String> explicitPassThroughArtifacts = options.explicitPassThroughArtifacts();
-    final boolean failOnUnsupportedModuleInfo = options.failOnUnsupportedModuleInfo();
     final List<Artifact> resolved = new ArrayList<>(project.getArtifacts());
     final List<ArtifactSnapshot> resolvedSnapshots = snapshots(resolved);
     validateIdentityPaths(resolvedSnapshots);
+    final String inputFingerprint =
+        ResolvedArtifactInventoryFingerprint.fingerprint(resolvedSnapshots);
     final Set<Artifact> directView = project.getDependencyArtifacts();
     final boolean directPresent = directView != null;
     final List<Artifact> direct = directPresent ? new ArrayList<>(directView) : List.of();
@@ -167,10 +184,7 @@ final class MavenElisionService {
     final ArtifactClassIndex index = new JarIndexScanner().scan(scanCandidates);
     final CompilerInputs compilerInputs =
         compilerInputs(project, session, scanCandidates, index, sourceRootsComplete);
-    final DynamicRootInputs dynamicRootInputs =
-        trimJars
-            ? dynamicRoots(scanCandidates)
-            : new DynamicRootInputs(Set.of(), Set.of(), Map.of());
+    final DynamicRootInputs dynamicRootInputs = dynamicRoots(scanCandidates, dynamicRootScanner);
     final Set<String> pruningRequiredClasses =
         requiredClassesForTrimming(
             compilerInputs.requiredClasses(),
@@ -190,6 +204,7 @@ final class MavenElisionService {
             ? Optional.empty()
             : Optional.of(new ProductionBytecodeReferenceScanner().scan(productionOutput.toPath()));
     final ClassUsageReport classUsageReport = ClassUsageReport.classify(index, trace, bytecodeScan);
+    MavenElisionGraphBinding.verifyInventoryFingerprint(resolvedSnapshots, inputFingerprint);
     final ElisionDecision jarDecision =
         new DependencyPruner()
             .prune(
@@ -199,18 +214,57 @@ final class MavenElisionService {
                 config(excludedArtifacts, keepForPruning),
                 pruningRequiredClasses);
     final ElisionDecision decision = retainNonJarArtifacts(jarDecision, resolvedSnapshots);
+    final MavenElisionGraphBinding.Result graphBinding =
+        MavenElisionGraphBinding.bind(
+            project, options, resolvedSnapshots, decision, trace, pruningRequiredClasses);
+    MavenElisionGraphBinding.verifyInventoryFingerprint(
+        resolvedSnapshots, graphBinding.inventoryFingerprint());
+    if (!inputFingerprint.equals(graphBinding.inventoryFingerprint())) {
+      throw new IOException("Resolved artifact inventory changed during analysis preparation");
+    }
+    return new PreparedAnalysis(
+        project,
+        options,
+        resolvedSnapshots,
+        directPresent,
+        directSnapshots,
+        decision,
+        classUsageReport,
+        bytecodeScan,
+        scanCandidates,
+        trace,
+        index,
+        dynamicRootInputs,
+        pruningRequiredClasses,
+        inputFingerprint,
+        graphBinding);
+  }
+
+  Analysis finish(final PreparedAnalysis prepared) throws IOException, MojoFailureException {
+    final MavenProject project = prepared.project();
+    final AnalysisOptions options = prepared.options();
+    final MavenSession session = options.session();
+    final boolean trimJars = options.trimJars();
+    final List<String> explicitTrimRoots = options.explicitTrimRoots();
+    final boolean failOnUnsupportedMultiRelease = options.failOnUnsupportedMultiRelease();
+    final List<String> explicitPassThroughArtifacts = options.explicitPassThroughArtifacts();
+    final boolean failOnUnsupportedModuleInfo = options.failOnUnsupportedModuleInfo();
     final MavenDependencyTrimmer.TrimResult trimResult =
         trimJars
             ? MavenDependencyTrimmer.trim(
                 new MavenDependencyTrimmer.TrimRequest(
                     project,
                     session,
-                    resolvedSnapshots,
-                    new MavenDependencyTrimmer.ScanInputs(index, dynamicRootInputs.scansByPath()),
-                    new HashSet<>(decision.retainedArtifacts()),
-                    trace,
-                    pruningRequiredClasses,
-                    bytecodeScan.map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
+                    prepared.resolvedSnapshots(),
+                    new MavenDependencyTrimmer.ScanInputs(
+                        prepared.index(), prepared.dynamicRootInputs().scansByPath()),
+                    new HashSet<>(prepared.rawDecision().retainedArtifacts()),
+                    prepared.trace(),
+                    prepared.pruningRequiredClasses(),
+                    prepared
+                        .bytecodeScan()
+                        .map(BytecodeReferenceScan::referencedClasses)
+                        .orElse(Set.of()),
                     explicitTrimRoots,
                     failOnUnsupportedMultiRelease,
                     explicitPassThroughArtifacts,
@@ -218,12 +272,12 @@ final class MavenElisionService {
             : new MavenDependencyTrimmer.TrimResult(
                 List.of(), List.of(), List.of(), List.of(), 0, 0L, 0);
     return new Analysis(
-        resolvedSnapshots,
-        directPresent,
-        directSnapshots,
-        decision,
-        classUsageReport,
-        bytecodeScan,
+        prepared.resolvedSnapshots(),
+        prepared.directArtifactsPresent(),
+        prepared.directSnapshots(),
+        prepared.rawDecision(),
+        prepared.classUsageReport(),
+        prepared.bytecodeScan(),
         trimResult.records(),
         trimResult.multiReleasePassthroughArtifacts(),
         trimResult.moduleInfoPassthroughArtifacts(),
@@ -231,6 +285,136 @@ final class MavenElisionService {
         trimResult.cacheHits(),
         trimResult.maximumCacheHitNanos(),
         trimResult.analysisRuns());
+  }
+
+  EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)
+      throws IOException, MojoFailureException {
+    final ElisionDecision rawDecision = prepared.rawDecision();
+    final MavenElisionGraphBinding.Result binding = prepared.graphBinding();
+    if (!prepared.inputFingerprint().equals(binding.inventoryFingerprint())) {
+      throw new IOException("Graph binding does not match the prepared artifact inventory");
+    }
+    EffectiveGraphPolicy.Evaluation evaluation = binding.evaluation();
+    ElisionDecision policyInput = rawDecision;
+    ElisionDecision effectiveDecision = evaluation.effectiveDecision(rawDecision);
+    final Set<ArtifactCoordinate> forcedUnchanged = new LinkedHashSet<>();
+    addUnchangedPolicyArtifacts(evaluation, forcedUnchanged);
+    if (!prepared.options().trimJars()) {
+      forcedUnchanged.addAll(effectiveDecision.retainedArtifacts());
+    }
+    Map<MavenDependencyTrimmer.ArtifactRootKey, Set<String>> discoveredRoots = Map.of();
+    MavenDependencyTrimmer.InMemoryAnalysis analysis;
+    while (true) {
+      verifyPreparedInventory(prepared);
+      final MavenDependencyTrimmer.TrimRequest trimRequest =
+          trimRequest(prepared, effectiveDecision);
+      analysis =
+          MavenDependencyTrimmer.analyzeInMemory(trimRequest, discoveredRoots, forcedUnchanged);
+      verifyPreparedInventory(prepared);
+      final Set<ArtifactCoordinate> newlyReachedDrops =
+          newlyReachedDrops(analysis, effectiveDecision);
+      if (newlyReachedDrops.isEmpty()) {
+        return new EffectiveAnalysis(
+            prepared,
+            evaluation,
+            rawDecision,
+            effectiveDecision,
+            analysis,
+            binding.inventoryFingerprint(),
+            binding.operationFingerprint());
+      }
+      if (binding.pair() == null) {
+        throw new IOException("Reachability found a raw drop without a bound graph pair");
+      }
+      policyInput = promoteForBytecode(policyInput, newlyReachedDrops);
+      evaluation = EffectiveGraphPolicy.evaluatePair(binding.pair(), policyInput);
+      effectiveDecision = evaluation.effectiveDecision(rawDecision);
+      forcedUnchanged.addAll(newlyReachedDrops);
+      addUnchangedPolicyArtifacts(evaluation, forcedUnchanged);
+      discoveredRoots = discoveredRoots(prepared.resolvedSnapshots(), analysis.candidateRoots());
+    }
+  }
+
+  private static void verifyPreparedInventory(final PreparedAnalysis prepared) throws IOException {
+    MavenElisionGraphBinding.verifyInventoryFingerprint(
+        prepared.resolvedSnapshots(), prepared.inputFingerprint());
+  }
+
+  private static MavenDependencyTrimmer.TrimRequest trimRequest(
+      final PreparedAnalysis prepared, final ElisionDecision effectiveDecision) {
+    final AnalysisOptions options = prepared.options();
+    return new MavenDependencyTrimmer.TrimRequest(
+        prepared.project(),
+        options.session(),
+        prepared.resolvedSnapshots(),
+        new MavenDependencyTrimmer.ScanInputs(
+            prepared.index(), prepared.dynamicRootInputs().scansByPath()),
+        new HashSet<>(effectiveDecision.retainedArtifacts()),
+        prepared.trace(),
+        prepared.pruningRequiredClasses(),
+        prepared.bytecodeScan().map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
+        options.explicitTrimRoots(),
+        options.failOnUnsupportedMultiRelease(),
+        options.explicitPassThroughArtifacts(),
+        options.failOnUnsupportedModuleInfo());
+  }
+
+  private static void addUnchangedPolicyArtifacts(
+      final EffectiveGraphPolicy.Evaluation evaluation, final Set<ArtifactCoordinate> unchanged) {
+    unchanged.addAll(evaluation.ancestorPromotedArtifacts());
+    unchanged.addAll(evaluation.protectedReasons().keySet());
+    if (evaluation.failClosed()) {
+      unchanged.addAll(evaluation.retainedArtifacts());
+    }
+  }
+
+  private static ElisionDecision promoteForBytecode(
+      final ElisionDecision decision, final Set<ArtifactCoordinate> promoted) {
+    final Set<ArtifactCoordinate> retained = new LinkedHashSet<>(decision.retainedArtifacts());
+    final Set<ArtifactCoordinate> elided = new LinkedHashSet<>(decision.elidedArtifacts());
+    promoted.stream().filter(elided::remove).forEach(retained::add);
+    return new ElisionDecision(
+        retained,
+        elided,
+        decision.retainedClassesPerArtifact(),
+        decision.unusedClassesPerArtifact(),
+        decision.elapsedNanos());
+  }
+
+  /** These maps are local to one analysis invocation and not shared. */
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  private static Map<MavenDependencyTrimmer.ArtifactRootKey, Set<String>> discoveredRoots(
+      final List<ArtifactSnapshot> snapshots, final Map<ArtifactCoordinate, Set<String>> roots)
+      throws IOException {
+    final Map<ArtifactCoordinate, ArtifactSnapshot> snapshotsByCoordinate = new HashMap<>();
+    snapshots.forEach(snapshot -> snapshotsByCoordinate.put(snapshot.coordinate(), snapshot));
+    final Map<MavenDependencyTrimmer.ArtifactRootKey, Set<String>> result = new HashMap<>();
+    for (final Map.Entry<ArtifactCoordinate, Set<String>> entry : roots.entrySet()) {
+      result.put(artifactRootKey(snapshotsByCoordinate, entry.getKey()), entry.getValue());
+    }
+    return Map.copyOf(result);
+  }
+
+  private static MavenDependencyTrimmer.ArtifactRootKey artifactRootKey(
+      final Map<ArtifactCoordinate, ArtifactSnapshot> snapshotsByCoordinate,
+      final ArtifactCoordinate coordinate)
+      throws IOException {
+    final ArtifactSnapshot snapshot = snapshotsByCoordinate.get(coordinate);
+    if (snapshot == null || snapshot.filePath() == null) {
+      throw new IOException("Discovered roots have no artifact file: " + coordinate);
+    }
+    return new MavenDependencyTrimmer.ArtifactRootKey(
+        snapshot.coordinate(),
+        snapshot.filePath(),
+        ArtifactDigests.read(snapshot.filePath()).sha256());
+  }
+
+  private static Set<ArtifactCoordinate> newlyReachedDrops(
+      final MavenDependencyTrimmer.InMemoryAnalysis analysis,
+      final ElisionDecision effectiveDecision) {
+    final Set<ArtifactCoordinate> result = new LinkedHashSet<>(analysis.reachableArtifacts());
+    result.retainAll(effectiveDecision.elidedArtifacts());
+    return result;
   }
 
   /** Prepares Maven artifact views without mutating project state. */
@@ -713,6 +897,39 @@ final class MavenElisionService {
       }
     }
   }
+
+  record PreparedAnalysis(
+      MavenProject project,
+      AnalysisOptions options,
+      List<ArtifactSnapshot> resolvedSnapshots,
+      boolean directArtifactsPresent,
+      List<ArtifactSnapshot> directSnapshots,
+      ElisionDecision rawDecision,
+      ClassUsageReport classUsageReport,
+      Optional<BytecodeReferenceScan> bytecodeScan,
+      List<ArtifactFileRef> scanCandidates,
+      TraceData trace,
+      ArtifactClassIndex index,
+      DynamicRootInputs dynamicRootInputs,
+      Set<String> pruningRequiredClasses,
+      String inputFingerprint,
+      MavenElisionGraphBinding.Result graphBinding) {
+    PreparedAnalysis {
+      resolvedSnapshots = List.copyOf(resolvedSnapshots);
+      directSnapshots = List.copyOf(directSnapshots);
+      scanCandidates = List.copyOf(scanCandidates);
+      pruningRequiredClasses = Set.copyOf(pruningRequiredClasses);
+    }
+  }
+
+  record EffectiveAnalysis(
+      PreparedAnalysis prepared,
+      EffectiveGraphPolicy.Evaluation graphEvaluation,
+      ElisionDecision rawDecision,
+      ElisionDecision effectiveDecision,
+      MavenDependencyTrimmer.InMemoryAnalysis trimAnalysis,
+      String inventoryFingerprint,
+      String operationFingerprint) {}
 
   record Analysis(
       List<ArtifactSnapshot> resolvedSnapshots,

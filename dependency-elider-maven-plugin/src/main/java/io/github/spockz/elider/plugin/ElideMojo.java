@@ -158,7 +158,8 @@ public final class ElideMojo extends AbstractMojo {
         trimRoots == null ? List.of() : trimRoots,
         failOnUnsupportedMultiRelease,
         trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
-        failOnUnsupportedModuleInfo);
+        failOnUnsupportedModuleInfo,
+        true);
   }
 
   private void logPassThroughWarnings(final MavenElisionService.Analysis analysis) {
