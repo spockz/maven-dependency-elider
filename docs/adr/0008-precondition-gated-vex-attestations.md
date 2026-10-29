@@ -42,6 +42,7 @@ Keep POM mapping overrides ahead of cached mappings when they address the same C
 * Presence of that class in any inventoried application provider or effective dependency archive prevents the precondition proof.
 * Precondition proof is disabled unless the user explicitly sets `elide.preconditionClassPathComplete=true`.
 * Inventory incompleteness, unreadable inputs, digest mismatch, or an unknown class/resource provider suppresses the VEX statement.
+* Raw class bytes are detected under non-class resource entry names. Nested ZIP/JAR entries are not recursively inspected and suppress proof.
 * The proof binds to the retained affected component's verified bytes and to the complete declared Maven inventory fingerprint.
 * The inventory claim does not include providers supplied outside the declared Maven build inventory.
 * CycloneDX keeps `specVersion` 1.6; OpenVEX keeps its 0.2.0 context. Their version fields are not internal schema-version counters.
