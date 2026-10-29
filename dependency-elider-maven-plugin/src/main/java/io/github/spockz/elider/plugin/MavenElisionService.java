@@ -73,7 +73,43 @@ final class MavenElisionService {
       List<String> explicitPassThroughArtifacts,
       boolean failOnUnsupportedModuleInfo,
       boolean testResolutionContext,
-      boolean conservativeServiceLoaderRoots) {
+      boolean conservativeServiceLoaderRoots,
+      int trimWorkers) {
+    AnalysisOptions {
+      if (trimWorkers < MavenDependencyTrimmer.MIN_TRIM_WORKERS) {
+        throw new IllegalArgumentException("trimWorkers must be at least 1");
+      }
+    }
+
+    AnalysisOptions(
+        final List<File> traceFiles,
+        final List<String> excludedArtifacts,
+        final File productionOutput,
+        final MavenSession session,
+        final boolean sourceRootsComplete,
+        final boolean trimJars,
+        final List<String> explicitTrimRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> explicitPassThroughArtifacts,
+        final boolean failOnUnsupportedModuleInfo,
+        final boolean testResolutionContext,
+        final boolean conservativeServiceLoaderRoots) {
+      this(
+          traceFiles,
+          excludedArtifacts,
+          productionOutput,
+          session,
+          sourceRootsComplete,
+          trimJars,
+          explicitTrimRoots,
+          failOnUnsupportedMultiRelease,
+          explicitPassThroughArtifacts,
+          failOnUnsupportedModuleInfo,
+          testResolutionContext,
+          conservativeServiceLoaderRoots,
+          MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS);
+    }
+
     AnalysisOptions(
         final List<File> traceFiles,
         final List<String> excludedArtifacts,
@@ -98,7 +134,8 @@ final class MavenElisionService {
           explicitPassThroughArtifacts,
           failOnUnsupportedModuleInfo,
           testResolutionContext,
-          true);
+          true,
+          MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS);
     }
   }
 
@@ -326,7 +363,10 @@ final class MavenElisionService {
                     explicitTrimRoots,
                     failOnUnsupportedMultiRelease,
                     explicitPassThroughArtifacts,
-                    failOnUnsupportedModuleInfo))
+                    failOnUnsupportedModuleInfo,
+                    prepared.dynamicRootInputs().provenServiceInterfaces(),
+                    options.conservativeServiceLoaderRoots(),
+                    options.trimWorkers()))
             : new MavenDependencyTrimmer.TrimResult(
                 List.of(), List.of(), List.of(), List.of(), 0, 0L, 0);
     return new Analysis(
@@ -508,7 +548,8 @@ final class MavenElisionService {
         options.explicitPassThroughArtifacts(),
         options.failOnUnsupportedModuleInfo(),
         prepared.dynamicRootInputs().provenServiceInterfaces(),
-        options.conservativeServiceLoaderRoots());
+        options.conservativeServiceLoaderRoots(),
+        options.trimWorkers());
   }
 
   private static void addUnchangedPolicyArtifacts(

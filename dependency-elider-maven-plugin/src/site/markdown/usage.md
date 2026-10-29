@@ -58,6 +58,7 @@ mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
 | :--- | :--- | :--- |
 | `-Delide.traceFiles` | *(none)* | Comma-separated paths to runtime telemetry traces (required). |
 | `-Delide.trimJars` | `false` | When `true`, simulates intra-JAR trimming and evaluates CVE absence proofs without modifying files. |
+| `-Delide.trimWorkers` | `4` | Maximum worker threads for JAR preparation, closure analysis, and archive sanitization. Actual concurrency is also capped by available processors and pending work; `1` runs sequentially. |
 | `-Delide.excludedArtifacts` | *(empty)* | Comma-separated coordinates (`groupId:artifactId[:version[:type[:classifier]]]`) to retain regardless of trace evidence. |
 | `-Delide.productionOutput` | *(empty)* | Path to compiled classes (e.g. `target/classes`) to enable static code reference scanning. |
 | `-Delide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader SPI roots; when `false`, prunes unproven SPI roots. |
@@ -132,6 +133,7 @@ Or configure the execution permanently in `pom.xml`:
 | `elide.skip` | `false` | Disables elision and trimming when set to `true`. |
 | `elide.traceFiles` | *(none)* | Comma-separated paths to runtime telemetry traces (required). |
 | `elide.trimJars` | `false` | Enables ProGuard Core link closure to trim unreferenced classes from retained JARs. |
+| `elide.trimWorkers` | `4` | Maximum worker threads for JAR preparation, closure analysis, and archive sanitization. Actual concurrency is also capped by available processors and pending work; `1` runs sequentially. |
 | `elide.sourceRootsComplete` | `false` | Set `true` only if all production and generated sources exist before `INITIALIZE` with no downstream generation. When `false`, all compile-classpath JARs and classes are conservatively retained. |
 | `elide.trimRoots` | *(none)* | Comma-separated additional root classes (e.g. `com.example.AppRoot`). |
 | `elide.trimSkipArtifacts` | *(none)* | Comma-separated coordinates of retained JARs to keep byte-identical. Their classes serve as roots for sibling closure. |
@@ -144,6 +146,8 @@ Or configure the execution permanently in `pom.xml`:
 | `elide.vexFile` | `target/dependency-elider.openvex.json` | Path for the generated OpenVEX document. |
 
 ### Preserving Metadata and Special JARs
+
+Set `-Delide.trimWorkers=2` to cap trimming at two workers. This setting limits the plugin's trimming concurrency; it does not reserve CPU cores or limit other Maven work. The JVM option `-XX:ActiveProcessorCount=N` changes the processor count reported to all Maven code, so it is a Maven-wide limit rather than a plugin-only setting.
 
 * **Framework Roots**: Service providers (`META-INF/services`), Spring factories, and GraalVM native-image configs automatically protect declaring and provider JARs from whole-artifact removal.
 * **ServiceLoader SPI Dynamic Roots**: Application bytecode is scanned for constant `ServiceLoader.load` invocations to prove SPI usage. When `conservativeServiceLoaderRoots` is `true` (default), unproven SPI providers are retained for runtime safety, but any CVEs retained solely by unproven SPI entries are excluded from mitigation into `Potentially conservative CVE exclusions`. Set `conservativeServiceLoaderRoots` to `false` to prune unproven SPI entries.
