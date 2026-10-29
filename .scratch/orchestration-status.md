@@ -286,6 +286,17 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 
 - Full `make check` passed after the final guard changes: 226 core tests, 374 plugin tests, 15 lifecycle integration tests, 8 SBOM-comparison tests, Markdown lint, and transcript drift verification. `make update-transcripts` reported all configured transcripts up to date.
 
+## WP-MRJAR-01: Multi-Release JAR Trimming and Vertical Shading
+
+| Core archive elevation and proof | PROVISIONED | `.scratch/worktrees/track-mrjar-core` / `track/mrjar-core` | Pending contract model, sanitizer/elevation, then multi-tier omitted-code proof. |
+| Plugin closure, configuration, SBOM, fixtures and documentation | PENDING CORE API | To be provisioned after core integration | Target/runtime projections and fixed point, strategy/cache binding, physical metrics, `ElideMojoTest`, docs. |
+
+## Specification Deviations and Architectural Choices
+
+* Use target plus each supported upper-tier breakpoint through the executing Maven JDK to preserve linkage for every advertised tier within the repository's existing verified-runtime boundary. This closes the upper-tier dependency gap in the supplied plan; releases above the Maven runtime remain unverified and are documented as such.
+* Do not version or elevate `META-INF/services` entries. JAR specification forbids versioned resources under `META-INF`; treat nested versioned `META-INF` resources as malformed and reject before output publication. Normalize root service descriptors only, filtering providers removed from the globally retained class set while preserving unknown/external providers.
+* Define class metrics over unique logical class names across all physical tiers; report input/output physical ZIP entry totals separately. A class copied from a version tier to root is retained, not a pruned payload.
+
 - `example-cve-safe-class-app` opts into `preconditionClassPathComplete`, identifies `org.codehaus.janino.ClassBodyEvaluator` used by Logback Core 1.5.18's conditional-script path, and maps the advisory to `ch.qos.logback:logback-core`. Its verifier checks the OpenVEX impact statement and omitted justification, plus CycloneDX `requires_dependency`.
 - After the final guard changes, `make fmt` and `make lint-java` passed; focused ADR-0008 proof tests passed 58/58; `make test-plugin` passed 340 plugin tests and 15 lifecycle integration tests.
 - `make test-examples` passed all four fixtures. The safe-class report lists `CVE-2025-11226` inactive for `ch.qos.logback:logback-core:jar:1.5.18`; the fixture verifier confirmed both serializers and schema validity. Log: `/tmp/wp-vex-02-test-examples-final-20261030-r2.log`; SHA-256 `c6d15304de822652d01c142ddc0be1dd270b1045970215ce0b44bc022fe2e616`.
