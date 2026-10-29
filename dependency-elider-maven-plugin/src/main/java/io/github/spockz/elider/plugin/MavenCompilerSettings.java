@@ -83,6 +83,27 @@ final class MavenCompilerSettings {
     return List.copyOf(options);
   }
 
+  static List<String> releaseIdentity(final MavenProject project, final MavenSession session)
+      throws IOException {
+    final List<Xpp3Dom> configurations = compilerConfigurations(project);
+    final String release =
+        value("release", "maven.compiler.release", project, session, configurations);
+    final String source =
+        value("source", "maven.compiler.source", project, session, configurations);
+    final String target =
+        value("target", "maven.compiler.target", project, session, configurations);
+    if (release != null && (source != null || target != null)) {
+      throw new IOException("Cannot identify compiler release with both release and source/target");
+    }
+    if (release != null) {
+      return List.of("--release", release);
+    }
+    if (source != null && target != null) {
+      return List.of("-source", source, "-target", target);
+    }
+    return List.of("unspecified-compiler-release");
+  }
+
   private static void rejectSelectedToolchain(final MavenSession session) throws IOException {
     if (session == null) {
       return;

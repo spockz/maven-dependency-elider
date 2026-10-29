@@ -57,9 +57,9 @@ public final class AnalyzeMojo extends AbstractMojo {
   @Parameter(property = "elide.trimSkipArtifacts")
   private List<String> trimSkipArtifacts;
 
-  /** Fails instead of retaining multi-release implementation JARs without trimming. */
-  @Parameter(property = "elide.failOnUnsupportedMultiRelease", defaultValue = DEFAULT_FALSE)
-  private boolean failOnUnsupportedMultiRelease;
+  /** Selects MRJAR vertical shading or byte-identical pass-through. */
+  @Parameter(property = "elide.mrjarStrategy", defaultValue = "vertical-shading")
+  private String mrjarStrategy = "vertical-shading";
 
   /** Rejects retained classpath JARs with a root module descriptor. */
   @Parameter(property = "elide.failOnUnsupportedModuleInfo", defaultValue = DEFAULT_FALSE)
@@ -135,12 +135,13 @@ public final class AnalyzeMojo extends AbstractMojo {
                       sourceRootsComplete,
                       trimJars,
                       trimRoots == null ? List.of() : trimRoots,
-                      failOnUnsupportedMultiRelease,
+                      false,
                       trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
                       failOnUnsupportedModuleInfo,
                       true,
                       conservativeServiceLoaderRoots,
-                      trimWorkers));
+                      trimWorkers,
+                      mrjarStrategy));
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =

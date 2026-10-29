@@ -227,6 +227,48 @@ class CycloneDxSbomGeneratorTest {
   }
 
   @Test
+  void writesLogicalClassAndPhysicalEntryMetricsForMultiReleaseTrim() throws Exception {
+    final Path original = temp.resolve("mr-original.jar");
+    final Path trimmed = temp.resolve("mr-trimmed.jar");
+    final Path output = temp.resolve("mr-trimmed-bom.json");
+    Files.writeString(original, "original multi-release bytes");
+    Files.writeString(trimmed, "elevated multi-release bytes");
+    final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "mr-library", "1.2");
+    final ArtifactTrimRecord record =
+        new ArtifactTrimRecord(
+            coordinate,
+            original,
+            digest(original, "SHA-256"),
+            digest(original, "SHA-1"),
+            trimmed,
+            digest(trimmed, "SHA-256"),
+            digest(trimmed, "SHA-1"),
+            8,
+            5,
+            64L,
+            14,
+            11,
+            "elevated_and_trimmed");
+    final ArtifactFileRef inventory = ArtifactFileRef.fromPath(coordinate, trimmed);
+    final ElisionDecision decision =
+        new ElisionDecision(Set.of(coordinate), Set.of(), Map.of(), Map.of(), 0);
+
+    GENERATOR.write(output, ROOT, List.of(inventory), decision, METADATA, List.of(record));
+
+    final JsonNode component = JSON.readTree(output.toFile()).path("components").get(0);
+    assertThat(component.path("properties").findValuesAsText("name"))
+        .contains(
+            "elider:retainedClasses",
+            "elider:totalClasses",
+            "elider:mrjarStatus",
+            "elider:inputPhysicalEntries",
+            "elider:outputPhysicalEntries");
+    assertThat(component.path("properties").findValuesAsText("value"))
+        .contains("5", "8", "elevated_and_trimmed", "14", "11");
+    assertSchemaValid(readPinnedSchema(), JSON.readTree(output.toFile()));
+  }
+
+  @Test
   void rejectsDuplicateOrOrphanTrimRecords() throws Exception {
     final Path original = temp.resolve("identity-original.jar");
     final Path trimmed = temp.resolve("identity-trimmed.jar");

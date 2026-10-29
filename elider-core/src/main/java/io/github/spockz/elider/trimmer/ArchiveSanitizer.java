@@ -5,30 +5,13 @@ package io.github.spockz.elider.trimmer;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Enumeration;
-import java.util.HashSet;
 import java.util.Objects;
-import java.util.Set;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
-import java.util.jar.JarOutputStream;
-import java.util.jar.Manifest;
-import org.objectweb.asm.ClassReader;
 
 /** Writes sanitized dependency JARs without merging artifact boundaries. */
-@SuppressWarnings({
-  "PMD.GodClass",
-  "PMD.CyclomaticComplexity",
-  "PMD.CognitiveComplexity",
-  "PMD.AvoidInstantiatingObjectsInLoops",
-  "PMD.AvoidCatchingGenericException"
-})
 public final class ArchiveSanitizer {
   /** Creates a stateless archive sanitizer. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
@@ -67,7 +50,34 @@ public final class ArchiveSanitizer {
         && !expectedOriginalSha256.equals(originalDigests.sha256())) {
       throw new IOException("Original dependency changed during trim analysis: " + originalJar);
     }
-    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests);
+    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests, null);
+  }
+
+  /** Stages an MRJAR using a validated target-release elevation plan. */
+  public PreparedOutput prepareMultiRelease(
+      final Path originalJar,
+      final Path trimmedJar,
+      final ArtifactCoordinate coordinate,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final MultiReleaseArchivePlan plan,
+      final String expectedOriginalSha256)
+      throws IOException {
+    validateInputs(originalJar, trimmedJar, coordinate, analysis);
+    Objects.requireNonNull(plan, "plan");
+    final ArtifactDigests originalDigests = ArtifactDigests.read(originalJar);
+    if (expectedOriginalSha256 != null
+        && !expectedOriginalSha256.equals(originalDigests.sha256())) {
+      throw new IOException("Original dependency changed during trim analysis: " + originalJar);
+    }
+    if (!plan.matches(originalJar.toRealPath(), originalDigests.sha256())) {
+      throw new IOException(
+          "MRJAR elevation plan does not match original dependency: " + originalJar);
+    }
+    if (analysis.totalClasses() != plan.targetClasses().size()
+        || !analysis.retainedClasses().equals(plan.retainedTargetClasses())) {
+      throw new IOException("Trim analysis does not match the MRJAR target-release view");
+    }
+    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests, plan);
   }
 
   /**
@@ -88,7 +98,7 @@ public final class ArchiveSanitizer {
       throw new IOException(
           "Captured original dependency digests belong to a different path: " + originalJar);
     }
-    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests);
+    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests, null);
   }
 
   private static void validateInputs(
@@ -114,40 +124,35 @@ public final class ArchiveSanitizer {
       final Path trimmedJar,
       final ArtifactCoordinate coordinate,
       final DependencyJarTrimmer.TrimAnalysis analysis,
-      final ArtifactDigests originalDigests)
+      final ArtifactDigests originalDigests,
+      final MultiReleaseArchivePlan elevationPlan)
       throws IOException {
-    final Path parent = trimmedJar.toAbsolutePath().normalize().getParent();
-    final Path fileName = trimmedJar.getFileName();
-    if (parent == null || fileName == null) {
-      throw new IOException("Trimmed JAR path has no parent directory: " + trimmedJar);
-    }
-    Files.createDirectories(parent);
-    final Path outputDirectory = parent.toRealPath();
-    final Path outputPath = outputDirectory.resolve(fileName.toString());
-    final Path originalPath = originalJar.toRealPath();
-    if (outputPath.equals(originalPath)
-        || (Files.exists(outputPath) && Files.isSameFile(originalPath, outputPath))) {
-      throw new IOException("Trimmed JAR must not overwrite its original: " + originalJar);
-    }
-    final Path temporaryJar = Files.createTempFile(outputDirectory, ".trimmed-", ".jar.tmp");
+    final ArchiveOutputStager.OutputLocation location =
+        ArchiveOutputStager.resolveOutputLocation(originalJar, trimmedJar);
+    final Path temporaryJar = Files.createTempFile(location.directory(), ".trimmed-", ".jar.tmp");
     boolean moved = false;
     try {
-      final long prunedClassBytes = writeArchive(originalJar, temporaryJar, analysis);
-      final ArtifactDigests trimmedDigests = ArtifactDigests.read(temporaryJar);
+      final ArchiveOutputStager.WriteResult writeResult =
+          ArchiveOutputStager.writeAndMeasure(originalJar, temporaryJar, analysis, elevationPlan);
       moved = true;
       return new PreparedOutput(
           temporaryJar,
-          outputPath,
+          location.outputPath(),
           originalJar.toAbsolutePath().normalize(),
-          originalPath,
+          location.originalPath(),
           coordinate,
           originalDigests.sha256(),
           originalDigests.sha1(),
-          trimmedDigests.sha256(),
-          trimmedDigests.sha1(),
-          analysis.totalClasses(),
-          analysis.retainedClasses().size(),
-          prunedClassBytes);
+          writeResult.trimmedDigests().sha256(),
+          writeResult.trimmedDigests().sha1(),
+          elevationPlan == null ? analysis.totalClasses() : elevationPlan.logicalClasses().size(),
+          elevationPlan == null
+              ? analysis.retainedClasses().size()
+              : elevationPlan.retainedLogicalClasses().size(),
+          writeResult.prunedClassBytes(),
+          writeResult.originalPhysicalEntries(),
+          writeResult.trimmedPhysicalEntries(),
+          elevationPlan == null ? "not_multi_release" : "elevated_and_trimmed");
     } finally {
       if (!moved) {
         Files.deleteIfExists(temporaryJar);
@@ -175,7 +180,10 @@ public final class ArchiveSanitizer {
         prepared.trimmedSha1(),
         prepared.totalClasses(),
         prepared.retainedClasses(),
-        prepared.prunedClassBytes());
+        prepared.prunedClassBytes(),
+        prepared.originalPhysicalEntries(),
+        prepared.trimmedPhysicalEntries(),
+        prepared.mrjarStatus());
   }
 
   /** Removes an unpublished staged archive. */
@@ -197,123 +205,10 @@ public final class ArchiveSanitizer {
       String trimmedSha1,
       int totalClasses,
       int retainedClasses,
-      long prunedClassBytes) {}
-
-  private static long writeArchive(
-      final Path originalJar,
-      final Path temporaryJar,
-      final DependencyJarTrimmer.TrimAnalysis analysis)
-      throws IOException {
-    final Set<String> retainedClasses = new HashSet<>(analysis.retainedClasses());
-    final Set<String> seenNames = new HashSet<>();
-    final Set<String> writtenClasses = new HashSet<>();
-    final Set<String> inputClasses = new HashSet<>();
-    final PrunedClassByteCounter prunedClassBytes = new PrunedClassByteCounter();
-    try (JarFile input = new JarFile(originalJar.toFile());
-        OutputStream fileOutput = Files.newOutputStream(temporaryJar);
-        JarOutputStream output = new JarOutputStream(fileOutput)) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
-        final String name = entry.getName();
-        if (!seenNames.add(name)) {
-          throw new IOException("Duplicate archive entry cannot be preserved safely: " + name);
-        }
-        if (entry.isDirectory()) {
-          writeEntry(input, output, entry);
-          continue;
-        }
-        if (JarSignatureSanitizer.isSignatureFile(name)) {
-          continue;
-        }
-        if (JarSignatureSanitizer.isManifest(name)) {
-          final Manifest manifest;
-          try (InputStream manifestInput = input.getInputStream(entry)) {
-            manifest = new Manifest(manifestInput);
-          }
-          JarSignatureSanitizer.cleanse(manifest);
-          JarSignatureSanitizer.writeManifest(output, entry, manifest);
-          continue;
-        }
-        if (DependencyJarTrimmer.isVersionedModuleDescriptor(name)) {
-          continue;
-        }
-        if (name.endsWith(".class")) {
-          if ("module-info.class".equals(name) || name.startsWith("META-INF/versions/")) {
-            throw new IOException("Unsupported modular or multi-release entry: " + name);
-          }
-          final String className;
-          try (InputStream classInput = input.getInputStream(entry)) {
-            className = new ClassReader(classInput).getClassName();
-          } catch (final RuntimeException exception) {
-            throw new IOException("Could not read class entry: " + name, exception);
-          }
-          if (!name.equals(className + ".class")) {
-            throw new IOException("Class entry path does not match its declared name: " + name);
-          }
-          inputClasses.add(className);
-          if (!retainedClasses.contains(className)) {
-            prunedClassBytes.add(entry);
-            continue;
-          }
-          writtenClasses.add(className);
-        }
-        writeEntry(input, output, entry);
-      }
-    }
-    if (!inputClasses.containsAll(retainedClasses)) {
-      final Set<String> missing = new HashSet<>(retainedClasses);
-      missing.removeAll(inputClasses);
-      throw new IOException(
-          "Trim analysis references classes missing from original JAR: " + missing);
-    }
-    if (!writtenClasses.equals(retainedClasses)) {
-      throw new IOException("Not all retained classes were written to the trimmed JAR");
-    }
-    if (inputClasses.size() != analysis.totalClasses()) {
-      throw new IOException("Trim analysis class count does not match original JAR entries");
-    }
-    return prunedClassBytes.value();
-  }
-
-  /** Counts omitted class payload bytes without retaining the payloads. */
-  private static final class PrunedClassByteCounter {
-    /** Total uncompressed bytes across omitted class entries. */
-    private long totalBytes;
-
-    private void add(final JarEntry entry) throws IOException {
-      if (entry.getSize() < 0) {
-        throw new IOException("Class entry has unknown uncompressed size: " + entry.getName());
-      }
-      try {
-        totalBytes = Math.addExact(totalBytes, entry.getSize());
-      } catch (final ArithmeticException exception) {
-        throw new IOException("Pruned class byte total overflowed", exception);
-      }
-    }
-
-    private long value() {
-      return totalBytes;
-    }
-  }
-
-  private static void writeEntry(
-      final JarFile input, final JarOutputStream output, final JarEntry entry) throws IOException {
-    final JarEntry copy = new JarEntry(entry.getName());
-    if (entry.getTime() >= 0) {
-      copy.setTime(entry.getTime());
-    }
-    if (entry.getComment() != null) {
-      copy.setComment(entry.getComment());
-    }
-    output.putNextEntry(copy);
-    if (!entry.isDirectory()) {
-      try (InputStream entryInput = input.getInputStream(entry)) {
-        entryInput.transferTo(output);
-      }
-    }
-    output.closeEntry();
-  }
+      long prunedClassBytes,
+      int originalPhysicalEntries,
+      int trimmedPhysicalEntries,
+      String mrjarStatus) {}
 
   private static void moveIntoPlace(final Path temporaryJar, final Path trimmedJar)
       throws IOException {

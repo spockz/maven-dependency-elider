@@ -55,6 +55,9 @@ class ArchiveSanitizerTest {
   /** JAR entry path for the retained fixture type. */
   private static final String KEEP_CLASS_ENTRY = "fixture/Keep.class";
 
+  /** Manifest entry path omitted while the test writes a replacement manifest. */
+  private static final String MANIFEST_ENTRY = "META-INF/MANIFEST.MF";
+
   /** Isolates test archive and compiler files. */
   @TempDir Path temporaryDirectory;
 
@@ -118,6 +121,67 @@ class ArchiveSanitizerTest {
           .isEqualTo(PRESERVED_VALUE);
       assertThat(manifest.getEntries()).doesNotContainKey(FIXTURE_PACKAGE + "/Drop.class");
     }
+  }
+
+  @Test
+  void elevatesMultiReleaseTargetAndProducesJarValidateCleanOutput() throws Exception {
+    final Path candidate = createCandidateJar();
+    final Path multiRelease = temporaryDirectory.resolve("elevated-multi-release.jar");
+    final byte[] keepClass;
+    try (JarFile input = new JarFile(candidate.toFile())) {
+      keepClass = input.getInputStream(input.getJarEntry(KEEP_CLASS_ENTRY)).readAllBytes();
+    }
+    final Manifest manifest = new Manifest();
+    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+    manifest.getMainAttributes().putValue("Multi-Release", "true");
+    try (JarFile input = new JarFile(candidate.toFile());
+        JarOutputStream output =
+            new JarOutputStream(Files.newOutputStream(multiRelease), manifest)) {
+      final Enumeration<JarEntry> entries = input.entries();
+      while (entries.hasMoreElements()) {
+        final JarEntry entry = entries.nextElement();
+        if (MANIFEST_ENTRY.equalsIgnoreCase(entry.getName())) {
+          continue;
+        }
+        copyEntry(input, output, entry);
+      }
+      writeEntry(output, "META-INF/versions/21/fixture/Keep.class", keepClass);
+    }
+    final MultiReleaseArchivePlan plan =
+        MultiReleaseArchivePlan.create(multiRelease, 21, List.of(ROOT_CLASS_NAME), List.of());
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer.TrimAnalysis(
+            2, java.util.Set.of("fixture/Keep"), java.util.Set.of("fixture/Keep"));
+    final Path output = temporaryDirectory.resolve("elevated-multi-release-output.jar");
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepareMultiRelease(
+            multiRelease,
+            output,
+            ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+            analysis,
+            plan,
+            null);
+    try {
+      assertThat(sanitizer.publish(prepared).retainedClasses()).isEqualTo(1);
+    } finally {
+      sanitizer.discard(prepared);
+    }
+    try (JarFile archive = new JarFile(output.toFile())) {
+      assertThat(archive.getEntry(KEEP_CLASS_ENTRY)).isNotNull();
+      assertThat(archive.getEntry("META-INF/versions/21/fixture/Keep.class")).isNull();
+    }
+    final Path jarTool = Path.of(System.getProperty("java.home"), "bin", "jar");
+    final Process process =
+        new ProcessBuilder(jarTool.toString(), "--validate", "--file", output.toString())
+            .redirectErrorStream(true)
+            .start();
+    final String validationOutput;
+    try (InputStream stream = process.getInputStream()) {
+      validationOutput = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+    }
+    assertThat(process.waitFor()).as(validationOutput).isZero();
+    assertThat(validationOutput).doesNotContainIgnoringCase("warning");
   }
 
   @Test

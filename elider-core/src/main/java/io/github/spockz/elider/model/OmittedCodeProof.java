@@ -6,17 +6,13 @@ import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 /** Proves mapped classes are absent from physical archives. */
-@SuppressWarnings("PMD.TooManyMethods")
 public final class OmittedCodeProof {
   /** Minimum number of mapped classes to require multi-symbol evaluation. */
   private static final int MULTI_SYMBOL_MINIMUM = 2;
@@ -34,8 +30,9 @@ public final class OmittedCodeProof {
     final ArtifactDigests trimmedDigests =
         verifyDigest(
             trimRecord.trimmedPath(), trimRecord.trimmedSha256(), trimRecord.trimmedSha1());
-    final Set<String> originalClasses = readClasses(trimRecord.originalPath());
-    final Set<String> trimmedClasses = readClasses(trimRecord.trimmedPath());
+    final Set<String> originalClasses =
+        OmittedArchiveClassInventory.read(trimRecord.originalPath());
+    final Set<String> trimmedClasses = OmittedArchiveClassInventory.read(trimRecord.trimmedPath());
     final Set<String> absent = verifySymbols(mapping, originalClasses, trimmedClasses);
     verifyUnchanged(trimRecord, originalDigests, trimmedDigests);
     final String impactDetail =
@@ -174,8 +171,9 @@ public final class OmittedCodeProof {
     if (mapping.vulnerableClasses().size() < MULTI_SYMBOL_MINIMUM) {
       return Optional.empty();
     }
-    final Set<String> originalClasses = readClasses(trimRecord.originalPath());
-    final Set<String> trimmedClasses = readClasses(trimRecord.trimmedPath());
+    final Set<String> originalClasses =
+        OmittedArchiveClassInventory.read(trimRecord.originalPath());
+    final Set<String> trimmedClasses = OmittedArchiveClassInventory.read(trimRecord.trimmedPath());
     final Set<String> absentFromOriginal = new TreeSet<>();
     final Set<String> presentAndPruned = new TreeSet<>();
     for (final String mapped : mapping.vulnerableClasses()) {
@@ -216,41 +214,5 @@ public final class OmittedCodeProof {
       }
     }
     return false;
-  }
-
-  private static Set<String> readClasses(final Path path) throws IOException {
-    final Set<String> names = new HashSet<>();
-    try (ZipFile zip = new ZipFile(path.toFile())) {
-      final Enumeration<? extends ZipEntry> entries = zip.entries();
-      while (entries.hasMoreElements()) {
-        final ZipEntry entry = entries.nextElement();
-        final String name = className(entry);
-        if (name != null && !names.add(name)) {
-          throw new IOException("Ambiguous duplicate class entry: " + name.replace('/', '.'));
-        }
-      }
-    } catch (final IllegalArgumentException exception) {
-      throw new IOException("Unreadable archive: " + path, exception);
-    }
-    return names;
-  }
-
-  private static String className(final ZipEntry entry) throws IOException {
-    final String entryName = entry.getName();
-    if (entry.isDirectory() || !entryName.endsWith(".class")) {
-      return null;
-    }
-    String name = entryName.substring(0, entryName.length() - ".class".length());
-    if (name.startsWith("META-INF/versions/")) {
-      final int slash = name.indexOf('/', "META-INF/versions/".length());
-      if (slash < 0) {
-        throw new IOException("Malformed multi-release class entry: " + entryName);
-      }
-      name = name.substring(slash + 1);
-    }
-    if ("module-info".equals(name) || name.endsWith("/module-info")) {
-      return null;
-    }
-    return name;
   }
 }

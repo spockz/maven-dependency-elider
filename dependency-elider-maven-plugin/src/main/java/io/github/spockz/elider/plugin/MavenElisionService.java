@@ -74,10 +74,16 @@ final class MavenElisionService {
       boolean failOnUnsupportedModuleInfo,
       boolean testResolutionContext,
       boolean conservativeServiceLoaderRoots,
-      int trimWorkers) {
+      int trimWorkers,
+      String mrjarStrategy) {
     AnalysisOptions {
       if (trimWorkers < MavenDependencyTrimmer.MIN_TRIM_WORKERS) {
         throw new IllegalArgumentException("trimWorkers must be at least 1");
+      }
+      if (!MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING.equals(mrjarStrategy)
+          && !MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(mrjarStrategy)) {
+        throw new IllegalArgumentException(
+            "elide.mrjarStrategy must be vertical-shading or pass-through");
       }
     }
 
@@ -107,7 +113,8 @@ final class MavenElisionService {
           failOnUnsupportedModuleInfo,
           testResolutionContext,
           conservativeServiceLoaderRoots,
-          MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS);
+          MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+          MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING);
     }
 
     AnalysisOptions(
@@ -135,7 +142,8 @@ final class MavenElisionService {
           failOnUnsupportedModuleInfo,
           testResolutionContext,
           true,
-          MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS);
+          MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+          MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING);
     }
   }
 
@@ -335,6 +343,16 @@ final class MavenElisionService {
   }
 
   Analysis finish(final PreparedAnalysis prepared) throws IOException, MojoFailureException {
+    if (requiresTierAwareMrjarTrim(prepared)) {
+      final Analysis analysis = finishEffectiveOutputs(finishAnalysis(prepared));
+      if (analysis.generationCommit() != null) {
+        try (TrimOutputGenerationCommitHandle generation = analysis.generationCommit()) {
+          generation.commit();
+          generation.cleanupCommitted();
+        }
+      }
+      return analysis;
+    }
     final MavenProject project = prepared.project();
     final AnalysisOptions options = prepared.options();
     final MavenSession session = options.session();
@@ -366,6 +384,10 @@ final class MavenElisionService {
                     failOnUnsupportedModuleInfo,
                     prepared.dynamicRootInputs().provenServiceInterfaces(),
                     options.conservativeServiceLoaderRoots(),
+                    options.mrjarStrategy(),
+                    options.trimJars(),
+                    prepared.dynamicRootInputs().provenServiceInterfaces(),
+                    options.conservativeServiceLoaderRoots(),
                     options.trimWorkers()))
             : new MavenDependencyTrimmer.TrimResult(
                 List.of(), List.of(), List.of(), List.of(), 0, 0L, 0);
@@ -384,6 +406,33 @@ final class MavenElisionService {
         trimResult.maximumCacheHitNanos(),
         trimResult.analysisRuns(),
         prepared.dynamicRootInputs().unprovenServiceRootsByCoordinate());
+  }
+
+  private static boolean requiresTierAwareMrjarTrim(final PreparedAnalysis prepared)
+      throws IOException {
+    final AnalysisOptions options = prepared.options();
+    if (!options.trimJars()) {
+      return false;
+    }
+    final Set<ArtifactCoordinate> retained = prepared.rawDecision().retainedArtifacts();
+    boolean hasMultiRelease = false;
+    boolean hasOtherCandidate = false;
+    for (final ArtifactSnapshot snapshot : prepared.resolvedSnapshots()) {
+      if (!retained.contains(snapshot.coordinate())
+          || !"jar".equals(snapshot.coordinate().type())
+          || !Set.of("compile", "runtime").contains(snapshot.coordinate().scope())) {
+        continue;
+      }
+      if (MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath())) {
+        hasMultiRelease = true;
+        if (MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING.equals(options.mrjarStrategy())) {
+          return true;
+        }
+      } else {
+        hasOtherCandidate = true;
+      }
+    }
+    return hasMultiRelease && hasOtherCandidate;
   }
 
   EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)
@@ -547,6 +596,8 @@ final class MavenElisionService {
         options.failOnUnsupportedMultiRelease(),
         options.explicitPassThroughArtifacts(),
         options.failOnUnsupportedModuleInfo(),
+        options.mrjarStrategy(),
+        options.trimJars(),
         prepared.dynamicRootInputs().provenServiceInterfaces(),
         options.conservativeServiceLoaderRoots(),
         options.trimWorkers());

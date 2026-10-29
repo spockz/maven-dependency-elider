@@ -14,9 +14,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
-import java.util.zip.ZipOutputStream;
+import java.util.jar.Manifest;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
@@ -69,11 +70,23 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     return fixture(duplicateClass, serviceRootInA, resourceOnlyB, false);
   }
 
-  private Fixture fixture(
+  /** Builds a fixture with optional unresolved ASM references. */
+  protected Fixture fixture(
       final boolean duplicateClass,
       final boolean serviceRootInA,
       final boolean resourceOnlyB,
       final boolean optionalAsmReference)
+      throws IOException {
+    return fixture(duplicateClass, serviceRootInA, resourceOnlyB, optionalAsmReference, 21);
+  }
+
+  /** Builds a release-specific fixture for multi-tier archive analysis. */
+  protected Fixture fixture(
+      final boolean duplicateClass,
+      final boolean serviceRootInA,
+      final boolean resourceOnlyB,
+      final boolean optionalAsmReference,
+      final int release)
       throws IOException {
     final Path sourceDirectory = Files.createDirectories(temporaryDirectory.resolve("sources"));
     final Path classes = Files.createDirectories(temporaryDirectory.resolve("classes"));
@@ -124,13 +137,17 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     if (optionalAsmSource != null) {
       sources.add(optionalAsmSource);
     }
-    compile(classes, sources);
+    io.github.spockz.elider.test.CompilationFixtureSupport.compile(classes, sources, release);
     final Path firstArtifactPath =
         jar(
             "a.jar",
             classes,
             List.of("closure/a/Entry.class", "closure/a/Extra.class"),
-            firstArtifactResources(serviceRootInA));
+            serviceRootInA
+                ? Map.of(
+                    "data/fixture.txt", "preserve this resource\n",
+                    "META-INF/services/closure.a.Entry", "closure.b.Middle\n")
+                : Map.of("data/fixture.txt", "preserve this resource\n"));
     final List<String> secondClasses =
         resourceOnlyB
             ? List.of()
@@ -151,21 +168,13 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         secondArtifactPath,
         thirdArtifactPath,
         fourthArtifactPath,
-        fifthArtifactPath);
+        fifthArtifactPath,
+        release);
   }
 
   /** Builds a fixture whose entry class has an unresolved optional ASM type. */
   protected Fixture fixtureWithOptionalAsmReference() throws IOException {
     return fixture(false, false, false, true);
-  }
-
-  private static Map<String, String> firstArtifactResources(final boolean serviceRootInA) {
-    if (serviceRootInA) {
-      return Map.of(
-          "data/fixture.txt", "preserve this resource\n",
-          "META-INF/services/closure.a.Entry", "closure.b.Middle\n");
-    }
-    return Map.of("data/fixture.txt", "preserve this resource\n");
   }
 
   private Path writeSource(final Path root, final String relative, final String content)
@@ -174,10 +183,6 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     Files.createDirectories(source.getParent());
     Files.writeString(source, content + "\n");
     return source;
-  }
-
-  private static void compile(final Path output, final List<Path> sources) throws IOException {
-    io.github.spockz.elider.test.CompilationFixtureSupport.compile(output, sources);
   }
 
   private Path jar(final String name, final Path classes, final List<String> entries)
@@ -228,7 +233,8 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         final Path secondArtifactPath,
         final Path thirdArtifactPath,
         final Path fourthArtifactPath,
-        final Path fifthArtifactPath)
+        final Path fifthArtifactPath,
+        final int release)
         throws IOException {
       final Artifact firstArtifact = artifact("a", firstArtifactPath);
       final Artifact secondArtifact = artifact("b", secondArtifactPath, RUNTIME_SCOPE);
@@ -244,7 +250,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       project.setArtifactId("consumer");
       project.setVersion(VERSION);
       project.setFile(temporaryDirectory.resolve("consumer-pom.xml").toFile());
-      project.getProperties().setProperty("maven.compiler.release", "21");
+      project.getProperties().setProperty("maven.compiler.release", Integer.toString(release));
       final Build build = new Build();
       build.setDirectory(temporaryDirectory.resolve("build").toString());
       project.setBuild(build);
@@ -317,10 +323,20 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
 
     Path addVersionedClassToC() throws IOException {
       final Path path = snapshot("c").filePath();
-      final byte[] content =
+      final Path versionedClasses = temporaryDirectory.resolve("version-9-classes");
+      io.github.spockz.elider.test.CompilationFixtureSupport.compile(
+          versionedClasses, List.of(temporaryDirectory.resolve("sources/closure/c/Leaf.java")), 9);
+      final byte[] content = Files.readAllBytes(versionedClasses.resolve("closure/c/Leaf.class"));
+      final byte[] baseContent =
           Files.readAllBytes(temporaryDirectory.resolve("classes/closure/c/Leaf.class"));
-      try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(path))) {
-        output.putNextEntry(new java.util.zip.ZipEntry("META-INF/versions/9/closure/c/Leaf.class"));
+      final Manifest manifest = new Manifest();
+      manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+      manifest.getMainAttributes().putValue("Multi-Release", "true");
+      try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path), manifest)) {
+        output.putNextEntry(new JarEntry("closure/c/Leaf.class"));
+        output.write(baseContent);
+        output.closeEntry();
+        output.putNextEntry(new JarEntry("META-INF/versions/9/closure/c/Leaf.class"));
         output.write(content);
         output.closeEntry();
       }

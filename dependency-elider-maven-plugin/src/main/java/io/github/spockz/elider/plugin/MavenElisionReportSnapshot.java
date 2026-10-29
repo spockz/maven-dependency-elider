@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -232,12 +233,7 @@ record MavenElisionReportSnapshot(
 
     final List<TrimmedArtifact> trimmed =
         analysis.trimRecords().stream()
-            .map(
-                record ->
-                    new TrimmedArtifact(
-                        record.coordinate().toString(),
-                        record.totalClasses() - record.retainedClasses(),
-                        record.prunedClassBytes()))
+            .map(MavenElisionReportSnapshot::trimmedArtifact)
             .sorted(Comparator.comparing(TrimmedArtifact::coordinate))
             .toList();
     final int prunedClasses = sumPrunedClassCounts(trimmed);
@@ -309,6 +305,16 @@ record MavenElisionReportSnapshot(
             ? MediatedGraphReport.unavailable(
                 "Mediated graph data is unavailable for this analysis")
             : analysis.mediatedGraph());
+  }
+
+  static TrimmedArtifact trimmedArtifact(final ArtifactTrimRecord record) {
+    final int prunedClasses = record.totalClasses() - record.retainedClasses();
+    if (prunedClasses == 0 && !"elevated_and_trimmed".equals(record.mrjarStatus())) {
+      throw new IllegalArgumentException(
+          "A single-release trim record must prune at least one class: " + record.coordinate());
+    }
+    return new TrimmedArtifact(
+        record.coordinate().toString(), prunedClasses, record.prunedClassBytes());
   }
 
   static DroppedArtifactSummary droppedArtifactSummary(final MavenElisionService.Analysis analysis)
@@ -495,7 +501,7 @@ record MavenElisionReportSnapshot(
       String coordinate, int programClassesPruned, long uncompressedProgramClassBytesPruned) {
     TrimmedArtifact {
       requireNonBlank(coordinate, "coordinate");
-      require(programClassesPruned > 0, "programClassesPruned must be positive");
+      require(programClassesPruned >= 0, "programClassesPruned must not be negative");
       require(
           uncompressedProgramClassBytesPruned >= 0,
           "uncompressedProgramClassBytesPruned must not be negative");

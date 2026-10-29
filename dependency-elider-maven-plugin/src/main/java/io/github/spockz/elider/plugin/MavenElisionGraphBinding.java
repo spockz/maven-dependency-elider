@@ -6,6 +6,7 @@ import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.model.TraceData;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -43,7 +44,8 @@ final class MavenElisionGraphBinding {
           "Resolved inventory cannot be fingerprinted: " + exception.getMessage());
     }
     final String operationFingerprint =
-        operationFingerprint(options, inventoryFingerprint, trace, requiredRoots, rawDecision);
+        operationFingerprint(
+            project, options, inventoryFingerprint, trace, requiredRoots, rawDecision);
     if (!MavenElisionGraphInventory.matchesDecision(inventory, rawDecision)) {
       return failClosed(
           projectKey,
@@ -153,16 +155,23 @@ final class MavenElisionGraphBinding {
   }
 
   private static String operationFingerprint(
+      final MavenProject project,
       final MavenElisionService.AnalysisOptions options,
       final String inventoryFingerprint,
       final TraceData trace,
       final Set<String> requiredRoots,
-      final ElisionDecision decision) {
+      final ElisionDecision decision)
+      throws IOException {
     final List<String> fields = new ArrayList<>();
     fields.add(inventoryFingerprint);
+    MavenCompilerSettings.releaseIdentity(project, options.session())
+        .forEach(option -> fields.add("compiler-option=" + option));
+    fields.add("runtime-release=" + Runtime.version().feature());
+    fields.add(
+        "java-home=" + Path.of(System.getProperty("java.home")).toAbsolutePath().normalize());
     fields.add(Boolean.toString(options.sourceRootsComplete()));
     fields.add(Boolean.toString(options.trimJars()));
-    fields.add(Boolean.toString(options.failOnUnsupportedMultiRelease()));
+    fields.add(options.mrjarStrategy());
     fields.add(Boolean.toString(options.failOnUnsupportedModuleInfo()));
     fields.addAll(sorted(options.excludedArtifacts()));
     fields.addAll(sorted(options.explicitTrimRoots()));

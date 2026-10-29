@@ -89,7 +89,7 @@ final class MultiReleaseLibraryProjectionTest {
 
     assertThat(
             List.of(
-                MultiReleaseLibraryProjection.hasUnsupportedVersionedClasses(multiRelease),
+                MultiReleaseClassInventory.hasUnsupportedVersionedClasses(multiRelease),
                 observe(nineProjection),
                 observe(twentyOneProjection)))
         .containsExactly(

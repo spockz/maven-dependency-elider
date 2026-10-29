@@ -6,9 +6,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.scanner.BytecodeReferenceScan;
+import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
 import io.github.spockz.elider.trimmer.TrimAnalysisSession;
@@ -26,6 +30,7 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -135,7 +140,7 @@ final class ElideMojoTest {
     final Path originalJar =
         compileJarSources(
             "publication-rollback",
-            java.util.Map.of("used/Entry.java", "package used; public class Entry {}"),
+            Map.of("used/Entry.java", "package used; public class Entry {}"),
             null);
     final Artifact used = runtimeArtifact("used", originalJar);
     final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
@@ -224,15 +229,13 @@ final class ElideMojoTest {
         runtimeArtifact(
             "used",
             compileJarSources(
-                "used",
-                java.util.Map.of("Sample.java", "package used; public class Sample {}"),
-                null));
+                "used", Map.of("Sample.java", "package used; public class Sample {}"), null));
     final Artifact unused =
         runtimeArtifact(
             "unused",
             compileJarSources(
                 "unused-valid-jar",
-                java.util.Map.of("unused/Idle.java", "package unused; public class Idle {}"),
+                Map.of("unused/Idle.java", "package unused; public class Idle {}"),
                 null));
     final Set<Artifact> resolved = new LinkedHashSet<>(List.of(used, unused));
     final Set<Artifact> direct = new LinkedHashSet<>(List.of(used, unused));
@@ -266,7 +269,7 @@ final class ElideMojoTest {
             "used-app-trace",
             compileJarSources(
                 "used-app-trace-jar",
-                java.util.Map.of("used/Entry.java", "package used; public class Entry {}"),
+                Map.of("used/Entry.java", "package used; public class Entry {}"),
                 null));
     final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
     final RecordingMavenLog log = new RecordingMavenLog();
@@ -288,7 +291,7 @@ final class ElideMojoTest {
             "unused-runtime",
             compileJarSources(
                 "unused-runtime-valid-jar",
-                java.util.Map.of("unused/Entry.java", "package unused; public class Entry {}"),
+                Map.of("unused/Entry.java", "package unused; public class Entry {}"),
                 null));
     final MavenProject project =
         project(runtime, new LinkedHashSet<>(List.of(directRuntime)), unusedRuntime);
@@ -413,45 +416,77 @@ final class ElideMojoTest {
   }
 
   @Test
-  void multiReleaseTargetsPassThroughAndSeedReverseClassClosure()
+  void multiReleaseAnalysisDeduplicatesEqualTargetAndRuntimeRelease()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final MultiReleaseFixture fixture = multiReleaseFixture("mr-equal-release");
+    fixture
+        .project()
+        .getProperties()
+        .setProperty("maven.compiler.release", Integer.toString(Runtime.version().feature()));
+    final byte[] selectedRoot =
+        jarEntryBytes(fixture.multiReleasePath(), "META-INF/versions/17/mrroot/Root.class");
+    final ElideMojo mojo = newMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", fixture.project());
+    set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
+    set(mojo, "reportFile", tempDir.resolve("mr-equal-release-report.json").toFile());
+    set(mojo, "trimJars", true);
+
+    mojo.execute();
+
+    assertThat(fixture.multiRelease().getFile().toPath()).isNotEqualTo(fixture.multiReleasePath());
+    try (JarFile output = new JarFile(fixture.multiRelease().getFile())) {
+      assertThat(jarEntryBytes(fixture.multiRelease().getFile().toPath(), "mrroot/Root.class"))
+          .isEqualTo(selectedRoot);
+      assertThat(output.stream().map(JarEntry::getName))
+          .noneMatch(name -> name.startsWith("META-INF/versions/"));
+      assertThat(output.getManifest().getMainAttributes().getValue("Multi-Release")).isNull();
+    }
+  }
+
+  @Test
+  void multiReleaseDefaultsToVerticalShadingAndClosesTargetAndUpperSiblingBodies()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final MultiReleaseFixture fixture = multiReleaseFixture("mr-default");
     final byte[] originalMultiReleaseBytes = Files.readAllBytes(fixture.multiReleasePath());
+    final byte[] selectedTargetRoot =
+        jarEntryBytes(fixture.multiReleasePath(), "META-INF/versions/11/mrroot/Root.class");
     final Path projectionDirectory = tempDir.resolve("mr-projections");
-    final Path javaNineProjection =
+    final Path javaElevenProjection =
         MultiReleaseLibraryProjection.create(
             fixture.multiReleasePath(),
             new ArtifactCoordinate("org.example", "mr-default-root", "1.0", "jar", "", "runtime"),
             projectionDirectory,
-            9);
-    final Path javaTwentyOneProjection =
+            11);
+    final Path javaSeventeenProjection =
         MultiReleaseLibraryProjection.create(
             fixture.multiReleasePath(),
             new ArtifactCoordinate("org.example", "mr-default-root", "1.0", "jar", "", "runtime"),
             projectionDirectory,
-            21);
+            17);
     final TrimAnalysisSession analysisSession = new TrimAnalysisSession(new DependencyJarTrimmer());
-    final DependencyJarTrimmer.PreparedAnalysis javaNineContext =
+    final DependencyJarTrimmer.PreparedAnalysis javaElevenContext =
         analysisSession.prepareUnchangedPassThrough(
-            javaNineProjection,
+            javaElevenProjection,
             List.of(fixture.candidatePath()),
-            new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 9),
+            new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 11),
             Set.of());
-    final DependencyJarTrimmer.PreparedAnalysis javaTwentyOneContext =
+    final DependencyJarTrimmer.PreparedAnalysis javaSeventeenContext =
         analysisSession.prepareUnchangedPassThrough(
-            javaTwentyOneProjection,
+            javaSeventeenProjection,
             List.of(fixture.candidatePath()),
-            new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 21),
+            new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 17),
             Set.of());
-    final DependencyJarTrimmer.TrimAnalysis javaNineAnalysis =
-        javaNineContext.analyze(archiveClassNames(javaNineProjection));
-    final DependencyJarTrimmer.TrimAnalysis javaTwentyOneAnalysis =
-        javaTwentyOneContext.analyze(archiveClassNames(javaTwentyOneProjection));
-    assertThat(javaNineAnalysis.reachableLibraryClasses()).doesNotContain("candidate/Helper");
-    assertThat(javaTwentyOneAnalysis.reachableLibraryClasses()).contains("candidate/Helper");
-    final List<String> warnings = new ArrayList<>();
+    final DependencyJarTrimmer.TrimAnalysis javaElevenAnalysis =
+        javaElevenContext.analyze(Set.of("mrroot.Root"));
+    final DependencyJarTrimmer.TrimAnalysis javaSeventeenAnalysis =
+        javaSeventeenContext.analyze(Set.of("mrroot.Root"));
+    assertThat(javaElevenAnalysis.reachableLibraryClasses())
+        .doesNotContain("candidate/TargetSupport");
+    assertThat(javaSeventeenAnalysis.reachableLibraryClasses())
+        .contains("candidate/TargetSupport", "candidate/UpperSupport");
     final ElideMojo mojo = newMojo();
-    mojo.setLog(recordingLog(warnings));
+    mojo.setLog(new SystemStreamLog());
     set(mojo, "project", fixture.project());
     set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
     set(mojo, "reportFile", tempDir.resolve("mr-default-report.json").toFile());
@@ -460,34 +495,76 @@ final class ElideMojoTest {
 
     mojo.execute();
 
-    assertThat(fixture.multiRelease().getFile().toPath()).isEqualTo(fixture.multiReleasePath());
     assertThat(Files.readAllBytes(fixture.multiReleasePath())).isEqualTo(originalMultiReleaseBytes);
+    assertThat(fixture.multiRelease().getFile().toPath()).isNotEqualTo(fixture.multiReleasePath());
     assertThat(fixture.candidate().getFile().toPath()).isNotEqualTo(fixture.candidatePath());
-    assertThat(warnings)
-        .anySatisfy(
-            warning ->
-                assertThat(warning)
-                    .contains("multi-release dependency unchanged")
-                    .contains("unchanged external links are tolerated")
-                    .contains("org.example:mr-default-root:jar:1.0"));
     try (JarFile trimmed = new JarFile(fixture.candidate().getFile())) {
       assertThat(trimmed.getEntry("candidate/Keep.class")).isNotNull();
-      assertThat(trimmed.getEntry("candidate/Helper.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/TargetSupport.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/TargetTail.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/UpperSupport.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/UpperTail.class")).isNotNull();
       assertThat(trimmed.getEntry("candidate/Drop.class")).isNull();
     }
     try (URLClassLoader loader =
         new URLClassLoader(
             new URL[] {
-              fixture.multiReleasePath().toUri().toURL(),
+              fixture.multiRelease().getFile().toURI().toURL(),
               fixture.candidate().getFile().toURI().toURL()
             })) {
       loader.loadClass("mrroot.Root").getMethod("execute").invoke(null);
     } catch (final java.lang.reflect.InvocationTargetException exception) {
       throw new AssertionError(
-          "The effective Java 21 MR method could not call candidate.Helper", exception);
+          "The effective Java 17 MR method could not call candidate.UpperSupport", exception);
     } catch (final ReflectiveOperationException exception) {
-      throw new AssertionError("The effective Java 21 MR method could not be invoked", exception);
+      throw new AssertionError("The effective Java 17 MR method could not be invoked", exception);
     }
+    final byte[] unusedUpperClass;
+    try (JarFile original = new JarFile(fixture.multiReleasePath().toFile())) {
+      try (InputStream input =
+          original.getInputStream(
+              original.getJarEntry("META-INF/versions/17/mrroot/UnusedUpperFeature.class"))) {
+        unusedUpperClass = input.readAllBytes();
+      }
+    }
+    try (JarFile trimmed = new JarFile(fixture.multiRelease().getFile())) {
+      assertThat(trimmed.getManifest().getMainAttributes().getValue("Multi-Release"))
+          .isEqualTo("true");
+      assertThat(jarEntryBytes(trimmed, "mrroot/Root.class")).isEqualTo(selectedTargetRoot);
+      assertThat(trimmed.getEntry("mrroot/VersionOnly.class")).isNull();
+      assertThat(trimmed.getEntry("mrroot/RootHelper.class")).isNotNull();
+      assertThat(trimmed.getEntry("mrroot/UnusedJava17.class")).isNull();
+      assertThat(trimmed.getEntry("META-INF/versions/17/mrroot/VersionOnly.class")).isNotNull();
+      assertThat(trimmed.getEntry("META-INF/versions/17/mrroot/UnusedUpperFeature.class"))
+          .isNotNull();
+      try (InputStream input =
+          trimmed.getInputStream(
+              trimmed.getJarEntry("META-INF/versions/17/mrroot/UnusedUpperFeature.class"))) {
+        assertThat(input.readAllBytes()).isEqualTo(unusedUpperClass);
+      }
+      assertThat(trimmed.getEntry("META-INF/versions/11/mrroot/Root.class")).isNull();
+      assertThat(trimmed.getEntry("META-INF/versions/17/mrroot/Root.class")).isNotNull();
+    }
+    final ObjectMapper mapper = new ObjectMapper();
+    final JsonNode sbom = mapper.readTree(tempDir.resolve("mr-default-build/sbom.json").toFile());
+    final JsonNode mrComponent =
+        java.util.stream.StreamSupport.stream(sbom.path("components").spliterator(), false)
+            .filter(component -> component.path("purl").asText().contains("mr-default-root"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(mrComponent.path("properties").findValuesAsText("name"))
+        .contains(
+            "elider:retainedClasses",
+            "elider:totalClasses",
+            "elider:mrjarStatus",
+            "elider:inputPhysicalEntries",
+            "elider:outputPhysicalEntries");
+    assertThat(componentProperty(mrComponent, "elider:totalClasses")).isEqualTo("5");
+    assertThat(componentProperty(mrComponent, "elider:retainedClasses")).isEqualTo("4");
+    assertThat(componentProperty(mrComponent, "elider:mrjarStatus"))
+        .isEqualTo("elevated_and_trimmed");
+    assertThat(componentProperty(mrComponent, "elider:inputPhysicalEntries")).isEqualTo("8");
+    assertThat(componentProperty(mrComponent, "elider:outputPhysicalEntries")).isEqualTo("6");
   }
 
   @Test
@@ -496,7 +573,7 @@ final class ElideMojoTest {
     final Path candidateWithBridgeStub =
         compileJarSources(
             "configured-pass-through-candidate-with-bridge-stub",
-            java.util.Map.of(
+            Map.of(
                 "Keep.java",
                 "package caller; public class Keep { public static void execute() { "
                     + "bridge.Root.execute(); } }",
@@ -511,7 +588,7 @@ final class ElideMojoTest {
     final Path helperPath =
         compileJarSources(
             "configured-pass-through-helper",
-            java.util.Map.of(
+            Map.of(
                 "Helper.java", "package candidate; public class Helper { public void touch() {} }",
                 "Entry.java", "package candidate; public class Entry {}",
                 "Drop.java", "package candidate; public class Drop {}"),
@@ -519,7 +596,7 @@ final class ElideMojoTest {
     final Path rootWithOptionalStub =
         compileJarSources(
             "configured-pass-through-root",
-            java.util.Map.of(
+            Map.of(
                 "Root.java",
                 "package bridge; public class Root { public static void execute() { "
                     + "new candidate.Helper().touch(); } "
@@ -537,7 +614,7 @@ final class ElideMojoTest {
     final Path candidateWithOptionalStub =
         compileJarSources(
             "strict-candidate",
-            java.util.Map.of(
+            Map.of(
                 "Keep.java",
                 "package strictcandidate; public class Keep { public static void call() { "
                     + "new org.example.optional.ScriptEvaluator().run(); } }",
@@ -637,21 +714,286 @@ final class ElideMojoTest {
   }
 
   @Test
-  void failHardRejectsMultiReleaseTrimTargetBeforeMutation()
-      throws IOException, ReflectiveOperationException {
-    final MultiReleaseFixture fixture = multiReleaseFixture("mr-fail-hard");
+  void analyzeServiceDirectFinishStagesVerticalShadingOutput()
+      throws IOException, MojoFailureException {
+    final MultiReleaseFixture fixture = multiReleaseFixture("mr-direct-finish");
+    final MavenElisionService.Analysis analysis =
+        new MavenElisionService()
+            .analyze(
+                fixture.project(),
+                new MavenElisionService.AnalysisOptions(
+                    List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()),
+                    List.of(),
+                    null,
+                    null,
+                    false,
+                    true,
+                    List.of(),
+                    false,
+                    List.of(),
+                    false,
+                    true,
+                    true,
+                    "vertical-shading"));
+
+    final ArtifactTrimRecord record =
+        analysis.trimRecords().stream()
+            .filter(item -> "mr-direct-finish-root".equals(item.coordinate().artifactId()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(record.mrjarStatus()).isEqualTo("elevated_and_trimmed");
+    assertThat(record.trimmedPath()).isRegularFile();
+    try (JarFile output = new JarFile(record.trimmedPath().toFile())) {
+      assertThat(output.getEntry("mrroot/Root.class")).isNotNull();
+      assertThat(output.getEntry("mrroot/RootHelper.class")).isNotNull();
+      assertThat(output.getEntry("META-INF/versions/11/mrroot/Root.class")).isNull();
+    }
+  }
+
+  @Test
+  void elevatedServicesDropProvidersMissingAtTargetButKeepUnknownProviders()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Path rootBase =
+        compileJarSources(
+            "mr-service-base",
+            Map.of(
+                "Root.java", "package mrservice; public class Root { public static void run() {} }",
+                "Spi.java", "package mrservice; public interface Spi {}"),
+            null,
+            8);
+    final Path targetRoot =
+        compileJarSources(
+            "mr-service-target",
+            Map.of(
+                "Root.java",
+                "package mrservice; public class Root { public static void run() {} }"),
+            rootBase,
+            11);
+    final Path upperClasses =
+        compileJarSources(
+            "mr-service-upper",
+            Map.of(
+                "Provider.java",
+                "package mrservice; class Provider implements Spi { public Provider() {} }"),
+            rootBase,
+            17);
+    final Path droppedProviderPath =
+        compileJarSources(
+            "mr-service-dropped-provider",
+            Map.of(
+                "Provider.java",
+                "package droppedprovider; public class Provider implements mrservice.Spi { "
+                    + "public Provider() {} }",
+                "Keep.java",
+                "package droppedprovider; public class Keep {}"),
+            rootBase,
+            8);
+    final Path multiReleasePath =
+        writeMultiReleaseJar(
+            "mr-service-root.jar",
+            rootBase,
+            null,
+            targetRoot,
+            upperClasses,
+            Map.of(
+                "META-INF/services/mrservice.Spi",
+                "mrservice.Provider\n" + "droppedprovider.Provider\n" + "external.Provider\n"));
+    final Artifact root = runtimeArtifact("mr-service-root", multiReleasePath);
+    final Artifact droppedProvider =
+        runtimeArtifact("mr-service-dropped-provider", droppedProviderPath);
+    final ArtifactCoordinate droppedProviderCoordinate =
+        new ArtifactCoordinate(
+            "org.example", "mr-service-dropped-provider", "1.0", "jar", "", "runtime");
+    final MavenProject project =
+        projectForArtifacts(
+            "mr-service-consumer", new LinkedHashSet<>(List.of(root, droppedProvider)));
+    project.getProperties().setProperty("maven.compiler.release", "11");
+    final MavenElisionService service = new MavenElisionService();
+    final Path trace = writeTrace("mrservice.Root\n");
+    final MavenElisionService.PreparedAnalysis prepared =
+        service.prepare(
+            project,
+            new MavenElisionService.AnalysisOptions(
+                List.of(trace.toFile()),
+                List.of(),
+                null,
+                null,
+                false,
+                true,
+                List.of("droppedprovider.Keep"),
+                false,
+                List.of(),
+                false,
+                true,
+                false,
+                "vertical-shading"));
+    assertThat(prepared.rawDecision().retainedArtifacts()).contains(droppedProviderCoordinate);
+    final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
+    assertThat(effective.effectiveDecision().retainedArtifacts())
+        .contains(droppedProviderCoordinate);
+    assertThat(effective.trimAnalysis().candidateAnalyses()).containsKey(droppedProviderCoordinate);
+    assertThat(
+            effective
+                .trimAnalysis()
+                .candidateAnalyses()
+                .get(droppedProviderCoordinate)
+                .retainedClasses())
+        .contains("droppedprovider/Keep")
+        .doesNotContain("droppedprovider/Provider");
+    final MavenDependencyTrimmer.TrimResult result =
+        MavenDependencyTrimmer.trimEffectiveOutputs(effective);
+    final ArtifactTrimRecord rootRecord =
+        result.records().stream()
+            .filter(record -> "mr-service-root".equals(record.coordinate().artifactId()))
+            .findFirst()
+            .orElseThrow();
+    final ArtifactTrimRecord providerRecord =
+        result.records().stream()
+            .filter(
+                record -> "mr-service-dropped-provider".equals(record.coordinate().artifactId()))
+            .findFirst()
+            .orElseThrow();
+
+    try (JarFile providerOutput = new JarFile(providerRecord.trimmedPath().toFile())) {
+      assertThat(providerOutput.getEntry("droppedprovider/Keep.class")).isNotNull();
+      assertThat(providerOutput.getEntry("droppedprovider/Provider.class")).isNull();
+    }
+
+    try (JarFile output = new JarFile(rootRecord.trimmedPath().toFile())) {
+      assertThat(output.getEntry("META-INF/versions/17/mrservice/Provider.class")).isNotNull();
+      final JarEntry descriptor = output.getJarEntry("META-INF/services/mrservice.Spi");
+      assertThat(descriptor).isNotNull();
+      try (InputStream input = output.getInputStream(descriptor)) {
+        final String providers =
+            new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(providers)
+            .doesNotContain("mrservice.Provider", "droppedprovider.Provider")
+            .contains("external.Provider");
+      }
+    }
+  }
+
+  @Test
+  void promotedArtifactSecondPassAcceptsVersionOnlyLogicalRoot()
+      throws IOException, MojoFailureException {
+    final MultiReleaseFixture fixture = multiReleaseFixture("mr-promotion");
+    final Path trace = writeTrace("mrroot.Root\nmrroot.VersionOnly\n");
+    final MavenElisionService service = new MavenElisionService();
+    final MavenElisionService.PreparedAnalysis prepared =
+        service.prepare(
+            fixture.project(),
+            new MavenElisionService.AnalysisOptions(
+                List.of(trace.toFile()),
+                List.of(),
+                null,
+                null,
+                false,
+                true,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                true,
+                true,
+                "vertical-shading"));
+    final ArtifactCoordinate mrCoordinate =
+        new ArtifactCoordinate("org.example", "mr-promotion-root", "1.0", "jar", "", "runtime");
+    final ArtifactCoordinate candidateCoordinate =
+        new ArtifactCoordinate(
+            "org.example", "mr-promotion-candidate", "1.0", "jar", "", "runtime");
+    assertThat(prepared.rawDecision().elidedArtifacts()).contains(candidateCoordinate);
+    final MavenDependencyTrimmer.TrimRequest initialRequest =
+        tieredRequest(prepared, prepared.rawDecision().retainedArtifacts());
+    final MavenDependencyTrimmer.InMemoryAnalysis first =
+        MavenDependencyTrimmer.analyzeInMemory(initialRequest, Map.of(), Set.of());
+    assertThat(first.reachableArtifacts()).contains(candidateCoordinate);
+    assertThat(first.candidateRoots().get(mrCoordinate)).contains("mrroot.VersionOnly");
+    final Path mrPath = fixture.multiReleasePath().toAbsolutePath().normalize();
+    final MavenDependencyTrimmer.ArtifactRootKey rootKey =
+        new MavenDependencyTrimmer.ArtifactRootKey(
+            mrCoordinate, mrPath, ArtifactDigests.read(mrPath).sha256());
+    final Set<ArtifactCoordinate> promotedCoordinates =
+        union(prepared.rawDecision().retainedArtifacts(), candidateCoordinate);
+    final Map<MavenDependencyTrimmer.ArtifactRootKey, Set<String>> discoveredRoots =
+        Map.of(rootKey, first.candidateRoots().get(mrCoordinate));
+    final MavenDependencyTrimmer.InMemoryAnalysis second =
+        MavenDependencyTrimmer.analyzeInMemory(
+            tieredRequest(prepared, promotedCoordinates),
+            discoveredRoots,
+            Set.of(candidateCoordinate));
+
+    assertThat(second.candidateRoots().get(mrCoordinate)).contains("mrroot.VersionOnly");
+    assertThat(second.candidateRoots().get(mrCoordinate))
+        .noneMatch(name -> name.startsWith("META-INF.versions."));
+    final MavenDependencyTrimmer.InMemoryAnalysis skippedMultiRelease =
+        MavenDependencyTrimmer.analyzeInMemory(
+            tieredRequest(prepared, promotedCoordinates), discoveredRoots, Set.of(mrCoordinate));
+    assertThat(skippedMultiRelease.candidateAnalyses()).containsKey(candidateCoordinate);
+    assertThat(skippedMultiRelease.candidateRoots().get(candidateCoordinate))
+        .contains("candidate.TargetSupport", "candidate.UpperSupport");
+    assertThat(skippedMultiRelease.candidateRoots()).doesNotContainKey(mrCoordinate);
+  }
+
+  @Test
+  void explicitPassThroughKeepsMultiReleaseJarByteIdentical()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final MultiReleaseFixture fixture = multiReleaseFixture("mr-pass-through", true);
+    final byte[] original = Files.readAllBytes(fixture.multiReleasePath());
     final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", fixture.project());
     set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
-    set(mojo, "reportFile", tempDir.resolve("mr-fail-hard-report.json").toFile());
+    set(mojo, "reportFile", tempDir.resolve("mr-pass-through-report.json").toFile());
     set(mojo, "trimJars", true);
-    set(mojo, "failOnUnsupportedMultiRelease", true);
+    set(mojo, "mrjarStrategy", "pass-through");
 
-    assertThatThrownBy(mojo::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Unsupported multi-release implementation classes");
+    mojo.execute();
+
     assertThat(fixture.multiRelease().getFile().toPath()).isEqualTo(fixture.multiReleasePath());
+    assertThat(Files.readAllBytes(fixture.multiReleasePath())).isEqualTo(original);
+    assertThat(fixture.candidate().getFile().toPath()).isNotEqualTo(fixture.candidatePath());
+    try (JarFile candidate = new JarFile(fixture.candidate().getFile())) {
+      assertThat(candidate.getEntry("candidate/TargetSupport.class")).isNotNull();
+      assertThat(candidate.getEntry("candidate/TargetTail.class")).isNotNull();
+    }
+    final Path targetView =
+        MultiReleaseLibraryProjection.create(
+            fixture.multiReleasePath(),
+            new ArtifactCoordinate(
+                "org.example", "mr-pass-through-root", "1.0", "jar", "", "runtime"),
+            tempDir.resolve("mr-pass-through-projection"),
+            11);
+    try (URLClassLoader loader =
+        new URLClassLoader(
+            new URL[] {
+              targetView.toUri().toURL(), fixture.candidate().getFile().toURI().toURL()
+            })) {
+      loader.loadClass("mrroot.Root").getMethod("execute").invoke(null);
+    } catch (final java.lang.reflect.InvocationTargetException exception) {
+      throw new AssertionError(
+          "The Java 11 MR view could not call its retained sibling implementation", exception);
+    } catch (final ReflectiveOperationException exception) {
+      throw new AssertionError("The Java 11 MR view could not be invoked", exception);
+    }
+  }
+
+  @Test
+  void disabledTrimmingKeepsRuntimeProjectionWhenCompilerReleaseExceedsRuntime()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final MultiReleaseFixture fixture = multiReleaseFixture("mr-no-trim");
+    final byte[] original = Files.readAllBytes(fixture.multiReleasePath());
+    fixture.project().getProperties().setProperty("maven.compiler.release", "25");
+    final ElideMojo mojo = newMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", fixture.project());
+    set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
+    set(mojo, "reportFile", tempDir.resolve("mr-no-trim-report.json").toFile());
+    set(mojo, "trimJars", false);
+
+    mojo.execute();
+
+    assertThat(fixture.multiRelease().getFile().toPath()).isEqualTo(fixture.multiReleasePath());
+    assertThat(Files.readAllBytes(fixture.multiReleasePath())).isEqualTo(original);
     assertThat(fixture.candidate().getFile().toPath()).isEqualTo(fixture.candidatePath());
   }
 
@@ -679,8 +1021,7 @@ final class ElideMojoTest {
     final Path versionedClassJar =
         compileJarSources(
             "test-scope-variant",
-            java.util.Map.of(
-                "testscope/Variant.java", "package testscope; public final class Variant {}"),
+            Map.of("testscope/Variant.java", "package testscope; public final class Variant {}"),
             null);
     final Path testJar = tempDir.resolve("test-scope-mr.jar");
     try (JarFile compiled = new JarFile(versionedClassJar.toFile());
@@ -738,52 +1079,46 @@ final class ElideMojoTest {
   private Path compileDynamicRootJar() throws IOException {
     return compileJarSources(
         "End",
-        java.util.Map.ofEntries(
-            java.util.Map.entry(
-                "End.java", "package chain; public interface End { static void touch() {} }"),
-            java.util.Map.entry(
-                "Provider.java", "package chain; public class Provider implements End {}"),
-            java.util.Map.entry("Reflected.java", "package chain; public class Reflected {}"),
-            java.util.Map.entry(
-                "ProxyMarker.java", "package chain; public interface ProxyMarker {}"),
-            java.util.Map.entry("SpringAuto.java", "package chain; public class SpringAuto {}"),
-            java.util.Map.entry("Factory.java", "package chain; public class Factory {}"),
-            java.util.Map.entry(
-                "MetadataCondition.java", "package chain; public class MetadataCondition {}"),
-            java.util.Map.entry(
-                "NativeImageRoot.java", "package chain; public class NativeImageRoot {}"),
-            java.util.Map.entry(
+        Map.ofEntries(
+            Map.entry("End.java", "package chain; public interface End { static void touch() {} }"),
+            Map.entry("Provider.java", "package chain; public class Provider implements End {}"),
+            Map.entry("Reflected.java", "package chain; public class Reflected {}"),
+            Map.entry("ProxyMarker.java", "package chain; public interface ProxyMarker {}"),
+            Map.entry("SpringAuto.java", "package chain; public class SpringAuto {}"),
+            Map.entry("Factory.java", "package chain; public class Factory {}"),
+            Map.entry("MetadataCondition.java", "package chain; public class MetadataCondition {}"),
+            Map.entry("NativeImageRoot.java", "package chain; public class NativeImageRoot {}"),
+            Map.entry(
                 "NativeImageJniRoot.java", "package chain; public class NativeImageJniRoot {}"),
-            java.util.Map.entry(
-                "NativeImageBundle.java", "package chain; public class NativeImageBundle {}"),
-            java.util.Map.entry(
+            Map.entry("NativeImageBundle.java", "package chain; public class NativeImageBundle {}"),
+            Map.entry(
                 "NativeImageBundleCondition.java",
                 "package chain; public class NativeImageBundleCondition {}"),
-            java.util.Map.entry(
+            Map.entry(
                 "NativeImageFeature.java", "package chain; public class NativeImageFeature {}"),
-            java.util.Map.entry(
+            Map.entry(
                 "NativeImageBuildTime.java", "package chain; public class NativeImageBuildTime {}"),
-            java.util.Map.entry(
+            Map.entry(
                 "AutoConfiguration.java",
                 "package org.springframework.boot.autoconfigure; public class "
                     + "AutoConfiguration { public static class Nested {} }"),
-            java.util.Map.entry(
+            Map.entry(
                 "ConditionalOnCheckpointRestore.java",
                 "package org.springframework.boot.autoconfigure.condition; public class "
                     + "ConditionalOnCheckpointRestore {}"),
-            java.util.Map.entry("Resource.java", "package org.crac; public interface Resource {}"),
-            java.util.Map.entry(
+            Map.entry("Resource.java", "package org.crac; public interface Resource {}"),
+            Map.entry(
                 "KafkaStreamsAnnotationDrivenConfiguration.java",
                 "package org.springframework.boot.autoconfigure.kafka; public class "
                     + "KafkaStreamsAnnotationDrivenConfiguration {}"),
-            java.util.Map.entry(
+            Map.entry(
                 "TaskSchedulingConfigurations.java",
                 "package org.springframework.boot.autoconfigure.task; public class "
                     + "TaskSchedulingConfigurations { public static class "
                     + "TaskSchedulerConfiguration {} }"),
-            java.util.Map.entry("BeforeAuto.java", "package chain; public class BeforeAuto {}"),
-            java.util.Map.entry("AfterAuto.java", "package chain; public class AfterAuto {}"),
-            java.util.Map.entry("Unused.java", "package chain; public class Unused {}")),
+            Map.entry("BeforeAuto.java", "package chain; public class BeforeAuto {}"),
+            Map.entry("AfterAuto.java", "package chain; public class AfterAuto {}"),
+            Map.entry("Unused.java", "package chain; public class Unused {}")),
         null);
   }
 
@@ -805,7 +1140,7 @@ final class ElideMojoTest {
     final Path ajar =
         rewriteJar(
             compiledRoot,
-            java.util.Map.of(
+            Map.of(
                 "META-INF/native-image/test/reflect-config.json",
                 "[{\"name\":\"chain.Reflected\"}]",
                 "META-INF/native-image/test/proxy-config.json",
@@ -833,7 +1168,7 @@ final class ElideMojoTest {
     final Path metadatfirstJar =
         rewriteJar(
             cjar,
-            java.util.Map.of(
+            Map.of(
                 "META-INF/spring-autoconfigure-metadata.properties",
                 "chain.SpringAuto.ConditionalOnClass=chain.MetadataCondition\n"
                     + "org.springframework.boot.autoconfigure.AutoConfiguration=\n"
@@ -903,7 +1238,7 @@ final class ElideMojoTest {
     final Path compiled =
         compileJarSources(
             "cycle-all",
-            java.util.Map.of(
+            Map.of(
                 "cycle/Root.java", "package cycle; public class Root { public Bridge bridge; }",
                 "cycle/Bridge.java", "package cycle; public class Bridge { public End end; }",
                 "cycle/End.java", "package cycle; public class End { public Root root; }",
@@ -1005,7 +1340,7 @@ final class ElideMojoTest {
     final Path candidateJar =
         compileJarSources(
             "module-pass-through-candidate",
-            java.util.Map.of(
+            Map.of(
                 "Entry.java",
                 "package candidate; public class Entry {}",
                 "Helper.java",
@@ -1017,7 +1352,7 @@ final class ElideMojoTest {
     final Path compiledPassThrough =
         compileJarSources(
             "module-pass-through-root",
-            java.util.Map.of(
+            Map.of(
                 "Root.java",
                 "package pass; public class Root { public static String call() { "
                     + "return candidate.Helper.value(); } }"),
@@ -1071,9 +1406,7 @@ final class ElideMojoTest {
       throws IOException, ReflectiveOperationException {
     final Path plainJar =
         compileJarSources(
-            "module-info-strict",
-            java.util.Map.of("Root.java", "package pass; public class Root {}"),
-            null);
+            "module-info-strict", Map.of("Root.java", "package pass; public class Root {}"), null);
     final Path modularJar = addRootModuleDescriptor(plainJar, "strict.pass", "pass");
     final Artifact artifact = runtimeArtifact("module-info-strict", modularJar);
     final MavenProject project = projectForArtifacts("module-info-strict", Set.of(artifact));
@@ -1133,7 +1466,7 @@ final class ElideMojoTest {
     final Path callbackJar =
         compileJarSources(
             "callback",
-            java.util.Map.of(
+            Map.of(
                 "Callback.java",
                 "package callback; public class Callback { public String invoke() { "
                     + "return \"callback\"; } }",
@@ -1145,7 +1478,7 @@ final class ElideMojoTest {
     final Path helperJar =
         compileJarSources(
             "helper",
-            java.util.Map.of(
+            Map.of(
                 "Helper.java",
                 "package callback; public class Helper { public static String call() { "
                     + "return new Callback().invoke(); } }"),
@@ -1196,7 +1529,7 @@ final class ElideMojoTest {
     used.setFile(
         rewriteJar(
                 original,
-                java.util.Map.of(
+                Map.of(
                     "META-INF/spring-autoconfigure-metadata.properties", "not-a-supported-key=x\n"))
             .toFile());
     final Path malformed = used.getFile().toPath();
@@ -1229,7 +1562,7 @@ final class ElideMojoTest {
     used.setFile(
         rewriteJar(
                 original,
-                java.util.Map.of(
+                Map.of(
                     "META-INF/native-image/test/native-image.properties",
                     "Args=-H:Class=example.NativeEntry\n"))
             .toFile());
@@ -1263,7 +1596,7 @@ final class ElideMojoTest {
     used.setFile(
         rewriteJar(
                 original,
-                java.util.Map.of(
+                Map.of(
                     "META-INF/native-image/test/test-resource.json",
                     "{\"bundles\":\"not-an-array\"}"))
             .toFile());
@@ -1432,7 +1765,7 @@ final class ElideMojoTest {
     final Path siblingJar =
         compileJarSources(
             "digest-sibling",
-            java.util.Map.of(
+            Map.of(
                 "Use.java",
                 "package helper; public class Use {}",
                 "Drop.java",
@@ -1441,7 +1774,7 @@ final class ElideMojoTest {
     final Path candidateJar =
         compileJarSources(
             "digest-candidate",
-            java.util.Map.of(
+            Map.of(
                 "Keep.java", "package sample; public class Keep { helper.Use use; }",
                 "Drop.java", "package sample; public class Drop {}"),
             siblingJar);
@@ -1491,13 +1824,11 @@ final class ElideMojoTest {
         runtimeArtifact(
             "used",
             compileJarSources(
-                "used",
-                java.util.Map.of("Sample.java", "package used; public class Sample {}"),
-                null));
+                "used", Map.of("Sample.java", "package used; public class Sample {}"), null));
     final Path explicitJar =
         compileJarSources(
             "explicit",
-            java.util.Map.of(
+            Map.of(
                 "Keep.java", "package explicit; public class Keep {}",
                 "Drop.java", "package explicit; public class Drop {}"),
             null);
@@ -1537,7 +1868,7 @@ final class ElideMojoTest {
     final Path dependencyJar =
         compileJarSources(
             "sbom-dependency",
-            java.util.Map.of(
+            Map.of(
                 "Keep.java", "package sbom; public class Keep {}",
                 "Drop.java", "package sbom; public class Drop {}"),
             null);
@@ -1590,7 +1921,7 @@ final class ElideMojoTest {
     io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
         jar,
         sourceDirectory,
-        java.util.Map.of(
+        Map.of(
             "sample/Keep.java", "package sample; public class Keep { Helper helper; }",
             "sample/Helper.java", "package sample; public class Helper {}",
             "sample/Drop.java", "package sample; public class Drop {}"),
@@ -1610,16 +1941,25 @@ final class ElideMojoTest {
 
   private Path compileJar(final String className, final String source, final Path classpath)
       throws IOException {
-    return compileJarSources(className, java.util.Map.of(className + ".java", source), classpath);
+    return compileJarSources(className, Map.of(className + ".java", source), classpath);
   }
 
   private Path compileJarSources(
-      final String jarName, final java.util.Map<String, String> sources, final Path classpath)
+      final String jarName, final Map<String, String> sources, final Path classpath)
+      throws IOException {
+    return compileJarSources(jarName, sources, classpath, 21);
+  }
+
+  private Path compileJarSources(
+      final String jarName,
+      final Map<String, String> sources,
+      final Path classpath,
+      final int release)
       throws IOException {
     final Path jar = tempDir.resolve(jarName + ".jar");
     final Path sourceDirectory = tempDir.resolve(jarName + "-src");
     return io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
-        jar, sourceDirectory, sources, classpath);
+        jar, sourceDirectory, sources, classpath, release);
   }
 
   private static byte[] toggleFinalClassFlag(final Path jar, final String entryName)
@@ -1696,36 +2036,115 @@ final class ElideMojoTest {
     Files.setLastModifiedTime(jar, timestamp);
   }
 
+  private static MavenDependencyTrimmer.TrimRequest tieredRequest(
+      final MavenElisionService.PreparedAnalysis prepared,
+      final Set<ArtifactCoordinate> retainedCoordinates) {
+    final MavenElisionService.AnalysisOptions options = prepared.options();
+    return new MavenDependencyTrimmer.TrimRequest(
+        prepared.project(),
+        options.session(),
+        prepared.resolvedSnapshots(),
+        new MavenDependencyTrimmer.ScanInputs(
+            prepared.index(), prepared.dynamicRootInputs().scansByPath()),
+        retainedCoordinates,
+        prepared.trace(),
+        prepared.pruningRequiredClasses(),
+        prepared.bytecodeScan().map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
+        prepared.projectOutputClasses(),
+        options.explicitTrimRoots(),
+        options.failOnUnsupportedMultiRelease(),
+        options.explicitPassThroughArtifacts(),
+        options.failOnUnsupportedModuleInfo(),
+        options.mrjarStrategy(),
+        options.trimJars(),
+        prepared.dynamicRootInputs().provenServiceInterfaces(),
+        options.conservativeServiceLoaderRoots());
+  }
+
+  private static Set<ArtifactCoordinate> union(
+      final Set<ArtifactCoordinate> coordinates, final ArtifactCoordinate coordinate) {
+    final Set<ArtifactCoordinate> result = new LinkedHashSet<>(coordinates);
+    result.add(coordinate);
+    return Set.copyOf(result);
+  }
+
   private MultiReleaseFixture multiReleaseFixture(final String name) throws IOException {
+    return multiReleaseFixture(name, false);
+  }
+
+  private MultiReleaseFixture multiReleaseFixture(
+      final String name, final boolean targetUsesTargetSupport) throws IOException {
     final Path candidatePath =
         compileJarSources(
             name + "-candidate",
-            java.util.Map.of(
-                "Keep.java", "package candidate; public class Keep {}",
-                "Helper.java", "package candidate; public class Helper { public void touch() {} }",
-                "Drop.java", "package candidate; public class Drop {}"),
-            null);
+            Map.of(
+                "Keep.java",
+                "package candidate; public class Keep {}",
+                "BaseSupport.java",
+                "package candidate; public class BaseSupport { public void touch() { "
+                    + "new BaseTail().touch(); } }",
+                "BaseTail.java",
+                "package candidate; public class BaseTail { public void touch() {} }",
+                "TargetSupport.java",
+                "package candidate; public class TargetSupport { public void touch() { "
+                    + "new TargetTail().touch(); } }",
+                "TargetTail.java",
+                "package candidate; public class TargetTail { public void touch() {} }",
+                "UpperSupport.java",
+                "package candidate; public class UpperSupport { public void touch() { "
+                    + "new UpperTail().touch(); } }",
+                "UpperTail.java",
+                "package candidate; public class UpperTail { public void touch() {} }",
+                "Drop.java",
+                "package candidate; public class Drop {}"),
+            null,
+            8);
     final Path rootClasses =
         compileJarSources(
             name + "-root-classes",
-            java.util.Map.of(
+            Map.of(
                 "Root.java",
-                "package mrroot; public class Root { public static void execute() {} }"),
-            candidatePath);
+                "package mrroot; public class Root { public static void execute() { "
+                    + "new candidate.BaseSupport().touch(); } }",
+                "RootHelper.java",
+                "package mrroot; public class RootHelper { public void execute() { "
+                    + "new candidate.TargetSupport().touch(); "
+                    + "new candidate.UpperSupport().touch(); } }"),
+            candidatePath,
+            8);
+    final Path targetRoot =
+        compileJarSources(
+            name + "-target-root",
+            Map.of(
+                "Root.java",
+                targetUsesTargetSupport
+                    ? "package mrroot; public class Root { public static void execute() { "
+                        + "new candidate.TargetSupport().touch(); } }"
+                    : "package mrroot; public class Root { public static void execute() {} }"),
+            candidatePath,
+            11);
     final Path versionOnly =
         compileJarSources(
             name + "-version-only",
-            java.util.Map.of(
+            Map.of(
                 "Root.java",
                 "package mrroot; public class Root { public static void execute() { "
-                    + "new candidate.Helper().touch(); } public static void optional() { "
-                    + "new org.example.optional.ScriptEvaluator().run(); } }",
-                "ScriptEvaluator.java",
-                "package org.example.optional; public class ScriptEvaluator { "
-                    + "public void run() {} }"),
-            candidatePath);
+                    + "new RootHelper().execute(); } }",
+                "VersionOnly.java",
+                "package mrroot; class VersionOnly {}",
+                "UnusedUpperFeature.java",
+                "package mrroot; class UnusedUpperFeature {}"),
+            rootClasses,
+            17);
+    final Path unusedJava17Root =
+        compileJarSources(
+            name + "-unused-java17-root",
+            Map.of("UnusedJava17.java", "package mrroot; public class UnusedJava17 {}"),
+            null,
+            17);
     final Path multiReleasePath =
-        writeMultiReleaseJar(name + "-root.jar", rootClasses, versionOnly);
+        writeMultiReleaseJar(
+            name + "-root.jar", rootClasses, unusedJava17Root, targetRoot, versionOnly, Map.of());
     final Artifact root = runtimeArtifact(name + "-root", multiReleasePath);
     final Artifact candidate = runtimeArtifact(name + "-candidate", candidatePath);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(root, candidate));
@@ -1735,7 +2154,7 @@ final class ElideMojoTest {
     project.setGroupId("org.example");
     project.setArtifactId(name + "-consumer");
     project.setVersion("1.0");
-    project.getProperties().setProperty("maven.compiler.release", "21");
+    project.getProperties().setProperty("maven.compiler.release", "11");
     final Build build = new Build();
     build.setDirectory(tempDir.resolve(name + "-build").toString());
     project.setBuild(build);
@@ -1778,18 +2197,36 @@ final class ElideMojoTest {
     return outputJar;
   }
 
-  private Path writeMultiReleaseJar(final String name, final Path baseJar, final Path versionedJar)
+  private Path writeMultiReleaseJar(
+      final String name,
+      final Path baseJar,
+      final Path additionalRootJar,
+      final Path targetVersionJar,
+      final Path upperVersionJar,
+      final Map<String, String> rootResources)
       throws IOException {
     final Path result = tempDir.resolve(name);
     final java.util.jar.Manifest manifest = new java.util.jar.Manifest();
     manifest.getMainAttributes().put(java.util.jar.Attributes.Name.MANIFEST_VERSION, "1.0");
     manifest.getMainAttributes().putValue("Multi-Release", "true");
     try (JarFile base = new JarFile(baseJar.toFile());
-        JarFile versioned = new JarFile(versionedJar.toFile());
+        JarFile targetVersion = new JarFile(targetVersionJar.toFile());
+        JarFile upperVersion = new JarFile(upperVersionJar.toFile());
         java.util.jar.JarOutputStream output =
             new java.util.jar.JarOutputStream(Files.newOutputStream(result), manifest)) {
       copyJarEntries(base, output, "");
-      copyJarEntries(versioned, output, "META-INF/versions/21/");
+      if (additionalRootJar != null) {
+        try (JarFile additionalRoot = new JarFile(additionalRootJar.toFile())) {
+          copyJarEntries(additionalRoot, output, "");
+        }
+      }
+      copyJarEntries(targetVersion, output, "META-INF/versions/11/");
+      copyJarEntries(upperVersion, output, "META-INF/versions/17/");
+      for (final Map.Entry<String, String> entry : rootResources.entrySet()) {
+        output.putNextEntry(new JarEntry(entry.getKey()));
+        output.write(entry.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        output.closeEntry();
+      }
     }
     return result;
   }
@@ -1838,18 +2275,31 @@ final class ElideMojoTest {
       Path candidatePath,
       MavenProject project) {}
 
-  private static Set<String> archiveClassNames(final Path archivePath) throws IOException {
-    final Set<String> names = new LinkedHashSet<>();
-    try (JarFile archive = new JarFile(archivePath.toFile())) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final String name = entries.nextElement().getName();
-        if (name.endsWith(".class")) {
-          names.add(name.substring(0, name.length() - ".class".length()).replace('/', '.'));
-        }
+  private static byte[] jarEntryBytes(final Path archive, final String entryName)
+      throws IOException {
+    try (JarFile jar = new JarFile(archive.toFile())) {
+      return jarEntryBytes(jar, entryName);
+    }
+  }
+
+  private static byte[] jarEntryBytes(final JarFile jar, final String entryName)
+      throws IOException {
+    final JarEntry entry = jar.getJarEntry(entryName);
+    if (entry == null) {
+      throw new IOException("Missing test archive entry: " + entryName);
+    }
+    try (InputStream input = jar.getInputStream(entry)) {
+      return input.readAllBytes();
+    }
+  }
+
+  private static String componentProperty(final JsonNode component, final String name) {
+    for (final JsonNode property : component.path("properties")) {
+      if (name.equals(property.path("name").asText())) {
+        return property.path("value").asText();
       }
     }
-    return names;
+    throw new AssertionError("Missing SBOM component property: " + name);
   }
 
   private Path descriptorJar(final String name, final String entry, final String content)
@@ -1863,7 +2313,7 @@ final class ElideMojoTest {
     return jar;
   }
 
-  private Path rewriteJar(final Path original, final java.util.Map<String, String> resources)
+  private Path rewriteJar(final Path original, final Map<String, String> resources)
       throws IOException {
     final Path outputJar = tempDir.resolve("with-metadata-" + original.getFileName());
     try (JarFile inputJar = new JarFile(original.toFile());
@@ -1877,7 +2327,7 @@ final class ElideMojoTest {
         }
         output.closeEntry();
       }
-      for (final java.util.Map.Entry<String, String> resource : resources.entrySet()) {
+      for (final Map.Entry<String, String> resource : resources.entrySet()) {
         output.putNextEntry(new ZipEntry(resource.getKey()));
         output.write(resource.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
         output.closeEntry();
@@ -2152,7 +2602,7 @@ final class ElideMojoTest {
     final ResolverArtifactPlan plan =
         new ResolverArtifactPlan(
             projectIdentity,
-            java.util.Map.of(
+            Map.of(
                 new ResolverArtifactPlan.ArtifactIdentity("org.example", "stale", "1.0", "jar", ""),
                 new ResolverArtifactPlan.Replacement(
                     replacement, ArtifactFileDigest.sha256(replacement))));

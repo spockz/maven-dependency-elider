@@ -59,6 +59,7 @@ class MavenElisionGraphBindingTestSupport {
     project.setGroupId("fixture");
     project.setArtifactId("consumer");
     project.setVersion(VERSION);
+    project.getProperties().setProperty("maven.compiler.release", "21");
     final Artifact artifact = artifact("library.jar", VERSION);
     Files.writeString(artifactPath(artifact), content);
     final MavenElisionService.ArtifactSnapshot snapshot =
@@ -201,9 +202,17 @@ class MavenElisionGraphBindingTestSupport {
     MavenElisionGraphBinding.Result bind(
         final List<MavenElisionService.ArtifactSnapshot> inventory, final ElisionDecision decision)
         throws IOException {
+      return bind(options, inventory, decision);
+    }
+
+    MavenElisionGraphBinding.Result bind(
+        final MavenElisionService.AnalysisOptions selectedOptions,
+        final List<MavenElisionService.ArtifactSnapshot> inventory,
+        final ElisionDecision decision)
+        throws IOException {
       return MavenElisionGraphBinding.bind(
           project,
-          options,
+          selectedOptions,
           inventory,
           decision,
           TraceData.of(Set.of("fixture.Keep")),

@@ -10,9 +10,19 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Enumeration;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
@@ -22,6 +32,9 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     extends MavenElisionServiceEffectiveOutputSupport {
   /** Shared root included by every cache fixture. */
   private static final String ENTRY_TRACE = "closure/a/Entry";
+
+  /** Cache manifest property used to identify the effective operation. */
+  private static final String FINGERPRINT_PROPERTY = "fingerprint";
 
   /** Creates the effective cache fixture. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -88,7 +101,7 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
     final ObjectMapper mapper = new ObjectMapper();
     final JsonNode original = mapper.readTree(manifest.toFile());
-    final String fingerprint = original.path("fingerprint").asText();
+    final String fingerprint = original.path(FINGERPRINT_PROPERTY).asText();
 
     final ObjectNode unsupportedVersion = original.deepCopy();
     unsupportedVersion.put("schemaVersion", 13);
@@ -126,6 +139,142 @@ final class MavenElisionServiceEffectiveOutputCacheTest
           manifest, entry -> entry.putArray(field).addNull());
       assertCacheMiss(effective);
     }
+  }
+
+  @Test
+  void multiReleaseFingerprintTracksSourceTargetStrategyAndTierPlatformIdentity() throws Exception {
+    final Fixture fixture = fixture(false, false, false, false, 11);
+    writeMultiReleaseInput(fixture, 1);
+    final Path trace = trace(temporaryDirectory, ENTRY_TRACE);
+    final ServiceOperation targetEleven =
+        operation(fixture, trace, null, true, List.of(), "vertical-shading");
+    final MavenElisionService.EffectiveAnalysis firstEffective =
+        targetEleven.service().finishAnalysis(targetEleven.prepared());
+    assertThat(firstEffective.trimAnalysis().analyzedTiers()).containsExactly(11, 17, 21);
+    final List<String> firstPlatformIdentities = firstEffective.trimAnalysis().platformIdentities();
+    final MavenDependencyTrimmer.TrimResult first =
+        MavenDependencyTrimmer.trimEffectiveOutputs(firstEffective);
+    final ArtifactTrimRecord firstRecord = outputRecord(first, fixture);
+    assertThat(firstRecord.mrjarStatus()).isEqualTo("elevated_and_trimmed");
+    assertThat(firstRecord.totalClasses()).isEqualTo(3);
+    assertThat(firstRecord.originalPhysicalEntries()).hasValue(6);
+    final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
+    final ObjectMapper mapper = new ObjectMapper();
+    final JsonNode firstManifest = mapper.readTree(manifest.toFile());
+    assertThat(firstManifest.path("schemaVersion").asInt())
+        .isEqualTo(MavenDependencyTrimmer.CACHE_SCHEMA_VERSION);
+    final String firstFingerprint = firstManifest.path(FINGERPRINT_PROPERTY).asText();
+    assertThat(trimEffective(targetEleven).cacheHits()).isPositive();
+
+    EffectiveOutputCacheTestFiles.mutateCacheEntry(
+        manifest, entry -> entry.put("retainedClasses", 1));
+    assertThat(trimEffective(targetEleven).cacheHits()).isZero();
+    EffectiveOutputCacheTestFiles.mutateCacheEntry(
+        manifest,
+        entry ->
+            entry.put(
+                "originalPhysicalEntries", entry.path("originalPhysicalEntries").asInt() + 1));
+    assertThat(trimEffective(targetEleven).cacheHits()).isZero();
+    EffectiveOutputCacheTestFiles.mutateCacheEntry(
+        manifest,
+        entry ->
+            entry.put("trimmedPhysicalEntries", entry.path("trimmedPhysicalEntries").asInt() + 1));
+    assertThat(trimEffective(targetEleven).cacheHits()).isZero();
+
+    writeMultiReleaseInput(fixture, 2);
+    final ServiceOperation changedMrInput =
+        operation(fixture, trace, null, true, List.of(), "vertical-shading");
+    assertThat(trimEffective(changedMrInput).cacheHits()).isZero();
+    final String changedInputFingerprint =
+        mapper.readTree(manifest.toFile()).path(FINGERPRINT_PROPERTY).asText();
+    assertThat(changedInputFingerprint).isNotEqualTo(firstFingerprint);
+
+    fixture.mavenProject().getProperties().setProperty("maven.compiler.release", "17");
+    final ServiceOperation targetSeventeen =
+        operation(fixture, trace, null, true, List.of(), "vertical-shading");
+    final MavenElisionService.EffectiveAnalysis targetSeventeenEffective =
+        targetSeventeen.service().finishAnalysis(targetSeventeen.prepared());
+    assertThat(targetSeventeenEffective.trimAnalysis().analyzedTiers()).containsExactly(17, 21);
+    assertThat(targetSeventeenEffective.trimAnalysis().platformIdentities())
+        .isNotEqualTo(firstPlatformIdentities);
+    assertThat(MavenDependencyTrimmer.trimEffectiveOutputs(targetSeventeenEffective).cacheHits())
+        .isZero();
+    final String targetFingerprint =
+        mapper.readTree(manifest.toFile()).path(FINGERPRINT_PROPERTY).asText();
+    assertThat(targetFingerprint).isNotEqualTo(changedInputFingerprint);
+
+    final ServiceOperation passThrough =
+        operation(fixture, trace, null, true, List.of(), "pass-through");
+    assertThat(trimEffective(passThrough).cacheHits()).isZero();
+    assertThat(mapper.readTree(manifest.toFile()).path(FINGERPRINT_PROPERTY).asText())
+        .isNotEqualTo(targetFingerprint);
+    assertThat(mapper.readTree(manifest.toFile()).path("schemaVersion").asInt()).isEqualTo(1);
+  }
+
+  private void writeMultiReleaseInput(final Fixture fixture, final int revision)
+      throws IOException {
+    final Path source = fixture.snapshot("a").filePath();
+    final Path versionedJar = temporaryDirectory.resolve("versioned-a.jar");
+    io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
+        versionedJar,
+        temporaryDirectory.resolve("versioned-a-src"),
+        Map.of(
+            "Entry.java",
+            "package closure.a; public class Entry { public Object make() { "
+                + "return new closure.d.Ancestor(); } }",
+            "VersionOnly.java",
+            "package closure.a; class VersionOnly {}"),
+        fixture.snapshot("d").filePath(),
+        17);
+    final Path rewritten = temporaryDirectory.resolve("a-mr.jar");
+    final Manifest manifest;
+    try (JarFile input = new JarFile(source.toFile())) {
+      manifest = input.getManifest() == null ? new Manifest() : new Manifest(input.getManifest());
+      manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+      manifest.getMainAttributes().putValue("Multi-Release", "true");
+      manifest.getMainAttributes().putValue("X-Test-Revision", Integer.toString(revision));
+      try (JarFile versioned = new JarFile(versionedJar.toFile());
+          JarOutputStream output =
+              new JarOutputStream(Files.newOutputStream(rewritten), manifest)) {
+        copyEntries(
+            input,
+            output,
+            "",
+            Set.of(
+                "META-INF/versions/17/closure/a/Entry.class",
+                "META-INF/versions/17/closure/a/VersionOnly.class"));
+        copyEntries(versioned, output, "META-INF/versions/17/", Set.of());
+      }
+    }
+    Files.move(rewritten, source, StandardCopyOption.REPLACE_EXISTING);
+  }
+
+  private static void copyEntries(
+      final JarFile input,
+      final JarOutputStream output,
+      final String prefix,
+      final Set<String> replacedEntries)
+      throws IOException {
+    final Enumeration<JarEntry> entries = input.entries();
+    while (entries.hasMoreElements()) {
+      final JarEntry entry = entries.nextElement();
+      if (entry.isDirectory()
+          || "META-INF/MANIFEST.MF".equalsIgnoreCase(entry.getName())
+          || replacedEntries.contains(entry.getName())) {
+        continue;
+      }
+      copyEntry(input, output, prefix, entry);
+    }
+  }
+
+  private static void copyEntry(
+      final JarFile input, final JarOutputStream output, final String prefix, final JarEntry entry)
+      throws IOException {
+    output.putNextEntry(new JarEntry(prefix + entry.getName()));
+    try (InputStream contents = input.getInputStream(entry)) {
+      contents.transferTo(output);
+    }
+    output.closeEntry();
   }
 
   private static ArtifactTrimRecord outputRecord(
