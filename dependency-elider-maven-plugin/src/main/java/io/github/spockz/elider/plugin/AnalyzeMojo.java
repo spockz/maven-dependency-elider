@@ -24,7 +24,7 @@ import org.apache.maven.project.MavenProject;
     name = "analyze",
     requiresDependencyResolution = org.apache.maven.plugins.annotations.ResolutionScope.TEST,
     threadSafe = true)
-@SuppressWarnings("PMD.TooManyFields")
+@SuppressWarnings({"PMD.TooManyFields", "PMD.ImmutableField"})
 public final class AnalyzeMojo extends AbstractMojo {
   /** Maven annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
@@ -60,6 +60,10 @@ public final class AnalyzeMojo extends AbstractMojo {
   /** Rejects retained classpath JARs with a root module descriptor. */
   @Parameter(property = "elide.failOnUnsupportedModuleInfo", defaultValue = DEFAULT_FALSE)
   private boolean failOnUnsupportedModuleInfo;
+
+  /** Retains unproven ServiceLoader dynamic roots declared in META-INF/services/. */
+  @Parameter(property = "elide.conservativeServiceLoaderRoots", defaultValue = "true")
+  private boolean conservativeServiceLoaderRoots = true;
 
   /** Explicit trace files that supply runtime observations. */
   @Parameter(property = "elide.traceFiles", required = true)
@@ -130,7 +134,8 @@ public final class AnalyzeMojo extends AbstractMojo {
                       failOnUnsupportedMultiRelease,
                       trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
                       failOnUnsupportedModuleInfo,
-                      true));
+                      true,
+                      conservativeServiceLoaderRoots));
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =

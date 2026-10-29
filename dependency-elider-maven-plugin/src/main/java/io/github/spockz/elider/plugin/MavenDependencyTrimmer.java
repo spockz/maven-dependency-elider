@@ -373,6 +373,7 @@ final class MavenDependencyTrimmer {
       Set<String> retainedClassNames,
       Set<String> reachableLibraryClasses) {}
 
+  @SuppressWarnings("PMD.ExcessiveParameterList")
   record TrimRequest(
       MavenProject project,
       MavenSession session,
@@ -386,7 +387,41 @@ final class MavenDependencyTrimmer {
       List<String> explicitRoots,
       boolean failOnUnsupportedMultiRelease,
       List<String> explicitPassThroughCoordinates,
-      boolean failOnUnsupportedModuleInfo) {}
+      boolean failOnUnsupportedModuleInfo,
+      Set<String> provenServiceInterfaces,
+      boolean conservativeServiceLoaderRoots) {
+    TrimRequest(
+        final MavenProject project,
+        final MavenSession session,
+        final List<MavenElisionService.ArtifactSnapshot> candidates,
+        final ScanInputs scanInputs,
+        final Set<ArtifactCoordinate> retainedCoordinates,
+        final TraceData trace,
+        final Set<String> sourceRoots,
+        final Set<String> bytecodeRoots,
+        final Set<String> projectOutputClasses,
+        final List<String> explicitRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> explicitPassThroughCoordinates,
+        final boolean failOnUnsupportedModuleInfo) {
+      this(
+          project,
+          session,
+          candidates,
+          scanInputs,
+          retainedCoordinates,
+          trace,
+          sourceRoots,
+          bytecodeRoots,
+          projectOutputClasses,
+          explicitRoots,
+          failOnUnsupportedMultiRelease,
+          explicitPassThroughCoordinates,
+          failOnUnsupportedModuleInfo,
+          Set.of(),
+          true);
+    }
+  }
 
   record ArtifactRootKey(ArtifactCoordinate coordinate, Path path, String sha256) {
     ArtifactRootKey {
@@ -460,7 +495,9 @@ final class MavenDependencyTrimmer {
             options.explicitTrimRoots(),
             options.failOnUnsupportedMultiRelease(),
             options.explicitPassThroughArtifacts(),
-            options.failOnUnsupportedModuleInfo());
+            options.failOnUnsupportedModuleInfo(),
+            prepared.dynamicRootInputs().provenServiceInterfaces(),
+            options.conservativeServiceLoaderRoots());
     final Map<ArtifactRootKey, Set<String>> roots =
         artifactRootKeys(prepared.resolvedSnapshots(), effective.trimAnalysis().candidateRoots());
     final Set<ArtifactCoordinate> unchangedCoordinates =
@@ -936,7 +973,10 @@ final class MavenDependencyTrimmer {
     if (scan == null) {
       throw new IOException("Missing dynamic-root scan for full inventory JAR: " + path);
     }
-    return scan.roots().stream()
+    final DependencyDynamicRoots.EffectiveRoots effective =
+        scan.effectiveRoots(
+            request.provenServiceInterfaces(), request.conservativeServiceLoaderRoots());
+    return effective.roots().stream()
         .map(name -> name.replace('/', '.'))
         .collect(java.util.stream.Collectors.toSet());
   }

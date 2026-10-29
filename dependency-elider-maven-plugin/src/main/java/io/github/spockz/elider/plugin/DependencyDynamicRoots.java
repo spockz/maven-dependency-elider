@@ -33,9 +33,64 @@ final class DependencyDynamicRoots {
       "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports";
   private static final String SPRING_METADATA = "META-INF/spring-autoconfigure-metadata.properties";
 
-  record RootScan(Set<String> roots, boolean declaresClassRoots) {
+  record ServiceDescriptor(String serviceInterface, Set<String> providers) {
+    ServiceDescriptor {
+      serviceInterface = java.util.Objects.requireNonNull(serviceInterface, "serviceInterface");
+      providers = Set.copyOf(providers);
+    }
+  }
+
+  record EffectiveRoots(
+      Set<String> roots,
+      Set<ServiceDescriptor> unprovenConservativeServices,
+      Set<String> unprovenConservativeRoots) {
+    EffectiveRoots {
+      roots = Set.copyOf(roots);
+      unprovenConservativeServices = Set.copyOf(unprovenConservativeServices);
+      unprovenConservativeRoots = Set.copyOf(unprovenConservativeRoots);
+    }
+
+    boolean declaresRoots() {
+      return !roots.isEmpty();
+    }
+  }
+
+  record RootScan(
+      Set<String> roots,
+      boolean declaresClassRoots,
+      Set<ServiceDescriptor> serviceDescriptors,
+      Set<String> nonServiceRoots) {
     RootScan {
       roots = Set.copyOf(roots);
+      serviceDescriptors = Set.copyOf(serviceDescriptors);
+      nonServiceRoots = Set.copyOf(nonServiceRoots);
+    }
+
+    RootScan(final Set<String> roots, final boolean declaresClassRoots) {
+      this(roots, declaresClassRoots, Set.of(), roots);
+    }
+
+    EffectiveRoots effectiveRoots(
+        final Set<String> provenServiceInterfaces, final boolean conservativeFallback) {
+      final Set<String> effective = new LinkedHashSet<>(nonServiceRoots);
+      final Set<ServiceDescriptor> unprovenServices = new LinkedHashSet<>();
+      final Set<String> unprovenRoots = new LinkedHashSet<>();
+      for (final ServiceDescriptor descriptor : serviceDescriptors) {
+        final boolean isProven =
+            provenServiceInterfaces.contains(descriptor.serviceInterface())
+                || descriptor.providers().stream().anyMatch(provenServiceInterfaces::contains);
+        if (isProven) {
+          effective.add(descriptor.serviceInterface());
+          effective.addAll(descriptor.providers());
+        } else if (conservativeFallback) {
+          effective.add(descriptor.serviceInterface());
+          effective.addAll(descriptor.providers());
+          unprovenServices.add(descriptor);
+          unprovenRoots.add(descriptor.serviceInterface());
+          unprovenRoots.addAll(descriptor.providers());
+        }
+      }
+      return new EffectiveRoots(effective, unprovenServices, unprovenRoots);
     }
   }
 
@@ -43,6 +98,8 @@ final class DependencyDynamicRoots {
 
   static RootScan scan(final java.nio.file.Path jar) throws IOException {
     final Set<String> roots = new LinkedHashSet<>();
+    final Set<String> nonServiceRoots = new LinkedHashSet<>();
+    final Set<ServiceDescriptor> serviceDescriptors = new LinkedHashSet<>();
     boolean declaresClassRoots = false;
     try (JarFile archive = new JarFile(jar.toFile())) {
       final Set<String> jarClasses =
@@ -64,7 +121,7 @@ final class DependencyDynamicRoots {
           if (service.isBlank() || service.contains("/")) {
             throw new IOException("Unsupported service descriptor path: " + name);
           }
-          roots.add(service);
+          final Set<String> providers = new LinkedHashSet<>();
           try (BufferedReader reader =
               new BufferedReader(
                   new InputStreamReader(archive.getInputStream(entry), StandardCharsets.UTF_8))) {
@@ -75,37 +132,41 @@ final class DependencyDynamicRoots {
                 if (!provider.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*")) {
                   throw new IOException("Malformed service provider in " + name + ": " + provider);
                 }
-                roots.add(provider);
+                providers.add(provider);
               }
             }
           }
+          serviceDescriptors.add(new ServiceDescriptor(service, providers));
+          roots.add(service);
+          roots.addAll(providers);
         } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
             && NativeImageDynamicRoots.isNativeImageClassConfig(name)) {
           declaresClassRoots = true;
-          NativeImageClassConfig.readNativeImageClassConfig(archive, name, roots);
+          NativeImageClassConfig.readNativeImageClassConfig(archive, name, nonServiceRoots);
         } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
             && NativeImageDynamicRoots.isNativeImageResourceConfig(name)) {
-          NativeImageResourceConfig.readNativeImageResourceConfig(archive, name, roots);
+          NativeImageResourceConfig.readNativeImageResourceConfig(archive, name, nonServiceRoots);
         } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
             && name.endsWith(".properties")) {
           declaresClassRoots |=
-              NativeImageDynamicRoots.readNativeImageProperties(archive, entry, roots);
+              NativeImageDynamicRoots.readNativeImageProperties(archive, entry, nonServiceRoots);
         } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
             && !NativeImageDynamicRoots.isNativeImageSbom(name)
             && name.endsWith(".json")) {
           throw new IOException("Unsupported native-image class metadata: " + name);
         } else if (SPRING_FACTORIES.equals(name)) {
-          declaresClassRoots |= readSpringFactories(archive.getInputStream(entry), roots);
+          declaresClassRoots |= readSpringFactories(archive.getInputStream(entry), nonServiceRoots);
         } else if (SPRING_IMPORTS.equals(name)) {
           declaresClassRoots = true;
-          readSpringImports(archive.getInputStream(entry), roots, name);
+          readSpringImports(archive.getInputStream(entry), nonServiceRoots, name);
         } else if (SPRING_METADATA.equals(name)) {
           declaresClassRoots = true;
-          readSpringMetadata(archive.getInputStream(entry), roots, jarClasses);
+          readSpringMetadata(archive.getInputStream(entry), nonServiceRoots, jarClasses);
         }
       }
     }
-    return new RootScan(roots, declaresClassRoots);
+    roots.addAll(nonServiceRoots);
+    return new RootScan(roots, declaresClassRoots, serviceDescriptors, nonServiceRoots);
   }
 
   private static boolean readSpringFactories(final InputStream input, final Set<String> roots)

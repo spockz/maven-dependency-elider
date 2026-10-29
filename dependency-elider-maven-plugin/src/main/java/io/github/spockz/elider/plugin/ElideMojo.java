@@ -28,7 +28,7 @@ import org.apache.maven.project.MavenProject;
     defaultPhase = LifecyclePhase.INITIALIZE,
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
-@SuppressWarnings({"PMD.TooManyFields", "PMD.CouplingBetweenObjects"})
+@SuppressWarnings({"PMD.TooManyFields", "PMD.CouplingBetweenObjects", "PMD.ImmutableField"})
 public final class ElideMojo extends AbstractMojo {
   /** Maven's annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
@@ -72,6 +72,10 @@ public final class ElideMojo extends AbstractMojo {
   /** Rejects retained classpath JARs with a root module descriptor. */
   @Parameter(property = "elide.failOnUnsupportedModuleInfo", defaultValue = DEFAULT_FALSE)
   private boolean failOnUnsupportedModuleInfo;
+
+  /** Retains unproven ServiceLoader dynamic roots declared in META-INF/services/. */
+  @Parameter(property = "elide.conservativeServiceLoaderRoots", defaultValue = "true")
+  private boolean conservativeServiceLoaderRoots = true;
 
   /** Explicit runtime evidence used when the goal is active. */
   @Parameter(property = "elide.traceFiles")
@@ -269,7 +273,8 @@ public final class ElideMojo extends AbstractMojo {
         failOnUnsupportedMultiRelease,
         trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
         failOnUnsupportedModuleInfo,
-        true);
+        true,
+        conservativeServiceLoaderRoots);
   }
 
   /** Creates a Mojo instance for Maven injection. */

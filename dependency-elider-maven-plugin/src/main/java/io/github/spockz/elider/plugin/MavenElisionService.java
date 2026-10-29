@@ -50,7 +50,9 @@ import org.apache.maven.project.MavenProject;
   "PMD.CyclomaticComplexity",
   "PMD.TooManyMethods",
   "PMD.CommentDefaultAccessModifier",
-  "PMD.AvoidDuplicateLiterals"
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.NPathComplexity",
+  "PMD.ExcessiveParameterList"
 })
 final class MavenElisionService {
   /** Maven scopes that may be considered for whole-artifact elision. */
@@ -70,7 +72,35 @@ final class MavenElisionService {
       boolean failOnUnsupportedMultiRelease,
       List<String> explicitPassThroughArtifacts,
       boolean failOnUnsupportedModuleInfo,
-      boolean testResolutionContext) {}
+      boolean testResolutionContext,
+      boolean conservativeServiceLoaderRoots) {
+    AnalysisOptions(
+        final List<File> traceFiles,
+        final List<String> excludedArtifacts,
+        final File productionOutput,
+        final MavenSession session,
+        final boolean sourceRootsComplete,
+        final boolean trimJars,
+        final List<String> explicitTrimRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> explicitPassThroughArtifacts,
+        final boolean failOnUnsupportedModuleInfo,
+        final boolean testResolutionContext) {
+      this(
+          traceFiles,
+          excludedArtifacts,
+          productionOutput,
+          session,
+          sourceRootsComplete,
+          trimJars,
+          explicitTrimRoots,
+          failOnUnsupportedMultiRelease,
+          explicitPassThroughArtifacts,
+          failOnUnsupportedModuleInfo,
+          testResolutionContext,
+          true);
+    }
+  }
 
   /** Creates the stateless Maven adapter. */
   MavenElisionService() {
@@ -189,7 +219,20 @@ final class MavenElisionService {
     final ArtifactClassIndex index = new JarIndexScanner().scan(scanCandidates);
     final CompilerInputs compilerInputs =
         compilerInputs(project, session, scanCandidates, index, sourceRootsComplete);
-    final DynamicRootInputs dynamicRootInputs = dynamicRoots(scanCandidates, dynamicRootScanner);
+    final ProductionBytecodeInputs productionInputs = productionBytecodeInputs(productionOutput);
+    final Set<String> provenServiceInterfaces = new HashSet<>();
+    if (productionOutput != null && productionOutput.isDirectory()) {
+      provenServiceInterfaces.addAll(
+          new io.github.spockz.elider.scanner.ServiceLoaderCallScanner()
+              .scan(productionOutput.toPath())
+              .provenServiceInterfaces());
+    }
+    final DynamicRootInputs dynamicRootInputs =
+        dynamicRoots(
+            scanCandidates,
+            dynamicRootScanner,
+            provenServiceInterfaces,
+            options.conservativeServiceLoaderRoots());
     final Set<String> pruningRequiredClasses =
         requiredClassesForTrimming(
             compilerInputs.requiredClasses(),
@@ -205,7 +248,6 @@ final class MavenElisionService {
       keepForPruning.addAll(
           parsePassThroughCoordinates(explicitPassThroughArtifacts, resolvedSnapshots));
     }
-    final ProductionBytecodeInputs productionInputs = productionBytecodeInputs(productionOutput);
     final String productionOutputFingerprint = productionInputs.fingerprint();
     final Optional<BytecodeReferenceScan> bytecodeScan = productionInputs.scan();
     final Set<String> projectOutputClasses = new HashSet<>(compilerInputs.declaredClasses());
@@ -300,7 +342,8 @@ final class MavenElisionService {
         trimResult.configuredPassThroughArtifacts(),
         trimResult.cacheHits(),
         trimResult.maximumCacheHitNanos(),
-        trimResult.analysisRuns());
+        trimResult.analysisRuns(),
+        prepared.dynamicRootInputs().unprovenServiceRootsByCoordinate());
   }
 
   EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)
@@ -393,7 +436,8 @@ final class MavenElisionService {
           trimResult.analysisRuns(),
           effective.graphProjection(),
           trimResult.generationCommit(),
-          mediatedGraph);
+          mediatedGraph,
+          prepared.dynamicRootInputs().unprovenServiceRootsByCoordinate());
     } catch (final IOException | RuntimeException failure) {
       closeGenerationAfterFailure(trimResult.generationCommit(), failure);
       throw failure;
@@ -462,7 +506,9 @@ final class MavenElisionService {
         options.explicitTrimRoots(),
         options.failOnUnsupportedMultiRelease(),
         options.explicitPassThroughArtifacts(),
-        options.failOnUnsupportedModuleInfo());
+        options.failOnUnsupportedModuleInfo(),
+        prepared.dynamicRootInputs().provenServiceInterfaces(),
+        options.conservativeServiceLoaderRoots());
   }
 
   private static void addUnchangedPolicyArtifacts(
@@ -693,27 +739,48 @@ final class MavenElisionService {
   }
 
   static DynamicRootInputs dynamicRoots(final List<ArtifactFileRef> candidates) throws IOException {
-    return dynamicRoots(candidates, DependencyDynamicRoots::scan);
+    return dynamicRoots(candidates, DependencyDynamicRoots::scan, Set.of(), true);
+  }
+
+  static DynamicRootInputs dynamicRoots(
+      final List<ArtifactFileRef> candidates, final DynamicRootScanner scanner) throws IOException {
+    return dynamicRoots(candidates, scanner, Set.of(), true);
   }
 
   @SuppressWarnings("PMD.UseConcurrentHashMap")
   static DynamicRootInputs dynamicRoots(
-      final List<ArtifactFileRef> candidates, final DynamicRootScanner scanner) throws IOException {
+      final List<ArtifactFileRef> candidates,
+      final DynamicRootScanner scanner,
+      final Set<String> provenServiceInterfaces,
+      final boolean conservativeServiceLoaderRoots)
+      throws IOException {
     final Set<String> classNames = new HashSet<>();
     final Set<ArtifactCoordinate> declaringArtifacts = new HashSet<>();
     final Map<Path, DependencyDynamicRoots.RootScan> scansByPath = new LinkedHashMap<>();
+    final Map<ArtifactCoordinate, Set<String>> unprovenRootsByCoordinate = new LinkedHashMap<>();
     for (final ArtifactFileRef candidate : candidates) {
       DependencyDynamicRoots.RootScan scan = scansByPath.get(candidate.filePath());
       if (scan == null) {
         scan = scanner.scan(candidate.filePath());
         scansByPath.put(candidate.filePath(), scan);
       }
-      classNames.addAll(scan.roots());
-      if (scan.declaresClassRoots()) {
+      final DependencyDynamicRoots.EffectiveRoots effective =
+          scan.effectiveRoots(provenServiceInterfaces, conservativeServiceLoaderRoots);
+      classNames.addAll(effective.roots());
+      if (effective.declaresRoots()) {
         declaringArtifacts.add(candidate.coordinate());
       }
+      if (!effective.unprovenConservativeRoots().isEmpty()) {
+        unprovenRootsByCoordinate.put(
+            candidate.coordinate(), effective.unprovenConservativeRoots());
+      }
     }
-    return new DynamicRootInputs(classNames, declaringArtifacts, scansByPath);
+    return new DynamicRootInputs(
+        classNames,
+        declaringArtifacts,
+        scansByPath,
+        unprovenRootsByCoordinate,
+        provenServiceInterfaces);
   }
 
   private static Set<String> requiredClassesForTrimming(
@@ -982,11 +1049,22 @@ final class MavenElisionService {
   record DynamicRootInputs(
       Set<String> classNames,
       Set<ArtifactCoordinate> declaringArtifacts,
-      Map<Path, DependencyDynamicRoots.RootScan> scansByPath) {
+      Map<Path, DependencyDynamicRoots.RootScan> scansByPath,
+      Map<ArtifactCoordinate, Set<String>> unprovenServiceRootsByCoordinate,
+      Set<String> provenServiceInterfaces) {
     DynamicRootInputs {
       classNames = Set.copyOf(classNames);
       declaringArtifacts = Set.copyOf(declaringArtifacts);
       scansByPath = Map.copyOf(scansByPath);
+      unprovenServiceRootsByCoordinate = Map.copyOf(unprovenServiceRootsByCoordinate);
+      provenServiceInterfaces = Set.copyOf(provenServiceInterfaces);
+    }
+
+    DynamicRootInputs(
+        final Set<String> classNames,
+        final Set<ArtifactCoordinate> declaringArtifacts,
+        final Map<Path, DependencyDynamicRoots.RootScan> scansByPath) {
+      this(classNames, declaringArtifacts, scansByPath, Map.of(), Set.of());
     }
   }
 
@@ -1142,7 +1220,85 @@ final class MavenElisionService {
       int trimAnalysisRuns,
       ResolverArtifactGraphProjection graphProjection,
       TrimOutputGenerationCommitHandle generationCommit,
-      MediatedGraphReport mediatedGraph) {
+      MediatedGraphReport mediatedGraph,
+      Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots) {
+    @SuppressWarnings("PMD.ExcessiveParameterList")
+    // Keeps the legacy adapter while the result fields stay named.
+    Analysis(
+        final List<ArtifactSnapshot> resolvedSnapshots,
+        final boolean directArtifactsPresent,
+        final List<ArtifactSnapshot> directSnapshots,
+        final ElisionDecision decision,
+        final ElisionDecision effectiveDecision,
+        final ClassUsageReport classUsageReport,
+        final Optional<BytecodeReferenceScan> bytecodeScan,
+        final List<ArtifactTrimRecord> trimRecords,
+        final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+        final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+        final List<ArtifactCoordinate> configuredPassThroughArtifacts,
+        final int trimCacheHits,
+        final long maximumTrimCacheHitNanos,
+        final int trimAnalysisRuns,
+        final ResolverArtifactGraphProjection graphProjection,
+        final TrimOutputGenerationCommitHandle generationCommit,
+        final MediatedGraphReport mediatedGraph) {
+      this(
+          resolvedSnapshots,
+          directArtifactsPresent,
+          directSnapshots,
+          decision,
+          effectiveDecision,
+          classUsageReport,
+          bytecodeScan,
+          trimRecords,
+          multiReleasePassthroughArtifacts,
+          moduleInfoPassthroughArtifacts,
+          configuredPassThroughArtifacts,
+          trimCacheHits,
+          maximumTrimCacheHitNanos,
+          trimAnalysisRuns,
+          graphProjection,
+          generationCommit,
+          mediatedGraph,
+          Map.of());
+    }
+
+    Analysis(
+        final List<ArtifactSnapshot> resolvedSnapshots,
+        final boolean directArtifactsPresent,
+        final List<ArtifactSnapshot> directSnapshots,
+        final ElisionDecision decision,
+        final ClassUsageReport classUsageReport,
+        final Optional<BytecodeReferenceScan> bytecodeScan,
+        final List<ArtifactTrimRecord> trimRecords,
+        final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+        final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+        final List<ArtifactCoordinate> configuredPassThroughArtifacts,
+        final int trimCacheHits,
+        final long maximumTrimCacheHitNanos,
+        final int trimAnalysisRuns,
+        final Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots) {
+      this(
+          resolvedSnapshots,
+          directArtifactsPresent,
+          directSnapshots,
+          decision,
+          decision,
+          classUsageReport,
+          bytecodeScan,
+          trimRecords,
+          multiReleasePassthroughArtifacts,
+          moduleInfoPassthroughArtifacts,
+          configuredPassThroughArtifacts,
+          trimCacheHits,
+          maximumTrimCacheHitNanos,
+          trimAnalysisRuns,
+          null,
+          null,
+          null,
+          unprovenServiceRoots);
+    }
+
     @SuppressWarnings("PMD.ExcessiveParameterList")
     // Keeps the legacy adapter while the result fields stay named.
     Analysis(
@@ -1238,6 +1394,8 @@ final class MavenElisionService {
       multiReleasePassthroughArtifacts = List.copyOf(multiReleasePassthroughArtifacts);
       moduleInfoPassthroughArtifacts = List.copyOf(moduleInfoPassthroughArtifacts);
       configuredPassThroughArtifacts = List.copyOf(configuredPassThroughArtifacts);
+      unprovenServiceRoots =
+          unprovenServiceRoots != null ? Map.copyOf(unprovenServiceRoots) : Map.of();
     }
 
     Set<Artifact> resolvedArtifacts() {

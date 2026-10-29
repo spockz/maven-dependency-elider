@@ -93,6 +93,27 @@ If an engineer deems this overly conservative because the absent class is irrele
 
 We are actively evaluating how to interpret multiple mapped classes (e.g. conjunction vs. disjunction) across version ranges and whether the elider must remain as strict as it is today.
 
+### Why is vulnerable code retained due to `META-INF/services/` (ServiceLoader SPI), and how do conservative exclusions work?
+
+Java Service Provider Interface (SPI) entries in `META-INF/services/` declare provider implementations loaded dynamically at runtime via `java.util.ServiceLoader`. Omitting these providers without proof can cause runtime `ServiceConfigurationError` exceptions.
+
+However, treating every declared SPI provider as an unconditional root retains unused transitive functionality. For example, `com.fasterxml.jackson.core:jackson-core` declares `JsonFactory` in `META-INF/services/com.fasterxml.jackson.core.JsonFactory`. Retaining `JsonFactory` forces retention of `NonBlockingJsonParser` and its interface `ByteArrayFeeder`, preventing trimming-based remediation of CVE-2026-68494 even when `ServiceLoader` is never invoked.
+
+Maven Dependency Elider uses static analysis (similar to GraalVM SubstrateVM) to detect positive proof of `ServiceLoader` usage:
+
+1. **Positive Proof of Use**: The scanner analyzes application bytecode for calls to `ServiceLoader.load(...)` or `ServiceLoader.loadInstalled(...)` where the service parameter is either a constant class/string literal or points to a `static final` constant field. When a service factory in a dependency JAR matches an observed call, the SPI entry is proven in use and retained as a legitimate root.
+2. **Conservative Fallback (`elide.conservativeServiceLoaderRoots`, default `true`)**: When negative proof is unavailable (the service interface is not observed statically, but reflection or dynamic loading might still occur), unproven SPI providers are retained by default for runtime safety.
+3. **Conservative CVE Exclusions**: If a CVE's vulnerable code survives in a trimmed JAR solely because unproven SPI roots preserved it, the CVE is excluded from "Mitigated CVEs" and instead reported under `Potentially conservative CVE exclusions:` with the unproven SPI roots identified and an actionable POM override snippet.
+4. **Disabling Conservative Fallback**: If you know your application does not use dynamic SPI lookups for that library, disable the fallback to prune unproven SPI entries and allow vulnerable code to be trimmed:
+
+```xml
+<configuration>
+  <conservativeServiceLoaderRoots>false</conservativeServiceLoaderRoots>
+</configuration>
+```
+
+Or pass `-Delide.conservativeServiceLoaderRoots=false` on the command line. When disabled, unproven SPI entries are not treated as roots, allowing unused classes (such as Jackson's `ByteArrayFeeder`) to be pruned and the CVE to be proven absent.
+
 ## Compatibility and Performance
 
 ### What Java versions and target compilation levels are supported?
