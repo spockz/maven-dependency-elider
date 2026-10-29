@@ -288,7 +288,7 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 
 ## WP-MRJAR-01: Multi-Release JAR Trimming and Vertical Shading
 
-| Core archive elevation and proof | PROVISIONED | `.scratch/worktrees/track-mrjar-core` / `track/mrjar-core` | Pending contract model, sanitizer/elevation, then multi-tier omitted-code proof. |
+| Core archive elevation and proof | ACTIVE | `.scratch/worktrees/track-mrjar-core` / `track/mrjar-core` | Slice 1: archive elevation and sanitization in progress; Slice 2 proof pending. |
 | Plugin closure, configuration, SBOM, fixtures and documentation | PENDING CORE API | To be provisioned after core integration | Target/runtime projections and fixed point, strategy/cache binding, physical metrics, `ElideMojoTest`, docs. |
 
 ## Specification Deviations and Architectural Choices
