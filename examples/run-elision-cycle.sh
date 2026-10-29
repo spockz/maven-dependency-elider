@@ -195,6 +195,7 @@ MANIFEST
     elif [[ $fixture == example-spring-boot-app ]]; then
       elision_options+=(
         -Delide.trimJars=true
+        -Delide.mrjarStrategy=pass-through
         -Delide.sourceRootsComplete=true
         -Dmaven.compiler.proc=none
         -Delide.trimRoots=freemarker.template.Configuration,groovy.text.markup.MarkupTemplateEngine,jakarta.validation.Validation,org.webjars.WebJarAssetLocator,org.reactivestreams.Publisher,io.micrometer.context.ContextSnapshot,reactor.core.publisher.Flux,reactor.core.publisher.Mono,reactor.util.context.Context,jakarta.servlet.jsp.jstl.core.Config,javax.annotation.Nonnull,edu.umd.cs.findbugs.annotations.SuppressFBWarnings,com.thoughtworks.xstream.XStream,com.thoughtworks.xstream.io.xml.StaxDriver
@@ -203,6 +204,7 @@ MANIFEST
     elif [[ $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
       elision_options+=(
         -Delide.trimJars=true
+        -Delide.mrjarStrategy=pass-through
         -Delide.sourceRootsComplete=true
         -Dmaven.compiler.proc=none
         -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar:
