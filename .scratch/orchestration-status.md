@@ -167,3 +167,26 @@
 * Focused suite: 13/13 (6 effective-output, 7 transaction tests). Log `/tmp/wp-resolve-3.2c-focused-final.log`, copied to `dependency-elider-maven-plugin/target/wp-resolve-3.2c-focused-final.log`; SHA-256 `29b510bd71ce896bab67af680479d6818891677bbdcdc02193961d21838c0a00`.
 * `make lint-java` passes with Checkstyle 0, PMD 0, and SpotBugs 0. Log `/tmp/wp-resolve-3.2c-lint-current.log`, copied to `dependency-elider-maven-plugin/target/wp-resolve-3.2c-lint-current.log`; SHA-256 `8e812ea666cb7d91f70b072be79a822a3de73f38e71c4bbaa24e7849dd63c806`.
 * Full `make check` passes with 149 core and 177 plugin tests; Markdown lint covered 35 files with 0 issues. Log `/tmp/wp-resolve-3.2c-make-check-final.log`, copied to `dependency-elider-maven-plugin/target/wp-resolve-3.2c-make-check-final.log`; SHA-256 `4b8a75de0c7ad11a6c6c8394f8a2473b18d9018d248111cfb74b9ffe9822dfa5`.
+
+# WP-REACTOR-01 Orchestration Status
+
+* **Work package**: WP-REACTOR-01, multi-module reactor fixture and concurrency verification.
+* **Owning session**: Primary coordinating session.
+* **Source**: `docs/handovers/2026-10-28-wp-reactor-01-multi-module-reactor-fixture.md`; research context: `docs/research/RQ-0012-multi-module-reactor-elision-and-concurrency.md`.
+* **Base / integration**: `PRE_MERGE_SHA=c15974c4b512931d1a47d66766ca3ba8e40691ee`; fast-forwarded `codex/wp-reactor-01` to `3775d41060d8962fe2370516e870b7c228ced092`.
+* **Initial baseline**: Java gate passed with GraalVM 21.0.12+7.1: compile, Spotless, Checkstyle, PMD, SpotBugs, 195 core tests, 267 plugin tests, and 15 lifecycle tests. Node-based Make targets were omitted under repository instructions.
+* **Scope**: complete the existing three-module fixture, lifecycle runner, Makefile and supported example documentation; prove sequential and `-T 4` `clean verify`, independent schema-1 reports, stable module metrics, and packaged runtime behavior.
+* **Architecture**: per-module elision and output boundaries; production report goal validates only the three child modules. Do not claim general cache race safety: common → service → app is a strict chain, so `-T 4` cannot run siblings simultaneously. Keep persisted report schema at 1; preserve original dependency archives and do not install reactor modules to mask reactor resolution.
+
+## Track Ledger
+
+| Track | State | Worktree / branch | Slices |
+| :--- | :--- | :--- | :--- |
+| Reactor fixture and runner | IMPLEMENTED, REVIEWED, VERIFIED; FAST-FORWARDED | `.scratch/worktrees/track-wp-reactor-01` / `track/wp-reactor-01` | Single slice committed as `3775d41`; review approved. Sequential and `-T 4` builds, child-only reports, stable metrics, shaded output, and cache checks pass. |
+
+## Verification and Deviations
+
+* `make test-reactor-example MAKE_JOBS=4` passed before and after integration. The final integrated `make test-examples MAKE_JOBS=4` passed all four single-project examples and the multi-module reactor. The runner verified the sequential build uses no `MultiThreadedBuilder`, the threaded build uses exactly four threads, all three child snapshots pass the production schema-1 reader, and stable metrics match.
+* The final integrated `make java-check MAKE_JOBS=4` passed: 195 core tests, 267 plugin tests, 15 lifecycle tests, compile, Spotless, Checkstyle, PMD, and SpotBugs. `make fmt`, `bash -n examples/run-elision-cycle.sh`, and `git diff --check` passed.
+* The reactor runner confirmed Shade consumes the app-local transformed Compress JAR, the packaged JAR retains Tar and omits Zip and Codec, the original Compress JAR hash is unchanged, and the configured Maven local repository's known elider-output inventory is unchanged.
+* `make check` and Node-based Markdown/SBOM checks were not run because the repository instructions prohibit Node.js. The Gemini review bridge was absent; the track reviewer recorded fail-open approval. The strict dependency chain does not prove simultaneous sibling execution or general reactor race safety; RQ-0012 remains open for broader topologies and incremental builds.
