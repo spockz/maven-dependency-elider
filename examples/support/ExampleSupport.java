@@ -390,6 +390,8 @@ public final class ExampleSupport {
 
     final JsonNode removedCves = report.path("removedCveComponents");
     final JsonNode provenCves = report.path("provenAbsentCves");
+    final JsonNode inactiveCves = report.path("inactivePreconditionCves");
+    final JsonNode conservativeCves = report.path("potentiallyConservativeCves");
     if (!removedCves.isArray()) {
       throw new IOException(
           "[" + fixture + "] dependency-elider-report.json missing valid 'removedCveComponents' array");
@@ -397,6 +399,14 @@ public final class ExampleSupport {
     if (!provenCves.isArray()) {
       throw new IOException(
           "[" + fixture + "] dependency-elider-report.json missing valid 'provenAbsentCves' array");
+    }
+    if (!inactiveCves.isArray()) {
+      throw new IOException(
+          "[" + fixture + "] dependency-elider-report.json missing valid 'inactivePreconditionCves' array");
+    }
+    if (!conservativeCves.isArray()) {
+      throw new IOException(
+          "[" + fixture + "] dependency-elider-report.json missing valid 'potentiallyConservativeCves' array");
     }
 
     final Pattern cvePattern = Pattern.compile("^CVE-[0-9]{4}-[0-9]{4,}$");
@@ -420,6 +430,28 @@ public final class ExampleSupport {
       provenIds.add(cveId);
     }
 
+    final List<String> inactiveIds = new ArrayList<>();
+    for (final JsonNode item : inactiveCves) {
+      final String cveId = item.path("cveId").asText("");
+      final String coordinate = item.path("coordinate").asText("");
+      if (!cvePattern.matcher(cveId).matches() || coordinate.isBlank()) {
+        throw new IOException("[" + fixture + "] Malformed inactivePreconditionCves entry: " + item);
+      }
+      inactiveIds.add(cveId);
+    }
+
+    final List<String> conservativeIds = new ArrayList<>();
+    for (final JsonNode item : conservativeCves) {
+      final String cveId = item.path("cveId").asText("");
+      final String coordinate = item.path("coordinate").asText("");
+      final String reason = item.path("reason").asText("");
+      final String pomOverride = item.path("pomOverrideSnippet").asText("");
+      if (!cvePattern.matcher(cveId).matches() || coordinate.isBlank() || reason.isBlank() || pomOverride.isBlank()) {
+        throw new IOException("[" + fixture + "] Malformed potentiallyConservativeCves entry: " + item);
+      }
+      conservativeIds.add(cveId);
+    }
+
     if (!output.contains("[INFO] Avoided CVEs (dropped artifacts):")) {
       throw new IOException(
           "[" + fixture + "] Report output missing 'Avoided CVEs (dropped artifacts):' heading");
@@ -429,6 +461,16 @@ public final class ExampleSupport {
           "["
               + fixture
               + "] Report output missing 'Mitigated CVEs (vulnerable code pruned by trimming):' heading");
+    }
+    if (!output.contains("[INFO] CVEs inactive due to unmet prerequisite dependencies:")) {
+      throw new IOException(
+          "["
+              + fixture
+              + "] Report output missing 'CVEs inactive due to unmet prerequisite dependencies:' heading");
+    }
+    if (!output.contains("[INFO] Potentially conservative CVE exclusions:")) {
+      throw new IOException(
+          "[" + fixture + "] Report output missing 'Potentially conservative CVE exclusions:' heading");
     }
 
     if (removedCves.isEmpty()) {
@@ -471,6 +513,48 @@ public final class ExampleSupport {
       }
     }
 
+    if (inactiveCves.isEmpty()) {
+      if (!output.contains(
+          "[INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available"
+              + " vulnerability mappings")) {
+        throw new IOException(
+            "[" + fixture
+                + "] Expected 'none matched the available vulnerability mappings' for inactive"
+                + " prerequisite CVEs");
+      }
+    } else {
+      for (final JsonNode item : inactiveCves) {
+        final String line =
+            "[INFO]   - " + item.path("cveId").asText() + " " + item.path("coordinate").asText();
+        if (!output.contains(line)) {
+          throw new IOException(
+              "[" + fixture + "] Missing expected inactive prerequisite CVE line in report output: " + line);
+        }
+      }
+    }
+
+    if (conservativeCves.isEmpty()) {
+      if (!output.contains("[INFO] Potentially conservative CVE exclusions: none detected")) {
+        throw new IOException(
+            "[" + fixture
+                + "] Expected 'Potentially conservative CVE exclusions: none detected' in report output");
+      }
+    } else {
+      for (final JsonNode item : conservativeCves) {
+        final String line =
+            "[INFO]   - " + item.path("cveId").asText() + " " + item.path("coordinate").asText();
+        if (!output.contains(line)) {
+          throw new IOException(
+              "[" + fixture + "] Missing expected conservative CVE line in report output: " + line);
+        }
+        final String reasonLine = "[INFO]     Reason: " + item.path("reason").asText();
+        if (!output.contains(reasonLine)) {
+          throw new IOException(
+              "[" + fixture + "] Missing expected conservative CVE reason in report output: " + reasonLine);
+        }
+      }
+    }
+
     // Concrete fixture-specific expected CVE assertions
     switch (fixture) {
       case "example-basic-app" -> {
@@ -478,29 +562,45 @@ public final class ExampleSupport {
           throw new IOException(
               "example-basic-app expected removed CVE-2014-3577, found: " + removedIds);
         }
-        if (!provenIds.isEmpty()) {
+        if (!provenIds.isEmpty() || !inactiveIds.isEmpty() || !conservativeIds.isEmpty()) {
           throw new IOException(
-              "example-basic-app expected 0 proven absent CVEs, found: " + provenIds);
+              "example-basic-app expected 0 other CVEs, found: proven=" + provenIds
+                  + ", inactive=" + inactiveIds + ", conservative=" + conservativeIds);
         }
       }
       case "example-cve-unused-app" -> {
-        if (!removedIds.isEmpty()) {
-          throw new IOException(
-              "example-cve-unused-app expected 0 removed CVEs, found: " + removedIds);
-        }
         if (!provenIds.contains("CVE-2022-42889")) {
           throw new IOException(
               "example-cve-unused-app expected proven absent CVE-2022-42889, found: " + provenIds);
         }
-      }
-      case "example-cve-safe-class-app", "example-spring-boot-app" -> {
-        if (!removedIds.isEmpty() || !provenIds.isEmpty()) {
+        if (!removedIds.isEmpty() || !inactiveIds.isEmpty() || !conservativeIds.isEmpty()) {
           throw new IOException(
-              fixture
-                  + " expected 0 CVE findings, found removed="
-                  + removedIds
-                  + ", proven="
-                  + provenIds);
+              "example-cve-unused-app expected 0 other CVEs, found: removed=" + removedIds
+                  + ", inactive=" + inactiveIds + ", conservative=" + conservativeIds);
+        }
+      }
+      case "example-cve-safe-class-app" -> {
+        if (!inactiveIds.contains("CVE-2025-11226")) {
+          throw new IOException(
+              "example-cve-safe-class-app expected inactive precondition CVE-2025-11226, found: "
+                  + inactiveIds);
+        }
+        if (!removedIds.isEmpty() || !provenIds.isEmpty() || !conservativeIds.isEmpty()) {
+          throw new IOException(
+              "example-cve-safe-class-app expected 0 other CVEs, found: removed=" + removedIds
+                  + ", proven=" + provenIds + ", conservative=" + conservativeIds);
+        }
+      }
+      case "example-spring-boot-app" -> {
+        if (!conservativeIds.contains("CVE-2026-68494")) {
+          throw new IOException(
+              "example-spring-boot-app expected potentially conservative CVE-2026-68494, found: "
+                  + conservativeIds);
+        }
+        if (!removedIds.isEmpty() || !provenIds.isEmpty() || !inactiveIds.isEmpty()) {
+          throw new IOException(
+              "example-spring-boot-app expected 0 other CVEs, found: removed=" + removedIds
+                  + ", proven=" + provenIds + ", inactive=" + inactiveIds);
         }
       }
       default -> {}
@@ -584,24 +684,20 @@ public final class ExampleSupport {
         throw new IOException("OpenVEX missing not_affected statement for CVE-2022-42889");
       }
     } else {
-      if (!before.contains("janino")
-          || !before.contains("logback-classic")
-          || !before.contains("logback-core")) {
-        throw new IOException("baseline inventory must contain Janino and Logback");
+      if (!before.contains("logback-classic") || !before.contains("logback-core")) {
+        throw new IOException("baseline inventory must contain Logback");
       }
-      if (!after.contains("janino")
-          || !after.contains("logback-classic")
-          || !after.contains("logback-core")) {
+      if (before.contains("janino") || after.contains("janino")) {
+        throw new IOException(
+            "safe-class fixture must not include Janino, ensuring precondition is unmet");
+      }
+      if (!after.contains("logback-classic") || !after.contains("logback-core")) {
         throw new IOException(
             "post-elision inventory must retain components whose code was not removed as a whole"
                 + " artifact");
       }
-      if (!containsCoordinatePrefix(
-          report.path("trimmedArtifacts"), "org.codehaus.janino:janino:")) {
-        throw new IOException("safe-class fixture must prove Janino code was trimmed");
-      }
       if (Files.exists(vexPath)) {
-        throw new IOException("unmapped retained Logback CVE must not produce VEX");
+        throw new IOException("inactive precondition CVE must not produce VEX");
       }
     }
   }

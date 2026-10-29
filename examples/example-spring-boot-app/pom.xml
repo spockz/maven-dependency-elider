@@ -148,6 +148,27 @@
                 <groupId>io.github.spockz</groupId>
                 <artifactId>dependency-elider-maven-plugin</artifactId>
                 <version>${project.version}</version>
+                <configuration>
+                    <!--
+                        Demonstrates refining an upstream advisory index gap:
+                        Upstream advisory feeds (OSV, NVD) only track package-level ranges or internal
+                        parser patch classes, lacking the public entry point. The project analyst refines
+                        the mapping to target ObjectMapper. Dependency Elider correlates ObjectMapper with
+                        the META-INF/services/com.fasterxml.jackson.core.ObjectCodec provider, warning
+                        that vulnerable code was conservatively retained under conservativeServiceLoaderRoots=true.
+                    -->
+                    <vulnerabilityMappings>
+                        <vulnerabilityMapping>
+                            <cveId>CVE-2026-68494</cveId>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-databind</artifactId>
+                            <versionRangeSpec>(,3.0.0)</versionRangeSpec>
+                            <vulnerableClasses>
+                                <vulnerableClass>com.fasterxml.jackson.databind.ObjectMapper</vulnerableClass>
+                            </vulnerableClasses>
+                        </vulnerabilityMapping>
+                    </vulnerabilityMappings>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

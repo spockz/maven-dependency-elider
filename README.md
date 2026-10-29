@@ -325,10 +325,10 @@ The repository includes end-to-end integration fixtures under `examples/`:
 
 | Fixture | Architecture | Target Demonstration |
 | :--- | :--- | :--- |
-| **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec` and `httpclient` (removing `CVE-2014-3577`); produces a shrunken shaded JAR. |
-| **`example-spring-boot-app`** | Spring Boot 3 Web | Retains candidates when no safe drop exists, trims Spring MVC under `BOOT-INF/lib`, and verifies HTTP endpoints. |
-| **`example-cve-unused-app`** | Standalone CVE test | Trims unused `StringLookup` from `commons-text` to prove `CVE-2022-42889` absent and emits OpenVEX. |
-| **`example-cve-safe-class-app`** | Standalone CVE test | Evaluates safe class usage without whole-artifact drops while preserving Logback/Spring runtime behavior. |
+| **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec` and `httpclient` (avoiding `CVE-2014-3577`); produces a shrunken shaded JAR. |
+| **`example-spring-boot-app`** | Spring Boot 3 Web | Retains candidates when no safe drop exists, trims Spring MVC under `BOOT-INF/lib`, and flags conservative SPI retention (`CVE-2026-68494`). |
+| **`example-cve-unused-app`** | Standalone CVE test | Trims unused `StringLookup` from `commons-text` to mitigate `CVE-2022-42889` and emits OpenVEX. |
+| **`example-cve-safe-class-app`** | Standalone CVE test | Demonstrates inactive prerequisite dependency handling (`CVE-2025-11226` without Janino) while preserving runtime behavior. |
 
 Run the full end-to-end verification suite across all fixtures:
 
@@ -350,7 +350,7 @@ Run standalone CVE fixture baselines:
 ```text
 example-basic-app
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-29T09:52:25.434919585Z
+[INFO] Snapshot: last successful elide run at 2026-10-29T19:06:04.532451432Z
 [INFO] Whole artifacts dropped: 2 (original JAR file bytes: 942.11 KiB)
 [INFO] Program classes removed with dropped JARs: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
@@ -368,14 +368,16 @@ example-basic-app
 
 example-spring-boot-app
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-29T09:53:07.220225791Z
+[INFO] Snapshot: last successful elide run at 2026-10-29T19:06:46.556244736Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 3409 (uncompressed omitted .class payload bytes: 8.49 MiB; excludes module descriptors and archive metadata)
 [INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
-[INFO] Potentially conservative CVE exclusions: none detected
+[INFO] Potentially conservative CVE exclusions:
+[INFO]   - CVE-2026-68494 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2
+[INFO]     Reason: Vulnerable code was retained due to conservative ServiceLoader SPI root com.fasterxml.jackson.core.ObjectCodec, com.fasterxml.jackson.databind.ObjectMapper without positive proof of use in application bytecode.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework.boot:spring-boot-starter-web:jar:3.3.5 (compile) {nodeId=n1} [RETAINED]
@@ -384,7 +386,7 @@ example-spring-boot-app
 
 example-cve-unused-app
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-29T09:53:32.915824571Z
+[INFO] Snapshot: last successful elide run at 2026-10-29T19:07:12.156693590Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 310 (uncompressed omitted .class payload bytes: 985.54 KiB; excludes module descriptors and archive metadata)
@@ -398,13 +400,14 @@ example-cve-unused-app
 
 example-cve-safe-class-app
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-29T09:53:45.784876234Z
+[INFO] Snapshot: last successful elide run at 2026-10-29T19:07:24.531228594Z
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
-[INFO] Program classes pruned from retained JARs: 108 (uncompressed omitted .class payload bytes: 433.66 KiB; excludes module descriptors and archive metadata)
+[INFO] Program classes pruned from retained JARs: 5 (uncompressed omitted .class payload bytes: 6.38 KiB; excludes module descriptors and archive metadata)
 [INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
-[INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
+[INFO] CVEs inactive due to unmet prerequisite dependencies:
+[INFO]   - CVE-2025-11226 ch.qos.logback:logback-classic:jar:1.5.18
 [INFO] Potentially conservative CVE exclusions: none detected
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   ...

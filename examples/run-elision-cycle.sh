@@ -226,7 +226,7 @@ main() {
     run_fixture_maven "$fixture_dir" -f "$pom" \
       io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report >"$report_output" 2>&1
     printf '\n%s report:\n' "$fixture"
-    grep -E '^\[INFO\] (Project:|Snapshot:|Whole artifacts dropped:|Program classes removed with dropped JARs:|Program classes pruned from retained JARs:|Avoided CVEs \(dropped artifacts\):|Mitigated CVEs \(vulnerable code pruned by trimming\):|  - )' \
+    grep -E '^\[INFO\] (Project:|Snapshot:|Whole artifacts dropped:|Program classes removed with dropped JARs:|Program classes pruned from retained JARs:|Avoided CVEs \(dropped artifacts\):|Mitigated CVEs \(vulnerable code pruned by trimming\):|CVEs inactive due to unmet prerequisite dependencies:|Potentially conservative CVE exclusions:|  - |    Reason:)' \
       "$report_output"
     verify_cve_report "$fixture" "$fixture_dir" "$report_output"
 
@@ -603,8 +603,7 @@ verify_baseline_archive() {
       ;;
     example-cve-safe-class-app)
       has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
-      has_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
-      has_prefix "$entries" 'org/codehaus/commons/compiler/'
+      lacks_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       ;;
   esac
 }
@@ -652,8 +651,7 @@ verify_archive() {
       ;;
     example-cve-safe-class-app)
       has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
-      has_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
-      has_prefix "$entries" 'org/codehaus/commons/compiler/'
+      lacks_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       ;;
   esac
 }
