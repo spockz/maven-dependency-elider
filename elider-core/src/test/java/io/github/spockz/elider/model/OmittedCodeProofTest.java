@@ -10,11 +10,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -75,6 +77,62 @@ class OmittedCodeProofTest {
     assertThatThrownBy(() -> OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("survives");
+  }
+
+  @Test
+  void rejectsVulnerableClassSurvivingOnlyInHighestMultiReleaseTier() throws Exception {
+    final ArtifactTrimRecord record =
+        record(
+            multiReleaseJar(
+                "multi-tier-original.jar",
+                "org/example/Vulnerable.class",
+                "META-INF/versions/9/org/example/Vulnerable.class",
+                "META-INF/versions/17/org/example/Vulnerable.class",
+                "org/example/Safe.class"),
+            multiReleaseJar(
+                "multi-tier-trimmed.jar",
+                "org/example/Safe.class",
+                "META-INF/versions/17/org/example/Vulnerable.class"),
+            2,
+            2,
+            0);
+
+    assertThatThrownBy(() -> OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Vulnerable class survives trimmed archive");
+  }
+
+  @Test
+  void provesVulnerableClassOmittedFromEveryMultiReleaseTier() throws Exception {
+    final ArtifactTrimRecord record =
+        record(
+            multiReleaseJar(
+                "multi-tier-original.jar",
+                "org/example/Vulnerable.class",
+                "META-INF/versions/9/org/example/Vulnerable.class",
+                "META-INF/versions/17/org/example/Vulnerable.class",
+                "org/example/Safe.class"),
+            multiReleaseJar("multi-tier-trimmed.jar", "org/example/Safe.class"),
+            2,
+            1,
+            3);
+
+    assertThat(OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record).evidenceSymbols())
+        .containsExactly("org.example.Vulnerable");
+  }
+
+  @Test
+  void rejectsDuplicatePhysicalClassEntryPath() throws Exception {
+    final Path original =
+        duplicatePhysicalEntryJar(
+            "duplicate-physical-entry.jar",
+            "org/example/Vulnerable.class",
+            "org/example/Vulnerablf.class");
+    final ArtifactTrimRecord record = record(original, jar("duplicate-physical-trimmed.jar"));
+
+    assertThatThrownBy(() -> OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Duplicate physical archive entry");
   }
 
   @Test
@@ -201,6 +259,16 @@ class OmittedCodeProofTest {
   }
 
   private ArtifactTrimRecord record(final Path original, final Path trimmed) throws IOException {
+    return record(original, trimmed, 3, 2, 1);
+  }
+
+  private ArtifactTrimRecord record(
+      final Path original,
+      final Path trimmed,
+      final int totalClasses,
+      final int retainedClasses,
+      final long prunedClassBytes)
+      throws IOException {
     final ArtifactDigests originalHash = ArtifactDigests.read(original);
     final ArtifactDigests trimmedHash = ArtifactDigests.read(trimmed);
     return new ArtifactTrimRecord(
@@ -211,9 +279,9 @@ class OmittedCodeProofTest {
         trimmed,
         trimmedHash.sha256(),
         trimmedHash.sha1(),
-        3,
-        2,
-        1);
+        totalClasses,
+        retainedClasses,
+        prunedClassBytes);
   }
 
   private Path jar(final String name, final String... entries) throws IOException {
@@ -226,6 +294,32 @@ class OmittedCodeProofTest {
       }
     }
     return path;
+  }
+
+  private Path multiReleaseJar(final String name, final String... entries) throws IOException {
+    final Path path = directory.resolve(name);
+    final Manifest manifest = new Manifest();
+    manifest.getMainAttributes().putValue("Manifest-Version", "1.0");
+    manifest.getMainAttributes().putValue("Multi-Release", "true");
+    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path), manifest)) {
+      for (final String entry : entries) {
+        output.putNextEntry(new JarEntry(entry));
+        output.write(new byte[] {0});
+        output.closeEntry();
+      }
+    }
+    return path;
+  }
+
+  private Path duplicatePhysicalEntryJar(
+      final String name, final String firstEntry, final String secondEntry) throws IOException {
+    final Path source = jar(name, firstEntry, secondEntry);
+    final byte[] originalBytes = Files.readAllBytes(source);
+    final String archive = new String(originalBytes, StandardCharsets.ISO_8859_1);
+    final byte[] duplicateBytes =
+        archive.replace(secondEntry, firstEntry).getBytes(StandardCharsets.ISO_8859_1);
+    Files.write(source, duplicateBytes);
+    return source;
   }
 
   private static VulnerabilitySymbolMapping mapping(final String className) {
