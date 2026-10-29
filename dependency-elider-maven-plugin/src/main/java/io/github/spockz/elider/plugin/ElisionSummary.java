@@ -199,12 +199,12 @@ final class ElisionSummary {
     }
     final String removedHeading =
         predicted
-            ? "  CVE components that would be removed from inventory: "
-            : "  CVE components removed from inventory: ";
+            ? "  Avoided CVEs (artifacts that would be dropped): "
+            : "  Avoided CVEs (dropped artifacts): ";
     final String provenHeading =
         predicted
-            ? "  CVEs whose vulnerable code would be proven absent by trimming: "
-            : "  CVEs with vulnerable code proven absent by trimming: ";
+            ? "  Mitigated CVEs (vulnerable code that would be pruned by trimming): "
+            : "  Mitigated CVEs (vulnerable code pruned by trimming): ";
     final String inactiveHeading =
         predicted
             ? "  CVEs that would be inactive due to unmet prerequisite dependencies: "

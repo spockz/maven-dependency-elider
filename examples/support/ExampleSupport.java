@@ -420,19 +420,20 @@ public final class ExampleSupport {
       provenIds.add(cveId);
     }
 
-    if (!output.contains("[INFO] CVE components removed from inventory:")) {
+    if (!output.contains("[INFO] Avoided CVEs (dropped artifacts):")) {
       throw new IOException(
-          "[" + fixture + "] Report output missing 'CVE components removed from inventory:' heading");
+          "[" + fixture + "] Report output missing 'Avoided CVEs (dropped artifacts):' heading");
     }
-    if (!output.contains("[INFO] CVEs with vulnerable code proven absent by trimming:")) {
+    if (!output.contains("[INFO] Mitigated CVEs (vulnerable code pruned by trimming):")) {
       throw new IOException(
-          "[" + fixture
-              + "] Report output missing 'CVEs with vulnerable code proven absent by trimming:' heading");
+          "["
+              + fixture
+              + "] Report output missing 'Mitigated CVEs (vulnerable code pruned by trimming):' heading");
     }
 
     if (removedCves.isEmpty()) {
       if (!output.contains(
-          "[INFO] CVE components removed from inventory: none matched the available vulnerability"
+          "[INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability"
               + " mappings")) {
         throw new IOException(
             "[" + fixture
@@ -452,7 +453,7 @@ public final class ExampleSupport {
 
     if (provenCves.isEmpty()) {
       if (!output.contains(
-          "[INFO] CVEs with vulnerable code proven absent by trimming: none matched the available"
+          "[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
               + " vulnerability mappings")) {
         throw new IOException(
             "[" + fixture

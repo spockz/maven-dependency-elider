@@ -141,20 +141,20 @@ final class MavenElisionReportWriter {
     }
     if (snapshot.removedCveComponents().isEmpty()) {
       lines.add(
-          "CVE components removed from inventory: "
+          "Avoided CVEs (dropped artifacts): "
               + "none matched the available vulnerability mappings");
     } else {
-      lines.add("CVE components removed from inventory:");
+      lines.add("Avoided CVEs (dropped artifacts):");
       for (final MavenElisionReportSnapshot.CveFinding finding : snapshot.removedCveComponents()) {
         lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
       }
     }
     if (snapshot.provenAbsentCves().isEmpty()) {
       lines.add(
-          "CVEs with vulnerable code proven absent by trimming: none matched the available"
+          "Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
               + " vulnerability mappings");
     } else {
-      lines.add("CVEs with vulnerable code proven absent by trimming:");
+      lines.add("Mitigated CVEs (vulnerable code pruned by trimming):");
       for (final MavenElisionReportSnapshot.CveFinding finding : snapshot.provenAbsentCves()) {
         lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
       }

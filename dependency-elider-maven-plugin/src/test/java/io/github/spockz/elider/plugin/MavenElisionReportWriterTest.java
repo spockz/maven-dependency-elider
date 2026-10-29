@@ -159,9 +159,9 @@ final class MavenElisionReportWriterTest {
             "Program classes pruned from retained JARs: 4 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "3.02 KiB; excludes module descriptors and archive metadata)",
-            "CVE components removed from inventory: "
+            "Avoided CVEs (dropped artifacts): "
                 + "none matched the available vulnerability mappings",
-            "CVEs with vulnerable code proven absent by trimming: none matched the available"
+            "Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
                 + " vulnerability mappings",
             "Mediated TEST dependency graph (captured and saved by the elide goal):");
     assertThat(MavenElisionReportWriter.render(reread))
@@ -203,9 +203,9 @@ final class MavenElisionReportWriterTest {
             "Program classes pruned from retained JARs: 0 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "0 B; excludes module descriptors and archive metadata)",
-            "CVE components removed from inventory: "
+            "Avoided CVEs (dropped artifacts): "
                 + "none matched the available vulnerability mappings",
-            "CVEs with vulnerable code proven absent by trimming: none matched the available"
+            "Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
                 + " vulnerability mappings");
   }
 
@@ -276,9 +276,9 @@ final class MavenElisionReportWriterTest {
     assertThat(reread.potentiallyConservativeCves()).containsExactly(conservative);
     assertThat(MavenElisionReportWriter.render(reread))
         .contains(
-            "CVE components removed from inventory:",
+            "Avoided CVEs (dropped artifacts):",
             "  - CVE-2026-10001 org.example:removed:jar:1.0",
-            "CVEs with vulnerable code proven absent by trimming:",
+            "Mitigated CVEs (vulnerable code pruned by trimming):",
             "  - CVE-2025-11226 org.example:trimmed:jar:2.0",
             "CVEs inactive due to unmet prerequisite dependencies:",
             "  - CVE-2025-11227 ch.qos.logback:logback-core:jar:1.5.15",

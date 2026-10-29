@@ -352,11 +352,12 @@ example-basic-app
 [INFO] Whole artifacts dropped: 2 (original JAR file bytes: 942.11 KiB)
 [INFO] Program classes removed with dropped JARs: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
-[INFO] CVE components removed from inventory:
+[INFO] Avoided CVEs (dropped artifacts):
 [INFO]   - CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4
-[INFO] CVEs with vulnerable code proven absent by trimming: none matched the available vulnerability mappings
+[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions: none detected
+[INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) {nodeId=n1} [EFFECTIVE_DROP]
@@ -368,10 +369,11 @@ example-spring-boot-app
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 3409 (uncompressed omitted .class payload bytes: 8.49 MiB; excludes module descriptors and archive metadata)
-[INFO] CVE components removed from inventory: none matched the available vulnerability mappings
-[INFO] CVEs with vulnerable code proven absent by trimming: none matched the available vulnerability mappings
+[INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
+[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions: none detected
+[INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework.boot:spring-boot-starter-web:jar:3.3.5 (compile) {nodeId=n1} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.1.14 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
@@ -382,8 +384,8 @@ example-cve-unused-app
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 310 (uncompressed omitted .class payload bytes: 985.54 KiB; excludes module descriptors and archive metadata)
-[INFO] CVE components removed from inventory: none matched the available vulnerability mappings
-[INFO] CVEs with vulnerable code proven absent by trimming:
+[INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
+[INFO] Mitigated CVEs (vulnerable code pruned by trimming):
 [INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions: none detected
@@ -394,8 +396,8 @@ example-cve-safe-class-app
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Program classes pruned from retained JARs: 108 (uncompressed omitted .class payload bytes: 433.66 KiB; excludes module descriptors and archive metadata)
-[INFO] CVE components removed from inventory: none matched the available vulnerability mappings
-[INFO] CVEs with vulnerable code proven absent by trimming: none matched the available vulnerability mappings
+[INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
+[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions: none detected
 ```
@@ -412,8 +414,8 @@ The non-mutating `analyze` goal identifies dependencies that would be elided and
 [INFO]   Estimated original JAR bytes for those artifacts: 151 B (sum of original on-disk input JAR sizes; final package delta may differ)
 [INFO]   Program class entries in JARs that would be dropped: 1 (uncompressed .class entry payload bytes: 63 B; excludes module descriptors and archive sanitation metadata)
 [INFO]   JAR trim cache: unavailable (trim stage not run)
-[INFO]   CVE components that would be removed from inventory: none matched the available vulnerability mappings
-[INFO]   CVEs whose vulnerable code would be proven absent by trimming: none matched the available vulnerability mappings
+[INFO]   Avoided CVEs (artifacts that would be dropped): none matched the available vulnerability mappings
+[INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming): none matched the available vulnerability mappings
 [INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO]   CVEs that would be excluded due to conservative multi-symbol checks: none detected
 ```

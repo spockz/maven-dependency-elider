@@ -367,7 +367,7 @@ final class ElideMojoTest {
                 + "CVE-2026-10001 org.example:runtime-dependency:jar:1.0")
         .noneMatch(message -> message.contains("sample.Drop"));
     assertThat(log.messages())
-        .anyMatch(line -> line.startsWith("  CVEs with vulnerable code proven absent by trimming:"))
+        .anyMatch(line -> line.startsWith("  Mitigated CVEs (vulnerable code pruned by trimming):"))
         .contains("    CVE-2026-10001 org.example:runtime-dependency:jar:1.0");
     assertThat(directRuntime.getFile().toPath()).isEqualTo(runtime.getFile().toPath());
     assertThat(project.getArtifacts()).contains(runtime);

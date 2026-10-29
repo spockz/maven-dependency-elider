@@ -155,9 +155,9 @@ final class AnalyzeMojoTest {
             "  Estimated original JAR bytes for those artifacts: "
                 + MavenElisionReportWriter.formatBytes(Files.size(unused.getFile().toPath()))
                 + " (sum of original on-disk input JAR sizes; final package delta may differ)",
-            "  CVE components that would be removed from inventory: ",
+            "  Avoided CVEs (artifacts that would be dropped): ",
             "    CVE-2026-19001 org.example:unused-runtime:jar:1.0",
-            "  CVEs whose vulnerable code would be proven absent by trimming: "
+            "  Mitigated CVEs (vulnerable code that would be pruned by trimming): "
                 + "none matched the available vulnerability mappings");
     assertThat(project.getArtifacts()).isSameAs(artifacts).containsExactlyInAnyOrder(used, unused);
     assertThat(unused.getFile()).isSameAs(unusedFile);
@@ -203,7 +203,8 @@ final class AnalyzeMojoTest {
     assertThat(log.messages())
         .anyMatch(
             line ->
-                line.startsWith("  CVEs whose vulnerable code would be proven absent by trimming:"))
+                line.startsWith(
+                    "  Mitigated CVEs (vulnerable code that would be pruned by trimming):"))
         .contains("    CVE-2026-19002 org.example:runtime-cve:jar:1.0");
     assertThat(project.getArtifacts()).containsExactly(runtime);
     assertThat(runtime.getFile()).isSameAs(original);
