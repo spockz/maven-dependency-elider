@@ -66,10 +66,10 @@ final class MultiReleaseArchiveInventory {
         throw new IOException("Duplicate archive entry cannot be preserved safely: " + name);
       }
       names.add(name);
-      if (entry.isDirectory() || !name.startsWith(MultiReleaseArchivePlan.VERSIONS_PREFIX)) {
-        addRootClass(archive, entry, name);
-      } else {
+      if (name.startsWith(MultiReleaseArchivePlan.VERSIONS_PREFIX)) {
         addVersionedEntry(archive, entry, name);
+      } else {
+        addRootClass(archive, entry, name);
       }
     }
 
@@ -90,6 +90,9 @@ final class MultiReleaseArchiveInventory {
 
     private void addVersionedEntry(final JarFile archive, final JarEntry entry, final String name)
         throws IOException {
+      if (entry.isDirectory() && MultiReleaseArchivePlan.VERSIONS_PREFIX.equals(name)) {
+        return;
+      }
       final MultiReleaseArchivePlan.VersionedPath path =
           MultiReleaseArchivePlan.parseVersionedPath(name, entry.isDirectory());
       if (path == null) {

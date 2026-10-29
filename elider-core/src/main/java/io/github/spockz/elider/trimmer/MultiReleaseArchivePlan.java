@@ -34,6 +34,8 @@ public final class MultiReleaseArchivePlan {
   private final String sourceSha256;
   private final int targetRelease;
   private final int inputPhysicalEntries;
+  private final Set<String> requestedRetainedClasses;
+  private final List<Integer> versionedClassReleases;
   private final Map<String, VersionedEntry> versionedEntries;
   private final Map<String, String> selectedClassEntries;
   private final Set<String> targetClasses;
@@ -50,6 +52,8 @@ public final class MultiReleaseArchivePlan {
       final String sourceSha256,
       final int targetRelease,
       final int inputPhysicalEntries,
+      final Set<String> requestedRetainedClasses,
+      final List<Integer> versionedClassReleases,
       final Map<String, VersionedEntry> versionedEntries,
       final Map<String, String> selectedClassEntries,
       final Set<String> targetClasses,
@@ -64,6 +68,8 @@ public final class MultiReleaseArchivePlan {
     this.sourceSha256 = sourceSha256;
     this.targetRelease = targetRelease;
     this.inputPhysicalEntries = inputPhysicalEntries;
+    this.requestedRetainedClasses = Set.copyOf(requestedRetainedClasses);
+    this.versionedClassReleases = versionedClassReleases.stream().distinct().sorted().toList();
     this.versionedEntries = Map.copyOf(versionedEntries);
     this.selectedClassEntries = Map.copyOf(selectedClassEntries);
     this.targetClasses = Set.copyOf(targetClasses);
@@ -148,6 +154,12 @@ public final class MultiReleaseArchivePlan {
         sourceSha256,
         targetRelease,
         names.size(),
+        normalizedRetained,
+        versionedClasses.values().stream()
+            .flatMap(variants -> variants.navigableKeySet().stream())
+            .distinct()
+            .sorted()
+            .toList(),
         versionedEntries,
         selection.selectedEntries(),
         selection.targetClasses(),
@@ -182,6 +194,10 @@ public final class MultiReleaseArchivePlan {
 
   int inputPhysicalEntries() {
     return inputPhysicalEntries;
+  }
+
+  Set<String> requestedRetainedClasses() {
+    return requestedRetainedClasses;
   }
 
   Map<String, VersionedEntry> versionedEntries() {
@@ -222,6 +238,21 @@ public final class MultiReleaseArchivePlan {
 
   boolean hasVersionedOutput() {
     return hasVersionedOutput;
+  }
+
+  /** Returns immutable release and closure facts for plugin candidate analysis. */
+  public PluginView pluginView() {
+    return new PluginView(
+        targetRelease,
+        targetClasses,
+        rootClassesRequiredByUpperTiers,
+        requestedRetainedClasses,
+        targetClasses.size(),
+        logicalClasses.size(),
+        retainedLogicalClasses.size(),
+        inputPhysicalEntries,
+        versionedClassReleases,
+        hasVersionedOutput);
   }
 
   boolean matches(final Path source, final String sha256) {
@@ -283,6 +314,39 @@ public final class MultiReleaseArchivePlan {
   }
 
   record VersionedPath(int release, String logicalName) {}
+
+  /**
+   * Immutable plugin facts; class names use JVM internal slash form.
+   *
+   * @param targetPresentClasses target-present names (internal slash form)
+   * @param requiredRootClasses forced root names (internal slash form)
+   * @param requestedRetainedClasses requested names (internal slash form)
+   * @param versionedClassReleases ascending implementation-class release breakpoints
+   */
+  public record PluginView(
+      int targetRelease,
+      Set<String> targetPresentClasses,
+      Set<String> requiredRootClasses,
+      Set<String> requestedRetainedClasses,
+      int targetClassCount,
+      int logicalClassCount,
+      int retainedLogicalClassCount,
+      int inputPhysicalEntries,
+      List<Integer> versionedClassReleases,
+      boolean hasHigherReleaseEntries) {
+    /** Creates a defensive immutable view of the plan facts. */
+    public PluginView {
+      targetPresentClasses = Set.copyOf(targetPresentClasses);
+      requiredRootClasses = Set.copyOf(requiredRootClasses);
+      requestedRetainedClasses = Set.copyOf(requestedRetainedClasses);
+      versionedClassReleases = versionedClassReleases.stream().distinct().sorted().toList();
+    }
+
+    @Override
+    public List<Integer> versionedClassReleases() {
+      return List.copyOf(versionedClassReleases);
+    }
+  }
 
   record ClassVariant(
       String name,

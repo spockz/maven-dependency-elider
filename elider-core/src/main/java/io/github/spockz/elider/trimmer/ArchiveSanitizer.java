@@ -74,7 +74,7 @@ public final class ArchiveSanitizer {
           "MRJAR elevation plan does not match original dependency: " + originalJar);
     }
     if (analysis.totalClasses() != plan.targetClasses().size()
-        || !plan.targetClasses().containsAll(analysis.retainedClasses())) {
+        || !analysis.retainedClasses().equals(plan.retainedTargetClasses())) {
       throw new IOException("Trim analysis does not match the MRJAR target-release view");
     }
     return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests, plan);

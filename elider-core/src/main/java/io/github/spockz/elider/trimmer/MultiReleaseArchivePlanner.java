@@ -41,7 +41,8 @@ final class MultiReleaseArchivePlanner {
           targetClasses,
           logicalClasses,
           rootRequired,
-          targetRelease);
+          targetRelease,
+          normalizedRetained);
     }
     validateRetainedClasses(normalizedRetained, targetClasses);
     final Set<String> retainedTarget = new HashSet<>(normalizedRetained);
@@ -70,7 +71,8 @@ final class MultiReleaseArchivePlanner {
       final Set<String> targetClasses,
       final Set<String> logicalClasses,
       final Set<String> rootRequired,
-      final int targetRelease)
+      final int targetRelease,
+      final Set<String> normalizedRetained)
       throws IOException {
     logicalClasses.add(className);
     final Map.Entry<Integer, MultiReleaseArchivePlan.ClassVariant> selected =
@@ -89,6 +91,11 @@ final class MultiReleaseArchivePlanner {
             .filter(variant -> variant.release() > targetRelease)
             .filter(variant -> variant.accessVisibility() != 0)
             .toList();
+    if (selected == null
+        && selectedTarget != null
+        && (normalizedRetained.contains(className) || !upperApiVariants.isEmpty())) {
+      MultiReleaseClassFile.validateTargetRelease(selectedTarget, targetRelease);
+    }
     if (!upperApiVariants.isEmpty()) {
       validateUpperApi(selectedTarget, upperApiVariants);
       rootRequired.add(className);

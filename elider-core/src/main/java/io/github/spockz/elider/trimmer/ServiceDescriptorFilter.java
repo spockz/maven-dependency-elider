@@ -48,25 +48,45 @@ final class ServiceDescriptorFilter {
 
   private static Optional<byte[]> filterLines(
       final String text, final Set<String> removedProviders) {
-    final String[] lines = text.split("\\n", -1);
     final StringBuilder filtered = new StringBuilder(text.length());
     boolean changed = false;
-    for (int index = 0; index < lines.length; index++) {
-      final String line = lines[index];
-      final String comparable = line.endsWith("\r") ? line.substring(0, line.length() - 1) : line;
-      final int comment = comparable.indexOf('#');
-      final String provider = (comment < 0 ? comparable : comparable.substring(0, comment)).trim();
-      final boolean removed = removedProviders.contains(provider);
+    int lineStart = 0;
+    while (lineStart < text.length()) {
+      int lineEnd = lineStart;
+      while (lineEnd < text.length() && !isLineBreak(text.charAt(lineEnd))) {
+        lineEnd++;
+      }
+      final int separatorEnd = lineSeparatorEnd(text, lineEnd);
+      final boolean removed =
+          removedProviders.contains(providerName(text.substring(lineStart, lineEnd)));
       changed |= removed;
       if (!removed) {
-        filtered.append(line);
-        if (index < lines.length - 1) {
-          filtered.append('\n');
-        }
+        filtered.append(text, lineStart, separatorEnd);
       }
+      lineStart = separatorEnd;
     }
     return changed
         ? Optional.of(filtered.toString().getBytes(StandardCharsets.UTF_8))
         : Optional.empty();
+  }
+
+  private static boolean isLineBreak(final char value) {
+    return value == '\r' || value == '\n';
+  }
+
+  private static int lineSeparatorEnd(final String text, final int lineEnd) {
+    if (lineEnd == text.length()) {
+      return lineEnd;
+    }
+    return text.charAt(lineEnd) == '\r'
+            && lineEnd + 1 < text.length()
+            && text.charAt(lineEnd + 1) == '\n'
+        ? lineEnd + 2
+        : lineEnd + 1;
+  }
+
+  private static String providerName(final String line) {
+    final int comment = line.indexOf('#');
+    return (comment < 0 ? line : line.substring(0, comment)).trim();
   }
 }

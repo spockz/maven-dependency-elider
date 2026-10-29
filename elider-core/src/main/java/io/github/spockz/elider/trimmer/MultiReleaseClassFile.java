@@ -36,7 +36,8 @@ final class MultiReleaseClassFile {
       throw new IOException(
           "Class entry path does not match its declared name: " + entry.getName());
     }
-    final int visibility = reader.getAccess() & API_ACCESS;
+    final ApiShapeBuilder apiBuilder = readApi(reader);
+    final int visibility = apiBuilder.visibility(reader.getAccess());
     final int majorVersion = reader.readUnsignedShort(6);
     if (release > 0 && majorVersion > release + 44) {
       throw new IOException("Versioned class file exceeds its release: " + entry.getName());
@@ -48,7 +49,7 @@ final class MultiReleaseClassFile {
         reader.getAccess(),
         visibility,
         majorVersion,
-        apiShape(reader));
+        apiBuilder.build());
   }
 
   static void validateRelease(final MultiReleaseArchivePlan.ClassVariant variant)
@@ -58,15 +59,26 @@ final class MultiReleaseClassFile {
     }
   }
 
-  private static MultiReleaseArchivePlan.ApiShape apiShape(final ClassReader reader) {
+  static void validateTargetRelease(
+      final MultiReleaseArchivePlan.ClassVariant variant, final int targetRelease)
+      throws IOException {
+    if (variant.majorVersion() > targetRelease + 44) {
+      throw new IOException(
+          "Selected root fallback exceeds target release: " + variant.entryName());
+    }
+  }
+
+  private static ApiShapeBuilder readApi(final ClassReader reader) {
     final ApiShapeBuilder builder = new ApiShapeBuilder();
     reader.accept(
         builder, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-    return builder.build();
+    return builder;
   }
 
   private static final class ApiShapeBuilder extends ClassVisitor {
     private String header;
+    private String className;
+    private int selfInnerAccess = -1;
     private final List<String> members = new ArrayList<>();
     private final List<String> records = new ArrayList<>();
 
@@ -83,7 +95,16 @@ final class MultiReleaseClassFile {
         final String superName,
         final String[] interfaces) {
       final List<String> interfaceNames = List.of(interfaces);
+      className = name;
       header = access + ":" + name + ":" + signature + ":" + superName + ":" + interfaceNames;
+    }
+
+    @Override
+    public void visitInnerClass(
+        final String name, final String outerName, final String innerName, final int access) {
+      if (name.equals(className)) {
+        selfInnerAccess = access;
+      }
     }
 
     @Override
@@ -125,7 +146,13 @@ final class MultiReleaseClassFile {
       members.sort(Comparator.naturalOrder());
       records.sort(Comparator.naturalOrder());
       return new MultiReleaseArchivePlan.ApiShape(
-          header, List.copyOf(members), List.copyOf(records));
+          header + ":selfInnerAccess=" + selfInnerAccess,
+          List.copyOf(members),
+          List.copyOf(records));
+    }
+
+    private int visibility(final int classAccess) {
+      return (selfInnerAccess < 0 ? classAccess : selfInnerAccess) & API_ACCESS;
     }
   }
 }

@@ -47,9 +47,13 @@ final class MultiReleaseArchivePlanTest {
     final Fixture fixture = multiReleaseFixture("target-eleven", "VALUE");
     final MultiReleaseArchivePlan plan =
         MultiReleaseArchivePlan.create(
-            fixture.jar(), 11, Set.of("fixture.Api"), Set.of("fixture.Drop"));
+            fixture.jar(),
+            11,
+            Set.of("fixture.Api"),
+            Set.of("fixture.Drop", "drop.Lf", "drop.Crlf"));
     final DependencyJarTrimmer.TrimAnalysis analysis =
-        new DependencyJarTrimmer.TrimAnalysis(3, Set.of(API_NAME), Set.of(API_NAME));
+        new DependencyJarTrimmer.TrimAnalysis(
+            3, Set.of(API_NAME, "fixture/UpperOnly"), Set.of(API_NAME, "fixture/UpperOnly"));
     final Path output = temporaryDirectory.resolve("target-eleven-output.jar");
     final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
     final ArchiveSanitizer.PreparedOutput prepared =
@@ -70,6 +74,10 @@ final class MultiReleaseArchivePlanTest {
 
     assertThat(record.totalClasses()).isEqualTo(3);
     assertThat(record.retainedClasses()).isEqualTo(2);
+    assertThat(record.prunedClassBytes())
+        .isEqualTo(
+            classEntrySize(fixture.jar(), "fixture/Api.class")
+                + classEntrySize(fixture.jar(), "fixture/Drop.class"));
     assertThat(record.mrjarStatus()).isEqualTo("elevated_and_trimmed");
     assertThat(record.originalPhysicalEntries()).hasValue(countEntries(fixture.jar()));
     assertThat(record.trimmedPhysicalEntries()).hasValue(countEntries(output));
@@ -87,7 +95,7 @@ final class MultiReleaseArchivePlanTest {
       assertThat(archive.getEntry("META-INF/versions/9/config/value.txt")).isNull();
       assertThat(archive.getEntry("META-INF/versions/17/config/value.txt")).isNotNull();
       assertThat(readEntry(archive, "META-INF/services/example.Service"))
-          .isEqualTo(bytes("outside.Provider\nfixture.Api\n"));
+          .isEqualTo(bytes("outside.Provider\rfixture.Api\r\n"));
       assertThat(archive.getEntry("META-INF/TEST.SF")).isNull();
       assertThat(archive.getManifest().getMainAttributes().getValue("Multi-Release"))
           .isEqualTo("true");
@@ -116,6 +124,13 @@ final class MultiReleaseArchivePlanTest {
       final ArtifactTrimRecord record = sanitizer.publish(prepared);
       assertThat(record.totalClasses()).isEqualTo(3);
       assertThat(record.retainedClasses()).isEqualTo(1);
+      assertThat(record.prunedClassBytes())
+          .isEqualTo(
+              classEntrySize(fixture.jar(), "fixture/Api.class")
+                  + classEntrySize(fixture.jar(), "fixture/Drop.class")
+                  + classEntrySize(fixture.jar(), "fixture/UpperOnly.class")
+                  + classEntrySize(fixture.jar(), "META-INF/versions/17/fixture/UpperOnly.class")
+                  + classEntrySize(fixture.jar(), "META-INF/versions/9/fixture/Api.class"));
       assertThat(record.mrjarStatus()).isEqualTo("elevated_and_trimmed");
     } finally {
       sanitizer.discard(prepared);
@@ -130,6 +145,64 @@ final class MultiReleaseArchivePlanTest {
           .isEqualTo(Files.readAllBytes(fixture.versionSeventeenApi()));
     }
     assertJarValid(output);
+  }
+
+  @Test
+  void exposesImmutablePluginViewWithSortedReleaseBreakpoints() throws Exception {
+    final Fixture fixture = multiReleaseFixture("plugin-view", "VALUE");
+    final MultiReleaseArchivePlan.PluginView view =
+        MultiReleaseArchivePlan.create(fixture.jar(), 11, Set.of("fixture.Api"), Set.of())
+            .pluginView();
+
+    assertThat(view.targetRelease()).isEqualTo(11);
+    assertThat(view.targetPresentClasses())
+        .containsExactlyInAnyOrder("fixture/Api", "fixture/Drop", "fixture/UpperOnly");
+    assertThat(view.requiredRootClasses())
+        .containsExactlyInAnyOrder("fixture/Api", "fixture/UpperOnly");
+    assertThat(view.requestedRetainedClasses()).containsExactly("fixture/Api");
+    assertThat(view.targetClassCount()).isEqualTo(3);
+    assertThat(view.logicalClassCount()).isEqualTo(3);
+    assertThat(view.retainedLogicalClassCount()).isEqualTo(2);
+    assertThat(view.versionedClassReleases()).containsExactly(9, 17);
+    assertThatThrownBy(() -> view.targetPresentClasses().add("fixture/Other"))
+        .isInstanceOf(UnsupportedOperationException.class);
+  }
+
+  @Test
+  void rejectsTrimAnalysisRetentionThatDiffersFromPlanRequest() throws Exception {
+    final Fixture fixture = multiReleaseFixture("retention-mismatch", "VALUE");
+    final MultiReleaseArchivePlan plan =
+        MultiReleaseArchivePlan.create(fixture.jar(), 11, Set.of("fixture.Api"), Set.of());
+    assertRetentionRejected(
+        fixture,
+        plan,
+        new DependencyJarTrimmer.TrimAnalysis(3, Set.of(API_NAME), Set.of(API_NAME)),
+        "missing-forced-root");
+    assertRetentionRejected(
+        fixture,
+        plan,
+        new DependencyJarTrimmer.TrimAnalysis(
+            3, Set.of(API_NAME, "fixture/Drop"), Set.of(API_NAME, "fixture/Drop")),
+        "extra-requested-class");
+  }
+
+  private void assertRetentionRejected(
+      final Fixture fixture,
+      final MultiReleaseArchivePlan plan,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final String outputName) {
+    assertThatThrownBy(
+            () ->
+                new ArchiveSanitizer()
+                    .prepareMultiRelease(
+                        fixture.jar(),
+                        temporaryDirectory.resolve(outputName + ".jar"),
+                        ArtifactCoordinate.of("org.example", "fixture", "1"),
+                        analysis,
+                        plan,
+                        null))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Trim analysis does not match");
   }
 
   @Test
@@ -156,6 +229,101 @@ final class MultiReleaseArchivePlanTest {
             () -> MultiReleaseArchivePlan.create(nonCanonical, 11, Set.of(API_NAME), Set.of()))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Invalid multi-release version directory");
+
+    final Path invalidDirectory =
+        copyWithEntry(
+            fixture.jar(),
+            temporaryDirectory.resolve("noncanonical-version-directory.jar"),
+            "META-INF/versions/09/",
+            bytes(""));
+    assertThatThrownBy(
+            () -> MultiReleaseArchivePlan.create(invalidDirectory, 11, Set.of(API_NAME), Set.of()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Invalid multi-release version directory");
+
+    final Path nestedMetaInfDirectory =
+        copyWithEntry(
+            fixture.jar(),
+            temporaryDirectory.resolve("versioned-meta-inf-directory.jar"),
+            "META-INF/versions/17/META-INF/",
+            bytes(""));
+    assertThatThrownBy(
+            () ->
+                MultiReleaseArchivePlan.create(
+                    nestedMetaInfDirectory, 11, Set.of(API_NAME), Set.of()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Versioned META-INF resources are not supported");
+
+    final Path withVersionContainer =
+        copyWithEntry(
+            fixture.jar(),
+            temporaryDirectory.resolve("version-container-directory.jar"),
+            "META-INF/versions/",
+            bytes(""));
+    assertThat(
+            MultiReleaseArchivePlan.create(withVersionContainer, 11, Set.of(API_NAME), Set.of())
+                .targetRelease())
+        .isEqualTo(11);
+  }
+
+  @Test
+  void detectsProtectedNestedUpperTierApiChanges() throws Exception {
+    final Path rootNested =
+        compileNestedClass("protected-nested-root", 8, "public int value() { return 8; }");
+    final Path upperNested =
+        compileNestedClass(
+            "protected-nested-upper",
+            17,
+            "public int value() { return 17; } public void added() {}");
+    final Path jar = temporaryDirectory.resolve("protected-nested-api.jar");
+    try (JarOutputStream output =
+        new JarOutputStream(Files.newOutputStream(jar), manifestFor(true))) {
+      add(output, "fixture/Outer$Nested.class", rootNested);
+      add(output, "META-INF/versions/17/fixture/Outer$Nested.class", upperNested);
+    }
+
+    assertThatThrownBy(
+            () -> MultiReleaseArchivePlan.create(jar, 11, Set.of("fixture.Outer$Nested"), Set.of()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Upper-tier public API differs");
+  }
+
+  @Test
+  void validatesTargetMajorOnlyForSelectedRootFallbacks() throws Exception {
+    final Path rootFallback =
+        compileClass(
+            "new-root-fallback",
+            17,
+            "package fixture; public class Fallback { public int value() { return 1; } }");
+    final Path upperFallback =
+        compileClass(
+            "new-upper-fallback",
+            17,
+            "package fixture; public class Fallback { public int value() { return 2; } }");
+    final Path fallbackJar = temporaryDirectory.resolve("new-root-fallback.jar");
+    try (JarOutputStream output =
+        new JarOutputStream(Files.newOutputStream(fallbackJar), manifestFor(true))) {
+      add(output, "fixture/Fallback.class", rootFallback);
+      add(output, "META-INF/versions/17/fixture/Fallback.class", upperFallback);
+    }
+    assertThatThrownBy(
+            () ->
+                MultiReleaseArchivePlan.create(
+                    fallbackJar, 11, Set.of("fixture.Fallback"), Set.of()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Selected root fallback exceeds target release");
+
+    final Path omittedRoot =
+        compileClass(
+            "new-omitted-root",
+            17,
+            "package fixture; public class Omitted { public int value() { return 3; } }");
+    final Path omittedJar = temporaryDirectory.resolve("new-omitted-root.jar");
+    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(omittedJar))) {
+      add(output, "fixture/Omitted.class", omittedRoot);
+    }
+    assertThat(MultiReleaseArchivePlan.create(omittedJar, 11, Set.of(), Set.of()).targetClasses())
+        .contains("fixture/Omitted");
   }
 
   @Test
@@ -224,7 +392,7 @@ final class MultiReleaseArchivePlanTest {
       write(
           output,
           "META-INF/services/example.Service",
-          bytes("fixture.Drop\noutside.Provider\nfixture.Api\n"));
+          bytes("fixture.Drop\rdrop.Lf\ndrop.Crlf\r\noutside.Provider\rfixture.Api\r\n"));
       write(output, "META-INF/TEST.SF", bytes("signature"));
       add(output, "META-INF/versions/9/fixture/Api.class", nineApi);
       write(output, "META-INF/versions/9/config/value.txt", bytes("nine"));
@@ -256,6 +424,19 @@ final class MultiReleaseArchivePlanTest {
     CompilationFixtureSupport.compile(
         outputDirectory, List.of(sourcePath), "--release", Integer.toString(release));
     return outputDirectory.resolve("module-info.class");
+  }
+
+  private Path compileNestedClass(final String name, final int release, final String methods)
+      throws IOException {
+    final String source =
+        "package fixture; public class Outer { protected static class Nested { " + methods + " } }";
+    final Path sourcePath = temporaryDirectory.resolve(name).resolve("fixture/Outer.java");
+    final Path outputDirectory = temporaryDirectory.resolve(name + "-classes");
+    Files.createDirectories(sourcePath.getParent());
+    Files.writeString(sourcePath, source);
+    CompilationFixtureSupport.compile(
+        outputDirectory, List.of(sourcePath), "--release", Integer.toString(release));
+    return outputDirectory.resolve("fixture/Outer$Nested.class");
   }
 
   private Path copyWithEntry(
@@ -351,6 +532,12 @@ final class MultiReleaseArchivePlanTest {
       }
     }
     return count;
+  }
+
+  private static long classEntrySize(final Path path, final String name) throws IOException {
+    try (JarFile archive = new JarFile(path.toFile())) {
+      return archive.getJarEntry(name).getSize();
+    }
   }
 
   private static void assertJarValid(final Path path) throws Exception {
