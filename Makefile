@@ -20,7 +20,7 @@ endif
 
 .DEFAULT_GOAL := check
 
-.PHONY: check check-parallel java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-sbom-comparison scan-sbom verify-docs site serve
+.PHONY: check check-parallel java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-reactor-example test-sbom-comparison scan-sbom verify-docs site serve
 
 check: ## Format, then run Java checks/tests and Markdown lint concurrently
 	$(MAKE) --no-print-directory fmt
@@ -77,8 +77,11 @@ test-plugin: test-core ## Run core and plugin tests, isolating nested lifecycle 
 test-all: ## Run the complete reactor verification suite
 	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) verify
 
-test-examples: ## Run baseline, trace-driven elision, package, and runtime checks for all examples
+test-examples: ## Run baseline and trace-driven package checks for single-project and reactor examples
 	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS) -T $(MAVEN_THREADS)" ./examples/run-elision-cycle.sh
+
+test-reactor-example: ## Verify sequential and threaded multi-module reactor builds and reports
+	REACTOR_ONLY=true JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS) -T $(MAVEN_THREADS)" ./examples/run-elision-cycle.sh
 
 test-sbom-comparison: ## Test package-level OSV SBOM comparison behavior with a fake scanner
 	$(NODE) --test scripts/compare-sbom-inventories.test.js

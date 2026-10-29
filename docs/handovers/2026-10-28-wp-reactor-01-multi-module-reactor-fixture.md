@@ -3,7 +3,7 @@
 
 ## Status
 
-Approved for Implementation
+Implemented and verified on 2026-10-29
 
 ## Context
 
@@ -27,3 +27,7 @@ Deliver `examples/example-multi-module-reactor`:
 - **Zero ~/.m2 Cache Pollution**: All generated/trimmed archives and caches reside strictly in module `target/` directories or standard OS user cache directories.
 - **Fail-Closed Snapshot Integrity**: Module snapshots must strictly conform to schema version 1.
 - **Deterministic Reporting**: Inter-module trimming must yield deterministic byte and class counts regardless of thread scheduling.
+
+## Verification Closeout
+
+`make test-examples` passed with Maven CLI 3.9.11 and GraalVM JDK 21.0.12. The runner verified the three module-local schema-1 snapshots after sequential and `-T 4` elision builds, compared stable artifact/class/byte metrics, confirmed Shade used the app-local trimmed Commons Compress JAR without Commons Codec, checked the final archive and runtime, checked the original Commons Compress JAR hash, and compared known transformed-output inventories in Maven's configured local repository. The three modules form a strict dependency chain, so the threaded build does not exercise simultaneous sibling execution.

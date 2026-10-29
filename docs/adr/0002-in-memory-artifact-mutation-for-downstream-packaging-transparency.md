@@ -39,11 +39,11 @@ For each supported plugin/version combination, verify the intended outcomes:
 * **Original Immutability**: Never modify original artifacts in the shared Maven repository. Write outputs under the build directory or an isolated transformation cache with traceable input/output identities and hashes.
 * **Consumer Consistency**: Verify compile, test, runtime, packaging, and reporting inventories independently; mutation surviving one consumer does not prove the others.
 * **Compilation Contract**: A single compile/runtime output must retain all compilation requirements. Separate compilation/runtime outputs are an unresolved design option, not an implicit optimization.
-* **Compatibility Evidence**: Limit compatibility claims to verified Maven, JDK, consumer-plugin, and project configurations. Maven CLI 3.9.11 single-project fixtures are verified; other Maven releases and active multi-module consumer reactors remain unverified.
+* **Compatibility Evidence**: Limit compatibility claims to verified Maven, JDK, consumer-plugin, and project configurations. Maven CLI 3.9.11 single-project fixtures and the strict three-module reactor chain are verified on GraalVM JDK 21.0.12, including sequential and `-T 4` builds. The reactor chain has no independent siblings, so arbitrary multi-module concurrency remains unverified; other Maven releases are also unverified.
 
 ## Consequences
 
-Avoiding bespoke downstream adapters is a design goal, conditional on lifecycle integration evidence. If a consumer re-resolves originals, record the limitation and resolve the integration boundary rather than claim transparent support. Reactor builds, parallel execution, IDE/direct goal invocations, and publication of specialized artifacts need explicit investigation in RQ-0004.
+Avoiding bespoke downstream adapters is a design goal, conditional on lifecycle integration evidence. If a consumer re-resolves originals, record the limitation and resolve the integration boundary rather than claim transparent support. Broader reactor topologies, independent-module concurrency, IDE/direct goal invocations, and publication of specialized artifacts need explicit investigation in RQ-0012 and RQ-0004.
 
 A second JAR cannot supplement individual fields of an existing class: classpath selection chooses a class definition and does not merge members. Source-driven constant retention should preserve the required fields in their owning transformed classes. Any future compilation-only artifacts need explicit execution and packaging policy. Maven scope alone is insufficient: [Boot includes `provided` dependencies by default](https://docs.spring.io/spring-boot/maven-plugin/packaging.html), and they are available to tests.
 

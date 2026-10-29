@@ -250,16 +250,16 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 | Feature or Environment | Status | Evidence and Boundary |
 | :--- | :--- | :--- |
 | Single-project Maven elision lifecycle | Fixture verified | Packaged Maven CLI 3.9.11 [integration fixture](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIntegrationTest.java#L446) runs `elide`, trims an unused class, and verifies a distinct direct TEST resolver call. |
-| Shade and Spring Boot packaging | Fixture verified | Basic Shade 3.6.0 and Spring Boot 3.3.5 [example builds](examples/run-elision-cycle.sh#L658) verify trimmed packaging and runtime behavior under JDK 21. |
+| Shade and Spring Boot packaging | Fixture verified | Basic Shade 3.6.0 and Spring Boot 3.3.5 [example checks](examples/run-elision-cycle.sh#L947) verify trimmed packaging and runtime behavior under JDK 21. |
 | Resolver extension and mediated artifact graph | Required; fixture verified | Graph-aware decisions require `.mvn/extensions.xml`. Without it, original repository artifacts remain visible. |
-| Bare production `dependency:tree` | Example and fixture verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1 | With `.mvn/extensions.xml` and an active initialize-bound execution, `dependency:tree` automatically runs elision first. See [production lifecycle tests](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIntegrationTest.java#L583) and [tree assertions](examples/run-elision-cycle.sh#L529). |
+| Bare production `dependency:tree` | Example and fixture verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1 | With `.mvn/extensions.xml` and an active initialize-bound execution, `dependency:tree` automatically runs elision first. See [production lifecycle tests](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIntegrationTest.java#L583) and [tree assertions](examples/run-elision-cycle.sh#L808). |
 | Class reachability and safe dependency removal | Unit tested; fixture verified | Covers explicit roots, source references, framework metadata, and graph leaves with retention across ancestors, cycles, and diamonds. |
 | Multi-release dependency JARs | Conservative pass-through | Retained multi-release JARs remain byte-identical; multi-release candidate archives are not trimmed. Optional strict mode can reject them. |
 | JARs with root `module-info.class` | Conservative pass-through on classpath | Retained JARs with root module descriptors are not trimmed. JPMS module-path linkage is unsupported. |
 | ServiceLoader SPI roots and conservative exclusion | Supported; positive proof with conservative fallback | Detects constant `ServiceLoader` calls in application bytecode. Unproven SPI roots are retained by default (`<conservativeServiceLoaderRoots>true`); if vulnerable code is kept due to unproven SPI roots, the CVE is reported under conservative exclusions with POM override guidance. |
 | Multi-symbol vulnerability interpretation | Strict fail-closed (open design question) | When an advisory maps multiple vulnerable classes across wide version ranges (e.g. Jackson Core `CVE-2026-68494`), all mapped classes must be present in the original JAR for proof of absence. |
 | Persisted report and CycloneDX pedigree | Unit tested; fixture verified | Verifies report structure, graph data, class and byte metrics, and example pedigree output. |
-| Maven multi-module reactor with active elision | Bare-tree auto-preparation fails fast; active reactor elision unverified | Automatic preparation rejects multi-project reactors before rendering the tree. Concurrent multi-module elision is unverified. |
+| Maven multi-module reactor with active elision | One strict three-module chain verified on Maven CLI 3.9.11 and GraalVM JDK 21.0.12 | Sequential and `-T 4` `clean verify` builds pass with module-local schema-1 reports. The chain has no independent siblings, so broader reactor concurrency remains unverified. |
 | Other Maven CLI versions | Unverified | Pinned to Maven CLI 3.9.11. Other Maven 3 versions and Maven 4 are unverified. |
 | Java 25 class files | Supported | Pinned ProGuard Core 9.4.0 engine parses and analyzes class files through Java 27. |
 | Process crash during publication | Unverified | Covers normal rollback on failure, not crash recovery or concurrent writers. |
@@ -329,11 +329,18 @@ The repository includes end-to-end integration fixtures under `examples/`:
 | **`example-spring-boot-app`** | Spring Boot 3 Web | Retains candidates when no safe drop exists, trims Spring MVC under `BOOT-INF/lib`, and flags conservative SPI retention (`CVE-2026-68494`). |
 | **`example-cve-unused-app`** | Standalone CVE test | Trims unused `StringLookup` from `commons-text` to mitigate `CVE-2022-42889` and emits OpenVEX. |
 | **`example-cve-safe-class-app`** | Standalone CVE test | Demonstrates inactive prerequisite dependency handling (`CVE-2025-11226` without Janino) while preserving runtime behavior. |
+| **`example-multi-module-reactor`** | Three-module Maven reactor with Shade | Exercises module-local reports and dependency elision for `reactor-common` → `reactor-service` → `reactor-app`, under sequential and `-T 4` builds. |
 
 Run the full end-to-end verification suite across all fixtures:
 
 ```sh
 make test-examples
+```
+
+Run only the multi-module reactor checks:
+
+```sh
+make test-reactor-example
 ```
 
 Run standalone CVE fixture baselines:
@@ -346,6 +353,17 @@ Run standalone CVE fixture baselines:
 ### Sample Elision Report Output
 
 `make test-examples` invokes `dependency-elider:report` after each build:
+
+The multi-module reactor check runs a baseline build, then trace-driven builds with
+the single-threaded and `-T 4` Maven builders. It asks the production `report` goal to
+validate each child module's separate schema-1 snapshot, compares stable dependency,
+class, and byte metrics across the two builds, verifies Shade's same-session classpath
+uses the app-local trimmed Commons Compress JAR without Commons Codec, and runs the
+shaded application. It also checks the original Compress hash and inventories known
+transformed outputs in Maven's configured local repository before and after the builds.
+Because its three modules form a strict dependency chain, Maven cannot execute sibling
+modules concurrently in this fixture; `-T 4` verifies the threaded-builder path but
+does not establish general reactor race safety.
 
 ```text
 example-basic-app

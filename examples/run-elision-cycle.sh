@@ -50,6 +50,19 @@ main() {
   fi
 
   read -r -a maven_options <<<"$maven_args"
+  maven_options_without_threads=()
+  skip_thread_count=false
+  for option in "${maven_options[@]}"; do
+    if [[ $skip_thread_count == true ]]; then
+      skip_thread_count=false
+    elif [[ $option == -T || $option == --threads ]]; then
+      skip_thread_count=true
+    elif [[ $option == -T* || $option == --threads=* ]]; then
+      continue
+    else
+      maven_options_without_threads+=("$option")
+    fi
+  done
 
   run_timed() {
     local timing_file=$1
@@ -83,6 +96,12 @@ main() {
     (cd -- "$fixture_dir" && "$maven" "${maven_options[@]}" "$@")
   }
 
+  run_reactor_maven() {
+    local fixture_dir=$1
+    shift
+    (cd -- "$fixture_dir" && env -u MAVEN_ARGS "$maven" "${maven_options_without_threads[@]}" "$@")
+  }
+
   dependency_classpath="$test_dir/example-support.classpath"
   "$maven" "${maven_options[@]}" -f "$repo_root/dependency-elider-maven-plugin/pom.xml" \
     dependency:build-classpath -DincludeScope=test "-Dmdep.outputFile=$dependency_classpath"
@@ -94,12 +113,16 @@ main() {
     "$repo_root/examples/support/ExampleSupportContractTest.java"
   "$java" "-Djava.io.tmpdir=$test_dir" --class-path "$support_classpath" ExampleSupportContractTest
 
-  fixture_names=(
-    example-basic-app
-    example-spring-boot-app
-    example-cve-unused-app
-    example-cve-safe-class-app
-  )
+  if [[ ${REACTOR_ONLY:-false} == true ]]; then
+    fixture_names=()
+  else
+    fixture_names=(
+      example-basic-app
+      example-spring-boot-app
+      example-cve-unused-app
+      example-cve-safe-class-app
+    )
+  fi
 
   for fixture in "${fixture_names[@]}"; do
     fixture_dir="$repo_root/examples/$fixture"
@@ -261,7 +284,238 @@ main() {
     fi
   done
 
-  echo "Example elision lifecycle checks passed for ${#fixture_names[@]} fixtures."
+  run_reactor_fixture "$repo_root/examples/example-multi-module-reactor" "$test_dir"
+  if [[ ${REACTOR_ONLY:-false} == true ]]; then
+    echo "Multi-module reactor lifecycle checks passed."
+  else
+    echo "Example elision lifecycle checks passed for ${#fixture_names[@]} standalone fixtures and the multi-module reactor."
+  fi
+}
+
+run_reactor_fixture() {
+  local fixture_dir=$1
+  local evidence_dir=$2
+  local pom="$fixture_dir/pom.xml"
+  local app_jar="$fixture_dir/reactor-app/target/reactor-app-0.1.0-SNAPSHOT.jar"
+  local trace="$evidence_dir/example-multi-module-reactor.log"
+  local baseline_output="$evidence_dir/example-multi-module-reactor-baseline.out"
+  local final_output="$evidence_dir/example-multi-module-reactor-final.out"
+  local baseline_entries="$evidence_dir/example-multi-module-reactor-baseline.entries"
+  local final_entries="$evidence_dir/example-multi-module-reactor-final.entries"
+  local sequential_build_log="$evidence_dir/reactor-sequential-build.log"
+  local threaded_build_log="$evidence_dir/reactor-threaded-build.log"
+  local user_repository_before="$evidence_dir/reactor-user-repository-before.tsv"
+  local user_repository_after="$evidence_dir/reactor-user-repository-after.tsv"
+  local local_repository
+  local original_compress
+  local original_compress_sha="$evidence_dir/reactor-original-compress.sha256"
+  local sequential_reports="$evidence_dir/reactor-sequential-reports"
+  local threaded_reports="$evidence_dir/reactor-threaded-reports"
+  local report_output="$evidence_dir/reactor-report.out"
+  local -a elision_options=(
+    -Delide.mode=elision
+    "-Delide.traceFiles=$trace"
+    -Delide.trimJars=true
+    -Delide.sourceRootsComplete=true
+    -Dmaven.compiler.proc=none
+    -Delider.verifyElision=true
+  )
+
+  local_repository=$(run_reactor_maven "$fixture_dir" -f "$pom" -q -DforceStdout \
+    -Dexpression=settings.localRepository help:evaluate)
+  if [[ -z $local_repository || ! -d $local_repository ]]; then
+    echo "Maven reported an invalid local repository path: $local_repository" >&2
+    exit 1
+  fi
+  local_repository=$(cd -- "$local_repository" && pwd -P)
+  original_compress="$local_repository/org/apache/commons/commons-compress/1.28.0/commons-compress-1.28.0.jar"
+  verify_reactor_user_repository "$local_repository" "$user_repository_before"
+
+  run_reactor_maven "$fixture_dir" -f "$pom" clean verify \
+    -Delide.mode=baseline -Delider.verifyElision=false
+  test -f "$app_jar"
+  test -f "$original_compress"
+  sha256sum "$original_compress" >"$original_compress_sha"
+  "$jar" tf "$app_jar" >"$baseline_entries"
+  has_entry "$baseline_entries" 'org/apache/commons/codec/binary/Base64.class'
+  has_entry "$baseline_entries" 'org/apache/commons/compress/archivers/tar/TarArchiveEntry.class'
+  has_entry "$baseline_entries" 'org/apache/commons/compress/archivers/zip/ZipArchiveEntry.class'
+  timeout --signal=TERM --kill-after=5s "$app_timeout" \
+    "$java" "-Xlog:class+load=info:file=$trace" -jar "$app_jar" >"$baseline_output"
+  test "$(<"$baseline_output")" = 'processed: input.tar'
+  verify_reactor_unused_trace "$trace"
+
+  run_reactor_elision_build "$fixture_dir" "$pom" "${elision_options[@]}" \
+    >"$sequential_build_log" 2>&1
+  if grep -Fq 'Using the MultiThreadedBuilder' "$sequential_build_log"; then
+    echo "Sequential reactor clean verify unexpectedly selected Maven's MultiThreadedBuilder" >&2
+    exit 1
+  fi
+  printf 'Sequential reactor builder verified: default single-threaded Maven builder.\n'
+  run_reactor_reports "$fixture_dir" "$pom" "$sequential_reports" "$report_output"
+  for module in reactor-common reactor-service reactor-app; do
+    cp -- "$fixture_dir/$module/target/dependency-elider-report.json" \
+      "$sequential_reports/$module.json"
+  done
+  "$jar" tf "$app_jar" >"$final_entries"
+  has_entry "$final_entries" 'io/github/spockz/example/reactor/app/MainApp.class'
+  has_entry "$final_entries" 'org/apache/commons/compress/archivers/tar/TarArchiveEntry.class'
+  lacks_entry "$final_entries" 'org/apache/commons/compress/archivers/zip/ZipArchiveEntry.class'
+  lacks_entry "$final_entries" 'org/apache/commons/codec/binary/Base64.class'
+  timeout --signal=TERM --kill-after=5s "$app_timeout" "$java" -jar "$app_jar" >"$final_output"
+  test "$(<"$final_output")" = 'processed: input.tar'
+  verify_reactor_trimmed_compress "$fixture_dir"
+  verify_reactor_shade_input_paths "$fixture_dir"
+  verify_reactor_output_paths "$fixture_dir"
+  sha256sum --check "$original_compress_sha"
+
+  run_reactor_elision_build "$fixture_dir" "$pom" -T 4 "${elision_options[@]}" \
+    >"$threaded_build_log" 2>&1
+  grep -Fq 'Using the MultiThreadedBuilder implementation with a thread count of 4' \
+    "$threaded_build_log" || {
+    echo "Threaded reactor clean verify did not select Maven's -T 4 builder" >&2
+    exit 1
+  }
+  grep -F 'Using the MultiThreadedBuilder implementation with a thread count of 4' \
+    "$threaded_build_log"
+  run_reactor_reports "$fixture_dir" "$pom" "$threaded_reports" "$report_output"
+  for module in reactor-common reactor-service reactor-app; do
+    cp -- "$fixture_dir/$module/target/dependency-elider-report.json" \
+      "$threaded_reports/$module.json"
+  done
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-reactor-reports "$sequential_reports" "$threaded_reports" "$fixture_dir"
+  "$jar" tf "$app_jar" >"$final_entries"
+  has_entry "$final_entries" 'org/apache/commons/compress/archivers/tar/TarArchiveEntry.class'
+  lacks_entry "$final_entries" 'org/apache/commons/compress/archivers/zip/ZipArchiveEntry.class'
+  lacks_entry "$final_entries" 'org/apache/commons/codec/binary/Base64.class'
+  timeout --signal=TERM --kill-after=5s "$app_timeout" "$java" -jar "$app_jar" >"$final_output"
+  test "$(<"$final_output")" = 'processed: input.tar'
+  verify_reactor_trimmed_compress "$fixture_dir"
+  verify_reactor_shade_input_paths "$fixture_dir"
+  verify_reactor_output_paths "$fixture_dir"
+  sha256sum --check "$original_compress_sha"
+  verify_reactor_user_repository "$local_repository" "$user_repository_after"
+  if ! cmp -s -- "$user_repository_before" "$user_repository_after"; then
+    diff -u -- "$user_repository_before" "$user_repository_after" >&2 || true
+    echo "Reactor builds changed transformed-artifact outputs under Maven's local repository" >&2
+    exit 1
+  fi
+  printf 'Multi-module reactor reports are independent schema-1 snapshots with matching sequential and -T 4 metrics.\n'
+}
+
+run_reactor_elision_build() {
+  local fixture_dir=$1
+  local pom=$2
+  shift 2
+  run_reactor_maven "$fixture_dir" -f "$pom" clean verify "$@"
+}
+
+run_reactor_reports() {
+  local fixture_dir=$1
+  local pom=$2
+  local report_directory=$3
+  local output=$4
+  mkdir -p -- "$report_directory"
+  run_reactor_maven "$fixture_dir" -f "$pom" -pl \
+    reactor-common,reactor-service,reactor-app \
+    io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report \
+    >"$output" 2>&1
+}
+
+verify_reactor_unused_trace() {
+  local trace=$1
+  if grep -Eq 'org\.apache\.commons\.codec\.' "$trace"; then
+    echo "Commons Codec classes were loaded by the multi-module reactor baseline" >&2
+    exit 1
+  else
+    local status=$?
+    if [[ $status -ne 1 ]]; then
+      echo "Could not read multi-module reactor class-load trace $trace" >&2
+      exit "$status"
+    fi
+  fi
+}
+
+verify_reactor_trimmed_compress() {
+  local fixture_dir=$1
+  local generations="$fixture_dir/reactor-common/target/elided-artifacts/.generations"
+  local -a matches=()
+  local entries="${fixture_dir}/reactor-common/target/commons-compress-trimmed.entries"
+  mapfile -t matches < <(
+    find "$generations" -mindepth 2 -maxdepth 2 -type f \
+      -name 'org.apache.commons-commons-compress-1.28.0-trimmed.jar' -print
+  )
+  if [[ ${#matches[@]} -ne 1 ]]; then
+    echo "Expected one Commons Compress generation under $generations" >&2
+    return 1
+  fi
+  "$jar" tf "${matches[0]}" >"$entries"
+  has_entry "$entries" 'org/apache/commons/compress/archivers/tar/TarArchiveEntry.class'
+  lacks_entry "$entries" 'org/apache/commons/compress/archivers/zip/ZipArchiveEntry.class'
+}
+
+verify_reactor_shade_input_paths() {
+  local fixture_dir=$1
+  local app_target="$fixture_dir/reactor-app/target"
+  local generations="$app_target/elided-artifacts/.generations"
+  local observed="$app_target/dependency-elider-shade-inputs.txt"
+  local -a matches=()
+  mapfile -t matches < <(
+    find "$generations" -mindepth 2 -maxdepth 2 -type f \
+      -name 'org.apache.commons-commons-compress-1.28.0-trimmed.jar' -print
+  )
+  if [[ ${#matches[@]} -ne 1 ]]; then
+    echo "Expected one app-local Commons Compress generation under $generations" >&2
+    return 1
+  fi
+  test -f "$observed"
+  grep -Fq -- "${matches[0]}" "$observed" || {
+    echo "Shade classpath does not contain the app-local trimmed Commons Compress: $observed" >&2
+    exit 1
+  }
+  if grep -Fq '/commons-codec/commons-codec/' "$observed"; then
+    echo "Shade classpath still contains Commons Codec: $observed" >&2
+    exit 1
+  fi
+}
+
+verify_reactor_output_paths() {
+  local fixture_dir=$1
+  local path
+  while IFS= read -r -d '' path; do
+    if [[ $path != "$fixture_dir"/reactor-*/target/elided-artifacts/* ]]; then
+      echo "Transformed reactor artifact escaped its module target directory: $path" >&2
+      return 1
+    fi
+  done < <(find "$fixture_dir" -type f -name '*-trimmed.jar' -print0)
+}
+
+verify_reactor_user_repository() {
+  local repository=$1
+  local inventory=$2
+  local paths="$inventory.paths"
+  local path
+  local digest
+  : >"$paths"
+  while IFS= read -r -d '' path; do
+    find "$path" -mindepth 0 -print0 >>"$paths"
+  done < <(find "$repository" -type d -name elided-artifacts -prune -print0)
+  find "$repository" -type f \
+    \( -name '*-trimmed.jar' -o -name '.trim-analysis-cache.json' \) \
+    -print0 >>"$paths"
+  sort --zero-terminated --unique "$paths" --output="$paths"
+  : >"$inventory"
+  while IFS= read -r -d '' path; do
+    local relative_path=${path#"$repository"/}
+    if [[ -d $path ]]; then
+      printf 'directory\t%s\n' "$relative_path" >>"$inventory"
+    elif [[ -f $path ]]; then
+      digest=$(sha256sum -- "$path")
+      printf 'file\t%s\t%s\n' "${digest%% *}" "$relative_path" >>"$inventory"
+    fi
+  done <"$paths"
+  rm -- "$paths"
 }
 
 verify_cve_sboms() {

@@ -2,6 +2,8 @@
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.ServerSocket;
@@ -13,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -30,7 +33,8 @@ public final class ExampleSupport {
     if (arguments.length == 0) {
       throw new IllegalArgumentException(
           "Expected run-spring-endpoint, verify-class-report, verify-effective-graph-report, "
-              + "verify-cve-report, verify-no-whole-artifact-drops, or verify-basic-graph-drop");
+              + "verify-cve-report, verify-no-whole-artifact-drops, verify-basic-graph-drop, "
+              + "or verify-reactor-reports");
     }
     switch (arguments[0]) {
       case "run-spring-endpoint" -> runSpringEndpoint(arguments);
@@ -40,6 +44,7 @@ public final class ExampleSupport {
       case "verify-cve-sboms" -> verifyCveSboms(arguments);
       case "verify-no-whole-artifact-drops" -> verifyNoWholeArtifactDrops(arguments);
       case "verify-basic-graph-drop" -> verifyBasicGraphDrop(arguments);
+      case "verify-reactor-reports" -> verifyReactorReports(arguments);
       default -> throw new IllegalArgumentException("Unsupported operation: " + arguments[0]);
     }
   }
@@ -374,6 +379,152 @@ public final class ExampleSupport {
               + " drops, found "
               + actualCoordinates);
     }
+  }
+
+  private static void verifyReactorReports(final String[] arguments) throws IOException {
+    if (arguments.length != 4) {
+      throw new IllegalArgumentException(
+          "Usage: verify-reactor-reports SEQUENTIAL_DIR THREADED_DIR FIXTURE_DIR");
+    }
+    final Path sequentialDirectory = requireAbsolutePath(arguments[1], "SEQUENTIAL_DIR");
+    final Path threadedDirectory = requireAbsolutePath(arguments[2], "THREADED_DIR");
+    final Path fixtureDirectory = requireAbsolutePath(arguments[3], "FIXTURE_DIR").toRealPath();
+    final Set<Path> reportPaths = new HashSet<>();
+    final String[] modules = {"reactor-common", "reactor-service", "reactor-app"};
+    for (final String module : modules) {
+      final Path expectedBaseDirectory = fixtureDirectory.resolve(module).toRealPath();
+      final Path sequentialPath = sequentialDirectory.resolve(module + ".json").toRealPath();
+      final Path threadedPath = threadedDirectory.resolve(module + ".json").toRealPath();
+      if (!reportPaths.add(sequentialPath) || !reportPaths.add(threadedPath)) {
+        throw new IOException("Reactor modules must produce independent report files");
+      }
+      final JsonNode sequential = readReactorSnapshot(sequentialPath, module, expectedBaseDirectory);
+      final JsonNode threaded = readReactorSnapshot(threadedPath, module, expectedBaseDirectory);
+      verifyReactorDecisions(sequential, module);
+      verifyReactorDecisions(threaded, module);
+      if (!stableReactorMetrics(sequential).equals(stableReactorMetrics(threaded))) {
+        throw new IOException("Sequential and threaded metrics differ for " + module);
+      }
+    }
+  }
+
+  private static void verifyReactorDecisions(final JsonNode report, final String module)
+      throws IOException {
+    if (!report.path("droppedArtifacts").isArray() || !report.path("trimmedArtifacts").isArray()) {
+      throw new IOException(module + " report is missing artifact decision arrays");
+    }
+    if ("reactor-common".equals(module)) {
+      if (!containsCoordinate(report.path("droppedArtifacts"), "commons-codec:commons-codec:")) {
+        throw new IOException("reactor-common report must record the unused Commons Codec drop");
+      }
+      boolean compressedArtifactTrimmed = false;
+      for (final JsonNode artifact : report.path("trimmedArtifacts")) {
+        if (artifact.path("coordinate").asText("").startsWith("org.apache.commons:commons-compress:")
+            && artifact.path("programClassesPruned").asInt(0) > 0
+            && artifact.path("uncompressedProgramClassBytesPruned").asLong(0) > 0) {
+          compressedArtifactTrimmed = true;
+          break;
+        }
+      }
+      if (!compressedArtifactTrimmed) {
+        throw new IOException("reactor-common report must record trimmed Commons Compress classes");
+      }
+    }
+  }
+
+  private static boolean containsCoordinate(final JsonNode artifacts, final String prefix) {
+    for (final JsonNode artifact : artifacts) {
+      if (artifact.path("coordinate").asText("").startsWith(prefix)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static JsonNode readReactorSnapshot(
+      final Path reportPath, final String module, final Path expectedBaseDirectory) throws IOException {
+    final JsonNode report = JSON.readTree(reportPath.toFile());
+    if (report == null || report.path("schemaVersion").asInt(-1) != 1) {
+      throw new IOException(module + " report must use schemaVersion 1: " + reportPath);
+    }
+    if (!"io.github.spockz".equals(report.path("projectGroupId").asText())
+        || !module.equals(report.path("projectArtifactId").asText())
+        || !"0.1.0-SNAPSHOT".equals(report.path("projectVersion").asText())) {
+      throw new IOException(module + " report has an unexpected project GAV: " + reportPath);
+    }
+    final Path actualBaseDirectory =
+        Path.of(report.path("projectBaseDirectory").asText()).toRealPath();
+    if (!expectedBaseDirectory.equals(actualBaseDirectory)) {
+      throw new IOException(module + " report belongs to " + actualBaseDirectory);
+    }
+    if (!report.path("mediatedGraph").path("available").asBoolean(false)) {
+      throw new IOException(module + " report has no mediated graph");
+    }
+    return report;
+  }
+
+  private static JsonNode stableReactorMetrics(final JsonNode report) throws IOException {
+    final ObjectNode stable = JSON.createObjectNode();
+    for (final String field :
+        List.of(
+            "wholeArtifactsDropped",
+            "originalJarBytesDropped",
+            "droppedProgramClassEntries",
+            "droppedProgramClassBytes",
+            "programClassesPruned",
+            "uncompressedProgramClassBytesPruned")) {
+      if (report.path(field).isMissingNode() || !report.path(field).isNumber()) {
+        throw new IOException("Reactor report is missing numeric metric " + field);
+      }
+      stable.set(field, report.path(field));
+    }
+    stable.set("droppedArtifacts", stableArtifactMetrics(report.path("droppedArtifacts"), true));
+    stable.set("trimmedArtifacts", stableArtifactMetrics(report.path("trimmedArtifacts"), false));
+    final List<String> rawDrops = new ArrayList<>();
+    for (final JsonNode coordinate : report.path("rawDroppedCoordinates")) {
+      if (!coordinate.isTextual()) {
+        throw new IOException("rawDroppedCoordinates must contain strings");
+      }
+      rawDrops.add(coordinate.asText());
+    }
+    rawDrops.sort(Comparator.naturalOrder());
+    final ArrayNode rawDropArray = JSON.createArrayNode();
+    rawDrops.forEach(rawDropArray::add);
+    stable.set("rawDroppedCoordinates", rawDropArray);
+    return stable;
+  }
+
+  private static ArrayNode stableArtifactMetrics(final JsonNode artifacts, final boolean dropped)
+      throws IOException {
+    if (!artifacts.isArray()) {
+      throw new IOException("Reactor report artifact metrics must be arrays");
+    }
+    final List<ObjectNode> rows = new ArrayList<>();
+    for (final JsonNode artifact : artifacts) {
+      final ObjectNode row = JSON.createObjectNode();
+      final String[] fields =
+          dropped
+              ? new String[] {
+                "coordinate",
+                "originalJarBytes",
+                "programClassesRemoved",
+                "uncompressedProgramClassBytesRemoved"
+              }
+              : new String[] {
+                "coordinate", "programClassesPruned", "uncompressedProgramClassBytesPruned"
+              };
+      for (final String field : fields) {
+        if (artifact.path(field).isMissingNode()) {
+          throw new IOException("Reactor artifact metric is missing " + field);
+        }
+        row.set(field, artifact.path(field));
+      }
+      rows.add(row);
+    }
+    rows.sort(Comparator.comparing(row -> row.path("coordinate").asText()));
+    final ArrayNode result = JSON.createArrayNode();
+    result.addAll(rows);
+    return result;
   }
 
   private static void verifyCveReport(final String[] arguments) throws IOException {

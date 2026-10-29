@@ -7,8 +7,9 @@ Open
 
 ## Current boundary
 
-Current end-to-end evidence covers single-project Maven CLI 3.9.11 builds across four fixtures (`example-basic-app`, `example-spring-boot-app`, `example-cve-unused-app`, and `example-cve-safe-class-app`). ADR-0001 and ADR-0002 explicitly state:
-> *"Current end-to-end evidence covers single-project Maven CLI 3.9.11 builds. Other Maven 3 releases, Maven 4, and active multi-module consumer reactors remain unverified."*
+End-to-end evidence covers four single-project fixtures and the `reactor-common` → `reactor-service` → `reactor-app` chain with Maven CLI 3.9.11 on GraalVM JDK 21.0.12. The reactor fixture passes trace-driven `clean verify` sequentially and with `-T 4`; the production report goal validates a separate schema-1 snapshot for each child, and stable per-module artifact, class, and byte metrics match across both runs. Shade's same-session classpath contains the app-local trimmed Commons Compress JAR and omits Commons Codec; the final archive and runtime checks pass. The original Commons Compress JAR hash is unchanged, known transformed-output inventories under Maven's configured local repository are unchanged, and generated trimmed JARs remain in module `target/` directories.
+
+The fixture is a strict dependency chain. The `-T 4` run verifies Maven's threaded-builder path but cannot schedule independent siblings concurrently, so it does not prove general reactor race safety or shared-cache contention behavior. Arbitrary module graphs, independent sibling execution, Maven 4, and incremental reactor invocations remain open.
 
 In multi-module reactors (`pom` packaging aggregator with child modules), Maven may execute builds sequentially or concurrently via `mvn -T` (multi-threaded builder). Furthermore, downstream reactor modules frequently depend on upstream reactor modules (`<groupId>${project.groupId}</groupId><artifactId>child-core</artifactId>`). When an upstream submodule undergoes dependency elision or intra-JAR trimming, the downstream consumer module must observe consistent compiler classpath, dependency trees, and packaging inputs without race conditions, corrupted cross-process state, or classpath divergence.
 
