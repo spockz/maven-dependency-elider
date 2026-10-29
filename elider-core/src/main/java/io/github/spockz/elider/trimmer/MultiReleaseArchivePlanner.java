@@ -41,12 +41,12 @@ final class MultiReleaseArchivePlanner {
           targetClasses,
           logicalClasses,
           rootRequired,
-          targetRelease,
-          normalizedRetained);
+          targetRelease);
     }
     validateRetainedClasses(normalizedRetained, targetClasses);
     final Set<String> retainedTarget = new HashSet<>(normalizedRetained);
     retainedTarget.addAll(rootRequired);
+    validateRetainedRootReleases(rootClasses, selectedEntries, retainedTarget, targetRelease);
     final Set<String> retainedLogical = new HashSet<>(retainedTarget);
     for (final Map.Entry<String, NavigableMap<Integer, MultiReleaseArchivePlan.ClassVariant>>
         entry : versionedClasses.entrySet()) {
@@ -71,8 +71,7 @@ final class MultiReleaseArchivePlanner {
       final Set<String> targetClasses,
       final Set<String> logicalClasses,
       final Set<String> rootRequired,
-      final int targetRelease,
-      final Set<String> normalizedRetained)
+      final int targetRelease)
       throws IOException {
     logicalClasses.add(className);
     final Map.Entry<Integer, MultiReleaseArchivePlan.ClassVariant> selected =
@@ -91,14 +90,23 @@ final class MultiReleaseArchivePlanner {
             .filter(variant -> variant.release() > targetRelease)
             .filter(variant -> variant.accessVisibility() != 0)
             .toList();
-    if (selected == null
-        && selectedTarget != null
-        && (normalizedRetained.contains(className) || !upperApiVariants.isEmpty())) {
-      MultiReleaseClassFile.validateTargetRelease(selectedTarget, targetRelease);
-    }
     if (!upperApiVariants.isEmpty()) {
       validateUpperApi(selectedTarget, upperApiVariants);
       rootRequired.add(className);
+    }
+  }
+
+  private static void validateRetainedRootReleases(
+      final Map<String, MultiReleaseArchivePlan.ClassVariant> rootClasses,
+      final Map<String, String> selectedEntries,
+      final Set<String> retainedTarget,
+      final int targetRelease)
+      throws IOException {
+    for (final String className : retainedTarget) {
+      if ((className + MultiReleaseArchivePlan.CLASS_SUFFIX)
+          .equals(selectedEntries.get(className))) {
+        MultiReleaseClassFile.validateTargetRelease(rootClasses.get(className), targetRelease);
+      }
     }
   }
 

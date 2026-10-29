@@ -169,21 +169,30 @@ final class MultiReleaseArchivePlanTest {
   }
 
   @Test
-  void rejectsTrimAnalysisRetentionThatDiffersFromPlanRequest() throws Exception {
-    final Fixture fixture = multiReleaseFixture("retention-mismatch", "VALUE");
+  void rejectsTrimClosureThatOmitsForcedUpperTierRoot() throws Exception {
+    final Fixture fixture = multiReleaseFixture("missing-forced-root", "VALUE");
     final MultiReleaseArchivePlan plan =
         MultiReleaseArchivePlan.create(fixture.jar(), 11, Set.of("fixture.Api"), Set.of());
     assertRetentionRejected(
         fixture,
         plan,
         new DependencyJarTrimmer.TrimAnalysis(3, Set.of(API_NAME), Set.of(API_NAME)),
-        "missing-forced-root");
+        "missing-forced-root-output");
+  }
+
+  @Test
+  void rejectsTrimClosureWithExtraRetainedClass() throws Exception {
+    final Fixture fixture = multiReleaseFixture("extra-retained-class", "VALUE");
+    final MultiReleaseArchivePlan plan =
+        MultiReleaseArchivePlan.create(fixture.jar(), 11, Set.of("fixture.Api"), Set.of());
     assertRetentionRejected(
         fixture,
         plan,
         new DependencyJarTrimmer.TrimAnalysis(
-            3, Set.of(API_NAME, "fixture/Drop"), Set.of(API_NAME, "fixture/Drop")),
-        "extra-requested-class");
+            3,
+            Set.of(API_NAME, "fixture/UpperOnly", "fixture/Drop"),
+            Set.of(API_NAME, "fixture/UpperOnly", "fixture/Drop")),
+        "extra-retained-class-output");
   }
 
   private void assertRetentionRejected(
@@ -289,7 +298,7 @@ final class MultiReleaseArchivePlanTest {
   }
 
   @Test
-  void validatesTargetMajorOnlyForSelectedRootFallbacks() throws Exception {
+  void validatesTargetMajorForRetainedRootsAndSkipsOmittedRoots() throws Exception {
     final Path rootFallback =
         compileClass(
             "new-root-fallback",
@@ -313,17 +322,43 @@ final class MultiReleaseArchivePlanTest {
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Selected root fallback exceeds target release");
 
+    final Path unrelatedVersioned =
+        compileClass("unrelated-versioned-helper", 17, "package fixture; class Helper {} ");
+    final Path rootOnly =
+        compileClass(
+            "new-root-only",
+            17,
+            "package fixture; public class RootOnly { public int value() { return 4; } }");
+    final Path rootOnlyJar = temporaryDirectory.resolve("new-root-only-with-overlay.jar");
+    writeRootAndUnrelatedOverlay(
+        rootOnlyJar, "fixture/RootOnly.class", rootOnly, unrelatedVersioned);
+    assertThatThrownBy(
+            () ->
+                MultiReleaseArchivePlan.create(
+                    rootOnlyJar, 11, Set.of("fixture.RootOnly"), Set.of()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Selected root fallback exceeds target release");
+
     final Path omittedRoot =
         compileClass(
             "new-omitted-root",
             17,
             "package fixture; public class Omitted { public int value() { return 3; } }");
-    final Path omittedJar = temporaryDirectory.resolve("new-omitted-root.jar");
-    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(omittedJar))) {
-      add(output, "fixture/Omitted.class", omittedRoot);
-    }
+    final Path omittedJar = temporaryDirectory.resolve("new-omitted-root-with-overlay.jar");
+    writeRootAndUnrelatedOverlay(
+        omittedJar, "fixture/Omitted.class", omittedRoot, unrelatedVersioned);
     assertThat(MultiReleaseArchivePlan.create(omittedJar, 11, Set.of(), Set.of()).targetClasses())
         .contains("fixture/Omitted");
+  }
+
+  private static void writeRootAndUnrelatedOverlay(
+      final Path jar, final String rootClassName, final Path rootClass, final Path versionedClass)
+      throws IOException {
+    try (JarOutputStream output =
+        new JarOutputStream(Files.newOutputStream(jar), manifestFor(true))) {
+      add(output, rootClassName, rootClass);
+      add(output, "META-INF/versions/17/fixture/Helper.class", versionedClass);
+    }
   }
 
   @Test
