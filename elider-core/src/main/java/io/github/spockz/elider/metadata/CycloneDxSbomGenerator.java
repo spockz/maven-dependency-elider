@@ -35,7 +35,6 @@ import java.util.UUID;
   "PMD.AvoidDuplicateLiterals",
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.AvoidLiteralsInIfCondition",
-  "PMD.CognitiveComplexity",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.CommentSize",
@@ -49,6 +48,7 @@ import java.util.UUID;
   "PMD.MethodArgumentCouldBeFinal",
   "PMD.ShortVariable",
   "PMD.UseExplicitTypes",
+  "PMD.UseConcurrentHashMap",
   "PMD.TooManyMethods"
 })
 public final class CycloneDxSbomGenerator {
@@ -248,12 +248,20 @@ public final class CycloneDxSbomGenerator {
     rootComponent.put("name", root.name());
     rootComponent.put("version", root.version());
     rootComponent.put("purl", rootComponent.path("bom-ref").asText());
+    final Map<String, String> componentDigests = new TreeMap<>();
     ArrayNode outComponents = bom.putArray("components");
     for (ComponentEntry entry : components.values()) {
-      outComponents.add(component(entry, trimsByIdentity.get(identity(entry.ref.coordinate()))));
+      final ObjectNode component =
+          component(entry, trimsByIdentity.get(identity(entry.ref.coordinate())));
+      outComponents.add(component);
+      componentDigests.put(
+          identity(entry.ref.coordinate()),
+          component.path("hashes").get(0).path("content").asText());
     }
     if (!attestations.isEmpty()) {
-      bom.set("vulnerabilities", vulnerabilities(attestations, components, trimsByIdentity));
+      bom.set(
+          "vulnerabilities",
+          vulnerabilities(attestations, components, trimsByIdentity, componentDigests));
     }
     return JSON.writeValueAsBytes(bom);
   }
@@ -311,44 +319,46 @@ public final class CycloneDxSbomGenerator {
   private static ArrayNode vulnerabilities(
       Collection<VexAttestation> attestations,
       Map<String, ComponentEntry> components,
-      Map<String, ArtifactTrimRecord> trimsByIdentity) {
-    TreeMap<String, VexAttestation> unique = new TreeMap<>();
+      Map<String, ArtifactTrimRecord> trimsByIdentity,
+      Map<String, String> componentDigests)
+      throws IOException {
+    Map<String, VexAttestation> omittedCode = new TreeMap<>();
+    Map<String, VexAttestation> preconditions = new TreeMap<>();
     for (VexAttestation attestation : attestations) {
       Objects.requireNonNull(attestation, "VEX attestation must not be null");
       requireText(attestation.cveId(), "VEX vulnerability id");
       requireText(attestation.impactDetail(), "VEX impact detail");
-      if (!"vulnerable_code_not_present".equals(attestation.justification())) {
-        throw new IllegalArgumentException(
-            "VEX attestation justification must be vulnerable_code_not_present");
-      }
-      if (attestation.evidenceSymbols() == null || attestation.evidenceSymbols().isEmpty()) {
-        throw new IllegalArgumentException("VEX attestation has no purged symbol evidence");
-      }
       String identity = identity(attestation.coordinate());
       ComponentEntry component = components.get(identity);
-      ArtifactTrimRecord trim = trimsByIdentity.get(identity);
-      if (component == null || trim == null) {
+      if (component == null) {
         throw new IllegalArgumentException(
-            "VEX attestation does not match a trimmed retained component: " + identity);
+            "VEX attestation does not match a retained component: " + identity);
       }
-      if (!trim.originalSha256().equals(attestation.originalSha256())
-          || !trim.trimmedSha256().equals(attestation.trimmedSha256())) {
+      final String emittedComponentSha256 = componentDigests.get(identity);
+      final String actualComponentSha256 =
+          VexSerializerSupport.verifyAttestation(attestation, component.ref);
+      if (!actualComponentSha256.equals(emittedComponentSha256)) {
         throw new IllegalArgumentException(
-            "VEX attestation digests do not match trim record: " + identity);
+            "Retained component changed while generating VEX evidence: " + identity);
+      }
+      if (!VexSerializerSupport.isPrecondition(attestation)) {
+        validateOmittedCodeTrim(attestation, trimsByIdentity.get(identity), identity);
       }
       String key = attestation.cveId() + "\u0000" + componentPurl(attestation.coordinate());
-      VexAttestation prior = unique.putIfAbsent(key, attestation);
-      if (prior != null && !OpenVexGenerator.sameEvidence(prior, attestation)) {
-        throw new IllegalArgumentException("Conflicting duplicate VEX attestation for " + key);
-      }
+      VexSerializerSupport.addAttestation(omittedCode, preconditions, key, attestation);
     }
     ArrayNode result = JSON.createArrayNode();
-    for (VexAttestation attestation : unique.values()) {
+    for (VexAttestation attestation :
+        VexSerializerSupport.preferredAttestations(omittedCode, preconditions).values()) {
       ObjectNode vulnerability = result.addObject();
       vulnerability.put("id", attestation.cveId());
       ObjectNode analysis = vulnerability.putObject("analysis");
       analysis.put("state", "not_affected");
-      analysis.put("justification", "code_not_present");
+      analysis.put(
+          "justification",
+          VexSerializerSupport.isPrecondition(attestation)
+              ? "requires_dependency"
+              : "code_not_present");
       analysis.put("detail", attestation.impactDetail());
       vulnerability
           .putArray("affects")
@@ -356,6 +366,19 @@ public final class CycloneDxSbomGenerator {
           .put("ref", componentPurl(attestation.coordinate()));
     }
     return result;
+  }
+
+  private static void validateOmittedCodeTrim(
+      VexAttestation attestation, ArtifactTrimRecord trim, String identity) {
+    if (trim == null) {
+      throw new IllegalArgumentException(
+          "Omitted-code VEX attestation does not match a trimmed component: " + identity);
+    }
+    if (!trim.originalSha256().equals(attestation.originalSha256())
+        || !trim.trimmedSha256().equals(attestation.trimmedSha256())) {
+      throw new IllegalArgumentException(
+          "VEX attestation digests do not match trim record: " + identity);
+    }
   }
 
   private static ObjectNode component(ComponentEntry entry, ArtifactTrimRecord trimRecord)

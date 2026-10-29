@@ -1,4 +1,4 @@
-// WHY: Emits standalone OpenVEX assertions only for vulnerability evidence proven by core trimming.
+// WHY: Emits standalone OpenVEX assertions only for proof-backed vulnerability evidence.
 
 package io.github.spockz.elider.metadata;
 
@@ -20,13 +20,11 @@ import java.util.Objects;
 import java.util.TreeMap;
 import java.util.UUID;
 
-/** Generates deterministic OpenVEX documents for verified omitted-code evidence. */
+/** Generates deterministic OpenVEX documents for verified vulnerability evidence. */
 @SuppressWarnings({
-  "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.LocalVariableCouldBeFinal",
   "PMD.MethodArgumentCouldBeFinal",
-  "PMD.TooManyMethods",
   "PMD.UseConcurrentHashMap"
 })
 public final class OpenVexGenerator {
@@ -38,9 +36,6 @@ public final class OpenVexGenerator {
 
   /** OpenVEX context URL for version 0.2.0. */
   private static final String CONTEXT = "https://openvex.dev/ns/v0.2.0";
-
-  /** Lowercase SHA-256 digest format used by the immutable evidence model. */
-  private static final String SHA256_PATTERN = "[0-9a-f]{64}";
 
   /** Creates a generator with the default JSON configuration. */
   public OpenVexGenerator() {
@@ -114,10 +109,19 @@ public final class OpenVexGenerator {
           "OpenVEX document requires at least one verified statement");
     }
     Map<String, ArtifactFileRef> componentsByPurl = indexComponents(postElisionInventory);
-    Map<String, VexAttestation> unique = uniqueAttestations(attestations, componentsByPurl);
+    Map<String, String> componentDigests = new TreeMap<>();
+    Map<String, VexAttestation> unique =
+        uniqueAttestations(attestations, componentsByPurl, componentDigests);
     ObjectNode document = document(metadata);
     ArrayNode statements = document.putArray("statements");
-    unique.values().forEach(attestation -> addStatement(statements, root, attestation));
+    unique
+        .values()
+        .forEach(
+            attestation -> {
+              String purl = CycloneDxSbomGenerator.componentPurl(attestation.coordinate());
+              String key = attestation.cveId() + "\u0000" + purl;
+              addStatement(statements, root, attestation, componentDigests.get(key));
+            });
     return JSON.writeValueAsBytes(document);
   }
 
@@ -137,21 +141,22 @@ public final class OpenVexGenerator {
   }
 
   private static Map<String, VexAttestation> uniqueAttestations(
-      Collection<VexAttestation> attestations, Map<String, ArtifactFileRef> componentsByPurl)
+      Collection<VexAttestation> attestations,
+      Map<String, ArtifactFileRef> componentsByPurl,
+      Map<String, String> componentDigests)
       throws IOException {
-    Map<String, VexAttestation> unique = new TreeMap<>();
+    Map<String, VexAttestation> omittedCode = new TreeMap<>();
+    Map<String, VexAttestation> preconditions = new TreeMap<>();
     for (VexAttestation attestation : attestations) {
       Objects.requireNonNull(attestation, "VEX attestation must not be null");
-      validateAttestation(attestation, componentsByPurl);
+      String componentSha256 = validateAttestation(attestation, componentsByPurl);
       final String purl = CycloneDxSbomGenerator.componentPurl(attestation.coordinate());
       String key = attestation.cveId() + "\u0000" + purl;
-      VexAttestation prior = unique.putIfAbsent(key, attestation);
-      if (prior != null && !sameEvidence(prior, attestation)) {
-        throw new IllegalArgumentException("Conflicting duplicate VEX attestation for " + key);
-      }
+      VexSerializerSupport.addAttestation(omittedCode, preconditions, key, attestation);
+      componentDigests.put(key, componentSha256);
     }
 
-    return unique;
+    return VexSerializerSupport.preferredAttestations(omittedCode, preconditions);
   }
 
   private static ObjectNode document(DocumentMetadata metadata) {
@@ -166,7 +171,10 @@ public final class OpenVexGenerator {
   }
 
   private static void addStatement(
-      ArrayNode statements, CycloneDxSbomGenerator.RootIdentity root, VexAttestation attestation) {
+      ArrayNode statements,
+      CycloneDxSbomGenerator.RootIdentity root,
+      VexAttestation attestation,
+      String componentSha256) {
     final String purl = CycloneDxSbomGenerator.componentPurl(attestation.coordinate());
     ObjectNode statement = statements.addObject();
     statement.putObject("vulnerability").put("name", attestation.cveId());
@@ -177,39 +185,15 @@ public final class OpenVexGenerator {
     ObjectNode subcomponent = product.putArray("subcomponents").addObject();
     subcomponent.put("@id", purl);
     subcomponent.putObject("identifiers").put("purl", purl);
-    subcomponent.putObject("hashes").put("sha-256", attestation.trimmedSha256());
+    subcomponent.putObject("hashes").put("sha-256", componentSha256);
     statement.put("status", "not_affected");
-    statement.put("justification", VULNERABLE_CODE_NOT_PRESENT);
+    if (!VexSerializerSupport.isPrecondition(attestation)) {
+      statement.put("justification", VULNERABLE_CODE_NOT_PRESENT);
+    }
     statement.put("impact_statement", attestation.impactDetail());
   }
 
-  private static void validateAttestation(
-      VexAttestation attestation, Map<String, ArtifactFileRef> componentsByPurl)
-      throws IOException {
-    validateEvidenceContent(attestation);
-    validateEvidenceDigests(attestation);
-    validatePostElisionDigest(attestation, componentsByPurl);
-  }
-
-  private static void validateEvidenceContent(VexAttestation attestation) {
-    requireText(attestation.cveId(), "VEX vulnerability id");
-    requireText(attestation.impactDetail(), "VEX impact detail");
-    if (!VULNERABLE_CODE_NOT_PRESENT.equals(attestation.justification())) {
-      throw new IllegalArgumentException(
-          "VEX attestation justification must be vulnerable_code_not_present");
-    }
-    if (attestation.evidenceSymbols() == null || attestation.evidenceSymbols().isEmpty()) {
-      throw new IllegalArgumentException("VEX attestation has no purged symbol evidence");
-    }
-  }
-
-  private static void validateEvidenceDigests(VexAttestation attestation) {
-    if (!isSha256(attestation.originalSha256()) || !isSha256(attestation.trimmedSha256())) {
-      throw new IllegalArgumentException("VEX attestation must contain exact SHA-256 digests");
-    }
-  }
-
-  private static void validatePostElisionDigest(
+  private static String validateAttestation(
       VexAttestation attestation, Map<String, ArtifactFileRef> componentsByPurl)
       throws IOException {
     String purl = CycloneDxSbomGenerator.componentPurl(attestation.coordinate());
@@ -218,29 +202,12 @@ public final class OpenVexGenerator {
       throw new IllegalArgumentException(
           "VEX attestation has no matching post-elision component: " + purl);
     }
-    if (!CycloneDxSbomGenerator.sha256(component.filePath()).equals(attestation.trimmedSha256())) {
-      throw new IllegalArgumentException(
-          "VEX attestation trimmed digest does not match post-elision component: " + purl);
-    }
-  }
-
-  /** Checks whether duplicate evidence would produce the same VEX statement. */
-  static boolean sameEvidence(VexAttestation left, VexAttestation right) {
-    return left.coordinate().equals(right.coordinate())
-        && left.justification().equals(right.justification())
-        && left.impactDetail().equals(right.impactDetail())
-        && left.evidenceSymbols().equals(right.evidenceSymbols())
-        && left.originalSha256().equals(right.originalSha256())
-        && left.trimmedSha256().equals(right.trimmedSha256());
+    return VexSerializerSupport.verifyAttestation(attestation, component);
   }
 
   private static void requireResolved(ArtifactCoordinate coordinate) {
     Objects.requireNonNull(coordinate, "coordinate must not be null");
     requireText(coordinate.version(), "component version");
-  }
-
-  private static boolean isSha256(String value) {
-    return value != null && value.matches(SHA256_PATTERN);
   }
 
   private static void requireText(String value, String name) {

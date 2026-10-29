@@ -6,6 +6,8 @@ package io.github.spockz.elider.metadata;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.OmittedCodeProof;
+import io.github.spockz.elider.model.PreconditionClassInventory;
+import io.github.spockz.elider.model.PreconditionProof;
 import io.github.spockz.elider.model.VexAttestation;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -18,6 +20,8 @@ import java.util.HexFormat;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
 
 @SuppressWarnings({
   "PMD.AvoidInstantiatingObjectsInLoops",
@@ -66,14 +70,45 @@ record VexTestFixture(
     return new VexTestFixture(coordinate, trimRecord, inventory, attestation);
   }
 
+  static VexAttestation preconditionFor(final VexTestFixture omittedCode) throws IOException {
+    return preconditionFor(omittedCode, "org.example.RequiredApi");
+  }
+
+  static VexAttestation preconditionFor(
+      final VexTestFixture omittedCode, final String requiredClass) throws IOException {
+    final PreconditionClassInventory inventory =
+        PreconditionClassInventory.complete(
+            Set.of(
+                PreconditionClassInventory.Provider.dependencyArchive(
+                    omittedCode.coordinate(), omittedCode.inventory().filePath())));
+    final VulnerabilitySymbolMapping mapping =
+        new VulnerabilitySymbolMapping(
+            omittedCode.attestation().cveId(),
+            omittedCode.coordinate(),
+            "[1.0,2.0)",
+            Set.of(),
+            java.net.URI.create("https://example.org/advisory/CVE-2025-12345"),
+            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            "org.example:optional",
+            requiredClass);
+    return PreconditionProof.prove(mapping, inventory);
+  }
+
   private static void writeJar(Path path, String... entries) throws IOException {
     try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(path))) {
       for (String name : entries) {
         output.putNextEntry(new ZipEntry(name));
-        output.write(1);
+        output.write(classBytes(name.substring(0, name.length() - ".class".length())));
         output.closeEntry();
       }
     }
+  }
+
+  private static byte[] classBytes(final String internalName) {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
+    writer.visitEnd();
+    return writer.toByteArray();
   }
 
   private static String digest(Path file, String algorithm)
