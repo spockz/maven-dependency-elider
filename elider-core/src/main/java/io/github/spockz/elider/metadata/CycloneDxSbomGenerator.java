@@ -410,6 +410,26 @@ public final class CycloneDxSbomGenerator {
           .addObject()
           .put("name", "elider:totalClasses")
           .put("value", Integer.toString(trimRecord.totalClasses()));
+      properties
+          .addObject()
+          .put("name", "elider:mrjarStatus")
+          .put("value", trimRecord.mrjarStatus());
+      trimRecord
+          .originalPhysicalEntries()
+          .ifPresent(
+              count ->
+                  properties
+                      .addObject()
+                      .put("name", "elider:inputPhysicalEntries")
+                      .put("value", Integer.toString(count)));
+      trimRecord
+          .trimmedPhysicalEntries()
+          .ifPresent(
+              count ->
+                  properties
+                      .addObject()
+                      .put("name", "elider:outputPhysicalEntries")
+                      .put("value", Integer.toString(count)));
       addPedigree(node, entry, trimRecord);
     }
     return node;

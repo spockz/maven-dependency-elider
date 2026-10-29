@@ -22,25 +22,9 @@ import org.objectweb.asm.Opcodes;
 @SuppressWarnings({"PMD.CommentRequired", "PMD.CommentDefaultAccessModifier"})
 final class MultiReleaseLibraryProjection {
   private static final String VERSIONS_PREFIX = "META-INF/versions/";
+  private static final String CLASS_SUFFIX = ".class";
 
   private MultiReleaseLibraryProjection() {}
-
-  static boolean hasUnsupportedVersionedClasses(final Path original) throws IOException {
-    try (JarFile archive = new JarFile(original.toFile())) {
-      final java.util.Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final String entryName = entries.nextElement().getName();
-        if (entryName.startsWith(VERSIONS_PREFIX) && entryName.endsWith(".class")) {
-          final String logicalName = logicalClassName(entryName);
-          if (!"module-info.class".equals(logicalName)
-              && !logicalName.endsWith("/module-info.class")) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-  }
 
   static boolean hasRootModuleDescriptor(final Path original) throws IOException {
     try (JarFile archive = new JarFile(original.toFile())) {
@@ -110,11 +94,11 @@ final class MultiReleaseLibraryProjection {
       final JarEntry entry,
       final Set<String> outputNames)
       throws IOException {
-    if (entry.isDirectory() || !entry.getName().endsWith(".class")) {
+    if (entry.isDirectory() || !entry.getName().endsWith(CLASS_SUFFIX)) {
       return;
     }
-    final String logicalName = logicalClassName(entry.getName());
-    if (isModuleDescriptor(logicalName)) {
+    final String logicalName = MultiReleaseClassInventory.logicalClassName(entry.getName());
+    if (MultiReleaseClassInventory.isModuleDescriptor(logicalName)) {
       try (InputStream moduleBytes = input.getInputStream(entry)) {
         validateModuleDescriptor(original, moduleBytes);
       }
@@ -131,10 +115,6 @@ final class MultiReleaseLibraryProjection {
     output.closeEntry();
   }
 
-  private static boolean isModuleDescriptor(final String logicalName) {
-    return "module-info.class".equals(logicalName) || logicalName.endsWith("/module-info.class");
-  }
-
   private static String safe(final String value) {
     return value.replaceAll("[^A-Za-z0-9._-]", "_");
   }
@@ -146,16 +126,5 @@ final class MultiReleaseLibraryProjection {
         || (reader.getAccess() & Opcodes.ACC_MODULE) == 0) {
       throw new IOException("Invalid module-info.class in classpath JAR: " + original);
     }
-  }
-
-  private static String logicalClassName(final String entryName) throws IOException {
-    if (!entryName.startsWith(VERSIONS_PREFIX)) {
-      return entryName;
-    }
-    final int versionEnd = entryName.indexOf('/', VERSIONS_PREFIX.length());
-    if (versionEnd < 0 || versionEnd == entryName.length() - 1) {
-      throw new IOException("Malformed multi-release class entry " + entryName);
-    }
-    return entryName.substring(versionEnd + 1);
   }
 }

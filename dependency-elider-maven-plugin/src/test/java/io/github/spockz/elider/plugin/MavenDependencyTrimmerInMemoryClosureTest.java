@@ -148,7 +148,7 @@ final class MavenDependencyTrimmerInMemoryClosureTest
   }
 
   @Test
-  void keepsRetainedMultiReleaseJarAsUnchangedPassThrough() throws Exception {
+  void analyzesRetainedMultiReleaseCandidateWithLogicalClassNames() throws Exception {
     final Fixture fixture = fixture(false);
     final Path multiRelease = fixture.addVersionedClassToC();
 
@@ -157,7 +157,9 @@ final class MavenDependencyTrimmerInMemoryClosureTest
         fixture.analyze(
             Set.of(fixture.coordinate("a"), fixture.coordinate("c")), Set.of(), Map.of());
 
-    assertThat(analysis.candidateAnalyses()).doesNotContainKey(fixture.coordinate("c"));
-    assertThat(analysis.candidateRoots()).doesNotContainKey(fixture.coordinate("c"));
+    assertThat(analysis.candidateAnalyses()).containsKey(fixture.coordinate("c"));
+    assertThat(analysis.candidateRoots().get(fixture.coordinate("c")))
+        .contains("closure.c.Leaf")
+        .noneMatch(name -> name.startsWith("META-INF.versions."));
   }
 }

@@ -23,13 +23,29 @@ public final class CompilationFixtureSupport {
   public static void compile(
       final Path outputDirectory, final List<Path> sources, final String... extraArgs)
       throws IOException {
+    compile(outputDirectory, sources, 21, extraArgs);
+  }
+
+  /** Compiles source files with standard flags and a selected language release. */
+  public static void compile(
+      final Path outputDirectory,
+      final List<Path> sources,
+      final int release,
+      final String... extraArgs)
+      throws IOException {
     Files.createDirectories(outputDirectory);
     final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     if (compiler == null) {
       throw new IllegalStateException("Test execution requires a JDK compiler");
     }
     final List<String> arguments = new ArrayList<>();
-    arguments.addAll(List.of("--release", "21", "-proc:none", "-d", outputDirectory.toString()));
+    arguments.addAll(
+        List.of(
+            "--release",
+            Integer.toString(release),
+            "-proc:none",
+            "-d",
+            outputDirectory.toString()));
     arguments.addAll(List.of(extraArgs));
     sources.forEach(source -> arguments.add(source.toString()));
     final int result = compiler.run(null, null, null, arguments.toArray(String[]::new));
@@ -45,6 +61,17 @@ public final class CompilationFixtureSupport {
       final Path sourceDirectory,
       final Map<String, String> sources,
       final Path classpath)
+      throws IOException {
+    return compileToJar(jarFile, sourceDirectory, sources, classpath, 21);
+  }
+
+  /** Compiles source text entries into a JAR with a selected language release. */
+  public static Path compileToJar(
+      final Path jarFile,
+      final Path sourceDirectory,
+      final Map<String, String> sources,
+      final Path classpath,
+      final int release)
       throws IOException {
     final Path parent = jarFile.getParent();
     if (parent == null) {
@@ -67,7 +94,7 @@ public final class CompilationFixtureSupport {
     if (classpath != null) {
       extraArgs.addAll(List.of("-classpath", classpath.toString()));
     }
-    compile(classesDir, sourceFiles, extraArgs.toArray(String[]::new));
+    compile(classesDir, sourceFiles, release, extraArgs.toArray(String[]::new));
     Files.createDirectories(parent);
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jarFile));
         Stream<Path> paths = Files.walk(classesDir)) {

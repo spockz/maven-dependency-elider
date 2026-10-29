@@ -42,8 +42,27 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       final boolean trimJars,
       final List<String> passThroughArtifacts)
       throws IOException, MojoFailureException {
+    return operation(
+        fixture, traceFile, productionOutput, trimJars, passThroughArtifacts, "vertical-shading");
+  }
+
+  /** Builds an operation with explicit MRJAR strategy. */
+  protected ServiceOperation operation(
+      final Fixture fixture,
+      final Path traceFile,
+      final File productionOutput,
+      final boolean trimJars,
+      final List<String> passThroughArtifacts,
+      final String mrjarStrategy)
+      throws IOException, MojoFailureException {
     return buildOperation(
-        fixture, traceFile, productionOutput, List.of(), trimJars, passThroughArtifacts);
+        fixture,
+        traceFile,
+        productionOutput,
+        List.of(),
+        trimJars,
+        passThroughArtifacts,
+        mrjarStrategy);
   }
 
   /** Retains coordinates through raw exclusion configuration. */
@@ -55,7 +74,13 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       final boolean trimJars)
       throws IOException, MojoFailureException {
     return buildOperation(
-        fixture, traceFile, productionOutput, excludedArtifacts, trimJars, List.of());
+        fixture,
+        traceFile,
+        productionOutput,
+        excludedArtifacts,
+        trimJars,
+        List.of(),
+        "vertical-shading");
   }
 
   /** Prepares the operation from raw exclusions and output pass-through coordinates. */
@@ -65,7 +90,8 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       final File productionOutput,
       final List<String> excludedArtifacts,
       final boolean trimJars,
-      final List<String> passThroughArtifacts)
+      final List<String> passThroughArtifacts,
+      final String mrjarStrategy)
       throws IOException, MojoFailureException {
     completeSourceRoots(fixture);
     final MavenElisionService service = new MavenElisionService();
@@ -81,7 +107,9 @@ abstract class MavenElisionServiceEffectiveOutputSupport
             false,
             passThroughArtifacts,
             false,
-            true);
+            true,
+            true,
+            mrjarStrategy);
     final MavenElisionService.PreparedAnalysis prepared =
         service.prepare(fixture.mavenProject(), options);
     final ResolverArtifactGraphCapturePair pair =

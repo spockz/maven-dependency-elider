@@ -15,6 +15,7 @@ import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
+import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
 import io.github.spockz.elider.trimmer.TrimAnalysisSession;
 import java.io.IOException;
 import java.io.InputStream;
@@ -72,10 +73,14 @@ import proguard.classfile.ClassPool;
 final class MavenDependencyTrimmer {
   private static final String DO_NOT_USE_THREADS_SUPPRESSION = "PMD.DoNotUseThreads";
   private static final String DEFAULT_BUILD_DIRECTORY = "target";
+  private static final String JAVA_HOME_PROPERTY = "java.home";
+  private static final String CLASS_SUFFIX = ".class";
+  static final String MRJAR_VERTICAL_SHADING = "vertical-shading";
+  static final String MRJAR_PASS_THROUGH = "pass-through";
   private static final String ELIDED_ARTIFACTS = "elided-artifacts";
-  private static final String JAR_TYPE = "jar";
+  static final String JAR_TYPE = "jar";
   private static final Set<String> TRIMMABLE_SCOPES = Set.of("compile", "runtime");
-  private static final Set<String> ANALYSIS_LIBRARY_SCOPES =
+  static final Set<String> ANALYSIS_LIBRARY_SCOPES =
       Set.of("compile", "runtime", "provided", "system");
   private static final ObjectMapper JSON =
       new ObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
@@ -140,6 +145,29 @@ final class MavenDependencyTrimmer {
       Map<Path, ArtifactDigests> inputDigests,
       List<JdkPlatformContext.PlatformSnapshot> platformSnapshots) {}
 
+  private record FingerprintOptions(
+      int runtimeRelease,
+      int release,
+      int schemaVersion,
+      String engineVersion,
+      JdkPlatformContext platformContext,
+      List<Integer> analyzedTiers,
+      String outputContext) {}
+
+  private record CacheOutputMetadata(
+      String originalSha1,
+      String trimmedPath,
+      String trimmedSha256,
+      String trimmedSha1,
+      int totalClasses,
+      int retainedClasses,
+      long prunedClassBytes,
+      Integer originalPhysicalEntries,
+      Integer trimmedPhysicalEntries,
+      String mrjarStatus) {}
+
+  private record TieringDecision(boolean required, boolean hasVerticalShadingCandidate) {}
+
   private record PlatformPools(ClassPool compiler, ClassPool runtime) {}
 
   private record IndexedResult<R>(int index, R value) {}
@@ -154,7 +182,41 @@ final class MavenDependencyTrimmer {
       Map<MavenElisionService.ArtifactSnapshot, Set<String>> byArtifact,
       Set<ArtifactCoordinate> droppedArtifacts) {}
 
-  private record PassThroughPlan(
+  private record SingleReleaseInventory(
+      List<MavenElisionService.ArtifactSnapshot> artifacts,
+      List<MavenElisionService.ArtifactSnapshot> retainedLibraries,
+      Map<MavenElisionService.ArtifactSnapshot, Path> analysisPaths,
+      Map<Path, Set<String>> classesByPath,
+      Map<MavenElisionService.ArtifactSnapshot, Set<String>> classesByArtifact,
+      Map<String, MavenElisionService.ArtifactSnapshot> ownerByClass,
+      Map<MavenElisionService.ArtifactSnapshot, Set<String>> requestedRoots) {}
+
+  private record SingleReleaseLayout(
+      Set<ArtifactCoordinate> retainedCoordinates,
+      List<MavenElisionService.ArtifactSnapshot> eligible,
+      List<MavenElisionService.ArtifactSnapshot> candidates,
+      List<MavenElisionService.ArtifactSnapshot> unchangedPrograms,
+      Set<ArtifactCoordinate> skippedProgramCoordinates,
+      Set<String> unchangedPassThroughClasses) {}
+
+  private record DynamicRootPlan(
+      Map<MavenElisionService.ArtifactSnapshot, Set<String>> rootsByOwner,
+      Set<ArtifactCoordinate> droppedArtifacts) {}
+
+  private record SingleReleaseRootPlan(
+      Map<MavenElisionService.ArtifactSnapshot, Set<String>> candidateRoots,
+      Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+          preparedCandidates,
+      Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+          preparedPrograms,
+      Set<ArtifactCoordinate> reachableArtifacts) {}
+
+  private record SingleReleaseClosure(
+      Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> analyses,
+      Set<ArtifactCoordinate> reachableArtifacts,
+      int analysisRuns) {}
+
+  record PassThroughPlan(
       List<MavenElisionService.ArtifactSnapshot> retainedLibraries,
       List<MavenElisionService.ArtifactSnapshot> retained,
       Set<String> multiReleaseIdentities,
@@ -169,6 +231,7 @@ final class MavenDependencyTrimmer {
       MavenDependencyTrimmer.InMemoryAnalysis analysis,
       Map<ArtifactRootKey, Set<String>> roots,
       Set<ArtifactCoordinate> unchangedCoordinates,
+      Set<ArtifactCoordinate> retainedCoordinates,
       String inventoryFingerprint,
       String directInventoryFingerprint,
       String operationFingerprint,
@@ -177,12 +240,13 @@ final class MavenDependencyTrimmer {
       List<String> explicitRoots,
       List<String> explicitPassThroughCoordinates,
       boolean sourceRootsComplete,
-      boolean failOnUnsupportedMultiRelease,
+      String mrjarStrategy,
       boolean failOnUnsupportedModuleInfo,
       TrimOutputGenerationPublisher.MoveOperation move) {
     private EffectiveOutputPlan {
       roots = immutableRootMap(roots);
       unchangedCoordinates = Set.copyOf(unchangedCoordinates);
+      retainedCoordinates = Set.copyOf(retainedCoordinates);
       bytecodeReferences = Set.copyOf(bytecodeReferences);
       explicitRoots = List.copyOf(explicitRoots);
       explicitPassThroughCoordinates = List.copyOf(explicitPassThroughCoordinates);
@@ -225,6 +289,7 @@ final class MavenDependencyTrimmer {
     private PreparedEffectiveOutputs prepareOutputs(
         final List<CandidateWork> work,
         final Map<Path, ArtifactDigests> inputDigests,
+        final EffectiveOutputPlan outputPlan,
         final int trimWorkers)
         throws IOException {
       final Map<CandidateWork, CacheEntry> entries = new java.util.HashMap<>();
@@ -235,12 +300,16 @@ final class MavenDependencyTrimmer {
         if (analysis == null) {
           continue;
         }
-        if (analysis.retainedClasses().size() == analysis.totalClasses()) {
+        if (!candidate.requiresOutput()) {
           entries.put(candidate, cacheEntry(candidate, null, inputDigests));
           continue;
         }
         toSanitize.add(candidate);
       }
+      final ServiceProviderInventory providerInventory =
+          toSanitize.stream().anyMatch(CandidateWork::isMultiRelease)
+              ? serviceProviderInventory(outputPlan, work)
+              : new ServiceProviderInventory(Set.of(), Set.of());
       final List<PendingOutput> prepared =
           mapParallel(
               toSanitize,
@@ -248,13 +317,39 @@ final class MavenDependencyTrimmer {
               candidate -> {
                 final Path stagedOutput =
                     stagedGeneration.resolve(candidate.output().getFileName());
-                final ArchiveSanitizer.PreparedOutput staged =
-                    sanitizer.prepareWithProvenance(
-                        candidate.snapshot().filePath(),
-                        stagedOutput,
-                        candidate.snapshot().coordinate(),
-                        candidate.analysis(),
-                        requiredInputDigest(inputDigests, candidate.snapshot().filePath()));
+                final ArchiveSanitizer.PreparedOutput staged;
+                if (candidate.isMultiRelease()) {
+                  final Set<String> removedProviders =
+                      removedServiceProviders(
+                          candidate,
+                          new ScanInputs(
+                              outputPlan.prepared().index(),
+                              outputPlan.prepared().dynamicRootInputs().scansByPath()),
+                          providerInventory);
+                  final MultiReleaseArchivePlan plan =
+                      MultiReleaseArchivePlan.create(
+                          candidate.snapshot().filePath(),
+                          outputPlan.analysis().compilerRelease(),
+                          candidate.analysis().retainedClasses(),
+                          removedProviders);
+                  staged =
+                      sanitizer.prepareMultiRelease(
+                          candidate.snapshot().filePath(),
+                          stagedOutput,
+                          candidate.snapshot().coordinate(),
+                          candidate.analysis(),
+                          plan,
+                          requiredInputDigest(inputDigests, candidate.snapshot().filePath())
+                              .sha256());
+                } else {
+                  staged =
+                      sanitizer.prepareWithProvenance(
+                          candidate.snapshot().filePath(),
+                          stagedOutput,
+                          candidate.snapshot().coordinate(),
+                          candidate.analysis(),
+                          requiredInputDigest(inputDigests, candidate.snapshot().filePath()));
+                }
                 return preparedOutputCleanup.track(new PendingOutput(candidate, staged));
               },
               preparedOutputCleanup);
@@ -275,7 +370,10 @@ final class MavenDependencyTrimmer {
                 staged.trimmedSha1(),
                 staged.totalClasses(),
                 staged.retainedClasses(),
-                staged.prunedClassBytes());
+                staged.prunedClassBytes(),
+                staged.originalPhysicalEntries().orElseThrow(),
+                staged.trimmedPhysicalEntries().orElseThrow(),
+                staged.mrjarStatus());
         records.add(record);
         entries.put(pending.candidate(), cacheEntry(pending.candidate(), record, inputDigests));
       }
@@ -302,11 +400,12 @@ final class MavenDependencyTrimmer {
       int runtimeRelease,
       String javaHome,
       List<String> platformIdentities,
+      List<Integer> analyzedTiers,
       List<String> bytecodeReferences,
       List<String> explicitRoots,
       List<String> explicitPassThroughCoordinates,
       boolean sourceRootsComplete,
-      boolean failOnUnsupportedMultiRelease,
+      String mrjarStrategy,
       boolean failOnUnsupportedModuleInfo) {}
 
   private record ArtifactCacheIdentity(
@@ -376,7 +475,10 @@ final class MavenDependencyTrimmer {
       Long prunedClassBytes,
       Set<String> roots,
       Set<String> retainedClassNames,
-      Set<String> reachableLibraryClasses) {}
+      Set<String> reachableLibraryClasses,
+      Integer originalPhysicalEntries,
+      Integer trimmedPhysicalEntries,
+      String mrjarStatus) {}
 
   @SuppressWarnings("PMD.ExcessiveParameterList")
   record TrimRequest(
@@ -393,6 +495,8 @@ final class MavenDependencyTrimmer {
       boolean failOnUnsupportedMultiRelease,
       List<String> explicitPassThroughCoordinates,
       boolean failOnUnsupportedModuleInfo,
+      String mrjarStrategy,
+      boolean trimEnabled,
       Set<String> provenServiceInterfaces,
       boolean conservativeServiceLoaderRoots,
       int trimWorkers) {
@@ -432,6 +536,8 @@ final class MavenDependencyTrimmer {
           failOnUnsupportedMultiRelease,
           explicitPassThroughCoordinates,
           failOnUnsupportedModuleInfo,
+          MRJAR_VERTICAL_SHADING,
+          true,
           provenServiceInterfaces,
           conservativeServiceLoaderRoots,
           DEFAULT_TRIM_WORKERS);
@@ -465,6 +571,8 @@ final class MavenDependencyTrimmer {
           failOnUnsupportedMultiRelease,
           explicitPassThroughCoordinates,
           failOnUnsupportedModuleInfo,
+          MRJAR_VERTICAL_SHADING,
+          true,
           Set.of(),
           true,
           DEFAULT_TRIM_WORKERS);
@@ -485,13 +593,17 @@ final class MavenDependencyTrimmer {
       int compilerRelease,
       int runtimeRelease,
       Path javaHome,
-      List<String> platformIdentities) {
+      List<String> platformIdentities,
+      List<Integer> analyzedTiers,
+      Map<ArtifactCoordinate, Set<String>> upperTierClasses) {
     InMemoryAnalysis {
       candidateAnalyses = immutableAnalysisMap(candidateAnalyses);
       candidateRoots = immutableSetMap(candidateRoots);
       reachableArtifacts = java.util.Collections.unmodifiableSet(new TreeSet<>(reachableArtifacts));
       javaHome = javaHome.toAbsolutePath().normalize();
       platformIdentities = List.copyOf(platformIdentities);
+      analyzedTiers = analyzedTiers.stream().distinct().sorted().toList();
+      upperTierClasses = immutableSetMap(upperTierClasses);
     }
   }
 
@@ -544,6 +656,8 @@ final class MavenDependencyTrimmer {
             options.failOnUnsupportedMultiRelease(),
             options.explicitPassThroughArtifacts(),
             options.failOnUnsupportedModuleInfo(),
+            options.mrjarStrategy(),
+            options.trimJars(),
             prepared.dynamicRootInputs().provenServiceInterfaces(),
             options.conservativeServiceLoaderRoots(),
             options.trimWorkers());
@@ -562,6 +676,7 @@ final class MavenDependencyTrimmer {
             effective.trimAnalysis(),
             roots,
             unchangedCoordinates,
+            effective.effectiveDecision().retainedArtifacts(),
             effective.inventoryFingerprint(),
             prepared.directInputFingerprint(),
             effective.operationFingerprint(),
@@ -570,7 +685,7 @@ final class MavenDependencyTrimmer {
             options.explicitTrimRoots(),
             options.explicitPassThroughArtifacts(),
             options.sourceRootsComplete(),
-            options.failOnUnsupportedMultiRelease(),
+            options.mrjarStrategy(),
             options.failOnUnsupportedModuleInfo(),
             move);
     final MavenProject project = request.project();
@@ -583,7 +698,8 @@ final class MavenDependencyTrimmer {
     }
     final List<String> compilerOptions =
         MavenCompilerSettings.options(project, request.session(), compileClasspath);
-    final Path javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
+    final Path javaHome =
+        Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
     final int release = releaseFromOptions(compilerOptions, javaHome);
     final int runtimeRelease = Runtime.version().feature();
     verifyAnalysisPlatform(effective, release, runtimeRelease, javaHome);
@@ -604,7 +720,8 @@ final class MavenDependencyTrimmer {
     }
     final List<String> compilerOptions =
         MavenCompilerSettings.options(project, session, compileClasspath);
-    final Path javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
+    final Path javaHome =
+        Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
     final int release = releaseFromOptions(compilerOptions, javaHome);
     final int runtimeRelease = Runtime.version().feature();
     final JdkPlatformContext platformContext =
@@ -617,25 +734,187 @@ final class MavenDependencyTrimmer {
       final Map<ArtifactRootKey, Set<String>> discoveredRoots,
       final Set<ArtifactCoordinate> forcedUnchanged)
       throws IOException, MojoFailureException {
-    final List<MavenElisionService.ArtifactSnapshot> inventory =
+    final TieringDecision decision = tieringDecision(request, forcedUnchanged);
+    if (!decision.required()) {
+      return analyzeInMemorySingleRelease(request, discoveredRoots, forcedUnchanged);
+    }
+    return analyzeInMemoryTiered(request, discoveredRoots, forcedUnchanged, decision);
+  }
+
+  private static TieringDecision tieringDecision(
+      final TrimRequest request, final Set<ArtifactCoordinate> forcedUnchanged) throws IOException {
+    if (!request.trimEnabled()) {
+      return new TieringDecision(false, false);
+    }
+    final PassThroughPlan passThrough = passThroughPlan(request);
+    final boolean otherTrimCandidate = hasOtherTrimCandidate(passThrough, forcedUnchanged);
+    final boolean unchangedMrjarProgram =
+        hasUnchangedMultiReleaseProgram(request, passThrough, forcedUnchanged);
+    final boolean verticalCandidate =
+        hasVerticalShadingCandidate(request, passThrough, forcedUnchanged);
+    return new TieringDecision(
+        verticalCandidate || (otherTrimCandidate && unchangedMrjarProgram), verticalCandidate);
+  }
+
+  private static boolean hasOtherTrimCandidate(
+      final PassThroughPlan passThrough, final Set<ArtifactCoordinate> forcedUnchanged)
+      throws IOException {
+    for (final MavenElisionService.ArtifactSnapshot snapshot : passThrough.retained()) {
+      if (!forcedUnchanged.contains(snapshot.coordinate())
+          && !isMultiReleaseArchive(snapshot.filePath())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasUnchangedMultiReleaseProgram(
+      final TrimRequest request,
+      final PassThroughPlan passThrough,
+      final Set<ArtifactCoordinate> forcedUnchanged)
+      throws IOException {
+    for (final MavenElisionService.ArtifactSnapshot snapshot : passThrough.retainedLibraries()) {
+      if (!isMultiReleaseArchive(snapshot.filePath())) {
+        continue;
+      }
+      final boolean forced = forcedUnchanged.contains(snapshot.coordinate());
+      final boolean skipped =
+          passThrough.skippedArtifactIdentities().contains(artifactIdentity(snapshot.coordinate()));
+      if (forced || skipped || MRJAR_PASS_THROUGH.equals(request.mrjarStrategy())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasVerticalShadingCandidate(
+      final TrimRequest request,
+      final PassThroughPlan passThrough,
+      final Set<ArtifactCoordinate> forcedUnchanged)
+      throws IOException {
+    if (!MRJAR_VERTICAL_SHADING.equals(request.mrjarStrategy())) {
+      return false;
+    }
+    for (final MavenElisionService.ArtifactSnapshot snapshot : passThrough.retained()) {
+      if (!forcedUnchanged.contains(snapshot.coordinate())
+          && isMultiReleaseArchive(snapshot.filePath())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean isMultiReleaseArchive(final Path path) throws IOException {
+    return MultiReleaseClassInventory.hasUnsupportedVersionedClasses(path);
+  }
+
+  private static InMemoryAnalysis analyzeInMemoryTiered(
+      final TrimRequest request,
+      final Map<ArtifactRootKey, Set<String>> discoveredRoots,
+      final Set<ArtifactCoordinate> forcedUnchanged,
+      final TieringDecision decision)
+      throws IOException, MojoFailureException {
+    final MavenProject project = request.project();
+    final List<String> compileClasspath;
+    try {
+      compileClasspath = project.getCompileClasspathElements();
+    } catch (final DependencyResolutionRequiredException exception) {
+      throw new IOException(
+          "Cannot resolve the effective compile classpath for analysis", exception);
+    }
+    final List<String> compilerOptions =
+        MavenCompilerSettings.options(project, request.session(), compileClasspath);
+    final Path javaHome =
+        Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
+    final int release = releaseFromOptions(compilerOptions, javaHome);
+    final int runtimeRelease = Runtime.version().feature();
+    if (release > runtimeRelease && decision.hasVerticalShadingCandidate()) {
+      throw new IOException(
+          "Compiler release " + release + " exceeds Maven runtime release " + runtimeRelease);
+    }
+    if (release > runtimeRelease) {
+      return analyzeInMemorySingleRelease(request, discoveredRoots, forcedUnchanged);
+    }
+    return MultiReleaseTierAnalyzer.analyze(
+        request, discoveredRoots, forcedUnchanged, release, runtimeRelease, javaHome);
+  }
+
+  private static InMemoryAnalysis analyzeInMemorySingleRelease(
+      final TrimRequest request,
+      final Map<ArtifactRootKey, Set<String>> discoveredRoots,
+      final Set<ArtifactCoordinate> forcedUnchanged)
+      throws IOException, MojoFailureException {
+    final SingleReleaseInventory inventory = readSingleReleaseInventory(request, discoveredRoots);
+    final SingleReleaseLayout layout = singleReleaseLayout(request, inventory, forcedUnchanged);
+    final List<Path> fullClasspath = fullClasspath(inventory);
+    final Path javaHome =
+        Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
+    final int runtimeRelease = Runtime.version().feature();
+    final int release = analysisRelease(request, javaHome, runtimeRelease);
+    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots =
+        platformSnapshots(javaHome, release, runtimeRelease);
+    final PlatformPools pools = readPlatformPools(platformSnapshots, release, runtimeRelease);
+    final TrimAnalysisSession analysisSession = new TrimAnalysisSession(new DependencyJarTrimmer());
+    final SingleReleaseRootPlan roots =
+        singleReleaseRootPlan(
+            request, inventory, layout, fullClasspath, pools, analysisSession, request.trimWorkers());
+    final SingleReleaseClosure closure =
+        analyzeSingleReleaseClosure(inventory, layout, roots, request.trimWorkers());
+    return inMemoryResult(
+        closure.analyses(),
+        roots.candidateRoots(),
+        closure.reachableArtifacts(),
+        closure.analysisRuns(),
+        release,
+        runtimeRelease,
+        javaHome,
+        platformSnapshots,
+        Map.of());
+  }
+
+  private static SingleReleaseInventory readSingleReleaseInventory(
+      final TrimRequest request, final Map<ArtifactRootKey, Set<String>> discoveredRoots)
+      throws IOException {
+    final List<MavenElisionService.ArtifactSnapshot> artifacts =
         request.candidates().stream()
             .filter(snapshot -> JAR_TYPE.equals(snapshot.coordinate().type()))
             .toList();
-    validateAnalysisInventory(inventory);
+    validateAnalysisInventory(artifacts);
     final Set<ArtifactCoordinate> retainedCoordinates = request.retainedCoordinates();
     final List<MavenElisionService.ArtifactSnapshot> retainedLibraries =
-        inventory.stream()
+        artifacts.stream()
             .filter(snapshot -> retainedCoordinates.contains(snapshot.coordinate()))
             .filter(snapshot -> ANALYSIS_LIBRARY_SCOPES.contains(snapshot.coordinate().scope()))
             .toList();
     final Map<MavenElisionService.ArtifactSnapshot, Path> analysisPaths =
-        analysisPaths(request, inventory);
+        analysisPaths(request, artifacts);
     final Map<Path, Set<String>> classesByPath = new java.util.LinkedHashMap<>();
     final Map<MavenElisionService.ArtifactSnapshot, Set<String>> classesByArtifact =
         new java.util.LinkedHashMap<>();
     final Map<String, MavenElisionService.ArtifactSnapshot> ownerByClass =
         new java.util.HashMap<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : inventory) {
+    populateSingleReleaseClassInventory(
+        artifacts, analysisPaths, classesByPath, classesByArtifact, ownerByClass);
+    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> requestedRoots =
+        validateDiscoveredRoots(discoveredRoots, artifacts, classesByPath);
+    return new SingleReleaseInventory(
+        artifacts,
+        retainedLibraries,
+        analysisPaths,
+        classesByPath,
+        classesByArtifact,
+        ownerByClass,
+        requestedRoots);
+  }
+
+  private static void populateSingleReleaseClassInventory(
+      final List<MavenElisionService.ArtifactSnapshot> artifacts,
+      final Map<MavenElisionService.ArtifactSnapshot, Path> analysisPaths,
+      final Map<Path, Set<String>> classesByPath,
+      final Map<MavenElisionService.ArtifactSnapshot, Set<String>> classesByArtifact,
+      final Map<String, MavenElisionService.ArtifactSnapshot> ownerByClass)
+      throws IOException {
+    for (final MavenElisionService.ArtifactSnapshot snapshot : artifacts) {
       final Path source = snapshot.filePath().toAbsolutePath().normalize();
       final Path analysisPath = analysisPaths.getOrDefault(snapshot, source);
       final Set<String> sourceClasses = classNames(source);
@@ -653,19 +932,23 @@ final class MavenDependencyTrimmer {
         }
       }
     }
-    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> requestedRoots =
-        validateDiscoveredRoots(discoveredRoots, inventory, classesByPath);
+  }
+
+  private static SingleReleaseLayout singleReleaseLayout(
+      final TrimRequest request,
+      final SingleReleaseInventory inventory,
+      final Set<ArtifactCoordinate> forcedUnchanged)
+      throws IOException {
+    final Set<ArtifactCoordinate> retainedCoordinates = request.retainedCoordinates();
     final Set<ArtifactCoordinate> layoutPassThroughCoordinates = new LinkedHashSet<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
-      if (!TRIMMABLE_SCOPES.contains(snapshot.coordinate().scope())) {
-        continue;
-      }
-      if (passThroughCoordinate(request, snapshot)) {
+    for (final MavenElisionService.ArtifactSnapshot snapshot : inventory.retainedLibraries()) {
+      if (TRIMMABLE_SCOPES.contains(snapshot.coordinate().scope())
+          && passThroughCoordinate(request, snapshot)) {
         layoutPassThroughCoordinates.add(snapshot.coordinate());
       }
     }
     final List<MavenElisionService.ArtifactSnapshot> eligible =
-        retainedLibraries.stream()
+        inventory.retainedLibraries().stream()
             .filter(snapshot -> TRIMMABLE_SCOPES.contains(snapshot.coordinate().scope()))
             .filter(snapshot -> !layoutPassThroughCoordinates.contains(snapshot.coordinate()))
             .toList();
@@ -689,35 +972,298 @@ final class MavenDependencyTrimmer {
     final List<MavenElisionService.ArtifactSnapshot> candidates =
         eligible.stream()
             .filter(snapshot -> !unchangedCoordinates.contains(snapshot.coordinate()))
-            .filter(snapshot -> !classesByArtifact.getOrDefault(snapshot, Set.of()).isEmpty())
+            .filter(
+                snapshot ->
+                    !inventory.classesByArtifact().getOrDefault(snapshot, Set.of()).isEmpty())
             .filter(
                 snapshot ->
                     !passThroughIdentities.contains(artifactIdentity(snapshot.coordinate())))
             .sorted(artifactSnapshotOrder())
             .toList();
     final List<MavenElisionService.ArtifactSnapshot> unchangedPrograms =
-        retainedLibraries.stream()
-            .filter(snapshot -> !classesByArtifact.getOrDefault(snapshot, Set.of()).isEmpty())
+        inventory.retainedLibraries().stream()
+            .filter(
+                snapshot ->
+                    !inventory.classesByArtifact().getOrDefault(snapshot, Set.of()).isEmpty())
             .filter(snapshot -> !candidates.contains(snapshot))
             .sorted(artifactSnapshotOrder())
             .toList();
     final Set<String> unchangedPassThroughClasses = new LinkedHashSet<>();
     for (final MavenElisionService.ArtifactSnapshot snapshot : configuredPassThrough) {
-      unchangedPassThroughClasses.addAll(classesByArtifact.getOrDefault(snapshot, Set.of()));
+      unchangedPassThroughClasses.addAll(
+          inventory.classesByArtifact().getOrDefault(snapshot, Set.of()));
     }
-    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
+    for (final MavenElisionService.ArtifactSnapshot snapshot : inventory.retainedLibraries()) {
       if (layoutPassThroughCoordinates.contains(snapshot.coordinate())) {
-        unchangedPassThroughClasses.addAll(classesByArtifact.getOrDefault(snapshot, Set.of()));
+        unchangedPassThroughClasses.addAll(
+            inventory.classesByArtifact().getOrDefault(snapshot, Set.of()));
       }
     }
-    final List<Path> fullClasspath =
-        inventory.stream()
-            .filter(snapshot -> ANALYSIS_LIBRARY_SCOPES.contains(snapshot.coordinate().scope()))
-            .map(
-                snapshot ->
-                    analysisPaths.getOrDefault(
-                        snapshot, snapshot.filePath().toAbsolutePath().normalize()))
-            .toList();
+    return new SingleReleaseLayout(
+        retainedCoordinates,
+        eligible,
+        candidates,
+        unchangedPrograms,
+        skippedProgramCoordinates,
+        unchangedPassThroughClasses);
+  }
+
+  private static List<Path> fullClasspath(final SingleReleaseInventory inventory) {
+    return inventory.artifacts().stream()
+        .filter(snapshot -> ANALYSIS_LIBRARY_SCOPES.contains(snapshot.coordinate().scope()))
+        .map(
+            snapshot ->
+                inventory
+                    .analysisPaths()
+                    .getOrDefault(snapshot, snapshot.filePath().toAbsolutePath().normalize()))
+        .toList();
+  }
+
+  private static List<JdkPlatformContext.PlatformSnapshot> platformSnapshots(
+      final Path javaHome, final int release, final int runtimeRelease) throws IOException {
+    final List<JdkPlatformContext.PlatformSnapshot> snapshots = new ArrayList<>(2);
+    try (JdkPlatformContext platformContext = new JdkPlatformContext(javaHome)) {
+      snapshots.add(platformContext.snapshot(release));
+      if (runtimeRelease != release) {
+        snapshots.add(platformContext.snapshot(runtimeRelease));
+      }
+    }
+    return List.copyOf(snapshots);
+  }
+
+  private static SingleReleaseRootPlan singleReleaseRootPlan(
+      final TrimRequest request,
+      final SingleReleaseInventory inventory,
+      final SingleReleaseLayout layout,
+      final List<Path> fullClasspath,
+      final PlatformPools pools,
+      final TrimAnalysisSession analysisSession,
+      final int trimWorkers)
+      throws IOException {
+    final Set<String> commonRoots = commonRoots(request);
+    final Set<String> platformClasses = platformClasses(pools);
+    final CommonRootOwners commonRootOwners =
+        commonRootOwners(
+            commonRoots,
+            inventory.ownerByClass(),
+            request,
+            layout.retainedCoordinates(),
+            inventory.classesByArtifact(),
+            platformClasses);
+    final DynamicRootPlan dynamicRoots =
+        dynamicRootPlan(request, inventory, layout, platformClasses);
+    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> candidateRoots =
+        candidateRoots(inventory, layout, commonRootOwners, dynamicRoots);
+    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        preparedCandidates =
+            prepareCandidates(layout, fullClasspath, pools, analysisSession, trimWorkers);
+    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        preparedPrograms =
+            preparePrograms(inventory, layout, fullClasspath, pools, analysisSession, trimWorkers);
+    final Set<ArtifactCoordinate> reachableArtifacts =
+        new LinkedHashSet<>(commonRootOwners.droppedArtifacts());
+    reachableArtifacts.addAll(dynamicRoots.droppedArtifacts());
+    return new SingleReleaseRootPlan(
+        candidateRoots, preparedCandidates, preparedPrograms, reachableArtifacts);
+  }
+
+  private static DynamicRootPlan dynamicRootPlan(
+      final TrimRequest request,
+      final SingleReleaseInventory inventory,
+      final SingleReleaseLayout layout,
+      final Set<String> platformClasses)
+      throws IOException {
+    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> rootsByOwner =
+        new java.util.LinkedHashMap<>();
+    final Set<ArtifactCoordinate> droppedArtifacts = new LinkedHashSet<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : inventory.retainedLibraries()) {
+      for (final String root : dynamicRoots(request, snapshot.filePath())) {
+        final MavenElisionService.ArtifactSnapshot owner = inventory.ownerByClass().get(root);
+        if (owner == null) {
+          if (request.projectOutputClasses().contains(root) || platformClasses.contains(root)) {
+            continue;
+          }
+          droppedArtifacts.addAll(droppedArtifactCoordinates(inventory, layout));
+          continue;
+        }
+        if (layout.retainedCoordinates().contains(owner.coordinate())) {
+          if (layout.eligible().contains(owner)) {
+            rootsByOwner.computeIfAbsent(owner, ignored -> new TreeSet<>()).add(root);
+          }
+        } else {
+          droppedArtifacts.add(owner.coordinate());
+        }
+      }
+    }
+    return new DynamicRootPlan(rootsByOwner, droppedArtifacts);
+  }
+
+  private static Set<ArtifactCoordinate> droppedArtifactCoordinates(
+      final SingleReleaseInventory inventory, final SingleReleaseLayout layout) {
+    return inventory.artifacts().stream()
+        .filter(snapshot -> !layout.retainedCoordinates().contains(snapshot.coordinate()))
+        .map(MavenElisionService.ArtifactSnapshot::coordinate)
+        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  private static Map<MavenElisionService.ArtifactSnapshot, Set<String>> candidateRoots(
+      final SingleReleaseInventory inventory,
+      final SingleReleaseLayout layout,
+      final CommonRootOwners commonRootOwners,
+      final DynamicRootPlan dynamicRoots) {
+    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> candidateRoots =
+        new java.util.LinkedHashMap<>();
+    for (final MavenElisionService.ArtifactSnapshot candidate : layout.candidates()) {
+      final Set<String> roots =
+          new TreeSet<>(inventory.requestedRoots().getOrDefault(candidate, Set.of()));
+      roots.addAll(commonRootOwners.byArtifact().getOrDefault(candidate, Set.of()));
+      roots.addAll(dynamicRoots.rootsByOwner().getOrDefault(candidate, Set.of()));
+      if (roots.isEmpty()) {
+        roots.addAll(inventory.classesByArtifact().getOrDefault(candidate, Set.of()));
+      }
+      candidateRoots.put(candidate, roots);
+    }
+    return candidateRoots;
+  }
+
+  private static Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+      prepareCandidates(
+          final SingleReleaseLayout layout,
+          final List<Path> fullClasspath,
+          final PlatformPools pools,
+          final TrimAnalysisSession analysisSession,
+          final int trimWorkers)
+          throws IOException {
+    final List<DependencyJarTrimmer.PreparedAnalysis> results =
+        mapParallel(
+            layout.candidates(),
+            trimWorkers,
+            candidate -> {
+              final Path path = candidate.filePath().toAbsolutePath().normalize();
+              final List<Path> siblings =
+                  fullClasspath.stream().filter(value -> !value.equals(path)).toList();
+              return analysisSession.prepareWithUnchangedPassThroughLibraries(
+                  path, siblings, pools.compiler(), layout.unchangedPassThroughClasses());
+            });
+    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        preparedCandidates = new java.util.LinkedHashMap<>();
+    for (int index = 0; index < layout.candidates().size(); index++) {
+      preparedCandidates.put(layout.candidates().get(index), results.get(index));
+    }
+    return preparedCandidates;
+  }
+
+  private static Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+      preparePrograms(
+          final SingleReleaseInventory inventory,
+          final SingleReleaseLayout layout,
+          final List<Path> fullClasspath,
+          final PlatformPools pools,
+          final TrimAnalysisSession analysisSession,
+          final int trimWorkers)
+          throws IOException {
+    final List<DependencyJarTrimmer.PreparedAnalysis> results =
+        mapParallel(
+            layout.unchangedPrograms(),
+            trimWorkers,
+            program -> {
+              final Path path =
+                  inventory
+                      .analysisPaths()
+                      .getOrDefault(program, program.filePath().toAbsolutePath().normalize());
+              final List<Path> siblings =
+                  fullClasspath.stream().filter(value -> !value.equals(path)).toList();
+              return layout.skippedProgramCoordinates().contains(program.coordinate())
+                  ? analysisSession.prepareUnchangedPassThrough(
+                      path, siblings, pools.runtime(), layout.unchangedPassThroughClasses())
+                  : analysisSession.prepareWithUnchangedPassThroughLibraries(
+                      path, siblings, pools.runtime(), layout.unchangedPassThroughClasses());
+            });
+    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        preparedPrograms = new java.util.LinkedHashMap<>();
+    for (int index = 0; index < layout.unchangedPrograms().size(); index++) {
+      preparedPrograms.put(layout.unchangedPrograms().get(index), results.get(index));
+    }
+    return preparedPrograms;
+  }
+
+  private static SingleReleaseClosure analyzeSingleReleaseClosure(
+      final SingleReleaseInventory inventory,
+      final SingleReleaseLayout layout,
+      final SingleReleaseRootPlan roots,
+      final int trimWorkers)
+      throws IOException {
+    final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> finalAnalyses =
+        new java.util.LinkedHashMap<>();
+    final Set<ArtifactCoordinate> reachableArtifacts =
+        new LinkedHashSet<>(roots.reachableArtifacts());
+    int analysisRuns = 0;
+    boolean rootsChanged;
+    do {
+      rootsChanged = false;
+      final List<
+              Map.Entry<
+                  MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>>
+          programEntries = List.copyOf(roots.preparedPrograms().entrySet());
+      final List<DependencyJarTrimmer.TrimAnalysis> programAnalyses =
+          mapParallel(
+              programEntries,
+              trimWorkers,
+              entry ->
+                  entry
+                      .getValue()
+                      .analyze(inventory.classesByArtifact().get(entry.getKey())));
+      analysisRuns += programAnalyses.size();
+      for (int index = 0; index < programEntries.size(); index++) {
+        final Map.Entry<
+                MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+            entry = programEntries.get(index);
+        final DependencyJarTrimmer.TrimAnalysis analysis = programAnalyses.get(index);
+        rootsChanged |=
+            collectReachableClasses(
+                analysis.reachableLibraryClasses(),
+                inventory.ownerByClass(),
+                layout.candidates(),
+                roots.candidateRoots(),
+                reachableArtifacts,
+                layout.retainedCoordinates(),
+                entry.getKey());
+      }
+      finalAnalyses.clear();
+      final List<
+              Map.Entry<
+                  MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>>
+          candidateEntries = List.copyOf(roots.preparedCandidates().entrySet());
+      final List<DependencyJarTrimmer.TrimAnalysis> candidateAnalyses =
+          mapParallel(
+              candidateEntries,
+              trimWorkers,
+              entry -> entry.getValue().analyze(roots.candidateRoots().get(entry.getKey())));
+      analysisRuns += candidateAnalyses.size();
+      for (int index = 0; index < candidateEntries.size(); index++) {
+        final MavenElisionService.ArtifactSnapshot candidate =
+            candidateEntries.get(index).getKey();
+        final DependencyJarTrimmer.TrimAnalysis analysis = candidateAnalyses.get(index);
+        finalAnalyses.put(candidate.coordinate(), analysis);
+        rootsChanged |=
+            collectReachableClasses(
+                analysis.reachableLibraryClasses(),
+                inventory.ownerByClass(),
+                layout.candidates(),
+                roots.candidateRoots(),
+                reachableArtifacts,
+                layout.retainedCoordinates(),
+                candidate);
+      }
+    } while (rootsChanged);
+    return new SingleReleaseClosure(finalAnalyses, reachableArtifacts, analysisRuns);
+  }
+
+  private static int analysisRelease(
+      final TrimRequest request, final Path javaHome, final int runtimeRelease) throws IOException {
+    if (!request.trimEnabled()) {
+      return runtimeRelease;
+    }
     final List<String> compileClasspath;
     try {
       compileClasspath = request.project().getCompileClasspathElements();
@@ -727,167 +1273,74 @@ final class MavenDependencyTrimmer {
     }
     final List<String> compilerOptions =
         MavenCompilerSettings.options(request.project(), request.session(), compileClasspath);
-    final Path javaHome = Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
-    final int release = releaseFromOptions(compilerOptions, javaHome);
-    final int runtimeRelease = Runtime.version().feature();
-    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots = new ArrayList<>(2);
-    try (JdkPlatformContext platformContext = new JdkPlatformContext(javaHome)) {
-      platformSnapshots.add(platformContext.snapshot(release));
-      if (runtimeRelease != release) {
-        platformSnapshots.add(platformContext.snapshot(runtimeRelease));
-      }
-    }
-    final PlatformPools pools = readPlatformPools(platformSnapshots, release, runtimeRelease);
-    final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
-    final TrimAnalysisSession analysisSession = new TrimAnalysisSession(trimmer);
-    final Set<String> commonRoots = commonRoots(request);
-    final Set<String> platformClasses = platformClasses(pools);
-    final CommonRootOwners commonRootOwners =
-        commonRootOwners(
-            commonRoots,
-            ownerByClass,
-            request,
-            retainedCoordinates,
-            classesByArtifact,
-            platformClasses);
-    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> dynamicRootsByOwner =
-        new java.util.LinkedHashMap<>();
-    final Set<ArtifactCoordinate> dynamicRootsInDroppedArtifacts = new LinkedHashSet<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
-      for (final String root : dynamicRoots(request, snapshot.filePath())) {
-        final MavenElisionService.ArtifactSnapshot owner = ownerByClass.get(root);
-        if (owner == null) {
-          if (request.projectOutputClasses().contains(root) || platformClasses.contains(root)) {
-            continue;
-          }
-          dynamicRootsInDroppedArtifacts.addAll(
-              inventory.stream()
-                  .filter(candidate -> !retainedCoordinates.contains(candidate.coordinate()))
-                  .map(MavenElisionService.ArtifactSnapshot::coordinate)
-                  .toList());
-          continue;
-        }
-        if (retainedCoordinates.contains(owner.coordinate())) {
-          if (eligible.contains(owner)) {
-            dynamicRootsByOwner.computeIfAbsent(owner, ignored -> new TreeSet<>()).add(root);
-          }
-        } else {
-          dynamicRootsInDroppedArtifacts.add(owner.coordinate());
-        }
-      }
-    }
-    final Map<MavenElisionService.ArtifactSnapshot, Set<String>> candidateRoots =
-        new java.util.LinkedHashMap<>();
-    for (final MavenElisionService.ArtifactSnapshot candidate : candidates) {
-      final Set<String> roots = new TreeSet<>(requestedRoots.getOrDefault(candidate, Set.of()));
-      roots.addAll(commonRootOwners.byArtifact().getOrDefault(candidate, Set.of()));
-      roots.addAll(dynamicRootsByOwner.getOrDefault(candidate, Set.of()));
-      if (roots.isEmpty()) {
-        roots.addAll(classesByArtifact.getOrDefault(candidate, Set.of()));
-      }
-      candidateRoots.put(candidate, roots);
-    }
-    final List<DependencyJarTrimmer.PreparedAnalysis> preparedCandidateResults =
-        mapParallel(
-            candidates,
-            request.trimWorkers(),
-            candidate -> {
-              final Path path = candidate.filePath().toAbsolutePath().normalize();
-              final List<Path> siblings =
-                  fullClasspath.stream().filter(value -> !value.equals(path)).toList();
-              return analysisSession.prepareWithUnchangedPassThroughLibraries(
-                  path, siblings, pools.compiler(), unchangedPassThroughClasses);
-            });
-    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
-        preparedCandidates = new java.util.LinkedHashMap<>();
-    for (int index = 0; index < candidates.size(); index++) {
-      preparedCandidates.put(candidates.get(index), preparedCandidateResults.get(index));
-    }
-    final List<DependencyJarTrimmer.PreparedAnalysis> preparedProgramResults =
-        mapParallel(
-            unchangedPrograms,
-            request.trimWorkers(),
-            program -> {
-              final Path path =
-                  analysisPaths.getOrDefault(
-                      program, program.filePath().toAbsolutePath().normalize());
-              final List<Path> siblings =
-                  fullClasspath.stream().filter(value -> !value.equals(path)).toList();
-              return skippedProgramCoordinates.contains(program.coordinate())
-                  ? analysisSession.prepareUnchangedPassThrough(
-                      path, siblings, pools.runtime(), unchangedPassThroughClasses)
-                  : analysisSession.prepareWithUnchangedPassThroughLibraries(
-                      path, siblings, pools.runtime(), unchangedPassThroughClasses);
-            });
-    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
-        preparedPrograms = new java.util.LinkedHashMap<>();
-    for (int index = 0; index < unchangedPrograms.size(); index++) {
-      preparedPrograms.put(unchangedPrograms.get(index), preparedProgramResults.get(index));
-    }
-    final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> finalAnalyses =
-        new java.util.LinkedHashMap<>();
-    final Set<ArtifactCoordinate> reachableArtifacts =
-        new LinkedHashSet<>(commonRootOwners.droppedArtifacts());
-    reachableArtifacts.addAll(dynamicRootsInDroppedArtifacts);
-    int analysisRuns = 0;
-    boolean rootsChanged;
-    do {
-      rootsChanged = false;
-      final List<DependencyJarTrimmer.TrimAnalysis> programAnalyses =
-          mapParallel(
-              unchangedPrograms,
-              request.trimWorkers(),
-              program -> preparedPrograms.get(program).analyze(classesByArtifact.get(program)));
-      analysisRuns += programAnalyses.size();
-      for (int index = 0; index < unchangedPrograms.size(); index++) {
-        final MavenElisionService.ArtifactSnapshot program = unchangedPrograms.get(index);
-        final DependencyJarTrimmer.TrimAnalysis analysis = programAnalyses.get(index);
-        rootsChanged |=
-            collectReachableClasses(
-                analysis.reachableLibraryClasses(),
-                ownerByClass,
-                candidates,
-                candidateRoots,
-                reachableArtifacts,
-                retainedCoordinates,
-                program);
-      }
-      finalAnalyses.clear();
-      final List<DependencyJarTrimmer.TrimAnalysis> candidateAnalyses =
-          mapParallel(
-              candidates,
-              request.trimWorkers(),
-              candidate ->
-                  preparedCandidates.get(candidate).analyze(candidateRoots.get(candidate)));
-      analysisRuns += candidateAnalyses.size();
-      for (int index = 0; index < candidates.size(); index++) {
-        final MavenElisionService.ArtifactSnapshot candidate = candidates.get(index);
-        final DependencyJarTrimmer.TrimAnalysis analysis = candidateAnalyses.get(index);
-        finalAnalyses.put(candidate.coordinate(), analysis);
-        rootsChanged |=
-            collectReachableClasses(
-                analysis.reachableLibraryClasses(),
-                ownerByClass,
-                candidates,
-                candidateRoots,
-                reachableArtifacts,
-                retainedCoordinates,
-                candidate);
-      }
-    } while (rootsChanged);
-    return inMemoryResult(
-        finalAnalyses,
-        candidateRoots,
-        reachableArtifacts,
-        analysisRuns,
-        release,
-        runtimeRelease,
-        javaHome,
-        platformSnapshots);
+    return releaseFromOptions(compilerOptions, javaHome);
   }
 
-  private static void validateAnalysisInventory(
-      final List<MavenElisionService.ArtifactSnapshot> inventory) throws IOException {
+  private static ServiceProviderInventory serviceProviderInventory(
+      final EffectiveOutputPlan outputPlan, final List<CandidateWork> candidates)
+      throws IOException {
+    final Map<ArtifactCoordinate, CandidateWork> candidatesByCoordinate = new java.util.HashMap<>();
+    candidates.forEach(
+        candidate -> candidatesByCoordinate.put(candidate.snapshot().coordinate(), candidate));
+    final Set<String> ownedClasses = new HashSet<>();
+    final Set<String> retainedClasses = new HashSet<>();
+    final Path projectionDirectory = analysisLibraryDirectory(outputPlan.prepared().project());
+    for (final MavenElisionService.ArtifactSnapshot snapshot :
+        outputPlan.prepared().resolvedSnapshots()) {
+      if (!JAR_TYPE.equals(snapshot.coordinate().type())) {
+        continue;
+      }
+      final Path source = snapshot.filePath().toAbsolutePath().normalize();
+      final Set<String> logicalClasses = logicalClassNames(source);
+      ownedClasses.addAll(logicalClasses);
+      if (!outputPlan.retainedCoordinates().contains(snapshot.coordinate())) {
+        continue;
+      }
+      final CandidateWork candidate = candidatesByCoordinate.get(snapshot.coordinate());
+      if (candidate != null) {
+        candidate.analysis().retainedClasses().stream()
+            .map(name -> name.replace('/', '.'))
+            .forEach(retainedClasses::add);
+      } else if (MultiReleaseClassInventory.hasUnsupportedVersionedClasses(source)) {
+        final Path projection =
+            MultiReleaseLibraryProjection.create(
+                source,
+                snapshot.coordinate(),
+                projectionDirectory,
+                outputPlan.analysis().compilerRelease());
+        retainedClasses.addAll(classNames(projection));
+      } else {
+        retainedClasses.addAll(logicalClasses);
+      }
+    }
+    return new ServiceProviderInventory(ownedClasses, retainedClasses);
+  }
+
+  private static Set<String> removedServiceProviders(
+      final CandidateWork candidate,
+      final ScanInputs scanInputs,
+      final ServiceProviderInventory inventory)
+      throws IOException {
+    final Path source = candidate.snapshot().filePath().toAbsolutePath().normalize();
+    final DependencyDynamicRoots.RootScan scan = scanInputs.dynamicRootScans().get(source);
+    if (scan == null) {
+      throw new IOException(
+          "Missing service descriptor scan for " + candidate.snapshot().coordinate());
+    }
+    final Set<String> removed = new HashSet<>();
+    for (final DependencyDynamicRoots.ServiceDescriptor descriptor : scan.serviceDescriptors()) {
+      for (final String provider : descriptor.providers()) {
+        if (inventory.ownedClasses().contains(provider)
+            && !inventory.retainedClasses().contains(provider)) {
+          removed.add(provider);
+        }
+      }
+    }
+    return Set.copyOf(removed);
+  }
+
+  static void validateAnalysisInventory(final List<MavenElisionService.ArtifactSnapshot> inventory)
+      throws IOException {
     final Set<ArtifactCoordinate> coordinates = new HashSet<>();
     for (final MavenElisionService.ArtifactSnapshot snapshot : inventory) {
       if (!coordinates.add(snapshot.coordinate())) {
@@ -911,7 +1364,7 @@ final class MavenDependencyTrimmer {
         continue;
       }
       final boolean multiRelease =
-          MultiReleaseLibraryProjection.hasUnsupportedVersionedClasses(snapshot.filePath());
+          MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath());
       final boolean moduleInfo =
           MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath());
       if (multiRelease || moduleInfo) {
@@ -931,24 +1384,20 @@ final class MavenDependencyTrimmer {
       final TrimRequest request, final MavenElisionService.ArtifactSnapshot snapshot)
       throws IOException {
     final boolean multiRelease =
-        MultiReleaseLibraryProjection.hasUnsupportedVersionedClasses(snapshot.filePath());
+        MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath());
     final boolean moduleInfo =
         MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath());
     if (!request.retainedCoordinates().contains(snapshot.coordinate())) {
       return multiRelease || moduleInfo;
     }
-    if (multiRelease && request.failOnUnsupportedMultiRelease()) {
-      throw new IOException(
-          "Unsupported multi-release implementation classes in " + snapshot.coordinate());
-    }
     if (moduleInfo && request.failOnUnsupportedModuleInfo()) {
       throw new IOException(
           "Unsupported root module descriptor in retained classpath JAR: " + snapshot.coordinate());
     }
-    return multiRelease || moduleInfo;
+    return moduleInfo || (multiRelease && MRJAR_PASS_THROUGH.equals(request.mrjarStrategy()));
   }
 
-  private static Map<MavenElisionService.ArtifactSnapshot, Set<String>> validateDiscoveredRoots(
+  static Map<MavenElisionService.ArtifactSnapshot, Set<String>> validateDiscoveredRoots(
       final Map<ArtifactRootKey, Set<String>> discoveredRoots,
       final List<MavenElisionService.ArtifactSnapshot> inventory,
       final Map<Path, Set<String>> classesByPath)
@@ -984,7 +1433,7 @@ final class MavenDependencyTrimmer {
     return result;
   }
 
-  private static Set<String> commonRoots(final TrimRequest request) {
+  static Set<String> commonRoots(final TrimRequest request) {
     final Set<String> roots = new LinkedHashSet<>(request.trace().loadedClassesDotFormat());
     roots.addAll(request.sourceRoots());
     roots.addAll(request.bytecodeRoots());
@@ -1037,8 +1486,7 @@ final class MavenDependencyTrimmer {
     return Set.copyOf(result);
   }
 
-  private static Set<String> dynamicRoots(final TrimRequest request, final Path path)
-      throws IOException {
+  static Set<String> dynamicRoots(final TrimRequest request, final Path path) throws IOException {
     final DependencyDynamicRoots.RootScan scan = request.scanInputs().dynamicRootScans().get(path);
     if (scan == null) {
       throw new IOException("Missing dynamic-root scan for full inventory JAR: " + path);
@@ -1078,7 +1526,7 @@ final class MavenDependencyTrimmer {
     return changed;
   }
 
-  private static InMemoryAnalysis inMemoryResult(
+  static InMemoryAnalysis inMemoryResult(
       final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> analyses,
       final Map<MavenElisionService.ArtifactSnapshot, Set<String>> roots,
       final Set<ArtifactCoordinate> reachableArtifacts,
@@ -1086,7 +1534,8 @@ final class MavenDependencyTrimmer {
       final int compilerRelease,
       final int runtimeRelease,
       final Path javaHome,
-      final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots) {
+      final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots,
+      final Map<ArtifactCoordinate, Set<String>> upperTierClasses) {
     final Map<ArtifactCoordinate, Set<String>> rootsByCoordinate = new java.util.LinkedHashMap<>();
     roots.forEach((snapshot, values) -> rootsByCoordinate.put(snapshot.coordinate(), values));
     return new InMemoryAnalysis(
@@ -1100,7 +1549,13 @@ final class MavenDependencyTrimmer {
         platformSnapshots.stream()
             .sorted(Comparator.comparingInt(JdkPlatformContext.PlatformSnapshot::effectiveRelease))
             .map(JdkPlatformContext.PlatformSnapshot::identity)
-            .toList());
+            .toList(),
+        platformSnapshots.stream()
+            .map(JdkPlatformContext.PlatformSnapshot::effectiveRelease)
+            .distinct()
+            .sorted()
+            .toList(),
+        upperTierClasses);
   }
 
   private static Map<ArtifactCoordinate, Set<String>> immutableSetMap(
@@ -1208,12 +1663,14 @@ final class MavenDependencyTrimmer {
             work,
             retainedInputPaths,
             passThrough.skippedArtifactIdentities(),
-            runtimeRelease,
-            release,
-            CACHE_SCHEMA_VERSION,
-            ENGINE_VERSION,
-            platformContext,
-            effectiveCacheContext(request, effectiveOutput));
+            new FingerprintOptions(
+                runtimeRelease,
+                release,
+                CACHE_SCHEMA_VERSION,
+                ENGINE_VERSION,
+                platformContext,
+                effectiveOutput.analysis().analyzedTiers(),
+                effectiveCacheContext(request, effectiveOutput)));
     verifyEffectiveInputs(effectiveOutput, fingerprint);
     final List<String> platformIdentities =
         fingerprint.platformSnapshots().stream()
@@ -1260,6 +1717,16 @@ final class MavenDependencyTrimmer {
       final int runtimeRelease,
       final JdkPlatformContext platformContext)
       throws IOException, MojoFailureException {
+    if (request.trimEnabled() && MRJAR_VERTICAL_SHADING.equals(request.mrjarStrategy())) {
+      for (final MavenElisionService.ArtifactSnapshot snapshot :
+          passThroughPlan(request).retained()) {
+        if (MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath())) {
+          throw new IOException(
+              "Vertical-shading MRJAR output requires tier-aware effective analysis: "
+                  + snapshot.coordinate());
+        }
+      }
+    }
     final MavenProject project = request.project();
     final ScanInputs scanInputs = request.scanInputs();
     final TraceData trace = request.trace();
@@ -1297,12 +1764,14 @@ final class MavenDependencyTrimmer {
             work,
             retainedInputPaths,
             skippedArtifactIdentities,
-            runtimeRelease,
-            release,
-            CACHE_SCHEMA_VERSION,
-            ENGINE_VERSION,
-            platformContext,
-            null);
+            new FingerprintOptions(
+                runtimeRelease,
+                release,
+                CACHE_SCHEMA_VERSION,
+                ENGINE_VERSION,
+                platformContext,
+                List.of(release, runtimeRelease),
+                null));
     final String completeFingerprint = fingerprintSnapshot.value();
     final TrimResult cached =
         loadCache(
@@ -1430,6 +1899,7 @@ final class MavenDependencyTrimmer {
             staging.prepareOutputs(
                 work,
                 fingerprint.inputDigests(),
+                effectiveOutput,
                 effectiveOutput.prepared().options().trimWorkers());
         final List<CacheEntry> entries = new ArrayList<>(work.size());
         for (final CandidateWork candidate : work) {
@@ -1668,7 +2138,7 @@ final class MavenDependencyTrimmer {
     return analysisRuns;
   }
 
-  private static Path analysisLibraryDirectory(final MavenProject project) {
+  static Path analysisLibraryDirectory(final MavenProject project) {
     return project.getBuild() == null || project.getBuild().getDirectory() == null
         ? Path.of(DEFAULT_BUILD_DIRECTORY, ELIDED_ARTIFACTS, ".analysis-libraries")
             .toAbsolutePath()
@@ -1678,7 +2148,7 @@ final class MavenDependencyTrimmer {
             .normalize();
   }
 
-  private static PassThroughPlan passThroughPlan(final TrimRequest request) throws IOException {
+  static PassThroughPlan passThroughPlan(final TrimRequest request) throws IOException {
     final List<MavenElisionService.ArtifactSnapshot> retainedLibraries =
         request.candidates().stream()
             .filter(
@@ -1690,11 +2160,8 @@ final class MavenDependencyTrimmer {
     final List<MavenElisionService.ArtifactSnapshot> multiRelease = new ArrayList<>();
     final List<MavenElisionService.ArtifactSnapshot> moduleInfo = new ArrayList<>();
     for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
-      if (MultiReleaseLibraryProjection.hasUnsupportedVersionedClasses(snapshot.filePath())) {
-        if (request.failOnUnsupportedMultiRelease()) {
-          throw new IOException(
-              "Unsupported multi-release implementation classes in " + snapshot.coordinate());
-        }
+      if (MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath())
+          && MRJAR_PASS_THROUGH.equals(request.mrjarStrategy())) {
         multiRelease.add(snapshot);
       }
       if (MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath())) {
@@ -1819,19 +2286,51 @@ final class MavenDependencyTrimmer {
       if (effectiveOutput.unchangedCoordinates().contains(candidate.coordinate())) {
         continue;
       }
-      final Set<String> candidateClasses = classesFor(candidate, classesByArtifact);
-      if (candidateClasses.isEmpty()) {
+      final boolean multiRelease =
+          effectiveOutput.analysis().upperTierClasses().containsKey(candidate.coordinate());
+      final Set<String> candidateClasses;
+      final int logicalClassCount;
+      if (multiRelease) {
+        final Path targetProjection =
+            MultiReleaseLibraryProjection.create(
+                candidate.filePath(),
+                candidate.coordinate(),
+                analysisLibraryDirectory(project),
+                effectiveOutput.analysis().compilerRelease());
+        candidateClasses = classNames(targetProjection);
+        final MultiReleaseArchivePlan initialPlan =
+            MultiReleaseArchivePlan.create(
+                candidate.filePath(),
+                effectiveOutput.analysis().compilerRelease(),
+                Set.of(),
+                Set.of());
+        logicalClassCount = initialPlan.pluginView().logicalClassCount();
+      } else {
+        candidateClasses = classesFor(candidate, classesByArtifact);
+        logicalClassCount = candidateClasses.size();
+      }
+      if (candidateClasses.isEmpty() && !multiRelease) {
         continue;
       }
-      final Set<String> roots = rootsBySnapshot.get(candidate);
-      if (roots == null) {
+      final Set<String> discovered = rootsBySnapshot.get(candidate);
+      if (discovered == null) {
         throw new IOException("Effective analysis has no roots for " + candidate.coordinate());
       }
+      final Set<String> roots = new TreeSet<>(discovered);
+      roots.retainAll(candidateClasses);
       final Path output = outputPath(project, candidate.coordinate());
       if (!distinctOutputs.add(output)) {
         throw new IOException("Distinct effective candidates share output path: " + output);
       }
-      work.add(new CandidateWork(candidate, candidateClasses, roots, output));
+      final CandidateWork candidateWork =
+          new CandidateWork(
+              candidate, candidateClasses, roots, output, multiRelease, logicalClassCount);
+      candidateWork.upperTierClasses(
+          effectiveOutput
+              .analysis()
+              .upperTierClasses()
+              .getOrDefault(candidate.coordinate(), Set.of()));
+      work.add(candidateWork);
     }
     return new CandidatePlan(retainedInputPaths, work, Map.of(), Map.of());
   }
@@ -1913,7 +2412,7 @@ final class MavenDependencyTrimmer {
           || !candidateAnalysis.roots().stream()
               .map(name -> name.replace('/', '.'))
               .collect(java.util.stream.Collectors.toSet())
-              .equals(candidate.roots())) {
+              .equals(candidate.targetRoots())) {
         throw new IOException(
             "Output candidate roots do not match effective analysis: "
                 + candidate.snapshot().coordinate());
@@ -1930,7 +2429,7 @@ final class MavenDependencyTrimmer {
         .toList();
   }
 
-  private static Comparator<MavenElisionService.ArtifactSnapshot> artifactSnapshotOrder() {
+  static Comparator<MavenElisionService.ArtifactSnapshot> artifactSnapshotOrder() {
     return Comparator.comparing(MavenElisionService.ArtifactSnapshot::coordinate)
         .thenComparing(snapshot -> snapshot.filePath().toAbsolutePath().normalize());
   }
@@ -1972,11 +2471,12 @@ final class MavenDependencyTrimmer {
             output.analysis().runtimeRelease(),
             output.analysis().javaHome().toString(),
             output.analysis().platformIdentities(),
+            output.analysis().analyzedTiers(),
             output.bytecodeReferences().stream().sorted().toList(),
             output.explicitRoots().stream().sorted().toList(),
             output.explicitPassThroughCoordinates().stream().sorted().toList(),
             output.sourceRootsComplete(),
-            output.failOnUnsupportedMultiRelease(),
+            request.mrjarStrategy(),
             output.failOnUnsupportedModuleInfo());
     try {
       return hash(JSON.writeValueAsBytes(identity));
@@ -2010,23 +2510,56 @@ final class MavenDependencyTrimmer {
     }
   }
 
-  private static Set<String> classNames(final Path archivePath) throws IOException {
+  static Set<String> classNames(final Path archivePath) throws IOException {
     final Set<String> classNames = new TreeSet<>();
     try (JarFile archive = new JarFile(archivePath.toFile())) {
       final var entries = archive.entries();
       while (entries.hasMoreElements()) {
         final String name = entries.nextElement().getName();
-        if (name.endsWith(".class")
+        if (name.endsWith(CLASS_SUFFIX)
             && !"module-info.class".equals(name)
             && !name.endsWith("/module-info.class")) {
-          classNames.add(name.substring(0, name.length() - ".class".length()).replace('/', '.'));
+          classNames.add(
+              name.substring(0, name.length() - CLASS_SUFFIX.length()).replace('/', '.'));
         }
       }
     }
     return Set.copyOf(classNames);
   }
 
-  private static Path outputPath(final MavenProject project, final ArtifactCoordinate coordinate) {
+  static Set<String> logicalClassNames(final Path archivePath) throws IOException {
+    final Set<String> classNames = new TreeSet<>();
+    final String versionsPrefix = "META-INF/versions/";
+    try (JarFile archive = new JarFile(archivePath.toFile())) {
+      final var entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        final String entry = entries.nextElement().getName();
+        if (!entry.endsWith(CLASS_SUFFIX)) {
+          continue;
+        }
+        final String logicalName;
+        if (entry.startsWith(versionsPrefix)) {
+          final int releaseEnd = entry.indexOf('/', versionsPrefix.length());
+          if (releaseEnd < 0 || releaseEnd == entry.length() - 1) {
+            throw new IOException("Malformed multi-release class entry " + entry);
+          }
+          logicalName = entry.substring(releaseEnd + 1);
+        } else {
+          logicalName = entry;
+        }
+        if (!"module-info.class".equals(logicalName)
+            && !logicalName.endsWith("/module-info.class")) {
+          classNames.add(
+              logicalName
+                  .substring(0, logicalName.length() - CLASS_SUFFIX.length())
+                  .replace('/', '.'));
+        }
+      }
+    }
+    return Set.copyOf(classNames);
+  }
+
+  static Path outputPath(final MavenProject project, final ArtifactCoordinate coordinate) {
     final String basename =
         safeFilePart(coordinate.groupId())
             + "-"
@@ -2046,6 +2579,9 @@ final class MavenDependencyTrimmer {
     private final MavenElisionService.ArtifactSnapshot snapshot;
     private final Set<String> classes;
     private final Set<String> roots;
+    private final boolean multiRelease;
+    private final int logicalClassCount;
+    private Set<String> upperTierClasses = Set.of();
     private Path output;
     private DependencyJarTrimmer.TrimAnalysis analysis;
 
@@ -2054,10 +2590,22 @@ final class MavenDependencyTrimmer {
         final Set<String> classes,
         final Set<String> roots,
         final Path output) {
+      this(snapshot, classes, roots, output, false, classes.size());
+    }
+
+    private CandidateWork(
+        final MavenElisionService.ArtifactSnapshot snapshot,
+        final Set<String> classes,
+        final Set<String> roots,
+        final Path output,
+        final boolean multiRelease,
+        final int logicalClassCount) {
       this.snapshot = snapshot;
       this.classes = Set.copyOf(classes);
-      this.roots = new TreeSet<>(roots.isEmpty() ? classes : roots);
+      this.roots = new TreeSet<>(multiRelease || !roots.isEmpty() ? roots : classes);
       this.output = output;
+      this.multiRelease = multiRelease;
+      this.logicalClassCount = logicalClassCount;
     }
 
     private MavenElisionService.ArtifactSnapshot snapshot() {
@@ -2070,6 +2618,34 @@ final class MavenDependencyTrimmer {
 
     private Set<String> roots() {
       return roots;
+    }
+
+    private Set<String> targetRoots() {
+      final Set<String> result = new TreeSet<>(roots);
+      result.retainAll(classes);
+      return Set.copyOf(result);
+    }
+
+    private boolean isMultiRelease() {
+      return multiRelease;
+    }
+
+    private int logicalClassCount() {
+      return logicalClassCount;
+    }
+
+    private Set<String> upperTierClasses() {
+      return upperTierClasses;
+    }
+
+    private void upperTierClasses(final Set<String> value) {
+      upperTierClasses = Set.copyOf(value);
+    }
+
+    private boolean requiresOutput() {
+      return multiRelease
+          || analysis == null
+          || analysis.retainedClasses().size() < analysis.totalClasses();
     }
 
     private Path output() {
@@ -2096,6 +2672,13 @@ final class MavenDependencyTrimmer {
   }
 
   private record PendingOutput(CandidateWork candidate, ArchiveSanitizer.PreparedOutput prepared) {}
+
+  private record ServiceProviderInventory(Set<String> ownedClasses, Set<String> retainedClasses) {
+    private ServiceProviderInventory {
+      ownedClasses = Set.copyOf(ownedClasses);
+      retainedClasses = Set.copyOf(retainedClasses);
+    }
+  }
 
   @FunctionalInterface
   private interface CleanupAction {
@@ -2192,7 +2775,7 @@ final class MavenDependencyTrimmer {
   }
 
   @FunctionalInterface
-  private interface TrimmerWorkItem<T, R> {
+  interface TrimmerWorkItem<T, R> {
     R execute(T item) throws IOException;
   }
 
@@ -2204,7 +2787,7 @@ final class MavenDependencyTrimmer {
     return Math.max(1, Math.min(Math.min(available, maxWorkers), workSize));
   }
 
-  private static <T, R> List<R> mapParallel(
+  static <T, R> List<R> mapParallel(
       final List<T> items, final int maxWorkers, final TrimmerWorkItem<T, R> task)
       throws IOException {
     return mapParallel(items, maxWorkers, task, null);
@@ -2375,12 +2958,7 @@ final class MavenDependencyTrimmer {
       final List<CandidateWork> candidates,
       final List<Path> allRetainedInputs,
       final Set<String> skippedArtifactIdentities,
-      final int runtimeRelease,
-      final int release,
-      final int schemaVersion,
-      final String engineVersion,
-      final JdkPlatformContext platformContext,
-      final String outputContext)
+      final FingerprintOptions options)
       throws IOException {
     final List<String> candidateIdentities = new ArrayList<>();
     final Set<String> roots = new TreeSet<>();
@@ -2396,14 +2974,16 @@ final class MavenDependencyTrimmer {
             .sorted()
             .map(identity -> "trim-skip:" + identity)
             .toList());
-    if (outputContext != null) {
-      candidateIdentities.add("effective-output-context:" + outputContext);
+    if (options.outputContext() != null) {
+      candidateIdentities.add("effective-output-context:" + options.outputContext());
     }
-    candidateIdentities.add("runtime-release:" + runtimeRelease);
-    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots = new ArrayList<>(2);
-    platformSnapshots.add(platformContext.snapshot(release));
-    if (runtimeRelease != release) {
-      platformSnapshots.add(platformContext.snapshot(runtimeRelease));
+    candidateIdentities.add("runtime-release:" + options.runtimeRelease());
+    final Set<Integer> tiers = new TreeSet<>(options.analyzedTiers());
+    tiers.add(options.release());
+    tiers.add(options.runtimeRelease());
+    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots = new ArrayList<>();
+    for (final int tier : tiers) {
+      platformSnapshots.add(options.platformContext().snapshot(tier));
     }
     platformSnapshots.sort(
         Comparator.comparingInt(JdkPlatformContext.PlatformSnapshot::effectiveRelease));
@@ -2414,9 +2994,9 @@ final class MavenDependencyTrimmer {
             allRetainedInputs,
             roots,
             platformSnapshots,
-            release,
-            schemaVersion,
-            engineVersion,
+            options.release(),
+            options.schemaVersion(),
+            options.engineVersion(),
             inputDigests);
     return new FingerprintSnapshot(value, inputDigests, List.copyOf(platformSnapshots));
   }
@@ -2445,7 +3025,7 @@ final class MavenDependencyTrimmer {
     return new PlatformPools(compiler, runtime);
   }
 
-  private static String artifactIdentity(final ArtifactCoordinate coordinate) {
+  static String artifactIdentity(final ArtifactCoordinate coordinate) {
     return coordinate.groupId()
         + ":"
         + coordinate.artifactId()
@@ -2659,19 +3239,55 @@ final class MavenDependencyTrimmer {
     final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
     final ArtifactDigests originalDigests =
         requiredInputDigest(inputDigests, candidate.snapshot().filePath());
+    final CacheOutputMetadata output =
+        cacheOutputMetadata(candidate, record, analysis, originalDigests);
     return new CacheEntry(
         candidate.snapshot().filePath().toAbsolutePath().normalize().toString(),
         originalDigests.sha256(),
-        record == null ? null : originalDigests.sha1(),
-        record == null ? null : record.trimmedPath().toString(),
-        record == null ? null : record.trimmedSha256(),
-        record == null ? null : record.trimmedSha1(),
-        analysis.totalClasses(),
-        analysis.retainedClasses().size(),
-        record == null ? 0L : record.prunedClassBytes(),
-        candidate.roots(),
+        output.originalSha1(),
+        output.trimmedPath(),
+        output.trimmedSha256(),
+        output.trimmedSha1(),
+        output.totalClasses(),
+        output.retainedClasses(),
+        output.prunedClassBytes(),
+        candidate.targetRoots(),
         analysis.retainedClasses(),
-        analysis.reachableLibraryClasses());
+        analysis.reachableLibraryClasses(),
+        output.originalPhysicalEntries(),
+        output.trimmedPhysicalEntries(),
+        output.mrjarStatus());
+  }
+
+  private static CacheOutputMetadata cacheOutputMetadata(
+      final CandidateWork candidate,
+      final ArtifactTrimRecord record,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final ArtifactDigests originalDigests) {
+    if (record == null) {
+      return new CacheOutputMetadata(
+          null,
+          null,
+          null,
+          null,
+          candidate.logicalClassCount(),
+          analysis.retainedClasses().size(),
+          0L,
+          null,
+          null,
+          "not_multi_release");
+    }
+    return new CacheOutputMetadata(
+        originalDigests.sha1(),
+        record.trimmedPath().toString(),
+        record.trimmedSha256(),
+        record.trimmedSha1(),
+        record.totalClasses(),
+        record.retainedClasses(),
+        record.prunedClassBytes(),
+        record.originalPhysicalEntries().orElseThrow(),
+        record.trimmedPhysicalEntries().orElseThrow(),
+        record.mrjarStatus());
   }
 
   private static TrimResult loadCache(
@@ -2714,6 +3330,10 @@ final class MavenDependencyTrimmer {
           || !originalDigests.sha256().equals(entry.originalSha256())) {
         return null;
       }
+      if (entry.originalPhysicalEntries() != null
+          && entry.originalPhysicalEntries() != physicalEntryCount(original)) {
+        return null;
+      }
       if (entry.trimmedPath() != null && !originalDigests.sha1().equals(entry.originalSha1())) {
         return null;
       }
@@ -2726,7 +3346,8 @@ final class MavenDependencyTrimmer {
       }
       final ArtifactDigests outputDigests = ArtifactDigests.read(output);
       if (!entry.trimmedSha256().equals(outputDigests.sha256())
-          || !entry.trimmedSha1().equals(outputDigests.sha1())) {
+          || !entry.trimmedSha1().equals(outputDigests.sha1())
+          || entry.trimmedPhysicalEntries() != physicalEntryCount(output)) {
         return null;
       }
       records.add(
@@ -2740,7 +3361,10 @@ final class MavenDependencyTrimmer {
               entry.trimmedSha1(),
               entry.totalClasses(),
               entry.retainedClasses(),
-              entry.prunedClassBytes()));
+              entry.prunedClassBytes(),
+              entry.originalPhysicalEntries(),
+              entry.trimmedPhysicalEntries(),
+              entry.mrjarStatus()));
     }
     return new TrimResult(
         records,
@@ -2753,38 +3377,90 @@ final class MavenDependencyTrimmer {
   }
 
   private static boolean validCacheEntry(final CacheEntry entry, final CandidateWork candidate) {
-    if (entry == null
-        || !validDigest(entry.originalSha256(), 64)
-        || entry.roots() == null
-        || entry.roots().contains(null)
-        || entry.retainedClassNames() == null
-        || entry.retainedClassNames().contains(null)
-        || entry.prunedClassBytes() == null
-        || entry.prunedClassBytes() < 0
-        || entry.reachableLibraryClasses() == null
-        || entry.reachableLibraryClasses().contains(null)
-        || entry.totalClasses() != candidate.classes().size()
-        || entry.retainedClasses() < 0
-        || entry.retainedClasses() > entry.totalClasses()
-        || entry.retainedClassNames().size() != entry.retainedClasses()
-        || !candidate.classes().containsAll(entry.roots())) {
+    if (entry == null) {
       return false;
     }
+    return validCacheMetadata(entry, candidate)
+        && validRetainedClassEvidence(entry, candidate)
+        && validCacheOutput(entry, candidate);
+  }
+
+  private static boolean validCacheMetadata(final CacheEntry entry, final CandidateWork candidate) {
+    return validCacheCollections(entry)
+        && validCacheCounts(entry, candidate)
+        && validCacheStatus(entry, candidate)
+        && candidate.targetRoots().containsAll(entry.roots());
+  }
+
+  private static boolean validCacheCollections(final CacheEntry entry) {
+    return validDigest(entry.originalSha256(), 64)
+        && entry.roots() != null
+        && !entry.roots().contains(null)
+        && entry.retainedClassNames() != null
+        && !entry.retainedClassNames().contains(null)
+        && entry.prunedClassBytes() != null
+        && entry.prunedClassBytes() >= 0
+        && entry.reachableLibraryClasses() != null
+        && !entry.reachableLibraryClasses().contains(null);
+  }
+
+  private static boolean validCacheCounts(final CacheEntry entry, final CandidateWork candidate) {
+    return entry.totalClasses() == candidate.logicalClassCount()
+        && entry.retainedClasses() >= 0
+        && entry.retainedClasses() <= entry.totalClasses()
+        && (candidate.isMultiRelease()
+            || entry.retainedClassNames().size() == entry.retainedClasses());
+  }
+
+  private static boolean validCacheStatus(final CacheEntry entry, final CandidateWork candidate) {
+    return candidate.isMultiRelease()
+        ? "elevated_and_trimmed".equals(entry.mrjarStatus())
+        : "not_multi_release".equals(entry.mrjarStatus());
+  }
+
+  private static boolean validRetainedClassEvidence(
+      final CacheEntry entry, final CandidateWork candidate) {
+    return validMultiReleaseRetainedCount(entry, candidate)
+        && matchesCurrentAnalysis(entry, candidate)
+        && retainedClassNamesBelongToCandidate(entry, candidate);
+  }
+
+  private static boolean validMultiReleaseRetainedCount(
+      final CacheEntry entry, final CandidateWork candidate) {
+    if (!candidate.isMultiRelease()) {
+      return true;
+    }
+    final Set<String> logicalRetained = normalizedNames(entry.retainedClassNames());
+    logicalRetained.addAll(candidate.upperTierClasses());
+    return logicalRetained.size() == entry.retainedClasses();
+  }
+
+  private static boolean matchesCurrentAnalysis(
+      final CacheEntry entry, final CandidateWork candidate) {
     final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
-    if (analysis != null
-        && (!candidate.roots().equals(entry.roots())
-            || !candidate.roots().equals(normalizedNames(analysis.roots()))
-            || !entry.retainedClassNames().equals(analysis.retainedClasses())
-            || !entry.reachableLibraryClasses().equals(analysis.reachableLibraryClasses()))) {
-      return false;
-    }
+    return analysis == null
+        || (candidate.targetRoots().equals(entry.roots())
+            && candidate.targetRoots().equals(normalizedNames(analysis.roots()))
+            && entry.retainedClassNames().equals(analysis.retainedClasses())
+            && entry.reachableLibraryClasses().equals(analysis.reachableLibraryClasses()));
+  }
+
+  private static boolean retainedClassNamesBelongToCandidate(
+      final CacheEntry entry, final CandidateWork candidate) {
     for (final String retainedClass : entry.retainedClassNames()) {
       if (!candidate.classes().contains(retainedClass.replace('/', '.'))) {
         return false;
       }
     }
+    return true;
+  }
+
+  private static boolean validCacheOutput(final CacheEntry entry, final CandidateWork candidate) {
     if (entry.trimmedPath() == null) {
-      return entry.retainedClasses() == entry.totalClasses()
+      return !candidate.isMultiRelease()
+          && entry.originalPhysicalEntries() == null
+          && entry.trimmedPhysicalEntries() == null
+          && entry.retainedClasses() == entry.totalClasses()
           && entry.originalSha1() == null
           && entry.trimmedSha256() == null
           && entry.trimmedSha1() == null;
@@ -2792,7 +3468,11 @@ final class MavenDependencyTrimmer {
     return validDigest(entry.originalSha1(), 40)
         && validDigest(entry.trimmedSha256(), 64)
         && validDigest(entry.trimmedSha1(), 40)
-        && entry.retainedClasses() < entry.totalClasses();
+        && entry.originalPhysicalEntries() != null
+        && entry.trimmedPhysicalEntries() != null
+        && entry.originalPhysicalEntries() >= 0
+        && entry.trimmedPhysicalEntries() >= 0
+        && (entry.retainedClasses() < entry.totalClasses() || candidate.isMultiRelease());
   }
 
   private static Set<String> normalizedNames(final Set<String> names) {
@@ -2803,6 +3483,20 @@ final class MavenDependencyTrimmer {
 
   private static boolean validDigest(final String value, final int length) {
     return value != null && value.matches("[0-9a-f]{" + length + "}");
+  }
+
+  private static int physicalEntryCount(final Path archivePath) throws IOException {
+    int count = 0;
+    try (JarFile archive = new JarFile(archivePath.toFile())) {
+      final var entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        entries.nextElement();
+        count = Math.addExact(count, 1);
+      }
+    } catch (final ArithmeticException exception) {
+      throw new IOException("Archive entry count overflowed: " + archivePath, exception);
+    }
+    return count;
   }
 
   private static void storeCache(final Path manifestPath, final CacheManifest manifest)
