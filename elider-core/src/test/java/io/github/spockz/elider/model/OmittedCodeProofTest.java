@@ -95,7 +95,7 @@ class OmittedCodeProofTest {
                 "META-INF/versions/17/org/example/Vulnerable.class"),
             2,
             2,
-            0);
+            2);
 
     assertThatThrownBy(() -> OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record))
         .isInstanceOf(IllegalArgumentException.class)
@@ -111,14 +111,53 @@ class OmittedCodeProofTest {
                 "org/example/Vulnerable.class",
                 "META-INF/versions/9/org/example/Vulnerable.class",
                 "META-INF/versions/17/org/example/Vulnerable.class",
+                "META-INF/versions/99/org/example/Vulnerable.class",
+                "org/example/Vulnerable$Inner.class",
+                "META-INF/versions/9/org/example/Vulnerable$Inner.class",
+                "META-INF/versions/17/org/example/Vulnerable$Inner.class",
+                "META-INF/versions/99/org/example/Vulnerable$Inner.class",
                 "org/example/Safe.class"),
             multiReleaseJar("multi-tier-trimmed.jar", "org/example/Safe.class"),
-            2,
+            3,
             1,
-            3);
+            8);
 
     assertThat(OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record).evidenceSymbols())
-        .containsExactly("org.example.Vulnerable");
+        .containsExactly("org.example.Vulnerable", "org.example.Vulnerable$Inner");
+  }
+
+  @Test
+  void rejectsMalformedMultiReleaseClassPaths() throws Exception {
+    assertMalformedVersionedClassPath("META-INF/versions/8/org/example/Vulnerable.class");
+    assertMalformedVersionedClassPath("META-INF/versions/09/org/example/Vulnerable.class");
+    assertMalformedVersionedClassPath("META-INF/versions/bogus/org/example/Vulnerable.class");
+    assertMalformedVersionedClassPath("META-INF/versions/17/.class");
+  }
+
+  @Test
+  void rejectsNestedClassSurvivingOnlyAboveRuntimeRelease() throws Exception {
+    final ArtifactTrimRecord record =
+        record(
+            multiReleaseJar(
+                "nested-tier-original.jar",
+                "org/example/Vulnerable.class",
+                "org/example/Vulnerable$Inner.class",
+                "META-INF/versions/9/org/example/Vulnerable.class",
+                "META-INF/versions/9/org/example/Vulnerable$Inner.class",
+                "META-INF/versions/99/org/example/Vulnerable.class",
+                "META-INF/versions/99/org/example/Vulnerable$Inner.class",
+                "org/example/Safe.class"),
+            multiReleaseJar(
+                "nested-tier-trimmed.jar",
+                "org/example/Safe.class",
+                "META-INF/versions/99/org/example/Vulnerable$Inner.class"),
+            3,
+            2,
+            5);
+
+    assertThatThrownBy(() -> OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Vulnerable class survives trimmed archive");
   }
 
   @Test
@@ -320,6 +359,17 @@ class OmittedCodeProofTest {
         archive.replace(secondEntry, firstEntry).getBytes(StandardCharsets.ISO_8859_1);
     Files.write(source, duplicateBytes);
     return source;
+  }
+
+  private void assertMalformedVersionedClassPath(final String malformedPath) throws IOException {
+    final ArtifactTrimRecord record =
+        record(
+            multiReleaseJar(
+                "malformed-versioned-class.jar", "org/example/Vulnerable.class", malformedPath),
+            jar("malformed-versioned-trimmed.jar"));
+    assertThatThrownBy(() -> OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Malformed");
   }
 
   private static VulnerabilitySymbolMapping mapping(final String className) {
