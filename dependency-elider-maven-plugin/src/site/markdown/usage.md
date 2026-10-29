@@ -224,9 +224,9 @@ mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report
 
 * **Dropped Artifacts**: Total count and original on-disk JAR bytes of elided dependencies.
 * **Pruned Classes**: Count and uncompressed `.class` payload bytes removed from dropped JARs and retained JARs (metrics never overlap).
-* **Vulnerability Status**: Summary of CVEs removed from inventory, proven absent by bytecode trimming, or inactive due to missing prerequisite dependencies.
+* **Vulnerability Status**: Separates CVEs removed from inventory, proven absent by bytecode trimming, and coordinate-only prerequisite findings. The prerequisite category does not prove that the exact provider class is absent and is not VEX evidence; see [VEX Evidence Boundary](#vex-evidence-boundary).
 * **Mediated Graph**: Visualizes shortest dependency paths with node dispositions: `[RETAINED]`, `[CLASS_TRIMMED]`, `[EFFECTIVE_DROP]`, or `[PROTECTED]`.
-* **Schema Versioning**: All persisted stores use independent schema version 1. Incompatible drafts fail fast with instructions to rerun `elide`.
+* **Format Versions**: Internal persisted report and cache formats use independent schema version 1; incompatible payloads fail fast with instructions to rerun `elide`. CycloneDX declares `specVersion` 1.6 and OpenVEX uses its 0.2.0 context URL. The top-level `version` in either generated security document is a document revision counter, not a schema version.
 
 ---
 
@@ -297,15 +297,11 @@ If you inspect the upstream fix commit and determine that only a subset of the m
 </configuration>
 ```
 
-### VEX Generation Requirements
+### VEX Evidence Boundary
 
-An OpenVEX statement (`vulnerable_code_not_present`) is generated only when:
+The current omitted-code proof path can support VEX only when a high-confidence mapping matches a retained trim candidate and archive inspection proves every mapped vulnerable class and nested class absent from that candidate's trimmed JAR. A dependency removed entirely is reported as dropped from inventory, not as code-absence VEX.
 
-1. Mapping confidence is `HIGH`.
-2. Artifact coordinates and version range match a retained trim candidate.
-3. Bytecode archive inspection confirms that all mapped classes and inner classes are absent from the trimmed JAR.
-
-If a vulnerable dependency is removed entirely, it is reported as dropped from inventory rather than generating code-absence VEX.
+Precondition-gated VEX is an accepted design that is not implemented yet. It will require both a prerequisite Maven coordinate and exact prerequisite class metadata. Users will have to set `elide.preconditionClassPathComplete=true` to assert that the declared Maven build inventory is complete. The proof will check application classes/resources and all effective post-elision dependency archives, bind the result to an inventory fingerprint and per-file digests, and suppress VEX if any inventory input or provider is unknown. The assertion will cover only that declared Maven inventory; it cannot prove absence of classes introduced by later packaging or external runtime mechanisms. The OpenVEX statement will use a free-form impact statement without a justification; this is less machine-readable, but no OpenVEX justification enum accurately describes the missing prerequisite. See [ADR-0008](https://github.com/spockz/maven-dependency-elider/blob/main/docs/adr/0008-precondition-gated-vex-attestations.md) and [RQ-0013](https://github.com/spockz/maven-dependency-elider/blob/main/docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
 
 ---
 

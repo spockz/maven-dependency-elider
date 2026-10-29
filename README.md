@@ -163,7 +163,7 @@ The `elide` goal writes two structured JSON records:
 * `target/dependency-elider-report.json` (`-Delide.summaryFile`): Persisted snapshot consumed by `dependency-elider:report`.
 * `target/dependency-elider-class-usage.json` (`-Delide.reportFile`): Detailed class-usage evidence.
 
-All persisted stores use independent schema version 1. Incompatible pre-release drafts or unsupported schema versions fail fast.
+Internal persisted report and cache formats use independent schema version 1. Their unreleased schemas remain at version 1 and incompatible payloads fail fast. CycloneDX declares `specVersion` 1.6, and OpenVEX uses the 0.2.0 context URL; neither is an internal schema version. Each generated security document's top-level `version` is a document revision counter.
 
 For detailed configuration parameters, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md), the [User FAQ](docs/faq.md), and [Contributor Decisions and FAQ](docs/contributor-decisions-and-faq.md).
 
@@ -206,9 +206,11 @@ For complete academic citations and analysis, see the [Project Rationale](depend
 
 ### Evidence Boundary and SBOM Scanning
 
-Removing an artifact or class removes package bloat, but generating a formal `vulnerable_code_not_present` VEX statement requires precise symbol-to-CVE mapping:
+Removing an artifact or class removes package bloat, but a formal VEX statement requires precise symbol-to-CVE mapping and proof tied to the resulting artifacts:
 
-* The plugin currently emits CycloneDX 1.6 trim pedigree; evidence-backed VEX generation is tracked in [RQ-0008](docs/research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md).
+* The current omitted-code evidence path is scoped to mapped vulnerable classes proven absent from a retained, trimmed archive. Broader precondition proof is accepted for implementation in [ADR-0008](docs/adr/0008-precondition-gated-vex-attestations.md) and is not yet implemented.
+* Precondition VEX will require an exact prerequisite class as well as its coordinate, plus explicit confirmation that the declared Maven build inventory is complete. It will not claim absence of providers added by later packaging or deployment runtime mechanisms. See [RQ-0013](docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
+* The current report's inactive-precondition category is based on coordinate absence only. It is a finding for review, not proof that the prerequisite class is absent and not VEX evidence.
 * Run `make scan-sbom` to run OSV-Scanner offline against baseline and post-elision SBOMs, producing a hash-backed comparison report in `target/sbom-comparison/`.
 * A finding is marked eliminated only when its package component is absent from the post-elision SBOM.
 
