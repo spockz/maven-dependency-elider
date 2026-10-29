@@ -38,3 +38,7 @@ The vulnerability assessment, SBOM/VEX publishing, Analyze summary, tests, and e
 ## 2026-10-29: Automated command-transcript tooling wrap-up
 
 The available task summary reports repository-native Go, shell, Make, and documentation edits for transcript generation and output elision. No semantic editing operation was attempted, so these were the normal project workflow rather than a fallback from a failed semantic edit. The full earlier thread transcript and child-agent tool logs were unavailable; no additional source-edit failure or workaround can be established from the retained evidence.
+
+## 2026-10-29: WP-TRANSCRIPT-01 post-rebase verification
+
+Repository-native `apply_patch` sorted conservative ServiceLoader root names before rendering advisory reasons and added a regression test for reverse-insertion input. The first post-rebase `make check` hit an intermittent parallel-trimming worker null dereference; a setup rerun passed, and the next full check exposed unstable root ordering in the generated report. After the ordering fix, the final full `make check` passed with 195 core tests, 267 plugin tests, 15 lifecycle tests, 8 SBOM comparison tests, Java and Markdown lint, and transcript drift verification. No semantic editing operation was invoked; repository-native patches were the normal method, not a fallback from a rejected semantic edit. The earlier full thread transcript and child-agent logs were unavailable, so this records only the visible wrap-up work.
