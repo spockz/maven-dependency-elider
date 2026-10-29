@@ -25,7 +25,8 @@ final class MavenPreconditionInventory {
       PreconditionClassInventory classProviders,
       String rootMembershipFingerprint,
       List<Path> knownOutputs,
-      List<Path> knownStages) {
+      List<Path> knownStages,
+      boolean optInEnabled) {
     Snapshot {
       artifactFiles = List.copyOf(artifactFiles);
       Objects.requireNonNull(classProviders, "classProviders");
@@ -34,7 +35,6 @@ final class MavenPreconditionInventory {
       knownStages = MavenPreconditionOutputState.normalizedPaths(knownStages);
     }
 
-    @SuppressWarnings("PMD.LawOfDemeter")
     boolean complete() {
       return classProviders.status() == PreconditionClassInventory.Status.COMPLETE;
     }
@@ -127,7 +127,8 @@ final class MavenPreconditionInventory {
           artifactFiles,
           "Precondition class-path completeness opt-in is disabled",
           outputs,
-          stages);
+          stages,
+          false);
     }
     try {
       final List<ArtifactFileRef> verifiedArtifactFiles =
@@ -147,7 +148,8 @@ final class MavenPreconditionInventory {
               MavenPreconditionOutputState.identity(outputs, stages),
               MavenPreconditionOutputState.states(outputs)),
           outputs,
-          stages);
+          stages,
+          true);
     } catch (final IOException
         | UncheckedIOException
         | IllegalArgumentException
@@ -156,7 +158,8 @@ final class MavenPreconditionInventory {
           artifactFiles,
           "Could not capture complete Maven class-provider inventory: " + failure.getMessage(),
           outputs,
-          stages);
+          stages,
+          true);
     }
   }
 
@@ -164,13 +167,15 @@ final class MavenPreconditionInventory {
       final List<ArtifactFileRef> artifactFiles,
       final String reason,
       final List<Path> outputs,
-      final List<Path> stages) {
+      final List<Path> stages,
+      final boolean optInEnabled) {
     return new Snapshot(
         artifactFiles,
         PreconditionClassInventory.incomplete(List.of(), reason),
         MavenPreconditionOutputState.fingerprint(
             List.of(reason), MavenPreconditionOutputState.identity(outputs, stages), List.of()),
         outputs,
-        stages);
+        stages,
+        optInEnabled);
   }
 }
