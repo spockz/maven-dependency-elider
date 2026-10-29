@@ -1,0 +1,139 @@
+{
+  "$comment": "WHY: Declares the fixture setup and exact Maven invocations whose output is maintained in documentation.",
+  "schemaVersion": 1,
+  "setup": {
+    "workingDirectory": ".",
+    "command": "bash",
+    "args": [
+      "scripts/prepare-transcript-examples.sh"
+    ],
+    "environment": {},
+    "expectedExitCode": 0,
+    "evidencePathMarker": "Transcript evidence retained at "
+  },
+  "invocations": [
+    {
+      "id": "analyze-basic-app",
+      "targetDocument": "README.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "--offline",
+        "-f",
+        "examples/example-basic-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze",
+        "-Delide.traceFiles={evidence}/example-basic-app.log",
+        "-Delide.trimJars=true",
+        "-Delide.sourceRootsComplete=true",
+        "-Dmaven.compiler.proc=none",
+        "-Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3",
+        "-Delide.cveCacheDirectory={evidence}/vulnerability-cache",
+        "-Delide.reportFile={root}/.scratch/transcript-analysis/analyze-basic-app-class-usage.json"
+      ],
+      "goal": "analyze",
+      "expectedExitCode": 0,
+      "requiredOutput": [
+        "CVE-2014-3577"
+      ]
+    },
+    {
+      "id": "analyze-cve-unused-app",
+      "targetDocument": "dependency-elider-maven-plugin/src/site/markdown/usage.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "--offline",
+        "-f",
+        "examples/example-cve-unused-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze",
+        "-Delide.traceFiles={evidence}/example-cve-unused-app.log",
+        "-Delide.trimJars=true",
+        "-Delide.sourceRootsComplete=true",
+        "-Dmaven.compiler.proc=none",
+        "-Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar:",
+        "-Delide.cveCacheDirectory={evidence}/vulnerability-cache",
+        "-Delide.reportFile={root}/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json"
+      ],
+      "goal": "analyze",
+      "renderMode": "command-output",
+      "expectedExitCode": 0,
+      "requiredOutput": [
+        "CVE-2022-42889"
+      ]
+    },
+    {
+      "id": "report-basic-app",
+      "targetDocument": "README.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "-f",
+        "examples/example-basic-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report"
+      ],
+      "goal": "report",
+      "expectedExitCode": 0,
+      "requiredOutput": [
+        "CVE-2014-3577"
+      ],
+      "maxGraphRows": 3
+    },
+    {
+      "id": "report-spring-boot-app",
+      "targetDocument": "README.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "-f",
+        "examples/example-spring-boot-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report"
+      ],
+      "goal": "report",
+      "expectedExitCode": 0,
+      "maxGraphRows": 3
+    },
+    {
+      "id": "report-cve-unused-app",
+      "targetDocument": "README.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "-f",
+        "examples/example-cve-unused-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report"
+      ],
+      "goal": "report",
+      "expectedExitCode": 0,
+      "requiredOutput": [
+        "CVE-2022-42889"
+      ],
+      "maxGraphRows": 3
+    },
+    {
+      "id": "report-cve-safe-class-app",
+      "targetDocument": "README.md",
+      "workingDirectory": ".",
+      "command": "./mvnw",
+      "args": [
+        "--batch-mode",
+        "--no-transfer-progress",
+        "-f",
+        "examples/example-cve-safe-class-app/pom.xml",
+        "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report"
+      ],
+      "goal": "report",
+      "expectedExitCode": 0,
+      "maxGraphRows": 3
+    }
+  ]
+}

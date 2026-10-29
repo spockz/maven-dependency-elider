@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   check:
-    name: Java 21 / make check
+    name: Java 21 and Go 1.24.4 / make check
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,6 +24,12 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+
+      - name: Set up Go 1.24.4
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.24.4'
+          cache: false
 
       - name: Install documentation linter
         run: make tools

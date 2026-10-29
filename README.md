@@ -343,17 +343,6 @@ Run only the multi-module reactor checks:
 make test-reactor-example
 ```
 
-Run standalone CVE fixture baselines:
-
-```sh
-./mvnw -f examples/example-cve-unused-app/pom.xml verify -Delide.mode=baseline
-./mvnw -f examples/example-cve-safe-class-app/pom.xml verify -Delide.mode=baseline
-```
-
-### Sample Elision Report Output
-
-`make test-examples` invokes `dependency-elider:report` after each build:
-
 The multi-module reactor check runs a baseline build, then trace-driven builds with
 the single-threaded and `-T 4` Maven builders. It asks the production `report` goal to
 validate each child module's separate schema-1 snapshot, compares stable dependency,
@@ -365,13 +354,48 @@ Because its three modules form a strict dependency chain, Maven cannot execute s
 modules concurrently in this fixture; `-T 4` verifies the threaded-builder path but
 does not establish general reactor race safety.
 
-```text
+Run standalone CVE fixture baselines:
+
+```sh
+./mvnw -f examples/example-cve-unused-app/pom.xml verify -Delide.mode=baseline
+./mvnw -f examples/example-cve-safe-class-app/pom.xml verify -Delide.mode=baseline
+```
+
+### Sample Elision Report Output
+
+The transcripts below come from configured Maven invocations. Run `make update-transcripts` to refresh them. Report dependency graphs keep the first three rows; an elision count and SHA-256 digest detect changes in omitted rows. Rerun the displayed fixture's full `report` command to inspect its graph without elision.
+
+The CVE findings use only the two mappings in the pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md); they do not represent complete vulnerability coverage.
+
 example-basic-app
+<!-- BEGIN:transcript:report-basic-app -->
+
+```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  -f \
+  examples/example-basic-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report
+Process exit status: 0
+[INFO]
+[INFO] -----------------< io.github.spockz:example-basic-app >-----------------
+[INFO] Building Example: Basic Maven Application 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-basic-app ---
+[INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-29T19:06:04.532451432Z
+[INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Whole artifacts dropped: 2 (original JAR file bytes: 942.11 KiB)
 [INFO] Program classes removed with dropped JARs: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
+[INFO] Raw trace decision drops before graph safety: 2
+[INFO]   - commons-codec:commons-codec:jar:1.19.0 (compile): 365.93 KiB original JAR, 115 class entries, 413.65 KiB
+[INFO]   - org.apache.httpcomponents:httpclient:jar:4.3.4 (compile): 576.18 KiB original JAR, 420 class entries, 1.11 MiB
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
+[INFO]   - org.apache.commons:commons-compress:jar:1.28.0 (compile): 535 classes, 1.93 MiB
 [INFO] Avoided CVEs (dropped artifacts):
 [INFO]   - CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
@@ -381,73 +405,226 @@ example-basic-app
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) {nodeId=n1} [EFFECTIVE_DROP]
-[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) -> commons-codec:commons-codec:jar:1.19.0 (compile) {nodeId=n4} [EFFECTIVE_DROP]
-[INFO]   ...
+[INFO]   ... 11 dependency graph rows elided (sha256:0bc2b8d079442ffdd62b0c7c8448bea58357a2287a870859362982360e2dcc12)
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
+```
+
+<!-- END:transcript:report-basic-app -->
 
 example-spring-boot-app
+<!-- BEGIN:transcript:report-spring-boot-app -->
+
+```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  -f \
+  examples/example-spring-boot-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report
+Process exit status: 0
+[INFO]
+[INFO] --------------< io.github.spockz:example-spring-boot-app >--------------
+[INFO] Building Example: Spring Boot Application 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-spring-boot-app ---
+[INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-29T19:06:46.556244736Z
+[INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
+[INFO] Raw trace decision drops before graph safety: 0
 [INFO] Program classes pruned from retained JARs: 3409 (uncompressed omitted .class payload bytes: 8.49 MiB; excludes module descriptors and archive metadata)
+[INFO]   - com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile): 53 classes, 92.44 KiB
+[INFO]   - com.fasterxml.jackson.datatype:jackson-datatype-jsr310:jar:2.18.2 (compile): 4 classes, 18.07 KiB
+[INFO]   - com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime): 21 classes, 14.79 KiB
+[INFO]   - com.google.code.findbugs:jsr305:jar:3.0.2 (runtime): 23 classes, 13.91 KiB
+[INFO]   - com.thoughtworks.xstream:xstream:jar:1.4.21 (runtime): 215 classes, 532.65 KiB
+[INFO]   - io.micrometer:context-propagation:jar:1.1.2 (runtime): 10 classes, 22.33 KiB
+[INFO]   - org.apache.groovy:groovy-xml:jar:4.0.23 (runtime): 48 classes, 186.54 KiB
+[INFO]   - org.apache.groovy:groovy:jar:4.0.23 (runtime): 2541 classes, 6.19 MiB
+[INFO]   - org.freemarker:freemarker:jar:2.3.33 (runtime): 304 classes, 809.26 KiB
+[INFO]   - org.hdrhistogram:HdrHistogram:jar:2.2.2 (runtime): 37 classes, 118.76 KiB
+[INFO]   - org.slf4j:slf4j-api:jar:2.0.16 (compile): 5 classes, 6.38 KiB
+[INFO]   - org.springframework:spring-jcl:jar:6.1.14 (compile): 1 classes, 1.24 KiB
+[INFO]   - org.springframework:spring-webmvc:jar:6.1.14 (compile): 146 classes, 524.46 KiB
+[INFO]   - org.webjars:webjars-locator-core:jar:0.58 (runtime): 1 classes, 10.66 KiB
 [INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions:
 [INFO]   - CVE-2026-68494 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2
 [INFO]     Reason: Vulnerable code was retained due to conservative ServiceLoader SPI root com.fasterxml.jackson.core.ObjectCodec, com.fasterxml.jackson.databind.ObjectMapper without positive proof of use in application bytecode.
+[INFO]     Actionable POM override to certify if absent classes do not apply to your version:
+[INFO]       <configuration>
+[INFO]         <conservativeServiceLoaderRoots>false</conservativeServiceLoaderRoots>
+[INFO]       </configuration>
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
-[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework.boot:spring-boot-starter-web:jar:3.3.5 (compile) {nodeId=n1} [RETAINED]
-[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.1.14 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
-[INFO]   ...
+[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n7} [RETAINED, CLASS_TRIMMED]
+[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.google.code.findbugs:jsr305:jar:3.0.2 (runtime) {nodeId=n15} [RETAINED, CLASS_TRIMMED]
+[INFO]   ... 89 dependency graph rows elided (sha256:5082109f83310856c6f3acf66c18c39611673d69a08ee28c82234ddc38f21744)
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
+```
+
+<!-- END:transcript:report-spring-boot-app -->
 
 example-cve-unused-app
+<!-- BEGIN:transcript:report-cve-unused-app -->
+
+```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  -f \
+  examples/example-cve-unused-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report
+Process exit status: 0
+[INFO]
+[INFO] --------------< io.github.spockz:example-cve-unused-app >---------------
+[INFO] Building Example: Graph-Backed CVE Dependency Analysis 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-cve-unused-app ---
+[INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-29T19:07:12.156693590Z
+[INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
+[INFO] Raw trace decision drops before graph safety: 0
 [INFO] Program classes pruned from retained JARs: 310 (uncompressed omitted .class payload bytes: 985.54 KiB; excludes module descriptors and archive metadata)
+[INFO]   - com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile): 70 classes, 163.47 KiB
+[INFO]   - org.apache.commons:commons-text:jar:1.9 (compile): 132 classes, 388.41 KiB
+[INFO]   - org.codehaus.janino:commons-compiler:jar:3.1.12 (compile): 51 classes, 96.78 KiB
+[INFO]   - org.codehaus.janino:janino:jar:3.1.12 (compile): 52 classes, 330.49 KiB
+[INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
 [INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming):
 [INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions: none detected
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
-[INFO]   ...
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n3} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
+[INFO]   ... 23 dependency graph rows elided (sha256:5cce3d43de14f83342509d9d36b89de07db34786f505418566e4a51c4126d74c)
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
+```
+
+<!-- END:transcript:report-cve-unused-app -->
 
 example-cve-safe-class-app
+<!-- BEGIN:transcript:report-cve-safe-class-app -->
+
+```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  -f \
+  examples/example-cve-safe-class-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report
+Process exit status: 0
+[INFO]
+[INFO] ------------< io.github.spockz:example-cve-safe-class-app >-------------
+[INFO] Building Example: Graph-Backed CVE Dependency Analysis with Logback 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-cve-safe-class-app ---
+[INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
-[INFO] Snapshot: last successful elide run at 2026-10-29T19:07:24.531228594Z
+[INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
+[INFO] Raw trace decision drops before graph safety: 0
 [INFO] Program classes pruned from retained JARs: 5 (uncompressed omitted .class payload bytes: 6.38 KiB; excludes module descriptors and archive metadata)
+[INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
 [INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
 [INFO] CVEs inactive due to unmet prerequisite dependencies:
 [INFO]   - CVE-2025-11226 ch.qos.logback:logback-classic:jar:1.5.18
 [INFO] Potentially conservative CVE exclusions: none detected
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
-[INFO]   ...
+[INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n1} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) {nodeId=n3} [RETAINED]
+[INFO]   ... 17 dependency graph rows elided (sha256:f0bea8653ca4e1b295c4019add6825462b22699991afed07c449d7c86c161fdf)
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
 ```
+
+<!-- END:transcript:report-cve-safe-class-app -->
 
 ---
 
 ## Dry-Run Analysis Output (`analyze`)
 
-The non-mutating `analyze` goal identifies dependencies that would be elided and estimates byte savings:
+The `analyze` goal previews dependencies and byte savings without changing artifacts, classpaths, or packages. It writes class-usage evidence to `elide.reportFile`; the transcript invocation places that output under ignored `.scratch/`:
+
+<!-- BEGIN:transcript:analyze-basic-app -->
 
 ```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  --offline \
+  -f \
+  examples/example-basic-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
+  -Delide.traceFiles=$TRANSCRIPT_EVIDENCE/example-basic-app.log \
+  -Delide.trimJars=true \
+  -Delide.sourceRootsComplete=true \
+  -Dmaven.compiler.proc=none \
+  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3 \
+  -Delide.cveCacheDirectory=$TRANSCRIPT_EVIDENCE/vulnerability-cache \
+  -Delide.reportFile=$PROJECT_ROOT/.scratch/transcript-analysis/analyze-basic-app-class-usage.json
+Process exit status: 0
+[INFO]
+[INFO] -----------------< io.github.spockz:example-basic-app >-----------------
+[INFO] Building Example: Basic Maven Application 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:analyze (default-cli) @ example-basic-app ---
 [INFO] Dependency Elider analysis summary
-[INFO]   Artifacts that would be elided by this analysis: 1 / 2 (50.0%)
-[INFO]   Estimated original JAR bytes for those artifacts: 151 B (sum of original on-disk input JAR sizes; final package delta may differ)
-[INFO]   Program class entries in JARs that would be dropped: 1 (uncompressed .class entry payload bytes: 63 B; excludes module descriptors and archive sanitation metadata)
-[INFO]   JAR trim cache: unavailable (trim stage not run)
-[INFO]   Avoided CVEs (artifacts that would be dropped): none matched the available vulnerability mappings
+[INFO]   Artifacts that would be elided by this analysis: 2 / 13 (15.4%)
+[INFO]   Estimated original JAR bytes for those artifacts: 942.11 KiB (sum of original on-disk input JAR sizes; final package delta may differ)
+[INFO]   Program class entries in JARs that would be dropped: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
+[INFO]   JAR trim cache: 0 validated hit(s), 3 analysis run(s)
+[INFO]   Avoided CVEs (artifacts that would be dropped):
+[INFO]     CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4
 [INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming): none matched the available vulnerability mappings
 [INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO]   CVEs that would be excluded due to conservative multi-symbol checks: none detected
+[INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-basic-app-class-usage.json
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
 ```
+
+<!-- END:transcript:analyze-basic-app -->
 
 For configuration options and supported telemetry formats, see [Maven Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md).
 

@@ -3,7 +3,7 @@
 
 Maven Dependency Elider provides four primary goals:
 
-* `analyze`: Non-mutating dry-run that identifies removable dependencies and estimates size savings.
+* `analyze`: Dry-run that identifies removable dependencies and estimates size savings without changing dependency artifacts, classpaths, or packages. It may write the configured class-usage report.
 * `elide`: Active build-time goal that prunes unneeded JARs and trims unreferenced classes during the `INITIALIZE` phase.
 * `report`: Displays the persisted elision snapshot and mediated dependency graph from the last successful build.
 * `update-cve-index`: Refreshes local vulnerability intelligence from OSV and CVEList v5.
@@ -45,12 +45,59 @@ Elision requires evidence of classes loaded during execution. Capture runtime te
 
 ## 3. Dry-Run Analysis (`analyze`)
 
-Run `analyze` to inspect potential dependency drops and byte savings without altering project artifacts, classpaths, or packaged outputs:
+Run `analyze` to inspect potential dependency drops and byte savings without altering project artifacts, classpaths, or packaged outputs. The goal writes class-usage evidence to `elide.reportFile` (default `target/dependency-elider-class-usage.json`); choose a path under `.scratch` if the output should not be kept with build artifacts:
 
 ```sh
 mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
   -Delide.traceFiles=target/classes.log
 ```
+
+The repository's CVE fixture transcript includes its configured command, exit status, and captured analysis output. Its CVE findings use only the two mappings in the pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md), so they do not represent complete vulnerability coverage. `$PROJECT_ROOT` and `$TRANSCRIPT_EVIDENCE` stand for the repository and temporary trace directory created by `make update-transcripts`:
+
+<!-- BEGIN:transcript:analyze-cve-unused-app -->
+
+```text
+$ ./mvnw \
+  --batch-mode \
+  --no-transfer-progress \
+  --offline \
+  -f \
+  examples/example-cve-unused-app/pom.xml \
+  io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
+  -Delide.traceFiles=$TRANSCRIPT_EVIDENCE/example-cve-unused-app.log \
+  -Delide.trimJars=true \
+  -Delide.sourceRootsComplete=true \
+  -Dmaven.compiler.proc=none \
+  -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar: \
+  -Delide.cveCacheDirectory=$TRANSCRIPT_EVIDENCE/vulnerability-cache \
+  -Delide.reportFile=$PROJECT_ROOT/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json
+Process exit status: 0
+[INFO]
+[INFO] --------------< io.github.spockz:example-cve-unused-app >---------------
+[INFO] Building Example: Graph-Backed CVE Dependency Analysis 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] --- dependency-elider:0.1.0-SNAPSHOT:analyze (default-cli) @ example-cve-unused-app ---
+[INFO] Dependency Elider analysis summary
+[INFO]   Artifacts that would be elided by this analysis: 0 / 25 (0.0%)
+[INFO]   Estimated original JAR bytes for those artifacts: 0 B (sum of original on-disk input JAR sizes; final package delta may differ)
+[INFO]   Program class entries in JARs that would be dropped: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
+[INFO]   JAR trim cache: 0 validated hit(s), 22 analysis run(s)
+[INFO]   Avoided CVEs (artifacts that would be dropped): none matched the available vulnerability mappings
+[INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming):
+[INFO]     CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
+[INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
+[INFO]   CVEs that would be excluded due to conservative multi-symbol checks: none detected
+[INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json
+[INFO] ------------------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: <BUILD_TIME>
+[INFO] Finished at: <TIMESTAMP>
+[INFO] ------------------------------------------------------------------------
+```
+
+<!-- END:transcript:analyze-cve-unused-app -->
 
 ### Analysis Options
 

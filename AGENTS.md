@@ -14,3 +14,9 @@
 - Do not use Python or Node.js in this project.
 - Tooling should stick to shell when simple and orchestrating commands, be implemented as part of Java unit/integration tests, or be built as a Go program.
 - Tooling such as applicable Java versions can be found in `.scratch/toolchains` of the main clone/worktree.
+
+## Generated command examples
+
+- When a change affects an example fixture, its documented Maven command, or the output shown in README or plugin usage, refresh the generated examples with `make update-transcripts` (`go run scripts/update-transcripts.go --update`) before wrapping up.
+- Review and include the generated documentation changes. Do not hand-edit content inside transcript marker blocks; update the manifest or fixture setup, then regenerate with `make update-transcripts`.
+- Use `make check-transcripts` to check for drift without rewriting documentation.

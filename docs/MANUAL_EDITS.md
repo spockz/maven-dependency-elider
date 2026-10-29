@@ -34,3 +34,7 @@ No semantic edit failure or automated-edit fallback is recorded. This is a workf
 ## 2026-10-28: WP-VEX-01 implementation and wrap-up
 
 The vulnerability assessment, SBOM/VEX publishing, Analyze summary, tests, and example-gate corrections were edited with repository-native `apply_patch`, then checked with Maven and the complete example runner. No semantic editing operation was invoked, so these edits were the normal repository workflow rather than a fallback from a failed semantic edit. The example assertions were revised from observed report/archive behavior after integration failures; `make test-examples` passed after correction. No semantic edit failure or unrecorded source-edit workaround occurred in the retained transcript evidence.
+
+## 2026-10-29: Automated command-transcript tooling wrap-up
+
+The available task summary reports repository-native Go, shell, Make, and documentation edits for transcript generation and output elision. No semantic editing operation was attempted, so these were the normal project workflow rather than a fallback from a failed semantic edit. The full earlier thread transcript and child-agent tool logs were unavailable; no additional source-edit failure or workaround can be established from the retained evidence.

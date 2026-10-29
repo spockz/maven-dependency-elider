@@ -7,6 +7,7 @@ MAVEN_ARGS ?= --batch-mode --no-transfer-progress
 MAVEN_THREADS ?= $(MAKE_JOBS)
 MARKDOWNLINT ?= .scratch/tools/node_modules/.bin/markdownlint-cli2
 NODE ?= node
+GO ?= go
 OSV_SCANNER ?= osv-scanner
 DEPENDENCY_CHECK_VERSION ?= 13.0.0
 SERVE_PORT ?= 8080
@@ -20,11 +21,18 @@ endif
 
 .DEFAULT_GOAL := check
 
-.PHONY: check check-parallel java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-reactor-example test-sbom-comparison scan-sbom verify-docs site serve
+.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-reactor-example test-sbom-comparison scan-sbom verify-docs site serve
 
-check: ## Format, then run Java checks/tests and Markdown lint concurrently
+check: ## Format, run Java checks/tests and Markdown lint concurrently, then verify command transcripts
 	$(MAKE) --no-print-directory fmt
 	$(MAKE) --no-print-directory -j$(MAKE_JOBS) check-parallel
+	$(MAKE) --no-print-directory check-transcripts
+
+update-transcripts: ## Re-run configured example goals and update their documentation transcripts
+	$(GO) run scripts/update-transcripts.go --update
+
+check-transcripts: ## Verify configured command transcripts without rewriting documentation
+	$(GO) run scripts/update-transcripts.go --check
 
 check-parallel: java-check lint-markdown test-sbom-comparison
 
