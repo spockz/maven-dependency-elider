@@ -616,6 +616,15 @@ final class MavenElisionService {
     if (!retained.isEmpty()) {
       throw new IOException("Contradictory retained and elided artifact identities: " + retained);
     }
+    final CurrentViews currentViews = verifyCurrentViews(project, analysis);
+    return new ApplyPlan(
+        retained(currentViews.resolvedArtifacts(), elided),
+        analysis.directArtifactsPresent(),
+        new LinkedHashSet<>(currentViews.directArtifacts()));
+  }
+
+  static CurrentViews verifyCurrentViews(final MavenProject project, final Analysis analysis)
+      throws IOException {
     final List<Artifact> resolvedInput = new ArrayList<>(project.getArtifacts());
     validateCurrentView("resolved", resolvedInput, analysis.resolvedSnapshots());
     final Set<Artifact> directSet = project.getDependencyArtifacts();
@@ -628,10 +637,7 @@ final class MavenElisionService {
     validateIdentityPaths(analysis.resolvedSnapshots());
     validateIdentityPaths(analysis.directSnapshots());
     validateDirectPaths(analysis.resolvedSnapshots(), analysis.directSnapshots());
-    return new ApplyPlan(
-        retained(resolvedInput, elided),
-        analysis.directArtifactsPresent(),
-        new LinkedHashSet<>(directInput));
+    return new CurrentViews(resolvedInput, directInput);
   }
 
   static List<ArtifactSnapshot> snapshots(final Collection<Artifact> artifacts) {
@@ -689,7 +695,7 @@ final class MavenElisionService {
     return isJarCandidate(ArtifactSnapshot.from(artifact));
   }
 
-  private static ArtifactCoordinate toCoordinate(final Artifact artifact) {
+  static ArtifactCoordinate toCoordinate(final Artifact artifact) {
     return new ArtifactCoordinate(
         artifact.getGroupId(),
         artifact.getArtifactId(),
@@ -988,7 +994,7 @@ final class MavenElisionService {
     }
   }
 
-  private static boolean hasUnknownSourceGeneration(final MavenProject project) {
+  static boolean hasUnknownSourceGeneration(final MavenProject project) {
     final org.apache.maven.model.Build build = project.getBuild();
     if (build == null
         || !Set.of("jar", "pom", "war", "maven-plugin").contains(project.getPackaging())
@@ -1467,6 +1473,13 @@ final class MavenElisionService {
     ApplyPlan {
       resolvedArtifacts = Collections.unmodifiableSet(new LinkedHashSet<>(resolvedArtifacts));
       directArtifacts = Collections.unmodifiableSet(new LinkedHashSet<>(directArtifacts));
+    }
+  }
+
+  record CurrentViews(List<Artifact> resolvedArtifacts, List<Artifact> directArtifacts) {
+    CurrentViews {
+      resolvedArtifacts = List.copyOf(resolvedArtifacts);
+      directArtifacts = List.copyOf(directArtifacts);
     }
   }
 
