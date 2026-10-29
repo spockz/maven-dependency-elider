@@ -43,7 +43,7 @@ The elider uses exact content digests to identify dependency and JDK platform in
 
 ### What happens if a dependency contains multi-release implementation classes?
 
-That JAR is kept byte-identical and skipped as a trim target with a warning. Other supported JARs can still be trimmed. Set `-Delide.failOnUnsupportedMultiRelease=true` if encountering such a JAR should fail the build.
+When `elide.trimJars=true`, the plugin uses the Maven compiler release as the baseline target, elevates its effective classes to the JAR root, and trims the target view. Higher-tier entries remain unchanged, while class bodies at tier breakpoints through the Maven runtime release contribute to sibling dependency closure. Tiers above that runtime are preserved without linkage analysis. SPI descriptors stay at the root and provider names for removed classes are filtered. Set `-Delide.mrjarStrategy=pass-through` to keep the original MRJAR byte-identical; this does not add classes to sibling JARs for unanalysed upper-tier references. Root module descriptors follow the existing classpath pass-through policy; versioned module descriptors are removed from trimmed output.
 
 ### What happens to reports and outputs if publication fails?
 
@@ -51,7 +51,7 @@ A failure before the publication commit restores the previous reports, output ge
 
 ### What if my application runs on a different JDK than Maven?
 
-Multi-release analysis currently uses the JDK feature release running Maven. If the deployed application uses a different JDK, its selected multi-release implementation has not been verified by that analysis. Run analysis with the deployment JDK or configure affected JARs for pass-through until that runtime is covered.
+MRJAR linkage analysis covers implementation tiers from the configured compiler release through the JDK feature release running Maven. If the deployed application uses a newer JDK, higher-tier entries are preserved but their references to sibling JARs are not included in the analyzed closure. Run the build with the deployment JDK to verify those links. Pass-through preserves the MRJAR bytes but does not preserve sibling dependencies referenced only from unanalysed tiers.
 
 ### What if generated sources are not available before `INITIALIZE`?
 

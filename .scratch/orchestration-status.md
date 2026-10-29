@@ -178,6 +178,21 @@
 * **Scope**: complete the existing three-module fixture, lifecycle runner, Makefile and supported example documentation; prove sequential and `-T 4` `clean verify`, independent schema-1 reports, stable module metrics, and packaged runtime behavior.
 * **Architecture**: per-module elision and output boundaries; production report goal validates only the three child modules. Do not claim general cache race safety: common → service → app is a strict chain, so `-T 4` cannot run siblings simultaneously. Keep persisted report schema at 1; preserve original dependency archives and do not install reactor modules to mask reactor resolution.
 
+---
+
+# WP-MRJAR-01 Orchestration Status
+
+* **Work package**: WP-MRJAR-01, Multi-Release JAR Trimming and Vertical Shading.
+* **Owning session**: Current coordinating session.
+* **Source handover**: `.scratch/handover.md` (the user-provided plan, saved before planning).
+* **Base**: `codex/mrjar-vertical-shading`, created from the clean task checkout at `a1f9f3bc6bc89e22dfa8051faf7d606d4f879e5f`; the repository `main` worktree remains unchanged.
+* **Initial baseline**: `make check` passed with the main clone's pinned Markdown linter configured, GraalVM JDK 21, 195 core tests, 267 plugin tests, 15 lifecycle integration tests, SBOM comparison tests, Java static checks, and 46 Markdown files with 0 issues. An initial attempt without `MARKDOWNLINT` failed only because the isolated checkout lacks `.scratch/tools`; no files were changed.
+* **Scope**: Automatic MRJAR trimming when `trimJars=true`, target-release elevation using Maven compiler `--release`, safe preservation/closure for upper tiers, physical multi-tier omitted-code proof, an opt-out `elide.mrjarStrategy=pass-through`, cache/fingerprint invalidation, CycloneDX 1.6 metrics, `ElideMojoTest`, a runnable `examples/` fixture, ADR and user/contributor documentation.
+* **Acceptance**: Core archive/proof tests; valid elevated archives checked by `jar --validate`; class closure across supported MRJAR tier breakpoints; configured pass-through remains byte-identical; end-to-end `ElideMojoTest`; runnable example verifies target elevation, upper-tier execution, and removed unused classes; SBOM logical and physical metrics; cache key includes target and strategy; relevant Maven/static/docs checks; measure the existing warm fast path.
+* **Architect review**: Approved runtime-bounded tier analysis: `T` must not exceed the Maven runtime; analyze `T` and each distinct class-tier breakpoint through the current runtime, keeping tier-specific analysis contexts and unioning retained/reachable requirements. Above-runtime entries remain preserved but outside the existing verified linkage boundary; physical omission proof still checks every tier. Preserve root counterparts for public/protected upper classes. Services are root `META-INF/services` resources; reject nested versioned `META-INF` resources, filter only providers owned by trimmed artifacts and absent from the global retained set, and preserve unknown/external providers. Upper-only intra/cross-artifact closure and artifact-promotion fixtures are required.
+* **Documentation discovery**: Update `README.md`, Maven usage, `docs/faq.md`, ADR-0003, and `docs/contributor-decisions-and-faq.md`. RQ-0003 is relevant to the warm fast-path boundary. The user-referenced RQ-0014 and `PROJECT_BRIEF.md` are absent from this checkout; do not claim to have reviewed or updated RQ-0014, and do not add a speculative replacement research question.
+* **Upper-tier preservation clarification**: The architect confirmed that every physical class entry above `T` is preserved byte-for-byte (except removed versioned module descriptors). Tier projections through `R` exist to union intra-JAR and sibling closure, not to prune upper class entries. Tier-17 unused classes in the example must survive and match source bytes.
+
 ## Track Ledger
 
 | Track | State | Worktree / branch | Slices |
@@ -288,14 +303,23 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 
 ## WP-MRJAR-01: Multi-Release JAR Trimming and Vertical Shading
 
-| Core archive elevation and proof | ACTIVE | `.scratch/worktrees/track-mrjar-core` / `track/mrjar-core` | Slice 1: archive elevation and sanitization in progress; Slice 2 proof pending. |
-| Plugin closure, configuration, SBOM, fixtures and documentation | PENDING CORE API | To be provisioned after core integration | Target/runtime projections and fixed point, strategy/cache binding, physical metrics, `ElideMojoTest`, docs. |
+| Core archive elevation and proof | IMPLEMENTED, REVIEWED, VERIFIED | `.scratch/worktrees/track-mrjar-core` / `track/mrjar-core` | Slice 1 approved through `2f96a69`; Slice 2 approved through `6bf225b`. Focused proof tests 16/16 and full `make check` passed with 267 plugin and 15 lifecycle tests. |
+| Plugin closure, configuration, SBOM and `ElideMojoTest` | ACTIVE | `.scratch/worktrees/track-mrjar-plugin` / `track/mrjar-plugin` | Runtime-bounded tier contexts and union closure, pass-through strategy, cache binding, physical/logical metrics, transactional output and proof coverage. |
+| Example and documentation | IN PROGRESS | Primary task worktree / `codex/mrjar-vertical-shading` | Added synthetic `example-mrjar-app` base/11/17 tiers and runner checks for elevation, class removal, upper-tier execution and `jar --validate`; updated README, FAQ, usage and ADR-0003. Awaiting plugin integration before end-to-end run and final evidence wording. |
 
 ## Specification Deviations and Architectural Choices
 
 * Use target plus each supported upper-tier breakpoint through the executing Maven JDK to preserve linkage for every advertised tier within the repository's existing verified-runtime boundary. This closes the upper-tier dependency gap in the supplied plan; releases above the Maven runtime remain unverified and are documented as such.
 * Do not version or elevate `META-INF/services` entries. JAR specification forbids versioned resources under `META-INF`; treat nested versioned `META-INF` resources as malformed and reject before output publication. Normalize root service descriptors only, filtering providers removed from the globally retained class set while preserving unknown/external providers.
 * Define class metrics over unique logical class names across all physical tiers; report input/output physical ZIP entry totals separately. A class copied from a version tier to root is retained, not a pruned payload.
+
+## Slice 1 Review Receipt
+
+* Read-only review initially requested fixes for retention-plan/analysis binding, CR-only and mixed service line endings, protected nested-class visibility from `InnerClasses`, target compatibility of retained root fallbacks, public immutable plan facts for plugin closure, and strict parsing of versioned directory entries. The approved follow-up `2f96a69` also covers root-only target compatibility and isolates extra-retention rejection. Exact `prunedClassBytes` assertions distinguish elevated copies from omitted payloads. Final re-review approved all findings; none were waived.
+
+## Slice 2 Review Receipt
+
+* Read-only review requested canonical tier-path parsing, nested class physical-survival coverage, nested-symbol deduplication across fully omitted tiers, and physical omitted-byte accounting. Commit `6bf225b` addresses all four; final review approved the cumulative Slice 2 changes. Focused tests pass 16/16 and full `make check` passes.
 
 - `example-cve-safe-class-app` opts into `preconditionClassPathComplete`, identifies `org.codehaus.janino.ClassBodyEvaluator` used by Logback Core 1.5.18's conditional-script path, and maps the advisory to `ch.qos.logback:logback-core`. Its verifier checks the OpenVEX impact statement and omitted justification, plus CycloneDX `requires_dependency`.
 - After the final guard changes, `make fmt` and `make lint-java` passed; focused ADR-0008 proof tests passed 58/58; `make test-plugin` passed 340 plugin tests and 15 lifecycle integration tests.

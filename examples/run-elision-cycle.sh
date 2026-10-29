@@ -102,6 +102,49 @@ main() {
     (cd -- "$fixture_dir" && env -u MAVEN_ARGS "$maven" "${maven_options_without_threads[@]}" "$@")
   }
 
+  build_mrjar_fixture() {
+    local fixture_sources="$repo_root/examples/example-mrjar-app"
+    local fixture_build="$test_dir/mrjar-fixture"
+    local classes="$fixture_build/classes"
+    local manifest="$fixture_build/manifest.mf"
+    mrjar_fixture_jar="$fixture_build/example-mrjar-fixture-0.1.0.jar"
+    local -a base_sources=()
+    local -a target_sources=()
+    local -a upper_sources=()
+    local base_source_list="$fixture_build/base-sources"
+    local target_source_list="$fixture_build/target-sources"
+    local upper_source_list="$fixture_build/upper-sources"
+    mkdir -p -- "$fixture_build"
+    find "$fixture_sources/mrjar-base" -type f -name '*.java' -print0 | sort -z >"$base_source_list"
+    find "$fixture_sources/mrjar-11" -type f -name '*.java' -print0 | sort -z >"$target_source_list"
+    find "$fixture_sources/mrjar-17" -type f -name '*.java' -print0 | sort -z >"$upper_source_list"
+    mapfile -d '' base_sources <"$base_source_list"
+    mapfile -d '' target_sources <"$target_source_list"
+    mapfile -d '' upper_sources <"$upper_source_list"
+    if ((${#base_sources[@]} == 0 || ${#target_sources[@]} == 0 || ${#upper_sources[@]} == 0)); then
+      echo "MRJAR example source tier is empty" >&2
+      exit 1
+    fi
+    mkdir -p -- "$classes/META-INF/versions/11" "$classes/META-INF/versions/17"
+    "$javac" --release 8 -d "$classes" "${base_sources[@]}"
+    "$javac" --release 11 -classpath "$classes" -d "$classes/META-INF/versions/11" "${target_sources[@]}"
+    "$javac" --release 17 -classpath "$classes" -d "$classes/META-INF/versions/17" "${upper_sources[@]}"
+    cat >"$manifest" <<'MANIFEST'
+Manifest-Version: 1.0
+Multi-Release: true
+MANIFEST
+    "$jar" --create --file "$mrjar_fixture_jar" --manifest "$manifest" -C "$classes" .
+    "$jar" --validate --file "$mrjar_fixture_jar"
+    "$maven" "${maven_options[@]}" \
+      org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file \
+      "-Dfile=$mrjar_fixture_jar" \
+      -DgroupId=io.github.spockz.fixtures \
+      -DartifactId=example-mrjar-fixture \
+      -Dversion=0.1.0 \
+      -Dpackaging=jar \
+      -DgeneratePom=true
+  }
+
   dependency_classpath="$test_dir/example-support.classpath"
   "$maven" "${maven_options[@]}" -f "$repo_root/dependency-elider-maven-plugin/pom.xml" \
     dependency:build-classpath -DincludeScope=test "-Dmdep.outputFile=$dependency_classpath"
@@ -116,11 +159,13 @@ main() {
   if [[ ${REACTOR_ONLY:-false} == true ]]; then
     fixture_names=()
   else
+    build_mrjar_fixture
     fixture_names=(
       example-basic-app
       example-spring-boot-app
       example-cve-unused-app
       example-cve-safe-class-app
+      example-mrjar-app
     )
   fi
 
@@ -128,6 +173,7 @@ main() {
     fixture_dir="$repo_root/examples/$fixture"
     pom="$fixture_dir/pom.xml"
     jar_file="$fixture_dir/target/$fixture-0.1.0-SNAPSHOT.jar"
+    archive_file="$jar_file"
     trace="$test_dir/$fixture.log"
     baseline_output="$test_dir/$fixture-baseline.out"
     final_output="$test_dir/$fixture-final.out"
@@ -161,6 +207,8 @@ main() {
         -Dmaven.compiler.proc=none
         -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar:
       )
+    elif [[ $fixture == example-mrjar-app ]]; then
+      archive_file="$mrjar_fixture_jar"
     else
       elision_options+=(
         -Delide.sourceRootsComplete=true
@@ -186,7 +234,7 @@ main() {
       baseline_package_bytes=$(wc -c <"$jar_file")
     fi
     baseline_entries="$test_dir/$fixture-baseline.jar-entries"
-    "$jar" tf "$jar_file" >"$baseline_entries"
+    "$jar" tf "$archive_file" >"$baseline_entries"
     verify_baseline_archive "$fixture" "$baseline_entries"
     if [[ $fixture == example-spring-boot-app ]]; then
       mail_artifacts="$test_dir/$fixture-mail-artifacts"
@@ -205,6 +253,25 @@ main() {
         "-Delide.productionOutput=$production_output"
         "-Delide.reportFile=$usage_report"
       )
+    elif [[ $fixture == example-mrjar-app ]]; then
+      production_output="$test_dir/$fixture-production-classes"
+      cp -a -- "$fixture_dir/target/classes" "$production_output"
+      elision_options+=(
+        -Delide.trimJars=true
+        -Delide.sourceRootsComplete=true
+        -Dmaven.compiler.proc=none
+        "-Delide.productionOutput=$production_output"
+      )
+      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+        "$java" "-Xlog:class+load=info:file=$trace" \
+        --class-path "$fixture_dir/target/classes:$mrjar_fixture_jar" \
+        io.github.spockz.example.mrjar.MultiReleaseApplication >"$baseline_output"
+      test "$(<"$baseline_output")" = "upper-tier"
+      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+        "$java" -Djdk.util.jar.version=11 \
+        --class-path "$fixture_dir/target/classes:$mrjar_fixture_jar" \
+        io.github.spockz.example.mrjar.MultiReleaseApplication >"$test_dir/$fixture-baseline-target.out"
+      test "$(<"$test_dir/$fixture-baseline-target.out")" = "target-tier"
     else
       timeout --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" "-Xlog:class+load=info:file=$trace" -jar "$jar_file" >"$baseline_output"
@@ -219,6 +286,15 @@ main() {
     fi
 
     run_timed "$elision_seconds" run_fixture_maven "$fixture_dir" -f "$pom" clean verify "${elision_options[@]}"
+
+    if [[ $fixture == example-mrjar-app ]]; then
+      archive_file=$(find "$fixture_dir/target/elided-artifacts/.generations" -type f \
+        -name '*example-mrjar-fixture*trimmed.jar' -print -quit)
+      if [[ -z $archive_file || ! -f $archive_file ]]; then
+        echo "MRJAR example did not publish a trimmed dependency" >&2
+        exit 1
+      fi
+    fi
 
     if [[ $fixture == example-basic-app || $fixture == example-spring-boot-app ||
       $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
@@ -257,7 +333,10 @@ main() {
     verify_cve_report "$fixture" "$fixture_dir" "$report_output"
 
     entries="$test_dir/$fixture.jar-entries"
-    "$jar" tf "$jar_file" >"$entries"
+    "$jar" tf "$archive_file" >"$entries"
+    if [[ $fixture == example-mrjar-app ]]; then
+      "$jar" --validate --file "$archive_file"
+    fi
     verify_archive "$fixture" "$entries" "$fixture_dir"
     if [[ $fixture == example-spring-boot-app ]]; then
       compare_spring_mail_artifacts "$jar_file" "$mail_artifacts"
@@ -265,6 +344,15 @@ main() {
 
     if [[ $fixture == example-spring-boot-app ]]; then
       run_spring_boot_endpoint "$jar_file" "$test_dir/$fixture-final.log" "$final_output"
+    elif [[ $fixture == example-mrjar-app ]]; then
+      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+        "$java" --class-path "$fixture_dir/target/classes:$archive_file" \
+        io.github.spockz.example.mrjar.MultiReleaseApplication >"$final_output"
+      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+        "$java" -Djdk.util.jar.version=11 \
+        --class-path "$fixture_dir/target/classes:$archive_file" \
+        io.github.spockz.example.mrjar.MultiReleaseApplication >"$test_dir/$fixture-final-target.out"
+      test "$(<"$test_dir/$fixture-final-target.out")" = "target-tier"
     else
       timeout --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" -jar "$jar_file" >"$final_output"
@@ -866,6 +954,16 @@ verify_baseline_archive() {
       lacks_entry "$entries" 'org/codehaus/janino/ClassBodyEvaluator.class'
       lacks_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       ;;
+    example-mrjar-app)
+      has_entry "$entries" 'io/github/spockz/example/mrjar/dependency/MultiReleaseService.class'
+      has_entry "$entries" 'io/github/spockz/example/mrjar/dependency/UnusedRootFeature.class'
+      has_entry "$entries" 'META-INF/versions/11/io/github/spockz/example/mrjar/dependency/MultiReleaseService.class'
+      has_entry "$entries" 'META-INF/versions/11/io/github/spockz/example/mrjar/dependency/TargetHelper.class'
+      has_entry "$entries" 'META-INF/versions/11/io/github/spockz/example/mrjar/dependency/UnusedTargetFeature.class'
+      has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/MultiReleaseService.class'
+      has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UpperHelper.class'
+      has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UnusedUpperFeature.class'
+      ;;
   esac
 }
 
@@ -916,7 +1014,29 @@ verify_archive() {
       lacks_entry "$entries" 'org/codehaus/janino/ClassBodyEvaluator.class'
       lacks_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       ;;
+    example-mrjar-app)
+      has_entry "$entries" 'io/github/spockz/example/mrjar/dependency/MultiReleaseService.class'
+      has_entry "$entries" 'io/github/spockz/example/mrjar/dependency/TargetHelper.class'
+      lacks_entry "$entries" 'io/github/spockz/example/mrjar/dependency/RootHelper.class'
+      lacks_entry "$entries" 'io/github/spockz/example/mrjar/dependency/UnusedRootFeature.class'
+      lacks_entry "$entries" 'io/github/spockz/example/mrjar/dependency/UnusedTargetFeature.class'
+      lacks_pattern "$entries" '^META-INF/versions/11/'
+      has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/MultiReleaseService.class'
+      has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UpperHelper.class'
+      has_entry "$entries" 'META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UnusedUpperFeature.class'
+      verify_mrjar_upper_class_bytes "$archive_file"
+      ;;
   esac
+}
+
+verify_mrjar_upper_class_bytes() {
+  local archive=$1
+  local entry='META-INF/versions/17/io/github/spockz/example/mrjar/dependency/UnusedUpperFeature.class'
+  local extracted="$test_dir/mrjar-upper-entry"
+  local source="$test_dir/mrjar-fixture/classes/$entry"
+  mkdir -p -- "$extracted"
+  (cd -- "$extracted" && "$jar" --extract --file "$archive" "$entry")
+  cmp -- "$source" "$extracted/$entry"
 }
 
 verify_effective_graph_report() {
@@ -1048,6 +1168,9 @@ verify_runtime() {
       ;;
     example-cve-safe-class-app)
       grep -Fq 'safe class usage' "$output"
+      ;;
+    example-mrjar-app)
+      test "$(<"$output")" = "upper-tier"
       ;;
   esac
 }

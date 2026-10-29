@@ -334,6 +334,7 @@ The repository includes end-to-end integration fixtures under `examples/`:
 | **`example-cve-unused-app`** | Standalone CVE test | Trims unused `StringLookup` from `commons-text` to mitigate `CVE-2022-42889` and emits OpenVEX. |
 | **`example-multi-module-reactor`** | Three-module Maven reactor with Shade | Exercises module-local reports and dependency elision for `reactor-common` → `reactor-service` → `reactor-app`, under sequential and `-T 4` builds. |
 | **`example-cve-safe-class-app`** | Standalone CVE test | Explicitly opts into complete inventory inspection and proves the Janino coordinate and `ClassBodyEvaluator` class absent from the Logback 1.5.18 conditional-script path for `CVE-2025-11226`, then emits CycloneDX and OpenVEX precondition evidence while preserving fixture runtime behavior. |
+| **`example-mrjar-app`** | Java 11 app + generated multi-release JAR | Elevates the Java 11 implementation, removes superseded lower and unused target-tier classes, preserves the Java 17 entries byte-for-byte, and runs both selected implementations. |
 
 Run the full end-to-end verification suite across all fixtures:
 
