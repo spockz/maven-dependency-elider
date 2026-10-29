@@ -45,6 +45,10 @@ public final class AnalyzeMojo extends AbstractMojo {
   @Parameter(property = "elide.trimJars", defaultValue = DEFAULT_FALSE)
   private boolean trimJars;
 
+  /** Maximum workers used by JAR trimming stages. */
+  @Parameter(property = "elide.trimWorkers", defaultValue = "4")
+  private int trimWorkers = MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS;
+
   /** Additional class names that must remain available for dynamic loading. */
   @Parameter(property = "elide.trimRoots")
   private List<String> trimRoots;
@@ -135,7 +139,8 @@ public final class AnalyzeMojo extends AbstractMojo {
                       trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
                       failOnUnsupportedModuleInfo,
                       true,
-                      conservativeServiceLoaderRoots));
+                      conservativeServiceLoaderRoots,
+                      trimWorkers));
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =

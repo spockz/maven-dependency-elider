@@ -62,6 +62,12 @@ public final class JdkApiClassPoolReader {
     throw new IOException("Unsupported selected JDK platform source: " + snapshot.sourceKind());
   }
 
+  /** Reads platform signatures into a fixed-membership pool. */
+  public ClassPool readFrozen(final JdkPlatformContext.PlatformSnapshot snapshot)
+      throws IOException {
+    return FrozenClassPool.copyOf(read(snapshot));
+  }
+
   private static ClassPool readJmods(final List<JdkPlatformContext.SourceIdentity> modules)
       throws IOException {
     final ClassPool classPool = new ClassPool();

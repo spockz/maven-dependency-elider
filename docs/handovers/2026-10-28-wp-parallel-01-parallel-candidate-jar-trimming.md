@@ -3,7 +3,7 @@
 
 ## Status
 
-Approved for Implementation
+Implementation complete; all four example lifecycle fixtures pass. Preliminary worker-count timing is recorded in the [closeout](2026-10-28-wp-parallel-01-parallel-candidate-jar-trimming-closeout.md); robust performance measurement and bit-exact parity verification remain pending.
 
 ## Context
 

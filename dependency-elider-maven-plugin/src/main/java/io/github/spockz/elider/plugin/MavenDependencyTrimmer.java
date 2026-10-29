@@ -30,12 +30,17 @@ import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
@@ -65,6 +70,7 @@ import proguard.classfile.ClassPool;
   "PMD.AvoidFieldNameMatchingMethodName"
 })
 final class MavenDependencyTrimmer {
+  private static final String DO_NOT_USE_THREADS_SUPPRESSION = "PMD.DoNotUseThreads";
   private static final String DEFAULT_BUILD_DIRECTORY = "target";
   private static final String ELIDED_ARTIFACTS = "elided-artifacts";
   private static final String JAR_TYPE = "jar";
@@ -81,7 +87,9 @@ final class MavenDependencyTrimmer {
   static final String CACHE_FORMAT_ID = "maven-dependency-elider-effective-output-cache";
 
   private static final String ENGINE_VERSION = "proguard-core-9.4.0";
-  private static final int MAX_TRIM_WORKERS = 4;
+  static final int DEFAULT_TRIM_WORKERS = 4;
+  static final int MIN_TRIM_WORKERS = 1;
+  private static final long CANCELLATION_GRACE_SECONDS = 30;
 
   record TrimResult(
       List<ArtifactTrimRecord> records,
@@ -112,10 +120,12 @@ final class MavenDependencyTrimmer {
     }
 
     TrimResult {
-      records = List.copyOf(records);
-      multiReleasePassthroughArtifacts = List.copyOf(multiReleasePassthroughArtifacts);
-      moduleInfoPassthroughArtifacts = List.copyOf(moduleInfoPassthroughArtifacts);
-      configuredPassThroughArtifacts = List.copyOf(configuredPassThroughArtifacts);
+      records =
+          records.stream().sorted(Comparator.comparing(ArtifactTrimRecord::coordinate)).toList();
+      multiReleasePassthroughArtifacts =
+          multiReleasePassthroughArtifacts.stream().sorted().toList();
+      moduleInfoPassthroughArtifacts = moduleInfoPassthroughArtifacts.stream().sorted().toList();
+      configuredPassThroughArtifacts = configuredPassThroughArtifacts.stream().sorted().toList();
     }
   }
 
@@ -131,6 +141,8 @@ final class MavenDependencyTrimmer {
       List<JdkPlatformContext.PlatformSnapshot> platformSnapshots) {}
 
   private record PlatformPools(ClassPool compiler, ClassPool runtime) {}
+
+  private record IndexedResult<R>(int index, R value) {}
 
   private record CandidatePlan(
       List<Path> retainedInputPaths,
@@ -200,17 +212,20 @@ final class MavenDependencyTrimmer {
 
   private static final class EffectiveOutputStaging implements AutoCloseable {
     private final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    private final PreparedOutputCleanup preparedOutputCleanup =
+        new PreparedOutputCleanup(sanitizer);
     private final Path stagedGeneration;
-    private final Path stagedManifest;
-    private final List<PendingOutput> pendingOutputs = new ArrayList<>();
 
     private EffectiveOutputStaging(final Path stagedGeneration, final Path stagedManifest) {
       this.stagedGeneration = stagedGeneration;
-      this.stagedManifest = stagedManifest;
+      preparedOutputCleanup.addCleanupAction(() -> Files.deleteIfExists(stagedManifest));
+      preparedOutputCleanup.addCleanupAction(() -> deleteTree(stagedGeneration));
     }
 
     private PreparedEffectiveOutputs prepareOutputs(
-        final List<CandidateWork> work, final Map<Path, ArtifactDigests> inputDigests)
+        final List<CandidateWork> work,
+        final Map<Path, ArtifactDigests> inputDigests,
+        final int trimWorkers)
         throws IOException {
       final Map<CandidateWork, CacheEntry> entries = new java.util.HashMap<>();
       final List<ArtifactTrimRecord> records = new ArrayList<>();
@@ -229,6 +244,7 @@ final class MavenDependencyTrimmer {
       final List<PendingOutput> prepared =
           mapParallel(
               toSanitize,
+              trimWorkers,
               candidate -> {
                 final Path stagedOutput =
                     stagedGeneration.resolve(candidate.output().getFileName());
@@ -239,14 +255,14 @@ final class MavenDependencyTrimmer {
                         candidate.snapshot().coordinate(),
                         candidate.analysis(),
                         requiredInputDigest(inputDigests, candidate.snapshot().filePath()));
-                return new PendingOutput(candidate, staged);
-              });
-      pendingOutputs.addAll(prepared);
+                return preparedOutputCleanup.track(new PendingOutput(candidate, staged));
+              },
+              preparedOutputCleanup);
       final List<ArtifactTrimRecord> stagedRecords =
           publishOutputs(
-              pendingOutputs.stream().map(PendingOutput::prepared).toList(), sanitizer::publish);
-      for (int index = 0; index < pendingOutputs.size(); index++) {
-        final PendingOutput pending = pendingOutputs.get(index);
+              prepared.stream().map(PendingOutput::prepared).toList(), sanitizer::publish);
+      for (int index = 0; index < prepared.size(); index++) {
+        final PendingOutput pending = prepared.get(index);
         final ArtifactTrimRecord staged = stagedRecords.get(index);
         final ArtifactTrimRecord record =
             new ArtifactTrimRecord(
@@ -268,27 +284,7 @@ final class MavenDependencyTrimmer {
 
     @Override
     public void close() throws IOException {
-      IOException cleanupFailure = null;
-      for (final PendingOutput pending : pendingOutputs) {
-        try {
-          sanitizer.discard(pending.prepared());
-        } catch (final IOException exception) {
-          cleanupFailure = appendFailure(cleanupFailure, exception);
-        }
-      }
-      try {
-        Files.deleteIfExists(stagedManifest);
-      } catch (final IOException exception) {
-        cleanupFailure = appendFailure(cleanupFailure, exception);
-      }
-      try {
-        deleteTree(stagedGeneration);
-      } catch (final IOException exception) {
-        cleanupFailure = appendFailure(cleanupFailure, exception);
-      }
-      if (cleanupFailure != null) {
-        throw cleanupFailure;
-      }
+      preparedOutputCleanup.close();
     }
   }
 
@@ -329,7 +325,16 @@ final class MavenDependencyTrimmer {
   private static Map<ArtifactRootKey, Set<String>> immutableRootMap(
       final Map<ArtifactRootKey, Set<String>> roots) {
     final Map<ArtifactRootKey, Set<String>> result = new java.util.LinkedHashMap<>();
-    roots.forEach((key, values) -> result.put(key, Set.copyOf(values)));
+    roots.entrySet().stream()
+        .sorted(
+            Comparator.comparing(
+                    (Map.Entry<ArtifactRootKey, Set<String>> entry) -> entry.getKey().coordinate())
+                .thenComparing(entry -> entry.getKey().path()))
+        .forEach(
+            entry ->
+                result.put(
+                    entry.getKey(),
+                    java.util.Collections.unmodifiableSet(new TreeSet<>(entry.getValue()))));
     return java.util.Collections.unmodifiableMap(result);
   }
 
@@ -389,7 +394,49 @@ final class MavenDependencyTrimmer {
       List<String> explicitPassThroughCoordinates,
       boolean failOnUnsupportedModuleInfo,
       Set<String> provenServiceInterfaces,
-      boolean conservativeServiceLoaderRoots) {
+      boolean conservativeServiceLoaderRoots,
+      int trimWorkers) {
+    TrimRequest {
+      if (trimWorkers < MIN_TRIM_WORKERS) {
+        throw new IllegalArgumentException("trimWorkers must be at least 1");
+      }
+    }
+
+    TrimRequest(
+        final MavenProject project,
+        final MavenSession session,
+        final List<MavenElisionService.ArtifactSnapshot> candidates,
+        final ScanInputs scanInputs,
+        final Set<ArtifactCoordinate> retainedCoordinates,
+        final TraceData trace,
+        final Set<String> sourceRoots,
+        final Set<String> bytecodeRoots,
+        final Set<String> projectOutputClasses,
+        final List<String> explicitRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> explicitPassThroughCoordinates,
+        final boolean failOnUnsupportedModuleInfo,
+        final Set<String> provenServiceInterfaces,
+        final boolean conservativeServiceLoaderRoots) {
+      this(
+          project,
+          session,
+          candidates,
+          scanInputs,
+          retainedCoordinates,
+          trace,
+          sourceRoots,
+          bytecodeRoots,
+          projectOutputClasses,
+          explicitRoots,
+          failOnUnsupportedMultiRelease,
+          explicitPassThroughCoordinates,
+          failOnUnsupportedModuleInfo,
+          provenServiceInterfaces,
+          conservativeServiceLoaderRoots,
+          DEFAULT_TRIM_WORKERS);
+    }
+
     TrimRequest(
         final MavenProject project,
         final MavenSession session,
@@ -419,7 +466,8 @@ final class MavenDependencyTrimmer {
           explicitPassThroughCoordinates,
           failOnUnsupportedModuleInfo,
           Set.of(),
-          true);
+          true,
+          DEFAULT_TRIM_WORKERS);
     }
   }
 
@@ -439,9 +487,9 @@ final class MavenDependencyTrimmer {
       Path javaHome,
       List<String> platformIdentities) {
     InMemoryAnalysis {
-      candidateAnalyses = Map.copyOf(candidateAnalyses);
+      candidateAnalyses = immutableAnalysisMap(candidateAnalyses);
       candidateRoots = immutableSetMap(candidateRoots);
-      reachableArtifacts = Set.copyOf(reachableArtifacts);
+      reachableArtifacts = java.util.Collections.unmodifiableSet(new TreeSet<>(reachableArtifacts));
       javaHome = javaHome.toAbsolutePath().normalize();
       platformIdentities = List.copyOf(platformIdentities);
     }
@@ -497,7 +545,8 @@ final class MavenDependencyTrimmer {
             options.explicitPassThroughArtifacts(),
             options.failOnUnsupportedModuleInfo(),
             prepared.dynamicRootInputs().provenServiceInterfaces(),
-            options.conservativeServiceLoaderRoots());
+            options.conservativeServiceLoaderRoots(),
+            options.trimWorkers());
     final Map<ArtifactRootKey, Set<String>> roots =
         artifactRootKeys(prepared.resolvedSnapshots(), effective.trimAnalysis().candidateRoots());
     final Set<ArtifactCoordinate> unchangedCoordinates =
@@ -644,11 +693,13 @@ final class MavenDependencyTrimmer {
             .filter(
                 snapshot ->
                     !passThroughIdentities.contains(artifactIdentity(snapshot.coordinate())))
+            .sorted(artifactSnapshotOrder())
             .toList();
     final List<MavenElisionService.ArtifactSnapshot> unchangedPrograms =
         retainedLibraries.stream()
             .filter(snapshot -> !classesByArtifact.getOrDefault(snapshot, Set.of()).isEmpty())
             .filter(snapshot -> !candidates.contains(snapshot))
+            .sorted(artifactSnapshotOrder())
             .toList();
     final Set<String> unchangedPassThroughClasses = new LinkedHashSet<>();
     for (final MavenElisionService.ArtifactSnapshot snapshot : configuredPassThrough) {
@@ -727,10 +778,7 @@ final class MavenDependencyTrimmer {
     }
     final Map<MavenElisionService.ArtifactSnapshot, Set<String>> candidateRoots =
         new java.util.LinkedHashMap<>();
-    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
-        preparedCandidates = new java.util.LinkedHashMap<>();
     for (final MavenElisionService.ArtifactSnapshot candidate : candidates) {
-      final Path path = candidate.filePath().toAbsolutePath().normalize();
       final Set<String> roots = new TreeSet<>(requestedRoots.getOrDefault(candidate, Set.of()));
       roots.addAll(commonRootOwners.byArtifact().getOrDefault(candidate, Set.of()));
       roots.addAll(dynamicRootsByOwner.getOrDefault(candidate, Set.of()));
@@ -738,27 +786,43 @@ final class MavenDependencyTrimmer {
         roots.addAll(classesByArtifact.getOrDefault(candidate, Set.of()));
       }
       candidateRoots.put(candidate, roots);
-      final List<Path> siblings =
-          fullClasspath.stream().filter(value -> !value.equals(path)).toList();
-      preparedCandidates.put(
-          candidate,
-          analysisSession.prepareWithUnchangedPassThroughLibraries(
-              path, siblings, pools.compiler(), unchangedPassThroughClasses));
     }
+    final List<DependencyJarTrimmer.PreparedAnalysis> preparedCandidateResults =
+        mapParallel(
+            candidates,
+            request.trimWorkers(),
+            candidate -> {
+              final Path path = candidate.filePath().toAbsolutePath().normalize();
+              final List<Path> siblings =
+                  fullClasspath.stream().filter(value -> !value.equals(path)).toList();
+              return analysisSession.prepareWithUnchangedPassThroughLibraries(
+                  path, siblings, pools.compiler(), unchangedPassThroughClasses);
+            });
+    final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        preparedCandidates = new java.util.LinkedHashMap<>();
+    for (int index = 0; index < candidates.size(); index++) {
+      preparedCandidates.put(candidates.get(index), preparedCandidateResults.get(index));
+    }
+    final List<DependencyJarTrimmer.PreparedAnalysis> preparedProgramResults =
+        mapParallel(
+            unchangedPrograms,
+            request.trimWorkers(),
+            program -> {
+              final Path path =
+                  analysisPaths.getOrDefault(
+                      program, program.filePath().toAbsolutePath().normalize());
+              final List<Path> siblings =
+                  fullClasspath.stream().filter(value -> !value.equals(path)).toList();
+              return skippedProgramCoordinates.contains(program.coordinate())
+                  ? analysisSession.prepareUnchangedPassThrough(
+                      path, siblings, pools.runtime(), unchangedPassThroughClasses)
+                  : analysisSession.prepareWithUnchangedPassThroughLibraries(
+                      path, siblings, pools.runtime(), unchangedPassThroughClasses);
+            });
     final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         preparedPrograms = new java.util.LinkedHashMap<>();
-    for (final MavenElisionService.ArtifactSnapshot program : unchangedPrograms) {
-      final Path path =
-          analysisPaths.getOrDefault(program, program.filePath().toAbsolutePath().normalize());
-      final List<Path> siblings =
-          fullClasspath.stream().filter(value -> !value.equals(path)).toList();
-      final DependencyJarTrimmer.PreparedAnalysis preparedProgram =
-          skippedProgramCoordinates.contains(program.coordinate())
-              ? analysisSession.prepareUnchangedPassThrough(
-                  path, siblings, pools.runtime(), unchangedPassThroughClasses)
-              : analysisSession.prepareWithUnchangedPassThroughLibraries(
-                  path, siblings, pools.runtime(), unchangedPassThroughClasses);
-      preparedPrograms.put(program, preparedProgram);
+    for (int index = 0; index < unchangedPrograms.size(); index++) {
+      preparedPrograms.put(unchangedPrograms.get(index), preparedProgramResults.get(index));
     }
     final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> finalAnalyses =
         new java.util.LinkedHashMap<>();
@@ -769,12 +833,15 @@ final class MavenDependencyTrimmer {
     boolean rootsChanged;
     do {
       rootsChanged = false;
-      for (final Map.Entry<
-              MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
-          entry : preparedPrograms.entrySet()) {
-        final Set<String> roots = classesByArtifact.get(entry.getKey());
-        final DependencyJarTrimmer.TrimAnalysis analysis = entry.getValue().analyze(roots);
-        analysisRuns++;
+      final List<DependencyJarTrimmer.TrimAnalysis> programAnalyses =
+          mapParallel(
+              unchangedPrograms,
+              request.trimWorkers(),
+              program -> preparedPrograms.get(program).analyze(classesByArtifact.get(program)));
+      analysisRuns += programAnalyses.size();
+      for (int index = 0; index < unchangedPrograms.size(); index++) {
+        final MavenElisionService.ArtifactSnapshot program = unchangedPrograms.get(index);
+        final DependencyJarTrimmer.TrimAnalysis analysis = programAnalyses.get(index);
         rootsChanged |=
             collectReachableClasses(
                 analysis.reachableLibraryClasses(),
@@ -783,16 +850,19 @@ final class MavenDependencyTrimmer {
                 candidateRoots,
                 reachableArtifacts,
                 retainedCoordinates,
-                entry.getKey());
+                program);
       }
       finalAnalyses.clear();
-      for (final Map.Entry<
-              MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
-          entry : preparedCandidates.entrySet()) {
-        final MavenElisionService.ArtifactSnapshot candidate = entry.getKey();
-        final DependencyJarTrimmer.TrimAnalysis analysis =
-            entry.getValue().analyze(candidateRoots.get(candidate));
-        analysisRuns++;
+      final List<DependencyJarTrimmer.TrimAnalysis> candidateAnalyses =
+          mapParallel(
+              candidates,
+              request.trimWorkers(),
+              candidate ->
+                  preparedCandidates.get(candidate).analyze(candidateRoots.get(candidate)));
+      analysisRuns += candidateAnalyses.size();
+      for (int index = 0; index < candidates.size(); index++) {
+        final MavenElisionService.ArtifactSnapshot candidate = candidates.get(index);
+        final DependencyJarTrimmer.TrimAnalysis analysis = candidateAnalyses.get(index);
         finalAnalyses.put(candidate.coordinate(), analysis);
         rootsChanged |=
             collectReachableClasses(
@@ -1036,7 +1106,23 @@ final class MavenDependencyTrimmer {
   private static Map<ArtifactCoordinate, Set<String>> immutableSetMap(
       final Map<ArtifactCoordinate, Set<String>> values) {
     final Map<ArtifactCoordinate, Set<String>> result = new java.util.LinkedHashMap<>();
-    values.forEach((coordinate, roots) -> result.put(coordinate, Set.copyOf(roots)));
+    values.entrySet().stream()
+        .sorted(Map.Entry.comparingByKey())
+        .forEach(
+            entry ->
+                result.put(
+                    entry.getKey(),
+                    java.util.Collections.unmodifiableSet(new TreeSet<>(entry.getValue()))));
+    return java.util.Collections.unmodifiableMap(result);
+  }
+
+  private static Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> immutableAnalysisMap(
+      final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> values) {
+    final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> result =
+        new java.util.LinkedHashMap<>();
+    values.entrySet().stream()
+        .sorted(Map.Entry.comparingByKey())
+        .forEach(entry -> result.put(entry.getKey(), entry.getValue()));
     return java.util.Collections.unmodifiableMap(result);
   }
 
@@ -1235,12 +1321,17 @@ final class MavenDependencyTrimmer {
     final PlatformPools platformPools =
         readPlatformPools(fingerprintSnapshot.platformSnapshots(), release, runtimeRelease);
     final int analysisRuns =
-        analyze(plan, passThroughPlan, analysisLibraryDirectory, runtimeRelease, platformPools);
+        analyze(
+            plan,
+            passThroughPlan,
+            analysisLibraryDirectory,
+            runtimeRelease,
+            platformPools,
+            request.trimWorkers());
 
     final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
     final Map<CandidateWork, CacheEntry> entriesByCandidate = new java.util.HashMap<>();
-    final List<PendingOutput> pendingOutputs = new ArrayList<>();
-    try {
+    try (PreparedOutputCleanup preparedOutputCleanup = new PreparedOutputCleanup(sanitizer)) {
       final List<CandidateWork> toSanitize = new ArrayList<>();
       for (final CandidateWork candidate : work) {
         final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
@@ -1257,6 +1348,7 @@ final class MavenDependencyTrimmer {
       final List<PendingOutput> prepared =
           mapParallel(
               toSanitize,
+              request.trimWorkers(),
               candidate -> {
                 final ArchiveSanitizer.PreparedOutput staged =
                     sanitizer.prepareWithProvenance(
@@ -1266,23 +1358,19 @@ final class MavenDependencyTrimmer {
                         candidate.analysis(),
                         requiredInputDigest(
                             fingerprintSnapshot.inputDigests(), candidate.snapshot().filePath()));
-                return new PendingOutput(candidate, staged);
-              });
-      pendingOutputs.addAll(prepared);
+                return preparedOutputCleanup.track(new PendingOutput(candidate, staged));
+              },
+              preparedOutputCleanup);
       final List<ArtifactTrimRecord> publishedRecords =
           publishOutputs(
-              pendingOutputs.stream().map(PendingOutput::prepared).toList(), sanitizer::publish);
-      for (int index = 0; index < pendingOutputs.size(); index++) {
-        final PendingOutput pending = pendingOutputs.get(index);
+              prepared.stream().map(PendingOutput::prepared).toList(), sanitizer::publish);
+      for (int index = 0; index < prepared.size(); index++) {
+        final PendingOutput pending = prepared.get(index);
         final ArtifactTrimRecord record = publishedRecords.get(index);
         records.add(record);
         entriesByCandidate.put(
             pending.candidate(),
             cacheEntry(pending.candidate(), record, fingerprintSnapshot.inputDigests()));
-      }
-    } finally {
-      for (final PendingOutput pending : pendingOutputs) {
-        sanitizer.discard(pending.prepared());
       }
     }
     final List<CacheEntry> cacheEntries = new ArrayList<>(work.size());
@@ -1339,7 +1427,10 @@ final class MavenDependencyTrimmer {
     try {
       try (staging) {
         final PreparedEffectiveOutputs preparedOutputs =
-            staging.prepareOutputs(work, fingerprint.inputDigests());
+            staging.prepareOutputs(
+                work,
+                fingerprint.inputDigests(),
+                effectiveOutput.prepared().options().trimWorkers());
         final List<CacheEntry> entries = new ArrayList<>(work.size());
         for (final CandidateWork candidate : work) {
           final CacheEntry entry = preparedOutputs.entries().get(candidate);
@@ -1378,14 +1469,6 @@ final class MavenDependencyTrimmer {
     }
   }
 
-  private static IOException appendFailure(final IOException previous, final IOException next) {
-    if (previous == null) {
-      return next;
-    }
-    previous.addSuppressed(next);
-    return previous;
-  }
-
   private static void deleteTree(final Path root) throws IOException {
     if (!Files.exists(root)) {
       return;
@@ -1402,7 +1485,8 @@ final class MavenDependencyTrimmer {
       final PassThroughPlan passThroughPlan,
       final Path analysisLibraryDirectory,
       final int runtimeRelease,
-      final PlatformPools platformPools)
+      final PlatformPools platformPools,
+      final int trimWorkers)
       throws IOException {
     final AnalysisLibraries libraries =
         analysisLibraries(passThroughPlan, analysisLibraryDirectory, runtimeRelease);
@@ -1410,9 +1494,11 @@ final class MavenDependencyTrimmer {
     final TrimAnalysisSession session = new TrimAnalysisSession(trimmer);
     validateUniqueAnalysisClasses(candidatePlan, libraries.skippedPrograms());
     final int passThroughRuns =
-        analyzePassThroughPrograms(candidatePlan, libraries, session, platformPools.runtime());
+        analyzePassThroughPrograms(
+            candidatePlan, libraries, session, platformPools.runtime(), trimWorkers);
     return passThroughRuns
-        + analyzeCandidateFixedPoint(candidatePlan, libraries, session, platformPools.compiler());
+        + analyzeCandidateFixedPoint(
+            candidatePlan, libraries, session, platformPools.compiler(), trimWorkers);
   }
 
   private static AnalysisLibraries analysisLibraries(
@@ -1488,7 +1574,8 @@ final class MavenDependencyTrimmer {
       final CandidatePlan candidatePlan,
       final AnalysisLibraries libraries,
       final TrimAnalysisSession analysisSession,
-      final ClassPool runtimePlatform)
+      final ClassPool runtimePlatform,
+      final int trimWorkers)
       throws IOException {
     final List<SkippedProgram> skipped = libraries.skippedPrograms();
     if (skipped.isEmpty()) {
@@ -1497,6 +1584,7 @@ final class MavenDependencyTrimmer {
     final List<DependencyJarTrimmer.TrimAnalysis> analyses =
         mapParallel(
             skipped,
+            trimWorkers,
             skippedProgram -> {
               final List<Path> siblings =
                   libraries.paths().stream()
@@ -1528,13 +1616,15 @@ final class MavenDependencyTrimmer {
       final CandidatePlan candidatePlan,
       final AnalysisLibraries libraries,
       final TrimAnalysisSession analysisSession,
-      final ClassPool platform)
+      final ClassPool platform,
+      final int trimWorkers)
       throws IOException {
     int analysisRuns = 0;
     final List<CandidateWork> work = candidatePlan.work();
     final List<DependencyJarTrimmer.PreparedAnalysis> preparedList =
         mapParallel(
             work,
+            trimWorkers,
             candidate -> {
               final List<Path> siblings =
                   libraries.paths().stream()
@@ -1556,7 +1646,9 @@ final class MavenDependencyTrimmer {
       rootsChanged = false;
       final List<DependencyJarTrimmer.TrimAnalysis> roundAnalyses =
           mapParallel(
-              work, candidate -> candidateAnalyses.get(candidate).analyze(candidate.roots()));
+              work,
+              trimWorkers,
+              candidate -> candidateAnalyses.get(candidate).analyze(candidate.roots()));
       for (int index = 0; index < work.size(); index++) {
         final CandidateWork candidate = work.get(index);
         final DependencyJarTrimmer.TrimAnalysis analysis = roundAnalyses.get(index);
@@ -1667,7 +1759,8 @@ final class MavenDependencyTrimmer {
 
     final Set<Path> distinctOutputs = new HashSet<>();
     final List<CandidateWork> work = new ArrayList<>();
-    for (final MavenElisionService.ArtifactSnapshot candidate : retained) {
+    for (final MavenElisionService.ArtifactSnapshot candidate :
+        retained.stream().sorted(artifactSnapshotOrder()).toList()) {
       final Set<String> candidateClasses =
           classesByArtifact.entrySet().stream()
               .filter(entry -> entry.getKey().filePath().equals(candidate.filePath()))
@@ -1721,7 +1814,8 @@ final class MavenDependencyTrimmer {
         retainedLibraries.stream().map(MavenElisionService.ArtifactSnapshot::filePath).toList();
     final Set<Path> distinctOutputs = new HashSet<>();
     final List<CandidateWork> work = new ArrayList<>();
-    for (final MavenElisionService.ArtifactSnapshot candidate : retained) {
+    for (final MavenElisionService.ArtifactSnapshot candidate :
+        retained.stream().sorted(artifactSnapshotOrder()).toList()) {
       if (effectiveOutput.unchangedCoordinates().contains(candidate.coordinate())) {
         continue;
       }
@@ -1832,10 +1926,13 @@ final class MavenDependencyTrimmer {
       final List<MavenElisionService.ArtifactSnapshot> snapshots) {
     return snapshots.stream()
         .filter(snapshot -> JAR_TYPE.equals(snapshot.coordinate().type()))
-        .sorted(
-            Comparator.comparing(MavenElisionService.ArtifactSnapshot::coordinate)
-                .thenComparing(snapshot -> snapshot.filePath().toAbsolutePath().normalize()))
+        .sorted(artifactSnapshotOrder())
         .toList();
+  }
+
+  private static Comparator<MavenElisionService.ArtifactSnapshot> artifactSnapshotOrder() {
+    return Comparator.comparing(MavenElisionService.ArtifactSnapshot::coordinate)
+        .thenComparing(snapshot -> snapshot.filePath().toAbsolutePath().normalize());
   }
 
   private static String effectiveCacheContext(
@@ -2001,6 +2098,84 @@ final class MavenDependencyTrimmer {
   private record PendingOutput(CandidateWork candidate, ArchiveSanitizer.PreparedOutput prepared) {}
 
   @FunctionalInterface
+  private interface CleanupAction {
+    void run() throws IOException;
+  }
+
+  // Deferred cleanup must not remove files while a cancelled worker can still write them.
+  @SuppressWarnings(DO_NOT_USE_THREADS_SUPPRESSION)
+  private static final class PreparedOutputCleanup implements AutoCloseable {
+    private final ArchiveSanitizer sanitizer;
+    private final Queue<PendingOutput> pendingOutputs = new ConcurrentLinkedQueue<>();
+    private final List<CleanupAction> cleanupActions = new ArrayList<>();
+    private ExecutorService deferredExecutor;
+
+    private PreparedOutputCleanup(final ArchiveSanitizer sanitizer) {
+      this.sanitizer = sanitizer;
+    }
+
+    private PendingOutput track(final PendingOutput pending) {
+      pendingOutputs.add(pending);
+      return pending;
+    }
+
+    private void addCleanupAction(final CleanupAction cleanupAction) {
+      cleanupActions.add(cleanupAction);
+    }
+
+    private void deferUntil(final ExecutorService executor) {
+      deferredExecutor = executor;
+    }
+
+    @Override
+    @SuppressWarnings("PMD.CloseResource")
+    public void close() throws IOException {
+      if (deferredExecutor != null && !deferredExecutor.isTerminated()) {
+        final ExecutorService executor = deferredExecutor;
+        Thread.ofVirtual()
+            .name("dependency-elider-staging-cleanup")
+            .start(
+                () -> {
+                  awaitTerminationUninterruptibly(executor);
+                  executor.close();
+                  try {
+                    cleanupResources();
+                  } catch (final IOException exception) {
+                    System.getLogger(MavenDependencyTrimmer.class.getName())
+                        .log(
+                            System.Logger.Level.ERROR,
+                            "Could not clean deferred trim staging",
+                            exception);
+                  }
+                });
+        return;
+      }
+      cleanupResources();
+    }
+
+    private void cleanupResources() throws IOException {
+      IOException cleanupFailure = null;
+      for (final PendingOutput pending : pendingOutputs) {
+        try {
+          sanitizer.discard(pending.prepared());
+        } catch (final IOException exception) {
+          cleanupFailure = appendFailure(cleanupFailure, exception);
+        }
+      }
+      for (final CleanupAction cleanupAction : cleanupActions) {
+        try {
+          cleanupAction.run();
+        } catch (final IOException exception) {
+          cleanupFailure = appendFailure(cleanupFailure, exception);
+        }
+      }
+      if (cleanupFailure != null) {
+        throw cleanupFailure;
+      }
+    }
+  }
+
+  @FunctionalInterface
   interface PreparedOutputPublisher {
     ArtifactTrimRecord publish(ArchiveSanitizer.PreparedOutput prepared) throws IOException;
   }
@@ -2021,57 +2196,179 @@ final class MavenDependencyTrimmer {
     R execute(T item) throws IOException;
   }
 
-  private static int trimParallelism(final int workSize) {
+  private static int trimParallelism(final int workSize, final int maxWorkers) {
     if (workSize <= 1) {
       return 1;
     }
     final int available = Runtime.getRuntime().availableProcessors();
-    return Math.max(1, Math.min(available, MAX_TRIM_WORKERS));
+    return Math.max(1, Math.min(Math.min(available, maxWorkers), workSize));
   }
 
-  @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.PreserveStackTrace"})
-  private static <T, R> List<R> mapParallel(final List<T> items, final TrimmerWorkItem<T, R> task)
+  private static <T, R> List<R> mapParallel(
+      final List<T> items, final int maxWorkers, final TrimmerWorkItem<T, R> task)
+      throws IOException {
+    return mapParallel(items, maxWorkers, task, null);
+  }
+
+  // Closing a timed-out executor here would undo the bounded cancellation wait.
+  @SuppressWarnings({
+    "PMD.AvoidCatchingGenericException",
+    "PMD.CloseResource",
+    DO_NOT_USE_THREADS_SUPPRESSION,
+    "PMD.PreserveStackTrace"
+  })
+  private static <T, R> List<R> mapParallel(
+      final List<T> items,
+      final int maxWorkers,
+      final TrimmerWorkItem<T, R> task,
+      final PreparedOutputCleanup deferredCleanup)
       throws IOException {
     if (items.isEmpty()) {
       return List.of();
     }
-    final int parallelism = trimParallelism(items.size());
-    if (parallelism <= 1 || items.size() == 1) {
+    final int parallelism = trimParallelism(items.size(), maxWorkers);
+    if (parallelism <= 1) {
       final List<R> results = new ArrayList<>(items.size());
       for (final T item : items) {
-        results.add(task.execute(item));
-      }
-      return List.copyOf(results);
-    }
-    try (ExecutorService executor =
-        Executors.newFixedThreadPool(
-            Math.min(items.size(), parallelism),
-            runnable -> {
-              final Thread thread = new Thread(runnable, "dependency-elider-worker");
-              thread.setDaemon(true);
-              return thread;
-            })) {
-      final List<Future<R>> futures = new ArrayList<>(items.size());
-      for (final T item : items) {
-        futures.add(executor.submit(() -> task.execute(item)));
-      }
-      final List<R> results = new ArrayList<>(items.size());
-      for (final Future<R> future : futures) {
         try {
-          results.add(future.get());
-        } catch (final ExecutionException e) {
-          final Throwable cause = e.getCause();
-          if (cause instanceof IOException ioException) {
-            throw ioException;
-          }
-          throw new IOException("Parallel trimming task failed", cause);
+          results.add(task.execute(item));
+        } catch (final IOException | RuntimeException exception) {
+          throw parallelTaskFailure(exception);
         }
       }
       return List.copyOf(results);
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IOException("Interrupted while executing parallel trimming tasks", e);
     }
+    final ExecutorService executor =
+        Executors.newFixedThreadPool(
+            parallelism,
+            Thread.ofPlatform().daemon().name("dependency-elider-worker-", 0).factory());
+    try {
+      final CompletionService<IndexedResult<R>> completions =
+          new ExecutorCompletionService<>(executor);
+      final List<Future<IndexedResult<R>>> active = new ArrayList<>(parallelism);
+      final List<R> results = new ArrayList<>(java.util.Collections.nCopies(items.size(), null));
+      int nextIndex = 0;
+      int completed = 0;
+      try {
+        while (completed < items.size()) {
+          while (nextIndex < items.size() && active.size() < parallelism) {
+            final int index = nextIndex;
+            nextIndex++;
+            active.add(
+                completions.submit(
+                    () -> new IndexedResult<>(index, task.execute(items.get(index)))));
+          }
+          final Future<IndexedResult<R>> finished = completions.take();
+          active.remove(finished);
+          final IndexedResult<R> result = finished.get();
+          results.set(result.index(), result.value());
+          completed++;
+        }
+        executor.shutdown();
+        return List.copyOf(results);
+      } catch (final InterruptedException e) {
+        final boolean terminated = cancelParallelWork(executor, active, deferredCleanup);
+        Thread.currentThread().interrupt();
+        final IOException failure =
+            new IOException("Interrupted while executing parallel trimming tasks", e);
+        if (!terminated) {
+          failure.addSuppressed(cancellationTimeoutFailure());
+        }
+        throw failure;
+      } catch (final ExecutionException e) {
+        final boolean terminated = cancelParallelWork(executor, active, deferredCleanup);
+        final Throwable cause = e.getCause();
+        if (cause instanceof Error error) {
+          if (!terminated) {
+            error.addSuppressed(cancellationTimeoutFailure());
+          }
+          throw error;
+        }
+        final IOException failure = parallelTaskFailure(cause);
+        if (!terminated) {
+          failure.addSuppressed(cancellationTimeoutFailure());
+        }
+        throw failure;
+      } catch (final RuntimeException | Error e) {
+        if (!cancelParallelWork(executor, active, deferredCleanup)) {
+          e.addSuppressed(cancellationTimeoutFailure());
+        }
+        throw e;
+      }
+    } finally {
+      if (!executor.isShutdown()) {
+        executor.shutdownNow();
+      }
+    }
+  }
+
+  @SuppressWarnings(DO_NOT_USE_THREADS_SUPPRESSION)
+  private static boolean cancelParallelWork(
+      final ExecutorService executor,
+      final List<? extends Future<?>> active,
+      final PreparedOutputCleanup deferredCleanup) {
+    active.forEach(future -> future.cancel(true));
+    executor.shutdownNow();
+    boolean interrupted = false;
+    final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CANCELLATION_GRACE_SECONDS);
+    while (!executor.isTerminated()) {
+      final long remainingNanos = deadline - System.nanoTime();
+      if (remainingNanos <= 0) {
+        break;
+      }
+      try {
+        executor.awaitTermination(remainingNanos, TimeUnit.NANOSECONDS);
+      } catch (final InterruptedException exception) {
+        interrupted = true;
+      }
+    }
+    final boolean terminated = executor.isTerminated();
+    if (!terminated && deferredCleanup != null) {
+      deferredCleanup.deferUntil(executor);
+    }
+    if (interrupted) {
+      Thread.currentThread().interrupt();
+    }
+    return terminated;
+  }
+
+  @SuppressWarnings(DO_NOT_USE_THREADS_SUPPRESSION)
+  private static void awaitTerminationUninterruptibly(final ExecutorService executor) {
+    boolean interrupted = false;
+    while (!executor.isTerminated()) {
+      try {
+        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+      } catch (final InterruptedException exception) {
+        interrupted = true;
+      }
+    }
+    if (interrupted) {
+      Thread.currentThread().interrupt();
+    }
+  }
+
+  private static IOException appendFailure(final IOException previous, final IOException next) {
+    if (previous == null) {
+      return next;
+    }
+    previous.addSuppressed(next);
+    return previous;
+  }
+
+  private static IOException cancellationTimeoutFailure() {
+    return new IOException(
+        "Parallel trimming workers did not stop within "
+            + CANCELLATION_GRACE_SECONDS
+            + " seconds; running tasks were detached");
+  }
+
+  private static IOException parallelTaskFailure(final Throwable cause) {
+    final String detail = cause.getMessage();
+    return new IOException(
+        detail == null
+            ? "Parallel trimming task failed"
+            : "Parallel trimming task failed: " + detail,
+        cause);
   }
 
   private static FingerprintSnapshot fingerprint(
@@ -2140,11 +2437,11 @@ final class MavenDependencyTrimmer {
       final int runtimeRelease)
       throws IOException {
     final JdkApiClassPoolReader reader = new JdkApiClassPoolReader();
-    final ClassPool compiler = reader.read(platformSnapshot(snapshots, compilerRelease));
+    final ClassPool compiler = reader.readFrozen(platformSnapshot(snapshots, compilerRelease));
     final ClassPool runtime =
         runtimeRelease == compilerRelease
             ? compiler
-            : reader.read(platformSnapshot(snapshots, runtimeRelease));
+            : reader.readFrozen(platformSnapshot(snapshots, runtimeRelease));
     return new PlatformPools(compiler, runtime);
   }
 
