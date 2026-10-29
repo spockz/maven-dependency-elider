@@ -102,7 +102,7 @@ Run `elide` alongside your packaging goals to trim dependencies and generate san
   -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
 ```
 
-This run drops `httpclient` and `commons-codec`, and trims unreferenced classes from retained `commons-compress` (saving 535 classes / 1.52 MiB from dropped JARs and 535 classes / 1.93 MiB from retained JARs).
+This run drops `httpclient` (420 classes) and `commons-codec` (115 classes), and trims 535 unreferenced classes from retained `commons-compress` (saving 535 classes / 1.52 MiB from dropped JARs and 535 classes / 1.93 MiB from retained JARs).
 
 ### 6. Inspect the Post-Elision Dependency Tree
 
