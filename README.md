@@ -362,6 +362,7 @@ example-basic-app
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) {nodeId=n1} [EFFECTIVE_DROP]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) -> commons-codec:commons-codec:jar:1.19.0 (compile) {nodeId=n4} [EFFECTIVE_DROP]
+[INFO]   ...
 
 example-spring-boot-app
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
@@ -377,6 +378,7 @@ example-spring-boot-app
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework.boot:spring-boot-starter-web:jar:3.3.5 (compile) {nodeId=n1} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.1.14 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
+[INFO]   ...
 
 example-cve-unused-app
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
@@ -389,6 +391,8 @@ example-cve-unused-app
 [INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions: none detected
+[INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
+[INFO]   ...
 
 example-cve-safe-class-app
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
@@ -400,6 +404,8 @@ example-cve-safe-class-app
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions: none detected
+[INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
+[INFO]   ...
 ```
 
 ---
