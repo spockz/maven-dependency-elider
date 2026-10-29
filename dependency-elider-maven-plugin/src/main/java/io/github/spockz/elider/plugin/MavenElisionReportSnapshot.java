@@ -16,7 +16,11 @@ import java.util.Objects;
 import java.util.Set;
 
 /** Immutable result snapshot used by the Maven {@code report} goal. */
-@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.ExcessiveParameterList"})
+@SuppressWarnings({
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.ExcessiveParameterList",
+  "PMD.AvoidDuplicateLiterals"
+})
 record MavenElisionReportSnapshot(
     int schemaVersion,
     String projectGroupId,
@@ -35,6 +39,8 @@ record MavenElisionReportSnapshot(
     List<TrimmedArtifact> trimmedArtifacts,
     List<CveFinding> removedCveComponents,
     List<CveFinding> provenAbsentCves,
+    List<CveFinding> inactivePreconditionCves,
+    List<ConservativeCveFinding> potentiallyConservativeCves,
     MediatedGraphReport mediatedGraph) {
   /** Current persisted JSON format version. */
   static final int SCHEMA_VERSION = 1;
@@ -57,6 +63,11 @@ record MavenElisionReportSnapshot(
     removedCveComponents =
         List.copyOf(Objects.requireNonNull(removedCveComponents, "removedCveComponents"));
     provenAbsentCves = List.copyOf(Objects.requireNonNull(provenAbsentCves, "provenAbsentCves"));
+    inactivePreconditionCves =
+        List.copyOf(Objects.requireNonNull(inactivePreconditionCves, "inactivePreconditionCves"));
+    potentiallyConservativeCves =
+        List.copyOf(
+            Objects.requireNonNull(potentiallyConservativeCves, "potentiallyConservativeCves"));
     Objects.requireNonNull(mediatedGraph, "mediatedGraph");
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
@@ -157,6 +168,8 @@ record MavenElisionReportSnapshot(
         trimmedArtifacts,
         List.of(),
         List.of(),
+        List.of(),
+        List.of(),
         mediatedGraph);
   }
 
@@ -176,6 +189,7 @@ record MavenElisionReportSnapshot(
       final List<TrimmedArtifact> trimmedArtifacts,
       final List<CveFinding> removedCveComponents,
       final List<CveFinding> provenAbsentCves,
+      final List<CveFinding> inactivePreconditionCves,
       final MediatedGraphReport mediatedGraph) {
     this(
         schemaVersion,
@@ -195,6 +209,8 @@ record MavenElisionReportSnapshot(
         trimmedArtifacts,
         removedCveComponents,
         provenAbsentCves,
+        inactivePreconditionCves,
+        List.of(),
         mediatedGraph);
   }
 
@@ -243,6 +259,29 @@ record MavenElisionReportSnapshot(
                 .sorted(
                     Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
                 .toList();
+    final List<CveFinding> inactivePreconditionCves =
+        vulnerabilityAssessment == null
+            ? List.of()
+            : vulnerabilityAssessment.inactiveDueToMissingPrerequisites().stream()
+                .map(finding -> new CveFinding(finding.cveId(), finding.coordinate().toId()))
+                .sorted(
+                    Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
+                .toList();
+    final List<ConservativeCveFinding> potentiallyConservativeCves =
+        vulnerabilityAssessment == null
+            ? List.of()
+            : vulnerabilityAssessment.potentiallyConservativeCves().stream()
+                .map(
+                    finding ->
+                        new ConservativeCveFinding(
+                            finding.cveId(),
+                            finding.coordinate().toId(),
+                            finding.reason(),
+                            finding.pomOverrideSnippet()))
+                .sorted(
+                    Comparator.comparing(ConservativeCveFinding::cveId)
+                        .thenComparing(ConservativeCveFinding::coordinate))
+                .toList();
     return new MavenElisionReportSnapshot(
         SCHEMA_VERSION,
         project.getGroupId(),
@@ -264,6 +303,8 @@ record MavenElisionReportSnapshot(
         trimmed,
         removedCveComponents,
         provenAbsentCves,
+        inactivePreconditionCves,
+        potentiallyConservativeCves,
         analysis.mediatedGraph() == null
             ? MediatedGraphReport.unavailable(
                 "Mediated graph data is unavailable for this analysis")
@@ -467,6 +508,18 @@ record MavenElisionReportSnapshot(
       requireNonBlank(cveId, "cveId");
       require(cveId.matches("CVE-[0-9]{4}-[0-9]{4,}"), "Invalid CVE format: " + cveId);
       requireNonBlank(coordinate, "coordinate");
+    }
+  }
+
+  /** Conservative exclusion with actionable override guidance. */
+  record ConservativeCveFinding(
+      String cveId, String coordinate, String reason, String pomOverrideSnippet) {
+    ConservativeCveFinding {
+      requireNonBlank(cveId, "cveId");
+      require(cveId.matches("CVE-[0-9]{4}-[0-9]{4,}"), "Invalid CVE format: " + cveId);
+      requireNonBlank(coordinate, "coordinate");
+      requireNonBlank(reason, "reason");
+      requireNonBlank(pomOverrideSnippet, "pomOverrideSnippet");
     }
   }
 }

@@ -6,6 +6,7 @@ package io.github.spockz.elider.trimmer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.spockz.elider.test.CompilationFixtureSupport;
 import java.io.IOException;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -17,8 +18,6 @@ import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.zip.ZipOutputStream;
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -549,47 +548,37 @@ class DependencyJarTrimmerTest {
       Files.writeString(sourceDirectory.resolve("fixture/" + source.getKey()), source.getValue());
     }
 
-    final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    if (compiler == null) {
-      throw new IllegalStateException("Tests require a JDK compiler");
-    }
-    final List<String> arguments =
+    final List<Path> sourcesList =
         List.of(
-            "--release",
-            "21",
-            "-d",
-            outputDirectory.toString(),
-            sourceDirectory.resolve("fixture/Ghost.java").toString(),
-            sourceDirectory.resolve("fixture/A.java").toString(),
-            sourceDirectory.resolve("fixture/B.java").toString(),
-            sourceDirectory.resolve("fixture/C.java").toString(),
-            sourceDirectory.resolve("fixture/DynamicOnly.java").toString(),
-            sourceDirectory.resolve("fixture/Helper.java").toString(),
-            sourceDirectory.resolve("fixture/Outer.java").toString(),
-            sourceDirectory.resolve("fixture/Problem.java").toString(),
-            sourceDirectory.resolve("fixture/RecordHolder.java").toString(),
-            sourceDirectory.resolve("fixture/RecordOnly.java").toString(),
-            sourceDirectory.resolve("fixture/RecordOnlyType.java").toString(),
-            sourceDirectory.resolve("fixture/SignatureOnly.java").toString(),
-            sourceDirectory.resolve("fixture/SignatureBound.java").toString(),
-            sourceDirectory.resolve("fixture/CondyUse.java").toString(),
-            sourceDirectory.resolve("fixture/CondyOnly.java").toString(),
-            sourceDirectory.resolve("fixture/InternalBase.java").toString(),
-            sourceDirectory.resolve("fixture/InternalGrandparent.java").toString(),
-            sourceDirectory.resolve("fixture/InternalMarker.java").toString(),
-            sourceDirectory.resolve("fixture/HierarchyBase.java").toString(),
-            sourceDirectory.resolve("fixture/SiblingOnly.java").toString(),
-            sourceDirectory.resolve("fixture/SiblingRoot.java").toString(),
-            sourceDirectory.resolve("fixture/lib/LibChild.java").toString(),
-            sourceDirectory.resolve("fixture/lib/LibParent.java").toString(),
-            sourceDirectory.resolve("fixture/lib/Creator.java").toString(),
-            sourceDirectory.resolve("fixture/GhostUser.java").toString(),
-            sourceDirectory.resolve("fixture/BodyOnly.java").toString(),
-            sourceDirectory.resolve("fixture/OptionalPack200.java").toString(),
-            sourceDirectory.resolve("org/objectweb/asm/ClassVisitor.java").toString());
-    if (compiler.run(null, null, null, arguments.toArray(String[]::new)) != 0) {
-      throw new IOException("Could not compile ProGuard Core test fixture");
-    }
+            sourceDirectory.resolve("fixture/Ghost.java"),
+            sourceDirectory.resolve("fixture/A.java"),
+            sourceDirectory.resolve("fixture/B.java"),
+            sourceDirectory.resolve("fixture/C.java"),
+            sourceDirectory.resolve("fixture/DynamicOnly.java"),
+            sourceDirectory.resolve("fixture/Helper.java"),
+            sourceDirectory.resolve("fixture/Outer.java"),
+            sourceDirectory.resolve("fixture/Problem.java"),
+            sourceDirectory.resolve("fixture/RecordHolder.java"),
+            sourceDirectory.resolve("fixture/RecordOnly.java"),
+            sourceDirectory.resolve("fixture/RecordOnlyType.java"),
+            sourceDirectory.resolve("fixture/SignatureOnly.java"),
+            sourceDirectory.resolve("fixture/SignatureBound.java"),
+            sourceDirectory.resolve("fixture/CondyUse.java"),
+            sourceDirectory.resolve("fixture/CondyOnly.java"),
+            sourceDirectory.resolve("fixture/InternalBase.java"),
+            sourceDirectory.resolve("fixture/InternalGrandparent.java"),
+            sourceDirectory.resolve("fixture/InternalMarker.java"),
+            sourceDirectory.resolve("fixture/HierarchyBase.java"),
+            sourceDirectory.resolve("fixture/SiblingOnly.java"),
+            sourceDirectory.resolve("fixture/SiblingRoot.java"),
+            sourceDirectory.resolve("fixture/lib/LibChild.java"),
+            sourceDirectory.resolve("fixture/lib/LibParent.java"),
+            sourceDirectory.resolve("fixture/lib/Creator.java"),
+            sourceDirectory.resolve("fixture/GhostUser.java"),
+            sourceDirectory.resolve("fixture/BodyOnly.java"),
+            sourceDirectory.resolve("fixture/OptionalPack200.java"),
+            sourceDirectory.resolve("org/objectweb/asm/ClassVisitor.java"));
+    CompilationFixtureSupport.compile(outputDirectory, sourcesList);
     Files.write(outputDirectory.resolve("fixture/CondyUse.class"), condyUseClass());
     final Path jarPath = temporaryDirectory.resolve(omitGhost ? "unresolved.jar" : "candidate.jar");
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jarPath));

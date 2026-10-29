@@ -72,11 +72,11 @@ final class UpdateCveIndexMojoTest {
 
     @Test
     void requiresConfiguredSourceUri() {
-      final UpdateCveIndexMojo mojo = newMojo(temporaryDirectory.resolve("cache"), null);
+      final UpdateCveIndexMojo mojo = newMojo(temporaryDirectory.resolve("cache"), "");
 
       assertThatThrownBy(mojo::execute)
           .isInstanceOf(MojoExecutionException.class)
-          .hasMessageContaining("elide.cveIndexUri");
+          .hasMessageContaining("elide.osvSnapshotUri");
     }
   }
 
@@ -266,7 +266,7 @@ final class UpdateCveIndexMojoTest {
     mojo.setLog(new SystemStreamLog());
     try {
       set(mojo, "cacheDirectory", cache.toFile());
-      set(mojo, "indexUri", uri);
+      set(mojo, "osvSnapshotUri", uri);
     } catch (final ReflectiveOperationException exception) {
       throw new IllegalStateException("Could not initialize update-goal fixture", exception);
     }

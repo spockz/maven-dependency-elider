@@ -32,7 +32,6 @@ import java.util.jar.JarFile;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-import javax.tools.ToolProvider;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
@@ -1586,40 +1585,16 @@ final class ElideMojoTest {
   }
 
   private Artifact compiledArtifact() throws IOException {
-    final Path source = tempDir.resolve("trim-src/sample");
-    final Path classes = tempDir.resolve("trim-classes");
-    Files.createDirectories(source);
-    Files.createDirectories(classes);
-    Files.writeString(
-        source.resolve("Keep.java"), "package sample; public class Keep { Helper helper; }");
-    Files.writeString(source.resolve("Helper.java"), "package sample; public class Helper {}");
-    Files.writeString(source.resolve("Drop.java"), "package sample; public class Drop {}");
-    final int result =
-        ToolProvider.getSystemJavaCompiler()
-            .run(
-                null,
-                null,
-                null,
-                "--release",
-                "21",
-                "-d",
-                classes.toString(),
-                source.resolve("Keep.java").toString(),
-                source.resolve("Helper.java").toString(),
-                source.resolve("Drop.java").toString());
-    if (result != 0) {
-      throw new IOException("Could not compile the trimming lifecycle fixture");
-    }
     final Path jar = tempDir.resolve("runtime-dependency.jar");
-    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(jar));
-        java.util.stream.Stream<Path> paths = Files.walk(classes)) {
-      for (final Path classFile : paths.filter(Files::isRegularFile).toList()) {
-        output.putNextEntry(
-            new ZipEntry(classes.relativize(classFile).toString().replace('\\', '/')));
-        Files.copy(classFile, output);
-        output.closeEntry();
-      }
-    }
+    final Path sourceDirectory = tempDir.resolve("trim-src");
+    io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
+        jar,
+        sourceDirectory,
+        java.util.Map.of(
+            "sample/Keep.java", "package sample; public class Keep { Helper helper; }",
+            "sample/Helper.java", "package sample; public class Helper {}",
+            "sample/Drop.java", "package sample; public class Drop {}"),
+        null);
     final Artifact artifact =
         new DefaultArtifact(
             "org.example",
@@ -1641,40 +1616,10 @@ final class ElideMojoTest {
   private Path compileJarSources(
       final String jarName, final java.util.Map<String, String> sources, final Path classpath)
       throws IOException {
-    final Path sourceDirectory = tempDir.resolve(jarName + "-src");
-    final Path output = tempDir.resolve(jarName + "-classes");
-    Files.createDirectories(sourceDirectory);
-    Files.createDirectories(output);
-    final List<Path> sourceFiles = new ArrayList<>();
-    for (final java.util.Map.Entry<String, String> source : sources.entrySet()) {
-      final Path sourceFile = sourceDirectory.resolve(source.getKey());
-      Files.createDirectories(sourceFile.getParent());
-      Files.writeString(sourceFile, source.getValue());
-      sourceFiles.add(sourceFile);
-    }
-    final List<String> arguments =
-        new ArrayList<>(List.of("--release", "21", "-d", output.toString()));
-    if (classpath != null) {
-      arguments.addAll(List.of("-classpath", classpath.toString()));
-    }
-    sourceFiles.forEach(source -> arguments.add(source.toString()));
-    final int result =
-        ToolProvider.getSystemJavaCompiler()
-            .run(null, null, null, arguments.toArray(String[]::new));
-    if (result != 0) {
-      throw new IOException("Could not compile cross-artifact trimming fixture " + jarName);
-    }
     final Path jar = tempDir.resolve(jarName + ".jar");
-    try (ZipOutputStream archive = new ZipOutputStream(Files.newOutputStream(jar));
-        java.util.stream.Stream<Path> paths = Files.walk(output)) {
-      for (final Path classFile : paths.filter(Files::isRegularFile).toList()) {
-        archive.putNextEntry(
-            new ZipEntry(output.relativize(classFile).toString().replace('\\', '/')));
-        Files.copy(classFile, archive);
-        archive.closeEntry();
-      }
-    }
-    return jar;
+    final Path sourceDirectory = tempDir.resolve(jarName + "-src");
+    return io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
+        jar, sourceDirectory, sources, classpath);
   }
 
   private static byte[] toggleFinalClassFlag(final Path jar, final String entryName)

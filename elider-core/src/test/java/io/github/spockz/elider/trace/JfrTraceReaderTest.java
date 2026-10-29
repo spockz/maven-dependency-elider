@@ -12,9 +12,8 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
 import jdk.jfr.Event;
 import jdk.jfr.Name;
 import jdk.jfr.Recording;
@@ -100,14 +99,7 @@ class JfrTraceReaderTest {
     Files.createDirectories(source.getParent());
     Files.createDirectories(output);
     Files.writeString(source, "package " + packageName + "; public class " + className + " {}");
-    final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    if (compiler == null) {
-      throw new IOException("A JDK compiler is required to create the JFR test fixture");
-    }
-    final int result = compiler.run(null, null, null, "-d", output.toString(), source.toString());
-    if (result != 0) {
-      throw new IOException("Could not compile JFR fixture class " + className);
-    }
+    io.github.spockz.elider.test.CompilationFixtureSupport.compile(output, List.of(source));
   }
 
   @SuppressWarnings("PMD.LawOfDemeter")

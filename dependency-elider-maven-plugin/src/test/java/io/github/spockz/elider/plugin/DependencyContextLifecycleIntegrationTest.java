@@ -1833,7 +1833,51 @@ final class DependencyContextLifecycleIntegrationTest {
         repositoryRoot, wrapper, settings, localRepository, logFile, timeout, arguments);
   }
 
+  private record SubprocessExecution(int exitCode, String output) {}
+
   @SuppressWarnings("PMD.DoNotUseThreads")
+  private static SubprocessExecution executeSubprocess(
+      final Path workingDirectory,
+      final Path wrapper,
+      final Path settings,
+      final Path localRepository,
+      final Path logFile,
+      final Duration timeout,
+      final String... arguments)
+      throws IOException, InterruptedException {
+    Files.createDirectories(logFile.getParent());
+    final List<String> command = new ArrayList<>();
+    command.add(wrapper.toString());
+    command.add("--batch-mode");
+    command.add("--no-transfer-progress");
+    command.add("-s");
+    command.add(settings.toString());
+    command.add("-Dmaven.repo.local=" + localRepository);
+    command.addAll(List.of(arguments));
+    final ProcessBuilder processBuilder =
+        new ProcessBuilder(command)
+            .directory(workingDirectory.toFile())
+            .redirectErrorStream(true)
+            .redirectOutput(logFile.toFile());
+    processBuilder.environment().put("JAVA_HOME", System.getProperty("java.home"));
+    final Process process = processBuilder.start();
+    final boolean exited;
+    try {
+      exited = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (InterruptedException interrupted) {
+      terminate(process);
+      Thread.currentThread().interrupt();
+      throw interrupted;
+    }
+    if (!exited) {
+      terminate(process);
+      process.waitFor(10, TimeUnit.SECONDS);
+      fail("Maven subprocess exceeded " + timeout + "; log retained at " + logFile);
+    }
+    final String output = Files.readString(logFile);
+    return new SubprocessExecution(process.exitValue(), output);
+  }
+
   private static String runFromDirectory(
       final Path workingDirectory,
       final Path wrapper,
@@ -1843,49 +1887,21 @@ final class DependencyContextLifecycleIntegrationTest {
       final Duration timeout,
       final String... arguments)
       throws IOException, InterruptedException {
-    Files.createDirectories(logFile.getParent());
-    final List<String> command = new ArrayList<>();
-    command.add(wrapper.toString());
-    command.add("--batch-mode");
-    command.add("--no-transfer-progress");
-    command.add("-s");
-    command.add(settings.toString());
-    command.add("-Dmaven.repo.local=" + localRepository);
-    command.addAll(List.of(arguments));
-    final ProcessBuilder processBuilder =
-        new ProcessBuilder(command)
-            .directory(workingDirectory.toFile())
-            .redirectErrorStream(true)
-            .redirectOutput(logFile.toFile());
-    processBuilder.environment().put("JAVA_HOME", System.getProperty("java.home"));
-    final Process process = processBuilder.start();
-    final boolean exited;
-    try {
-      exited = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
-    } catch (InterruptedException interrupted) {
-      terminate(process);
-      Thread.currentThread().interrupt();
-      throw interrupted;
-    }
-    if (!exited) {
-      terminate(process);
-      process.waitFor(10, TimeUnit.SECONDS);
-      fail("Maven subprocess exceeded " + timeout + "; log retained at " + logFile);
-    }
-    final String output = Files.readString(logFile);
-    if (process.exitValue() != 0) {
+    final SubprocessExecution execution =
+        executeSubprocess(
+            workingDirectory, wrapper, settings, localRepository, logFile, timeout, arguments);
+    if (execution.exitCode() != 0) {
       fail(
           "Maven subprocess exited "
-              + process.exitValue()
+              + execution.exitCode()
               + "; log retained at "
               + logFile
               + "\n"
-              + output);
+              + execution.output());
     }
-    return output;
+    return execution.output();
   }
 
-  @SuppressWarnings("PMD.DoNotUseThreads")
   private static String runExpectingFailure(
       final Path workingDirectory,
       final Path wrapper,
@@ -1895,40 +1911,17 @@ final class DependencyContextLifecycleIntegrationTest {
       final Duration timeout,
       final String... arguments)
       throws IOException, InterruptedException {
-    Files.createDirectories(logFile.getParent());
-    final List<String> command = new ArrayList<>();
-    command.add(wrapper.toString());
-    command.add("--batch-mode");
-    command.add("--no-transfer-progress");
-    command.add("-s");
-    command.add(settings.toString());
-    command.add("-Dmaven.repo.local=" + localRepository);
-    command.addAll(List.of(arguments));
-    final ProcessBuilder processBuilder =
-        new ProcessBuilder(command)
-            .directory(workingDirectory.toFile())
-            .redirectErrorStream(true)
-            .redirectOutput(logFile.toFile());
-    processBuilder.environment().put("JAVA_HOME", System.getProperty("java.home"));
-    final Process process = processBuilder.start();
-    final boolean exited;
-    try {
-      exited = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
-    } catch (InterruptedException interrupted) {
-      terminate(process);
-      Thread.currentThread().interrupt();
-      throw interrupted;
+    final SubprocessExecution execution =
+        executeSubprocess(
+            workingDirectory, wrapper, settings, localRepository, logFile, timeout, arguments);
+    if (execution.exitCode() == 0) {
+      fail(
+          "Maven subprocess unexpectedly succeeded; log retained at "
+              + logFile
+              + "\n"
+              + execution.output());
     }
-    if (!exited) {
-      terminate(process);
-      process.waitFor(10, TimeUnit.SECONDS);
-      fail("Maven subprocess exceeded " + timeout + "; log retained at " + logFile);
-    }
-    final String output = Files.readString(logFile);
-    if (process.exitValue() == 0) {
-      fail("Maven subprocess unexpectedly succeeded; log retained at " + logFile + "\n" + output);
-    }
-    return output;
+    return execution.output();
   }
 
   private static void terminate(final Process process) {

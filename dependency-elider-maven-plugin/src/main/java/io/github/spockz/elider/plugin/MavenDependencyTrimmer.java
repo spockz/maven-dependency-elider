@@ -32,6 +32,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.jar.JarFile;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
@@ -77,6 +81,7 @@ final class MavenDependencyTrimmer {
   static final String CACHE_FORMAT_ID = "maven-dependency-elider-effective-output-cache";
 
   private static final String ENGINE_VERSION = "proguard-core-9.1.10";
+  private static final int MAX_TRIM_WORKERS = 4;
 
   record TrimResult(
       List<ArtifactTrimRecord> records,
@@ -209,22 +214,34 @@ final class MavenDependencyTrimmer {
         throws IOException {
       final Map<CandidateWork, CacheEntry> entries = new java.util.HashMap<>();
       final List<ArtifactTrimRecord> records = new ArrayList<>();
+      final List<CandidateWork> toSanitize = new ArrayList<>();
       for (final CandidateWork candidate : work) {
         final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
+        if (analysis == null) {
+          continue;
+        }
         if (analysis.retainedClasses().size() == analysis.totalClasses()) {
           entries.put(candidate, cacheEntry(candidate, null, inputDigests));
           continue;
         }
-        final Path stagedOutput = stagedGeneration.resolve(candidate.output().getFileName());
-        final ArchiveSanitizer.PreparedOutput prepared =
-            sanitizer.prepareWithProvenance(
-                candidate.snapshot().filePath(),
-                stagedOutput,
-                candidate.snapshot().coordinate(),
-                analysis,
-                requiredInputDigest(inputDigests, candidate.snapshot().filePath()));
-        pendingOutputs.add(new PendingOutput(candidate, prepared));
+        toSanitize.add(candidate);
       }
+      final List<PendingOutput> prepared =
+          mapParallel(
+              toSanitize,
+              candidate -> {
+                final Path stagedOutput =
+                    stagedGeneration.resolve(candidate.output().getFileName());
+                final ArchiveSanitizer.PreparedOutput staged =
+                    sanitizer.prepareWithProvenance(
+                        candidate.snapshot().filePath(),
+                        stagedOutput,
+                        candidate.snapshot().coordinate(),
+                        candidate.analysis(),
+                        requiredInputDigest(inputDigests, candidate.snapshot().filePath()));
+                return new PendingOutput(candidate, staged);
+              });
+      pendingOutputs.addAll(prepared);
       final List<ArtifactTrimRecord> stagedRecords =
           publishOutputs(
               pendingOutputs.stream().map(PendingOutput::prepared).toList(), sanitizer::publish);
@@ -1034,7 +1051,7 @@ final class MavenDependencyTrimmer {
       return trimEffectivePrepared(
           request, release, runtimeRelease, platformContext, effectiveOutput);
     }
-    return trimLegacyPrepared(request, release, runtimeRelease, platformContext);
+    return trimDirectPrepared(request, release, runtimeRelease, platformContext);
   }
 
   private static TrimResult trimEffectivePrepared(
@@ -1111,7 +1128,7 @@ final class MavenDependencyTrimmer {
             effectiveOutput.analysis().analysisRuns()));
   }
 
-  private static TrimResult trimLegacyPrepared(
+  private static TrimResult trimDirectPrepared(
       final TrimRequest request,
       final int release,
       final int runtimeRelease,
@@ -1184,6 +1201,7 @@ final class MavenDependencyTrimmer {
     final Map<CandidateWork, CacheEntry> entriesByCandidate = new java.util.HashMap<>();
     final List<PendingOutput> pendingOutputs = new ArrayList<>();
     try {
+      final List<CandidateWork> toSanitize = new ArrayList<>();
       for (final CandidateWork candidate : work) {
         final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
         if (analysis == null) {
@@ -1194,16 +1212,23 @@ final class MavenDependencyTrimmer {
               candidate, cacheEntry(candidate, null, fingerprintSnapshot.inputDigests()));
           continue;
         }
-        final ArchiveSanitizer.PreparedOutput prepared =
-            sanitizer.prepareWithProvenance(
-                candidate.snapshot().filePath(),
-                candidate.output(),
-                candidate.snapshot().coordinate(),
-                analysis,
-                requiredInputDigest(
-                    fingerprintSnapshot.inputDigests(), candidate.snapshot().filePath()));
-        pendingOutputs.add(new PendingOutput(candidate, prepared));
+        toSanitize.add(candidate);
       }
+      final List<PendingOutput> prepared =
+          mapParallel(
+              toSanitize,
+              candidate -> {
+                final ArchiveSanitizer.PreparedOutput staged =
+                    sanitizer.prepareWithProvenance(
+                        candidate.snapshot().filePath(),
+                        candidate.output(),
+                        candidate.snapshot().coordinate(),
+                        candidate.analysis(),
+                        requiredInputDigest(
+                            fingerprintSnapshot.inputDigests(), candidate.snapshot().filePath()));
+                return new PendingOutput(candidate, staged);
+              });
+      pendingOutputs.addAll(prepared);
       final List<ArtifactTrimRecord> publishedRecords =
           publishOutputs(
               pendingOutputs.stream().map(PendingOutput::prepared).toList(), sanitizer::publish);
@@ -1425,15 +1450,28 @@ final class MavenDependencyTrimmer {
       final TrimAnalysisSession analysisSession,
       final ClassPool runtimePlatform)
       throws IOException {
+    final List<SkippedProgram> skipped = libraries.skippedPrograms();
+    if (skipped.isEmpty()) {
+      return 0;
+    }
+    final List<DependencyJarTrimmer.TrimAnalysis> analyses =
+        mapParallel(
+            skipped,
+            skippedProgram -> {
+              final List<Path> siblings =
+                  libraries.paths().stream()
+                      .filter(path -> !path.equals(skippedProgram.path()))
+                      .toList();
+              final DependencyJarTrimmer.PreparedAnalysis prepared =
+                  analysisSession.prepareUnchangedPassThrough(
+                      skippedProgram.path(),
+                      siblings,
+                      runtimePlatform,
+                      libraries.passThroughClassNames());
+              return prepared.analyze(skippedProgram.classNames());
+            });
     int analysisRuns = 0;
-    for (final SkippedProgram skippedProgram : libraries.skippedPrograms()) {
-      final List<Path> siblings =
-          libraries.paths().stream().filter(path -> !path.equals(skippedProgram.path())).toList();
-      final DependencyJarTrimmer.PreparedAnalysis prepared =
-          analysisSession.prepareUnchangedPassThrough(
-              skippedProgram.path(), siblings, runtimePlatform, libraries.passThroughClassNames());
-      final DependencyJarTrimmer.TrimAnalysis analysis =
-          prepared.analyze(skippedProgram.classNames());
+    for (final DependencyJarTrimmer.TrimAnalysis analysis : analyses) {
       analysisRuns++;
       for (final String linkedName : analysis.reachableLibraryClasses()) {
         final String dottedName = linkedName.replace('/', '.');
@@ -1453,27 +1491,35 @@ final class MavenDependencyTrimmer {
       final ClassPool platform)
       throws IOException {
     int analysisRuns = 0;
+    final List<CandidateWork> work = candidatePlan.work();
+    final List<DependencyJarTrimmer.PreparedAnalysis> preparedList =
+        mapParallel(
+            work,
+            candidate -> {
+              final List<Path> siblings =
+                  libraries.paths().stream()
+                      .filter(path -> !path.equals(candidate.snapshot().filePath()))
+                      .toList();
+              return analysisSession.prepareWithUnchangedPassThroughLibraries(
+                  candidate.snapshot().filePath(),
+                  siblings,
+                  platform,
+                  libraries.passThroughClassNames());
+            });
     final Map<CandidateWork, DependencyJarTrimmer.PreparedAnalysis> candidateAnalyses =
         new java.util.HashMap<>();
-    for (final CandidateWork candidate : candidatePlan.work()) {
-      final List<Path> siblings =
-          libraries.paths().stream()
-              .filter(path -> !path.equals(candidate.snapshot().filePath()))
-              .toList();
-      candidateAnalyses.put(
-          candidate,
-          analysisSession.prepareWithUnchangedPassThroughLibraries(
-              candidate.snapshot().filePath(),
-              siblings,
-              platform,
-              libraries.passThroughClassNames()));
+    for (int index = 0; index < work.size(); index++) {
+      candidateAnalyses.put(work.get(index), preparedList.get(index));
     }
     boolean rootsChanged;
     do {
       rootsChanged = false;
-      for (final CandidateWork candidate : candidatePlan.work()) {
-        final DependencyJarTrimmer.TrimAnalysis analysis =
-            candidateAnalyses.get(candidate).analyze(candidate.roots());
+      final List<DependencyJarTrimmer.TrimAnalysis> roundAnalyses =
+          mapParallel(
+              work, candidate -> candidateAnalyses.get(candidate).analyze(candidate.roots()));
+      for (int index = 0; index < work.size(); index++) {
+        final CandidateWork candidate = work.get(index);
+        final DependencyJarTrimmer.TrimAnalysis analysis = roundAnalyses.get(index);
         analysisRuns++;
         candidate.analysis(analysis);
         for (final String linkedName : analysis.reachableLibraryClasses()) {
@@ -1928,6 +1974,64 @@ final class MavenDependencyTrimmer {
       records.add(publisher.publish(prepared));
     }
     return List.copyOf(records);
+  }
+
+  @FunctionalInterface
+  private interface TrimmerWorkItem<T, R> {
+    R execute(T item) throws IOException;
+  }
+
+  private static int trimParallelism(final int workSize) {
+    if (workSize <= 1) {
+      return 1;
+    }
+    final int available = Runtime.getRuntime().availableProcessors();
+    return Math.max(1, Math.min(available, MAX_TRIM_WORKERS));
+  }
+
+  @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.PreserveStackTrace"})
+  private static <T, R> List<R> mapParallel(final List<T> items, final TrimmerWorkItem<T, R> task)
+      throws IOException {
+    if (items.isEmpty()) {
+      return List.of();
+    }
+    final int parallelism = trimParallelism(items.size());
+    if (parallelism <= 1 || items.size() == 1) {
+      final List<R> results = new ArrayList<>(items.size());
+      for (final T item : items) {
+        results.add(task.execute(item));
+      }
+      return List.copyOf(results);
+    }
+    try (ExecutorService executor =
+        Executors.newFixedThreadPool(
+            Math.min(items.size(), parallelism),
+            runnable -> {
+              final Thread thread = new Thread(runnable, "dependency-elider-worker");
+              thread.setDaemon(true);
+              return thread;
+            })) {
+      final List<Future<R>> futures = new ArrayList<>(items.size());
+      for (final T item : items) {
+        futures.add(executor.submit(() -> task.execute(item)));
+      }
+      final List<R> results = new ArrayList<>(items.size());
+      for (final Future<R> future : futures) {
+        try {
+          results.add(future.get());
+        } catch (final ExecutionException e) {
+          final Throwable cause = e.getCause();
+          if (cause instanceof IOException ioException) {
+            throw ioException;
+          }
+          throw new IOException("Parallel trimming task failed", cause);
+        }
+      }
+      return List.copyOf(results);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IOException("Interrupted while executing parallel trimming tasks", e);
+    }
   }
 
   private static FingerprintSnapshot fingerprint(

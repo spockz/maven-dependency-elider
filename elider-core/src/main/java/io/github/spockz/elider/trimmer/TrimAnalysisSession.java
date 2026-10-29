@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
 import proguard.classfile.ClassPool;
 
 /** Holds immutable input snapshots for one multi-candidate trim invocation. */
@@ -19,6 +20,9 @@ import proguard.classfile.ClassPool;
 public final class TrimAnalysisSession {
   /** Engine used to construct an isolated reference model for each analysis. */
   private final DependencyJarTrimmer trimmer;
+
+  /** Guards concurrent archive reads and map population. */
+  private final ReentrantLock archiveLock = new ReentrantLock();
 
   /** Cached archive snapshots keyed by normalized path. */
   private final Map<Path, ArchiveSnapshot> archives = new HashMap<>();
@@ -155,15 +159,20 @@ public final class TrimAnalysisSession {
       throw new IOException("Only flat sibling JAR libraries are supported: " + path);
     }
     final Path key = path.toAbsolutePath().normalize();
-    ArchiveSnapshot snapshot = archives.get(key);
-    if (snapshot == null) {
-      snapshot = ArchiveSnapshot.read(key, candidate);
-      archives.put(key, snapshot);
+    archiveLock.lock();
+    try {
+      ArchiveSnapshot snapshot = archives.get(key);
+      if (snapshot == null) {
+        snapshot = ArchiveSnapshot.read(key, candidate);
+        archives.put(key, snapshot);
+      }
+      if (candidate) {
+        snapshot.validateCandidate(key);
+      }
+      return snapshot;
+    } finally {
+      archiveLock.unlock();
     }
-    if (candidate) {
-      snapshot.validateCandidate(key);
-    }
-    return snapshot;
   }
 
   private static Set<String> normalizeClassNames(final Collection<String> classNames) {

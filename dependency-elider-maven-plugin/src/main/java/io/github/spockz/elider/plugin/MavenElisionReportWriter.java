@@ -17,7 +17,12 @@ import java.util.Locale;
 import org.apache.maven.project.MavenProject;
 
 /** Reads, writes, and renders persisted elision summaries. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.CognitiveComplexity",
+  "PMD.CyclomaticComplexity",
+  "PMD.NPathComplexity"
+})
 final class MavenElisionReportWriter {
   /** JSON serializer shared by report snapshot reads and writes. */
   private static final ObjectMapper JSON =
@@ -152,6 +157,33 @@ final class MavenElisionReportWriter {
       lines.add("CVEs with vulnerable code proven absent by trimming:");
       for (final MavenElisionReportSnapshot.CveFinding finding : snapshot.provenAbsentCves()) {
         lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
+      }
+    }
+    if (snapshot.inactivePreconditionCves().isEmpty()) {
+      lines.add(
+          "CVEs inactive due to unmet prerequisite dependencies: "
+              + "none matched the available vulnerability mappings");
+    } else {
+      lines.add("CVEs inactive due to unmet prerequisite dependencies:");
+      for (final MavenElisionReportSnapshot.CveFinding finding :
+          snapshot.inactivePreconditionCves()) {
+        lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
+      }
+    }
+    if (snapshot.potentiallyConservativeCves().isEmpty()) {
+      lines.add("Potentially conservative CVE exclusions: none detected");
+    } else {
+      lines.add("Potentially conservative CVE exclusions:");
+      for (final MavenElisionReportSnapshot.ConservativeCveFinding finding :
+          snapshot.potentiallyConservativeCves()) {
+        lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
+        lines.add("    Reason: " + finding.reason());
+        lines.add(
+            "    Actionable POM override to certify if absent classes do not apply to your"
+                + " version:");
+        for (final String overrideLine : finding.pomOverrideSnippet().split("\n")) {
+          lines.add("      " + overrideLine);
+        }
       }
     }
     lines.addAll(

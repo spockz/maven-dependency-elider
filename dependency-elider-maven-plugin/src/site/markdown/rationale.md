@@ -1,30 +1,30 @@
 <!-- WHY: Explains the empirical and architectural rationale for the Maven Dependency Elider project based on research into SCA granularity mismatch and the vulnerability reduction funnel. -->
 # Project Rationale: The Granularity Impedance Mismatch in Dependency Security
 
-The primary motivation behind `maven-dependency-elider` is the realization that traditional Software Composition Analysis (SCA) suffers from a fundamental impedance mismatch between how security vulnerabilities are catalogued, how build systems resolve dependencies, and how the Java Virtual Machine executes bytecode.
+Traditional Software Composition Analysis (SCA) suffers from a fundamental impedance mismatch between how security vulnerabilities are catalogued, how build systems resolve dependencies, and how the Java Virtual Machine executes bytecode.
 
-Empirical research across academia and industry demonstrates that **on average, only 1% to 3% of reported Common Vulnerabilities and Exposures (CVEs) represent genuine, exploitable risks** in a given production application. Yet, developers spend countless hours triaging false positives, maintaining fragile XML `<exclusion>` rules, and fighting compliance alarms.
+Empirical research confirms that **only 1% to 3% of reported Common Vulnerabilities and Exposures (CVEs) represent genuine, exploitable risks** in production Java applications. The remaining 97% to 99% generate alert fatigue, costly manual triage, and fragile `<exclusion>` lists.
 
 ---
 
-## 1. The Core Problem: Multi-Level Granularity Impedance Mismatch
+## 1. The Core Problem: Multi-Level Granularity Mismatch
 
-Modern Java dependency security operates across four mismatched levels of abstraction:
+Modern Java dependency security breaks down across four mismatched abstraction layers:
 
 1. **Product-Level CPE Over-Matching (The "Netty" Problem)**:
-   The National Vulnerability Database (NVD) historically catalogues vulnerabilities using coarse Common Platform Enumeration (CPE) strings (e.g., `cpe:2.3:a:netty:netty`). Security scanners matching these strings flag *every* `io.netty:netty-*` sub-module on the classpath, even when the underlying flaw exists solely in `netty-codec-http2` and the application only depends on `netty-buffer`.
+   Coarse Common Platform Enumeration (CPE) strings (e.g. `cpe:2.3:a:netty:netty`) cause scanners to flag *every* `io.netty:netty-*` module on the classpath, even when a vulnerability exists solely in `netty-codec-http2` and the application only imports `netty-buffer`.
 2. **Artifact-Level Coordinate Coarseness**:
-   Apache Maven resolves, compiles, and packages dependencies strictly at the `groupId:artifactId` boundary. A single vulnerable, uncalled utility class inside a large multi-megabyte JAR marks the entire artifact as vulnerable in downstream reports.
+   Maven resolves and packages dependencies strictly at the `groupId:artifactId` boundary. A single dormant, uncalled utility class inside a multi-megabyte JAR marks the entire artifact as vulnerable.
 3. **Compound Exploitability & Gadget Chains**:
-   Many high-severity CVEs (such as FasterXML Jackson polymorphic deserialization) require compound co-occurrence: a carrier library, a secondary gadget artifact (e.g. specific Spring or Commons Collections classes), and an active vulnerable configuration. Absent any of these elements, the flaw is unexploitable.
+   Severe vulnerabilities (such as Jackson polymorphic deserialization) typically require compound conditions: a carrier library, secondary gadget classes, and specific runtime configuration. Absent these prerequisites, the flaw cannot be exploited.
 4. **Class & Method Execution Reality**:
-   The JVM loads individual `.class` files dynamically. Whole transitive JARs—and vast portions of directly imported libraries—remain completely quiescent during runtime execution.
+   The JVM loads individual `.class` files on demand. Entire transitive JARs—and large portions of direct dependencies—remain completely unloaded during application execution.
 
 ---
 
 ## 2. The Vulnerability Reality: The 1%–3% Exploitability Funnel
 
-Extensive empirical research from academic institutions (KTH CASTOR, SAP Security Research) and industrial security telemetry (Snyk, Sonatype, Endor Labs, CISA) reveals that software bloat and coarse matching account for up to 99% of all reported dependency vulnerabilities:
+Telemetry and academic studies (KTH CASTOR, SAP Security Research, Snyk, Endor Labs, CISA) reveal how software bloat and coarse matching inflate vulnerability findings:
 
 ```text
 [Stage 1: Raw Baseline (100%)]
@@ -47,29 +47,30 @@ Extensive empirical research from academic institutions (KTH CASTOR, SAP Securit
 | Stage | Finding / Metric | Empirical Evidence & Academic Source |
 | :--- | :--- | :--- |
 | **Stage 1: Raw Baseline** | **100%** | Starting corpus of all reported CVE alerts produced by manifest and CPE scanners. |
-| **Stage 2: CPE Disambiguation** | **45%–65% remaining** | Ponta et al. (SAP Research / ICSME 2018) proved that 88.8% of findings for code-covered CVEs were false positives driven by coarse CPE matching. Dann et al. (ICSE-SEIP 2021) identified package identity mapping as the primary bottleneck in SCA accuracy. |
-| **Stage 3: Unused Dependency Pruning** | **20%–35% remaining** | Soto-Valero et al. (KTH / EMSE 2021) analyzed 9,639 Maven Central artifacts (723,444 dependency relationships) and proved that 57% of transitive dependencies and 75.1% of all dependency relationships in Maven are completely bloated (zero classes loaded). Soto-Valero et al. (ESEC/FSE 2021) showed that 89.2% of bloated dependencies remain bloated across subsequent releases. |
-| **Stage 4: Function Reachability** | **3%–8% remaining** | Snyk Enterprise Telemetry and Endor Labs benchmarked that function-level reachability cuts 92%–95% of package-level alerts. Sonatype State of the Software Supply Chain documented that only ~11% of vulnerable library downloads have reachable execution paths. |
-| **Stage 5: Compound Context** | **1%–3% remaining** | FIRST.org EPSS and CISA KEV confirm that < 0.5% of CVEs are actively exploited in the wild, with only 2%–5% having realistic exploit probability. USENIX Security 2022 (Cao et al.) confirmed that over half of statically reachable gadget chains fail at runtime due to missing secondary companion libraries or dormant configurations. |
+| **Stage 2: CPE Disambiguation** | **45%–65% remaining** | Ponta et al. (SAP Research / ICSME 2018) showed 88.8% of findings for code-covered CVEs were false positives driven by coarse CPE matching. Dann et al. (ICSE-SEIP 2021) identified package identity mapping as the primary bottleneck in SCA accuracy. |
+| **Stage 3: Unused Dependency Pruning** | **20%–35% remaining** | Soto-Valero et al. (KTH / EMSE 2021) analyzed 9,639 Maven Central artifacts (723,444 dependency relationships) and proved that 57% of transitive dependencies and 75.1% of all dependency relationships in Maven are completely bloated (zero classes loaded). |
+| **Stage 4: Function Reachability** | **3%–8% remaining** | Snyk Enterprise Telemetry and Endor Labs benchmarked that function-level reachability eliminates 92%–95% of package-level alerts. Sonatype documented that only ~11% of vulnerable library downloads have reachable execution paths. |
+| **Stage 5: Compound Context** | **1%–3% remaining** | FIRST.org EPSS and CISA KEV confirm < 0.5% of CVEs are actively exploited in the wild, with only 2%–5% having realistic exploit probability. USENIX Security 2022 (Cao et al.) showed over half of statically reachable gadget chains fail at runtime due to missing companion libraries or inactive configurations. |
 
 ---
 
-## 3. Why Build-Time Maven Elision Beats Downstream Administrative Suppression
+## 3. Build-Time Elision vs. Downstream Suppression
 
-When organizations attempt to manage vulnerability noise downstream using Vulnerability Exploitability eXchange (VEX) documents or scanner-specific suppression XML files:
+Organizations typically attempt to handle vulnerability noise through downstream suppression files or Vulnerability Exploitability eXchange (VEX) documents. Here is how build-time elision compares:
 
-* **Asymmetric Scanner Support**: Open-source scanners like Trivy and Grype natively ingest VEX, but commercial enterprise scanners and older tools (e.g. legacy OWASP Dependency-Check) ignore inbound VEX files or treat them purely as manual export formats.
-* **Persistent Compliance Overhead**: Even with VEX, compliance teams must periodically review and defend hundreds of open alerts.
-* **Residual Attack Surface**: Dormant code left on the disk or inside a container image remains susceptible to future zero-day discoveries or gadget chain re-purposing.
+| Dimension | Downstream Suppression / VEX | Build-Time Elision (`maven-dependency-elider`) |
+| :--- | :--- | :--- |
+| **Scanner Compatibility** | Fragmented; many enterprise scanners ignore inbound VEX or suppression files. | Universal; vulnerable code is physically removed, so all scanners report clean. |
+| **Maintenance Burden** | Ongoing; compliance teams must periodically review and defend hundreds of open alerts. | Zero recurring triage; dead dependencies are automatically dropped during the build. |
+| **Attack Surface** | Residual code remains packaged in containers and JARs, susceptible to future gadget reuse. | Eliminated; dormant classes are stripped from the final shipped archive. |
+| **Supply Chain Provenance** | Vulnerability metadata sits outside build artifacts in separate manifests. | Schema-valid CycloneDX 1.6 SBOM records original component digests and trimming pedigree. |
 
-### The Elider Approach: Physical Removal at Build Time
+### The Elision Workflow
 
-`maven-dependency-elider` solves the problem upstream within the Maven lifecycle:
-
-1. **Grounded Runtime Telemetry**: Ingests verifiable JVM execution evidence (HotSpot `-Xlog:class+load`, CDS dumps, JFR recordings, GraalVM reflection configuration, and JaCoCo coverage).
-2. **Whole-Artifact Dynamic Pruning**: Safely mutates Maven's in-memory artifact views at the `INITIALIZE` phase, stripping unobserved transitive JARs before downstream packaging (Shade, Spring Boot repackaging) or SBOM generation occurs.
-3. **Sub-Artifact Bytecode Slicing**: For retained dependencies, intra-JAR symbol slicing removes unreferenced classes while strictly preserving constant-pool link closure and stripping invalidated JAR signatures.
-4. **Transparent Packaging & Clean Scans**: Downstream packaging plugins, scanners, and CycloneDX SBOM generators see only the reduced, actively needed dependency graph. Vulnerabilities in elided code are physically absent from the shipped artifact, eliminating false positives at the root.
+1. **Ground in Concrete Telemetry**: Ingest real JVM execution evidence (HotSpot `-Xlog:class+load`, CDS lists, JFR events, GraalVM reflection configs, JaCoCo execs).
+2. **Whole-Artifact Pruning**: Mutate Maven's in-memory artifact views at `INITIALIZE` to drop unobserved transitive dependencies before packaging.
+3. **Bytecode Trimming**: Use ProGuard Core link closure on retained JARs to strip unreferenced classes while preserving resources, licenses, and SPI descriptors.
+4. **Transparent Downstream Packaging**: Standard packaging plugins (`maven-shade-plugin`, `spring-boot-maven-plugin`) and scanners consume the clean, minimized classpath without bespoke glue code.
 
 ---
 

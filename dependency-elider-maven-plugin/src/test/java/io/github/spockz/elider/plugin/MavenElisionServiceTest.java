@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.test.CompilationFixtureSupport;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,11 +20,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.jar.JarEntry;
-import java.util.jar.JarOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
-import javax.tools.ToolProvider;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
@@ -36,9 +34,7 @@ import org.junit.jupiter.api.io.TempDir;
 /** Verifies Maven elision preparation without mutating Maven state. */
 @SuppressWarnings({
   "PMD.AvoidDuplicateLiterals",
-  "PMD.CouplingBetweenObjects",
   "PMD.LawOfDemeter",
-  "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.TooManyMethods",
   "PMD.UnitTestContainsTooManyAsserts"
 })
@@ -504,31 +500,15 @@ final class MavenElisionServiceTest {
   private Path compileJar(final String jarName, final String className) throws IOException {
     final String packageName = className.substring(0, className.lastIndexOf('.'));
     final String simpleName = className.substring(className.lastIndexOf('.') + 1);
-    final Path source =
-        tempDir
-            .resolve(jarName + "-src")
-            .resolve(packageName.replace('.', '/'))
-            .resolve(simpleName + ".java");
-    Files.createDirectories(source.getParent());
-    Files.writeString(source, "package " + packageName + "; public class " + simpleName + " {}\n");
-    final Path output = Files.createDirectories(tempDir.resolve(jarName + "-classes"));
-    final int result =
-        ToolProvider.getSystemJavaCompiler()
-            .run(null, null, null, "--release", "21", "-d", output.toString(), source.toString());
-    if (result != 0) {
-      throw new IOException("Could not compile the complete-source test dependency");
-    }
     final Path jar = tempDir.resolve(jarName);
-    try (JarOutputStream archive = new JarOutputStream(Files.newOutputStream(jar));
-        java.util.stream.Stream<Path> paths = Files.walk(output)) {
-      for (final Path classFile : paths.filter(Files::isRegularFile).toList()) {
-        archive.putNextEntry(
-            new JarEntry(output.relativize(classFile).toString().replace('\\', '/')));
-        Files.copy(classFile, archive);
-        archive.closeEntry();
-      }
-    }
-    return jar;
+    final Path sourceDirectory = tempDir.resolve(jarName + "-src");
+    return CompilationFixtureSupport.compileToJar(
+        jar,
+        sourceDirectory,
+        Map.of(
+            className.replace('.', '/') + ".java",
+            "package " + packageName + "; public class " + simpleName + " {}\n"),
+        null);
   }
 
   private static ArtifactCoordinate generatedOwnerCoordinate() {

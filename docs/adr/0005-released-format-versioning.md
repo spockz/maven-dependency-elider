@@ -14,6 +14,7 @@ The plugin stores several independent formats, including resolver plans, capture
 - A change to a format that was previously published in a `maven-dependency-elider` release increments that format's schema or protocol version before the changed format is released.
 - Version each persisted format independently. A change to one format does not increment unrelated format versions or the plugin release version.
 - Do not promise compatibility aliases or migrations for unreleased formats. Readers reject malformed or incompatible payloads explicitly.
+- Do not introduce 'legacy' adapters, shims, tests, or payload naming for unreleased code or schemas. Because no format version has been published, prior iterations or incomplete payloads are simply invalid, not legacy.
 - Before making a compatibility or migration promise for a released format, record its scope and policy in an ADR.
 
 ## Consequences

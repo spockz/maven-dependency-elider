@@ -212,6 +212,21 @@ final class MavenElisionReportWriterTest {
   @Test
   void writesReadsAndRendersPopulatedCveFindings() throws IOException {
     final MavenElisionReportSnapshot base = snapshot();
+    final MavenElisionReportSnapshot.ConservativeCveFinding conservative =
+        new MavenElisionReportSnapshot.ConservativeCveFinding(
+            "CVE-2026-68494",
+            "com.fasterxml.jackson.core:jackson-core:jar:2.14.3",
+            "Advisory mapping requires multiple symbols, but class(es)"
+                + " [com.fasterxml.jackson.core.exc.StreamConstraintsException] are absent from"
+                + " original archive while [com.fasterxml.jackson.core.async.ByteArrayFeeder] were"
+                + " pruned.",
+            "<configuration>\n"
+                + "  <vulnerabilityMappings>\n"
+                + "    <vulnerabilityMapping>\n"
+                + "      <cveId>CVE-2026-68494</cveId>\n"
+                + "    </vulnerabilityMapping>\n"
+                + "  </vulnerabilityMappings>\n"
+                + "</configuration>");
     final MavenElisionReportSnapshot populated =
         new MavenElisionReportSnapshot(
             base.schemaVersion(),
@@ -222,6 +237,8 @@ final class MavenElisionReportWriterTest {
             base.generatedAt(),
             base.wholeArtifactsDropped(),
             base.originalJarBytesDropped(),
+            base.droppedProgramClassEntries(),
+            base.droppedProgramClassBytes(),
             base.droppedArtifacts(),
             base.rawDroppedCoordinates(),
             base.programClassesPruned(),
@@ -233,6 +250,10 @@ final class MavenElisionReportWriterTest {
             List.of(
                 new MavenElisionReportSnapshot.CveFinding(
                     "CVE-2025-11226", "org.example:trimmed:jar:2.0")),
+            List.of(
+                new MavenElisionReportSnapshot.CveFinding(
+                    "CVE-2025-11227", "ch.qos.logback:logback-core:jar:1.5.15")),
+            List.of(conservative),
             base.mediatedGraph());
     final Path output = temporaryDirectory.resolve("target/cve-report.json");
 
@@ -248,12 +269,34 @@ final class MavenElisionReportWriterTest {
         .containsExactly(
             new MavenElisionReportSnapshot.CveFinding(
                 "CVE-2025-11226", "org.example:trimmed:jar:2.0"));
+    assertThat(reread.inactivePreconditionCves())
+        .containsExactly(
+            new MavenElisionReportSnapshot.CveFinding(
+                "CVE-2025-11227", "ch.qos.logback:logback-core:jar:1.5.15"));
+    assertThat(reread.potentiallyConservativeCves()).containsExactly(conservative);
     assertThat(MavenElisionReportWriter.render(reread))
         .contains(
             "CVE components removed from inventory:",
             "  - CVE-2026-10001 org.example:removed:jar:1.0",
             "CVEs with vulnerable code proven absent by trimming:",
-            "  - CVE-2025-11226 org.example:trimmed:jar:2.0");
+            "  - CVE-2025-11226 org.example:trimmed:jar:2.0",
+            "CVEs inactive due to unmet prerequisite dependencies:",
+            "  - CVE-2025-11227 ch.qos.logback:logback-core:jar:1.5.15",
+            "Potentially conservative CVE exclusions:",
+            "  - CVE-2026-68494 com.fasterxml.jackson.core:jackson-core:jar:2.14.3",
+            "    Reason: Advisory mapping requires multiple symbols, but class(es)"
+                + " [com.fasterxml.jackson.core.exc.StreamConstraintsException] are absent from"
+                + " original archive while [com.fasterxml.jackson.core.async.ByteArrayFeeder] were"
+                + " pruned.",
+            "    Actionable POM override to certify if absent classes do not apply to your"
+                + " version:",
+            "      <configuration>",
+            "        <vulnerabilityMappings>",
+            "          <vulnerabilityMapping>",
+            "            <cveId>CVE-2026-68494</cveId>",
+            "          </vulnerabilityMapping>",
+            "        </vulnerabilityMappings>",
+            "      </configuration>");
   }
 
   @Test

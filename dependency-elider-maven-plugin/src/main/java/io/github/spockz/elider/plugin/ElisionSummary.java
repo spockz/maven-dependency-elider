@@ -205,8 +205,42 @@ final class ElisionSummary {
         predicted
             ? "  CVEs whose vulnerable code would be proven absent by trimming: "
             : "  CVEs with vulnerable code proven absent by trimming: ";
+    final String inactiveHeading =
+        predicted
+            ? "  CVEs that would be inactive due to unmet prerequisite dependencies: "
+            : "  CVEs inactive due to unmet prerequisite dependencies: ";
     reportFindings(log, removedHeading, assessment.removedComponents());
     reportFindings(log, provenHeading, assessment.provenVulnerableCodeAbsent());
+    reportFindings(log, inactiveHeading, assessment.inactiveDueToMissingPrerequisites());
+    reportConservativeDrops(log, assessment.potentiallyConservativeCves(), predicted);
+  }
+
+  private static void reportConservativeDrops(
+      final Log log,
+      final java.util.List<MavenVulnerabilityAssessment.ConservativeFinding> findings,
+      final boolean predicted) {
+    if (!log.isInfoEnabled()) {
+      return;
+    }
+    final String heading =
+        predicted
+            ? "  CVEs that would be excluded due to conservative multi-symbol checks:"
+            : "  CVEs excluded due to conservative multi-symbol checks:";
+    if (findings.isEmpty()) {
+      log.info(heading + " none detected");
+      return;
+    }
+    log.info(heading);
+    for (final MavenVulnerabilityAssessment.ConservativeFinding finding : findings) {
+      log.info("    " + finding.cveId() + " " + finding.coordinate().toId());
+      log.info("      Reason: " + finding.reason());
+      log.info(
+          "      Actionable POM override to certify if absent classes do not apply to your"
+              + " version:");
+      for (final String line : finding.pomOverrideSnippet().split("\n")) {
+        log.info("        " + line);
+      }
+    }
   }
 
   private static void reportFindings(

@@ -17,11 +17,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.stream.Stream;
 import java.util.zip.ZipOutputStream;
-import javax.tools.ToolProvider;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
@@ -151,43 +148,17 @@ final class MavenDependencyTrimmerTest {
             false));
   }
 
-  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
   private Path compileJar() throws IOException {
-    final Path sourceDirectory = Files.createDirectories(tempDir.resolve("sources/sample"));
-    final Path outputDirectory = Files.createDirectories(tempDir.resolve("classes"));
-    final Path keep = sourceDirectory.resolve("Keep.java");
-    final Path dynamic = sourceDirectory.resolve("Dynamic.java");
-    final Path drop = sourceDirectory.resolve("Drop.java");
-    Files.writeString(keep, "package sample; public class Keep {}\n");
-    Files.writeString(dynamic, "package sample; public class Dynamic {}\n");
-    Files.writeString(drop, "package sample; public class Drop {}\n");
-    final int compilationResult =
-        ToolProvider.getSystemJavaCompiler()
-            .run(
-                null,
-                null,
-                null,
-                "--release",
-                "21",
-                "-d",
-                outputDirectory.toString(),
-                keep.toString(),
-                dynamic.toString(),
-                drop.toString());
-    if (compilationResult != 0) {
-      throw new IOException("Could not compile the trimmer root reuse fixture");
-    }
     final Path jar = tempDir.resolve("runtime.jar");
-    try (ZipOutputStream archive = new ZipOutputStream(Files.newOutputStream(jar));
-        Stream<Path> classFiles = Files.walk(outputDirectory)) {
-      for (final Path classFile : classFiles.filter(Files::isRegularFile).toList()) {
-        archive.putNextEntry(
-            new JarEntry(outputDirectory.relativize(classFile).toString().replace('\\', '/')));
-        Files.copy(classFile, archive);
-        archive.closeEntry();
-      }
-    }
-    return jar;
+    final Path sourceDirectory = tempDir.resolve("sources");
+    return io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
+        jar,
+        sourceDirectory,
+        Map.of(
+            "sample/Keep.java", "package sample; public class Keep {}\n",
+            "sample/Dynamic.java", "package sample; public class Dynamic {}\n",
+            "sample/Drop.java", "package sample; public class Drop {}\n"),
+        null);
   }
 
   private static Artifact runtimeArtifact(final Path jar) {

@@ -21,7 +21,8 @@ An eliminated finding means that the baseline package finding did not match a pa
 2. If it is integrated, how should scanner version, vulnerability database revision/time, target inventory, and outputs be recorded so pre/post results are comparable and reproducible?
 3. Can the difference be reported only as findings no longer matched to the post-elision component inventory, without implying exploitability or code-level remediation?
 4. What should happen when the scanner, network, or vulnerability database is unavailable: skip explicitly, warn, or fail? How can offline use remain clear and auditable?
-5. Is there reliable vulnerability data that maps a CVE to specific classes or members, and can that map be linked to verified trim output strongly enough to support a CycloneDX VEX `code_not_present` statement?
+5. Is there reliable vulnerability data that maps a CVE to specific classes or members, and can that map be linked to verified trim output strongly enough to support a CycloneDX VEX `code_not_present` statement? (Resolved by [ADR-0006](../adr/0006-dual-source-vulnerability-advisory-ingestion-from-cvelist-v5-and-osv-maven.md) using dual-source ingestion from OSV Maven database snapshots and CVEList v5).
+6. How should advisories mapping multiple vulnerable classes be interpreted across wide version ranges? For instance, Jackson Core `CVE-2026-68494` maps both `ByteArrayFeeder` and `StreamConstraintsException`, but `StreamConstraintsException` only exists in versions >= 2.15 while versions < 2.15 are also marked vulnerable. Does the presence of any mapped class indicate vulnerability, or must all be present? Under what conditions can current fail-closed strictness be relaxed?
 
 ## Options
 

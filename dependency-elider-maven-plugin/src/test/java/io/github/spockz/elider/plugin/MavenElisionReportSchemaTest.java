@@ -63,9 +63,12 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
-  void rejectsSchemaOneDroppedArtifactDraftMissingClassMetrics() throws IOException {
-    final ObjectNode payload = currentReportShapeWithLegacyDroppedRow();
-    final Path previous = temporaryDirectory.resolve("legacy-dropped-row.json");
+  void rejectsDroppedArtifactMissingClassMetrics() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    final ObjectNode row = (ObjectNode) payload.withArray(DROPPED_ROWS).get(0);
+    row.remove(DROPPED_CLASSES);
+    row.remove(DROPPED_CLASS_BYTES);
+    final Path previous = temporaryDirectory.resolve("missing-class-metrics.json");
     JSON.writeValue(previous.toFile(), payload);
 
     assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
@@ -195,7 +198,25 @@ final class MavenElisionReportSchemaTest {
         .hasMessageContaining("coordinate must be nonblank text");
   }
 
-  private static ObjectNode currentReportShapeWithLegacyDroppedRow() {
+  @Test
+  void rejectsBlankConservativeCveReason() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload
+        .withArray("potentiallyConservativeCves")
+        .addObject()
+        .put("cveId", "CVE-2026-68494")
+        .put("coordinate", "example:dep:jar:1.0")
+        .put("reason", "   ")
+        .put("pomOverrideSnippet", "<xml/>");
+    final Path previous = temporaryDirectory.resolve("blank-reason.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("reason must be a non-blank string");
+  }
+
+  static ObjectNode currentReportShapeWithDroppedRow() {
     final ObjectNode payload = JSON.createObjectNode();
     payload.put("schemaVersion", 1);
     payload.put("projectGroupId", "example");
@@ -211,13 +232,17 @@ final class MavenElisionReportSchemaTest {
         .putArray(DROPPED_ROWS)
         .addObject()
         .put("coordinate", "example:old:jar:1.0")
-        .put("originalJarBytes", 1);
+        .put("originalJarBytes", 1)
+        .put(DROPPED_CLASSES, 0)
+        .put(DROPPED_CLASS_BYTES, 0);
     payload.putArray("rawDroppedCoordinates");
     payload.put("programClassesPruned", 0);
     payload.put("uncompressedProgramClassBytesPruned", 0);
     payload.putArray("trimmedArtifacts");
     payload.putArray("removedCveComponents");
     payload.putArray("provenAbsentCves");
+    payload.putArray("inactivePreconditionCves");
+    payload.putArray("potentiallyConservativeCves");
     final ObjectNode graph = payload.putObject("mediatedGraph");
     graph.put("available", false);
     graph.put("unavailableReason", "No graph was provided");
@@ -227,14 +252,6 @@ final class MavenElisionReportSchemaTest {
     graph.putNull("snapshot");
     graph.putArray("nodeStatuses");
     graph.putArray("artifactPaths");
-    return payload;
-  }
-
-  static ObjectNode currentReportShapeWithDroppedRow() {
-    final ObjectNode payload = currentReportShapeWithLegacyDroppedRow();
-    final ObjectNode row = (ObjectNode) payload.withArray(DROPPED_ROWS).get(0);
-    row.put(DROPPED_CLASSES, 0);
-    row.put(DROPPED_CLASS_BYTES, 0);
     return payload;
   }
 }

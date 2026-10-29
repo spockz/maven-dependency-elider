@@ -90,7 +90,9 @@ final class DependencyDynamicRoots {
             && name.endsWith(".properties")) {
           declaresClassRoots |=
               NativeImageDynamicRoots.readNativeImageProperties(archive, entry, roots);
-        } else if (name.startsWith(NativeImageDynamicRoots.PREFIX) && name.endsWith(".json")) {
+        } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
+            && !NativeImageDynamicRoots.isNativeImageSbom(name)
+            && name.endsWith(".json")) {
           throw new IOException("Unsupported native-image class metadata: " + name);
         } else if (SPRING_FACTORIES.equals(name)) {
           declaresClassRoots |= readSpringFactories(archive.getInputStream(entry), roots);

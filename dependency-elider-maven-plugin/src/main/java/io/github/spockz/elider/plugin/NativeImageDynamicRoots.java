@@ -25,6 +25,10 @@ final class NativeImageDynamicRoots {
     return NativeImageResourceConfig.isNativeImageResourceConfig(name);
   }
 
+  static boolean isNativeImageSbom(final String name) {
+    return (PREFIX + "sbom.json").equals(name) || name.endsWith("/sbom.json");
+  }
+
   static boolean readNativeImageProperties(
       final JarFile archive, final JarEntry propertiesEntry, final Set<String> roots)
       throws IOException {

@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.jar.JarFile;
-import javax.tools.ToolProvider;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.model.Build;
 import org.apache.maven.project.MavenProject;
@@ -239,11 +238,6 @@ final class MavenElisionServiceEffectiveOutputTest
         "package generated; public class Output { public int value() { return "
             + constant
             + "; } }\n");
-    final int result =
-        ToolProvider.getSystemJavaCompiler()
-            .run(null, null, null, "--release", "21", "-d", output.toString(), source.toString());
-    if (result != 0) {
-      throw new IOException("Could not compile production bytecode cache fixture");
-    }
+    io.github.spockz.elider.test.CompilationFixtureSupport.compile(output, List.of(source));
   }
 }

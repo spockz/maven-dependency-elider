@@ -157,6 +157,49 @@ class OmittedCodeProofTest {
         .hasMessageContaining("does not match");
   }
 
+  @Test
+  void evaluatesConservativeOmissionForMultiSymbolMappingWithAbsentSymbol() throws Exception {
+    final ArtifactTrimRecord record =
+        record(
+            jar("original.jar", "org/example/PresentVulnerable.class", "org/example/Safe.class"),
+            jar("trimmed.jar", "org/example/Safe.class"));
+    final VulnerabilitySymbolMapping multiSymbol =
+        new VulnerabilitySymbolMapping(
+            "CVE-2026-68494",
+            ArtifactCoordinate.of("org.example", "demo", "1.0"),
+            "[1.0,2.0)",
+            Set.of("org.example.PresentVulnerable", "org.example.AbsentClass"),
+            null,
+            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH);
+
+    final java.util.Optional<OmittedCodeProof.ConservativeOmission> omission =
+        OmittedCodeProof.evaluateConservativeOmission(multiSymbol, record);
+    assertThat(omission).isPresent();
+    assertThat(omission.get().cveId()).isEqualTo("CVE-2026-68494");
+    assertThat(omission.get().absentFromOriginal()).containsExactly("org.example.AbsentClass");
+    assertThat(omission.get().presentAndPruned()).containsExactly("org.example.PresentVulnerable");
+  }
+
+  @Test
+  void doesNotEvaluateConservativeOmissionIfMappedSymbolSurvives() throws Exception {
+    final ArtifactTrimRecord record =
+        record(
+            jar("original.jar", "org/example/PresentVulnerable.class", "org/example/Safe.class"),
+            jar("trimmed.jar", "org/example/PresentVulnerable.class", "org/example/Safe.class"));
+    final VulnerabilitySymbolMapping multiSymbol =
+        new VulnerabilitySymbolMapping(
+            "CVE-2026-68494",
+            ArtifactCoordinate.of("org.example", "demo", "1.0"),
+            "[1.0,2.0)",
+            Set.of("org.example.PresentVulnerable", "org.example.AbsentClass"),
+            null,
+            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH);
+
+    final java.util.Optional<OmittedCodeProof.ConservativeOmission> omission =
+        OmittedCodeProof.evaluateConservativeOmission(multiSymbol, record);
+    assertThat(omission).isEmpty();
+  }
+
   private ArtifactTrimRecord record(final Path original, final Path trimmed) throws IOException {
     final ArtifactDigests originalHash = ArtifactDigests.read(original);
     final ArtifactDigests trimmedHash = ArtifactDigests.read(trimmed);

@@ -69,6 +69,30 @@ It fails before changing Maven artifact pointers rather than assuming unknown me
 
 Not necessarily. Many vulnerability tools report by artifact coordinates and version, even when some classes have been removed. The core has a mapping reader and archive-proof API, but the Maven plugin does not yet wire them into trimming or serialize VEX. The core accepts only HIGH-confidence mappings and verifies mapped classes and their nested classes against the actual original and trimmed archives. `versionRangeSpec` is currently stored as metadata; Maven version-range applicability is not evaluated. A package/version finding or unused artifact alone is insufficient. Inspect and scan the final packaged artifact, and assess the advisory's affected code and exploit conditions separately. See [RQ-0008](research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) for the implementation boundary.
 
+### What happens if an advisory maps multiple vulnerable classes that do not exist in an older version?
+
+The verification engine currently fails closed: `OmittedCodeProof` requires all mapped vulnerable classes to be present in the original dependency JAR before certifying that trimming removed them. In cases like Jackson Core (`CVE-2026-68494`), a vulnerability fix across a broad version range touches classes that were only introduced in later minor versions (such as `StreamConstraintsException` added in Jackson 2.15), meaning older affected versions (like Jackson 2.14) do not contain all mapped symbols. In such cases, the elider conservatively omits the CVE from being considered "avoided" or emitting a VEX statement.
+
+If an engineer deems this overly conservative because the absent class is irrelevant to their version, they can override the mapping directly in `pom.xml` under `<configuration><vulnerabilityMappings>`:
+
+```xml
+<vulnerabilityMappings>
+  <vulnerabilityMapping>
+    <cveId>CVE-2026-68494</cveId>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-core</artifactId>
+    <versionRangeSpec>[2.14.0,2.15.0)</versionRangeSpec>
+    <vulnerableClasses>
+      <vulnerableClass>com.fasterxml.jackson.core.async.ByteArrayFeeder</vulnerableClass>
+    </vulnerableClasses>
+    <sourceAdvisoryUrl>https://github.com/FasterXML/jackson-core/pull/1611</sourceAdvisoryUrl>
+    <confidenceLevel>HIGH</confidenceLevel>
+  </vulnerabilityMapping>
+</vulnerabilityMappings>
+```
+
+We are actively evaluating how to interpret multiple mapped classes (e.g. conjunction vs. disjunction) across version ranges and whether the elider must remain as strict as it is today.
+
 ## Compatibility and Performance
 
 ### Is Java 25 class-file analysis supported?
@@ -77,4 +101,4 @@ No, not with the currently pinned ProGuard Core 9.1.10. The validated example to
 
 ### How much build time does elision add?
 
-Three baseline-first `clean verify` cycles after the 7.6 platform identity change measured Basic at a median 2.262 seconds without elision and 4.224 seconds with it; the median of the three paired differences was +1.977 seconds. Spring Boot measured medians of 4.106 seconds and 24.523 seconds, with a median paired difference of +20.417 seconds. These are descriptive observations, not stable performance guarantees or isolated causal estimates. The fresh-context trim-cache operation remains above the <10 ms target; the repeated same-request cache hit is below it. Elision remains under active development and should not be used to remove dependencies from production builds. See [RQ-0003](research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for measurement details.
+Three baseline-first `clean verify` cycles measured Basic at a median 2.262 seconds without elision and 4.224 seconds with it; the median of the three paired differences was +1.977 seconds. Spring Boot measured medians of 4.106 seconds and 24.523 seconds, with a median paired difference of +20.417 seconds. These are descriptive observations, not stable performance guarantees or isolated causal estimates. The fresh-context trim-cache operation remains above the <10 ms target; the repeated same-request cache hit is below it. Elision remains under active development and should not be used to remove dependencies from production builds. See [RQ-0003](research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for measurement details.

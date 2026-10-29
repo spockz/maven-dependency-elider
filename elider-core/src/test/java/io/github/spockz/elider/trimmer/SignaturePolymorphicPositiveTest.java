@@ -4,15 +4,13 @@ package io.github.spockz.elider.trimmer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
+import io.github.spockz.elider.test.CompilationFixtureSupport;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -52,20 +50,7 @@ class SignaturePolymorphicPositiveTest {
             + "private static int target(DescriptorOnly ignored, int value) "
             + "{ return value + 1; } } "
             + "final class DescriptorOnly {}");
-    final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    if (compiler == null
-        || compiler.run(
-                null,
-                null,
-                null,
-                "--release",
-                "21",
-                "-d",
-                outputDirectory.toString(),
-                sourceFile.toString())
-            != 0) {
-      throw new IOException("Could not compile the MethodHandle fixture");
-    }
+    CompilationFixtureSupport.compile(outputDirectory, List.of(sourceFile));
     final Path candidateJar =
         SignaturePolymorphicTestSupport.writeClassJar(
             temporaryDirectory,
@@ -200,20 +185,7 @@ class SignaturePolymorphicPositiveTest {
             + "throw new AssertionError(); "
             + "return (DescriptorOnly) handle.get(); } } "
             + "final class DescriptorOnly {}");
-    final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    if (compiler == null
-        || compiler.run(
-                null,
-                null,
-                null,
-                "--release",
-                "21",
-                "-d",
-                outputDirectory.toString(),
-                sourceFile.toString())
-            != 0) {
-      throw new IOException("Could not compile the VarHandle fixture");
-    }
+    CompilationFixtureSupport.compile(outputDirectory, List.of(sourceFile));
     final Path candidateJar =
         SignaturePolymorphicTestSupport.writeClassJar(
             temporaryDirectory,

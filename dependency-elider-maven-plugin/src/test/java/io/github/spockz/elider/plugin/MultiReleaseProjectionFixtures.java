@@ -2,14 +2,15 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.test.CompilationFixtureSupport;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
-import javax.tools.ToolProvider;
 
 /** Creates compiler-backed archive fixtures for projection tests. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -32,21 +33,7 @@ final class MultiReleaseProjectionFixtures {
     final Path api = packageDirectory.resolve("Api.java");
     Files.writeString(descriptor, "module projection.test { exports projection; }");
     Files.writeString(api, "package projection; public class Api {}");
-    final int result =
-        ToolProvider.getSystemJavaCompiler()
-            .run(
-                null,
-                null,
-                null,
-                "--release",
-                "9",
-                "-d",
-                outputDirectory.toString(),
-                descriptor.toString(),
-                api.toString());
-    if (result != 0) {
-      throw new IOException("Could not compile modular pass-through projection fixture");
-    }
+    CompilationFixtureSupport.compile(outputDirectory, List.of(descriptor, api), "--release", "9");
     final Path jar = root.resolve("modular.jar");
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar))) {
       addClass(output, outputDirectory.resolve(MODULE_INFO_ENTRY), MODULE_INFO_ENTRY);
@@ -63,20 +50,8 @@ final class MultiReleaseProjectionFixtures {
     Files.createDirectories(outputDirectory);
     final Path sourceFile = sourceDirectory.resolve(sourceClassName(source));
     Files.writeString(sourceFile, source);
-    final int result =
-        ToolProvider.getSystemJavaCompiler()
-            .run(
-                null,
-                null,
-                null,
-                "--release",
-                Integer.toString(release),
-                "-d",
-                outputDirectory.toString(),
-                sourceFile.toString());
-    if (result != 0) {
-      throw new IOException("Could not compile multi-release projection fixture " + name);
-    }
+    CompilationFixtureSupport.compile(
+        outputDirectory, List.of(sourceFile), "--release", Integer.toString(release));
     return outputDirectory
         .resolve("projection")
         .resolve(sourceClassName(source).replace(".java", ".class"));

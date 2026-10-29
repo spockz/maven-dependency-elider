@@ -1,46 +1,78 @@
 <!-- WHY: Documents the usable Maven goal and the lifecycle safety boundary for plugin consumers. -->
-# Maven plugin usage
+# Maven Plugin Usage
 
-The nonmutating `analyze` goal reads explicit runtime trace files and reports artifacts that would be elided by this analysis. It also reports the exact sum of their original on-disk JAR sizes as an estimate; the final package delta may differ. It does not mutate Maven's artifact sets, classpaths, or packaged output. By default it does not run intra-JAR trimming; pass `-Delide.trimJars=true` with the same trim options used by `elide` to calculate dry-run trim records and code-absence proofs.
+Maven Dependency Elider provides four primary goals:
 
-For practical configuration and compatibility questions, see the [User FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/faq.md). Implementation rationale and benchmark evidence are in the [Contributor Decision Register and Engineering FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/contributor-decisions-and-faq.md).
+* `analyze`: Non-mutating dry-run that identifies removable dependencies and estimates size savings.
+* `elide`: Active build-time goal that prunes unneeded JARs and trims unreferenced classes during the `INITIALIZE` phase.
+* `report`: Displays the persisted elision snapshot and mediated dependency graph from the last successful build.
+* `update-cve-index`: Refreshes local vulnerability intelligence from OSV and CVEList v5.
 
-First, install this repository's plugin and core dependency using the repository wrapper:
+For common questions, see the [User FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/faq.md) and [Contributor Decisions and FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/contributor-decisions-and-faq.md).
+
+---
+
+## 1. Quick Installation
+
+Install the plugin and core engine into your local Maven repository:
 
 ```sh
 ./mvnw -pl dependency-elider-maven-plugin -am install
 ```
 
-Then, from the consumer project, invoke the goal with that project's Maven binary or wrapper:
+---
+
+## 2. Capturing Runtime Telemetry
+
+Elision requires evidence of classes loaded during execution. Capture runtime telemetry using any supported JVM sensor:
+
+| Telemetry Format | File Extension | JVM Flag or Tool Command |
+| :--- | :--- | :--- |
+| **Class-load logs** | `.log`, `.txt` | `-Xlog:class+load=info:file=target/classes.log` |
+| **CDS Class List** | `.lst` | `-XX:DumpLoadedClassList=target/classes.lst` |
+| **JDK Flight Recorder** | `.jfr` | `-XX:StartFlightRecording=dumponexit=true,filename=target/recording.jfr` |
+| **GraalVM Reflection** | `.json` | Native Image Tracing Agent (`-agentlib:native-image-agent=config-output-dir=...`) |
+| **JaCoCo Execution** | `.exec` | JaCoCo Java Agent (`-javaagent:jacocoagent.jar=destfile=target/jacoco.exec`) |
+
+### Telemetry Rules
+
+* Pass one or more file paths as a comma-separated list via `-Delide.traceFiles`.
+* Every specified file must exist, be readable, and use a supported format.
+* The merged trace set must be non-empty and match at least one class in a resolved JAR dependency.
+* Malformed traces or traces with no matching classes fail the goal.
+
+---
+
+## 3. Dry-Run Analysis (`analyze`)
+
+Run `analyze` to inspect potential dependency drops and byte savings without altering project artifacts, classpaths, or packaged outputs:
 
 ```sh
 mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
   -Delide.traceFiles=target/classes.log
 ```
 
-Pass multiple trace paths as a comma-separated `elide.traceFiles` value. Supported readers recognize class-loading logs (`.log` or `.txt`), CDS lists (`.lst`), JFR recordings (`.jfr`), GraalVM reflection configuration (`.json`), and JaCoCo execution data (`.exec`). Every supplied file must be supported and readable. The merged trace set must be nonempty and match at least one class in a supplied JAR dependency; an individual file may contribute no matching observation when another supplied file provides a match. Malformed or unsupported evidence fails the goal.
+### Analysis Options
 
-`elide.excludedArtifacts` accepts global retention coordinates in `groupId:artifactId[:version[:type[:classifier]]]` form. Type defaults to `jar`; an omitted version matches every version. Matching ignores Maven scope. The default is empty.
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `-Delide.traceFiles` | *(none)* | Comma-separated paths to runtime telemetry traces (required). |
+| `-Delide.trimJars` | `false` | When `true`, simulates intra-JAR trimming and evaluates CVE absence proofs without modifying files. |
+| `-Delide.excludedArtifacts` | *(empty)* | Comma-separated coordinates (`groupId:artifactId[:version[:type[:classifier]]]`) to retain regardless of trace evidence. |
+| `-Delide.productionOutput` | *(empty)* | Path to compiled classes (e.g. `target/classes`) to enable static code reference scanning. |
+| `-Delide.reportFile` | `target/dependency-elider-class-usage.json` | Path for the class-usage analysis report. |
 
-Only resolved regular JAR files are scanned. Non-JAR artifact types remain retained. The analysis currently considers `compile` and `runtime` scopes as candidates, and excludes all others from elision.
+Only resolved regular JARs in `compile` and `runtime` scopes are considered for elision. Non-JAR artifacts and other dependency scopes are always retained.
 
-The `analyze` summary reports raw artifacts that would be elided by its analysis and the exact sum of their original on-disk JAR sizes as an estimate; the final package delta may differ. With `elide.trimJars=true`, it also simulates trimming and reports mapped CVE components that would leave the inventory and CVEs whose vulnerable classes would be proven absent. Component removal is package-inventory evidence, while a code-proof result requires a HIGH-confidence mapping and archive inspection. The `elide` summary distinguishes raw candidates from effective whole-artifact drops. Exact whole-artifact removal requires a unique compatible pre-elision Maven graph capture; if the production core extension or matching graph evidence is unavailable, the effective drop set is empty and raw candidates remain retained. The trim-disabled `elide` summary marks class, method, and field stages as not run. When `elide.trimJars=true`, `elide` reports program classes removed from retained JARs and the sum of their uncompressed omitted `.class` entry payload bytes. That total excludes module descriptors and archive sanitation metadata. Methods and fields remain marked as unrun; the summary reports validated trim-cache hits and analysis runs.
+---
 
-After a successful lifecycle run with `elide` enabled, the `report` goal reads its saved result without repeating dependency analysis. By default, `elide` writes `target/dependency-elider-report.json`; set `-Delide.summaryFile=/path/to/report.json` to change the location. Invoke the report from the same project checkout:
+## 4. Active Build Elision (`elide`)
 
-```sh
-mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report
-```
+The `elide` goal runs in Maven's `INITIALIZE` lifecycle phase, removing unused dependencies and trimming unreferenced classes before compilation and packaging plugins execute.
 
-The report shows raw whole-artifact candidates separately from effective whole JAR drops. Dropped-JAR metrics include artifact count, original on-disk JAR bytes, `.class` entry count, and uncompressed `.class` entry payload bytes. Retained-JAR trimming has separate class and payload-byte totals; dropped-JAR classes are excluded from those trimmed totals, and persisted reports reject any coordinate listed in both categories. Both categories exclude root and versioned `module-info.class` entries and archive sanitation metadata. The report renders the saved mediated TEST graph as deterministic shortest dependency paths with retained, class-trimmed, protected, and effective-drop statuses. It fails clearly if that graph was unavailable when `elide` ran. Byte totals use binary units such as KiB and MiB. The snapshot identifies the project's GAV, canonical directory, and last successful elision timestamp. A failure before publication leaves the prior snapshot active; `report` labels it as the last successful run. If backup cleanup fails after publication commits, the goal reports that error while the new snapshot and outputs remain active. The goal reads only the saved snapshot and does not revalidate changed sources, dependencies, or traces or invoke Maven dependency resolution/tree collection.
+### Step 1: Enable the Core Extension
 
-Each persisted format has an independent schema version 1: the top-level elision report, graph-capture session store, resolver-plan session store, class-usage report, and trim cache. Format identity and required fields distinguish these records; schema numbers are not plugin release versions. Unsupported values and incompatible pre-release field shapes are rejected with rerun guidance. No migration or backward-compatibility promise is provided for unreleased drafts.
-
-The `analyze` and `elide` goals also write a deterministic class-usage analysis report to `target/dependency-elider-class-usage.json` by default. Set `-Delide.reportFile=/path/to/report.json` to choose another location. This is distinct from the persisted elision snapshot at `target/dependency-elider-report.json`, configured with `-Delide.summaryFile`, which is consumed by `dependency-elider:report`. The class-usage report lists classes by their complete static and runtime evidence groups, along with a per-class category. Static scanning is opt-in because it examines only the application production output explicitly supplied through `-Delide.productionOutput=target/classes`; it does not inspect test output. When that option is omitted, the report sets `staticEvidenceAvailable` to `false`, leaves the three static-dependent group values `null`, and labels each class as having unknown static evidence. It never labels a class runtime-only or unused without a completed scan.
-
-The `elide` goal runs in `INITIALIZE` with test dependency resolution. For whole-artifact removal, load the packaged production core extension through the consumer's `.mvn/extensions.xml`; it captures the initial mediated TEST graph and applies a source-fingerprint-bound projection to a later compatible resolver graph. If the graph is missing, ambiguous, or differs from the captured source, the resolver fails before changing that graph and the whole-artifact decision fails closed. The direct dependency-artifact membership is preserved; retained artifact objects may receive trimmed file pointers. With the extension and an active initialize-bound elider execution, a bare `dependency:tree` request automatically schedules elision before tree collection. This is fixture-verified for a single-project leaf graph on Maven CLI 3.9.11 and Dependency Plugin 3.8.1; automatic preparation rejects multi-project reactors. Ordinary lifecycle commands such as `mvn test` already pass through `INITIALIZE` and need no separate initialization goal. At `INITIALIZE`, production sources may not include generated files, and annotation processors or generators may add compile references later. Therefore `elide.sourceRootsComplete` defaults to `false`: the plugin skips source attribution and conservatively retains every effective compile-classpath JAR and all of its indexed classes. This can reduce whole-artifact and intra-JAR elision, while preserving compile visibility when source coverage is unknown.
-
-After installing the plugin, add the production core extension to the consumer's `.mvn/extensions.xml`:
+To enable whole-artifact dependency removal, declare the core extension in the consumer project's `.mvn/extensions.xml`:
 
 ```xml
 <extensions>
@@ -52,25 +84,117 @@ After installing the plugin, add the production core extension to the consumer's
 </extensions>
 ```
 
-Without this extension, whole-artifact candidates remain in the effective dependency set, although retained-JAR trimming can still run.
+> **Important**: Without this extension, whole-artifact drops fail closed (all candidate JARs remain retained), though retained-JAR trimming still functions.
 
-Set `-Delide.sourceRootsComplete=true` only when every production and generated source is already present before `INITIALIZE`, and no later processor or generator will introduce compile references. With this assertion, the plugin resolves current Java source references using the effective Maven compiler `release` or `source`/`target` and supported encoding settings. Unsupported compiler modes, selected JDK toolchains, unresolved settings, source-generation lifecycle executions, and empty or missing source roots fail before mutation. Regardless of this setting, pruning still requires at least one supplied dependency class to match runtime trace evidence; source-only matches cannot replace that runtime guard.
+### Step 2: Run the Elision Build
 
-Supported service, Spring, and native-image metadata roots protect both the declaring JAR and indexed provider JARs from whole-artifact elision even when `elide.trimJars=false`. If a root has multiple scanned owners, all matching JARs are kept; if no owner is found, the plugin conservatively keeps the scanned JAR inventory. Setting `-Delide.trimJars=true` additionally trims classes from retained dependency JARs during `INITIALIZE`. The plugin combines runtime observations, compiler source roots, optional production bytecode references, `META-INF/services` providers, supported Graal reflection/proxy metadata, and optional comma-separated `-Delide.trimRoots=package.Type,...` roots. It propagates links across retained sibling JARs before writing artifact pointer changes. Unknown native-image class metadata, unsupported compiler modes, unresolved links, and unsupported JAR layouts fail before publication. Closure recognizes JVM signature-polymorphic `MethodHandle.invoke`/`invokeExact` and `VarHandle` operations only when the corresponding native-varargs declaration exists; call-site descriptor classes remain closure roots and unresolved descriptor classes remain fatal. Trimmed JARs are written under `target/elided-artifacts/` with coordinate-safe names; original JARs remain intact. Retained artifact objects in Maven's resolved/project views and matching objects in the preserved direct dependency set receive the trimmed file.
+Invoke `elide` on the command line alongside your build goals:
 
-By default, retained JARs with versioned implementation classes pass through unchanged. The plugin creates a class-only projection of their effective entries for the current JVM release, then analyzes every projected class body as a root so links into trim candidates remain reachable. The projection release is `Runtime.version().feature()` and is included in the cache fingerprint; deployments on a different Java release are not covered by that closure. `-Delide.failOnUnsupportedMultiRelease=true` fails instead of using this pass-through behavior.
+```sh
+mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:elide package \
+  -Delide.skip=false \
+  -Delide.traceFiles=target/classes.log \
+  -Delide.trimJars=true
+```
 
-Retained classpath JARs with a root `module-info.class` also pass through unchanged by default. The plugin validates the descriptor, omits it only from an ephemeral class-only projection, and analyzes every remaining class body as a root. This closure covers classpath use; it does not resolve JPMS module readability or module-path linkage. Set `-Delide.failOnUnsupportedModuleInfo=true` to fail before artifact pointer mutation. The core candidate trimmer still rejects root module descriptors. Versioned module-info-only entries remain eligible for classpath sanitization.
+Or configure the execution permanently in `pom.xml`:
 
-Use `-Delide.trimSkipArtifacts=groupId:artifactId:version[:type[:classifier]],...` for another retained JAR that must remain byte-identical. Configured pass-through classes are analyzed as roots against retained siblings; unresolved external links owned by those unchanged classes are tolerated, while missing links in trimmed candidates or reachable ordinary sibling classes still fail before artifact mutation. The original input path, coordinate, ordered classpath position, and exact bytes remain in the cache fingerprint. A configured coordinate must match a resolved compile/runtime JAR. This setting also pins its artifact against whole-artifact pruning. The Spring fixture uses pass-through entries for `spring-boot` (optional CRaC references), `spring-boot-autoconfigure` (optional AMQP/Quartz references), `spring-web` (optional Jetty references), `spring-context` (optional Java Money references), `spring-context-support` (optional Quartz references), `spring-beans` (its optional SnakeYAML references are tolerated from this unchanged owner; SnakeYAML itself is whole-artifact-pruned), `spring-aop` (optional AspectJ and Kotlin references), `spring-expression` (optional Kotlin reflection references), `groovy-templates` (optional SpotBugs annotation metadata), and `micrometer-observation` (optional Micrometer Context references), plus `micrometer-commons` (optional `javax.annotation` references). It adds Boot-managed Jakarta Validation, Freemarker, Groovy, WebJars Locator, Reactive Streams, Reactor Core, Micrometer Context, JSTL and JSR-305, SpotBugs annotation, and XStream 1.4.21 APIs as trim candidates so their optional edges resolve; Groovy Templates remains byte-identical as an explicit pass-through, and `spring-webmvc` still trims. Retained JARs with root module descriptors use the automatic module-info pass-through policy above.
+```xml
+<build>
+  <plugins>
+    <plugin>
+      <groupId>io.github.spockz</groupId>
+      <artifactId>dependency-elider-maven-plugin</artifactId>
+      <version>0.1.0-SNAPSHOT</version>
+      <executions>
+        <execution>
+          <goals>
+            <goal>elide</goal>
+          </goals>
+        </execution>
+      </executions>
+      <configuration>
+        <traceFiles>
+          <traceFile>target/classes.log</traceFile>
+        </traceFiles>
+        <trimJars>true</trimJars>
+      </configuration>
+    </plugin>
+  </plugins>
+</build>
+```
 
-With trimming enabled, the plugin writes a CycloneDX 1.6 SBOM to `target/dependency-elider-sbom.cdx.json`; set `-Delide.sbomFile=/path/to/bom.json` to choose another path. Trimmed component provenance includes the original component and digest. The global trim cache binds ordered candidate and sibling JAR content digests, sorted roots, the selected platform signature digest, engine/schema versions, and each trimmed output digest. Repeated single-artifact lifecycle tests measured 95.2 to 99.1 ms for validated warm hits under GraalVM JDK 21. The <1.5 ms target remains unmet; exact content validation and cross-JAR link closure remain enabled, and a cache hit skips ProGuard analysis.
+### Elision Configuration Reference
 
-Trimming also writes the original resolved dependency inventory to `target/baseline-sbom.cdx.json` before Maven's artifact views are changed. Set `-Delide.baselineSbomFile=/path/to/baseline.json` to change it. Whole-artifact drops remain in this baseline, while post-elision inventory reflects retained components and exact trimmed JAR hashes. When the build has an output directory, the post-elision SBOM is also staged at `META-INF/sbom/application.cdx.json` and `META-INF/native-image/sbom.json` below that directory. The first location follows Spring Boot's application SBOM convention used by its [Actuator SBOM endpoint](https://docs.spring.io/spring-boot/3.3/api/rest/actuator/sbom.html); the second is the classpath resource location described by [GraalVM Native Image SBOM documentation](https://www.graalvm.org/latest/security-guide/native-image/sbom/). This stages SBOM files for packaging and native-image classpaths; it does not establish that a native image embeds the file or that VEX is embedded.
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `elide.skip` | `false` | Disables elision and trimming when set to `true`. |
+| `elide.traceFiles` | *(none)* | Comma-separated paths to runtime telemetry traces (required). |
+| `elide.trimJars` | `false` | Enables ProGuard Core link closure to trim unreferenced classes from retained JARs. |
+| `elide.sourceRootsComplete` | `false` | Set `true` only if all production and generated sources exist before `INITIALIZE` with no downstream generation. When `false`, all compile-classpath JARs and classes are conservatively retained. |
+| `elide.trimRoots` | *(none)* | Comma-separated additional root classes (e.g. `com.example.AppRoot`). |
+| `elide.trimSkipArtifacts` | *(none)* | Comma-separated coordinates of retained JARs to keep byte-identical. Their classes serve as roots for sibling closure. |
+| `elide.failOnUnsupportedMultiRelease` | `false` | When `false`, multi-release JARs pass through unchanged. When `true`, multi-release candidate JARs fail the build. |
+| `elide.failOnUnsupportedModuleInfo` | `false` | When `false`, JARs with root `module-info.class` pass through unchanged on the classpath. When `true`, they fail the build. |
+| `elide.summaryFile` | `target/dependency-elider-report.json` | Path for the persisted elision snapshot read by `report`. |
+| `elide.sbomFile` | `target/dependency-elider-sbom.cdx.json` | Path for the post-elision CycloneDX 1.6 SBOM. |
+| `elide.baselineSbomFile` | `target/baseline-sbom.cdx.json` | Path for the pre-elision baseline CycloneDX 1.6 SBOM. |
+| `elide.vexFile` | `target/dependency-elider.openvex.json` | Path for the generated OpenVEX document. |
 
-The optional local vulnerability index has no built-in remote feed. Configure an HTTP(S) source you trust with `-Delide.cveIndexUri=https://example.invalid/index.json`; normal build refresh is skipped for offline Maven sessions, and download or cache-refresh failures warn and fall back to a valid cached index or the bundled seed. The default cache is under the operating system's user cache directory, outside `~/.m2`; override it with `-Delide.cveCacheDirectory=/path/to/cache`. The default freshness interval is 24 hours and can be changed with `-Delide.cveCacheTtlHours=48`; `-Delide.cveForceSync=true` bypasses freshness during normal builds. To explicitly refresh, run `mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:update-cve-index -Delide.cveIndexUri=...`. The projectless update goal always requests a fresh download, requires a configured URI, fails while Maven is offline, and fails if that refresh cannot update the cache; only normal elision builds use cached or bundled fallback.
+### Preserving Metadata and Special JARs
 
-Project mappings can supplement or override the cache. An explicit range uses Maven version range syntax; a bare recommended version is treated as an exact version. A missing range uses the mapping's `version` as an exact constraint. Only HIGH confidence mappings can produce VEX, and only when the exact artifact identity and version range match a retained trim record and archive inspection proves every mapped class and original nested class absent from the trimmed JAR. For example:
+* **Framework Roots**: Service providers (`META-INF/services`), Spring factories, and GraalVM native-image configs automatically protect declaring and provider JARs from whole-artifact removal.
+* **Intra-JAR Trimming**: Trimmed JARs are written to `target/elided-artifacts/` with original JARs left untouched. Digital signatures are stripped to maintain archive validity, while resources, licenses, and SPI descriptors are preserved.
+* **Multi-Release and Module Descriptors**: Multi-release implementation classes and root `module-info.class` entries pass through unchanged on the classpath by default.
+* **Exact Pass-Through (`trimSkipArtifacts`)**: Pins specified dependencies byte-identical while allowing their classes to resolve external links into trimmed sibling dependencies.
+
+### Inspecting the Post-Elision Dependency Tree
+
+With `.mvn/extensions.xml` and an active initialize-bound elider execution, run `dependency:tree` to inspect the post-elision graph directly:
+
+```sh
+mvn dependency:tree
+```
+
+---
+
+## 5. Viewing Elision Reports (`report`)
+
+The `report` goal displays the summary and mediated dependency graph from the last successful `elide` run without re-executing dependency analysis:
+
+```sh
+mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report
+```
+
+### Report Information
+
+* **Dropped Artifacts**: Total count and original on-disk JAR bytes of elided dependencies.
+* **Pruned Classes**: Count and uncompressed `.class` payload bytes removed from dropped JARs and retained JARs (metrics never overlap).
+* **Vulnerability Status**: Summary of CVEs removed from inventory, proven absent by bytecode trimming, or inactive due to missing prerequisite dependencies.
+* **Mediated Graph**: Visualizes shortest dependency paths with node dispositions: `[RETAINED]`, `[CLASS_TRIMMED]`, `[EFFECTIVE_DROP]`, or `[PROTECTED]`.
+* **Schema Versioning**: All persisted stores use independent schema version 1. Incompatible drafts fail fast with instructions to rerun `elide`.
+
+---
+
+## 6. Vulnerability Intelligence & OpenVEX
+
+Maven Dependency Elider syncs vulnerability metadata from the official OSV Maven snapshot (`-Delide.osvSnapshotUri`) and the CVEList v5 repository (`-Delide.cveListGitUri`).
+
+### Refreshing the Vulnerability Cache
+
+Update the local vulnerability database on demand:
+
+```sh
+mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:update-cve-index
+```
+
+* **Cache location**: Stored in the OS user cache directory (outside `~/.m2`); override via `-Delide.cveCacheDirectory=/path/to/cache`.
+* **Freshness TTL**: Defaults to 24 hours (`-Delide.cveCacheTtlHours=24`). Use `-Delide.cveForceSync=true` to force synchronization.
+* **Offline resilience**: Normal builds skip network synchronization when offline, falling back safely to the local cache or bundled seed data.
+
+### Declaring Project Vulnerability Mappings
+
+Map specific vulnerabilities to code symbols in `pom.xml`:
 
 ```xml
 <configuration>
@@ -92,12 +216,55 @@ Project mappings can supplement or override the cache. An explicit range uses Ma
 </configuration>
 ```
 
-Verified mappings add CycloneDX vulnerability analysis to the post-elision SBOM and write `target/dependency-elider.openvex.json`; set `-Delide.vexFile=/path/to/vex.json` to select another output. Unmapped findings, mappings for whole-artifact drops, nonmatching ranges, retained mapped classes, and failed archive proofs produce no VEX. In particular, removing Janino does not prove Logback's CVE-2025-11226 code absent: Logback remains package-level inventory and no VEX is emitted without a Logback symbol mapping and a matching trim record.
+### Overriding Conservative Multi-Symbol Mappings
 
-## Compare OSV-Scanner SBOM inventories
+When an upstream vulnerability advisory covers a wide version range and maps multiple classes across versions (for example, Jackson Core `CVE-2026-68494` mapping both `ByteArrayFeeder` and `StreamConstraintsException`), the elider's default proof engine conservatively fails closed if any mapped class does not exist in the original dependency JAR (such as versions prior to Jackson 2.15 where `StreamConstraintsException` had not yet been created).
 
-`make scan-sbom` builds both CVE examples and compares each baseline SBOM with its post-elision SBOM using OSV-Scanner. Install OSV-Scanner first, then run the target. Both scans use `--offline-vulnerabilities` against the same local scanner cache and request JSON output. The comparison is package-level: it reports findings no longer matched to a package in the post-elision inventory and findings that remain. It does not establish that vulnerable code was removed, that the application is unaffected, or create VEX.
+If you inspect the upstream fix commit and determine that only a subset of the mapped classes applies to your specific version, you can declare an explicit POM override targeting your library version. POM overrides take precedence over the indexed mapping:
 
-The target writes `baseline-scan.json`, `post-elision-scan.json`, and `comparison-report.json` under each fixture's `target/sbom-comparison/`. The report records the exact scanner version and executable, separate start/completion timestamps for each scan, both SBOM SHA-256 hashes, and whether the database revision was exposed. Each input is hashed before and after its scan; a content change aborts comparison so the reported inventory is the one scanned. A finding is labeled eliminated only when its component is absent from the post-elision SBOM; a finding that is no longer returned while the component remains is reported separately. Generic Maven findings that match multiple component variants, such as ordinary and classifier PURLs, are left unclassified. OSV-Scanner does not currently expose a database revision in this workflow, so the report leaves it unknown; offline mode uses the same local database cache but does not independently prove its revision. See [OSV-Scanner SBOM usage](https://google.github.io/osv-scanner/usage/scan-source) and [RQ-0008](../../../docs/research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) for the evidence boundary.
+```xml
+<configuration>
+  <trimJars>true</trimJars>
+  <vulnerabilityMappings>
+    <!-- Jackson Core: override index mapping to only require ByteArrayFeeder for pre-2.15 versions -->
+    <vulnerabilityMapping>
+      <cveId>CVE-2026-68494</cveId>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
+      <versionRangeSpec>[2.14.0,2.15.0)</versionRangeSpec>
+      <vulnerableClasses>
+        <vulnerableClass>com.fasterxml.jackson.core.async.ByteArrayFeeder</vulnerableClass>
+      </vulnerableClasses>
+      <!-- Point directly to the upstream fix commit showing the modified file diffs -->
+      <sourceAdvisoryUrl>https://github.com/FasterXML/jackson-core/pull/1611</sourceAdvisoryUrl>
+      <confidenceLevel>HIGH</confidenceLevel>
+    </vulnerabilityMapping>
+  </vulnerabilityMappings>
+</configuration>
+```
 
-`elide.skip` is a Boolean Maven user property (`-Delide.skip=true|false`). The CVE example fixtures bind the goal and default this property to `true` so baseline packaging remains available. Set it to `false` and supply `-Delide.traceFiles=...` to apply elision. Missing, malformed, unsupported, or unmatched trace evidence fails the goal.
+### VEX Generation Requirements
+
+An OpenVEX statement (`vulnerable_code_not_present`) is generated only when:
+
+1. Mapping confidence is `HIGH`.
+2. Artifact coordinates and version range match a retained trim candidate.
+3. Bytecode archive inspection confirms that all mapped classes and inner classes are absent from the trimmed JAR.
+
+If a vulnerable dependency is removed entirely, it is reported as dropped from inventory rather than generating code-absence VEX.
+
+---
+
+## 7. Comparing SBOMs with OSV-Scanner
+
+To verify vulnerability reduction across baseline and post-elision inventories, run the automated comparison:
+
+```sh
+make scan-sbom
+```
+
+This runs OSV-Scanner offline against both `target/baseline-sbom.cdx.json` and `target/dependency-elider-sbom.cdx.json`, generating reports in `target/sbom-comparison/`:
+
+* `baseline-scan.json`: Raw scanner findings on the untrimmed baseline inventory.
+* `post-elision-scan.json`: Raw scanner findings on the post-elision inventory.
+* `comparison-report.json`: Hash-verified summary of eliminated versus remaining package-level findings.

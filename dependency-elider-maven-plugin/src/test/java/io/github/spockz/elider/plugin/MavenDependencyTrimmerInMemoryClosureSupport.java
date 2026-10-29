@@ -17,7 +17,6 @@ import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.zip.ZipOutputStream;
-import javax.tools.ToolProvider;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
@@ -178,15 +177,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
   }
 
   private static void compile(final Path output, final List<Path> sources) throws IOException {
-    final List<String> arguments =
-        new ArrayList<>(List.of("--release", "21", "-d", output.toString()));
-    sources.forEach(source -> arguments.add(source.toString()));
-    final int result =
-        ToolProvider.getSystemJavaCompiler()
-            .run(null, null, null, arguments.toArray(String[]::new));
-    if (result != 0) {
-      throw new IOException("Could not compile the bytecode closure fixture");
-    }
+    io.github.spockz.elider.test.CompilationFixtureSupport.compile(output, sources);
   }
 
   private Path jar(final String name, final Path classes, final List<String> entries)

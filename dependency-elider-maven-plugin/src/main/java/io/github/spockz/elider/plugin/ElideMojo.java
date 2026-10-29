@@ -121,9 +121,17 @@ public final class ElideMojo extends AbstractMojo {
   @Parameter(property = "elide.cveForceSync", defaultValue = DEFAULT_FALSE)
   private boolean cveForceSync;
 
-  /** Optional remote vulnerability-index URI. */
-  @Parameter(property = "elide.cveIndexUri")
-  private String cveIndexUri;
+  /** Remote OSV Maven database snapshot URI. */
+  @Parameter(
+      property = "elide.osvSnapshotUri",
+      defaultValue = "https://storage.googleapis.com/osv-vulnerabilities/Maven/all.zip")
+  private String osvSnapshotUri;
+
+  /** Remote Git repository URI for CVEList v5. */
+  @Parameter(
+      property = "elide.cveListGitUri",
+      defaultValue = "https://github.com/CVEProject/cvelistV5.git")
+  private String cveListGitUri;
 
   /** Explicit POM vulnerability mappings override cache entries. */
   @Parameter private List<VulnerabilityMappingConfig> vulnerabilityMappings;
@@ -229,12 +237,15 @@ public final class ElideMojo extends AbstractMojo {
         cveCacheDirectory == null
             ? VulnerabilityCacheManager.defaultCacheDirectory()
             : cveCacheDirectory.toPath();
-    final URI source =
-        cveIndexUri == null || cveIndexUri.isBlank() ? null : URI.create(cveIndexUri);
+    final URI osvSource =
+        osvSnapshotUri == null || osvSnapshotUri.isBlank() ? null : URI.create(osvSnapshotUri);
+    final URI cveListGit =
+        cveListGitUri == null || cveListGitUri.isBlank() ? null : URI.create(cveListGitUri);
     final CacheConfig config =
         new CacheConfig(
             cacheDirectory,
-            source,
+            osvSource,
+            cveListGit,
             Duration.ofHours(cveCacheTtlHours),
             cveForceSync,
             session != null && session.isOffline(),

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.test.CompilationFixtureSupport;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,8 +23,6 @@ import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 import java.util.stream.Stream;
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -296,19 +295,11 @@ class ArchiveSanitizerTest {
     Files.writeString(
         packageDirectory.resolve(secondClassName + ".java"),
         "package fixture; public class " + secondClassName + " {}\n");
-    final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    if (compiler == null
-        || compiler.run(
-                null,
-                null,
-                null,
-                "-d",
-                classes.toString(),
-                packageDirectory.resolve("Keep.java").toString(),
-                packageDirectory.resolve(secondClassName + ".java").toString())
-            != 0) {
-      throw new IOException("Could not compile archive sanitizer test fixture");
-    }
+    CompilationFixtureSupport.compile(
+        classes,
+        List.of(
+            packageDirectory.resolve("Keep.java"),
+            packageDirectory.resolve(secondClassName + ".java")));
 
     final Path jar = temporaryDirectory.resolve(jarName);
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar))) {
@@ -464,12 +455,7 @@ class ArchiveSanitizerTest {
     final Path moduleOutput = Files.createDirectories(temporaryDirectory.resolve("module-classes"));
     Files.createDirectories(moduleSource.getParent());
     Files.writeString(moduleSource, "module fixture.module {}\n");
-    final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-    if (compiler == null
-        || compiler.run(null, null, null, "-d", moduleOutput.toString(), moduleSource.toString())
-            != 0) {
-      throw new IOException("Could not compile versioned module descriptor fixture");
-    }
+    CompilationFixtureSupport.compile(moduleOutput, List.of(moduleSource));
     try (JarFile input = new JarFile(source.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
       final Enumeration<JarEntry> entries = input.entries();

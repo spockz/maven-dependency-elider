@@ -28,9 +28,17 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
   @Parameter(property = "elide.cveCacheTtlHours", defaultValue = "24")
   private int ttlHours;
 
-  /** Configured HTTP(S) index used for the forced refresh. */
-  @Parameter(property = "elide.cveIndexUri")
-  private String indexUri;
+  /** Remote OSV Maven database snapshot URI. */
+  @Parameter(
+      property = "elide.osvSnapshotUri",
+      defaultValue = "https://storage.googleapis.com/osv-vulnerabilities/Maven/all.zip")
+  private String osvSnapshotUri;
+
+  /** Remote Git repository URI for CVEList v5. */
+  @Parameter(
+      property = "elide.cveListGitUri",
+      defaultValue = "https://github.com/CVEProject/cvelistV5.git")
+  private String cveListGitUri;
 
   /** Maven session used to reject refreshes requested in offline mode. */
   @Parameter(defaultValue = "${session}", readonly = true)
@@ -43,9 +51,10 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
 
   @Override
   public void execute() throws MojoExecutionException {
-    final URI source = configuredSource();
+    final URI osvSource = configuredOsvSource();
+    final URI cveListGit = configuredCveListGit();
     requireOnlineSession();
-    final CacheResult result = update(source);
+    final CacheResult result = update(osvSource, cveListGit);
     if (getLog().isInfoEnabled()) {
       getLog()
           .info(
@@ -56,12 +65,19 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
     }
   }
 
-  private URI configuredSource() throws MojoExecutionException {
-    if (indexUri == null || indexUri.isBlank()) {
+  private URI configuredOsvSource() throws MojoExecutionException {
+    if (osvSnapshotUri == null || osvSnapshotUri.isBlank()) {
       throw new MojoExecutionException(
-          "Set -Delide.cveIndexUri to an HTTP(S) vulnerability mapping index before updating");
+          "Set -Delide.osvSnapshotUri to an HTTP(S) vulnerability snapshot before updating");
     }
-    return URI.create(indexUri);
+    return URI.create(osvSnapshotUri);
+  }
+
+  private URI configuredCveListGit() {
+    if (cveListGitUri == null || cveListGitUri.isBlank()) {
+      return null;
+    }
+    return URI.create(cveListGitUri);
   }
 
   private void requireOnlineSession() throws MojoExecutionException {
@@ -71,12 +87,13 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
     }
   }
 
-  private CacheResult update(final URI source) throws MojoExecutionException {
+  private CacheResult update(final URI osvSource, final URI cveListGit)
+      throws MojoExecutionException {
     try {
       final CacheResult result =
           new VulnerabilityCacheManager()
               .load(
-                  cacheConfig(source),
+                  cacheConfig(osvSource, cveListGit),
                   mappings -> validateMappings(mappings, "downloaded vulnerability index"));
       if (result.refreshFailure().isPresent()) {
         throw new MojoExecutionException(
@@ -90,12 +107,13 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
     }
   }
 
-  private CacheConfig cacheConfig(final URI source) {
+  private CacheConfig cacheConfig(final URI osvSource, final URI cveListGit) {
     return new CacheConfig(
         cacheDirectory == null
             ? VulnerabilityCacheManager.defaultCacheDirectory()
             : cacheDirectory.toPath(),
-        source,
+        osvSource,
+        cveListGit,
         Duration.ofHours(ttlHours),
         true,
         false,

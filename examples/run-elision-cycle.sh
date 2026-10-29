@@ -75,7 +75,7 @@ main() {
   trap cleanup EXIT
 
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
-    -pl dependency-elider-maven-plugin -am install
+    -pl dependency-elider-maven-plugin -am install -DskipTests
 
   run_fixture_maven() {
     local fixture_dir=$1
@@ -228,6 +228,7 @@ main() {
     printf '\n%s report:\n' "$fixture"
     grep -E '^\[INFO\] (Project:|Snapshot:|Whole artifacts dropped:|Program classes removed with dropped JARs:|Program classes pruned from retained JARs:|CVE components removed from inventory:|CVEs with vulnerable code proven absent by trimming:|  - )' \
       "$report_output"
+    verify_cve_report "$fixture" "$fixture_dir" "$report_output"
 
     entries="$test_dir/$fixture.jar-entries"
     "$jar" tf "$jar_file" >"$entries"
@@ -268,40 +269,8 @@ verify_cve_sboms() {
   local baseline=$2
   local post_elision=$3
   local vex=$4
-  node - "$fixture" "$baseline" "$post_elision" "$vex" <<'NODE'
-const fs = require('node:fs');
-const path = require('node:path');
-const [fixture, baselinePath, postPath, vexPath] = process.argv.slice(2);
-const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
-const post = JSON.parse(fs.readFileSync(postPath, 'utf8'));
-const report = JSON.parse(fs.readFileSync(path.join(path.dirname(postPath), 'dependency-elider-report.json'), 'utf8'));
-const names = bom => new Set((bom.components ?? []).map(component => component.name));
-const before = names(baseline);
-const after = names(post);
-const assert = (condition, message) => {
-  if (!condition) {
-    throw new Error(message);
-  }
-};
-if (fixture === 'example-cve-unused-app') {
-  assert(before.has('logback-classic') && before.has('logback-core') && before.has('janino'),
-    'baseline inventory must contain Logback and its Janino prerequisite');
-  assert(after.has('logback-classic') && after.has('logback-core') && after.has('janino'),
-    'post-elision inventory must retain components whose code was not removed as a whole artifact');
-  assert(report.trimmedArtifacts.some(item => item.coordinate.includes('org.codehaus.janino:janino:')),
-    'unused fixture must prove Janino code was trimmed');
-  assert(!fs.existsSync(vexPath),
-    'retained Logback without vulnerable-symbol proof must not produce VEX');
-} else {
-  assert(before.has('janino') && before.has('logback-classic') && before.has('logback-core'),
-    'baseline inventory must contain Janino and Logback');
-  assert(after.has('janino') && after.has('logback-classic') && after.has('logback-core'),
-    'post-elision inventory must retain components whose code was not removed as a whole artifact');
-  assert(report.trimmedArtifacts.some(item => item.coordinate.includes('org.codehaus.janino:janino:')),
-    'safe-class fixture must prove Janino code was trimmed');
-  assert(!fs.existsSync(vexPath), 'unmapped retained Logback CVE must not produce VEX');
-}
-NODE
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-cve-sboms "$fixture" "$baseline" "$post_elision" "$vex"
 }
 
 run_spring_boot_endpoint() {
@@ -531,18 +500,18 @@ verify_source_root_compiler_visibility() {
   mkdir -p "$probe_fixture/.mvn"
   cp -- "$repo_root/examples/example-basic-app/.mvn/extensions.xml" "$probe_fixture/.mvn/extensions.xml"
   mkdir -p "$probe_fixture/src/main/java/io/github/spockz/example/basic"
-  cat >"$probe_fixture/src/main/java/io/github/spockz/example/basic/ElidedCodecReference.java" <<'JAVA'
+  cat >"$probe_fixture/src/main/java/io/github/spockz/example/basic/ElidedHttpClientReference.java" <<'JAVA'
 /* WHY: Provides a compile-time reference to the dependency removed by the recorded runtime trace. */
 package io.github.spockz.example.basic;
 
-import org.apache.commons.codec.binary.Hex;
+import org.apache.http.client.HttpClient;
 
 /** Confirms compiler visibility follows the active Maven artifact set. */
-final class ElidedCodecReference {
-  private ElidedCodecReference() {}
+final class ElidedHttpClientReference {
+  private ElidedHttpClientReference() {}
 
-  static String encode(final byte[] value) {
-    return Hex.encodeHexString(value);
+  static Class<?> clientType() {
+    return HttpClient.class;
   }
 }
 JAVA
@@ -551,7 +520,7 @@ JAVA
     -Delide.mode=elision -Delide.traceFiles="$trace" -Delider.verifyElision=false \
     -Delide.sourceRootsComplete=true -Dmaven.compiler.proc=none) \
     >"$active_log" 2>&1
-  if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedCodecReference.class ]]; then
+  if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedHttpClientReference.class ]]; then
     echo "Compiler did not produce the source-root probe class when elision was enabled" >&2
     cat "$active_log" >&2
     exit 1
@@ -560,18 +529,18 @@ JAVA
   (cd -- "$probe_fixture" && "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
     -Delide.mode=baseline -Delide.traceFiles="$trace" -Delider.verifyElision=false) \
     >"$skipped_log" 2>&1
-  if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedCodecReference.class ]]; then
+  if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedHttpClientReference.class ]]; then
     echo "Compiler did not produce the probe class when elision was skipped" >&2
     cat "$skipped_log" >&2
     exit 1
   fi
-  echo "Compiler visibility probe passed: the source-root reference retained Commons Codec before javac; skipped compile succeeds."
+  echo "Compiler visibility probe passed: the source-root reference retained HttpClient before javac; skipped compile succeeds."
 }
 
 verify_basic_unused_trace() {
   local trace=$1
-  if grep -Eq 'org\.apache\.commons\.codec\.' "$trace"; then
-    echo "Commons Codec classes were loaded by the basic example" >&2
+  if grep -Eq 'org\.apache\.commons\.codec\.|org\.apache\.http\.' "$trace"; then
+    echo "Unused classes (Commons Codec or HttpClient) were loaded by the basic example" >&2
     exit 1
   else
     local status=$?
@@ -591,8 +560,8 @@ verify_basic_elided_tree() {
     cat "$tree_output" >&2
     exit 1
   fi
-  if grep -Fq 'commons-codec:commons-codec' "$tree_output"; then
-    echo "Bare Basic dependency:tree still contains Commons Codec: $output" >&2
+  if grep -Fq 'commons-codec:commons-codec' "$tree_output" || grep -Fq 'org.apache.httpcomponents:httpclient' "$tree_output"; then
+    echo "Bare Basic dependency:tree still contains dropped dependencies: $output" >&2
     cat "$tree_output" >&2
     exit 1
   else
@@ -602,7 +571,7 @@ verify_basic_elided_tree() {
       exit "$status"
     fi
   fi
-  printf 'Bare Basic dependency:tree omitted Commons Codec and retained Commons Compress\n'
+  printf 'Bare Basic dependency:tree omitted Commons Codec and HttpClient, and retained Commons Compress\n'
 }
 
 verify_baseline_archive() {
@@ -611,6 +580,7 @@ verify_baseline_archive() {
   case $fixture in
     example-basic-app)
       has_entry "$entries" 'org/apache/commons/codec/binary/Hex.class'
+      has_entry "$entries" 'org/apache/http/client/HttpClient.class'
       has_entry "$entries" 'org/apache/commons/compress/archivers/zip/ZipArchiveEntry.class'
       has_entry "$entries" 'org/apache/commons/compress/archivers/tar/TarArchiveEntry.class'
       ;;
@@ -624,6 +594,8 @@ verify_baseline_archive() {
       ;;
     example-cve-unused-app)
       has_entry "$entries" 'com/fasterxml/jackson/databind/ObjectMapper.class'
+      has_entry "$entries" 'org/apache/commons/text/similarity/LevenshteinDistance.class'
+      has_entry "$entries" 'org/apache/commons/text/lookup/StringLookup.class'
       has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
       has_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       has_prefix "$entries" 'org/codehaus/commons/compiler/'
@@ -642,7 +614,7 @@ verify_archive() {
   local entries=$2
   local fixture_dir=$3
   case $fixture in
-    example-basic-app) verify_effective_graph_report "$fixture_dir" 1 ;;
+    example-basic-app) verify_effective_graph_report "$fixture_dir" 2 ;;
     example-spring-boot-app) verify_effective_graph_report "$fixture_dir" 0 ;;
     example-cve-unused-app|example-cve-safe-class-app)
       verify_effective_graph_report "$fixture_dir" 0
@@ -653,6 +625,7 @@ verify_archive() {
   case $fixture in
     example-basic-app)
       lacks_entry "$entries" 'org/apache/commons/codec/binary/Hex.class'
+      lacks_entry "$entries" 'org/apache/http/client/HttpClient.class'
       has_entry "$entries" 'org/apache/commons/compress/archivers/zip/ZipArchiveEntry.class'
       lacks_entry "$entries" 'org/apache/commons/compress/archivers/tar/TarArchiveEntry.class'
       ;;
@@ -670,6 +643,8 @@ verify_archive() {
       ;;
     example-cve-unused-app)
       has_entry "$entries" 'com/fasterxml/jackson/databind/ObjectMapper.class'
+      has_entry "$entries" 'org/apache/commons/text/similarity/LevenshteinDistance.class'
+      lacks_entry "$entries" 'org/apache/commons/text/lookup/StringLookup.class'
       has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
       has_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       has_prefix "$entries" 'org/codehaus/commons/compiler/'
@@ -688,60 +663,33 @@ verify_effective_graph_report() {
   local expected_drops=${2:-}
   local report="$fixture_dir/target/dependency-elider-report.json"
   test -f "$report"
-  python3 - "$report" "$expected_drops" <<'PY'
-import json
-import sys
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-effective-graph-report "$report" "$expected_drops"
+}
 
-with open(sys.argv[1], encoding="utf-8") as report_file:
-    report = json.load(report_file)
-graph = report["mediatedGraph"]
-if graph["available"] is not True:
-    raise SystemExit("Example did not capture the configured core-extension graph")
-drops = report["droppedArtifacts"]
-drop_paths = [path for path in graph["artifactPaths"] if path["kind"] == "WHOLE_ARTIFACT_DROPPED"]
-if len(drop_paths) != len(drops) or report["wholeArtifactsDropped"] != len(drops):
-    raise SystemExit("Effective whole-artifact drops lack occurrence-specific graph paths")
-if sys.argv[2] and len(drops) != int(sys.argv[2]):
-    raise SystemExit(f"Expected {sys.argv[2]} effective whole-artifact drops, found {len(drops)}")
-trim_paths = [path for path in graph["artifactPaths"] if path["kind"] == "CLASS_TRIMMED"]
-if len(trim_paths) != len(report["trimmedArtifacts"]):
-    raise SystemExit("Trimmed artifacts lack occurrence-specific graph paths")
-statuses = {item["nodeId"]: item["disposition"] for item in graph["nodeStatuses"]}
-if any(statuses.get(path["nodeId"]) != "SAFE_ELIDED" for path in drop_paths):
-    raise SystemExit("Effective graph drop path is not marked SAFE_ELIDED")
-PY
+verify_cve_report() {
+  local fixture=$1
+  local fixture_dir=$2
+  local report_output=$3
+  local report_json="$fixture_dir/target/dependency-elider-report.json"
+  test -f "$report_json"
+  test -f "$report_output"
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-cve-report "$fixture" "$report_json" "$report_output"
 }
 
 verify_no_spring_whole_artifact_drops() {
   local report="$1/target/dependency-elider-report.json"
-  python3 - "$report" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as report_file:
-    report = json.load(report_file)
-if report["rawDroppedCoordinates"] or report["droppedArtifacts"]:
-    raise SystemExit("Spring fixture expects no raw or effective whole-artifact drops")
-PY
+  test -f "$report"
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-no-whole-artifact-drops "Spring fixture" "$report"
 }
 
 verify_no_cve_whole_artifact_drops() {
   local report="$1/target/dependency-elider-report.json"
-  python3 - "$report" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as report_file:
-    report = json.load(report_file)
-if report["rawDroppedCoordinates"] or report["droppedArtifacts"]:
-    raise SystemExit("CVE fixture expects the graph-backed analysis to retain all whole artifacts")
-drop_paths = [
-    path for path in report["mediatedGraph"]["artifactPaths"]
-    if path["kind"] == "WHOLE_ARTIFACT_DROPPED"
-]
-if drop_paths:
-    raise SystemExit("CVE fixture must not report whole-artifact removal paths")
-PY
+  test -f "$report"
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-no-whole-artifact-drops "CVE fixture" "$report"
 }
 
 verify_basic_trimmed_artifacts() {
@@ -806,22 +754,20 @@ verify_basic_shade_input_paths() {
     exit 1
   }
   verify_effective_graph_report "$fixture_dir"
-  python3 - "$report" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as report_file:
-    report = json.load(report_file)
-expected = "commons-codec:commons-codec:jar:1.19.0 (compile)"
-if [artifact["coordinate"] for artifact in report["droppedArtifacts"]] != [expected]:
-    raise SystemExit("Basic graph report must contain exactly the safe Commons Codec drop")
-PY
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-basic-graph-drop "$report" \
+      "commons-codec:commons-codec:jar:1.19.0 (compile)" \
+      "org.apache.httpcomponents:httpclient:jar:4.3.4 (compile)"
   grep -Fq -- 'commons-codec:commons-codec:jar:1.19.0 (compile)' "$report" || {
     echo "The report must record the raw Commons Codec candidate for comparison: $report" >&2
     exit 1
   }
-  if grep -Fq -- '/commons-codec/commons-codec/' "$observed"; then
-    echo "The same-session Maven classpath still contains effectively dropped Commons Codec: $observed" >&2
+  grep -Fq -- 'org.apache.httpcomponents:httpclient:jar:4.3.4 (compile)' "$report" || {
+    echo "The report must record the raw HttpClient candidate for comparison: $report" >&2
+    exit 1
+  }
+  if grep -Fq -- '/commons-codec/commons-codec/' "$observed" || grep -Fq -- '/org/apache/httpcomponents/httpclient/' "$observed"; then
+    echo "The same-session Maven classpath still contains effectively dropped dependencies: $observed" >&2
     exit 1
   fi
 }

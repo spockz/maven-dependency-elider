@@ -8,13 +8,19 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Enumeration;
 import java.util.HashSet;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /** Proves mapped classes are absent from physical archives. */
+@SuppressWarnings("PMD.TooManyMethods")
 public final class OmittedCodeProof {
+  /** Minimum number of mapped classes to require multi-symbol evaluation. */
+  private static final int MULTI_SYMBOL_MINIMUM = 2;
+
   private OmittedCodeProof() {}
 
   /** Returns proof evidence or throws when checks fail. */
@@ -32,12 +38,19 @@ public final class OmittedCodeProof {
     final Set<String> trimmedClasses = readClasses(trimRecord.trimmedPath());
     final Set<String> absent = verifySymbols(mapping, originalClasses, trimmedClasses);
     verifyUnchanged(trimRecord, originalDigests, trimmedDigests);
+    final String impactDetail =
+        mapping.sourceAdvisoryUrl() != null
+            ? "Mapped vulnerable classes and their original nested classes are absent "
+                + "from the trimmed artifact (verified against fix commit/advisory: "
+                + mapping.sourceAdvisoryUrl()
+                + ")."
+            : "Mapped vulnerable classes and their original nested classes are absent "
+                + "from the trimmed artifact.";
     return new VexAttestation(
         mapping.cveId(),
         trimRecord.coordinate(),
         "vulnerable_code_not_present",
-        "Mapped vulnerable classes and their original nested classes are absent "
-            + "from the trimmed artifact.",
+        impactDetail,
         absent,
         originalDigests.sha256(),
         trimmedDigests.sha256());
@@ -130,6 +143,79 @@ public final class OmittedCodeProof {
         && left.version().equals(right.version())
         && left.type().equals(right.type())
         && left.classifier().equals(right.classifier());
+  }
+
+  /** Evaluates whether a multi-symbol mapping had missing symbols. */
+  public record ConservativeOmission(
+      String cveId,
+      ArtifactCoordinate coordinate,
+      Set<String> absentFromOriginal,
+      Set<String> presentAndPruned) {
+    /** Validates non-null collections and wraps them immutably. */
+    public ConservativeOmission {
+      Objects.requireNonNull(cveId, "cveId");
+      Objects.requireNonNull(coordinate, "coordinate");
+      absentFromOriginal = Set.copyOf(absentFromOriginal);
+      presentAndPruned = Set.copyOf(presentAndPruned);
+    }
+  }
+
+  /** Evaluates multi-symbol mapping drops due to missing archive symbols. */
+  @SuppressWarnings("PMD.CyclomaticComplexity")
+  public static Optional<ConservativeOmission> evaluateConservativeOmission(
+      final VulnerabilitySymbolMapping mapping, final ArtifactTrimRecord trimRecord)
+      throws IOException {
+    if (mapping == null || trimRecord == null) {
+      return Optional.empty();
+    }
+    if (!sameArtifactIdentity(mapping.affectedCoordinate(), trimRecord.coordinate())) {
+      return Optional.empty();
+    }
+    if (mapping.vulnerableClasses().size() < MULTI_SYMBOL_MINIMUM) {
+      return Optional.empty();
+    }
+    final Set<String> originalClasses = readClasses(trimRecord.originalPath());
+    final Set<String> trimmedClasses = readClasses(trimRecord.trimmedPath());
+    final Set<String> absentFromOriginal = new TreeSet<>();
+    final Set<String> presentAndPruned = new TreeSet<>();
+    for (final String mapped : mapping.vulnerableClasses()) {
+      final String binaryName = mapped.replace('.', '/');
+      if (originalClasses.contains(binaryName)) {
+        if (classSurvives(binaryName, originalClasses, trimmedClasses)) {
+          return Optional.empty();
+        }
+        presentAndPruned.add(mapped);
+      } else {
+        absentFromOriginal.add(mapped);
+      }
+    }
+    if (!absentFromOriginal.isEmpty() && !presentAndPruned.isEmpty()) {
+      return Optional.of(
+          new ConservativeOmission(
+              mapping.cveId(), trimRecord.coordinate(), absentFromOriginal, presentAndPruned));
+    }
+    return Optional.empty();
+  }
+
+  private static boolean classSurvives(
+      final String binaryName,
+      final Set<String> originalClasses,
+      final Set<String> trimmedClasses) {
+    if (trimmedClasses.contains(binaryName)) {
+      return true;
+    }
+    for (final String symbol : nestedSymbols(binaryName, originalClasses)) {
+      if (trimmedClasses.contains(symbol)) {
+        return true;
+      }
+    }
+    final String nestedPrefix = binaryName + "$";
+    for (final String trimmed : trimmedClasses) {
+      if (trimmed.startsWith(nestedPrefix)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static Set<String> readClasses(final Path path) throws IOException {
