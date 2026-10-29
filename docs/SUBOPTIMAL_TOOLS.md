@@ -1,6 +1,20 @@
 <!-- WHY: Preserves observed tooling outcomes and their evidence limits across sessions, without inventing semantic-tool comparisons for workflows that did not use them. -->
 # Tooling Assessments
 
+## 2026-10-29: WP-PARALLEL-01 benchmark and wrap-up
+
+Coverage is the coordinator's visible WP-PARALLEL-01 work and wrap-up turn. No semantic transcript extractor or subagent transcript collection was available. The enabled tool catalog exposed no `semantic_*` operations, and none were used; semantic-versus-built-in efficiency cannot be compared.
+
+| Workflow / attempt | Observed outcome | Agent efficiency and runtime comparison |
+| :--- | :--- | :--- |
+| Repository-native implementation and verification | `apply_patch`, Git, Maven, Make, and shell were used. The four review comments were fixed; the source branch passed nine `make test-examples` runs, and merged `main` passed `make lint-java` plus all standalone and multi-module example checks. | No semantic alternative was available or invoked. No token or runtime savings are claimed. |
+| Hyperfine setup | Hyperfine was absent; the apt package was not cached locally. `/etc/codex/network-policy.json` and the `cloud_environment.environment_status` tool were unavailable, so no package network request was made. The example runner's `date +%s%N` wall-clock timings were used; worker order was fixed and sample ranges varied. | The data is directional and recorded in the WP closeout. No hyperfine or semantic-tool runtime comparison is available. |
+| Shell sandbox launch | Initial read-only commands failed before execution with `bwrap: Unexpected capabilities but not setuid, old file caps config?`; reviewed escalated commands worked. | Retry overhead was introduced. No repository state changed on the failed attempts. |
+| App worktree identity lookup | `codex_app__list_artifacts` returned `No handler registered`. Git metadata supplied the linked-worktree registration and branch ancestry, but not an app attachment identity. | The app lookup failed; Git was sufficient for local integration but does not establish app attachment state. |
+| Post-merge Java verification | `make lint-java` and `make test-examples MAKE_JOBS=4` passed on `main`. A `make java-check` attempt passed 195 core and 267 plugin tests, then the nested lifecycle test failed in offline mode because its file repository lacked Maven offline-origin metadata for Jackson and Spring Boot BOMs. | No online retry was made because network access could not be verified. The failed nested fixture is an environment/repository-resolution limitation, not a reported assertion failure in the parallel trimmer. |
+
+No semantic operation, semantic result, or semantic-tool runtime was observed in this turn. The linked source worktree and branch were removed after Git integration; ignored scratch evidence was preserved in the main checkout. `codex_app__set_thread_archived` returned that dynamic archive tools are unavailable on this host, so the conversation remains open.
+
 ## 2026-10-29: WP-REACTOR-01 implementation and wrap-up
 
 The bundled extractor covered the root thread and all three referenced child logs (4 retained logs total, 2 compactions, no missing children). It found zero executed `semantic_*` calls, zero semantic results, and two command-review candidates. Manual inspection found `exec-c9b58989-d266-4f75-8d80-387398def962` at root line 1656 was an `rg` search for the helper and WP-REACTOR identifiers; `exec-e838fc2b-99b4-44f7-beea-7596ccaf1945` at line 1669 was the transcript helper invocation itself. Neither invoked a semantic operation. Deleted, unrecorded, or truncated history remains unrecoverable. The current tool catalog exposes no `semantic_*` tools.
