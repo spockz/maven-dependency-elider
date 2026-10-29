@@ -46,7 +46,7 @@ final class ProGuardReferenceVisitors {
     return new RecordingLibraryReferenceVisitor(unresolvedReferences, resolver);
   }
 
-  /** Adds metadata links Core 9.1.10 omits from its general visitor. */
+  /** Adds metadata links ProGuard Core omits from its general visitor. */
   /* Package access keeps the ProGuard visitor internal to the trimmer. */
   static final class CompleteReferencedClassVisitor extends ReferencedClassVisitor
       implements RecordComponentInfoVisitor {

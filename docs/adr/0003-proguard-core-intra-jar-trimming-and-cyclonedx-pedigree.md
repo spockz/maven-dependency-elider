@@ -22,7 +22,7 @@ Previous attempts at custom link-closure algorithms risk missing complex JVM byt
 
 ## Decision
 
-Adopt **`com.guardsquare:proguard-core:9.1.10`** (licensed under Apache License 2.0) as the underlying engine to perform intra-JAR dependency trimming:
+Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2.0) as the underlying engine to perform intra-JAR dependency trimming:
 
 1. **Root Set Formulation**:
    Construct the root set $R$ for each retained dependency by combining:

@@ -80,7 +80,7 @@ final class MavenDependencyTrimmer {
   /** Domain marker distinguishes this cache from incompatible pre-release drafts. */
   static final String CACHE_FORMAT_ID = "maven-dependency-elider-effective-output-cache";
 
-  private static final String ENGINE_VERSION = "proguard-core-9.1.10";
+  private static final String ENGINE_VERSION = "proguard-core-9.4.0";
   private static final int MAX_TRIM_WORKERS = 4;
 
   record TrimResult(

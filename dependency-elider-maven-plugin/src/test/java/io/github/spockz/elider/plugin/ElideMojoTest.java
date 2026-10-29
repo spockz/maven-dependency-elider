@@ -1314,7 +1314,7 @@ final class ElideMojoTest {
             List.of(ctSym),
             21,
             4,
-            "proguard-core-9.1.10");
+            "proguard-core-9.4.0");
 
     assertThat(
             MavenDependencyTrimmer.fingerprintForInputs(
@@ -1324,7 +1324,7 @@ final class ElideMojoTest {
                 List.of(ctSym),
                 21,
                 4,
-                "proguard-core-9.1.10"))
+                "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
             MavenDependencyTrimmer.fingerprintForInputs(
@@ -1334,7 +1334,7 @@ final class ElideMojoTest {
                 List.of(ctSym),
                 17,
                 4,
-                "proguard-core-9.1.10"))
+                "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
             MavenDependencyTrimmer.fingerprintForInputs(
@@ -1344,7 +1344,7 @@ final class ElideMojoTest {
                 List.of(otherJdkCtSym),
                 21,
                 4,
-                "proguard-core-9.1.10"))
+                "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
             MavenDependencyTrimmer.fingerprintForInputs(
@@ -1354,7 +1354,7 @@ final class ElideMojoTest {
                 List.of(ctSym),
                 21,
                 4,
-                "proguard-core-9.1.10"))
+                "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
             MavenDependencyTrimmer.fingerprintForInputs(
@@ -1364,7 +1364,7 @@ final class ElideMojoTest {
                 List.of(jmod),
                 21,
                 4,
-                "proguard-core-9.1.10"))
+                "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
             MavenDependencyTrimmer.fingerprintForInputs(
@@ -1374,7 +1374,7 @@ final class ElideMojoTest {
                 List.of(ctSym, jmod),
                 21,
                 4,
-                "proguard-core-9.1.10"))
+                "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
             MavenDependencyTrimmer.fingerprintForInputs(
@@ -1384,7 +1384,7 @@ final class ElideMojoTest {
                 List.of(ctSym),
                 21,
                 5,
-                "proguard-core-9.1.10"))
+                "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
             MavenDependencyTrimmer.fingerprintForInputs(
@@ -1394,7 +1394,7 @@ final class ElideMojoTest {
                 List.of(ctSym),
                 21,
                 4,
-                "proguard-core-9.1.11"))
+                "proguard-core-9.4.1"))
         .isNotEqualTo(baseline);
 
     Files.writeString(firstLibrary, "other-bytes");
@@ -1407,7 +1407,7 @@ final class ElideMojoTest {
             List.of(ctSym),
             21,
             4,
-            "proguard-core-9.1.10");
+            "proguard-core-9.4.0");
     assertThat(dependencyChangedFingerprint).isNotEqualTo(baseline);
     final long ctSymSize = Files.size(ctSym);
     Files.writeString(ctSym, "xt-sym-bytes");
@@ -1422,7 +1422,7 @@ final class ElideMojoTest {
                 List.of(ctSym),
                 21,
                 4,
-                "proguard-core-9.1.10"))
+                "proguard-core-9.4.0"))
         .isNotEqualTo(dependencyChangedFingerprint);
   }
 

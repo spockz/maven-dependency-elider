@@ -37,7 +37,7 @@ However, slicing a third-party JAR introduces three unresolved challenges:
 
 We evaluated two premier established shrinking and bytecode analysis engines for per-dependency intra-JAR trimming:
 
-| Dimension | `com.guardsquare:proguard-core:9.1.10` | `com.android.tools:r8` |
+| Dimension | `com.guardsquare:proguard-core:9.4.0` | `com.android.tools:r8` |
 | :--- | :--- | :--- |
 | **Licensing** | **Apache 2.0** (`proguard-core` is licensed under Apache 2.0; distinct from GPL `proguard-base`). Perfectly compatible with project's Apache 2.0 license. | **BSD 3-Clause** (Apache compatible). |
 | **Distribution** | Hosted directly on **Maven Central**. | Hosted on Google Maven repository (`maven.google.com`), not on Central. |
@@ -140,7 +140,7 @@ The trimmer records class-removal provenance but has no CVE knowledge and does n
 
 ## 3. Evidence & Experimental Plan
 
-1. Benchmark `com.guardsquare:proguard-core:9.1.10` class pool loading and reachability traversal latency across 50 dependency JARs.
+1. Benchmark `com.guardsquare:proguard-core:9.4.0` class pool loading and reachability traversal latency across 50 dependency JARs.
 2. Verify that trimming `commons-compress` in `example-basic-app` retains only required archive classes while preserving JVM class verification under Java 21+.
 3. Ingest generated CycloneDX 1.6 SBOM into schema validators and downstream scanners to confirm valid `pedigree` ingestion.
 
@@ -148,7 +148,7 @@ The trimmer records class-removal provenance but has no CVE knowledge and does n
 
 ## 4. Decision Checkpoints
 
-* [x] **Checkpoint 1 (Engine Selection)**: Select `com.guardsquare:proguard-core:9.1.10` under Apache 2.0 license over Google R8 for per-JAR boundary preservation and Maven Central availability.
+* [x] **Checkpoint 1 (Engine Selection)**: Select `com.guardsquare:proguard-core:9.4.0` under Apache 2.0 license over Google R8 for per-JAR boundary preservation and Maven Central availability.
 * [x] **Checkpoint 2 (Archive Sanitation)**: Adopt Shade signature-stripping conventions (`META-INF/*.SF`, `*.RSA`) and manifest digest cleansing.
 * [x] **Checkpoint 3 (CycloneDX Provenance)**: Model trimmed artifact provenance via CycloneDX 1.6 `pedigree.ancestors` (Central SHA-256) and `pedigree.patches`.
 * [ ] **Checkpoint 4 (Source-Root Protection)**: Implement source compilation reference scanner to protect compile-time dependencies.

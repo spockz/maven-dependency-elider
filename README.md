@@ -260,7 +260,7 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 | Persisted report and CycloneDX pedigree | Unit tested; fixture verified | Verifies report structure, graph data, class and byte metrics, and example pedigree output. |
 | Maven multi-module reactor with active elision | Bare-tree auto-preparation fails fast; active reactor elision unverified | Automatic preparation rejects multi-project reactors before rendering the tree. Concurrent multi-module elision is unverified. |
 | Other Maven CLI versions | Unverified | Pinned to Maven CLI 3.9.11. Other Maven 3 versions and Maven 4 are unverified. |
-| Java 25 class files | Unsupported | Pinned ProGuard Core version cannot parse Java 25 class files. |
+| Java 25 class files | Supported | Pinned ProGuard Core 9.4.0 engine parses and analyzes class files through Java 27. |
 | Process crash during publication | Unverified | Covers normal rollback on failure, not crash recovery or concurrent writers. |
 
 ### Configuration Rules & Safeguards

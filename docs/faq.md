@@ -100,8 +100,8 @@ We are actively evaluating how to interpret multiple mapped classes (e.g. conjun
 There is an important distinction between the JDK running Maven and your application's compilation target:
 
 * **Build Runtime (JDK executing Maven)**: Requires **JDK 21 or newer**. The plugin is implemented in Java 21 LTS using modern language features (such as Records, pattern matching, and sequenced collections) and requires a Java 21+ JVM process to run inside Maven.
-* **Application Compilation Target (Target Bytecode)**: Supports compilation targets from **Java 1.1 up through Java 24** (class-file major versions 45 through 68). A project can compile with `<release>8</release>`, `<release>11</release>`, `<release>17</release>`, `<release>21</release>`, or `<release>24</release>` and use intra-JAR trimming, reachability link closure, and whole-artifact elision normally, provided Maven itself is executed with JDK 21+.
-* **Upper Boundary**: The maximum supported bytecode target is **Java 24** (class-file version 68). Analyzing class files compiled for **Java 25** (class-file version 69) is unsupported because the pinned bytecode engine (ProGuard Core 9.1.10) fails fast when encountering class-file major version 69.
+* **Application Compilation Target (Target Bytecode)**: Supports compilation targets from **Java 1.1 up through Java 27** (class-file major versions 45 through 71), including **Java 25** (version 69). A project can compile with `<release>8</release>`, `<release>11</release>`, `<release>17</release>`, `<release>21</release>`, or `<release>25</release>` and use intra-JAR trimming, reachability link closure, and whole-artifact elision normally, provided Maven itself is executed with JDK 21+.
+* **Bytecode Engine Compatibility**: The pinned bytecode engine (`com.guardsquare:proguard-core:9.4.0`) natively supports class-file versions through Java 27 (major version 71), fully supporting Java 25 class-file analysis.
 
 ### How much build time does elision add?
 
