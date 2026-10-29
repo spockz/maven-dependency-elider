@@ -95,9 +95,13 @@ We are actively evaluating how to interpret multiple mapped classes (e.g. conjun
 
 ## Compatibility and Performance
 
-### Is Java 25 class-file analysis supported?
+### What Java versions and target compilation levels are supported?
 
-No, not with the currently pinned ProGuard Core 9.1.10. The validated example toolchain is GraalVM JDK 21. A newer Maven runtime analyzing dependencies compiled to an older class-file version is a separate compatibility case.
+There is an important distinction between the JDK running Maven and your application's compilation target:
+
+* **Build Runtime (JDK executing Maven)**: Requires **JDK 21 or newer**. The plugin is implemented in Java 21 LTS using modern language features (such as Records, pattern matching, and sequenced collections) and requires a Java 21+ JVM process to run inside Maven.
+* **Application Compilation Target (Target Bytecode)**: Supports compilation targets from **Java 1.1 up through Java 24** (class-file major versions 45 through 68). A project can compile with `<release>8</release>`, `<release>11</release>`, `<release>17</release>`, `<release>21</release>`, or `<release>24</release>` and use intra-JAR trimming, reachability link closure, and whole-artifact elision normally, provided Maven itself is executed with JDK 21+.
+* **Upper Boundary**: The maximum supported bytecode target is **Java 24** (class-file version 68). Analyzing class files compiled for **Java 25** (class-file version 69) is unsupported because the pinned bytecode engine (ProGuard Core 9.1.10) fails fast when encountering class-file major version 69.
 
 ### How much build time does elision add?
 
