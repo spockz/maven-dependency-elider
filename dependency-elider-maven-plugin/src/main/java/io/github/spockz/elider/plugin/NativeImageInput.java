@@ -112,7 +112,12 @@ final class NativeImageInput {
       if (!Files.isRegularFile(sibling)) {
         throw new IOException("Native-image sibling data is missing: " + sibling);
       }
-      return Files.newInputStream(sibling);
+      final Path realParent = parent.toRealPath();
+      final Path realSibling = sibling.toRealPath();
+      if (!realSibling.startsWith(realParent)) {
+        throw new IOException("Native-image sibling path escapes descriptor directory: " + path);
+      }
+      return Files.newInputStream(realSibling);
     }
   }
 }

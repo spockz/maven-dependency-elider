@@ -98,6 +98,36 @@ final class DependencyDynamicRootsTest {
   }
 
   @Test
+  void rejectsPredefinedClassdataEscapingThroughSymlink() throws IOException {
+    final String hash = "0123456789abcdef0123456789abcdef";
+    final Path descriptorDirectory = tempDir.resolve("descriptor-root");
+    final Path externalDirectory = tempDir.resolve("external-classdata");
+    Files.createDirectories(descriptorDirectory);
+    Files.createDirectories(externalDirectory);
+    final Path config = descriptorDirectory.resolve("arbitrary.data");
+    Files.writeString(
+        config,
+        "[{\"type\":\"agent-extracted\",\"classes\":[{\"hash\":\"" + hash + "\"}]}]",
+        StandardCharsets.UTF_8);
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(
+        Opcodes.V21, Opcodes.ACC_PUBLIC, "org/example/Escaped", null, "java/lang/Object", null);
+    writer.visitEnd();
+    Files.write(externalDirectory.resolve(hash + ".classdata"), writer.toByteArray());
+    Files.createSymbolicLink(
+        descriptorDirectory.resolve("agent-extracted-predefined-classes"), externalDirectory);
+
+    final Set<String> roots = new java.util.LinkedHashSet<>();
+    assertThatThrownBy(
+            () ->
+                NativeImageClassConfig.readNativeImageClassConfig(
+                    NativeImageInput.file(config, NativeImageDescriptorKind.PREDEFINED_CLASSES),
+                    roots))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Unresolved predefined class hash");
+  }
+
+  @Test
   void distinguishesProvenAndUnprovenServiceRoots() throws IOException {
     final Path jar = tempDir.resolve("spi-service.jar");
     try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
