@@ -40,7 +40,8 @@ final class NativeImageDynamicRoots {
       List<UnsupportedArgument> unsupportedArguments,
       Set<Path> resourceProviders,
       Set<NativeImageConsumedInput> consumedInputs,
-      NativeImagePolicyRoots.ResourcePatternSelection resourcePatterns) {}
+      NativeImagePolicyRoots.ResourcePatternSelection resourcePatterns,
+      NativeImageServiceLoaderPolicy.Selection serviceLoaderPolicy) {}
 
   @SuppressWarnings("PMD.CyclomaticComplexity")
   static PropertiesResult readNativeImagePropertiesDetailed(
@@ -68,9 +69,15 @@ final class NativeImageDynamicRoots {
     boolean requiresArtifactRetention = false;
     final NativeImagePolicyRoots.ResourcePatterns resourcePatterns =
         new NativeImagePolicyRoots.ResourcePatterns();
+    final NativeImageServiceLoaderPolicy.Builder serviceLoaderPolicy =
+        new NativeImageServiceLoaderPolicy.Builder();
     final List<UnsupportedArgument> unsupported = new ArrayList<>();
     for (final String argument : arguments) {
       try {
+        if (NativeImageServiceLoaderPolicy.read(argument, propertiesEntry, serviceLoaderPolicy)) {
+          requiresArtifactRetention = true;
+          continue;
+        }
         declaresClassRoots |=
             readNativeImageArgument(
                 argument,
@@ -100,7 +107,8 @@ final class NativeImageDynamicRoots {
         List.copyOf(unsupported),
         Set.copyOf(resourceProviders),
         Set.copyOf(consumedInputs),
-        resourcePatterns.snapshot());
+        resourcePatterns.snapshot(),
+        serviceLoaderPolicy.snapshot());
   }
 
   private static boolean isConfigurationResourceArgument(final String argument) {

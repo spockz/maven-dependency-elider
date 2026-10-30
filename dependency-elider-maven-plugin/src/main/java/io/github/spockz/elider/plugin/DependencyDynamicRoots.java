@@ -63,7 +63,8 @@ final class DependencyDynamicRoots {
       java.util.List<NativeImageDynamicRoots.UnsupportedArgument> unsupportedNativeImageArgs,
       String nativeImagePolicy,
       Set<NativeImageConsumedInput> consumedInputs,
-      NativeImagePolicyRoots.ResourcePatternSelection resourcePatterns) {
+      NativeImagePolicyRoots.ResourcePatternSelection resourcePatterns,
+      NativeImageServiceLoaderPolicy.Selection serviceLoaderPolicy) {
     RootScan {
       roots = Set.copyOf(roots);
       serviceDescriptors = Set.copyOf(serviceDescriptors);
@@ -75,6 +76,10 @@ final class DependencyDynamicRoots {
           resourcePatterns == null
               ? NativeImagePolicyRoots.ResourcePatternSelection.empty()
               : resourcePatterns;
+      serviceLoaderPolicy =
+          serviceLoaderPolicy == null
+              ? NativeImageServiceLoaderPolicy.Selection.empty()
+              : serviceLoaderPolicy;
     }
 
     RootScan(final Set<String> roots, final boolean declaresClassRoots) {
@@ -88,7 +93,8 @@ final class DependencyDynamicRoots {
           java.util.List.of(),
           "default",
           Set.of(),
-          NativeImagePolicyRoots.ResourcePatternSelection.empty());
+          NativeImagePolicyRoots.ResourcePatternSelection.empty(),
+          NativeImageServiceLoaderPolicy.Selection.empty());
     }
 
     RootScan(
@@ -109,7 +115,8 @@ final class DependencyDynamicRoots {
           unsupportedNativeImageArgs,
           nativeImagePolicy,
           Set.of(),
-          NativeImagePolicyRoots.ResourcePatternSelection.empty());
+          NativeImagePolicyRoots.ResourcePatternSelection.empty(),
+          NativeImageServiceLoaderPolicy.Selection.empty());
     }
 
     boolean requiresPassThrough() {
@@ -118,10 +125,21 @@ final class DependencyDynamicRoots {
 
     EffectiveRoots effectiveRoots(
         final Set<String> provenServiceInterfaces, final boolean conservativeFallback) {
+      return effectiveRoots(
+          provenServiceInterfaces,
+          conservativeFallback,
+          NativeImageServiceLoaderPolicy.Selection.empty());
+    }
+
+    EffectiveRoots effectiveRoots(
+        final Set<String> provenServiceInterfaces,
+        final boolean conservativeFallback,
+        final NativeImageServiceLoaderPolicy.Selection featureSelection) {
       final Set<String> effective = new LinkedHashSet<>(nonServiceRoots);
       final Set<ServiceDescriptor> unprovenServices = new LinkedHashSet<>();
       final Set<String> unprovenRoots = new LinkedHashSet<>();
       for (final ServiceDescriptor descriptor : serviceDescriptors) {
+        addFeatureRoots(effective, descriptor, featureSelection);
         final boolean isProven =
             provenServiceInterfaces.contains(descriptor.serviceInterface())
                 || descriptor.providers().stream().anyMatch(provenServiceInterfaces::contains);
@@ -137,6 +155,20 @@ final class DependencyDynamicRoots {
         }
       }
       return new EffectiveRoots(effective, unprovenServices, unprovenRoots);
+    }
+
+    private static void addFeatureRoots(
+        final Set<String> effective,
+        final ServiceDescriptor descriptor,
+        final NativeImageServiceLoaderPolicy.Selection selection) {
+      if (!selection.enabled()
+          || selection.excludedServices().contains(descriptor.serviceInterface())) {
+        return;
+      }
+      effective.add(descriptor.serviceInterface());
+      descriptor.providers().stream()
+          .filter(provider -> !selection.excludedProviders().contains(provider))
+          .forEach(effective::add);
     }
   }
 
@@ -189,6 +221,10 @@ final class DependencyDynamicRoots {
     /** Resource patterns deferred until all invocation properties are scanned. */
     private final NativeImagePolicyRoots.ResourcePatterns resourcePatterns =
         new NativeImagePolicyRoots.ResourcePatterns();
+
+    /** ServiceLoader options are deferred until candidates are aggregated. */
+    private final NativeImageServiceLoaderPolicy.Builder serviceLoaderPolicy =
+        new NativeImageServiceLoaderPolicy.Builder();
 
     /** External descriptor and predefined sibling bytes consumed by this archive scan. */
     private final Set<NativeImageConsumedInput> consumedInputs = new LinkedHashSet<>();
@@ -308,6 +344,7 @@ final class DependencyDynamicRoots {
       resourceProviders.addAll(result.resourceProviders());
       result.resourcePatterns().includes().forEach(resourcePatterns::include);
       result.resourcePatterns().excludes().forEach(resourcePatterns::exclude);
+      serviceLoaderPolicy.merge(result.serviceLoaderPolicy());
     }
 
     /** Freezes accumulated metadata into the result consumed by Maven pruning. */
@@ -326,7 +363,8 @@ final class DependencyDynamicRoots {
               + ";allowed="
               + String.join(",", new java.util.TreeSet<>(allowedArguments)),
           consumedInputs,
-          resourcePatterns.snapshot());
+          resourcePatterns.snapshot(),
+          serviceLoaderPolicy.snapshot());
     }
   }
 

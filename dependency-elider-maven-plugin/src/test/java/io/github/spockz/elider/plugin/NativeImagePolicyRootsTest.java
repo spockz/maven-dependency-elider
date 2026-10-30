@@ -215,6 +215,7 @@ import org.junit.jupiter.api.io.TempDir;
         raw.unsupportedNativeImageArgs(),
         raw.nativeImagePolicy(),
         raw.consumedInputs(),
-        raw.resourcePatterns());
+        raw.resourcePatterns(),
+        raw.serviceLoaderPolicy());
   }
 }

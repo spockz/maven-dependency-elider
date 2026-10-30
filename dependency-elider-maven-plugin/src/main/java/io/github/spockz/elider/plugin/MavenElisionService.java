@@ -1181,14 +1181,9 @@ final class MavenElisionService {
         }
         scansByPath.put(candidate.filePath(), scan);
       }
-      final DependencyDynamicRoots.EffectiveRoots effective =
-          scan.effectiveRoots(provenServiceInterfaces, conservativeServiceLoaderRoots);
-      classNames.addAll(effective.roots());
       resourceProviderPaths.addAll(scan.resourceProviders());
       resourcePatterns.add(scan.resourcePatterns());
-      if (effective.declaresRoots()
-          || scan.requiresPassThrough()
-          || scan.requiresArtifactRetention()) {
+      if (scan.requiresPassThrough() || scan.requiresArtifactRetention()) {
         declaringArtifacts.add(candidate.coordinate());
       }
       if (scan.requiresPassThrough()) {
@@ -1209,6 +1204,21 @@ final class MavenElisionService {
                       + argument.fullArgument()
                       + "')");
         }
+      }
+    }
+    final NativeImageServiceLoaderPolicy.Selection serviceLoaderPolicy =
+        NativeImageServiceLoaderPolicy.merge(
+            scansByPath.values().stream()
+                .map(DependencyDynamicRoots.RootScan::serviceLoaderPolicy)
+                .toList());
+    for (final ArtifactFileRef candidate : candidates) {
+      final DependencyDynamicRoots.RootScan scan = scansByPath.get(candidate.filePath());
+      final DependencyDynamicRoots.EffectiveRoots effective =
+          scan.effectiveRoots(
+              provenServiceInterfaces, conservativeServiceLoaderRoots, serviceLoaderPolicy);
+      classNames.addAll(effective.roots());
+      if (effective.declaresRoots()) {
+        declaringArtifacts.add(candidate.coordinate());
       }
       if (!effective.unprovenConservativeRoots().isEmpty()) {
         unprovenRootsByCoordinate.put(
