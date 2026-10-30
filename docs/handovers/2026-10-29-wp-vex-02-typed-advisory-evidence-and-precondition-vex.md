@@ -95,8 +95,8 @@ Only after these checks may CycloneDX emit `analysis.justification = code_not_pr
 
 * Exact prerequisite Maven coordinate and exact prerequisite class are both present in the mapping.
 * The affected component is present and its bytes are digest-verified.
-* The explicit completeness opt-in is set, the declared Maven provider inventory is complete and digest-bound, and neither prerequisite coordinate nor exact class appears in that inventory.
-* Any incomplete inventory, provider ambiguity, changed digest, or missing exact prerequisite class suppresses the statement.
+* The explicit completeness opt-in is set, the declared Maven provider inventory is complete and digest-bound, and neither prerequisite coordinate nor exact class appears in that inventory. Completeness includes inspecting raw class entries in every declared provider, including root and every `META-INF/versions/<N>/` tier of MRJARs; indexed or metadata-derived class lists alone are insufficient.
+* Any incomplete inventory, provider ambiguity, changed digest, or missing exact prerequisite class suppresses the statement. A prerequisite-only evidence object cannot be dispatched to omitted-code proof, and class-only evidence cannot be dispatched to precondition proof.
 
 Do not infer a prerequisite dependency from prose and pass it to `PreconditionProof`. Only explicit, typed prerequisite evidence can enter that proof.
 
@@ -175,9 +175,12 @@ Add focused fixtures covering:
 * An unresolved Java source mapping produces an actionable verify-and-add-POM-mapping suggestion but no VEX; after the user supplies a valid exact `vulnerableClasses` mapping, omitted-code VEX still requires the normal physical proof and digest checks.
 * A valid mapped class omitted from all output tiers, a mapped class that survives, and a class absent from the original; only the first case may prove omitted code absent.
 * An old cache payload with `HIGH` but no evidence provenance; it is rejected or made ineligible, including offline behavior.
-* Exact precondition coordinate and class absent, coordinate absent but class present in another provider, class absent but coordinate present, incomplete inventory, and digest mutation.
+* Exact precondition coordinate and class absent, coordinate absent but class present in another declared provider (including a raw class entry in an MRJAR version tier), class absent but coordinate present, missing `requiresClass`, explicit completeness opt-out, incomplete inventory, and digest mutation.
+* Proof dispatch rejects prerequisite-only evidence at omitted-code proof and class-only evidence at precondition proof.
 * `MEDIUM` and `LOW` data never generates CycloneDX/OpenVEX `not_affected`, even when an artifact is dropped or most classes are pruned.
-* Conflicting POM/cache/advisory rows, order-independent reconciliation, and explicit POM mappings passing the same physical proof gates.
+* Conflicting POM/cache/advisory rows, order-independent reconciliation, documented explicit POM override precedence, and explicit POM mappings passing the same physical proof gates.
+* A regression where prose or a commit URL names a helper class that trimming removes while the mapped vulnerable class survives; neither CycloneDX nor OpenVEX may emit a `not_affected` claim.
+* A bare package advisory whose entire component is removed; reporting may show the package is absent, but must not fabricate a class-level proof or VEX.
 
 Every positive and negative VEX fixture validates CycloneDX 1.6 and OpenVEX 0.2.0 output against the pinned schemas. Where a real CVE fixture is unavailable, use a schema-valid synthetic record and label it as a test record; do not imply it is a real vulnerability.
 
@@ -199,3 +202,5 @@ Every positive and negative VEX fixture validates CycloneDX 1.6 and OpenVEX 0.2.
 ## 7. Delivery Notes
 
 The precondition proof and publication architecture described by ADR-0008 already exist. This work package changes the evidence model and its ingestion/reporting gates; it must preserve that implementation's exact class, inventory completeness, digest, conflict, and transaction safeguards. Do not mark the proposal implemented until the evidence provenance fixtures and all negative VEX cases above pass.
+
+This work package does not resolve the separate OSV version-range or partial-delta P1 findings. Precondition VEX proves absence only from the complete, opted-in declared Maven inventory; it does not establish that future or undeclared runtime providers are absent.
