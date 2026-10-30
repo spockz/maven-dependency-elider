@@ -173,6 +173,8 @@ final class MavenElisionGraphBinding {
     fields.add(Boolean.toString(options.trimJars()));
     fields.add(options.mrjarStrategy());
     fields.add(Boolean.toString(options.failOnUnsupportedModuleInfo()));
+    fields.add(Boolean.toString(options.failOnUnsupportedNativeImageArgs()));
+    fields.addAll(sorted(options.allowedNativeImageArgs()));
     fields.addAll(sorted(options.excludedArtifacts()));
     fields.addAll(sorted(options.explicitTrimRoots()));
     fields.addAll(sorted(options.explicitPassThroughArtifacts()));

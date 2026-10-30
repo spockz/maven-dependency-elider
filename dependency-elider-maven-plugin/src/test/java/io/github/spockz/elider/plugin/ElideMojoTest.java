@@ -1637,9 +1637,48 @@ final class ElideMojoTest {
 
     assertThatThrownBy(mojo::execute)
         .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Unsupported native-image Args");
+        .hasMessageContaining("Unsupported native-image argument '-H:Class'")
+        .hasMessageContaining("META-INF/native-image/test/native-image.properties")
+        .hasMessageContaining("<allowedNativeImageArgs>")
+        .hasMessageContaining("org.example:native-image-unsupported")
+        .hasMessageContaining(input.toString());
     assertThat(used.getFile().toPath()).isEqualTo(input).isNotEqualTo(original);
     assertThat(project.getArtifacts()).contains(used);
+  }
+
+  @Test
+  void permissiveNativeImageArgsRetainArchiveByteIdenticallyDuringEffectiveTrimming()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Artifact artifact = artifact("native-image-permissive", "used/Sample.class");
+    final Path original = artifact.getFile().toPath();
+    final Path input =
+        rewriteJar(
+            original,
+            java.util.Map.of(
+                "META-INF/native-image/test/native-image.properties",
+                "Args = -H:UnknownOption=value\n"));
+    artifact.setFile(input.toFile());
+    final byte[] originalBytes = Files.readAllBytes(input);
+    final MavenProject project = project(artifact, new LinkedHashSet<>(List.of(artifact)));
+    project.setGroupId("org.example");
+    project.setArtifactId("native-image-permissive-consumer");
+    project.setVersion("1.0");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("native-image-permissive-build").toString());
+    project.setBuild(build);
+    final ElideMojo mojo = newMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
+    set(mojo, "reportFile", tempDir.resolve("native-image-permissive-report.json").toFile());
+    set(mojo, "trimJars", true);
+    set(mojo, "failOnUnsupportedNativeImageArgs", false);
+
+    mojo.execute();
+
+    assertThat(project.getArtifacts()).contains(artifact);
+    assertThat(artifact.getFile().toPath()).isEqualTo(input);
+    assertThat(Files.readAllBytes(input)).containsExactly(originalBytes);
   }
 
   @Test

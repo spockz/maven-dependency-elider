@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -80,5 +81,103 @@ final class DependencyDynamicRootsTest {
         .containsExactlyInAnyOrder(MY_SERVICE, "org.example.spi.MyServiceImpl");
     assertThat(nonConservative.unprovenConservativeRoots()).isEmpty();
     assertThat(nonConservative.unprovenConservativeServices()).isEmpty();
+  }
+
+  @Test
+  void parsesOkHttpArgsAndRetainsFeatureRoot() throws IOException {
+    final Path jar =
+        nativeImageJar(
+            "Args = -H:+AddAllCharsets --enable-http --enable-https "
+                + "--features=okhttp3.internal.graal.OkHttpFeature "
+                + "--report-unsupported-elements-at-runtime\n");
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+
+    assertThat(scan.roots()).contains("okhttp3.internal.graal.OkHttpFeature");
+    assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
+  void stripsQuotesAndAllowsArgumentsByName() throws IOException {
+    final Path jar =
+        nativeImageJar(
+            "Args = \"-H:ReflectionConfigurationResources=${.}/reflect-config.json\" "
+                + "'--enable-http' -H:CustomFlag=some\\,value\n",
+            "META-INF/native-image/test/reflect-config.json",
+            "[]");
+
+    final DependencyDynamicRoots.RootScan scan =
+        DependencyDynamicRoots.scan(
+            jar, Set.of("-H:CustomFlag", "-H:ReflectionConfigurationResources"), true);
+
+    assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
+  void fallbackMarksUnsupportedArchiveForPassThroughAndStrictErrorIsActionable()
+      throws IOException {
+    final Path jar = nativeImageJar("Args = -H:UnknownOption=value\n");
+
+    final DependencyDynamicRoots.RootScan fallback =
+        DependencyDynamicRoots.scan(jar, Set.of(), false);
+
+    assertThat(fallback.requiresPassThrough()).isTrue();
+    assertThat(fallback.declaresClassRoots()).isFalse();
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of(), true))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("-H:UnknownOption")
+        .hasMessageContaining("full argument: '-H:UnknownOption=value'")
+        .hasMessageContaining("META-INF/native-image/test/native-image.properties")
+        .hasMessageContaining("<allowedNativeImageArgs>");
+  }
+
+  @Test
+  void rejectsUnmatchedQuotes() throws IOException {
+    final Path jar = nativeImageJar("Args = --features='org.example.Feature\n");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Unmatched quote");
+  }
+
+  @Test
+  void doesNotAllowBareModeledRootNamesToBypassValidation() throws IOException {
+    final Path jar = nativeImageJar("Args = --features\n");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of("--features"), false))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("root option has no value");
+  }
+
+  @Test
+  void bindsAllowlistAndStrictnessToNativeImageScanPolicy() throws IOException {
+    final Path jar = nativeImageJar("Args = -H:CustomFlag=value\n");
+    final DependencyDynamicRoots.RootScan strict = DependencyDynamicRoots.scan(jar, Set.of(), true);
+    final DependencyDynamicRoots.RootScan allowed =
+        DependencyDynamicRoots.scan(jar, Set.of("-H:CustomFlag"), true);
+    final DependencyDynamicRoots.RootScan permissive =
+        DependencyDynamicRoots.scan(jar, Set.of(), false);
+
+    assertThat(strict.nativeImagePolicy()).isNotEqualTo(allowed.nativeImagePolicy());
+    assertThat(strict.nativeImagePolicy()).isNotEqualTo(permissive.nativeImagePolicy());
+    assertThat(allowed.nativeImagePolicy()).isNotEqualTo(permissive.nativeImagePolicy());
+  }
+
+  private Path nativeImageJar(final String args) throws IOException {
+    return nativeImageJar(args, null, null);
+  }
+
+  private Path nativeImageJar(final String args, final String extraName, final String extraContent)
+      throws IOException {
+    final Path jar = tempDir.resolve("native-image-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+      out.putNextEntry(new JarEntry("META-INF/native-image/test/native-image.properties"));
+      out.write(args.getBytes(StandardCharsets.UTF_8));
+      out.closeEntry();
+      if (extraName != null) {
+        out.putNextEntry(new JarEntry(extraName));
+        out.write(extraContent.getBytes(StandardCharsets.UTF_8));
+        out.closeEntry();
+      }
+    }
+    return jar;
   }
 }

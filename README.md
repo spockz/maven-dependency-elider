@@ -33,6 +33,20 @@ Whole-artifact removal runs only when a compatible mediated graph proves the exa
 * **Transparent Packaging**: Functions out-of-the-box with `maven-shade-plugin` and `spring-boot-maven-plugin` without custom archive wrappers.
 * **Verifiable Provenance**: Emits schema-valid CycloneDX 1.6 SBOMs recording trimmed component SHA-256 hashes and ancestral pedigree.
 
+### GraalVM native-image metadata
+
+The plugin reads modeled feature, initialization, reflection-configuration, and resource-configuration roots from dependency `native-image.properties`. Unknown arguments fail closed by default. To permit a reviewed non-root option, configure its name only:
+
+```xml
+<configuration>
+  <allowedNativeImageArgs>
+    <allowedNativeImageArg>-H:EnableURLProtocols</allowedNativeImageArg>
+  </allowedNativeImageArgs>
+</configuration>
+```
+
+For a bounded fallback, `-Delide.failOnUnsupportedNativeImageArgs=false` retains the archive containing an unknown argument byte-identically and skips trimming it. Other dependencies remain eligible for elision and trimming.
+
 ---
 
 ## Quick Start

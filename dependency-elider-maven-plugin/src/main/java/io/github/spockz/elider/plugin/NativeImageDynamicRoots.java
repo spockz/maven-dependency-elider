@@ -4,13 +4,15 @@ package io.github.spockz.elider.plugin;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /** Parses supported native-image metadata without accepting unknown root formats. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.GodClass"})
 final class NativeImageDynamicRoots {
   /** Root of the native-image metadata namespace in dependency archives. */
   static final String PREFIX = "META-INF/native-image/";
@@ -30,7 +32,29 @@ final class NativeImageDynamicRoots {
   }
 
   static boolean readNativeImageProperties(
-      final JarFile archive, final JarEntry propertiesEntry, final Set<String> roots)
+      final JarFile archive,
+      final JarEntry propertiesEntry,
+      final Set<String> roots,
+      final Set<String> allowedArguments,
+      final boolean failOnUnsupported)
+      throws IOException {
+    return readNativeImagePropertiesDetailed(
+            archive, propertiesEntry, roots, allowedArguments, failOnUnsupported)
+        .declaresClassRoots();
+  }
+
+  record UnsupportedArgument(String entry, String name, String fullArgument) {}
+
+  record PropertiesResult(
+      boolean declaresClassRoots, List<UnsupportedArgument> unsupportedArguments) {}
+
+  @SuppressWarnings("PMD.CyclomaticComplexity")
+  static PropertiesResult readNativeImagePropertiesDetailed(
+      final JarFile archive,
+      final JarEntry propertiesEntry,
+      final Set<String> roots,
+      final Set<String> allowedArguments,
+      final boolean failOnUnsupported)
       throws IOException {
     final Properties properties = new Properties();
     try (InputStream input = archive.getInputStream(propertiesEntry)) {
@@ -39,17 +63,106 @@ final class NativeImageDynamicRoots {
     if (properties.size() != 1 || !properties.containsKey("Args")) {
       throw new IOException("Unsupported native-image properties in " + propertiesEntry.getName());
     }
-    final String args = properties.getProperty("Args").trim();
-    if (args.isEmpty() || args.contains("\"") || args.contains("'")) {
+    final List<String> arguments = tokenize(properties.getProperty("Args"));
+    if (arguments.isEmpty()) {
       throw new IOException("Unsupported native-image Args in " + propertiesEntry.getName());
     }
     boolean declaresClassRoots = false;
-    for (final String argument : args.split("\\s+")) {
-      declaresClassRoots |= readNativeImageArgument(argument, archive, propertiesEntry, roots);
+    final List<UnsupportedArgument> unsupported = new ArrayList<>();
+    for (final String argument : arguments) {
+      try {
+        declaresClassRoots |= readNativeImageArgument(argument, archive, propertiesEntry, roots);
+      } catch (final UnknownNativeImageArgument exception) {
+        if (allowedArguments.contains(argumentName(argument))) {
+          continue;
+        }
+        if (failOnUnsupported) {
+          throw unsupportedArgument(propertiesEntry, argument, exception);
+        }
+        unsupported.add(
+            new UnsupportedArgument(propertiesEntry.getName(), argumentName(argument), argument));
+      }
     }
-    return declaresClassRoots;
+    return new PropertiesResult(declaresClassRoots, List.copyOf(unsupported));
   }
 
+  /** Scans quote-delimited tokens while preserving non-syntactic characters verbatim. */
+  @SuppressWarnings({
+    "PMD.CognitiveComplexity",
+    "PMD.CyclomaticComplexity",
+    "PMD.ConfusingTernary",
+    "PMD.AvoidDeeplyNestedIfStmts"
+  })
+  private static List<String> tokenize(final String input) throws IOException {
+    final List<String> tokens = new ArrayList<>();
+    final StringBuilder token = new StringBuilder();
+    char quote = 0;
+    for (int index = 0; index < input.length(); index++) {
+      final char value = input.charAt(index);
+      if (quote != 0) {
+        if (value == quote) {
+          if (token.length() == 0) {
+            throw new IOException("Empty token in native-image Args");
+          }
+          quote = 0;
+        } else {
+          token.append(value);
+        }
+      } else if (value == '\'' || value == '"') {
+        quote = value;
+      } else if (Character.isWhitespace(value)) {
+        addToken(tokens, token);
+      } else {
+        token.append(value);
+      }
+    }
+    if (quote != 0) {
+      throw new IOException("Unmatched quote in native-image Args");
+    }
+    addToken(tokens, token);
+    return tokens;
+  }
+
+  private static void addToken(final List<String> tokens, final StringBuilder token)
+      throws IOException {
+    if (token.length() > 0) {
+      tokens.add(token.toString());
+      token.setLength(0);
+    }
+  }
+
+  private static String argumentName(final String argument) {
+    final int equals = argument.indexOf('=');
+    return equals < 0 ? argument : argument.substring(0, equals);
+  }
+
+  private static IOException unsupportedArgument(
+      final JarEntry entry, final String argument, final IOException cause) {
+    final String name = argumentName(argument);
+    return new IOException(
+        "Unsupported native-image argument '"
+            + name
+            + "' in "
+            + entry.getName()
+            + " (full argument: '"
+            + argument
+            + "'). Inspect the property in the dependency archive. "
+            + "If it does not declare dynamic class roots, add its name to "
+            + "<allowedNativeImageArgs> in pom.xml:\n"
+            + "  <configuration>\n    <allowedNativeImageArgs>\n      <allowedNativeImageArg>"
+            + name
+            + "</allowedNativeImageArg>\n    </allowedNativeImageArgs>\n  </configuration>\n"
+            + "Or via CLI: -Delide.allowedNativeImageArgs="
+            + name,
+        cause);
+  }
+
+  /** Separates unknown options from malformed modeled options. */
+  private static final class UnknownNativeImageArgument extends IOException {
+    private static final long serialVersionUID = 1L;
+  }
+
+  @SuppressWarnings("PMD.CyclomaticComplexity")
   private static boolean readNativeImageArgument(
       final String argument,
       final JarFile archive,
@@ -64,6 +177,16 @@ final class NativeImageDynamicRoots {
           true,
           roots);
       return true;
+    }
+    if ("-H:ReflectionConfigurationResources".equals(argument)
+        || "-H:ResourceConfigurationResources".equals(argument)
+        || "--features".equals(argument)
+        || "--initialize-at-build-time".equals(argument)) {
+      throw new IOException(
+          "Native-image root option has no value in "
+              + propertiesEntry.getName()
+              + ": "
+              + argument);
     }
     if (argument.startsWith("-H:ResourceConfigurationResources=")) {
       readNativeImageConfigResources(
@@ -85,7 +208,12 @@ final class NativeImageDynamicRoots {
       return readNativeImageClassNames(
           argument.substring("--features=".length()), propertiesEntry, roots);
     }
-    throw new IOException("Unsupported native-image Args in " + propertiesEntry.getName());
+    if ("-H:+AddAllCharsets".equals(argument)
+        || "-H:-AddAllCharsets".equals(argument)
+        || "--report-unsupported-elements-at-runtime".equals(argument)) {
+      return false;
+    }
+    throw new UnknownNativeImageArgument();
   }
 
   private static boolean readNativeImageClassNames(

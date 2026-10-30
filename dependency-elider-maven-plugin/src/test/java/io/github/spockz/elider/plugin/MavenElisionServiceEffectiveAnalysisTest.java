@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -171,6 +172,120 @@ final class MavenElisionServiceEffectiveAnalysisTest
     assertThat(result.effectiveDecision().retainedArtifacts()).contains(fixture.coordinate("b"));
     assertThat(result.effectiveDecision().elidedArtifacts()).isEmpty();
     assertThat(temporaryDirectory.resolve("build/elided-artifacts")).doesNotExist();
+  }
+
+  @Test
+  void unsupportedNativeImageArchiveIsPinnedWhileSiblingTrimAndElisionProceed() throws Exception {
+    final Fixture fixture = fixture(false);
+    fixture.addUnsupportedNativeImageArgsToA();
+    final Path fallbackPath = fixture.snapshot("a").filePath();
+    final String fallbackDigest =
+        io.github.spockz.elider.trimmer.ArtifactDigests.read(fallbackPath).sha256();
+    final Path trace = temporaryDirectory.resolve("native-image-fallback-runtime.lst");
+    Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\nclosure/b/Middle\n");
+    final MavenElisionService.AnalysisOptions options =
+        new MavenElisionService.AnalysisOptions(
+            List.of(trace.toFile()),
+            List.of(),
+            null,
+            null,
+            false,
+            true,
+            List.of(),
+            false,
+            List.of(),
+            false,
+            true,
+            true,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            List.of(),
+            false);
+    final MavenElisionService service = new MavenElisionService();
+    final MavenElisionService.PreparedAnalysis raw =
+        service.prepare(fixture.mavenProject(), options);
+    assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("a"));
+    assertThat(raw.dynamicRootInputs().scansByPath().get(fallbackPath).requiresPassThrough())
+        .isTrue();
+    final ResolverArtifactGraphCapturePair pair =
+        MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
+    final EffectiveGraphPolicy.Evaluation policy =
+        EffectiveGraphPolicy.evaluatePair(pair, raw.rawDecision());
+    final MavenElisionService.PreparedAnalysis prepared =
+        MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
+            raw,
+            new MavenElisionGraphBinding.Result(
+                policy,
+                raw.graphBinding().inventoryFingerprint(),
+                raw.graphBinding().operationFingerprint(),
+                pair));
+    final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
+
+    assertThat(effective.effectiveDecision().retainedArtifacts())
+        .contains(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c"));
+    assertThat(effective.effectiveDecision().elidedArtifacts()).contains(fixture.coordinate("e"));
+    assertThat(effective.trimAnalysis().candidateAnalyses())
+        .doesNotContainKey(fixture.coordinate("a"));
+    final MavenDependencyTrimmer.TrimResult trimmed =
+        MavenDependencyTrimmer.trimEffectiveOutputs(effective);
+    final ArtifactTrimRecord siblingRecord =
+        trimmed.records().stream()
+            .filter(record -> record.coordinate().equals(fixture.coordinate("b")))
+            .findFirst()
+            .orElseThrow();
+
+    assertThat(trimmed.records())
+        .noneMatch(record -> record.coordinate().equals(fixture.coordinate("a")));
+    assertThat(io.github.spockz.elider.trimmer.ArtifactDigests.read(fallbackPath).sha256())
+        .isEqualTo(fallbackDigest);
+    assertThat(siblingRecord.retainedClasses()).isLessThan(siblingRecord.totalClasses());
+    try (java.util.jar.JarFile output =
+        new java.util.jar.JarFile(siblingRecord.trimmedPath().toFile())) {
+      assertThat(output.getEntry("closure/b/Unused.class")).isNull();
+      assertThat(output.getEntry("closure/b/Middle.class")).isNotNull();
+    }
+
+    final MavenElisionService.AnalysisOptions allowlistedOptions =
+        new MavenElisionService.AnalysisOptions(
+            List.of(trace.toFile()),
+            List.of(),
+            null,
+            null,
+            false,
+            true,
+            List.of(),
+            false,
+            List.of(),
+            false,
+            true,
+            true,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            List.of("-H:CustomUnknown"),
+            true);
+    final MavenElisionService.PreparedAnalysis allowlistedRaw =
+        service.prepare(fixture.mavenProject(), allowlistedOptions);
+    assertThat(
+            allowlistedRaw
+                .dynamicRootInputs()
+                .scansByPath()
+                .get(fallbackPath)
+                .requiresPassThrough())
+        .isFalse();
+    final ResolverArtifactGraphCapturePair allowlistedPair =
+        MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
+    final EffectiveGraphPolicy.Evaluation allowlistedPolicy =
+        EffectiveGraphPolicy.evaluatePair(allowlistedPair, allowlistedRaw.rawDecision());
+    final MavenElisionService.EffectiveAnalysis allowlistedEffective =
+        service.finishAnalysis(
+            MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
+                allowlistedRaw,
+                new MavenElisionGraphBinding.Result(
+                    allowlistedPolicy,
+                    allowlistedRaw.graphBinding().inventoryFingerprint(),
+                    allowlistedRaw.graphBinding().operationFingerprint(),
+                    allowlistedPair)));
+    final MavenDependencyTrimmer.TrimResult afterPolicySwitch =
+        MavenDependencyTrimmer.trimEffectiveOutputs(allowlistedEffective);
+    assertThat(afterPolicySwitch.cacheHits()).isZero();
   }
 
   @Test

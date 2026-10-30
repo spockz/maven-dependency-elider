@@ -130,10 +130,19 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     final Path fifthSource =
         writeSource(
             sourceDirectory, "closure/e/Leaf.java", "package closure.e; public class Leaf {}");
+    final Path unusedSecondSource =
+        writeSource(
+            sourceDirectory, "closure/b/Unused.java", "package closure.b; public class Unused {}");
     final List<Path> sources =
         new ArrayList<>(
             List.of(
-                firstSource, extraSource, secondSource, thirdSource, fourthSource, fifthSource));
+                firstSource,
+                extraSource,
+                secondSource,
+                thirdSource,
+                fourthSource,
+                fifthSource,
+                unusedSecondSource));
     if (optionalAsmSource != null) {
       sources.add(optionalAsmSource);
     }
@@ -153,7 +162,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
             ? List.of()
             : duplicateClass
                 ? List.of("closure/a/Extra.class", "closure/b/Middle.class")
-                : List.of("closure/b/Middle.class");
+                : List.of("closure/b/Middle.class", "closure/b/Unused.class");
     final Path secondArtifactPath =
         jar(
             "b.jar",
@@ -215,6 +224,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
   }
 
   /** Fixture whose generated inputs stay within its temporary test directory. */
+  @SuppressWarnings({"PMD.CouplingBetweenObjects", "PMD.TooManyMethods"})
   protected final class Fixture {
     /** Full resolved Maven artifact inventory. */
     final List<MavenElisionService.ArtifactSnapshot> snapshots;
@@ -341,6 +351,30 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         output.closeEntry();
       }
       return path;
+    }
+
+    // Recreate each ZIP entry while appending metadata to the archive under test.
+    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+    void addUnsupportedNativeImageArgsToA() throws IOException {
+      final Path path = snapshot("a").filePath();
+      final Path staged = temporaryDirectory.resolve("a-with-unsupported-native-image.jar");
+      try (java.util.jar.JarFile archive = new java.util.jar.JarFile(path.toFile());
+          JarOutputStream output = new JarOutputStream(Files.newOutputStream(staged))) {
+        final java.util.Enumeration<JarEntry> entries = archive.entries();
+        while (entries.hasMoreElements()) {
+          final JarEntry entry = entries.nextElement();
+          output.putNextEntry(new JarEntry(entry.getName()));
+          try (java.io.InputStream input = archive.getInputStream(entry)) {
+            input.transferTo(output);
+          }
+          output.closeEntry();
+        }
+        output.putNextEntry(new JarEntry("META-INF/native-image/test/native-image.properties"));
+        output.write(
+            "Args = -H:CustomUnknown=value\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        output.closeEntry();
+      }
+      Files.move(staged, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
 
     List<Artifact> artifacts() {

@@ -59,15 +59,22 @@ final class DependencyDynamicRoots {
       Set<String> roots,
       boolean declaresClassRoots,
       Set<ServiceDescriptor> serviceDescriptors,
-      Set<String> nonServiceRoots) {
+      Set<String> nonServiceRoots,
+      java.util.List<NativeImageDynamicRoots.UnsupportedArgument> unsupportedNativeImageArgs,
+      String nativeImagePolicy) {
     RootScan {
       roots = Set.copyOf(roots);
       serviceDescriptors = Set.copyOf(serviceDescriptors);
       nonServiceRoots = Set.copyOf(nonServiceRoots);
+      unsupportedNativeImageArgs = java.util.List.copyOf(unsupportedNativeImageArgs);
     }
 
     RootScan(final Set<String> roots, final boolean declaresClassRoots) {
-      this(roots, declaresClassRoots, Set.of(), roots);
+      this(roots, declaresClassRoots, Set.of(), roots, java.util.List.of(), "default");
+    }
+
+    boolean requiresPassThrough() {
+      return !unsupportedNativeImageArgs.isEmpty();
     }
 
     EffectiveRoots effectiveRoots(
@@ -97,10 +104,20 @@ final class DependencyDynamicRoots {
   private DependencyDynamicRoots() {}
 
   static RootScan scan(final java.nio.file.Path jar) throws IOException {
+    return scan(jar, Set.of(), true);
+  }
+
+  static RootScan scan(
+      final java.nio.file.Path jar,
+      final Set<String> allowedArguments,
+      final boolean failOnUnsupported)
+      throws IOException {
     final Set<String> roots = new LinkedHashSet<>();
     final Set<String> nonServiceRoots = new LinkedHashSet<>();
     final Set<ServiceDescriptor> serviceDescriptors = new LinkedHashSet<>();
     boolean declaresClassRoots = false;
+    final java.util.List<NativeImageDynamicRoots.UnsupportedArgument> unsupportedNativeImageArgs =
+        new java.util.ArrayList<>();
     try (JarFile archive = new JarFile(jar.toFile())) {
       final Set<String> jarClasses =
           archive.stream()
@@ -148,8 +165,11 @@ final class DependencyDynamicRoots {
           NativeImageResourceConfig.readNativeImageResourceConfig(archive, name, nonServiceRoots);
         } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
             && name.endsWith(".properties")) {
-          declaresClassRoots |=
-              NativeImageDynamicRoots.readNativeImageProperties(archive, entry, nonServiceRoots);
+          final NativeImageDynamicRoots.PropertiesResult propertiesResult =
+              NativeImageDynamicRoots.readNativeImagePropertiesDetailed(
+                  archive, entry, nonServiceRoots, allowedArguments, failOnUnsupported);
+          declaresClassRoots |= propertiesResult.declaresClassRoots();
+          unsupportedNativeImageArgs.addAll(propertiesResult.unsupportedArguments());
         } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
             && !NativeImageDynamicRoots.isNativeImageSbom(name)
             && name.endsWith(".json")) {
@@ -166,7 +186,16 @@ final class DependencyDynamicRoots {
       }
     }
     roots.addAll(nonServiceRoots);
-    return new RootScan(roots, declaresClassRoots, serviceDescriptors, nonServiceRoots);
+    return new RootScan(
+        roots,
+        declaresClassRoots,
+        serviceDescriptors,
+        nonServiceRoots,
+        java.util.List.copyOf(unsupportedNativeImageArgs),
+        "fail="
+            + failOnUnsupported
+            + ";allowed="
+            + String.join(",", new java.util.TreeSet<>(allowedArguments)));
   }
 
   private static boolean readSpringFactories(final InputStream input, final Set<String> roots)

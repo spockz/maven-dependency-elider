@@ -119,6 +119,46 @@ final class AnalyzeMojoTest {
   }
 
   @Test
+  void analyzeAcceptsPermissiveNativeImageArgsWithTrimmingDisabled()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Path archive = tempDir.resolve("native-image-analysis.jar");
+    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(archive))) {
+      output.putNextEntry(new ZipEntry("used/Sample.class"));
+      output.write(new byte[] {0});
+      output.closeEntry();
+      output.putNextEntry(new ZipEntry("META-INF/native-image/test/native-image.properties"));
+      output.write(
+          "Args = -H:UnknownOption=value\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      output.closeEntry();
+    }
+    final Artifact artifact =
+        new DefaultArtifact(
+            "org.example",
+            "native-image",
+            "1.0",
+            "compile",
+            "jar",
+            null,
+            new DefaultArtifactHandler("jar"));
+    artifact.setFile(archive.toFile());
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(new LinkedHashSet<>(Set.of(artifact)));
+    final Path trace = tempDir.resolve("native-image-trace.lst");
+    Files.writeString(trace, "used.Sample\n");
+    final AnalyzeMojo mojo = new AnalyzeMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "trimJars", false);
+    set(mojo, "failOnUnsupportedNativeImageArgs", false);
+    set(mojo, "reportFile", tempDir.resolve("native-image-analysis.json").toFile());
+
+    mojo.execute();
+
+    assertThat(project.getArtifacts()).contains(artifact);
+    assertThat(artifact.getFile().toPath()).isEqualTo(archive);
+  }
+
+  @Test
   void reportsPredictedElisionsAndExactOriginalJarBytesWithoutMutation()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =

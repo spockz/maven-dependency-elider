@@ -1384,18 +1384,23 @@ final class MavenDependencyTrimmer {
   private static boolean passThroughCoordinate(
       final TrimRequest request, final MavenElisionService.ArtifactSnapshot snapshot)
       throws IOException {
+    final DependencyDynamicRoots.RootScan rootScan =
+        request.scanInputs().dynamicRootScans().get(snapshot.filePath());
+    final boolean nativeImageFallback = rootScan != null && rootScan.requiresPassThrough();
     final boolean multiRelease =
         MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath());
     final boolean moduleInfo =
         MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath());
     if (!request.retainedCoordinates().contains(snapshot.coordinate())) {
-      return multiRelease || moduleInfo;
+      return multiRelease || moduleInfo || nativeImageFallback;
     }
     if (moduleInfo && request.failOnUnsupportedModuleInfo()) {
       throw new IOException(
           "Unsupported root module descriptor in retained classpath JAR: " + snapshot.coordinate());
     }
-    return moduleInfo || (multiRelease && MRJAR_PASS_THROUGH.equals(request.mrjarStrategy()));
+    return nativeImageFallback
+        || moduleInfo
+        || (multiRelease && MRJAR_PASS_THROUGH.equals(request.mrjarStrategy()));
   }
 
   static Map<MavenElisionService.ArtifactSnapshot, Set<String>> validateDiscoveredRoots(
@@ -2160,7 +2165,13 @@ final class MavenDependencyTrimmer {
             .toList();
     final List<MavenElisionService.ArtifactSnapshot> multiRelease = new ArrayList<>();
     final List<MavenElisionService.ArtifactSnapshot> moduleInfo = new ArrayList<>();
+    final List<MavenElisionService.ArtifactSnapshot> nativeImageFallback = new ArrayList<>();
     for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
+      final DependencyDynamicRoots.RootScan rootScan =
+          request.scanInputs().dynamicRootScans().get(snapshot.filePath());
+      if (rootScan != null && rootScan.requiresPassThrough()) {
+        nativeImageFallback.add(snapshot);
+      }
       if (MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath())
           && MRJAR_PASS_THROUGH.equals(request.mrjarStrategy())) {
         multiRelease.add(snapshot);
@@ -2188,6 +2199,14 @@ final class MavenDependencyTrimmer {
     final Set<String> skippedIdentities = new LinkedHashSet<>(multiReleaseIdentities);
     skippedIdentities.addAll(moduleInfoIdentities);
     skippedIdentities.addAll(identities(configured));
+    skippedIdentities.addAll(identities(nativeImageFallback));
+    for (final MavenElisionService.ArtifactSnapshot snapshot : retainedLibraries) {
+      final DependencyDynamicRoots.RootScan scan =
+          request.scanInputs().dynamicRootScans().get(snapshot.filePath());
+      if (scan != null) {
+        skippedIdentities.add("native-image-policy:" + scan.nativeImagePolicy());
+      }
+    }
     final List<MavenElisionService.ArtifactSnapshot> retained =
         retainedLibraries.stream()
             .filter(
@@ -2201,7 +2220,10 @@ final class MavenDependencyTrimmer {
         skippedIdentities,
         multiRelease.stream().map(MavenElisionService.ArtifactSnapshot::coordinate).toList(),
         moduleInfo.stream().map(MavenElisionService.ArtifactSnapshot::coordinate).toList(),
-        configuredOnly.stream().map(MavenElisionService.ArtifactSnapshot::coordinate).toList());
+        java.util.stream.Stream.concat(configuredOnly.stream(), nativeImageFallback.stream())
+            .distinct()
+            .map(MavenElisionService.ArtifactSnapshot::coordinate)
+            .toList());
   }
 
   private static CandidatePlan candidatePlan(

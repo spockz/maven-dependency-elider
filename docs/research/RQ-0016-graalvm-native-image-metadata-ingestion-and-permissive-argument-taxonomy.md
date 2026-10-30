@@ -120,7 +120,15 @@ To balance safety and ergonomics, the parser adopts a two-pronged configuration 
 
 ---
 
-## 3. Research Questions
+## 3. Implementation Findings (WP-NATIVE-01)
+
+The accepted policy is implemented in [ADR-0009](../adr/0009-permissive-graalvm-native-image-metadata-ingestion.md). `Properties.load(InputStream)` remains the properties reader; Args tokens are scanned by whitespace outside quote delimiters, with syntactic quotes removed and backslashes preserved. Unmatched quotes and empty tokens fail explicitly. Feature, initialization, and reflection/resource configuration options are parsed before name-only allowlist matching, so allowlisting a modeled option cannot suppress its roots or validation. The built-in non-root set remains the three ADR-approved flags plus `--enable-http` and `--enable-https`.
+
+`allowedNativeImageArgs` is validated as nonblank names without `=` and canonicalized in sorted, deduplicated order. With strict mode enabled, diagnostics include the argument name, full token, archive entry, POM snippet, and CLI form. With strict mode disabled, the scanner marks only the containing artifact; it is retained before whole-artifact pruning, skipped in both trim engines, and analyzed as unchanged link input. Other artifacts remain independently eligible for trimming and elision. Policy inputs participate in graph and trim-cache identity.
+
+Evidence is in [`NativeImageDynamicRoots`](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/NativeImageDynamicRoots.java), [`DependencyDynamicRootsTest`](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyDynamicRootsTest.java), and [`ElideMojoTest`](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/ElideMojoTest.java). Coverage includes the exact OkHttp Args sequence and feature root, quoted resource options, name-only allowance, unmatched quotes, strict diagnostics, and unsupported-artifact fallback state. End-to-end digest parity with a separate eligible trim target is tracked by the WP-NATIVE verification gate.
+
+## 4. Remaining Research Questions
 
 1. **Comprehensive Whitelist of Non-Class Compiler Flags**:
    * What is the exhaustive set of standard GraalVM compiler flags used across popular Java libraries (Netty, OkHttp, Jackson, BouncyCastle, Quarkus, Micronaut, Spring)?
@@ -136,7 +144,7 @@ To balance safety and ergonomics, the parser adopts a two-pronged configuration 
 
 ---
 
-## 4. Evidence Gates
+## 5. Evidence Gates
 
 * **OkHttp Fixture Verification**:
   * Build a test case using `com.squareup.okhttp3:okhttp-jvm:5.3.2`.

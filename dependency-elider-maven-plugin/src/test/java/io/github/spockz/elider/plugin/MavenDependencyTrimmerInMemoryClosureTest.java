@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -161,5 +162,59 @@ final class MavenDependencyTrimmerInMemoryClosureTest
     assertThat(analysis.candidateRoots().get(fixture.coordinate("c")))
         .contains("closure.c.Leaf")
         .noneMatch(name -> name.startsWith("META-INF.versions."));
+  }
+
+  // Builds a synthetic pass-through scan for one archive.
+  @Test
+  @SuppressWarnings({
+    "PMD.UseConcurrentHashMap",
+    "PMD.LiteralsFirstInComparisons",
+    "PMD.AvoidInstantiatingObjectsInLoops",
+    "PMD.LawOfDemeter"
+  })
+  void unsupportedNativeImageArchiveStaysUnchangedAndItsClassesSeedSiblingClosure()
+      throws Exception {
+    final Fixture fixture = fixture(false);
+    final Map<Path, DependencyDynamicRoots.RootScan> scans = new java.util.LinkedHashMap<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : fixture.allSnapshots()) {
+      final boolean fallback = snapshot.coordinate().artifactId().equals("a");
+      scans.put(
+          snapshot.filePath().toAbsolutePath().normalize(),
+          new DependencyDynamicRoots.RootScan(
+              Set.of(),
+              false,
+              Set.of(),
+              Set.of(),
+              fallback
+                  ? List.of(
+                      new NativeImageDynamicRoots.UnsupportedArgument(
+                          "META-INF/native-image/test/native-image.properties",
+                          "-H:CustomUnknown",
+                          "-H:CustomUnknown=value"))
+                  : List.of(),
+              "fail=false;allowed="));
+    }
+    final MavenDependencyTrimmer.InMemoryAnalysis result =
+        MavenDependencyTrimmer.analyzeInMemory(
+            new MavenDependencyTrimmer.TrimRequest(
+                fixture.mavenProject(),
+                null,
+                fixture.allSnapshots(),
+                new MavenDependencyTrimmer.ScanInputs(fixture.scanInputs.classIndex(), scans),
+                Set.of(fixture.coordinate("a")),
+                TraceData.of(Set.of("closure.a.Entry")),
+                Set.of(),
+                Set.of(),
+                Set.of(),
+                List.of(),
+                false,
+                List.of(),
+                false),
+            Map.of(),
+            Set.of());
+
+    assertThat(result.candidateAnalyses()).doesNotContainKey(fixture.coordinate("a"));
+    assertThat(result.reachableArtifacts()).contains(fixture.coordinate("b"));
+    assertThat(fixture.snapshot("a").filePath()).exists();
   }
 }

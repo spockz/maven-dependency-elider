@@ -189,6 +189,8 @@ If the requested lifecycle reaches `test`, the guard also requires the standard 
 | `elide.trimRoots` | *(none)* | Comma-separated additional root classes (e.g. `com.example.AppRoot`). |
 | `elide.trimSkipArtifacts` | *(none)* | Comma-separated coordinates of retained JARs to keep byte-identical. Their classes serve as roots for sibling closure. |
 | `elide.mrjarStrategy` | `vertical-shading` | With `trimJars=true`, `vertical-shading` elevates and trims the configured compiler release view. Higher-tier entries are preserved while their analyzed bodies retain sibling dependencies. Set to `pass-through` to preserve the entire multi-release input JAR byte-identically; when another dependency is trimmed, the unchanged MRJAR still contributes closure through the Maven runtime release. |
+| `elide.allowedNativeImageArgs` | *(none)* | Comma-separated native-image argument names accepted without their values. Modeled root and resource options are still parsed before this allowlist is checked. Applies to both `analyze` and `elide`. |
+| `elide.failOnUnsupportedNativeImageArgs` | `true` | In both `analyze` and `elide`, unknown `native-image.properties` Args fail with an actionable diagnostic by default. Set to `false` to retain the containing archive byte-identically and skip its trimming; other archives remain independently eligible. |
 | `elide.failOnUnsupportedModuleInfo` | `false` | When `false`, JARs with root `module-info.class` pass through unchanged on the classpath. When `true`, they fail the build. |
 | `elide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader dynamic roots declared in `META-INF/services/`. When `false`, unproven SPI roots are pruned. |
 | `elide.summaryFile` | `target/dependency-elider-report.json` | Path for the persisted elision snapshot read by `report`. |
@@ -205,6 +207,7 @@ Set `-Delide.trimWorkers=2` to cap trimming at two workers. This setting limits 
 * **Intra-JAR Trimming**: Trimmed JARs are written to `target/elided-artifacts/` with original JARs left untouched. Digital signatures are stripped to maintain archive validity, while resources, licenses, and SPI descriptors are preserved.
 * **Multi-Release and Module Descriptors**: With JAR trimming enabled, the compiler target view is elevated and trimmed. All higher-tier entries remain byte-identical except versioned `module-info.class`, which is removed. Bodies at class-tier breakpoints through the Maven runtime release contribute to sibling closure; tiers above that runtime remain outside the verified linkage boundary. Set `elide.mrjarStrategy=pass-through` to preserve the whole source archive. Root module descriptors keep the existing classpath pass-through behavior.
 * **Exact Pass-Through (`trimSkipArtifacts`)**: Pins specified dependencies byte-identical while allowing their classes to resolve external links into trimmed sibling dependencies.
+* **Native-image argument policy**: `allowedNativeImageArgs` accepts names only (for example `-H:EnableURLProtocols`, without a value after `=`). Unknown arguments fail closed unless `failOnUnsupportedNativeImageArgs=false`; in fallback mode, the archive containing the unknown argument remains unchanged and its classes participate in sibling link closure.
 
 ### Inspecting the Post-Elision Dependency Tree
 
