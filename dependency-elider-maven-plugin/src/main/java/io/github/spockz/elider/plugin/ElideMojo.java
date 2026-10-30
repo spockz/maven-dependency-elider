@@ -193,8 +193,8 @@ public final class ElideMojo extends AbstractMojo {
   private boolean skip;
 
   /** Restricts dependency elision to leaf modules in multi-module reactors. */
-  @Parameter(property = "elide.leafOnly", defaultValue = DEFAULT_FALSE)
-  private boolean leafOnly;
+  @Parameter(property = "elide.leafOnly", defaultValue = "true")
+  private boolean leafOnly = true;
 
   /** Package callback used to test publication ordering. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")

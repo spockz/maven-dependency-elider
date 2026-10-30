@@ -24,6 +24,10 @@
         <module>reactor-app</module>
     </modules>
 
+    <properties>
+        <elide.leafOnly>false</elide.leafOnly>
+    </properties>
+
     <dependencyManagement>
         <dependencies>
             <dependency>

@@ -1,7 +1,7 @@
 <!-- WHY: Defines the work package specification, track decomposition, and step-by-step implementation guide for post-compile process-classes elision and production bytecode completeness (RQ-0017, ADR-0010). -->
 # Work Package Handover: WP-LIFECYCLE-01 Post-Compile `process-classes` Execution & Production Bytecode Completeness
 
-* **Status**: Ready for Implementation
+* **Status**: Implemented (Follow-up investigation open on inlined constants)
 * **Owning Thread / Session**: Primary Coordinating Session
 * **Date**: 2026-10-30
 * **Target Branch / Base**: `main`
@@ -468,3 +468,21 @@ make check-transcripts
 3. **Dynamic Phase Rebinding & Tree Preparation**: Setting `-Delide.productionClassesComplete=true` dynamically rebinds `elide` to `process-classes` in `EliderLifecycleParticipant`, and `EliderTreePreparation` injects `process-classes` before standalone `dependency:tree` requests.
 4. **Phase-Relative Precondition VEX**: `MavenPreconditionInventory` produces a `COMPLETE` snapshot at `process-classes` for projects using `generate-sources` and `compile` annotation processors, while `sourceRootsComplete=true` at `initialize` rejects `annotationProcessorPaths`.
 5. **Zero Regressions**: All existing unit tests, lifecycle integration tests, precondition tests, and `make check` pass with 0 errors.
+
+---
+
+## 5. Known Boundaries, Shortcomings, and Open Follow-Up Investigations
+
+### 5.1 Compile-Time Inlined Constants and Non-Emitted Symbols
+
+A key shortcoming identified in post-compile `process-classes` execution is the handling of compile-time inlined constants:
+
+* **Mechanism**: When production source code references a `public static final` primitive or `String` constant from a dependency JAR, `javac` performs constant folding and embeds the literal value directly into bytecode instructions. The consuming `.class` file in `target/classes` contains **no symbolic reference** to the constant-defining class in its constant pool.
+* **Failure Risk**:
+  * `ProductionBytecodeReferenceScanner` inspects `target/classes` and sees zero references to the constant-defining class.
+  * If the dependency is not invoked at runtime (and absent from runtime telemetry), `dependency-elider` treats the dependency as unneeded bloat and prunes it from the in-memory Maven artifact set.
+  * If unit tests in `src/test/java` reference the constant class (e.g. for assertions), subsequent `test-compile` fails with `cannot find symbol`.
+* **Proposed Follow-Up (see [RQ-0017](../research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md))**:
+  * Implement a hybrid union model at `process-classes`:
+    $$\text{Required Roots} = \text{BytecodeReferences}(\text{target/classes}) \ \cup \ \text{SourceReferences}(\text{CompileSourceRoots})$$
+  * Because all source generation and annotation processing is complete by `process-classes`, the source roots are stable and can be scanned (via AST or a lightweight import scanner) to retain constant-defining types without re-running full compiler attribution.

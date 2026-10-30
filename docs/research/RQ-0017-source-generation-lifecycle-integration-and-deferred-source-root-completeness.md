@@ -3,7 +3,7 @@
 
 ## Status
 
-Resolved (see [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md))
+Partially Resolved (Baseline implementation accepted in [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md); inlined constant follow-up open)
 
 ## Date
 
@@ -110,6 +110,32 @@ When `elide` runs at `process-classes` and prunes `compile`-scoped dependencies 
 * When traces are collected by running the test suite (`mvn test`), test-used classes are present in `traceFiles` and retained automatically.
 * When traces are collected from production/staging (or only subset tests), `test-compile` will fail if `src/test/java` directly imports a dropped `compile`-scoped dependency—surfacing that the dependency is unused by production and should be declared in `<scope>test</scope>` (or retained via `elide.excludedArtifacts` / `elide.trimRoots`).
 
+### 2.4 Inlined Compile-Time Constants and Non-Emitted Symbols
+
+When `javac` compiles code that references `public static final` primitive or `String` constants defined in a dependency library:
+
+```java
+// Dependency library constant:
+public class ConfigConstants {
+    public static final String API_URL = "https://api.example.com";
+}
+
+// Application code:
+String url = ConfigConstants.API_URL;
+```
+
+The Java compiler performs compile-time constant folding:
+
+1. It inlines the literal value directly into the application bytecode stream.
+2. It does not emit an entry for the constant-defining class (`ConfigConstants`) in the constant pool of the consuming `.class` file.
+3. At `process-classes`, `ProductionBytecodeReferenceScanner` inspects only `target/classes` and finds zero references to `ConfigConstants`.
+
+If that dependency is not otherwise invoked at runtime (and thus absent from runtime telemetry), `dependency-elider` concludes the dependency is completely dead and drops it as a whole artifact or trims the constant class:
+
+* **Downstream `test-compile` Breakage**: `test-compile` executes immediately after `process-classes`. If any test in `src/test/java` references `ConfigConstants` (e.g. `assertEquals(ConfigConstants.API_URL, client.getUrl())`), compilation fails with `cannot find symbol ConfigConstants` because the library was removed from the compile classpath.
+* **Consumer Reactor Breakage**: In multi-module builds, if an upstream library module undergoes post-compile elision, downstream sibling modules compiling against it lose access to the constant class unless protected by the leaf-only boundary ([ADR-0011](../adr/0011-reactor-leaf-module-elision-boundary.md)).
+* **Incremental Recompilation & IDEs**: Incremental compilers and IDE workspaces that reuse the mutated post-elision classpath cannot recompile edits referencing members of the pruned library.
+
 ---
 
 ## 3. Analysis of the Rejected "Double Javac Pass" Alternative
@@ -131,6 +157,17 @@ During research, an alternative was evaluated: having the plugin trigger a secon
 2. **Ergonomic Phase Configuration**:
    * *Question*: How can users activate post-compile elision via a property (`-Delide.productionClassesComplete=true`) when Maven computes lifecycle phases before Mojo `@Parameter` injection?
    * *Answer*: Because `@Mojo(defaultPhase)` is static in `plugin.xml`, `EliderLifecycleParticipant.afterProjectsRead(MavenSession)` inspects effective project/user properties and plugin `<configuration>` before `DefaultLifecycleExecutionPlanCalculator` runs, dynamically rebinding the `elide` execution's phase to `process-classes` whenever `elide.productionClassesComplete=true` is enabled.
+3. **Inlined Constants and Non-Emitted Symbols in Post-Compile Slicing**:
+   * *Question*: How can `process-classes` elision prevent pruning dependencies that contributed inlined `static final` constants or compile-only types without re-running a slow second `javac` attribution pass?
+   * *Investigated Solutions*:
+     * **Option A: Hybrid Post-Compile Source + Bytecode Union (Recommended)**:
+       At `process-classes`, all code generators and annotation processors have completed, so both `src/main/java` and `target/generated-sources` are complete and stable. Rather than making `sourceRootsComplete` and `productionClassesComplete` strictly mutually exclusive, `process-classes` can compute:
+       $$\text{Required Roots} = \text{BytecodeReferences}(\text{target/classes}) \ \cup \ \text{SourceReferences}(\text{CompileSourceRoots})$$
+       This retains types used exclusively for constant folding while keeping the post-compile guarantee that dynamically generated classes are fully recognized.
+     * **Option B: Lightweight Syntactic Import & Identifier Token Scanner**:
+       Full semantic attribution via `JavacTask.analyze()` can add 2–4 seconds of build overhead. A lightweight scanner parsing only `import` statements and qualified identifiers in `.java` files can identify candidate dependency classes that may have been inlined, retaining them without re-typechecking the whole project.
+     * **Option C: Preserving Inlined Constants via Annotation/Configuration Overrides**:
+       Allow developers to retain constant-defining libraries explicitly using `elide.trimRoots` or `<excludedArtifacts>`, while surfacing diagnostic warnings during `dependency-elider:report` when a dropped library matches an imported class name from source files.
 
 ---
 
@@ -153,4 +190,4 @@ The implementation now separates the output-completeness assertion from the trus
 
 The real Maven lifecycle test `extensionRebindsElideAfterGeneratedBytecodeExists` generates a Java class with the AntRun `generate-sources` execution, checks that the produced class references the retained dependency, enables the extension property, and runs a post-elision `dependency:tree` request. Unit tests cover compiled-bytecode attribution, missing class output, source-root resource members, and process-classes writer ordering. The Maven Compiler Plugin `testCompile` safeguard remains active even when `skipTests` is true because that flag does not skip test compilation.
 
-Remaining boundary: trusted VEX inventory requires the packaged Maven extension and a real lifecycle-sourced `process-classes` execution. Direct Mojo invocation, a missing lifecycle phase, and other phases remain conservative. The process-classes mode also takes effect only after production compilation; it cannot remove dependencies from that compile invocation.
+Remaining boundary: trusted VEX inventory requires the packaged Maven extension and a real lifecycle-sourced `process-classes` execution. Direct Mojo invocation, a missing lifecycle phase, and other phases remain conservative. The process-classes mode takes effect only after production compilation; it cannot remove dependencies from that compile invocation. Additionally, pure bytecode scanning at `process-classes` cannot observe compile-time inlined constants (`static final` fields), requiring hybrid source-root unioning or explicit retention to prevent dropping constant-only dependencies.

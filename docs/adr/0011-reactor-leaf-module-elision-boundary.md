@@ -37,9 +37,9 @@ Under the baseline configuration, every module declaring `dependency-elider:elid
 We introduce **Reactor Leaf Module Elision (`elide.leafOnly`)**:
 
 1. **Configuration Parameter**:
-   * Both `ElideMojo` and `AnalyzeMojo` expose `@Parameter(property = "elide.leafOnly", defaultValue = "false") private boolean leafOnly;`.
-   * When `leafOnly=false` (default), each module independently evaluates and trims its dependencies, preserving full backward compatibility with existing reactor fixtures.
-   * When `leafOnly=true`, dependency elision and intra-JAR trimming execute **only on leaf modules** in a multi-module Maven reactor.
+   * Both `ElideMojo` and `AnalyzeMojo` expose `@Parameter(property = "elide.leafOnly", defaultValue = "true") private boolean leafOnly = true;`.
+   * When `leafOnly=true` (default), dependency elision and intra-JAR trimming execute **only on leaf modules** in a multi-module Maven reactor.
+   * When `leafOnly=false`, each module independently evaluates and trims its dependencies, preserving module-local reports for every reactor submodule.
 
 2. **Topological Leaf Detection (`ReactorLeafModuleDetector`)**:
    * The plugin evaluates the Maven reactor DAG using `session.getProjectDependencyGraph()`.
@@ -68,4 +68,4 @@ We introduce **Reactor Leaf Module Elision (`elide.leafOnly`)**:
 
 * **Negative / Trade-offs**:
   * If an intermediate library module is intentionally published as a standalone, elided/trimmed artifact to an external Maven repository, `elide.leafOnly` must be set to `false` for that specific module.
-  * Defaults to `false` to maintain strict compatibility with existing test fixtures and workflows that assert module-local reports for every reactor submodule.
+  * Multi-module fixtures or builds that assert module-local reports for every reactor submodule must explicitly configure `<elide.leafOnly>false</elide.leafOnly>`.

@@ -46,8 +46,8 @@ public final class AnalyzeMojo extends AbstractMojo {
   private boolean productionClassesComplete;
 
   /** Restricts dependency analysis to leaf modules in multi-module reactors. */
-  @Parameter(property = "elide.leafOnly", defaultValue = DEFAULT_FALSE)
-  private boolean leafOnly;
+  @Parameter(property = "elide.leafOnly", defaultValue = "true")
+  private boolean leafOnly = true;
 
   /** Enables dry-run intra-JAR trimming prediction. */
   @Parameter(property = "elide.trimJars", defaultValue = DEFAULT_FALSE)

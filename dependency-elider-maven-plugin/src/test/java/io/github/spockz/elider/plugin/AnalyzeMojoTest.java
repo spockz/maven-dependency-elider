@@ -494,8 +494,7 @@ final class AnalyzeMojoTest {
 
     set(mojo, "project", intermediate);
     set(mojo, "session", session);
-    set(mojo, "leafOnly", true);
-    // Skips without failing on missing trace files
+    // leafOnly is true by default: skips without failing on missing trace files
     assertThatCode(mojo::execute).doesNotThrowAnyException();
   }
 
