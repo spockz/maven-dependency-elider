@@ -65,6 +65,13 @@ import org.junit.jupiter.api.io.TempDir;
 
   /* package */
   @Test
+  void enableUrlProtocolsAcceptsNonUrlGrammarToken() throws IOException {
+    NativeImageBroadPolicyRootsTestSupport.assertBroadRoots(
+        temporaryDirectory, propertyEntry, "-H:EnableURLProtocols=custom_protocol");
+  }
+
+  /* package */
+  @Test
   void disabledPoliciesAndSecurityFeatureToggleAddNoRoots() throws IOException {
     final Path provider = NativeImageBroadPolicyRootsTestSupport.provider(temporaryDirectory);
     final Path declaring =

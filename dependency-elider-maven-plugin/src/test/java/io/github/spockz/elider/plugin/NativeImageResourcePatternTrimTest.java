@@ -104,8 +104,8 @@ import org.junit.jupiter.api.Test;
 
   /* package */
   @Test
-  void matchingOrdinaryResourceRetainsClasslessRuntimeArchive() throws Exception {
-    final Fixture fixture = fixture(false, false, true);
+  void matchingOrdinaryResourceRetainsRuntimeArchiveAndTrimsItsUnrootedClass() throws Exception {
+    final Fixture fixture = fixture(false, false, false);
     final Path declaring =
         appendEntries(
             fixture.snapshot("a").filePath(),
@@ -123,24 +123,49 @@ import org.junit.jupiter.api.Test;
     replaceArtifactFile(fixture, "a", declaring);
     replaceArtifactFile(fixture, "b", provider);
     final Path trace = temporaryDirectory.resolve("resource-only-trace.lst");
-    Files.writeString(trace, "closure.a.Entry\n");
+    Files.writeString(trace, "closure.b.Middle\nclosure.c.Leaf\n");
 
+    final MavenElisionService service = new MavenElisionService();
     final MavenElisionService.PreparedAnalysis prepared =
-        new MavenElisionService()
-            .prepare(
-                fixture.mavenProject(),
-                MavenElisionServiceEffectiveAnalysisFixtures.options(
-                    List.of(trace.toFile()), null, true));
+        service.prepare(
+            fixture.mavenProject(),
+            MavenElisionServiceEffectiveAnalysisFixtures.options(
+                List.of(trace.toFile()), null, true));
+    final MavenElisionService.Analysis analysis = service.finish(prepared);
+    final ArtifactTrimRecord providerTrim =
+        analysis.trimRecords().stream()
+            .filter(record -> record.coordinate().equals(fixture.coordinate("b")))
+            .findFirst()
+            .orElseThrow();
+    final boolean unrelatedClassRemoved;
+    final boolean reachableClassRetained;
+    final boolean matchingResourceRetained;
+    try (JarFile output = new JarFile(providerTrim.trimmedPath().toFile())) {
+      unrelatedClassRemoved = output.getEntry("closure/b/Unused.class") == null;
+      reachableClassRetained = output.getEntry("closure/b/Middle.class") != null;
+      matchingResourceRetained = output.getEntry("runtime/provider.dat") != null;
+    }
 
     assertThat(
             List.of(
                 prepared.dynamicRootInputs().classNames(),
                 prepared.dynamicRootInputs().resourceProviderArtifacts(),
-                prepared.rawDecision().retainedArtifacts()))
+                prepared.rawDecision().retainedArtifacts(),
+                providerTrim.totalClasses(),
+                providerTrim.retainedClasses(),
+                reachableClassRetained,
+                unrelatedClassRemoved,
+                matchingResourceRetained))
         .containsExactly(
             java.util.Set.of(),
             java.util.Set.of(fixture.coordinate("b")),
-            java.util.Set.of(fixture.coordinate("a"), fixture.coordinate("b")));
+            java.util.Set.of(
+                fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c")),
+            2,
+            1,
+            true,
+            true,
+            true);
   }
 
   private Path appendEntries(
