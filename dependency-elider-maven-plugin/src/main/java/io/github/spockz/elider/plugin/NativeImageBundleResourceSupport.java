@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -17,17 +18,32 @@ final class NativeImageBundleResourceSupport {
       final String requestedBundle,
       final Set<String> roots,
       final Set<Path> providers) {
-    final String bundle = baseName(requestedBundle);
-    final String resourceBase = bundle.replace('.', '/');
-    for (final Map.Entry<String, List<NativeImageArchiveInventory>> entry : resources.entrySet()) {
-      final String logicalResource = logicalResourceName(entry.getKey());
-      if (isBundleResource(logicalResource, resourceBase)) {
-        for (final NativeImageArchiveInventory archive : entry.getValue()) {
-          providers.add(archive.path());
-          addClassResourceRoot(logicalResource, archive, roots);
+    for (final String family : bundleFamilies(requestedBundle)) {
+      final String resourceBase = family.replace('.', '/');
+      for (final Map.Entry<String, List<NativeImageArchiveInventory>> entry :
+          resources.entrySet()) {
+        final String logicalResource = logicalResourceName(entry.getKey());
+        if (isBundleResource(logicalResource, resourceBase)) {
+          for (final NativeImageArchiveInventory archive : entry.getValue()) {
+            providers.add(archive.path());
+            addClassResourceRoot(logicalResource, archive, roots);
+          }
         }
       }
     }
+  }
+
+  private static Set<String> bundleFamilies(final String requestedBundle) {
+    final Set<String> families = new LinkedHashSet<>();
+    families.add(lastComponentBaseName(requestedBundle));
+    families.add(baseName(requestedBundle));
+    return families;
+  }
+
+  private static String lastComponentBaseName(final String requestedBundle) {
+    final int packageSeparator = requestedBundle.lastIndexOf('.');
+    final int localeSeparator = requestedBundle.indexOf('_', packageSeparator + 1);
+    return localeSeparator < 0 ? requestedBundle : requestedBundle.substring(0, localeSeparator);
   }
 
   private static String baseName(final String requestedBundle) {
@@ -48,7 +64,13 @@ final class NativeImageBundleResourceSupport {
       return false;
     }
     final String stem = resource.substring(0, resource.lastIndexOf('.'));
-    return stem.equals(base) || (stem.startsWith(base + "_") && stem.length() > base.length() + 1);
+    if (stem.equals(base)) {
+      return true;
+    }
+    if (!stem.startsWith(base + "_") || stem.length() <= base.length() + 1) {
+      return false;
+    }
+    return stem.indexOf('/', base.length() + 1) < 0;
   }
 
   private static void addClassResourceRoot(

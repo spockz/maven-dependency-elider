@@ -90,10 +90,12 @@ final class NativeImageConfigurationPointers {
 
   /* package */
   static boolean isPointer(final String argument) {
-    return POINTERS.stream()
-        .anyMatch(
-            pointer ->
-                argument.equals(pointer.option()) || argument.startsWith(pointer.option() + "="));
+    return NativeImageConfigurationDirectories.isOption(argument)
+        || POINTERS.stream()
+            .anyMatch(
+                pointer ->
+                    argument.equals(pointer.option())
+                        || argument.startsWith(pointer.option() + "="));
   }
 
   /* package */
@@ -106,6 +108,11 @@ final class NativeImageConfigurationPointers {
       final Set<Path> resourceProviders,
       final Set<NativeImageConsumedInput> consumedInputs)
       throws IOException {
+    if (NativeImageConfigurationDirectories.isOption(argument)) {
+      return Optional.of(
+          NativeImageConfigurationDirectories.read(
+              argument, propertiesEntry, roots, scanContext, resourceProviders, consumedInputs));
+    }
     for (final Pointer pointer : POINTERS) {
       if (argument.equals(pointer.option())) {
         throw missingValue(argument, propertiesEntry);
@@ -239,7 +246,7 @@ final class NativeImageConfigurationPointers {
     }
   }
 
-  private static void readTypedDescriptor(
+  /* package */ static void readTypedDescriptor(
       final NativeImageInput input,
       final NativeImageDescriptorKind kind,
       final Set<String> roots,

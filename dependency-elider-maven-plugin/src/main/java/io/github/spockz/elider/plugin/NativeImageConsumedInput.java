@@ -13,8 +13,11 @@ import java.util.HexFormat;
 import java.util.List;
 
 /** Digest and canonical path for an external descriptor or sibling bytecode file. */
-record NativeImageConsumedInput(
+/* package */ record NativeImageConsumedInput(
     Path logicalPath, Path canonicalPath, String role, long byteLength, String sha256) {
+  /** Distinguishes directory membership snapshots during revalidation. */
+  private static final String DIRECTORY_MEMBERSHIP_ROLE = "configuration-directory-membership";
+
   NativeImageConsumedInput {
     logicalPath = logicalPath.toAbsolutePath().normalize();
     canonicalPath = canonicalPath.toAbsolutePath().normalize();
@@ -38,6 +41,15 @@ record NativeImageConsumedInput(
     }
   }
 
+  /* package */ static NativeImageConsumedInput directoryMembership(
+      final Path directory, final List<String> members) throws IOException {
+    final Path logical = directory.toAbsolutePath().normalize();
+    final Path canonical = logical.toRealPath();
+    final byte[] manifest = NativeImageConfigurationDirectorySupport.membershipBytes(members);
+    return new NativeImageConsumedInput(
+        logical, canonical, DIRECTORY_MEMBERSHIP_ROLE, manifest.length, digest(manifest));
+  }
+
   /* package */
   String identity() {
     return frame(role)
@@ -55,6 +67,18 @@ record NativeImageConsumedInput(
     final Path currentCanonical = logicalPath.toRealPath();
     if (!canonicalPath.equals(currentCanonical)) {
       throw new IOException("Native-image input target changed after preparation: " + logicalPath);
+    }
+    if (DIRECTORY_MEMBERSHIP_ROLE.equals(role)) {
+      final String currentMembership =
+          digest(
+              NativeImageConfigurationDirectorySupport.membershipBytes(
+                  NativeImageConfigurationDirectorySupport.membershipEntries(logicalPath)));
+      if (!sha256.equals(currentMembership)) {
+        throw new IOException(
+            "Native-image configuration directory membership changed after preparation: "
+                + logicalPath);
+      }
+      return;
     }
     final String currentDigest = digest(Files.readAllBytes(currentCanonical));
     if (!sha256.equals(currentDigest)) {

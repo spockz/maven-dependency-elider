@@ -116,6 +116,44 @@ import org.junit.jupiter.api.io.TempDir;
                 localeFamilyProvider.toRealPath()));
   }
 
+  /* package */
+  @Test
+  void packageUnderscoreBundleUnionsRequestedAndPinnedFamilies() throws IOException {
+    final Path declaring =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "bundle-package-underscore-declaring.jar",
+            NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+            "Args = -H:IncludeResourceBundles=org.example.pkg_under.Messages_en_US\n");
+    final Path provider =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "bundle-package-underscore-provider.jar",
+            "org/example/pkg_under/Messages.properties",
+            "message=base",
+            "org/example/pkg_under/Messages_fr.class",
+            CLASS_BYTES,
+            "org/example/pkg_fr.class",
+            CLASS_BYTES,
+            "org/example/pkg_under/MessagesExtra.properties",
+            "message=prefix-collision",
+            "org/example/pkgExtra_fr.class",
+            CLASS_BYTES);
+    final ArtifactFileRef declaringCandidate = candidate("package-underscore-declaring", declaring);
+    final ArtifactFileRef providerCandidate = candidate("package-underscore-provider", provider);
+    final DependencyDynamicRoots.RootScan scan =
+        DependencyDynamicRoots.scan(
+            declaring,
+            NativeImageScanContext.create(List.of(declaringCandidate, providerCandidate), null),
+            Set.of(),
+            true);
+
+    assertThat(List.of(scan.roots(), scan.resourceProviders()))
+        .containsExactly(
+            Set.of("org.example.pkg_under.Messages_fr", "org.example.pkg_fr"),
+            Set.of(provider.toRealPath()));
+  }
+
   private ArtifactFileRef candidate(final String artifact, final Path path) throws IOException {
     return ArtifactFileRef.fromPath(ArtifactCoordinate.of("org.example", artifact, "1.0"), path);
   }
