@@ -7,11 +7,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Set;
-import java.util.jar.JarEntry;
-import java.util.jar.JarOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -36,26 +34,21 @@ final class DependencyDynamicRootsTest {
   @Test
   void distinguishesProvenAndUnprovenServiceRoots() throws IOException {
     final Path jar = tempDir.resolve("spi-service.jar");
-    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
-      out.putNextEntry(new JarEntry("org/example/spi/MyService.class"));
-      out.write(DUMMY_BYTE);
-      out.closeEntry();
-      out.putNextEntry(new JarEntry("org/example/spi/MyServiceImpl.class"));
-      out.write(DUMMY_BYTE);
-      out.closeEntry();
-      out.putNextEntry(new JarEntry("org/example/spi/OtherService.class"));
-      out.write(DUMMY_BYTE);
-      out.closeEntry();
-      out.putNextEntry(new JarEntry("org/example/spi/OtherServiceImpl.class"));
-      out.write(DUMMY_BYTE);
-      out.closeEntry();
-      out.putNextEntry(new JarEntry("META-INF/services/" + MY_SERVICE));
-      out.write("org.example.spi.MyServiceImpl\n".getBytes(StandardCharsets.UTF_8));
-      out.closeEntry();
-      out.putNextEntry(new JarEntry("META-INF/services/org.example.spi.OtherService"));
-      out.write("org.example.spi.OtherServiceImpl\n".getBytes(StandardCharsets.UTF_8));
-      out.closeEntry();
-    }
+    writeJar(
+        jar,
+        Map.of(
+            "org/example/spi/MyService.class",
+            DUMMY_BYTE,
+            "org/example/spi/MyServiceImpl.class",
+            DUMMY_BYTE,
+            "org/example/spi/OtherService.class",
+            DUMMY_BYTE,
+            "org/example/spi/OtherServiceImpl.class",
+            DUMMY_BYTE,
+            "META-INF/services/" + MY_SERVICE,
+            "org.example.spi.MyServiceImpl\n".getBytes(StandardCharsets.UTF_8),
+            "META-INF/services/org.example.spi.OtherService",
+            "org.example.spi.OtherServiceImpl\n".getBytes(StandardCharsets.UTF_8)));
 
     final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
     assertThat(scan.declaresClassRoots()).isTrue();
@@ -270,11 +263,11 @@ final class DependencyDynamicRootsTest {
             + "}";
 
     final Path jar = tempDir.resolve("reachability-metadata-" + System.nanoTime() + ".jar");
-    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
-      out.putNextEntry(new JarEntry("META-INF/native-image/test/group/reachability-metadata.json"));
-      out.write(reachabilityMetadata.getBytes(StandardCharsets.UTF_8));
-      out.closeEntry();
-    }
+    writeJar(
+        jar,
+        Map.of(
+            "META-INF/native-image/test/group/reachability-metadata.json",
+            reachabilityMetadata.getBytes(StandardCharsets.UTF_8)));
 
     final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
@@ -351,13 +344,11 @@ final class DependencyDynamicRootsTest {
             + "}";
 
     final Path jar = tempDir.resolve("netty-epoll-" + System.nanoTime() + ".jar");
-    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
-      out.putNextEntry(
-          new JarEntry(
-              "META-INF/native-image/io.netty/netty-transport-classes-epoll/resource-config.json"));
-      out.write(resourceConfig.getBytes(StandardCharsets.UTF_8));
-      out.closeEntry();
-    }
+    writeJar(
+        jar,
+        Map.of(
+            "META-INF/native-image/io.netty/netty-transport-classes-epoll/resource-config.json",
+            resourceConfig.getBytes(StandardCharsets.UTF_8)));
 
     final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
@@ -385,16 +376,23 @@ final class DependencyDynamicRootsTest {
   private Path nativeImageJar(final String args, final String extraName, final String extraContent)
       throws IOException {
     final Path jar = tempDir.resolve("native-image-" + System.nanoTime() + ".jar");
-    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
-      out.putNextEntry(new JarEntry("META-INF/native-image/test/native-image.properties"));
-      out.write(args.getBytes(StandardCharsets.UTF_8));
-      out.closeEntry();
-      if (extraName != null) {
-        out.putNextEntry(new JarEntry(extraName));
-        out.write(extraContent.getBytes(StandardCharsets.UTF_8));
-        out.closeEntry();
-      }
+    if (extraName != null) {
+      return writeJar(
+          jar,
+          Map.of(
+              "META-INF/native-image/test/native-image.properties",
+              args.getBytes(StandardCharsets.UTF_8),
+              extraName,
+              extraContent.getBytes(StandardCharsets.UTF_8)));
     }
-    return jar;
+    return writeJar(
+        jar,
+        Map.of(
+            "META-INF/native-image/test/native-image.properties",
+            args.getBytes(StandardCharsets.UTF_8)));
+  }
+
+  private Path writeJar(final Path path, final Map<String, byte[]> entries) throws IOException {
+    return ImmutableTestJar.write(path, entries);
   }
 }

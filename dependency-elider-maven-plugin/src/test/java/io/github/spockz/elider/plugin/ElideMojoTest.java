@@ -2929,12 +2929,7 @@ final class ElideMojoTest {
     final ClassWriter writer = new ClassWriter(0);
     writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
     writer.visitEnd();
-    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(jar))) {
-      output.putNextEntry(new ZipEntry(classEntry));
-      output.write(writer.toByteArray());
-      output.closeEntry();
-    }
-    return jar;
+    return ImmutableTestJar.write(jar, Map.of(classEntry, writer.toByteArray()));
   }
 
   private static void set(final Object target, final String name, final Object value)

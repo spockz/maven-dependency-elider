@@ -27,8 +27,10 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /** Verifies retained-JAR trimming uses the supplied invocation evidence. */
+@Isolated("One malformed-JDK fixture temporarily overrides java.home")
 @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
 final class MavenDependencyTrimmerTest {
   /** Artifact identity shared by the test archive and Maven project. */
@@ -42,6 +44,9 @@ final class MavenDependencyTrimmerTest {
 
   /** JAR type shared by fixture coordinates. */
   private static final String JAR_TYPE = "jar";
+
+  /** WHY: Fake JDK path key used by this test. */
+  private static final String JAVA_HOME_PROPERTY = "java.home";
 
   /** Temporary workspace for compiled JAR fixtures. */
   @TempDir private Path tempDir;
@@ -219,18 +224,22 @@ final class MavenDependencyTrimmerTest {
     final TrimScanInputs scanInputs =
         new TrimScanInputs(
             classIndex, Map.of(normalizedJar, new DependencyDynamicRoots.RootScan(Set.of(), true)));
-    final String previousJavaHome = System.getProperty("java.home");
+    final String previousJavaHome = System.getProperty(JAVA_HOME_PROPERTY);
     final Path manifest = tempDir.resolve("build/elided-artifacts/.trim-analysis-cache.json");
     final Path output =
         tempDir.resolve("build/elided-artifacts/org.example-runtime-1.0-trimmed.jar");
 
-    System.setProperty("java.home", javaHome.toString());
+    System.setProperty(JAVA_HOME_PROPERTY, javaHome.toString());
     try {
       assertThatThrownBy(() -> trim(project, snapshot, scanInputs))
           .isInstanceOf(IOException.class)
           .hasMessageContaining("Could not read JDK API signature");
     } finally {
-      System.setProperty("java.home", previousJavaHome);
+      if (previousJavaHome == null) {
+        System.clearProperty(JAVA_HOME_PROPERTY);
+      } else {
+        System.setProperty(JAVA_HOME_PROPERTY, previousJavaHome);
+      }
     }
 
     assertThat(manifest).doesNotExist();

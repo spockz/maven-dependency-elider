@@ -27,8 +27,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.jar.JarEntry;
-import java.util.jar.JarOutputStream;
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
 import org.apache.maven.artifact.Artifact;
@@ -49,11 +47,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
 /** WHY: Groups provider inventory cases around one shared fixture. */
 @DisplayName("ADR-0008: Maven precondition inventory completeness and freshness")
+@Isolated("The javac plugin fixture communicates with a compiler through a JVM system property")
 @SuppressWarnings({
   "PMD.AtLeastOneConstructor",
   "PMD.CommentDefaultAccessModifier",
@@ -121,6 +121,9 @@ final class ADR0008MavenPreconditionInventoryTest {
 
   /** WHY: Compiler guard fixtures set the shared processor mode property. */
   private static final String PROCESSING_PROPERTY = "maven.compiler.proc";
+
+  /** WHY: Javac writes the generated class through this key. */
+  private static final String JAVAC_PLUGIN_OUTPUT_PROPERTY = "elider.test.javacPluginOutput";
 
   /** WHY: Compiler guard fixtures distinguish processor modes. */
   private static final String PROCESSING_FULL = "full";
@@ -256,16 +259,23 @@ final class ADR0008MavenPreconditionInventoryTest {
           .isZero();
 
       final Path pluginArchive = temporaryDirectory.resolve("javac-plugin.jar");
-      try (JarOutputStream archive = new JarOutputStream(Files.newOutputStream(pluginArchive))) {
-        try (java.util.stream.Stream<Path> pluginClassFiles = Files.walk(pluginClasses)) {
-          for (final Path pluginClass : pluginClassFiles.filter(Files::isRegularFile).toList()) {
-            addPluginClassEntry(archive, pluginClasses, pluginClass);
-          }
-        }
-        archive.putNextEntry(new JarEntry("META-INF/services/com.sun.source.util.Plugin"));
-        archive.write("plugin.ProviderPlugin\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        archive.closeEntry();
+      final Map<String, byte[]> pluginEntries;
+      try (java.util.stream.Stream<Path> pluginClassFiles = Files.walk(pluginClasses)) {
+        pluginEntries =
+            java.util.stream.Stream.concat(
+                    pluginClassFiles
+                        .filter(Files::isRegularFile)
+                        .map(pluginClass -> pluginClassEntry(pluginClasses, pluginClass)),
+                    java.util.stream.Stream.of(
+                        Map.entry(
+                            "META-INF/services/com.sun.source.util.Plugin",
+                            "plugin.ProviderPlugin\n"
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8))))
+                .collect(
+                    java.util.stream.Collectors.toUnmodifiableMap(
+                        Map.Entry::getKey, Map.Entry::getValue));
       }
+      ImmutableTestJar.write(pluginArchive, pluginEntries);
 
       final Path consumerSource =
           writeSource(
@@ -273,7 +283,8 @@ final class ADR0008MavenPreconditionInventoryTest {
               "CompileTrigger.java",
               "package app; public final class CompileTrigger {}\n");
       final Path generatedClass = fixture.productionOutput().resolve("generated/FromPlugin.class");
-      System.setProperty("elider.test.javacPluginOutput", generatedClass.toString());
+      final String previousPluginOutput = System.getProperty(JAVAC_PLUGIN_OUTPUT_PROPERTY);
+      System.setProperty(JAVAC_PLUGIN_OUTPUT_PROPERTY, generatedClass.toString());
       try {
         assertThat(
                 compiler.run(
@@ -288,7 +299,11 @@ final class ADR0008MavenPreconditionInventoryTest {
                     consumerSource.toString()))
             .isZero();
       } finally {
-        System.clearProperty("elider.test.javacPluginOutput");
+        if (previousPluginOutput == null) {
+          System.clearProperty(JAVAC_PLUGIN_OUTPUT_PROPERTY);
+        } else {
+          System.setProperty(JAVAC_PLUGIN_OUTPUT_PROPERTY, previousPluginOutput);
+        }
       }
       assertThat(generatedClass).exists();
 
@@ -2502,20 +2517,21 @@ final class ADR0008MavenPreconditionInventoryTest {
         "}");
   }
 
-  private static void addPluginClassEntry(
-      final JarOutputStream archive, final Path classesRoot, final Path classFile)
-      throws IOException {
-    final String entryName = classesRoot.relativize(classFile).toString().replace('\\', '/');
-    archive.putNextEntry(new JarEntry(entryName));
-    Files.copy(classFile, archive);
-    archive.closeEntry();
+  private static void writeJar(final Path path) throws IOException {
+    ImmutableTestJar.write(
+        path,
+        Map.of(
+            "META-INF/MANIFEST.MF",
+            "Manifest-Version: 1.0\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
   }
 
-  private static void writeJar(final Path path) throws IOException {
-    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path))) {
-      output.putNextEntry(new JarEntry("META-INF/MANIFEST.MF"));
-      output.write("Manifest-Version: 1.0\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-      output.closeEntry();
+  private static Map.Entry<String, byte[]> pluginClassEntry(
+      final Path classesRoot, final Path classFile) {
+    final String entryName = classesRoot.relativize(classFile).toString().replace('\\', '/');
+    try {
+      return Map.entry(entryName, Files.readAllBytes(classFile));
+    } catch (final IOException exception) {
+      throw new java.io.UncheckedIOException(exception);
     }
   }
 
