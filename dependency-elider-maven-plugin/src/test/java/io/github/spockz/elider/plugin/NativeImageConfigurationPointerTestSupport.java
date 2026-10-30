@@ -135,6 +135,14 @@ import java.util.Set;
     assertThat(publishedOutputDirectory).doesNotExist();
   }
 
+  /* package */ static void assertPredefinedResourceScan(
+      final DependencyDynamicRoots.RootScan scan, final Path provider) throws IOException {
+    assertThat(List.of(scan.roots(), scan.resourceProviders()))
+        .containsExactly(
+            Set.of("org.example.ResourceGenerated", "org.example.ResourceDependency"),
+            Set.of(provider.toRealPath()));
+  }
+
   /* package */ record PointerCase(
       String option, boolean resource, NativeImageDescriptorKind kind) {}
 

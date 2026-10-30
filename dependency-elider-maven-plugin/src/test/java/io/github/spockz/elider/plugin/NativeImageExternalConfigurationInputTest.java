@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -131,6 +133,52 @@ import org.objectweb.asm.Opcodes;
 
   /* package */
   @Test
+  void arbitraryPredefinedResourceReadsItsSiblingClassData() throws IOException {
+    final String hash = "abcdef0123456789abcdef0123456789";
+    final String resourceName = "arbitrary-predefined.blob";
+    final Path declaring =
+        NativeImageScanContextTestSupport.jar(
+            inputDirectory,
+            "predefined-resource-declaring.jar",
+            NativeImageScanContextTestSupport.entries(
+                NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+                "Args = -H:PredefinedClassesConfigurationResources=" + resourceName + "\n"));
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(
+        Opcodes.V21,
+        Opcodes.ACC_PUBLIC,
+        "org/example/ResourceGenerated",
+        null,
+        "org/example/ResourceDependency",
+        null);
+    writer.visitEnd();
+    final Path provider = inputDirectory.resolve("predefined-resource-provider.jar");
+    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(provider))) {
+      writeJarEntry(
+          output,
+          resourceName,
+          ("[{\"type\":\"agent-extracted\",\"classes\":[{\"hash\":\"" + hash + "\"}]}]")
+              .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      writeJarEntry(
+          output,
+          "agent-extracted-predefined-classes/" + hash + ".classdata",
+          writer.toByteArray());
+    }
+    final NativeImageScanContext context =
+        NativeImageScanContext.create(
+            List.of(
+                NativeImageScanContextTestSupport.candidate("declaring", declaring),
+                NativeImageScanContextTestSupport.candidate("provider", provider)),
+            inputDirectory);
+
+    final DependencyDynamicRoots.RootScan scan =
+        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+
+    NativeImageConfigurationPointerTestSupport.assertPredefinedResourceScan(scan, provider);
+  }
+
+  /* package */
+  @Test
   void contentChangesWithPreservedSizeAndMtimeInvalidateSnapshot() throws IOException {
     final Path descriptor = inputDirectory.resolve("same-size.payload");
     Files.writeString(descriptor, "[1,2,3]");
@@ -171,22 +219,31 @@ import org.objectweb.asm.Opcodes;
   /* package */
   @Test
   void relativeFilePointerRejectsSymlinkEscapeFromInvocationBase() throws IOException {
-    final Path outside = inputDirectory.getParent().resolve("outside-native-image.payload");
+    final Path invocationBase = Files.createDirectories(inputDirectory.resolve("invocation-base"));
+    final Path outsideDirectory = Files.createDirectories(inputDirectory.resolve("outside"));
+    final Path outside = outsideDirectory.resolve("outside-native-image.payload");
     Files.writeString(outside, NativeImageScanContextTestSupport.reflection("org.example.Outside"));
-    Files.createSymbolicLink(inputDirectory.resolve("linked.payload"), outside);
+    Files.createSymbolicLink(invocationBase.resolve("linked.payload"), outside);
     final Path declaring =
         NativeImageScanContextTestSupport.jar(
-            inputDirectory,
+            invocationBase,
             "symlink-declaring.jar",
             NativeImageScanContextTestSupport.entries(
                 NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
                 "Args = -H:ReflectionConfigurationFiles=linked.payload\n"));
     final NativeImageScanContext context =
-        NativeImageExternalConfigurationInputTestSupport.context(declaring, inputDirectory);
+        NativeImageExternalConfigurationInputTestSupport.context(declaring, invocationBase);
 
     assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context, Set.of(), true))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("escapes invocation base");
+  }
+
+  private static void writeJarEntry(
+      final JarOutputStream output, final String name, final byte[] bytes) throws IOException {
+    output.putNextEntry(new JarEntry(name));
+    output.write(bytes);
+    output.closeEntry();
   }
 
   /* package */
