@@ -46,83 +46,59 @@ Enterprise projects that use modern Java frameworks almost universally rely on s
 
 ---
 
-## 2. The Primary Architectural Proposal: Programmatic Double-Pass Compilation
+## 2. The Primary Architectural Solution: Single-Pass `process-classes` Execution
 
-To preserve the project's unique selling proposition (USP)—**guaranteeing that code compiles cleanly against the elided classpath in a single Maven run**—while supporting all code generators and annotation processors without hardcoded heuristics, the leading proposal introduces a **Programmatic Double-Pass Compilation Pattern**:
+Rather than attempting to predict what annotation processors will generate from uncompiled source text, or introducing an over-engineered double-compilation pass, the definitive architectural solution is **binding dependency elision to `process-classes` in a single, high-speed build pass**:
 
 ### 2.1 The Execution Workflow
 
 ```text
-Pass 1: Full Discovery & Generation (Full Classpath)
-├── 1. [generate-sources]  (OpenAPI, Protobuf, Avro generate .java files)
-└── 2. [compile]           (javac + MapStruct/Lombok compile into target/classes)
+1. [compile]         javac compiles src/main/java + generated-sources + annotation processors
+                     └── Produces the 100% complete bytecode truth in target/classes
 
-Elision & Verification Hook
-├── 3. [process-classes]   <=== DEPENDENCY-ELIDER RUNS HERE!
-│      ├── Reads compiled bytecode in target/classes (human + generated)
-│      ├── Performs link-closure dependency analysis
-│      ├── Mutates project.getArtifacts() & sets artifact filters in memory
-│      ├── Atomically clears target/classes
-│      └── Programmatically re-invokes compiler:compile on ELIDED classpath!
-│          └── If javac succeeds -> USP IS PROVEN! All code compiles without dropped JARs!
+2. [process-classes] dependency-elider executes:
+                     ├── Inspects target/classes (ground-truth bytecode, zero guessing)
+                     ├── Performs link-closure analysis against dependencies
+                     └── Mutates project artifacts in-memory (drops dead JARs, trims retained JARs)
 
-Downstream Lifecycle Continues (Elided Classpath)
-├── 4. [test-compile]      (Compiles tests against elided classpath)
-├── 5. [test]              (Surefire runs against elided classpath)
-└── 6. [package]           (Packages elided/trimmed artifacts)
+3. [test-compile]    javac compiles test classes against the ELIDED compile classpath!
+                     └── If an elided dependency was mistakenly dropped, test-compile FAILS here!
+
+4. [test]            Surefire runs tests on the ELIDED runtime classpath!
+                     └── If a dynamic/reflection path was broken, tests FAIL here!
+
+5. [package]         Shade / Spring Boot packages the ELIDED artifacts into the final JAR/WAR/image.
 ```
 
-### 2.2 Orchestration Trade-Offs: Programmatic Invocation vs. POM XML Settings
+### 2.2 Why This Preserves Safety & The Compile-Time Gate
 
-| Dimension | Programmatic (`BuildPluginManager.executeMojo`) | POM Settings (`<executions>` in `pom.xml`) |
-| :--- | :--- | :--- |
-| **Developer Ergonomics** | **Zero configuration.** The user just adds Dependency Elider. Everything happens automatically in `mvn clean verify`. | **High friction.** Every project must modify its POM, duplicate compiler executions, and maintain boilerplate XML. |
-| **Compiler Settings Parity** | **Guaranteed zero drift.** Elider inspects the project's existing `maven-compiler-plugin` execution and clones its exact configuration (`release`, `compilerArgs`, etc.). | **Risk of configuration drift.** If a developer updates compiler flags in one execution but forgets the other, the two passes diverge. |
-| **Atomic State Control** | **Total control.** Elider wipes `target/classes`, swaps the artifact pointers in memory, and immediately triggers `javac` before any other plugin can see a dirty state. | **Fragile lifecycle ordering.** Other plugins bound to `process-classes` might run between executions or see inconsistent states. |
-| **IDE Compatibility** | **Completely transparent.** IntelliJ, Eclipse, and VSCode import the POM as a normal single-compiler build without confusion. | **IDE confusion.** IDEs often struggle with duplicate compiler plugin executions in the same build, triggering duplicate incremental compilation cycles. |
-| **Incremental Compilation Safety** | Clears `target/classes` or sets `compiler.forceJavacCompilerUse = true` so `javac` does not skip the second pass. | Same issue: `javac` skips compilation unless `target/classes` is cleared. |
-
-### 2.3 Why This Solves the Annotation Processor Problem
-
-* **Zero Knowledge of Processors**: Elider never needs to know what MapStruct, Lombok, or Dagger do. `javac` runs them during Round 1.
-* **Ground-Truth Bytecode**: In `target/classes`, all generated mapper classes, builder classes, and protobuf stubs exist as compiled JVM bytecode with explicit constant pool references and method invocations.
-* **Fail-Fast Safety**: If an annotation processor generated code that references a dropped dependency, Round 2 fails immediately at compile time.
+* **The Test-Compile Gate**: `test-compile` runs immediately after `process-classes`. It compiles the project's unit and integration tests against `project.getCompileClasspathElements()`, which has now been pruned by the elider. If production code or test code relies on a dropped dependency, `test-compile` fails immediately at compile time.
+* **The Surefire Runtime Gate**: Surefire runs test suites against the elided and trimmed JARs. If any runtime reflection or SPI path was broken, tests fail before packaging or publication.
+* **100% Complete Bytecode Truth**: In `target/classes`, all code generated by MapStruct, Lombok, OpenAPI, Protobuf, Avro, ANTLR, and Kotlin physically exists as compiled JVM bytecode. Bytecode analysis (`ProGuard Core` / ASM) inspects exact constant pool entries, opcodes, and descriptors with zero heuristic guessing.
+* **Zero Ecosystem Special-Casing**: The plugin does not need to know about `@Mapper`, `@Builder`, `@Introspected`, or any custom enterprise annotation processor.
 
 ---
 
-## 3. Alternative Architectural Dynamics & Considerations
+## 3. Analysis of the Rejected "Double Javac Pass" Alternative
 
-### Option 1: Two-Stage Lifecycle Split (Graph Mediation at `INITIALIZE`, Slicing at `PROCESS-SOURCES`)
+During research, an alternative was analyzed: having the plugin trigger a second `javac` compilation pass inside the build. While conceptually appealing on paper, detailed analysis proved it to be an over-engineered anti-pattern:
 
-* **Concept**: Split the elider's responsibilities across two lifecycle hooks:
-  1. *Early Phase (`INITIALIZE`)*: Hook repository session resolution and record baseline graph structure.
-  2. *Post-Generation Phase (`PROCESS-SOURCES`)*: Execute source attribution after `target/generated-sources` are populated by Maven lifecycle plugins, but before `javac` compiles.
-* **Scope**: Solves file-based code generators (OpenAPI, Protobuf), but does not cover annotation processors running inside `javac` (MapStruct, Lombok).
-
-### Option 2: Pre-Execution Generator Dry-Run / Warmup
-
-* **Concept**: During the `INITIALIZE` phase, the plugin detects configured generator plugins in the POM (e.g. `openapi-generator-maven-plugin`, `protobuf-maven-plugin`) and triggers a targeted, in-process execution of their generator goals before source scanning begins.
-* **Challenge**: Invoking sibling plugins out-of-band within the Maven session can have unintended side effects on project state, file timestamps, and plugin descriptors.
-
-### Option 3: User-Trust Opt-In (`elide.trustSourceGenerators=true`)
-
-* **Concept**: Rather than treating all executions in `generate-sources` as hostile, allow users to assert that their generators/processors only map between project entities. The plugin scans explicit source types in `src/main/java`, prunes dependencies, and lets `javac` compile in a single pass. If a generator needed a dropped dependency, `javac` fails cleanly.
+1. **The "Wiped Resources" Hazard**: `process-resources` runs before `compile`. Wiping `target/classes` to force recompilation accidentally destroys copied and filtered application resources (`application.properties`, XML schemas).
+2. **Annotation Processor Loops & `FilerException`**: Running `javac` twice causes annotation processors to run twice, risking `javax.annotation.processing.FilerException: Attempt to recreate a file for type ...` on existing generated sources unless `-proc:none` is artificially injected.
+3. **Reactor Concurrency Starvation (`mvn -T`)**: Under parallel reactor builds, sibling modules read `target/classes` directly from disk. Clearing or swapping classes mid-build creates fatal race conditions across threads.
+4. **Redundant Work**: Bytecode analysis of `target/classes` is already mathematically more rigorous and complete than `javac`. Forcing `javac` to recompile adds 3–5 seconds of build latency solely to rubber-stamp what link-closure analysis already verified.
 
 ---
 
 ## 4. Research Questions
 
-1. **`BuildPluginManager` Programmatic Invocation**:
-   * How cleanly does `BuildPluginManager.executeMojo` re-execute `maven-compiler-plugin:compile` across Maven 3.9 and Maven 4?
-   * How should incremental compilation (`useIncrementalCompilation`) be disabled on the verification pass to guarantee `javac` actually runs?
-2. **Re-resolution Cache Behavior**:
-   * Does mutating `project.getArtifacts()` at `process-classes` persist reliably through `test-compile`, Surefire, and packaging without Maven's `DependencyContext` triggering graph re-resolution?
-3. **Compilation Overhead Benchmarks**:
-   * What is the wall-clock overhead of the second `javac` pass on representative mid-size and large enterprise projects?
-
----
-
-## 5. Evidence Gates
+1. **Maven Lifecycle Re-Resolution Boundaries**:
+   * Does mutating `project.getArtifacts()` at `process-classes` persist reliably through `test-compile`, Surefire, and packaging without Maven's internal `DependencyContext` cache triggering graph re-resolution?
+   * How should the core extension (`EliderGraphTransformer` / `EliderEventSpy`) intercept resolution sessions when elision is bound to `process-classes`?
+2. **Test-Scoped Dependency Elision**:
+   * When whole-artifact elision runs at `process-classes`, should test-scoped dependencies (`scope = test`) also be evaluated and pruned for Surefire, or should elision remain strictly focused on compile/runtime dependencies destined for packaging?
+3. **Ergonomic Profile / Configuration**:
+   * Should the lifecycle binding phase be configurable via `@Parameter(property = "elide.phase", defaultValue = "process-classes")` to allow backwards-compatibility with projects using `initialize`?
 
 * **MapStruct / OpenAPI Reference Fixture**:
   * Create a standalone example fixture utilizing `generate-sources` (e.g., MapStruct or OpenAPI generator).
