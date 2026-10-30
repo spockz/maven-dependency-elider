@@ -568,6 +568,88 @@ final class ElideMojoTest {
   }
 
   @Test
+  void permissiveNativeImageArgsKeepMrjarUnchangedAndCloseUpperTierSiblingLinks()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final MultiReleaseFixture fixture =
+        multiReleaseFixture(
+            "mr-native-fallback",
+            false,
+            Map.of(
+                "META-INF/native-image/test/native-image.properties",
+                "Args=-H:UnknownOption=value\n"));
+    final byte[] originalMultiReleaseBytes = Files.readAllBytes(fixture.multiReleasePath());
+    final ElideMojo mojo = newMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", fixture.project());
+    set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
+    set(mojo, "reportFile", tempDir.resolve("mr-native-fallback-report.json").toFile());
+    set(mojo, "trimJars", true);
+    set(mojo, "failOnUnsupportedNativeImageArgs", false);
+
+    mojo.execute();
+
+    assertThat(fixture.multiRelease().getFile().toPath()).isEqualTo(fixture.multiReleasePath());
+    assertThat(Files.readAllBytes(fixture.multiReleasePath()))
+        .containsExactly(originalMultiReleaseBytes);
+    assertThat(fixture.candidate().getFile().toPath()).isNotEqualTo(fixture.candidatePath());
+    try (JarFile trimmed = new JarFile(fixture.candidate().getFile())) {
+      assertThat(trimmed.getEntry("candidate/Keep.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/TargetSupport.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/TargetTail.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/UpperSupport.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/UpperTail.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/Drop.class")).isNull();
+    }
+    try (URLClassLoader loader =
+        new URLClassLoader(
+            new URL[] {
+              fixture.multiRelease().getFile().toURI().toURL(),
+              fixture.candidate().getFile().toURI().toURL()
+            })) {
+      loader.loadClass("mrroot.Root").getMethod("execute").invoke(null);
+    } catch (final java.lang.reflect.InvocationTargetException exception) {
+      throw new AssertionError(
+          "The unchanged Java 17 MR method could not call candidate.UpperSupport", exception);
+    }
+  }
+
+  @Test
+  void nativeImageFallbackArchiveDoesNotDisableSiblingMrjarVerticalShading()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final MultiReleaseFixture fixture = multiReleaseFixture("mr-native-sibling-fallback");
+    final Path fallbackPath =
+        rewriteJar(
+            fixture.candidatePath(),
+            Map.of(
+                "META-INF/native-image/test/native-image.properties",
+                "Args=-H:UnknownOption=value\n"));
+    fixture.candidate().setFile(fallbackPath.toFile());
+    final byte[] originalFallbackBytes = Files.readAllBytes(fallbackPath);
+    final byte[] selectedTargetRoot =
+        jarEntryBytes(fixture.multiReleasePath(), "META-INF/versions/11/mrroot/Root.class");
+    final ElideMojo mojo = newMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", fixture.project());
+    set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
+    set(mojo, "reportFile", tempDir.resolve("mr-native-sibling-report.json").toFile());
+    set(mojo, "trimJars", true);
+    set(mojo, "failOnUnsupportedNativeImageArgs", false);
+
+    mojo.execute();
+
+    assertThat(fixture.candidate().getFile().toPath()).isEqualTo(fallbackPath);
+    assertThat(Files.readAllBytes(fallbackPath)).containsExactly(originalFallbackBytes);
+    assertThat(fixture.multiRelease().getFile().toPath()).isNotEqualTo(fixture.multiReleasePath());
+    try (JarFile trimmed = new JarFile(fixture.multiRelease().getFile())) {
+      assertThat(jarEntryBytes(trimmed, "mrroot/Root.class")).isEqualTo(selectedTargetRoot);
+      assertThat(trimmed.getEntry("META-INF/versions/11/mrroot/Root.class")).isNull();
+      assertThat(trimmed.getEntry("META-INF/versions/17/mrroot/Root.class")).isNotNull();
+      assertThat(trimmed.getManifest().getMainAttributes().getValue("Multi-Release"))
+          .isEqualTo("true");
+    }
+  }
+
+  @Test
   void configuredPassThroughToleratesItsMissingOptionalReferenceAndKeepsLinkedCandidate()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path candidateWithBridgeStub =
@@ -1654,7 +1736,7 @@ final class ElideMojoTest {
     final Path input =
         rewriteJar(
             original,
-            java.util.Map.of(
+            Map.of(
                 "META-INF/native-image/test/native-image.properties",
                 "Args = -H:UnknownOption=value\n"));
     artifact.setFile(input.toFile());
@@ -2163,11 +2245,19 @@ final class ElideMojoTest {
   }
 
   private MultiReleaseFixture multiReleaseFixture(final String name) throws IOException {
-    return multiReleaseFixture(name, false);
+    return multiReleaseFixture(name, false, Map.of());
   }
 
   private MultiReleaseFixture multiReleaseFixture(
       final String name, final boolean targetUsesTargetSupport) throws IOException {
+    return multiReleaseFixture(name, targetUsesTargetSupport, Map.of());
+  }
+
+  private MultiReleaseFixture multiReleaseFixture(
+      final String name,
+      final boolean targetUsesTargetSupport,
+      final Map<String, String> rootResources)
+      throws IOException {
     final Path candidatePath =
         compileJarSources(
             name + "-candidate",
@@ -2238,7 +2328,12 @@ final class ElideMojoTest {
             17);
     final Path multiReleasePath =
         writeMultiReleaseJar(
-            name + "-root.jar", rootClasses, unusedJava17Root, targetRoot, versionOnly, Map.of());
+            name + "-root.jar",
+            rootClasses,
+            unusedJava17Root,
+            targetRoot,
+            versionOnly,
+            rootResources);
     final Artifact root = runtimeArtifact(name + "-root", multiReleasePath);
     final Artifact candidate = runtimeArtifact(name + "-candidate", candidatePath);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(root, candidate));

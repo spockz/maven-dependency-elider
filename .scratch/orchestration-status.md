@@ -334,3 +334,32 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 * Final `make check` passed: 211 core tests, 275 plugin tests, 15 nested Maven lifecycle integration tests, 8 SBOM comparison tests, Checkstyle/PMD/SpotBugs clean, and Markdown lint across 46 files with 0 issues. Log: `/tmp/mrjar-make-check-final.log`.
 * The production warm trim-cache JMH operation measured 0.159 ± 0.007 ms/op (99.9% confidence interval), using GraalVM JDK 21.0.12+7.1, JMH 1.37, 2 forks, 3 × 1 s warmup and 5 × 1 s measurement. This is the repeated same-request cache hit; it is below 10 ms and does not represent a fresh Maven context. Log: `/tmp/mrjar-warm-cache-jmh.log`. `elider-benchmarks` now enables annotation processing locally because the root compiler configuration disables it and otherwise omits JMH's generated benchmark index.
 * RQ-0014 was absent from this task checkout but available in the main source clone at `/workspace/sources/maven-dependency-elider/docs/research/RQ-0014-multi-release-jar-trimming-and-vertical-shading.md`; its ADR-0003 update instructions were reviewed and applied. `PROJECT_BRIEF.md` remains absent.
+# WP-NATIVE-01 Orchestration Status
+
+* **Work package**: WP-NATIVE-01, permissive GraalVM native-image argument ingestion and configurable allowed properties.
+* **Owning session**: Primary coordinating session.
+* **Source**: `docs/handovers/2026-10-30-wp-native-image-01-permissive-argument-ingestion.md`.
+* **Base**: `main` at `ee1b3d7` after the MRJAR vertical-shading and optional-link fix was fast-forwarded.
+* **Initial baseline**: clean; `JAVA_HOME=/workspace/sources/maven-dependency-elider/.scratch/toolchains/graalvm-jdk-21.0.12+7.1 MARKDOWNLINT=/workspace/sources/maven-dependency-elider/.scratch/tools/node_modules/.bin/markdownlint-cli2 make check` passed, including 149 core tests, 374 plugin tests, 15 lifecycle integration tests, formatting, Checkstyle, PMD, SpotBugs, Markdown lint, SBOM comparison, and transcript drift verification.
+* **Scope**: quote-aware native-image Args tokenization, name-only allowed flags, fail-closed diagnostics, archive-local pass-through fallback, Mojo/service/trimmer/cache wiring, regression tests, and user/contributor documentation.
+* **Architect review**: approved a single integration track. Preserve modeled roots before applying the allowlist; only unknown arguments may trigger fallback. In permissive mode retain the archive before whole-artifact pruning, skip it in both trim paths, include its classes in link closure, and bind effective options into cache identities.
+* **Acceptance**: exact OkHttp feature retention; quote and continuation handling; name-only matching; actionable default error; permissive unknown-argument fallback retains the affected archive byte-identically while unrelated archives remain eligible for trim/elision; focused and full checks pass.
+
+## Track Ledger
+
+| Track | State | Worktree / branch | Slices |
+| :--- | :--- | :--- | :--- |
+| Native-image ingestion | REVIEW APPROVED; REBASE COMPLETE; INTEGRATION READY; USER MERGE CONFIRMATION PENDING | `.scratch/worktrees/track-native-image` / `track/native-image-args` | Rebased slices `3b54433`, `0a67fc0`, and `cdae1e3`; follow-up reviewer and whole-system architect approved the combined MRJAR/native-image behavior. |
+
+## Specification Deviations and Architectural Choices
+
+* A modeled class or resource option is parsed before allowlist matching, even when its name is present in `allowedNativeImageArgs`; malformed modeled values remain errors.
+* Tokenization splits whitespace only outside quote delimiters, strips syntactic quotes around tokens or values, preserves backslashes, and rejects unmatched quotes.
+* Tolerated unknown options retain the containing artifact before pruning and exclude it from both JAR trimming paths; its classes participate in unchanged-archive link closure.
+* Fallback is reported at warning level to match ADR-0009 and RQ-0016, resolving the handover's conflicting `[INFO]` instruction.
+* Additional GraalVM root/resource formats listed as open research in RQ-0016 remain outside this package.
+* Rebased onto `ee1b3d7`. The architect approved preserving MRJAR vertical shading and strategy-gated pass-through while independently excluding permissive native-image fallback archives from transformation; fallback archives remain closure contributors. Combined Mojo regressions prove unchanged higher-tier link closure and continued vertical shading of an unaffected MRJAR.
+* Final integrated `make check` passed: 242 core tests, 398 plugin tests, 15 lifecycle integration tests, 8 SBOM comparison tests, formatting, Checkstyle, PMD, SpotBugs, Markdown lint (59 files, 0 issues), and transcript drift verification. The existing Node.js SBOM test ran under the user's explicit authorization. `make test-examples` passed five standalone fixtures and the multi-module reactor; nested Jackson Core and SnakeYAML tier assertions verified selected class bytes and unchanged upper-tier bytes. The strengthened Spring script checks passed. `bash -n examples/run-elision-cycle.sh` and `git diff --check` passed.
+* The dedicated reviewer approved after verifying exact target-tier class bytes, Jackson Core's upper Java 22 tier, and strict failure handling in the shell assertions. The whole-system architect approved constructors/defaults, root precedence, fallback retention/closure, independent MRJAR behavior, cache identity, and combined regression coverage. Stale FAQ/RQ wording was corrected and Markdown lint passed afterward. The Gemini review bridge is not available in this environment; review followed the documented fail-open path.
+* The referenced MRJAR thread's investigation traced the Spring failure to transcript setup using default vertical shading while the existing example-cycle workflow explicitly selected `pass-through` for optional Kotlin links. The read-only thread tool was available, but no cross-thread message tool was present, so the coordinator inspected that resolution rather than sending a live follow-up. The integrated transcript drift check passes.
+* Final code is ready on `track/native-image-args`; it has not been merged to `main` pending user confirmation. The orchestration ledger and review receipts preserve the final evidence.

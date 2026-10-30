@@ -10,14 +10,15 @@ configured_passthrough_names=(
   spring-context-support-6.1.14.jar spring-expression-6.1.14.jar spring-web-6.1.14.jar
 )
 automatic_passthrough_names=(
-  angus-activation-2.0.2.jar jackson-annotations-2.18.2.jar jackson-core-2.18.2.jar
+  angus-activation-2.0.2.jar jackson-annotations-2.18.2.jar
   jakarta.activation-api-2.1.3.jar jakarta.annotation-api-2.1.1.jar jakarta.mail-2.0.3.jar
   jakarta.servlet.jsp.jstl-api-3.0.2.jar jakarta.validation-api-3.0.2.jar log4j-api-2.23.1.jar
   log4j-to-slf4j-2.23.1.jar logback-classic-1.5.11.jar logback-core-1.5.11.jar
   micrometer-core-1.13.6.jar
-  reactor-core-3.6.11.jar snakeyaml-2.2.jar spring-core-6.1.14.jar tomcat-embed-core-10.1.31.jar
+  reactor-core-3.6.11.jar spring-core-6.1.14.jar tomcat-embed-core-10.1.31.jar
   tomcat-embed-el-10.1.31.jar tomcat-embed-websocket-10.1.31.jar
 )
+vertically_shaded_mrjar_names=(jackson-core-2.18.2.jar snakeyaml-2.2.jar)
 
 main() {
   repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -740,6 +741,11 @@ compare_spring_passthrough() {
   local current_names="$test_dir/passthrough-current-names"
   collect_spring_passthrough "$archive" "$current_dir" true
   find "$baseline_dir" -type f -name '*.jar' -printf '%f\n' | sort >"$baseline_names"
+  local transformed
+  for transformed in "${vertically_shaded_mrjar_names[@]}"; do
+    grep -Fvx -- "$transformed" "$baseline_names" >"$baseline_names.expected"
+    mv -- "$baseline_names.expected" "$baseline_names"
+  done
   find "$current_dir" -type f -name '*.jar' -printf '%f\n' | sort >"$current_names"
   local configured
   for configured in "${configured_passthrough_names[@]}"; do
@@ -759,9 +765,100 @@ compare_spring_passthrough() {
       exit 1
     }
   done <"$current_names"
+  verify_spring_nested_vertical_shading "$archive" "$baseline_dir"
   printf '%s configured and %s automatic pass-through JAR(s) remained byte-identical\n' \
     "$(grep -Fxf <(printf '%s\n' "${configured_passthrough_names[@]}") "$current_names" | wc -l)" \
     "$(grep -Fxf <(printf '%s\n' "${automatic_passthrough_names[@]}") "$current_names" | wc -l)"
+}
+
+verify_spring_nested_vertical_shading() {
+  local archive=$1
+  local baseline_dir=$2
+  local name
+  local baseline
+  local current
+  local baseline_entries
+  local current_entries
+  local baseline_target_versioned
+  local current_target_versioned
+  local baseline_classes
+  local current_classes
+  local retained_class
+  local selected_version
+  local selected_root
+  local upper_tier
+  for name in "${vertically_shaded_mrjar_names[@]}"; do
+    baseline="$baseline_dir/$name"
+    current="$test_dir/$name.current.jar"
+    baseline_entries="$test_dir/$name.baseline-entries"
+    current_entries="$test_dir/$name.current-entries"
+    extract_nested_jar "$archive" "BOOT-INF/lib/$name" "$current"
+    "$jar" tf "$baseline" >"$baseline_entries"
+    "$jar" tf "$current" >"$current_entries"
+    baseline_target_versioned=$(awk -F/ \
+      '/^META-INF\/versions\/[0-9]+\/.*\.class$/ && $0 !~ /\/module-info\.class$/ { if (($3 + 0) <= 21) count++ } END { print count + 0 }' \
+      "$baseline_entries")
+    current_target_versioned=$(awk -F/ \
+      '/^META-INF\/versions\/[0-9]+\/.*\.class$/ && $0 !~ /\/module-info\.class$/ { if (($3 + 0) <= 21) count++ } END { print count + 0 }' \
+      "$current_entries")
+    baseline_classes=$(awk '/\.class$/ { count++ } END { print count + 0 }' "$baseline_entries")
+    current_classes=$(awk '/\.class$/ { count++ } END { print count + 0 }' "$current_entries")
+    if (( baseline_target_versioned == 0 || current_target_versioned != 0 )); then
+      echo "Nested MRJAR retained implementation classes at or below Java 21: $name" >&2
+      exit 1
+    fi
+    if (( current_classes >= baseline_classes )); then
+      echo "Vertically shaded MRJAR did not prune physical class entries: $name" >&2
+      exit 1
+    fi
+    case $name in
+      jackson-core-2.18.2.jar)
+        retained_class='com/fasterxml/jackson/core/JsonFactory.class'
+        selected_version='META-INF/versions/21/com/fasterxml/jackson/core/internal/shaded/fdp/v2_18_2/FastDoubleSwar.class'
+        selected_root='com/fasterxml/jackson/core/internal/shaded/fdp/v2_18_2/FastDoubleSwar.class'
+        upper_tier='META-INF/versions/22/com/fasterxml/jackson/core/internal/shaded/fdp/v2_18_2/FastDoubleSwar.class'
+        ;;
+      snakeyaml-2.2.jar)
+        retained_class='org/yaml/snakeyaml/Yaml.class'
+        selected_version='META-INF/versions/9/org/yaml/snakeyaml/internal/Logger.class'
+        selected_root='org/yaml/snakeyaml/internal/Logger.class'
+        upper_tier=''
+        ;;
+      *) echo "No retained-class assertion for vertically shaded MRJAR: $name" >&2; exit 1 ;;
+    esac
+    has_entry "$current_entries" "$retained_class"
+    has_entry "$baseline_entries" "$selected_version"
+    has_entry "$current_entries" "$selected_root"
+    compare_nested_entry_bytes \
+      "$baseline" "$selected_version" "$current" "$selected_root" "$name" selected-implementation
+    if [[ -n $upper_tier ]]; then
+      has_entry "$baseline_entries" "$upper_tier"
+      has_entry "$current_entries" "$upper_tier"
+      compare_nested_entry_bytes "$baseline" "$upper_tier" "$current" "$upper_tier" "$name" upper-tier
+    fi
+    printf 'Nested %s vertically shaded: %s/%s target-tier/physical classes became %s/%s; selected implementation bytes match\n' \
+      "$name" "$baseline_target_versioned" "$baseline_classes" \
+      "$current_target_versioned" "$current_classes"
+  done
+}
+
+compare_nested_entry_bytes() {
+  local baseline=$1
+  local baseline_entry=$2
+  local current=$3
+  local current_entry=$4
+  local name=$5
+  local label=$6
+  local baseline_dir="$test_dir/$name-$label-baseline"
+  local current_dir="$test_dir/$name-$label-current"
+  rm -rf -- "$baseline_dir" "$current_dir"
+  mkdir -p -- "$baseline_dir" "$current_dir"
+  (cd -- "$baseline_dir" && "$jar" --extract --file "$baseline" "$baseline_entry")
+  (cd -- "$current_dir" && "$jar" --extract --file "$current" "$current_entry")
+  cmp -- "$baseline_dir/$baseline_entry" "$current_dir/$current_entry" || {
+    echo "Vertically shaded MRJAR did not preserve the $label class bytes: $name" >&2
+    exit 1
+  }
 }
 
 collect_spring_passthrough() {
@@ -795,6 +892,10 @@ collect_spring_passthrough() {
     elif [[ $unsupported == true ]]; then
       if contains_string "$name" "${automatic_passthrough_names[@]}"; then
         selected=true
+      elif contains_string "$name" "${vertically_shaded_mrjar_names[@]}"; then
+        if [[ $reject_unknown == false ]]; then
+          selected=true
+        fi
       elif [[ $reject_unknown == true ]]; then
         echo "Unknown automatic pass-through archive appeared: $name" >&2
         exit 1

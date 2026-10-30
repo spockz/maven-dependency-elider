@@ -137,6 +137,39 @@ final class MavenElisionService {
         final boolean failOnUnsupportedModuleInfo,
         final boolean testResolutionContext,
         final boolean conservativeServiceLoaderRoots,
+        final String mrjarStrategy) {
+      this(
+          traceFiles,
+          excludedArtifacts,
+          productionOutput,
+          session,
+          sourceRootsComplete,
+          trimJars,
+          explicitTrimRoots,
+          failOnUnsupportedMultiRelease,
+          explicitPassThroughArtifacts,
+          failOnUnsupportedModuleInfo,
+          testResolutionContext,
+          conservativeServiceLoaderRoots,
+          MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+          mrjarStrategy,
+          List.of(),
+          true);
+    }
+
+    AnalysisOptions(
+        final List<File> traceFiles,
+        final List<String> excludedArtifacts,
+        final File productionOutput,
+        final MavenSession session,
+        final boolean sourceRootsComplete,
+        final boolean trimJars,
+        final List<String> explicitTrimRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> explicitPassThroughArtifacts,
+        final boolean failOnUnsupportedModuleInfo,
+        final boolean testResolutionContext,
+        final boolean conservativeServiceLoaderRoots,
         final int trimWorkers) {
       this(
           traceFiles,

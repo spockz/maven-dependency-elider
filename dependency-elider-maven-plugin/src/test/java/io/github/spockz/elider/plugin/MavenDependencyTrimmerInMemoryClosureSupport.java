@@ -90,18 +90,12 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final int release)
       throws IOException {
     return fixture(
-        duplicateClass, serviceRootInA, resourceOnlyB, optionalAsmReference, release, COMPILE_SCOPE);
-  }
-
-  private Fixture fixture(
-      final boolean duplicateClass,
-      final boolean serviceRootInA,
-      final boolean resourceOnlyB,
-      final boolean optionalAsmReference,
-      final String firstArtifactScope)
-      throws IOException {
-    return fixture(
-        duplicateClass, serviceRootInA, resourceOnlyB, optionalAsmReference, 21, firstArtifactScope);
+        duplicateClass,
+        serviceRootInA,
+        resourceOnlyB,
+        optionalAsmReference,
+        release,
+        COMPILE_SCOPE);
   }
 
   private Fixture fixture(

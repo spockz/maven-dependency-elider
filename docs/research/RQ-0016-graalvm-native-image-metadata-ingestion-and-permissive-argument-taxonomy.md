@@ -138,9 +138,6 @@ Evidence is in [`NativeImageDynamicRoots`](../../dependency-elider-maven-plugin/
      * `-H:DynamicProxyConfigurationResources=` (`proxy-config.json`)
      * `-H:SerializationConfigurationResources=` (`serialization-config.json`)
      * `-H:JNIConfigurationResources=` (`jni-config.json`)
-3. **Bounded Containment Contract**:
-   * How should the configuration and build logs report an archive that drops from candidate trimming to pass-through due to unknown native-image options?
-   * Should this be gated by an opt-in/opt-out flag (e.g., `elide.failOnUnknownNativeImageArgs=false`)?
 
 ---
 

@@ -63,7 +63,7 @@ On the classpath, such JARs are kept byte-identical with a warning. Set `-Delide
 
 ### What happens when the plugin encounters metadata or an archive layout it does not understand?
 
-It fails before changing Maven artifact pointers rather than assuming unknown metadata is unused. Multi-release and root-module-info JARs have the explicit pass-through policies described above, with strict failure options available.
+It fails before changing Maven artifact pointers rather than assuming unknown metadata is unused. Multi-release JARs use the configured `elide.mrjarStrategy` (vertical shading by default or byte-identical pass-through), while root-module-info JARs follow the module-info policy above. Unsupported metadata outside those policies still fails closed.
 
 ### What happens when a dependency has an unsupported native-image argument?
 
