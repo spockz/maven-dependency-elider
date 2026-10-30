@@ -245,10 +245,14 @@ func runInvocations(root, evidencePath string, items []invocation, workerLimit i
 	}
 	workers.Wait()
 
+	failures := make([]error, 0)
 	for _, err := range invocationErrors {
 		if err != nil {
-			return nil, err
+			failures = append(failures, err)
 		}
+	}
+	if len(failures) > 0 {
+		return nil, errors.Join(failures...)
 	}
 	return results, nil
 }

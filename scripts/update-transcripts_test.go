@@ -201,24 +201,34 @@ func TestRunInvocationsReturnsManifestOrderAfterOutOfOrderCompletion(t *testing.
 	}
 }
 
-func TestRunInvocationsReturnsEarliestManifestError(t *testing.T) {
+func TestRunInvocationsAggregatesFixtureErrorsInManifestOrder(t *testing.T) {
 	root := t.TempDir()
 	items := []invocation{
 		fixtureInvocation("first-error", "examples/first/pom.xml"),
+		fixtureInvocation("same-fixture-after-error", "./examples/first/pom.xml"),
 		fixtureInvocation("second-error", "examples/second/pom.xml"),
 	}
 	firstStarted := make(chan struct{})
 	secondStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	done := make(chan invocationRun, 1)
+	var skippedMu sync.Mutex
+	skippedInvocationRan := false
 	run := func(item invocation) (commandResult, error) {
-		if item.ID == "first-error" {
+		switch item.ID {
+		case "first-error":
 			close(firstStarted)
 			<-releaseFirst
-			return commandResult{}, errors.New("first manifest failure")
+			return commandResult{}, errors.New("first manifest failure\nfirst command diagnostics")
+		case "same-fixture-after-error":
+			skippedMu.Lock()
+			skippedInvocationRan = true
+			skippedMu.Unlock()
+			return commandResult{}, nil
+		default:
+			close(secondStarted)
+			return commandResult{}, errors.New("second manifest failure\nsecond command diagnostics")
 		}
-		close(secondStarted)
-		return commandResult{}, errors.New("second manifest failure")
 	}
 	go func() {
 		results, err := runInvocations(root, "", items, len(items), run)
@@ -243,11 +253,27 @@ func TestRunInvocationsReturnsEarliestManifestError(t *testing.T) {
 
 	select {
 	case result := <-done:
-		if result.err == nil || result.err.Error() != "first manifest failure" {
-			t.Fatalf("got error %v, want earliest manifest error", result.err)
+		if result.err == nil {
+			t.Fatal("got no error, want both fixture failures")
 		}
+		message := result.err.Error()
+		firstFailure := strings.Index(message, "first manifest failure")
+		secondFailure := strings.Index(message, "second manifest failure")
+		if firstFailure < 0 || secondFailure < 0 || firstFailure >= secondFailure {
+			t.Fatalf("fixture failures were not aggregated in manifest order: %q", message)
+		}
+		for _, diagnostics := range []string{"first command diagnostics", "second command diagnostics"} {
+			if !strings.Contains(message, diagnostics) {
+				t.Errorf("aggregated error omitted %q: %q", diagnostics, message)
+			}
+		}
+		skippedMu.Lock()
+		if skippedInvocationRan {
+			t.Error("worker ran a later invocation after failure in the same fixture")
+		}
+		skippedMu.Unlock()
 	case <-time.After(time.Second):
-		t.Fatal("fixture worker pool did not return errors")
+		t.Fatal("fixture worker pool did not return aggregated errors")
 	}
 }
 
