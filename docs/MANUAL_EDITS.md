@@ -46,3 +46,7 @@ Repository-native `apply_patch` sorted conservative ServiceLoader root names bef
 ## 2026-10-30: WP-NATIVE-01 final integration
 
 The native-image/MRJAR integration and its documentation used repository-native `apply_patch`, Git, Make, and Maven. No semantic edit operation was available or used, and no manual source-edit fallback followed a failed semantic edit.
+
+## 2026-10-30: WP-LIFECYCLE-02 implementation and wrap-up
+
+The compile-time constant retention implementation and its tests/docs used repository-native changes in the linked worktree, followed by Maven and Make verification. The retained root and three child logs contain no semantic editing or refactoring operation. The one command-review candidate was an earlier invocation of the transcript extractor, not a source edit. Repository-native edits were the normal project workflow, not a fallback after a rejected semantic edit. The implementation report records the passing focused regressions and full `make check`; the wrap-up reran `make check` after configuring the repository JDK 21 and existing Markdown linter. Exact per-file edit calls from the implementer are not recoverable from the compacted task summary, so no edit timing or avoided manual work is claimed. No manual source-edit workaround or semantic-tool failure occurred.
