@@ -83,7 +83,7 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
         new DefaultDependencyNode(
             new Dependency(
                 new DefaultArtifact("fixture", "consumer", "", "pom", "1.0"), "", false));
-    final DependencyNode artifactA = graphNode("a", "compile");
+    final DependencyNode artifactA = graphNode("a", fixture.snapshot("a").coordinate().scope());
     final DependencyNode artifactC = graphNode("c", RUNTIME_SCOPE);
     final DependencyNode artifactD = graphNode("d", RUNTIME_SCOPE);
     final DependencyNode artifactE = graphNode("e", RUNTIME_SCOPE);

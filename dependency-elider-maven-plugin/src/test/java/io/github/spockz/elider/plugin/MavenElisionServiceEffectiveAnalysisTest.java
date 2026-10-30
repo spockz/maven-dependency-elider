@@ -25,6 +25,9 @@ final class MavenElisionServiceEffectiveAnalysisTest
   /** Entry root shared by traced fixed-point scenarios. */
   private static final String ENTRY_CLASS = "closure.a.Entry";
 
+  /** Link target shared by dynamic-root scenarios. */
+  private static final String MIDDLE_CLASS = "closure.b.Middle";
+
   /** Rule key for shared package-visible test helpers. */
   private static final String ACCESS_MODIFIER_SUPPRESSION = "PMD.CommentDefaultAccessModifier";
 
@@ -46,8 +49,8 @@ final class MavenElisionServiceEffectiveAnalysisTest
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
                 List.of(trace.toFile()), null, false));
-    assertThat(prepared.dynamicRootInputs().classNames()).contains(ENTRY_CLASS, "closure.b.Middle");
-    assertThat(prepared.pruningRequiredClasses()).contains("closure.b.Middle");
+    assertThat(prepared.dynamicRootInputs().classNames()).contains(ENTRY_CLASS, MIDDLE_CLASS);
+    assertThat(prepared.pruningRequiredClasses()).contains(MIDDLE_CLASS);
     final MavenElisionService.Analysis analysis = service.finish(prepared);
     final ArtifactCoordinate artifactA =
         MavenElisionServiceEffectiveAnalysisFixtures.coordinate(analysis.resolvedSnapshots(), "a");
@@ -148,7 +151,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
             true);
     final MavenElisionService.PreparedAnalysis raw =
         service.prepare(fixture.mavenProject(), options);
-    assertThat(raw.dynamicRootInputs().classNames()).contains(ENTRY_CLASS, "closure.b.Middle");
+    assertThat(raw.dynamicRootInputs().classNames()).contains(ENTRY_CLASS, MIDDLE_CLASS);
     assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("a"));
     assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("b"));
     final ResolverArtifactGraphCapturePair pair =
@@ -176,7 +179,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
 
   @Test
   void unsupportedNativeImageArchiveIsPinnedWhileSiblingTrimAndElisionProceed() throws Exception {
-    final Fixture fixture = fixture(false);
+    final Fixture fixture = fixtureWithRuntimeA();
     fixture.addUnsupportedNativeImageArgsToA();
     final Path fallbackPath = fixture.snapshot("a").filePath();
     final String fallbackDigest =
@@ -224,6 +227,56 @@ final class MavenElisionServiceEffectiveAnalysisTest
                     closurePair)));
     assertThat(closureEffective.effectiveDecision().retainedArtifacts())
         .contains(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c"));
+
+    final Path closureTargetTrace =
+        temporaryDirectory.resolve("native-image-fallback-untraced-link.lst");
+    Files.writeString(closureTargetTrace, "closure/c/Leaf\nclosure/b/Unused\n");
+    assertThat(Files.readAllLines(closureTargetTrace))
+        .contains("closure/b/Unused")
+        .doesNotContain("closure/b/Middle");
+    final MavenElisionService.PreparedAnalysis closureTargetRaw =
+        service.prepare(
+            fixture.mavenProject(),
+            new MavenElisionService.AnalysisOptions(
+                List.of(closureTargetTrace.toFile()),
+                List.of(),
+                null,
+                null,
+                false,
+                true,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                true,
+                true,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                List.of(),
+                false));
+    assertThat(closureTargetRaw.rawDecision().retainedArtifacts())
+        .contains(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c"));
+    final ResolverArtifactGraphCapturePair closureTargetPair =
+        MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
+    final EffectiveGraphPolicy.Evaluation closureTargetPolicy =
+        EffectiveGraphPolicy.evaluatePair(closureTargetPair, closureTargetRaw.rawDecision());
+    final MavenElisionService.EffectiveAnalysis closureTargetEffective =
+        service.finishAnalysis(
+            MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
+                closureTargetRaw,
+                new MavenElisionGraphBinding.Result(
+                    closureTargetPolicy,
+                    closureTargetRaw.graphBinding().inventoryFingerprint(),
+                    closureTargetRaw.graphBinding().operationFingerprint(),
+                    closureTargetPair)));
+    assertThat(
+            closureTargetEffective
+                .trimAnalysis()
+                .candidateAnalyses()
+                .get(fixture.coordinate("b"))
+                .retainedClasses())
+        .contains("closure/b/Middle", "closure/b/Unused");
+    assertThat(closureTargetEffective.trimAnalysis().candidateRoots().get(fixture.coordinate("b")))
+        .contains(MIDDLE_CLASS, "closure.b.Unused");
 
     final Path trace = temporaryDirectory.resolve("native-image-fallback-runtime.lst");
     Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\nclosure/b/Middle\n");

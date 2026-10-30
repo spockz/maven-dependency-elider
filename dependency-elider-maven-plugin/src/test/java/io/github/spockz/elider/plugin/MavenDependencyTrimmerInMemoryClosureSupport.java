@@ -26,7 +26,7 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Provides reusable immutable-input fixtures for closure tests. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 class MavenDependencyTrimmerInMemoryClosureSupport {
 
   /** Fixture coordinates are shared by generated test artifacts. */
@@ -77,7 +77,8 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final boolean resourceOnlyB,
       final boolean optionalAsmReference)
       throws IOException {
-    return fixture(duplicateClass, serviceRootInA, resourceOnlyB, optionalAsmReference, 21);
+    return fixture(
+        duplicateClass, serviceRootInA, resourceOnlyB, optionalAsmReference, 21, COMPILE_SCOPE);
   }
 
   /** Builds a release-specific fixture for multi-tier archive analysis. */
@@ -87,6 +88,29 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final boolean resourceOnlyB,
       final boolean optionalAsmReference,
       final int release)
+      throws IOException {
+    return fixture(
+        duplicateClass, serviceRootInA, resourceOnlyB, optionalAsmReference, release, COMPILE_SCOPE);
+  }
+
+  private Fixture fixture(
+      final boolean duplicateClass,
+      final boolean serviceRootInA,
+      final boolean resourceOnlyB,
+      final boolean optionalAsmReference,
+      final String firstArtifactScope)
+      throws IOException {
+    return fixture(
+        duplicateClass, serviceRootInA, resourceOnlyB, optionalAsmReference, 21, firstArtifactScope);
+  }
+
+  private Fixture fixture(
+      final boolean duplicateClass,
+      final boolean serviceRootInA,
+      final boolean resourceOnlyB,
+      final boolean optionalAsmReference,
+      final int release,
+      final String firstArtifactScope)
       throws IOException {
     final Path sourceDirectory = Files.createDirectories(temporaryDirectory.resolve("sources"));
     final Path classes = Files.createDirectories(temporaryDirectory.resolve("classes"));
@@ -178,7 +202,13 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         thirdArtifactPath,
         fourthArtifactPath,
         fifthArtifactPath,
-        release);
+        release,
+        firstArtifactScope);
+  }
+
+  /** Builds a fixture whose first archive is visible only at runtime. */
+  protected Fixture fixtureWithRuntimeA() throws IOException {
+    return fixture(false, false, false, false, 21, RUNTIME_SCOPE);
   }
 
   /** Builds a fixture whose entry class has an unresolved optional ASM type. */
@@ -224,7 +254,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
   }
 
   /** Fixture whose generated inputs stay within its temporary test directory. */
-  @SuppressWarnings({"PMD.CouplingBetweenObjects", "PMD.TooManyMethods"})
+  @SuppressWarnings("PMD.CouplingBetweenObjects")
   protected final class Fixture {
     /** Full resolved Maven artifact inventory. */
     final List<MavenElisionService.ArtifactSnapshot> snapshots;
@@ -244,9 +274,10 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         final Path thirdArtifactPath,
         final Path fourthArtifactPath,
         final Path fifthArtifactPath,
-        final int release)
+        final int release,
+        final String firstArtifactScope)
         throws IOException {
-      final Artifact firstArtifact = artifact("a", firstArtifactPath);
+      final Artifact firstArtifact = artifact("a", firstArtifactPath, firstArtifactScope);
       final Artifact secondArtifact = artifact("b", secondArtifactPath, RUNTIME_SCOPE);
       final Artifact thirdArtifact = artifact("c", thirdArtifactPath, RUNTIME_SCOPE);
       final Artifact fourthArtifact = artifact("d", fourthArtifactPath, RUNTIME_SCOPE);
@@ -390,10 +421,6 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
 
     ArtifactCoordinate coordinate(final String artifactId) {
       return snapshot(artifactId).coordinate();
-    }
-
-    private Artifact artifact(final String artifactId, final Path path) {
-      return artifact(artifactId, path, COMPILE_SCOPE);
     }
 
     private Artifact artifact(final String artifactId, final Path path, final String scope) {
