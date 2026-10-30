@@ -51,6 +51,48 @@ import org.objectweb.asm.Opcodes;
 
   /* package */
   @Test
+  void everyTypedPointerUsesItsDeclaredKindForArbitraryNames() throws IOException {
+    int index = 0;
+    for (final NativeImageConfigurationPointerTestSupport.PointerCase pointer :
+        NativeImageConfigurationPointerTestSupport.pointerCases()) {
+      final String reference = "descriptor-" + index + ".payload";
+      final String descriptor =
+          NativeImageConfigurationPointerTestSupport.descriptor(pointer.kind());
+      final Path declaring =
+          NativeImageScanContextTestSupport.jar(
+              inputDirectory,
+              "dispatch-declaring-" + index + ".jar",
+              NativeImageScanContextTestSupport.entries(
+                  NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+                  "Args = " + pointer.option() + "=" + reference + "\n"));
+      final NativeImageScanContext context;
+      if (pointer.resource()) {
+        final Path provider =
+            NativeImageScanContextTestSupport.jar(
+                inputDirectory,
+                "dispatch-provider-" + index + ".jar",
+                NativeImageScanContextTestSupport.entries(reference, descriptor));
+        context =
+            NativeImageScanContext.create(
+                List.of(
+                    NativeImageScanContextTestSupport.candidate("declaring", declaring),
+                    NativeImageScanContextTestSupport.candidate("provider", provider)),
+                inputDirectory);
+      } else {
+        Files.writeString(inputDirectory.resolve(reference), descriptor);
+        context =
+            NativeImageExternalConfigurationInputTestSupport.context(declaring, inputDirectory);
+      }
+      final DependencyDynamicRoots.RootScan scan =
+          DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+
+      NativeImageConfigurationPointerTestSupport.assertDispatch(scan, pointer, reference);
+      index++;
+    }
+  }
+
+  /* package */
+  @Test
   void predefinedFileSnapshotsItsSiblingClassData() throws IOException {
     final Path jar =
         NativeImageScanContextTestSupport.jar(
@@ -128,6 +170,27 @@ import org.objectweb.asm.Opcodes;
 
   /* package */
   @Test
+  void relativeFilePointerRejectsSymlinkEscapeFromInvocationBase() throws IOException {
+    final Path outside = inputDirectory.getParent().resolve("outside-native-image.payload");
+    Files.writeString(outside, NativeImageScanContextTestSupport.reflection("org.example.Outside"));
+    Files.createSymbolicLink(inputDirectory.resolve("linked.payload"), outside);
+    final Path declaring =
+        NativeImageScanContextTestSupport.jar(
+            inputDirectory,
+            "symlink-declaring.jar",
+            NativeImageScanContextTestSupport.entries(
+                NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+                "Args = -H:ReflectionConfigurationFiles=linked.payload\n"));
+    final NativeImageScanContext context =
+        NativeImageExternalConfigurationInputTestSupport.context(declaring, inputDirectory);
+
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context, Set.of(), true))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("escapes invocation base");
+  }
+
+  /* package */
+  @Test
   void mutationAfterPrepareFailsBeforeFinishCanPublish() throws IOException, MojoFailureException {
     final Fixture fixture = fixture(false, false, false);
     final Path declaring =
@@ -152,8 +215,7 @@ import org.objectweb.asm.Opcodes;
     Files.writeString(
         descriptor, NativeImageScanContextTestSupport.reflection("closure.d.Ancestor"));
 
-    assertThatThrownBy(() -> service.finish(prepared))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("content changed");
+    NativeImageConfigurationPointerTestSupport.assertMutationRejectedBeforePublication(
+        service, prepared, temporaryDirectory.resolve("build/elided-artifacts"));
   }
 }

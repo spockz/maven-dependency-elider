@@ -188,27 +188,54 @@ final class NativeImageConfigurationPointers {
                         "Native-image configuration files require an invocation base: "
                             + propertiesEntry.getName()));
     for (final String reference : references(values, propertiesEntry)) {
-      final Path requested;
-      try {
-        requested = Path.of(reference);
-      } catch (final java.nio.file.InvalidPathException exception) {
-        throw new IOException(
-            "Invalid native-image configuration file path in "
-                + propertiesEntry.getName()
-                + ": "
-                + reference,
-            exception);
-      }
-      final Path logicalPath =
-          requested.isAbsolute()
-              ? requested.normalize()
-              : invocationBase.resolve(requested).normalize();
-      if (!requested.isAbsolute() && !logicalPath.startsWith(invocationBase)) {
-        throw new IOException(
-            "Native-image configuration file escapes invocation base: " + reference);
-      }
+      final Path logicalPath = resolveFilePath(reference, invocationBase, propertiesEntry);
       final NativeImageInput input = NativeImageInput.file(logicalPath, pointer.kind());
       readTypedDescriptor(input, pointer.kind(), roots, consumedInputs);
+    }
+  }
+
+  private static Path resolveFilePath(
+      final String reference, final Path invocationBase, final JarEntry propertiesEntry)
+      throws IOException {
+    final Path requested;
+    try {
+      requested = Path.of(reference);
+    } catch (final java.nio.file.InvalidPathException exception) {
+      throw new IOException(
+          "Invalid native-image configuration file path in "
+              + propertiesEntry.getName()
+              + ": "
+              + reference,
+          exception);
+    }
+    if (requested.isAbsolute()) {
+      return requested.normalize();
+    }
+    final Path logicalPath = invocationBase.resolve(requested).normalize();
+    if (!logicalPath.startsWith(invocationBase)) {
+      throw new IOException(
+          "Native-image configuration file escapes invocation base: " + reference);
+    }
+    final Path canonicalBase = canonicalPath(invocationBase, propertiesEntry);
+    final Path canonicalFile = canonicalPath(logicalPath, propertiesEntry);
+    if (!canonicalFile.startsWith(canonicalBase)) {
+      throw new IOException(
+          "Native-image configuration file escapes invocation base: " + reference);
+    }
+    return logicalPath;
+  }
+
+  private static Path canonicalPath(final Path path, final JarEntry propertiesEntry)
+      throws IOException {
+    try {
+      return path.toRealPath();
+    } catch (final IOException exception) {
+      throw new IOException(
+          "Cannot resolve native-image configuration path referenced by "
+              + propertiesEntry.getName()
+              + ": "
+              + path,
+          exception);
     }
   }
 
