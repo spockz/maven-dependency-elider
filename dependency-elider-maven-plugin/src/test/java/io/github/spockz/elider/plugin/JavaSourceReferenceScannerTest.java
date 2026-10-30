@@ -337,6 +337,26 @@ final class JavaSourceReferenceScannerTest {
   }
 
   @Test
+  @DisplayName("ADR-0010/platform release options reject boot and upgrade module paths")
+  void platformReleaseOptionsRejectBootAndUpgradeModulePathOverrides() {
+    for (final String argument :
+        List.of(
+            "--upgrade-module-path=/platform/modules",
+            "-Xbootclasspath:/platform/boot",
+            "-Xbootclasspath/p:/platform/patch",
+            "-Xbootclasspath/a:/platform/append")) {
+      final MavenProject project = new MavenProject();
+      project.getProperties().setProperty("maven.compiler.release", "21");
+      project.getProperties().setProperty("maven.compiler.compilerArgs", argument);
+
+      assertThatThrownBy(() -> MavenCompilerSettings.platformReleaseOptions(project, null))
+          .as("reject %s", argument)
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("compiler argument " + argument);
+    }
+  }
+
+  @Test
   @DisplayName("ADR-0010/source completeness detects processors unless processing is disabled")
   void sourceCompletenessDetectsProcessorArgumentsUnlessProcessingIsDisabled() {
     final MavenProject project = new MavenProject();

@@ -65,7 +65,9 @@ final class MavenCompilerSettings {
           "-h",
           "--patch-module",
           "--module-path",
+          "--upgrade-module-path",
           "-p",
+          "-Xbootclasspath",
           "release",
           "source",
           "target",
@@ -324,12 +326,17 @@ final class MavenCompilerSettings {
       return;
     }
     for (final String token : text.trim().split("\\s+")) {
-      if (token.startsWith("@")
-          || PLATFORM_ARGUMENT_OVERRIDES.stream()
-              .anyMatch(prefix -> token.equals(prefix) || token.startsWith(prefix + "="))) {
+      if (token.startsWith("@") || isPlatformOverrideToken(token)) {
         throw new IOException("Cannot determine compiler platform with compiler argument " + token);
       }
     }
+  }
+
+  private static boolean isPlatformOverrideToken(final String token) {
+    return PLATFORM_ARGUMENT_OVERRIDES.stream()
+            .anyMatch(prefix -> token.equals(prefix) || token.startsWith(prefix + "="))
+        || token.startsWith("-Xbootclasspath:")
+        || token.startsWith("-Xbootclasspath/");
   }
 
   private static boolean hasProcessorOptions(final Xpp3Dom configuration) {

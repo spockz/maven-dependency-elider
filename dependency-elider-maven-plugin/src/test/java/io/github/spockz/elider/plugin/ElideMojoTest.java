@@ -43,12 +43,16 @@ import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
+import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.toolchain.ToolchainManager;
 import org.codehaus.plexus.PlexusContainer;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -96,6 +100,93 @@ final class ElideMojoTest {
     skip.setBoolean(mojo, true);
 
     assertThatCode(mojo::execute).doesNotThrowAnyException();
+  }
+
+  @Test
+  @org.junit.jupiter.api.DisplayName(
+      "ADR-0010/process-classes defaults bytecode evidence and trims with compile processors")
+  void processClassesAutomaticallyUsesBytecodeWithCompileProcessorPathsAndTrimming()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Path originalJar =
+        compileJarSources(
+            "process-classes-processor-input",
+            Map.of(
+                "Keep.java", "package sample; public final class Keep {}\n",
+                "Drop.java", "package sample; public final class Drop {}\n"),
+            null);
+    final Artifact dependency = runtimeArtifact("process-classes-processor", originalJar);
+    final MavenProject project = project(dependency, new LinkedHashSet<>(List.of(dependency)));
+    final Path output = tempDir.resolve("lifecycle-target/classes");
+    final Path testOutput = tempDir.resolve("lifecycle-target/test-classes");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("lifecycle-target").toString());
+    build.setOutputDirectory(output.toString());
+    build.setTestOutputDirectory(testOutput.toString());
+    project.setBuild(build);
+    project.getProperties().setProperty("maven.compiler.release", "21");
+
+    final Plugin compiler = new Plugin();
+    compiler.setGroupId("org.apache.maven.plugins");
+    compiler.setArtifactId("maven-compiler-plugin");
+    compiler.setVersion("3.13.0");
+    final Xpp3Dom rootConfiguration = new Xpp3Dom("configuration");
+    rootConfiguration.addChild(dom("release", "21"));
+    compiler.setConfiguration(rootConfiguration);
+    final PluginExecution compile = new PluginExecution();
+    compile.setId("default-compile");
+    compile.setGoals(List.of("compile"));
+    final Xpp3Dom compileConfiguration = new Xpp3Dom("configuration");
+    compileConfiguration.addChild(dom("release", "21"));
+    final Xpp3Dom processorPaths = new Xpp3Dom("annotationProcessorPaths");
+    processorPaths.addChild(dom("path", null));
+    compileConfiguration.addChild(processorPaths);
+    compile.setConfiguration(compileConfiguration);
+    compiler.addExecution(compile);
+    final PluginExecution testCompile = new PluginExecution();
+    testCompile.setId("default-testCompile");
+    testCompile.setGoals(List.of("testCompile"));
+    final Xpp3Dom testConfiguration = new Xpp3Dom("configuration");
+    testConfiguration.addChild(dom("release", "21"));
+    testConfiguration.addChild(dom("proc", "none"));
+    testCompile.setConfiguration(testConfiguration);
+    compiler.addExecution(testCompile);
+    build.addPlugin(compiler);
+
+    final Path applicationClass = output.resolve("app/Main.class");
+    Files.createDirectories(applicationClass.getParent());
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Main", null, "java/lang/Object", null);
+    writer.visitField(Opcodes.ACC_PUBLIC, "value", "Lsample/Keep;", null, null).visitEnd();
+    writer.visitEnd();
+    Files.write(applicationClass, writer.toByteArray());
+    final Path trace = tempDir.resolve("process-classes-processor.lst");
+    Files.writeString(trace, "sample.Keep\n");
+
+    final ElideMojo mojo = newMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "reportFile", tempDir.resolve("process-classes-processor-report.json").toFile());
+    set(mojo, "trimJars", true);
+    final MojoExecution execution = new MojoExecution(new Plugin(), "elide", "default-elide");
+    set(execution, "source", MojoExecution.Source.LIFECYCLE);
+    execution.setLifecyclePhase("process-classes");
+    set(mojo, "mojoExecution", execution);
+
+    mojo.execute();
+
+    assertThat(dependency.getFile().toPath()).isNotEqualTo(originalJar);
+    try (JarFile trimmed = new JarFile(dependency.getFile())) {
+      assertThat(trimmed.getEntry("sample/Keep.class")).isNotNull();
+      assertThat(trimmed.getEntry("sample/Drop.class")).isNull();
+    }
+    final JsonNode report =
+        new ObjectMapper()
+            .readTree(tempDir.resolve("process-classes-processor-report.json").toFile());
+    assertThat(report.path("productionOutput").asText())
+        .isEqualTo(output.toAbsolutePath().normalize().toString());
+    assertThat(report.path("staticEvidenceAvailable").asBoolean()).isTrue();
+    assertThat(report.path("groups").path("applicationReferenced").toString())
+        .contains("sample.Keep");
   }
 
   @Test
@@ -2836,6 +2927,14 @@ final class ElideMojoTest {
     final Field field = target.getClass().getDeclaredField(name);
     field.setAccessible(true);
     field.set(target, value);
+  }
+
+  private static Xpp3Dom dom(final String name, final String value) {
+    final Xpp3Dom node = new Xpp3Dom(name);
+    if (value != null) {
+      node.setValue(value);
+    }
+    return node;
   }
 
   private void seedResolverPlan(

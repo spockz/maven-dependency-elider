@@ -18,8 +18,10 @@ import java.util.zip.ZipOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.model.Build;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
@@ -33,6 +35,9 @@ import org.objectweb.asm.Opcodes;
   "PMD.TooManyMethods"
 })
 final class AnalyzeMojoTest {
+  /** WHY: CVE fixtures use one stable vulnerable symbol in mappings and assertions. */
+  private static final String UNUSED_CLASS = "unused.Idle";
+
   /** Temporary directory for ZIP fixtures and explicit trace files. */
   @TempDir private Path tempDir;
 
@@ -182,7 +187,7 @@ final class AnalyzeMojoTest {
     mapping.setGroupId("org.example");
     mapping.setArtifactId("unused-runtime");
     mapping.setVersion("1.0");
-    mapping.setVulnerableClasses(List.of("unused.Idle"));
+    mapping.setVulnerableClasses(List.of(UNUSED_CLASS));
     set(mojo, "vulnerabilityMappings", List.of(mapping));
     final RecordingMavenLog log = new RecordingMavenLog();
     mojo.setLog(log);
@@ -210,6 +215,65 @@ final class AnalyzeMojoTest {
   }
 
   @Test
+  @DisplayName("ADR-0010/analyze defaults bytecode output and reports compile savings")
+  void productionClassesCompleteDefaultsOutputAndReportsCompileCveSavings()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Artifact used =
+        artifact(
+            "used-bytecode", "1.0", "compile", "jar", "used-bytecode.jar", "used/Sample.class");
+    final Artifact unused =
+        artifact(
+            "unused-compile", "1.0", "compile", "jar", "unused-compile.jar", "unused/Idle.class");
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(new LinkedHashSet<>(List.of(used, unused)));
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    final Path target = tempDir.resolve("bytecode-default-output");
+    final Path output = target.resolve("classes");
+    build.setDirectory(target.toString());
+    build.setOutputDirectory(output.toString());
+    project.setBuild(build);
+    final Path applicationClass = output.resolve("app/Main.class");
+    Files.createDirectories(applicationClass.getParent());
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Main", null, "java/lang/Object", null);
+    writer.visitField(Opcodes.ACC_PRIVATE, "used", "Lused/Sample;", null, null).visitEnd();
+    writer.visitEnd();
+    Files.write(applicationClass, writer.toByteArray());
+    final Path trace = tempDir.resolve("bytecode-default-output.lst");
+    Files.writeString(trace, "used/Sample\n");
+    final Path report = target.resolve("dependency-elider-class-usage.json");
+    final AnalyzeMojo mojo = new AnalyzeMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "productionClassesComplete", true);
+    set(mojo, "reportFile", report.toFile());
+    set(mojo, "cveCacheDirectory", tempDir.resolve("bytecode-analysis-cache").toFile());
+    final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
+    mapping.setCveId("CVE-2026-19003");
+    mapping.setGroupId("org.example");
+    mapping.setArtifactId("unused-compile");
+    mapping.setVersion("1.0");
+    mapping.setVulnerableClasses(List.of(UNUSED_CLASS));
+    set(mojo, "vulnerabilityMappings", List.of(mapping));
+    final RecordingMavenLog log = new RecordingMavenLog();
+    mojo.setLog(log);
+
+    mojo.execute();
+
+    assertThat(report).isRegularFile();
+    assertThat(log.messages())
+        .contains(
+            "  Artifacts that would be elided by this analysis: 1 / 2 (50.0%)",
+            "    CVE-2026-19003 org.example:unused-compile:jar:1.0");
+    final com.fasterxml.jackson.databind.JsonNode reportJson =
+        new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
+    assertThat(reportJson.path("productionOutput").asText()).isEqualTo(output.toString());
+    assertThat(reportJson.path("staticEvidenceAvailable").asBoolean()).isTrue();
+    assertThat(reportJson.path("classFilesScanned").asInt()).isEqualTo(1);
+  }
+
+  @Test
   void predictsCvesWhoseClassesWouldBeProvenAbsentByDryRunTrimming()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact runtime = artifactWithClasses("runtime-cve", "runtime-cve.jar");
@@ -217,7 +281,7 @@ final class AnalyzeMojoTest {
     final MavenProject project = new MavenProject();
     project.setArtifacts(new LinkedHashSet<>(List.of(runtime)));
     project.getProperties().setProperty("maven.compiler.release", "21");
-    final org.apache.maven.model.Build build = new org.apache.maven.model.Build();
+    final Build build = new Build();
     build.setDirectory(tempDir.resolve("trim-analysis-target").toString());
     project.setBuild(build);
     final Path trace = tempDir.resolve("trim-analysis.lst");
@@ -292,9 +356,9 @@ final class AnalyzeMojoTest {
     assertThat(json.path("groups").path("runtimeObservedWithoutApplicationReference").toString())
         .contains("runtimeOnly.Type");
     assertThat(json.path("groups").path("neitherReferencedNorObserved").toString())
-        .contains("unused.Idle");
+        .contains(UNUSED_CLASS);
     assertThat(json.path("classes").toString())
-        .contains("used.Sample", "runtimeOnly.Type", "unused.Idle");
+        .contains("used.Sample", "runtimeOnly.Type", UNUSED_CLASS);
   }
 
   @Test

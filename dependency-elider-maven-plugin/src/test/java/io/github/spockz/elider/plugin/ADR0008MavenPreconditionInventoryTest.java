@@ -140,6 +140,9 @@ final class ADR0008MavenPreconditionInventoryTest {
   /** WHY: Maven Xpp3Dom fixtures use this canonical element name. */
   private static final String CONFIGURATION_ELEMENT = "configuration";
 
+  /** WHY: Compiler processor paths must remain scoped to default compile. */
+  private static final String ANNOTATION_PROCESSOR_PATHS = "annotationProcessorPaths";
+
   /** WHY: This compiler flag must be rejected as an argument channel. */
   private static final String PROCESSOR_FLAG = "-proc:full";
 
@@ -689,14 +692,14 @@ final class ADR0008MavenPreconditionInventoryTest {
       final Fixture processorPath = fixture();
       final Plugin activeCompiler = compilerPlugin();
       activeCompiler.setConfiguration(configuration(PROCESSING_SETTING, PROCESSING_NONE));
-      pluginConfiguration(activeCompiler).addChild(setting("annotationProcessorPaths", null));
+      pluginConfiguration(activeCompiler).addChild(setting(ANNOTATION_PROCESSOR_PATHS, null));
       processorPath.project().getBuild().addPlugin(activeCompiler);
 
       final MavenPreconditionInventory.Snapshot processorPathSnapshot = capture(processorPath);
 
       assertThat(processorPathSnapshot.complete()).isFalse();
       assertThat(processorPathSnapshot.classProviders().detail())
-          .contains("annotationProcessorPaths");
+          .contains(ANNOTATION_PROCESSOR_PATHS);
 
       final Fixture testCompile = fixture("test-compile");
       final Plugin managedCompiler = compilerPlugin();
@@ -762,8 +765,8 @@ final class ADR0008MavenPreconditionInventoryTest {
       final PluginExecution compile = new PluginExecution();
       compile.setId(DEFAULT_COMPILE);
       compile.setGoals(List.of(GOAL_COMPILE));
-      final Xpp3Dom compileConfiguration = new Xpp3Dom("configuration");
-      compileConfiguration.addChild(new Xpp3Dom("annotationProcessorPaths"));
+      final Xpp3Dom compileConfiguration = new Xpp3Dom(CONFIGURATION_ELEMENT);
+      compileConfiguration.addChild(new Xpp3Dom(ANNOTATION_PROCESSOR_PATHS));
       compile.setConfiguration(compileConfiguration);
       compiler.addExecution(compile);
       final PluginExecution testCompile = new PluginExecution();
@@ -783,7 +786,7 @@ final class ADR0008MavenPreconditionInventoryTest {
                       fixture.project(), session, true))
           .doesNotThrowAnyException();
 
-      testCompile.setConfiguration(new Xpp3Dom("configuration"));
+      testCompile.setConfiguration(new Xpp3Dom(CONFIGURATION_ELEMENT));
 
       assertThatThrownBy(
               () ->
@@ -792,6 +795,90 @@ final class ADR0008MavenPreconditionInventoryTest {
           .isInstanceOf(IOException.class)
           .hasMessageContaining(
               "explicit proc=none is required for compiler execution default-testCompile");
+    }
+
+    @Test
+    @DisplayName(
+        "ADR-0008/trusted COMPLETE inventory preserves generated sources with compile processors")
+    void trustedCompleteInventoryCapturesGeneratedSourcesWithCompileProcessorPaths()
+        throws IOException {
+      final Fixture fixture = fixture("trusted-complete-generated-processor");
+      Files.writeString(
+          fixture.productionSources().resolve("Generated.java"),
+          "package generated; public final class Generated {}\n");
+      addUnknownGenerator(fixture, "generate-sources");
+      fixture.project().getProperties().remove(PROCESSING_PROPERTY);
+      final Plugin compiler = compilerPlugin();
+      final PluginExecution compile = new PluginExecution();
+      compile.setId(DEFAULT_COMPILE);
+      compile.setGoals(List.of(GOAL_COMPILE));
+      final Xpp3Dom compileConfiguration = new Xpp3Dom(CONFIGURATION_ELEMENT);
+      compileConfiguration.addChild(new Xpp3Dom(ANNOTATION_PROCESSOR_PATHS));
+      compile.setConfiguration(compileConfiguration);
+      compiler.addExecution(compile);
+      final PluginExecution testCompile = new PluginExecution();
+      testCompile.setId(DEFAULT_TEST_COMPILE);
+      testCompile.setGoals(List.of("testCompile"));
+      testCompile.setConfiguration(configuration(PROCESSING_SETTING, PROCESSING_NONE));
+      compiler.addExecution(testCompile);
+      fixture.project().getBuild().addPlugin(compiler);
+      final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+      request.setGoals(List.of(GOAL_CLEAN, PROCESS_CLASSES_PHASE));
+      final MavenSession session = new MavenSession(null, request, null, fixture.project());
+      session.getUserProperties().setProperty(SKIP_TESTS, TRUE);
+
+      final MavenPreconditionInventory.Snapshot snapshot =
+          MavenPreconditionInventory.capture(
+              fixture.project(),
+              session,
+              fixture.plan(),
+              trustedProcessClassesAnalysis(fixture.analysis()),
+              true,
+              List.of());
+
+      assertThat(snapshot.complete()).isTrue();
+      assertThat(snapshot.classProviders().providers())
+          .anySatisfy(
+              provider ->
+                  assertThat(provider.path())
+                      .isEqualTo(fixture.productionSources().resolve("Generated.java")));
+
+      testCompile.setConfiguration(new Xpp3Dom(CONFIGURATION_ELEMENT));
+      final MavenPreconditionInventory.Snapshot unsafe =
+          MavenPreconditionInventory.capture(
+              fixture.project(),
+              session,
+              fixture.plan(),
+              trustedProcessClassesAnalysis(fixture.analysis()),
+              true,
+              List.of());
+      assertThat(unsafe.complete()).isFalse();
+      assertThat(unsafe.classProviders().detail()).contains("default-testCompile");
+    }
+
+    private static MavenElisionService.Analysis trustedProcessClassesAnalysis(
+        final MavenElisionService.Analysis analysis) {
+      return new MavenElisionService.Analysis(
+          analysis.resolvedSnapshots(),
+          analysis.directArtifactsPresent(),
+          analysis.directSnapshots(),
+          analysis.decision(),
+          analysis.effectiveDecision(),
+          analysis.classUsageReport(),
+          analysis.bytecodeScan(),
+          analysis.trimRecords(),
+          analysis.multiReleasePassthroughArtifacts(),
+          analysis.moduleInfoPassthroughArtifacts(),
+          analysis.configuredPassThroughArtifacts(),
+          analysis.trimCacheHits(),
+          analysis.maximumTrimCacheHitNanos(),
+          analysis.trimAnalysisRuns(),
+          analysis.graphProjection(),
+          analysis.generationCommit(),
+          analysis.mediatedGraph(),
+          analysis.unprovenServiceRoots(),
+          true,
+          true);
     }
 
     @Test

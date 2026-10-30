@@ -511,6 +511,82 @@ final class MavenElisionServiceTest {
   }
 
   @Test
+  @DisplayName("ADR-0010/source and bytecode completeness assertions are mutually exclusive")
+  void completenessAssertionsAreMutuallyExclusive() {
+    final MavenElisionService.AnalysisOptions options =
+        new MavenElisionService.AnalysisOptions(
+            List.of(),
+            List.of(),
+            null,
+            null,
+            true,
+            false,
+            List.of(),
+            false,
+            List.of(),
+            false,
+            true,
+            true,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+            true,
+            false);
+
+    assertThatThrownBy(() -> new MavenElisionService().prepare(new MavenProject(), options))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("are mutually exclusive");
+  }
+
+  @Test
+  @DisplayName("ADR-0010/source completeness rejects compiler processor paths")
+  void sourceCompletenessRejectsCompilerAnnotationProcessorPaths() throws Exception {
+    final Artifact observed =
+        resolvedArtifact("source-processor-observed", "compile", "observed.jar");
+    observed.setFile(compileJar("observed.jar", "library.Observed").toFile());
+    final MavenProject project = projectWith(new LinkedHashSet<>(List.of(observed)), null);
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("source-processor-root"));
+    final Path source = sourceRoot.resolve("app/Application.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, "package app; public final class Application {}\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
+    final Plugin compiler = new Plugin();
+    compiler.setGroupId("org.apache.maven.plugins");
+    compiler.setArtifactId("maven-compiler-plugin");
+    compiler.setVersion("3.13.0");
+    final Xpp3Dom configuration = new Xpp3Dom("configuration");
+    final Xpp3Dom processorPaths = new Xpp3Dom("annotationProcessorPaths");
+    processorPaths.addChild(new Xpp3Dom("path"));
+    configuration.addChild(processorPaths);
+    compiler.setConfiguration(configuration);
+    project.getBuild().addPlugin(compiler);
+    final Path trace = tempDir.resolve("source-processor.lst");
+    Files.writeString(trace, "library/Observed\n");
+    final MavenElisionService.AnalysisOptions options =
+        new MavenElisionService.AnalysisOptions(
+            List.of(trace.toFile()),
+            List.of(),
+            null,
+            null,
+            true,
+            false,
+            List.of(),
+            false,
+            List.of(),
+            false,
+            true,
+            true,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+            false,
+            false);
+
+    assertThatThrownBy(() -> new MavenElisionService().analyze(project, options))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("source-generation lifecycle execution");
+  }
+
+  @Test
   @DisplayName("ADR-0010/empty production bytecode output fails closed")
   void emptyProductionBytecodeOutputFailsClosed() throws Exception {
     final MavenProject project = projectWith(Set.of(), null);
