@@ -1,4 +1,5 @@
-/* WHY: Recomputes fingerprints so mutated detached structures cannot be accepted as authentic. */
+/* WHY: Recomputes fingerprints so mutated detached structures cannot be
+ * accepted as authentic. */
 
 package io.github.spockz.elider.plugin;
 

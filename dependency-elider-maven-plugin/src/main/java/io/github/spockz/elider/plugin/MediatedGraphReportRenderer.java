@@ -1,4 +1,5 @@
-/* WHY: Renders only the graph and outcomes saved by the successful elide invocation. */
+/* WHY: Renders only the graph and outcomes saved by the successful elide
+ * invocation. */
 
 package io.github.spockz.elider.plugin;
 

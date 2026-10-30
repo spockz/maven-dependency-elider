@@ -55,7 +55,7 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
 
     final ServiceOperation changed =
         operation(fixture, trace(temporaryDirectory.resolve("extra"), "closure/a/Extra"), null);
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         service.finishAnalysis(changed.prepared());
     assertThatThrownBy(
             () ->
@@ -78,7 +78,7 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
         .isEqualTo(oldOutputDigest);
     assertThat(EffectiveOutputCacheTestFiles.generationCount(fixture.mavenProject())).isEqualTo(1);
 
-    final MavenDependencyTrimmer.TrimResult retry = trimEffective(changed);
+    final TrimResult retry = trimEffective(changed);
     final ArtifactTrimRecord retriedRecord = outputRecord(retry, fixture);
     assertThat(retry.cacheHits()).isZero();
     assertThat(retriedRecord.trimmedPath()).isNotEqualTo(originalRecord.trimmedPath());
@@ -99,7 +99,7 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
     final byte[] originalManifest = Files.readAllBytes(manifest);
     Files.writeString(original.trimmedPath(), "damaged prior generation before backup failure");
     final byte[] originalOutput = Files.readAllBytes(original.trimmedPath());
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
 
     assertThatThrownBy(
@@ -137,7 +137,7 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
     final byte[] originalManifest = Files.readAllBytes(manifest);
     Files.writeString(original.trimmedPath(), "damaged prior generation before completed backup");
     final byte[] originalOutput = Files.readAllBytes(original.trimmedPath());
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
 
     assertThatThrownBy(
@@ -174,7 +174,7 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
     Files.writeString(original.trimmedPath(), "damaged prior generation");
     final byte[] damagedBytes = Files.readAllBytes(original.trimmedPath());
     final String damagedDigest = ArtifactDigests.read(original.trimmedPath()).sha256();
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
     assertThatThrownBy(
             () ->
@@ -213,10 +213,10 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
         EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject())
             .toAbsolutePath()
             .normalize();
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
 
-    final MavenDependencyTrimmer.TrimResult committed =
+    final TrimResult committed =
         MavenDependencyTrimmer.trimEffectiveOutputs(
             effective,
             (source, target, replace) -> {
@@ -239,7 +239,7 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
     final Fixture fixture = fixture(false);
     final ServiceOperation operation =
         operation(fixture, trace(temporaryDirectory, ENTRY_TRACE), null);
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
     fixture.mavenProject().getProperties().setProperty("maven.compiler.release", "17");
 
@@ -251,8 +251,7 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
         .doesNotExist();
   }
 
-  private static ArtifactTrimRecord outputRecord(
-      final MavenDependencyTrimmer.TrimResult result, final Fixture fixture) {
+  private static ArtifactTrimRecord outputRecord(final TrimResult result, final Fixture fixture) {
     return EffectiveOutputCacheTestFiles.record(result.records(), fixture.coordinate("a"));
   }
 }

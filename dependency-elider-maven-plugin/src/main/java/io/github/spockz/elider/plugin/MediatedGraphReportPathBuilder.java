@@ -1,4 +1,5 @@
-/* WHY: Derives stable occurrence paths from an immutable mediated graph snapshot. */
+/* WHY: Derives stable occurrence paths from an immutable mediated graph
+ * snapshot. */
 
 package io.github.spockz.elider.plugin;
 

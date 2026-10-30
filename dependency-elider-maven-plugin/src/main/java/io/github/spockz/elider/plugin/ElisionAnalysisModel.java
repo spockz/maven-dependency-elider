@@ -1,0 +1,265 @@
+// WHY: Defines immutable inputs and results shared by Maven elision collaborators.
+
+package io.github.spockz.elider.plugin;
+
+import static io.github.spockz.elider.plugin.MavenDependencyTrimmer.MIN_TRIM_WORKERS;
+
+import io.github.spockz.elider.engine.ClassUsageReport;
+import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.scanner.ArtifactClassIndex;
+import io.github.spockz.elider.scanner.BytecodeReferenceScan;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import org.apache.maven.artifact.Artifact;
+import org.apache.maven.execution.MavenSession;
+import org.apache.maven.project.MavenProject;
+
+/** Defines immutable inputs and results shared by Maven elision collaborators. */
+final class ElisionAnalysisModel {
+  private ElisionAnalysisModel() {}
+
+  /* default */ record AnalysisOptions(
+      List<File> traceFiles,
+      List<String> excludedArtifacts,
+      File productionOutput,
+      MavenSession session,
+      CompletenessOptions completeness,
+      TrimOptions trim,
+      DynamicRootOptions dynamicRoots) {
+    /* default */ AnalysisOptions {
+      if (trim.workers() < MIN_TRIM_WORKERS) {
+        throw new IllegalArgumentException("trimWorkers must be at least 1");
+      }
+      if (!MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING.equals(trim.mrjarStrategy())
+          && !MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(trim.mrjarStrategy())) {
+        throw new IllegalArgumentException(
+            "elide.mrjarStrategy must be vertical-shading or pass-through");
+      }
+      dynamicRoots =
+          new DynamicRootOptions(
+              dynamicRoots.conservativeServiceLoaderRoots(),
+              canonicalAllowedNativeImageArgs(dynamicRoots.allowedNativeImageArgs()),
+              dynamicRoots.failOnUnsupportedNativeImageArgs());
+    }
+  }
+
+  /* default */ record CompletenessOptions(
+      boolean sourceRootsComplete,
+      boolean productionClassesComplete,
+      boolean trustedProcessClassesContext,
+      boolean testResolutionContext) {}
+
+  /* default */ record TrimOptions(
+      boolean enabled,
+      List<String> explicitRoots,
+      boolean failOnUnsupportedMultiRelease,
+      List<String> passThroughArtifacts,
+      boolean failOnUnsupportedModuleInfo,
+      int workers,
+      String mrjarStrategy) {}
+
+  /* default */ record DynamicRootOptions(
+      boolean conservativeServiceLoaderRoots,
+      List<String> allowedNativeImageArgs,
+      boolean failOnUnsupportedNativeImageArgs) {}
+
+  private static List<String> canonicalAllowedNativeImageArgs(final List<String> configured) {
+    if (configured == null) {
+      return List.of();
+    }
+    final Set<String> names = new java.util.TreeSet<>();
+    for (final String name : configured) {
+      if (name == null
+          || name.isBlank()
+          || name.contains("=")
+          || name.chars().anyMatch(Character::isWhitespace)) {
+        throw new IllegalArgumentException(
+            "allowedNativeImageArgs entries must be nonblank argument names without '='");
+      }
+      names.add(name);
+    }
+    return List.copyOf(names);
+  }
+
+  /** Scans one dependency archive during an analysis invocation. */
+  /* default */
+  @FunctionalInterface
+  interface DynamicRootScanner {
+    /** Returns the dynamic roots declared by the archive. */
+    DependencyDynamicRoots.RootScan scan(Path path) throws IOException;
+  }
+
+  /** Holds invocation roots and the scans reused by retained-JAR trimming. */
+  /* default */ record DynamicRootInputs(
+      Set<String> classNames,
+      Set<ArtifactCoordinate> declaringArtifacts,
+      Map<Path, DependencyDynamicRoots.RootScan> scansByPath,
+      Map<ArtifactCoordinate, Set<String>> unprovenServiceRootsByCoordinate,
+      Set<String> provenServiceInterfaces) {
+    /* default */ DynamicRootInputs {
+      classNames = Set.copyOf(classNames);
+      declaringArtifacts = Set.copyOf(declaringArtifacts);
+      scansByPath = Map.copyOf(scansByPath);
+      unprovenServiceRootsByCoordinate = Map.copyOf(unprovenServiceRootsByCoordinate);
+      provenServiceInterfaces = Set.copyOf(provenServiceInterfaces);
+    }
+
+    /* default */ DynamicRootInputs(
+        final Set<String> classNames,
+        final Set<ArtifactCoordinate> declaringArtifacts,
+        final Map<Path, DependencyDynamicRoots.RootScan> scansByPath) {
+      this(classNames, declaringArtifacts, scansByPath, Map.of(), Set.of());
+    }
+  }
+
+  /* default */ record PreparedAnalysis(
+      MavenProject project,
+      AnalysisOptions options,
+      List<ArtifactSnapshot> resolvedSnapshots,
+      boolean directArtifactsPresent,
+      List<ArtifactSnapshot> directSnapshots,
+      ElisionDecision rawDecision,
+      ClassUsageReport classUsageReport,
+      Optional<BytecodeReferenceScan> bytecodeScan,
+      List<ArtifactFileRef> scanCandidates,
+      TraceData trace,
+      ArtifactClassIndex index,
+      DynamicRootInputs dynamicRootInputs,
+      Set<String> projectOutputClasses,
+      Set<String> sourceRequiredClasses,
+      Set<String> pruningRequiredClasses,
+      String productionOutputFingerprint,
+      String inputFingerprint,
+      String directInputFingerprint,
+      MavenElisionGraphBinding.Result graphBinding,
+      String sourceAttributionFallback) {
+    /* default */ PreparedAnalysis {
+      resolvedSnapshots = List.copyOf(resolvedSnapshots);
+      directSnapshots = List.copyOf(directSnapshots);
+      scanCandidates = List.copyOf(scanCandidates);
+      projectOutputClasses = Set.copyOf(projectOutputClasses);
+      sourceRequiredClasses = Set.copyOf(sourceRequiredClasses);
+      pruningRequiredClasses = Set.copyOf(pruningRequiredClasses);
+      java.util.Objects.requireNonNull(productionOutputFingerprint, "productionOutputFingerprint");
+    }
+  }
+
+  /* default */ record EffectiveAnalysis(
+      PreparedAnalysis prepared,
+      EffectiveGraphPolicy.Evaluation graphEvaluation,
+      ElisionDecision rawDecision,
+      ElisionDecision effectiveDecision,
+      Set<ArtifactCoordinate> forcedUnchangedCoordinates,
+      TrimAnalysisResult trimAnalysis,
+      String inventoryFingerprint,
+      String operationFingerprint,
+      ResolverArtifactGraphProjection graphProjection) {
+    /* default */ EffectiveAnalysis {
+      forcedUnchangedCoordinates = Set.copyOf(forcedUnchangedCoordinates);
+    }
+  }
+
+  /* default */ record ArtifactViews(
+      List<ArtifactSnapshot> resolvedSnapshots,
+      boolean directArtifactsPresent,
+      List<ArtifactSnapshot> directSnapshots) {
+    /* default */ ArtifactViews {
+      resolvedSnapshots = List.copyOf(resolvedSnapshots);
+      directSnapshots = List.copyOf(directSnapshots);
+    }
+
+    /* default */ Set<Artifact> resolvedArtifacts() {
+      return references(resolvedSnapshots);
+    }
+
+    /* default */ Set<Artifact> directArtifacts() {
+      return references(directSnapshots);
+    }
+
+    private static Set<Artifact> references(final List<ArtifactSnapshot> snapshots) {
+      final Set<Artifact> result = new LinkedHashSet<>();
+      snapshots.stream().map(ArtifactSnapshot::artifact).forEach(result::add);
+      return Collections.unmodifiableSet(result);
+    }
+  }
+
+  /* default */ record AnalysisEvidence(
+      ClassUsageReport classUsageReport,
+      Optional<BytecodeReferenceScan> bytecodeScan,
+      Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots,
+      boolean productionClassesComplete,
+      boolean trustedProcessClassesContext,
+      String sourceAttributionFallback) {
+    /* default */ AnalysisEvidence {
+      unprovenServiceRoots =
+          unprovenServiceRoots != null ? Map.copyOf(unprovenServiceRoots) : Map.of();
+    }
+  }
+
+  /* default */ record Analysis(
+      ArtifactViews artifacts,
+      ElisionDecision decision,
+      ElisionDecision effectiveDecision,
+      AnalysisEvidence evidence,
+      TrimResult trimResult,
+      ResolverArtifactGraphProjection graphProjection,
+      MediatedGraphReport mediatedGraph) {}
+
+  /* default */ static ArtifactViews artifactViews(final PreparedAnalysis prepared) {
+    return new ArtifactViews(
+        prepared.resolvedSnapshots(),
+        prepared.directArtifactsPresent(),
+        prepared.directSnapshots());
+  }
+
+  /* default */ static AnalysisEvidence evidence(final PreparedAnalysis prepared) {
+    final AnalysisOptions options = prepared.options();
+    final CompletenessOptions completeness = options.completeness();
+    final DynamicRootInputs dynamicRoots = prepared.dynamicRootInputs();
+    return new AnalysisEvidence(
+        prepared.classUsageReport(),
+        prepared.bytecodeScan(),
+        dynamicRoots.unprovenServiceRootsByCoordinate(),
+        completeness.productionClassesComplete(),
+        completeness.trustedProcessClassesContext(),
+        prepared.sourceAttributionFallback());
+  }
+
+  /* default */ record ArtifactSnapshot(
+      Artifact artifact, ArtifactCoordinate coordinate, Path filePath) {
+    /* default */ static ArtifactSnapshot from(final Artifact artifact) {
+      return new ArtifactSnapshot(
+          artifact,
+          MavenArtifactInventory.toCoordinate(artifact),
+          MavenArtifactInventory.normalizedPath(artifact));
+    }
+  }
+
+  /* default */ record ApplyPlan(
+      Set<Artifact> resolvedArtifacts,
+      boolean directArtifactsPresent,
+      Set<Artifact> directArtifacts) {
+    /* default */ ApplyPlan {
+      resolvedArtifacts = Collections.unmodifiableSet(new LinkedHashSet<>(resolvedArtifacts));
+      directArtifacts = Collections.unmodifiableSet(new LinkedHashSet<>(directArtifacts));
+    }
+  }
+
+  /* default */ record CurrentViews(
+      List<Artifact> resolvedArtifacts, List<Artifact> directArtifacts) {
+    /* default */ CurrentViews {
+      resolvedArtifacts = List.copyOf(resolvedArtifacts);
+      directArtifacts = List.copyOf(directArtifacts);
+    }
+  }
+}

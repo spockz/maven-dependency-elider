@@ -1,4 +1,5 @@
-/* WHY: Binds Maven artifact files independently from the path-free resolver graph snapshot. */
+/* WHY: Binds Maven artifact files independently from the path-free resolver
+ * graph snapshot. */
 
 package io.github.spockz.elider.plugin;
 
@@ -25,11 +26,11 @@ final class ResolvedArtifactInventoryFingerprint {
     throw new AssertionError("No instances");
   }
 
-  static String fingerprint(final List<MavenElisionService.ArtifactSnapshot> inventory)
+  static String fingerprint(final List<ElisionAnalysisModel.ArtifactSnapshot> inventory)
       throws IOException {
     final List<String> entries = new ArrayList<>();
     final Set<String> identities = new HashSet<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : inventory) {
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : inventory) {
       final ArtifactCoordinate coordinate = snapshot.coordinate();
       final String extension = resolverExtension(snapshot);
       if (extension == null || extension.isBlank()) {
@@ -48,7 +49,7 @@ final class ResolvedArtifactInventoryFingerprint {
   }
 
   static void verifyFingerprint(
-      final List<MavenElisionService.ArtifactSnapshot> inventory, final String expectedFingerprint)
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory, final String expectedFingerprint)
       throws IOException {
     if (expectedFingerprint == null || !expectedFingerprint.equals(fingerprint(inventory))) {
       throw new IOException("Resolved artifact inventory changed after fingerprinting");
@@ -57,7 +58,7 @@ final class ResolvedArtifactInventoryFingerprint {
 
   /** Reads the resolver extension through Maven's artifact handler. */
   @SuppressWarnings("PMD.LawOfDemeter")
-  static String resolverExtension(final MavenElisionService.ArtifactSnapshot snapshot) {
+  static String resolverExtension(final ElisionAnalysisModel.ArtifactSnapshot snapshot) {
     final org.apache.maven.artifact.Artifact artifact = snapshot.artifact();
     final org.apache.maven.artifact.handler.ArtifactHandler handler = artifact.getArtifactHandler();
     if (handler == null) {
@@ -67,7 +68,7 @@ final class ResolvedArtifactInventoryFingerprint {
   }
 
   private static String inventoryEntry(
-      final MavenElisionService.ArtifactSnapshot snapshot, final String extension)
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot, final String extension)
       throws IOException {
     final String path = snapshot.filePath() == null ? "<missing>" : snapshot.filePath().toString();
     final String digest = digest(snapshot, extension);
@@ -75,7 +76,7 @@ final class ResolvedArtifactInventoryFingerprint {
   }
 
   private static String digest(
-      final MavenElisionService.ArtifactSnapshot snapshot, final String extension)
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot, final String extension)
       throws IOException {
     if (snapshot.filePath() != null && Files.isRegularFile(snapshot.filePath())) {
       return ArtifactDigests.read(snapshot.filePath()).sha256();

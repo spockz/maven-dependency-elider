@@ -29,7 +29,7 @@ final class MavenElisionServiceInventoryValidationTest
     final Fixture fixture = fixture(false);
     final Path trace = temporaryDirectory.resolve("scan-mutation.lst");
     Files.writeString(trace, TRACE);
-    final MavenElisionService.AnalysisOptions options = options(trace);
+    final ElisionAnalysisModel.AnalysisOptions options = options(trace);
 
     assertThatThrownBy(
             () ->
@@ -83,7 +83,7 @@ final class MavenElisionServiceInventoryValidationTest
     final Path trace = temporaryDirectory.resolve("membership-change.lst");
     Files.writeString(trace, TRACE);
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(fixture.mavenProject(), options(trace));
     fixture.mavenProject().setArtifacts(Set.of(fixture.artifacts().getFirst()));
 
@@ -99,7 +99,7 @@ final class MavenElisionServiceInventoryValidationTest
     final Path trace = temporaryDirectory.resolve("direct-membership-change.lst");
     Files.writeString(trace, TRACE);
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(fixture.mavenProject(), options(trace));
     fixture.mavenProject().setDependencyArtifacts(Set.copyOf(fixture.artifacts()));
 
@@ -108,18 +108,21 @@ final class MavenElisionServiceInventoryValidationTest
         .hasMessageContaining("Live Maven direct artifact view changed");
   }
 
-  private static MavenElisionService.AnalysisOptions options(final Path trace) {
-    return new MavenElisionService.AnalysisOptions(
+  private static ElisionAnalysisModel.AnalysisOptions options(final Path trace) {
+    return new ElisionAnalysisModel.AnalysisOptions(
         List.of(trace.toFile()),
         List.of(),
         null,
         null,
-        false,
-        true,
-        List.of(),
-        false,
-        List.of(),
-        false,
-        true);
+        new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+        new ElisionAnalysisModel.TrimOptions(
+            true,
+            List.of(),
+            false,
+            List.of(),
+            false,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+        new ElisionAnalysisModel.DynamicRootOptions(true, List.of(), true));
   }
 }

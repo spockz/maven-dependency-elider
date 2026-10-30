@@ -1,4 +1,5 @@
-/* WHY: Captures Maven's mediated dependency graph as detached values without changing it. */
+/* WHY: Captures Maven's mediated dependency graph as detached values without
+ * changing it. */
 
 package io.github.spockz.elider.plugin;
 

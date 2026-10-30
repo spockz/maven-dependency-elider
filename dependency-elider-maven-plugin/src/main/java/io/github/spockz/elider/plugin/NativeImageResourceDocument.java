@@ -1,4 +1,5 @@
-/* WHY: Validates native-image resource JSON while extracting conditional class roots. */
+/* WHY: Validates native-image resource JSON while extracting conditional
+ * class roots. */
 
 package io.github.spockz.elider.plugin;
 

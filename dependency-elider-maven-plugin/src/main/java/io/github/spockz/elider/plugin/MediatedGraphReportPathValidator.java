@@ -1,4 +1,5 @@
-/* WHY: Verifies each persisted path uses reachable nodes and real captured edges. */
+/* WHY: Verifies each persisted path uses reachable nodes and real captured
+ * edges. */
 
 package io.github.spockz.elider.plugin;
 

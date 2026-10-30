@@ -1,4 +1,5 @@
-/* WHY: Stores occurrence-aware mediated paths with the elision outcomes used to publish them. */
+/* WHY: Stores occurrence-aware mediated paths with the elision outcomes used
+ * to publish them. */
 
 package io.github.spockz.elider.plugin;
 

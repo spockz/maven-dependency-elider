@@ -1,4 +1,5 @@
-/* WHY: Captures retained artifacts for the shared output and proof inventory. */
+/* WHY: Captures retained artifacts for the shared output and proof
+ * inventory. */
 
 package io.github.spockz.elider.plugin;
 
@@ -26,11 +27,12 @@ final class MavenPreconditionArtifactInventory {
   private MavenPreconditionArtifactInventory() {}
 
   static List<ArtifactFileRef> capture(
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final boolean strict)
       throws IOException {
-    final Map<ArtifactCoordinate, Path> trimmedPaths = trimmedPaths(analysis.trimRecords(), strict);
+    final Map<ArtifactCoordinate, Path> trimmedPaths =
+        trimmedPaths(analysis.trimResult().records(), strict);
     final List<ArtifactFileRef> files = new ArrayList<>();
     for (final Artifact artifact : plan.resolvedArtifacts()) {
       final ArtifactFileRef file = captureArtifact(artifact, trimmedPaths, strict);
@@ -105,7 +107,7 @@ final class MavenPreconditionArtifactInventory {
       }
       return null;
     }
-    final ArtifactCoordinate coordinate = MavenElisionService.toCoordinate(artifact);
+    final ArtifactCoordinate coordinate = MavenArtifactInventory.toCoordinate(artifact);
     final Path path = trimmedPaths.getOrDefault(coordinate, currentFile.toPath());
     return ArtifactFileRef.fromPath(coordinate, strict ? canonicalRegularFile(path) : path);
   }

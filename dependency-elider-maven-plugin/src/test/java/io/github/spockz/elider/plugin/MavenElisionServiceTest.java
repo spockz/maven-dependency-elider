@@ -54,11 +54,14 @@ final class MavenElisionServiceTest {
     final Artifact first = artifact("first", "compile");
     final Artifact second = artifact("second", "compile");
     final Set<Artifact> ordered = new LinkedHashSet<>(List.of(first, second));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            MavenElisionService.snapshots(ordered), false, List.of(), decision(Set.of(), Set.of()));
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(ordered), false, List.of()),
+            decision(Set.of(), Set.of()));
 
-    assertThat(new ArrayList<>(analysis.resolvedArtifacts())).containsExactly(first, second);
+    assertThat(new ArrayList<>(analysis.artifacts().resolvedArtifacts()))
+        .containsExactly(first, second);
   }
 
   @Test
@@ -72,8 +75,8 @@ final class MavenElisionServiceTest {
     final DependencyDynamicRoots.RootScan expectedScan =
         new DependencyDynamicRoots.RootScan(Set.of("library.Provider"), true);
 
-    final MavenElisionService.DynamicRootInputs inputs =
-        MavenElisionService.dynamicRoots(
+    final ElisionAnalysisModel.DynamicRootInputs inputs =
+        DynamicRootOrchestrator.dynamicRoots(
             candidates,
             path -> {
               scannedPaths.add(path);
@@ -90,18 +93,20 @@ final class MavenElisionServiceTest {
   void analysisSnapshotsAreOrderedImmutableAndDetachedFromSourceCollections() {
     final Artifact first = artifact("first", "compile");
     final Artifact second = artifact("second", "compile");
-    final List<MavenElisionService.ArtifactSnapshot> source =
-        new ArrayList<>(MavenElisionService.snapshots(List.of(first, second)));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(source, false, List.of(), decision(Set.of(), Set.of()));
+    final List<ElisionAnalysisModel.ArtifactSnapshot> source =
+        new ArrayList<>(MavenArtifactInventory.snapshots(List.of(first, second)));
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(source, false, List.of()),
+            decision(Set.of(), Set.of()));
     source.clear();
 
-    assertThat(analysis.resolvedSnapshots())
-        .extracting(MavenElisionService.ArtifactSnapshot::artifact)
+    assertThat(analysis.artifacts().resolvedSnapshots())
+        .extracting(ElisionAnalysisModel.ArtifactSnapshot::artifact)
         .containsExactly(first, second);
-    assertThatThrownBy(() -> analysis.resolvedSnapshots().clear())
+    assertThatThrownBy(() -> analysis.artifacts().resolvedSnapshots().clear())
         .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> analysis.resolvedArtifacts().clear())
+    assertThatThrownBy(() -> analysis.artifacts().resolvedArtifacts().clear())
         .isInstanceOf(UnsupportedOperationException.class);
   }
 
@@ -113,8 +118,8 @@ final class MavenElisionServiceTest {
     final Path dependencyPath = dependencyFile.toPath();
     final Path expectedPath = dependencyPath.toAbsolutePath().normalize();
 
-    final MavenElisionService.ArtifactSnapshot snapshot =
-        MavenElisionService.snapshots(List.of(dependency)).getFirst();
+    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
+        MavenArtifactInventory.snapshots(List.of(dependency)).getFirst();
 
     assertThat(snapshot.artifact()).isSameAs(dependency);
     assertThat(snapshot.coordinate()).isEqualTo(coordinate("runtime"));
@@ -127,8 +132,8 @@ final class MavenElisionServiceTest {
     final Artifact second = artifact("second", "compile");
     final Set<Artifact> source = new LinkedHashSet<>(List.of(first, second));
     final Set<Artifact> directSource = new LinkedHashSet<>(List.of(second));
-    final MavenElisionService.ApplyPlan plan =
-        new MavenElisionService.ApplyPlan(source, true, directSource);
+    final ElisionAnalysisModel.ApplyPlan plan =
+        new ElisionAnalysisModel.ApplyPlan(source, true, directSource);
     source.clear();
     directSource.clear();
 
@@ -144,10 +149,11 @@ final class MavenElisionServiceTest {
     final ArtifactCoordinate retained = coordinate("compile");
     final ArtifactCoordinate elided = coordinate("runtime");
     final ElisionDecision contradictory = decision(Set.of(retained), Set.of(elided));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(List.of(), false, List.of(), contradictory);
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(List.of(), false, List.of()), contradictory);
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(new MavenProject(), analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(new MavenProject(), analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Contradictory retained and elided artifact identities");
   }
@@ -172,14 +178,15 @@ final class MavenElisionServiceTest {
     final MavenProject project = new MavenProject();
     project.setArtifacts(new LinkedHashSet<>(List.of(resolved)));
     project.setDependencyArtifacts(new LinkedHashSet<>(List.of(direct, unrepresented)));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            MavenElisionService.snapshots(List.of(resolved)),
-            true,
-            MavenElisionService.snapshots(List.of(direct, unrepresented)),
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(List.of(resolved)),
+                true,
+                MavenArtifactInventory.snapshots(List.of(direct, unrepresented))),
             decision(Set.of(), Set.of(coordinate("compile"))));
 
-    final MavenElisionService.ApplyPlan plan = new MavenElisionService().plan(project, analysis);
+    final ElisionAnalysisModel.ApplyPlan plan = MavenArtifactInventory.plan(project, analysis);
 
     assertThat(plan.resolvedArtifacts()).isEmpty();
     assertThat(plan.directArtifactsPresent()).isTrue();
@@ -196,14 +203,15 @@ final class MavenElisionServiceTest {
     final MavenProject project = new MavenProject();
     project.setArtifacts(new LinkedHashSet<>(List.of(resolved)));
     project.setDependencyArtifacts(Set.of(direct));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            MavenElisionService.snapshots(List.of(resolved)),
-            true,
-            MavenElisionService.snapshots(List.of(direct)),
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(List.of(resolved)),
+                true,
+                MavenArtifactInventory.snapshots(List.of(direct))),
             decision(Set.of(coordinate("compile")), Set.of()));
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Conflicting direct artifact file");
     assertThat(project.getArtifacts()).containsExactly(resolved);
@@ -214,10 +222,10 @@ final class MavenElisionServiceTest {
   void planRejectsArtifactCoordinateChangesAfterAnalysis() throws Exception {
     final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
     final MavenProject project = projectWith(dependency, null);
-    final MavenElisionService.Analysis analysis = analyze(project, "coordinate.lst");
+    final ElisionAnalysisModel.Analysis analysis = analyze(project, "coordinate.lst");
     dependency.setVersion("2.0");
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("artifact coordinate changed after analysis");
     assertThat(project.getArtifacts()).containsExactly(dependency);
@@ -228,10 +236,10 @@ final class MavenElisionServiceTest {
   void planRejectsArtifactScopeChangesAfterAnalysis() throws Exception {
     final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
     final MavenProject project = projectWith(dependency, null);
-    final MavenElisionService.Analysis analysis = analyze(project, "scope.lst");
+    final ElisionAnalysisModel.Analysis analysis = analyze(project, "scope.lst");
     dependency.setScope("runtime");
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("artifact coordinate changed after analysis");
     assertThat(project.getArtifacts()).containsExactly(dependency);
@@ -241,12 +249,12 @@ final class MavenElisionServiceTest {
   void planRejectsArtifactReferenceReplacementAfterAnalysis() throws Exception {
     final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
     final MavenProject project = projectWith(dependency, null);
-    final MavenElisionService.Analysis analysis = analyze(project, "reference.lst");
+    final ElisionAnalysisModel.Analysis analysis = analyze(project, "reference.lst");
     final Artifact replacement = artifact("library", "compile");
     replacement.setFile(dependency.getFile());
     project.setArtifacts(new LinkedHashSet<>(List.of(replacement)));
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("artifact order or reference changed after analysis");
     assertThat(project.getArtifacts()).containsExactly(replacement);
@@ -256,10 +264,10 @@ final class MavenElisionServiceTest {
   void planRejectsArtifactPathChangesAfterAnalysis() throws Exception {
     final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
     final MavenProject project = projectWith(dependency, null);
-    final MavenElisionService.Analysis analysis = analyze(project, "path.lst");
+    final ElisionAnalysisModel.Analysis analysis = analyze(project, "path.lst");
     dependency.setFile(writeJar("changed.jar").toFile());
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("artifact file path changed after analysis");
     assertThat(project.getArtifacts()).containsExactly(dependency);
@@ -269,20 +277,20 @@ final class MavenElisionServiceTest {
   void servicePreservesAbsentAndEmptyDirectViewDistinction() throws Exception {
     final Artifact absentViewArtifact = resolvedArtifact("absent", "compile", "absent.jar");
     final MavenProject absentProject = projectWith(absentViewArtifact, null);
-    final MavenElisionService.Analysis absentAnalysis = analyze(absentProject, "absent.lst");
-    final MavenElisionService.ApplyPlan absentPlan =
-        new MavenElisionService().plan(absentProject, absentAnalysis);
+    final ElisionAnalysisModel.Analysis absentAnalysis = analyze(absentProject, "absent.lst");
+    final ElisionAnalysisModel.ApplyPlan absentPlan =
+        MavenArtifactInventory.plan(absentProject, absentAnalysis);
 
     final Artifact emptyViewArtifact = resolvedArtifact("empty", "compile", "empty.jar");
     final MavenProject emptyProject = projectWith(emptyViewArtifact, new LinkedHashSet<>());
-    final MavenElisionService.Analysis emptyAnalysis = analyze(emptyProject, "empty.lst");
-    final MavenElisionService.ApplyPlan emptyPlan =
-        new MavenElisionService().plan(emptyProject, emptyAnalysis);
+    final ElisionAnalysisModel.Analysis emptyAnalysis = analyze(emptyProject, "empty.lst");
+    final ElisionAnalysisModel.ApplyPlan emptyPlan =
+        MavenArtifactInventory.plan(emptyProject, emptyAnalysis);
 
-    assertThat(absentAnalysis.directArtifactsPresent()).isFalse();
+    assertThat(absentAnalysis.artifacts().directArtifactsPresent()).isFalse();
     assertThat(absentPlan.directArtifactsPresent()).isFalse();
     assertThat(absentPlan.directArtifacts()).isEmpty();
-    assertThat(emptyAnalysis.directArtifactsPresent()).isTrue();
+    assertThat(emptyAnalysis.artifacts().directArtifactsPresent()).isTrue();
     assertThat(emptyPlan.directArtifactsPresent()).isTrue();
     assertThat(emptyPlan.directArtifacts()).isEmpty();
   }
@@ -322,7 +330,7 @@ final class MavenElisionServiceTest {
     final Path trace = tempDir.resolve("generated-source-runtime.lst");
     Files.writeString(trace, "observed/RuntimeEntry\n");
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
 
     assertThat(Files.exists(generatedSources)).isFalse();
@@ -348,7 +356,7 @@ final class MavenElisionServiceTest {
     final Path trace = tempDir.resolve("empty-source-roots-runtime.lst");
     Files.writeString(trace, "observed/RuntimeEntry\n");
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
 
     assertThat(project.getCompileSourceRoots()).isEmpty();
@@ -393,7 +401,7 @@ final class MavenElisionServiceTest {
     final Path trace = tempDir.resolve("complete-source-runtime.lst");
     Files.writeString(trace, "observed/Entry\n");
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService()
             .analyze(project, List.of(trace.toFile()), List.of(), null, null, true);
 
@@ -481,27 +489,25 @@ final class MavenElisionServiceTest {
     final Path trace = tempDir.resolve("production-bytecode.lst");
     Files.writeString(trace, "observed/Entry\n");
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService()
             .analyze(
                 project,
-                new MavenElisionService.AnalysisOptions(
+                new ElisionAnalysisModel.AnalysisOptions(
                     List.of(trace.toFile()),
                     List.of(),
                     output.toFile(),
                     null,
-                    false,
-                    false,
-                    List.of(),
-                    false,
-                    List.of(),
-                    false,
-                    true,
-                    true,
-                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-                    true,
-                    false));
+                    new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+                    new ElisionAnalysisModel.TrimOptions(
+                        false,
+                        List.of(),
+                        false,
+                        List.of(),
+                        false,
+                        MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                        MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                    new ElisionAnalysisModel.DynamicRootOptions(true, List.of(), true)));
 
     assertThat(analysis.decision().retainedArtifacts())
         .containsExactlyInAnyOrder(
@@ -515,12 +521,12 @@ final class MavenElisionServiceTest {
   @DisplayName("ADR-0010/post-compile source-bytecode union retains inlined constant owners")
   void inlinedConstantOwnerIsRetainedForArtifactAndJarTrimming() throws Exception {
     final ConstantFixture fixture = constantFixture("inlined-constant");
-    final MavenElisionService.Analysis artifactAnalysis =
+    final ElisionAnalysisModel.Analysis artifactAnalysis =
         new MavenElisionService().analyze(fixture.project(), postCompileOptions(fixture, false));
 
-    assertThat(artifactAnalysis.bytecodeScan().orElseThrow().referencedClasses())
+    assertThat(artifactAnalysis.evidence().bytecodeScan().orElseThrow().referencedClasses())
         .doesNotContain("library.Constants");
-    assertThat(artifactAnalysis.classUsageReport().classes())
+    assertThat(artifactAnalysis.evidence().classUsageReport().classes())
         .anySatisfy(
             usage -> {
               assertThat(usage.className()).isEqualTo("library.Constants");
@@ -537,10 +543,10 @@ final class MavenElisionServiceTest {
         .contains("library.Constants")
         .doesNotContain("library.Dead");
 
-    final MavenElisionService.Analysis trimAnalysis =
+    final ElisionAnalysisModel.Analysis trimAnalysis =
         new MavenElisionService().analyze(fixture.project(), postCompileOptions(fixture, true));
 
-    assertThat(trimAnalysis.trimRecords())
+    assertThat(trimAnalysis.trimResult().records())
         .anySatisfy(
             record -> {
               assertThat(record.coordinate())
@@ -548,16 +554,16 @@ final class MavenElisionServiceTest {
               assertThat(record.totalClasses()).isEqualTo(2);
               assertThat(record.retainedClasses()).isEqualTo(1);
             });
-    assertThat(trimAnalysis.sourceAttributionFallback()).isNull();
+    assertThat(trimAnalysis.evidence().sourceAttributionFallback()).isNull();
 
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis sourcePrepared =
+    final ElisionAnalysisModel.PreparedAnalysis sourcePrepared =
         service.prepare(fixture.project(), postCompileOptions(fixture, false));
     Files.writeString(
         fixture.source(),
         "package app; public final class Consumer { "
             + "String value = \"constant\"; generated.Model model; }\n");
-    final MavenElisionService.PreparedAnalysis bytecodeOnlyPrepared =
+    final ElisionAnalysisModel.PreparedAnalysis bytecodeOnlyPrepared =
         service.prepare(fixture.project(), postCompileOptions(fixture, false));
     assertThat(bytecodeOnlyPrepared.graphBinding().operationFingerprint())
         .isNotEqualTo(sourcePrepared.graphBinding().operationFingerprint());
@@ -601,31 +607,27 @@ final class MavenElisionServiceTest {
     project.addCompileSourceRoot(sourceRoot.toString());
     final Path trace = tempDir.resolve("fallback-runtime.lst");
     Files.writeString(trace, "observed/Entry\n");
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(trace.toFile()),
             List.of(),
             output.toFile(),
             null,
-            false,
-            true,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true,
-            true,
-            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-            List.of(),
-            true,
-            true,
-            false);
+            new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                true,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true, List.of(), true));
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService().analyze(project, options);
 
-    assertThat(analysis.sourceAttributionFallback())
+    assertThat(analysis.evidence().sourceAttributionFallback())
         .contains("Cannot resolve production source references");
     assertThat(analysis.decision().retainedArtifacts())
         .contains(
@@ -713,27 +715,23 @@ final class MavenElisionServiceTest {
     return new ConstantFixture(project, output, trace, source);
   }
 
-  private static MavenElisionService.AnalysisOptions postCompileOptions(
+  private static ElisionAnalysisModel.AnalysisOptions postCompileOptions(
       final ConstantFixture fixture, final boolean trimJars) {
-    return new MavenElisionService.AnalysisOptions(
+    return new ElisionAnalysisModel.AnalysisOptions(
         List.of(fixture.trace().toFile()),
         List.of(),
         fixture.output().toFile(),
         null,
-        false,
-        trimJars,
-        List.of(),
-        false,
-        List.of(),
-        false,
-        true,
-        true,
-        MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-        MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-        List.of(),
-        true,
-        true,
-        false);
+        new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+        new ElisionAnalysisModel.TrimOptions(
+            trimJars,
+            List.of(),
+            false,
+            List.of(),
+            false,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+        new ElisionAnalysisModel.DynamicRootOptions(true, List.of(), true));
   }
 
   private static byte[] emptyClass(final String internalName) {
@@ -754,24 +752,22 @@ final class MavenElisionServiceTest {
   @Test
   @DisplayName("ADR-0010/source and bytecode completeness assertions are mutually exclusive")
   void completenessAssertionsAreMutuallyExclusive() {
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(),
             List.of(),
             null,
             null,
-            true,
-            false,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true,
-            true,
-            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-            true,
-            false);
+            new ElisionAnalysisModel.CompletenessOptions(true, true, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                false,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true, List.of(), true));
 
     assertThatThrownBy(() -> new MavenElisionService().prepare(new MavenProject(), options))
         .isInstanceOf(IOException.class)
@@ -803,24 +799,22 @@ final class MavenElisionServiceTest {
     project.getBuild().addPlugin(compiler);
     final Path trace = tempDir.resolve("source-processor.lst");
     Files.writeString(trace, "library/Observed\n");
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(trace.toFile()),
             List.of(),
             null,
             null,
-            true,
-            false,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true,
-            true,
-            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-            false,
-            false);
+            new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                false,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true, List.of(), true));
 
     assertThatThrownBy(() -> new MavenElisionService().analyze(project, options))
         .isInstanceOf(IOException.class)
@@ -840,23 +834,21 @@ final class MavenElisionServiceTest {
                 new MavenElisionService()
                     .analyze(
                         project,
-                        new MavenElisionService.AnalysisOptions(
+                        new ElisionAnalysisModel.AnalysisOptions(
                             List.of(trace.toFile()),
                             List.of(),
                             output.toFile(),
                             null,
-                            false,
-                            false,
-                            List.of(),
-                            false,
-                            List.of(),
-                            false,
-                            true,
-                            true,
-                            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-                            true,
-                            false)))
+                            new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+                            new ElisionAnalysisModel.TrimOptions(
+                                false,
+                                List.of(),
+                                false,
+                                List.of(),
+                                false,
+                                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                            new ElisionAnalysisModel.DynamicRootOptions(true, List.of(), true))))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("requires compiled production class files");
   }
@@ -868,14 +860,15 @@ final class MavenElisionServiceTest {
     final Artifact secondDirect = resolvedArtifact("library", "test", "direct-b.jar");
     final Set<Artifact> direct = identitySet(firstDirect, secondDirect);
     final MavenProject project = projectWith(resolved, direct);
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            MavenElisionService.snapshots(List.of(resolved)),
-            true,
-            MavenElisionService.snapshots(direct),
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(List.of(resolved)),
+                true,
+                MavenArtifactInventory.snapshots(direct)),
             decision(Set.of(coordinate("compile")), Set.of()));
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Conflicting files for artifact identity");
     assertThat(project.getArtifacts()).containsExactly(resolved);
@@ -963,7 +956,7 @@ final class MavenElisionServiceTest {
     return project;
   }
 
-  private MavenElisionService.Analysis analyze(final MavenProject project, final String traceName)
+  private ElisionAnalysisModel.Analysis analyze(final MavenProject project, final String traceName)
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     final Path trace = tempDir.resolve(traceName);
     Files.writeString(trace, "library/Unused\n");

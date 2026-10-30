@@ -42,7 +42,7 @@ final class MavenElisionServiceEffectiveOutputTest
     final Fixture fixture = fixture(false);
     final Path trace = trace(temporaryDirectory, ENTRY_TRACE);
     final ServiceOperation operation = operation(fixture, trace, null);
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
     assertThat(effective.prepared().rawDecision()).isEqualTo(operation.prepared().rawDecision());
     assertThat(effective.forcedUnchangedCoordinates())
@@ -52,8 +52,7 @@ final class MavenElisionServiceEffectiveOutputTest
     final String unchangedDigest = ArtifactDigests.read(fixture.snapshot("b").filePath()).sha256();
     assertThat(fixture.mavenProject().getDependencyArtifacts()).isNull();
 
-    final MavenDependencyTrimmer.TrimResult cold =
-        MavenDependencyTrimmer.trimEffectiveOutputs(effective);
+    final TrimResult cold = MavenDependencyTrimmer.trimEffectiveOutputs(effective);
     assertThat(effective.rawDecision().retainedClassesPerArtifact().get(fixture.coordinate("a")))
         .contains("closure.a.Entry");
     final ArtifactTrimRecord coldRecord = record(cold.records(), fixture.coordinate("a"));
@@ -88,7 +87,7 @@ final class MavenElisionServiceEffectiveOutputTest
           .isEqualTo(FIXTURE_RESOURCE_CONTENT);
     }
 
-    final MavenDependencyTrimmer.TrimResult warm =
+    final TrimResult warm =
         MavenDependencyTrimmer.trimEffectiveOutputs(
             operation.service().finishAnalysis(operation.prepared()));
     final ArtifactTrimRecord warmRecord = record(warm.records(), fixture.coordinate("a"));
@@ -103,12 +102,12 @@ final class MavenElisionServiceEffectiveOutputTest
     final Fixture fixture = fixture(false);
     final ServiceOperation firstOperation =
         operation(fixture, trace(temporaryDirectory.resolve("entry"), ENTRY_TRACE), null);
-    final MavenDependencyTrimmer.TrimResult first = trimEffective(firstOperation);
+    final TrimResult first = trimEffective(firstOperation);
     final ArtifactTrimRecord firstRecord = record(first.records(), fixture.coordinate("a"));
 
     final ServiceOperation secondOperation =
         operation(fixture, trace(temporaryDirectory.resolve("extra"), "closure/a/Extra"), null);
-    final MavenDependencyTrimmer.TrimResult second = trimEffective(secondOperation);
+    final TrimResult second = trimEffective(secondOperation);
     final ArtifactTrimRecord secondRecord = record(second.records(), fixture.coordinate("a"));
 
     assertThat(second.cacheHits()).isZero();
@@ -126,7 +125,7 @@ final class MavenElisionServiceEffectiveOutputTest
     final Path production = Files.createDirectories(temporaryDirectory.resolve("production"));
     compileProductionClass(production, 1);
     final ServiceOperation firstOperation = operation(fixture, trace, production.toFile());
-    final MavenDependencyTrimmer.TrimResult first = trimEffective(firstOperation);
+    final TrimResult first = trimEffective(firstOperation);
     final ArtifactTrimRecord firstRecord = record(first.records(), fixture.coordinate("a"));
     final java.util.Set<String> firstReferences =
         java.util.Set.copyOf(
@@ -135,7 +134,7 @@ final class MavenElisionServiceEffectiveOutputTest
 
     compileProductionClass(production, 2);
     final ServiceOperation secondOperation = operation(fixture, trace, production.toFile());
-    final MavenDependencyTrimmer.TrimResult second = trimEffective(secondOperation);
+    final TrimResult second = trimEffective(secondOperation);
     final ArtifactTrimRecord secondRecord = record(second.records(), fixture.coordinate("a"));
 
     assertThat(secondOperation.prepared().bytecodeScan().orElseThrow().referencedClasses())
@@ -153,7 +152,7 @@ final class MavenElisionServiceEffectiveOutputTest
         operation(fixture, trace(temporaryDirectory, ENTRY_TRACE), null, false);
     final List<String> before = sourceDigests(fixture);
 
-    final MavenDependencyTrimmer.TrimResult result = trimEffective(operation);
+    final TrimResult result = trimEffective(operation);
 
     assertThat(result.records()).isEmpty();
     assertThat(sourceDigests(fixture)).isEqualTo(before);
@@ -175,14 +174,14 @@ final class MavenElisionServiceEffectiveOutputTest
             null,
             List.of("fixture:b:1.0:jar"),
             true);
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
     assertThat(effective.rawDecision().retainedArtifacts()).contains(fixture.coordinate("b"));
     assertThat(effective.effectiveDecision().retainedArtifacts()).contains(fixture.coordinate("b"));
     final Path source = fixture.snapshot("b").filePath();
     final String sourceDigest = ArtifactDigests.read(source).sha256();
 
-    final MavenDependencyTrimmer.TrimResult result = trimEffective(operation);
+    final TrimResult result = trimEffective(operation);
 
     assertThat(result.records())
         .extracting(ArtifactTrimRecord::coordinate)
@@ -209,7 +208,7 @@ final class MavenElisionServiceEffectiveOutputTest
     build.setDirectory("relative-build-output");
     project.setBuild(build);
 
-    assertThat(MavenDependencyTrimmer.generationPath(project, "fingerprint")).isAbsolute();
+    assertThat(TrimPaths.generationPath(project, "fingerprint")).isAbsolute();
   }
 
   private static ArtifactTrimRecord record(
@@ -222,7 +221,7 @@ final class MavenElisionServiceEffectiveOutputTest
 
   private static List<String> sourceDigests(final Fixture fixture) throws IOException {
     final List<String> digests = new java.util.ArrayList<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : fixture.allSnapshots()) {
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : fixture.allSnapshots()) {
       digests.add(ArtifactDigests.read(snapshot.filePath()).sha256());
     }
     return List.copyOf(digests);

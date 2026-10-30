@@ -427,7 +427,7 @@ final class AnalyzeMojoTest {
             null,
             new DefaultArtifactHandler("pom"));
 
-    assertThat(MavenElisionService.isJarCandidate(pom)).isFalse();
+    assertThat(MavenArtifactInventory.isJarCandidate(pom)).isFalse();
   }
 
   @Test
@@ -442,7 +442,7 @@ final class AnalyzeMojoTest {
             null,
             new DefaultArtifactHandler("jar"));
 
-    assertThatThrownBy(() -> MavenElisionService.isJarCandidate(jar))
+    assertThatThrownBy(() -> MavenArtifactInventory.isJarCandidate(jar))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Resolved artifact has no regular file");
   }

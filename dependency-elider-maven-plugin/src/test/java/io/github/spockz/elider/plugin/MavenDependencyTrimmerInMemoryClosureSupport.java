@@ -251,13 +251,13 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
   @SuppressWarnings("PMD.CouplingBetweenObjects")
   protected final class Fixture {
     /** Full resolved Maven artifact inventory. */
-    final List<MavenElisionService.ArtifactSnapshot> snapshots;
+    final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots;
 
     /** Project associated with the inventory. */
     final MavenProject project;
 
     /** Pre-scanned complete JAR inventory. */
-    final MavenDependencyTrimmer.ScanInputs scanInputs;
+    final TrimScanInputs scanInputs;
 
     /** Mutable Maven artifact objects owned by the project fixture. */
     final List<Artifact> projectArtifacts;
@@ -278,7 +278,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final Artifact fifthArtifact = artifact("e", fifthArtifactPath, RUNTIME_SCOPE);
       projectArtifacts =
           List.of(firstArtifact, secondArtifact, thirdArtifact, fourthArtifact, fifthArtifact);
-      snapshots = MavenElisionService.snapshots(projectArtifacts);
+      snapshots = MavenArtifactInventory.snapshots(projectArtifacts);
       project = new MavenProject();
       project.setArtifacts(Set.copyOf(projectArtifacts));
       project.setGroupId(GROUP_ID);
@@ -290,7 +290,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       build.setDirectory(temporaryDirectory.resolve("build").toString());
       project.setBuild(build);
       final List<ArtifactFileRef> refs = new ArrayList<>();
-      for (final MavenElisionService.ArtifactSnapshot snapshot : snapshots) {
+      for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : snapshots) {
         refs.add(ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath()));
       }
       final ArtifactClassIndex index = new JarIndexScanner().scan(refs);
@@ -298,24 +298,24 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
           snapshots.stream()
               .collect(
                   java.util.stream.Collectors.toMap(
-                      MavenElisionService.ArtifactSnapshot::filePath, ignored -> EMPTY_ROOT_SCAN));
-      scanInputs = new MavenDependencyTrimmer.ScanInputs(index, dynamic);
+                      ElisionAnalysisModel.ArtifactSnapshot::filePath, ignored -> EMPTY_ROOT_SCAN));
+      scanInputs = new TrimScanInputs(index, dynamic);
     }
 
     /** Strictly analyzes the complete candidate archive inventory. */
-    MavenDependencyTrimmer.InMemoryAnalysis analyze(
+    TrimAnalysisResult analyze(
         final Set<ArtifactCoordinate> retained,
         final Set<ArtifactCoordinate> unchanged,
-        final Map<MavenDependencyTrimmer.ArtifactRootKey, Set<String>> roots)
+        final Map<TrimArtifactRootKey, Set<String>> roots)
         throws IOException, org.apache.maven.plugin.MojoFailureException {
       return analyze(retained, unchanged, roots, Map.of(), List.of());
     }
 
     /** Attaches dynamic roots to each candidate archive before strict analysis. */
-    MavenDependencyTrimmer.InMemoryAnalysis analyze(
+    TrimAnalysisResult analyze(
         final Set<ArtifactCoordinate> retained,
         final Set<ArtifactCoordinate> unchanged,
-        final Map<MavenDependencyTrimmer.ArtifactRootKey, Set<String>> roots,
+        final Map<TrimArtifactRootKey, Set<String>> roots,
         final Map<Path, Set<String>> dynamicRoots,
         final List<String> passThroughCoordinates)
         throws IOException, org.apache.maven.plugin.MojoFailureException {
@@ -330,20 +330,15 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
                                   snapshot.filePath().toAbsolutePath().normalize(), Set.of()),
                               true)));
       return MavenDependencyTrimmer.analyzeInMemory(
-          new MavenDependencyTrimmer.TrimRequest(
+          new TrimRequest(
               project,
               null,
               snapshots,
-              new MavenDependencyTrimmer.ScanInputs(scanInputs.classIndex(), scans),
+              new TrimScanInputs(scanInputs.classIndex(), scans),
               retained,
-              TraceData.of(Set.of("closure.a.Entry")),
-              Set.of(),
-              Set.of(),
-              Set.of(),
-              List.of(),
-              false,
-              passThroughCoordinates,
-              false),
+              new TrimEvidence(
+                  TraceData.of(Set.of("closure.a.Entry")), Set.of(), Set.of(), Set.of()),
+              new TrimPolicy(List.of(), false, passThroughCoordinates, false)),
           roots,
           unchanged);
     }
@@ -352,7 +347,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       return project;
     }
 
-    List<MavenElisionService.ArtifactSnapshot> allSnapshots() {
+    List<ElisionAnalysisModel.ArtifactSnapshot> allSnapshots() {
       return snapshots;
     }
 
@@ -406,7 +401,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       return projectArtifacts;
     }
 
-    MavenElisionService.ArtifactSnapshot snapshot(final String artifactId) {
+    ElisionAnalysisModel.ArtifactSnapshot snapshot(final String artifactId) {
       return snapshots.stream()
           .filter(snapshot -> snapshot.coordinate().artifactId().equals(artifactId))
           .findFirst()

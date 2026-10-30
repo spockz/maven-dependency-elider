@@ -73,14 +73,14 @@ final class ElisionSummary {
 
   /** Reports artifacts this nonmutating analysis predicts would be elided. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static void reportAnalysis(final Log log, final MavenElisionService.Analysis analysis)
+  static void reportAnalysis(final Log log, final ElisionAnalysisModel.Analysis analysis)
       throws IOException {
     reportAnalysis(log, analysis, null, false);
   }
 
   static void reportAnalysis(
       final Log log,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.Analysis analysis,
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment,
       final boolean trimJars)
       throws IOException {
@@ -90,7 +90,7 @@ final class ElisionSummary {
     }
     final MavenElisionReportSnapshot.DroppedArtifactSummary droppedArtifacts =
         MavenElisionReportSnapshot.droppedArtifactSummary(analysis);
-    final int inputCount = analysis.resolvedSnapshots().size();
+    final int inputCount = analysis.artifacts().resolvedSnapshots().size();
     final int elidedCount = droppedArtifacts.artifacts().size();
     final String percentage =
         inputCount == 0
@@ -124,14 +124,14 @@ final class ElisionSummary {
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static void reportTrimmed(
       final Log log,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.Analysis analysis,
       final MavenElisionReportSnapshot reportSnapshot,
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment) {
     reportSourceAttributionFallback(log, analysis);
     if (!log.isInfoEnabled()) {
       return;
     }
-    reportHeader(log, analysis.decision(), analysis.resolvedSnapshots().size());
+    reportHeader(log, analysis.decision(), analysis.artifacts().resolvedSnapshots().size());
     log.info(
         "  Program classes pruned from retained JARs: "
             + reportSnapshot.programClassesPruned()
@@ -169,7 +169,7 @@ final class ElisionSummary {
   }
 
   private static void reportTrimCache(
-      final Log log, final MavenElisionService.Analysis analysis, final boolean trimJars) {
+      final Log log, final ElisionAnalysisModel.Analysis analysis, final boolean trimJars) {
     if (!log.isInfoEnabled()) {
       return;
     }
@@ -179,22 +179,22 @@ final class ElisionSummary {
     }
     final String cacheMessage =
         "  JAR trim cache: "
-            + analysis.trimCacheHits()
+            + analysis.trimResult().cacheHits()
             + " validated hit(s), "
-            + analysis.trimAnalysisRuns()
+            + analysis.trimResult().analysisRuns()
             + " analysis run(s)";
     log.info(
-        analysis.trimCacheHits() == 0
+        analysis.trimResult().cacheHits() == 0
             ? cacheMessage
             : cacheMessage
                 + "; maximum validated hit "
-                + analysis.maximumTrimCacheHitNanos() / 1_000_000.0
+                + analysis.trimResult().maximumCacheHitNanos() / 1_000_000.0
                 + " ms");
   }
 
   private static void reportSourceAttributionFallback(
-      final Log log, final MavenElisionService.Analysis analysis) {
-    final String fallback = analysis.sourceAttributionFallback();
+      final Log log, final ElisionAnalysisModel.Analysis analysis) {
+    final String fallback = analysis.evidence().sourceAttributionFallback();
     if (fallback != null) {
       log.warn(
           "Post-compile source attribution used conservative fallback; all compile-visible "

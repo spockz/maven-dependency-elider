@@ -1,4 +1,5 @@
-/* WHY: Selects a planless graph capture compatible with one Maven analysis operation. */
+/* WHY: Selects a planless graph capture compatible with one Maven analysis
+ * operation. */
 
 package io.github.spockz.elider.plugin;
 
@@ -25,8 +26,8 @@ final class MavenElisionGraphBinding {
 
   static Result bind(
       final MavenProject project,
-      final MavenElisionService.AnalysisOptions options,
-      final List<MavenElisionService.ArtifactSnapshot> inventory,
+      final ElisionAnalysisModel.AnalysisOptions options,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
       final ElisionDecision rawDecision,
       final TraceData trace,
       final Set<String> requiredRoots)
@@ -54,7 +55,7 @@ final class MavenElisionGraphBinding {
           operationFingerprint,
           "Resolved Maven inventory does not match the raw decision inventory");
     }
-    if (!options.testResolutionContext()) {
+    if (!options.completeness().testResolutionContext()) {
       return failClosed(
           projectKey,
           rawDecision,
@@ -104,7 +105,7 @@ final class MavenElisionGraphBinding {
   }
 
   static void verifyInventoryFingerprint(
-      final List<MavenElisionService.ArtifactSnapshot> inventory, final String expectedFingerprint)
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory, final String expectedFingerprint)
       throws IOException {
     ResolvedArtifactInventoryFingerprint.verifyFingerprint(inventory, expectedFingerprint);
   }
@@ -142,7 +143,7 @@ final class MavenElisionGraphBinding {
   }
 
   @SuppressWarnings("PMD.LawOfDemeter")
-  private static Object graphPayload(final MavenElisionService.AnalysisOptions options) {
+  private static Object graphPayload(final ElisionAnalysisModel.AnalysisOptions options) {
     final MavenSession session = options.session();
     if (session == null) {
       return null;
@@ -156,7 +157,7 @@ final class MavenElisionGraphBinding {
 
   private static String operationFingerprint(
       final MavenProject project,
-      final MavenElisionService.AnalysisOptions options,
+      final ElisionAnalysisModel.AnalysisOptions options,
       final String inventoryFingerprint,
       final TraceData trace,
       final Set<String> requiredRoots,
@@ -169,16 +170,16 @@ final class MavenElisionGraphBinding {
     fields.add("runtime-release=" + Runtime.version().feature());
     fields.add(
         "java-home=" + Path.of(System.getProperty("java.home")).toAbsolutePath().normalize());
-    fields.add(Boolean.toString(options.sourceRootsComplete()));
-    fields.add(Boolean.toString(options.productionClassesComplete()));
-    fields.add(Boolean.toString(options.trimJars()));
-    fields.add(options.mrjarStrategy());
-    fields.add(Boolean.toString(options.failOnUnsupportedModuleInfo()));
-    fields.add(Boolean.toString(options.failOnUnsupportedNativeImageArgs()));
-    fields.addAll(sorted(options.allowedNativeImageArgs()));
+    fields.add(Boolean.toString(options.completeness().sourceRootsComplete()));
+    fields.add(Boolean.toString(options.completeness().productionClassesComplete()));
+    fields.add(Boolean.toString(options.trim().enabled()));
+    fields.add(options.trim().mrjarStrategy());
+    fields.add(Boolean.toString(options.trim().failOnUnsupportedModuleInfo()));
+    fields.add(Boolean.toString(options.dynamicRoots().failOnUnsupportedNativeImageArgs()));
+    fields.addAll(sorted(options.dynamicRoots().allowedNativeImageArgs()));
     fields.addAll(sorted(options.excludedArtifacts()));
-    fields.addAll(sorted(options.explicitTrimRoots()));
-    fields.addAll(sorted(options.explicitPassThroughArtifacts()));
+    fields.addAll(sorted(options.trim().explicitRoots()));
+    fields.addAll(sorted(options.trim().passThroughArtifacts()));
     fields.addAll(sorted(trace.loadedClassesDotFormat()));
     fields.addAll(sorted(requiredRoots));
     fields.addAll(sorted(decision.retainedArtifacts().stream().map(Object::toString).toList()));

@@ -1,4 +1,5 @@
-/* WHY: Binds precondition evidence and SBOM writers to one post-elision inventory snapshot. */
+/* WHY: Binds precondition evidence and SBOM writers to one post-elision
+ * inventory snapshot. */
 
 package io.github.spockz.elider.plugin;
 
@@ -43,8 +44,8 @@ final class MavenPreconditionInventory {
     /** Rechecks captured roots and rejects provider or target drift. */
     void verifyFresh(
         final MavenProject project,
-        final MavenElisionService.ApplyPlan plan,
-        final MavenElisionService.Analysis analysis,
+        final ElisionAnalysisModel.ApplyPlan plan,
+        final ElisionAnalysisModel.Analysis analysis,
         final Collection<Path> actualStages)
         throws IOException {
       verifyFresh(project, null, plan, analysis, knownOutputs, actualStages);
@@ -54,8 +55,8 @@ final class MavenPreconditionInventory {
     void verifyFresh(
         final MavenProject project,
         final MavenSession session,
-        final MavenElisionService.ApplyPlan plan,
-        final MavenElisionService.Analysis analysis,
+        final ElisionAnalysisModel.ApplyPlan plan,
+        final ElisionAnalysisModel.Analysis analysis,
         final Collection<Path> actualStages)
         throws IOException {
       verifyFresh(project, session, plan, analysis, knownOutputs, actualStages);
@@ -64,8 +65,8 @@ final class MavenPreconditionInventory {
     /** Rejects target changes as well as provider-root, staging-path, and digest drift. */
     void verifyFresh(
         final MavenProject project,
-        final MavenElisionService.ApplyPlan plan,
-        final MavenElisionService.Analysis analysis,
+        final ElisionAnalysisModel.ApplyPlan plan,
+        final ElisionAnalysisModel.Analysis analysis,
         final Collection<Path> actualOutputs,
         final Collection<Path> actualStages)
         throws IOException {
@@ -76,8 +77,8 @@ final class MavenPreconditionInventory {
     void verifyFresh(
         final MavenProject project,
         final MavenSession session,
-        final MavenElisionService.ApplyPlan plan,
-        final MavenElisionService.Analysis analysis,
+        final ElisionAnalysisModel.ApplyPlan plan,
+        final ElisionAnalysisModel.Analysis analysis,
         final Collection<Path> actualOutputs,
         final Collection<Path> actualStages)
         throws IOException {
@@ -92,7 +93,7 @@ final class MavenPreconditionInventory {
       if (!knownStages.containsAll(stages)) {
         throw new IOException("Unreserved precondition output staging path");
       }
-      MavenElisionService.verifyCurrentViews(project, analysis);
+      MavenArtifactInventory.verifyCurrentViews(project, analysis);
       MavenPreconditionStages.validateExpected(knownStages, stages);
       final Snapshot current =
           captureInternal(project, session, plan, analysis, true, knownOutputs, knownStages);
@@ -115,8 +116,8 @@ final class MavenPreconditionInventory {
   /** Captures declared providers and retained artifact files. */
   static Snapshot capture(
       final MavenProject project,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final boolean optIn,
       final Collection<Path> knownOutputs)
       throws IOException {
@@ -127,8 +128,8 @@ final class MavenPreconditionInventory {
   static Snapshot capture(
       final MavenProject project,
       final MavenSession session,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final boolean optIn,
       final Collection<Path> knownOutputs)
       throws IOException {
@@ -138,8 +139,8 @@ final class MavenPreconditionInventory {
   /** Captures the inventory while binding the transaction's exact staging paths. */
   static Snapshot capture(
       final MavenProject project,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final boolean optIn,
       final Collection<Path> knownOutputs,
       final Collection<Path> knownStages)
@@ -151,8 +152,8 @@ final class MavenPreconditionInventory {
   static Snapshot capture(
       final MavenProject project,
       final MavenSession session,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final boolean optIn,
       final Collection<Path> knownOutputs,
       final Collection<Path> knownStages)
@@ -163,8 +164,8 @@ final class MavenPreconditionInventory {
   private static Snapshot captureInternal(
       final MavenProject project,
       final MavenSession session,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final boolean optIn,
       final Collection<Path> knownOutputs,
       final Collection<Path> knownStages)
@@ -183,7 +184,7 @@ final class MavenPreconditionInventory {
     }
     try {
       MavenCompilerGenerationGuard.requireSafeCompilerConfiguration(
-          project, session, analysis.trustedProcessClassesContext());
+          project, session, analysis.evidence().trustedProcessClassesContext());
       final List<ArtifactFileRef> verifiedArtifactFiles =
           MavenPreconditionArtifactInventory.capture(plan, analysis, true);
       MavenPreconditionStages.validateIfPresent(stages);

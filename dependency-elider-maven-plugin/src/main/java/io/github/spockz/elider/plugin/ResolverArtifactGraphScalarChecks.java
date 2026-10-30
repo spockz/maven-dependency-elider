@@ -1,4 +1,5 @@
-/* WHY: Keeps scalar field validation separate from graph object and topology checks. */
+/* WHY: Keeps scalar field validation separate from graph object and topology
+ * checks. */
 
 package io.github.spockz.elider.plugin;
 

@@ -30,6 +30,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -102,7 +103,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final Path affectedTwoJar = writeJar("affected-2.0.jar");
     final VulnerabilitySymbolMapping mapping =
         mapping(affectedOne, EXACT_VERSION_RANGE, Set.of(), ConfidenceLevel.HIGH);
-    final MavenElisionService.Analysis analysis = analysis(List.of(affectedOne, affectedTwo));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affectedOne, affectedTwo));
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(
             Provider.dependencyArchive(affectedOne, affectedOneJar),
@@ -144,7 +145,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         ArtifactCoordinate.of("org.example", "prerequisite", "9.7");
     final Path affectedJar = writeJar("affected.jar");
     final Path prerequisiteJar = writeJar("prerequisite-9.7.jar");
-    final MavenElisionService.Analysis analysis = analysis(List.of(affected, prerequisite));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected, prerequisite));
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(
             Provider.dependencyArchive(affected, affectedJar),
@@ -196,7 +197,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         inventory(incompleteClassProviders, affectedProvider);
     final MavenPreconditionInventory.Snapshot disabled =
         inventory(incompleteClassProviders, false, affectedProvider);
-    final MavenElisionService.Analysis analysis = analysis(List.of(affected));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected));
     final List<VulnerabilitySymbolMapping> mappings =
         List.of(mapping(affected, EXACT_VERSION_RANGE, Set.of(), ConfidenceLevel.HIGH));
     final RecordingMavenLog log = new RecordingMavenLog();
@@ -227,7 +228,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final Path affectedJar = writeJar("affected-confidence.jar");
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(Provider.dependencyArchive(affected, affectedJar));
-    final MavenElisionService.Analysis analysis = analysis(List.of(affected));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected));
 
     for (final ConfidenceLevel confidence : List.of(ConfidenceLevel.LOW, ConfidenceLevel.MEDIUM)) {
       final MavenVulnerabilityAssessment.Result result =
@@ -249,7 +250,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final Path affectedJar = writeJar("affected-override.jar");
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(Provider.dependencyArchive(affected, affectedJar));
-    final MavenElisionService.Analysis analysis = analysis(List.of(affected));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected));
     final VulnerabilitySymbolMapping cachedHigh =
         mapping(affected, EXACT_VERSION_RANGE, Set.of(), ConfidenceLevel.HIGH);
     final VulnerabilitySymbolMapping pomOverride =
@@ -279,7 +280,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final Path originalJar = writeJar("affected-original.jar", "org/example/Vulnerable.class");
     final Path trimmedJar = writeJar("affected-trimmed.jar");
     final ArtifactTrimRecord trimRecord = trimRecord(trimCoordinate, originalJar, trimmedJar);
-    final MavenElisionService.Analysis analysis = analysis(List.of(affected), List.of(trimRecord));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected), List.of(trimRecord));
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(Provider.dependencyArchive(affected, trimmedJar));
     final VulnerabilitySymbolMapping mapping =
@@ -307,7 +308,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, OVERLAP_MAPPING_VERSION);
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(Provider.dependencyArchive(candidate, writeJar("overlap-candidate.jar")));
-    final MavenElisionService.Analysis analysis = analysis(List.of(candidate));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(candidate));
     final VulnerabilitySymbolMapping first =
         mapping(firstMappingCoordinate, FIRST_OVERLAP_RANGE, Set.of(), ConfidenceLevel.HIGH);
     final VulnerabilitySymbolMapping second =
@@ -340,7 +341,8 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final Path originalJar = writeJar("conflict-original.jar", "org/example/Vulnerable.class");
     final Path trimmedJar = writeJar("conflict-trimmed.jar");
     final ArtifactTrimRecord trimRecord = trimRecord(candidate, originalJar, trimmedJar);
-    final MavenElisionService.Analysis analysis = analysis(List.of(candidate), List.of(trimRecord));
+    final ElisionAnalysisModel.Analysis analysis =
+        analysis(List.of(candidate), List.of(trimRecord));
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(Provider.dependencyArchive(candidate, trimmedJar));
     final VulnerabilitySymbolMapping first =
@@ -387,7 +389,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(
             Provider.dependencyArchive(candidate, writeJar("conflicting-variant.jar")));
-    final MavenElisionService.Analysis analysis = analysis(List.of(candidate));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(candidate));
     final VulnerabilitySymbolMapping high =
         mapping(firstMappingCoordinate, FIRST_OVERLAP_RANGE, Set.of(), ConfidenceLevel.HIGH);
     final VulnerabilitySymbolMapping low =
@@ -422,7 +424,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(
             Provider.dependencyArchive(candidate, writeJar("same-key-candidate.jar")));
-    final MavenElisionService.Analysis analysis = analysis(List.of(candidate));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(candidate));
     final VulnerabilitySymbolMapping first =
         mappingWithPrerequisites(
             mappingCoordinate,
@@ -457,7 +459,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
     final ArtifactCoordinate secondMappingCoordinate =
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, OVERLAP_MAPPING_VERSION);
-    final MavenElisionService.Analysis analysis = analysis(List.of(), List.of(removed), List.of());
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(), List.of(removed), List.of());
     final VulnerabilitySymbolMapping first =
         mappingWithPrerequisites(
             firstMappingCoordinate,
@@ -488,7 +490,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(Provider.dependencyArchive(affected, writeJar("duplicate-map.jar")));
-    final MavenElisionService.Analysis analysis = analysis(List.of(affected));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected));
     final VulnerabilitySymbolMapping duplicate =
         mapping(affected, EXACT_VERSION_RANGE, Set.of(), ConfidenceLevel.HIGH);
 
@@ -508,7 +510,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final Path originalJar = writeJar("conservative-original.jar", "org/example/Present.class");
     final Path trimmedJar = writeJar("conservative-trimmed.jar");
     final ArtifactTrimRecord trimRecord = trimRecord(affected, originalJar, trimmedJar);
-    final MavenElisionService.Analysis analysis = analysis(List.of(affected), List.of(trimRecord));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected), List.of(trimRecord));
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(Provider.dependencyArchive(affected, trimmedJar));
     final VulnerabilitySymbolMapping mapping =
@@ -532,7 +534,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
   }
 
   private MavenVulnerabilityAssessment.Result assess(
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.Analysis analysis,
       final MavenPreconditionInventory.Snapshot inventory,
       final List<VulnerabilitySymbolMapping> mappings)
       throws IOException {
@@ -614,18 +616,18 @@ final class ADR0008MavenPreconditionAssessmentTest {
         requiredClass);
   }
 
-  private static MavenElisionService.Analysis analysis(
+  private static ElisionAnalysisModel.Analysis analysis(
       final List<ArtifactCoordinate> retainedCoordinates) {
     return analysis(retainedCoordinates, List.of());
   }
 
-  private static MavenElisionService.Analysis analysis(
+  private static ElisionAnalysisModel.Analysis analysis(
       final List<ArtifactCoordinate> retainedCoordinates,
       final List<ArtifactTrimRecord> trimRecords) {
     return analysis(retainedCoordinates, List.of(), trimRecords);
   }
 
-  private static MavenElisionService.Analysis analysis(
+  private static ElisionAnalysisModel.Analysis analysis(
       final List<ArtifactCoordinate> retainedCoordinates,
       final List<ArtifactCoordinate> removedCoordinates,
       final List<ArtifactTrimRecord> trimRecords) {
@@ -636,25 +638,15 @@ final class ADR0008MavenPreconditionAssessmentTest {
             Map.of(),
             Map.of(),
             0L);
-    return new MavenElisionService.Analysis(
-        List.of(),
-        false,
-        List.of(),
+    return new ElisionAnalysisModel.Analysis(
+        new ElisionAnalysisModel.ArtifactViews(List.of(), false, List.of()),
         decision,
         decision,
-        new ClassUsageReport(List.of()),
-        java.util.Optional.empty(),
-        trimRecords,
-        List.of(),
-        List.of(),
-        List.of(),
-        0,
-        0L,
-        0,
+        new ElisionAnalysisModel.AnalysisEvidence(
+            new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null),
+        new TrimResult(trimRecords, List.of(), List.of(), List.of(), 0, 0L, 0, null),
         null,
-        null,
-        null,
-        Map.of());
+        null);
   }
 
   private static MavenPreconditionInventory.Snapshot completeInventory(final Provider... providers)
@@ -727,7 +719,8 @@ final class ADR0008MavenPreconditionAssessmentTest {
   }
 
   private MavenElisionReportSnapshot reportSnapshot(
-      final MavenElisionService.Analysis analysis, final MavenVulnerabilityAssessment.Result result)
+      final ElisionAnalysisModel.Analysis analysis,
+      final MavenVulnerabilityAssessment.Result result)
       throws IOException {
     final MavenProject project = new MavenProject();
     project.setGroupId(GROUP_ID);

@@ -38,14 +38,14 @@ final class MavenElisionOutputPublisher {
 
   static void publish(final Request request) throws IOException, MojoFailureException {
     MavenElisionOutputLogger.passThroughWarnings(request.log(), request.analysis());
-    final MavenElisionService.ApplyPlan plan =
-        request.service().plan(request.project(), request.analysis());
+    final ElisionAnalysisModel.ApplyPlan plan =
+        MavenArtifactInventory.plan(request.project(), request.analysis());
     final MavenVulnerabilityAssessment.Result assessment = publishReportsAndViews(request, plan);
     MavenElisionOutputLogger.completion(request, assessment);
   }
 
   private static MavenVulnerabilityAssessment.Result publishReportsAndViews(
-      final Request request, final MavenElisionService.ApplyPlan plan) throws IOException {
+      final Request request, final ElisionAnalysisModel.ApplyPlan plan) throws IOException {
     final Path summary =
         MavenElisionReportWriter.outputPath(request.files().summary(), request.project());
     final List<Path> outputTargets = outputTargets(request, summary);
@@ -95,7 +95,7 @@ final class MavenElisionOutputPublisher {
 
   private static MavenPreconditionInventory.Snapshot captureInventory(
       final Request request,
-      final MavenElisionService.ApplyPlan plan,
+      final ElisionAnalysisModel.ApplyPlan plan,
       final List<Path> outputTargets,
       final List<Path> stages)
       throws IOException {
@@ -184,18 +184,18 @@ final class MavenElisionOutputPublisher {
   private static void writeStagedReports(
       final MavenOutputTransaction outputs,
       final Request request,
-      final MavenElisionService.ApplyPlan plan,
+      final ElisionAnalysisModel.ApplyPlan plan,
       final MavenElisionReportSnapshot reportSnapshot,
       final Path summary,
       final List<ArtifactFileRef> baselineInventory,
       final MavenPreconditionInventory.Snapshot inventory,
       final MavenVulnerabilityAssessment.Result assessment)
       throws IOException {
-    final MavenElisionService.Analysis analysis = request.analysis();
+    final ElisionAnalysisModel.Analysis analysis = request.analysis();
     MavenClassUsageReportWriter.write(
         outputs.stagedPath(request.files().classUsage().toPath()),
-        analysis.classUsageReport(),
-        analysis.bytecodeScan());
+        analysis.evidence().classUsageReport(),
+        analysis.evidence().bytecodeScan());
     if (request.files().trimJars()) {
       final List<io.github.spockz.elider.model.VexAttestation> attestations =
           assessment.attestations();
@@ -300,13 +300,13 @@ final class MavenElisionOutputPublisher {
       "PMD.AvoidCatchingGenericException") // Project view rollback must include unchecked updater
   // failures.
   private static void publishViewsAndPlan(
-      final Request request, final MavenElisionService.ApplyPlan plan) throws IOException {
+      final Request request, final ElisionAnalysisModel.ApplyPlan plan) throws IOException {
     final MavenProject project = request.project();
     final Set<Artifact> originalArtifacts = new LinkedHashSet<>(project.getArtifacts());
     final Set<Artifact> originalResolvedArtifacts = resolvedArtifactView(project);
     final Map<Artifact, File> originalFiles = originalArtifactFiles(plan);
     try {
-      MavenArtifactViewUpdater.apply(plan, request.analysis().trimRecords());
+      MavenArtifactViewUpdater.apply(plan, request.analysis().trimResult().records());
       final Set<Artifact> retained = new LinkedHashSet<>(plan.resolvedArtifacts());
       project.setResolvedArtifacts(retained);
       project.setArtifacts(retained);
@@ -315,7 +315,7 @@ final class MavenElisionOutputPublisher {
           .publish(
               request.session(),
               project,
-              request.analysis().trimRecords(),
+              request.analysis().trimResult().records(),
               request.analysis().graphProjection());
     } catch (final IOException | RuntimeException failure) {
       restoreProjectViews(project, originalArtifacts, originalResolvedArtifacts, originalFiles);
@@ -333,7 +333,7 @@ final class MavenElisionOutputPublisher {
   @SuppressWarnings(
       "PMD.UseConcurrentHashMap") // Artifact file pointers must key by object identity.
   private static Map<Artifact, File> originalArtifactFiles(
-      final MavenElisionService.ApplyPlan plan) {
+      final ElisionAnalysisModel.ApplyPlan plan) {
     final Map<Artifact, File> result = new IdentityHashMap<>();
     plan.resolvedArtifacts().forEach(artifact -> result.put(artifact, artifact.getFile()));
     plan.directArtifacts().forEach(artifact -> result.putIfAbsent(artifact, artifact.getFile()));
@@ -400,7 +400,7 @@ final class MavenElisionOutputPublisher {
       MavenProject project,
       MavenSession session,
       MavenElisionService service,
-      MavenElisionService.Analysis analysis,
+      ElisionAnalysisModel.Analysis analysis,
       TrimOutputGenerationCommitHandle generation,
       ReportFiles files,
       Log log,

@@ -1,4 +1,5 @@
-/* WHY: Keeps Maven conflict metadata serialization separate from ordinary artifact coordinates. */
+/* WHY: Keeps Maven conflict metadata serialization separate from ordinary
+ * artifact coordinates. */
 
 package io.github.spockz.elider.plugin;
 

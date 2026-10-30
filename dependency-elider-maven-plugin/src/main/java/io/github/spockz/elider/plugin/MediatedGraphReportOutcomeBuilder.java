@@ -1,4 +1,5 @@
-/* WHY: Turns graph policy outcomes into one detached status for every captured node. */
+/* WHY: Turns graph policy outcomes into one detached status for every
+ * captured node. */
 
 package io.github.spockz.elider.plugin;
 

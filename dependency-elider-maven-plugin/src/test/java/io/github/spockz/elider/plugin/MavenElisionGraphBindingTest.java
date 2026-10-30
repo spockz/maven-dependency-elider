@@ -37,7 +37,7 @@ final class MavenElisionGraphBindingTest extends MavenElisionGraphBindingTestSup
   @Test
   void operationFingerprintIncludesCompilerReleaseAndMultiReleaseStrategy() throws Exception {
     final Fixture fixture = fixture(true, JAR_BYTES);
-    final List<MavenElisionService.ArtifactSnapshot> inventory = List.of(fixture.snapshot());
+    final List<ElisionAnalysisModel.ArtifactSnapshot> inventory = List.of(fixture.snapshot());
     final MavenElisionGraphBinding.Result baseline = fixture.bind(inventory);
 
     fixture.project().getProperties().setProperty("maven.compiler.release", "17");
@@ -46,22 +46,28 @@ final class MavenElisionGraphBindingTest extends MavenElisionGraphBindingTestSup
             fixture.options(),
             inventory,
             new ElisionDecision(Set.of(coordinate(VERSION)), Set.of(), Map.of(), Map.of(), 0L));
-    final MavenElisionService.AnalysisOptions options = fixture.options();
-    final MavenElisionService.AnalysisOptions passThrough =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options = fixture.options();
+    final ElisionAnalysisModel.AnalysisOptions passThrough =
+        new ElisionAnalysisModel.AnalysisOptions(
             options.traceFiles(),
             options.excludedArtifacts(),
             options.productionOutput(),
             options.session(),
-            options.sourceRootsComplete(),
-            options.trimJars(),
-            options.explicitTrimRoots(),
-            options.failOnUnsupportedMultiRelease(),
-            options.explicitPassThroughArtifacts(),
-            options.failOnUnsupportedModuleInfo(),
-            options.testResolutionContext(),
-            options.conservativeServiceLoaderRoots(),
-            "pass-through");
+            new ElisionAnalysisModel.CompletenessOptions(
+                options.completeness().sourceRootsComplete(),
+                false,
+                false,
+                options.completeness().testResolutionContext()),
+            new ElisionAnalysisModel.TrimOptions(
+                options.trim().enabled(),
+                options.trim().explicitRoots(),
+                options.trim().failOnUnsupportedMultiRelease(),
+                options.trim().passThroughArtifacts(),
+                options.trim().failOnUnsupportedModuleInfo(),
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                "pass-through"),
+            new ElisionAnalysisModel.DynamicRootOptions(
+                options.dynamicRoots().conservativeServiceLoaderRoots(), List.of(), true));
     final MavenElisionGraphBinding.Result changedStrategy =
         fixture.bind(
             passThrough,

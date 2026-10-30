@@ -30,14 +30,14 @@ final class MavenDependencyTrimmerInMemoryClosureTest
   @Test
   void scansPromotedArtifactAsProgramToDiscoverDroppedDependency() throws Exception {
     final Fixture fixture = fixture(false);
-    final MavenDependencyTrimmer.InMemoryAnalysis first =
+    final TrimAnalysisResult first =
         fixture.analyze(Set.of(fixture.coordinate("a")), Set.of(), Map.of());
 
     assertThat(first.reachableArtifacts()).contains(fixture.coordinate("b"));
     assertThat(first.reachableArtifacts()).doesNotContain(fixture.coordinate("c"));
     assertThat(first.candidateRoots().get(fixture.coordinate("a"))).contains(ENTRY_CLASS);
 
-    final MavenDependencyTrimmer.InMemoryAnalysis second =
+    final TrimAnalysisResult second =
         fixture.analyze(
             Set.of(fixture.coordinate("a"), fixture.coordinate("b")),
             Set.of(fixture.coordinate("b")),
@@ -53,10 +53,9 @@ final class MavenDependencyTrimmerInMemoryClosureTest
   void consumesAndValidatesExactPerArtifactDiscoveredRoots() throws Exception {
     final Fixture fixture = fixture(false);
     final Path path = fixture.snapshot("a").filePath();
-    final MavenDependencyTrimmer.ArtifactRootKey key =
-        new MavenDependencyTrimmer.ArtifactRootKey(
-            fixture.coordinate("a"), path, ArtifactDigests.read(path).sha256());
-    final MavenDependencyTrimmer.InMemoryAnalysis result =
+    final TrimArtifactRootKey key =
+        new TrimArtifactRootKey(fixture.coordinate("a"), path, ArtifactDigests.read(path).sha256());
+    final TrimAnalysisResult result =
         fixture.analyze(
             Set.of(fixture.coordinate("a")), Set.of(), Map.of(key, Set.of("closure.a.Extra")));
 
@@ -72,7 +71,7 @@ final class MavenDependencyTrimmerInMemoryClosureTest
     final Map<Path, Set<String>> dynamicRoots =
         Map.of(fixture.snapshot("b").filePath(), Set.of("closure/b/Middle"));
 
-    final MavenDependencyTrimmer.InMemoryAnalysis result =
+    final TrimAnalysisResult result =
         fixture.analyze(
             Set.of(fixture.coordinate("a"), fixture.coordinate("b")),
             Set.of(),
@@ -92,7 +91,7 @@ final class MavenDependencyTrimmerInMemoryClosureTest
   void scansConfiguredPassThroughAndReportsItsRawDroppedReference() throws Exception {
     final Fixture fixture = fixture(false);
 
-    final MavenDependencyTrimmer.InMemoryAnalysis result =
+    final TrimAnalysisResult result =
         fixture.analyze(
             Set.of(fixture.coordinate("a")),
             Set.of(fixture.coordinate("a")),
@@ -107,7 +106,7 @@ final class MavenDependencyTrimmerInMemoryClosureTest
   void analyzesRawRetainedCandidateAndFindsAnotherRawDrop() throws Exception {
     final Fixture fixture = fixture(false);
 
-    final MavenDependencyTrimmer.InMemoryAnalysis result =
+    final TrimAnalysisResult result =
         fixture.analyze(
             Set.of(fixture.coordinate("a"), fixture.coordinate("b")),
             Set.of(),
@@ -123,7 +122,7 @@ final class MavenDependencyTrimmerInMemoryClosureTest
   void forcedUnchangedProgramToleratesAnUnresolvedOptionalClassReference() throws Exception {
     final Fixture fixture = fixtureWithOptionalAsmReference();
 
-    final MavenDependencyTrimmer.InMemoryAnalysis result =
+    final TrimAnalysisResult result =
         fixture.analyze(Set.of(fixture.coordinate("a")), Set.of(fixture.coordinate("a")), Map.of());
 
     assertThat(result.reachableArtifacts()).contains(fixture.coordinate("b"));
@@ -154,7 +153,7 @@ final class MavenDependencyTrimmerInMemoryClosureTest
     final Path multiRelease = fixture.addVersionedClassToC();
 
     assertThat(multiRelease).isRegularFile();
-    final MavenDependencyTrimmer.InMemoryAnalysis analysis =
+    final TrimAnalysisResult analysis =
         fixture.analyze(
             Set.of(fixture.coordinate("a"), fixture.coordinate("c")), Set.of(), Map.of());
 
@@ -176,7 +175,7 @@ final class MavenDependencyTrimmerInMemoryClosureTest
       throws Exception {
     final Fixture fixture = fixture(false);
     final Map<Path, DependencyDynamicRoots.RootScan> scans = new java.util.LinkedHashMap<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : fixture.allSnapshots()) {
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : fixture.allSnapshots()) {
       final boolean fallback = snapshot.coordinate().artifactId().equals("a");
       scans.put(
           snapshot.filePath().toAbsolutePath().normalize(),
@@ -194,22 +193,17 @@ final class MavenDependencyTrimmerInMemoryClosureTest
                   : List.of(),
               "fail=false;allowed="));
     }
-    final MavenDependencyTrimmer.InMemoryAnalysis result =
+    final TrimAnalysisResult result =
         MavenDependencyTrimmer.analyzeInMemory(
-            new MavenDependencyTrimmer.TrimRequest(
+            new TrimRequest(
                 fixture.mavenProject(),
                 null,
                 fixture.allSnapshots(),
-                new MavenDependencyTrimmer.ScanInputs(fixture.scanInputs.classIndex(), scans),
+                new TrimScanInputs(fixture.scanInputs.classIndex(), scans),
                 Set.of(fixture.coordinate("a")),
-                TraceData.of(Set.of("closure.a.Entry")),
-                Set.of(),
-                Set.of(),
-                Set.of(),
-                List.of(),
-                false,
-                List.of(),
-                false),
+                new TrimEvidence(
+                    TraceData.of(Set.of("closure.a.Entry")), Set.of(), Set.of(), Set.of()),
+                new TrimPolicy(List.of(), false, List.of(), false)),
             Map.of(),
             Set.of());
 

@@ -1,5 +1,5 @@
-/* WHY: Clears stale SBOM and VEX files only when their bytes match recorded plugin output.
- */
+/* WHY: Clears stale SBOM and VEX files only when their bytes match recorded
+ * plugin output. */
 
 package io.github.spockz.elider.plugin;
 

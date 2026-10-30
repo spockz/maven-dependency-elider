@@ -856,29 +856,33 @@ final class ADR0008MavenPreconditionInventoryTest {
       assertThat(unsafe.classProviders().detail()).contains("default-testCompile");
     }
 
-    private static MavenElisionService.Analysis trustedProcessClassesAnalysis(
-        final MavenElisionService.Analysis analysis) {
-      return new MavenElisionService.Analysis(
-          analysis.resolvedSnapshots(),
-          analysis.directArtifactsPresent(),
-          analysis.directSnapshots(),
+    private static ElisionAnalysisModel.Analysis trustedProcessClassesAnalysis(
+        final ElisionAnalysisModel.Analysis analysis) {
+      return new ElisionAnalysisModel.Analysis(
+          new ElisionAnalysisModel.ArtifactViews(
+              analysis.artifacts().resolvedSnapshots(),
+              analysis.artifacts().directArtifactsPresent(),
+              analysis.artifacts().directSnapshots()),
           analysis.decision(),
           analysis.effectiveDecision(),
-          analysis.classUsageReport(),
-          analysis.bytecodeScan(),
-          analysis.trimRecords(),
-          analysis.multiReleasePassthroughArtifacts(),
-          analysis.moduleInfoPassthroughArtifacts(),
-          analysis.configuredPassThroughArtifacts(),
-          analysis.trimCacheHits(),
-          analysis.maximumTrimCacheHitNanos(),
-          analysis.trimAnalysisRuns(),
+          new ElisionAnalysisModel.AnalysisEvidence(
+              analysis.evidence().classUsageReport(),
+              analysis.evidence().bytecodeScan(),
+              analysis.evidence().unprovenServiceRoots(),
+              true,
+              true,
+              null),
+          new TrimResult(
+              analysis.trimResult().records(),
+              analysis.trimResult().multiReleasePassthroughArtifacts(),
+              analysis.trimResult().moduleInfoPassthroughArtifacts(),
+              analysis.trimResult().configuredPassThroughArtifacts(),
+              analysis.trimResult().cacheHits(),
+              analysis.trimResult().maximumCacheHitNanos(),
+              analysis.trimResult().analysisRuns(),
+              analysis.trimResult().generationCommit()),
           analysis.graphProjection(),
-          analysis.generationCommit(),
-          analysis.mediatedGraph(),
-          analysis.unprovenServiceRoots(),
-          true,
-          true);
+          analysis.mediatedGraph());
     }
 
     @Test
@@ -2182,16 +2186,15 @@ final class ADR0008MavenPreconditionInventoryTest {
     project.setBuild(build);
     project.addResource(productionResource);
     project.addTestResource(testResource);
-    final ArtifactCoordinate coordinate = MavenElisionService.toCoordinate(artifact);
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            MavenElisionService.snapshots(List.of(artifact)),
-            false,
-            List.of(),
+    final ArtifactCoordinate coordinate = MavenArtifactInventory.toCoordinate(artifact);
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(List.of(artifact)), false, List.of()),
             new io.github.spockz.elider.model.ElisionDecision(
                 Set.of(), Set.of(coordinate), Map.of(), Map.of(), 0L));
-    final MavenElisionService.ApplyPlan plan =
-        new MavenElisionService.ApplyPlan(artifacts, false, Set.of());
+    final ElisionAnalysisModel.ApplyPlan plan =
+        new ElisionAnalysisModel.ApplyPlan(artifacts, false, Set.of());
     return new Fixture(
         project,
         analysis,
@@ -2530,8 +2533,8 @@ final class ADR0008MavenPreconditionInventoryTest {
 
   private record Fixture(
       MavenProject project,
-      MavenElisionService.Analysis analysis,
-      MavenElisionService.ApplyPlan plan,
+      ElisionAnalysisModel.Analysis analysis,
+      ElisionAnalysisModel.ApplyPlan plan,
       ArtifactCoordinate coordinate,
       Path dependency,
       Path productionSources,

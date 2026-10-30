@@ -1,4 +1,5 @@
-/* WHY: Binds exact safe graph occurrences to a later resolver transformation. */
+/* WHY: Binds exact safe graph occurrences to a later resolver
+ * transformation. */
 
 package io.github.spockz.elider.plugin;
 

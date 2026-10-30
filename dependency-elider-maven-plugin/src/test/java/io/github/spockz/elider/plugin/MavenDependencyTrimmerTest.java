@@ -58,18 +58,18 @@ final class MavenDependencyTrimmerTest {
         new ArtifactCoordinate(GROUP_ID, ARTIFACT_ID, VERSION, JAR_TYPE, "", ARTIFACT_ID);
     final Artifact artifact = runtimeArtifact(jar);
     final MavenProject project = project(artifact);
-    final MavenElisionService.ArtifactSnapshot snapshot =
-        new MavenElisionService.ArtifactSnapshot(artifact, coordinate, normalizedJar);
+    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
+        new ElisionAnalysisModel.ArtifactSnapshot(artifact, coordinate, normalizedJar);
     final ArtifactFileRef artifactRef = ArtifactFileRef.fromPath(coordinate, normalizedJar);
     final ArtifactClassIndex classIndex = new JarIndexScanner().scan(List.of(artifactRef));
-    final MavenDependencyTrimmer.ScanInputs scanInputs =
-        new MavenDependencyTrimmer.ScanInputs(
+    final TrimScanInputs scanInputs =
+        new TrimScanInputs(
             classIndex,
             Map.of(
                 normalizedJar,
                 new DependencyDynamicRoots.RootScan(Set.of("sample.Dynamic"), true)));
 
-    final MavenDependencyTrimmer.TrimResult result = trim(project, snapshot, scanInputs);
+    final TrimResult result = trim(project, snapshot, scanInputs);
 
     assertThat(result.records()).hasSize(1);
     try (JarFile trimmed = new JarFile(result.records().getFirst().trimmedPath().toFile())) {
@@ -77,10 +77,7 @@ final class MavenDependencyTrimmerTest {
       assertThat(trimmed.getEntry("sample/Dynamic.class")).isNotNull();
       assertThat(trimmed.getEntry("sample/Drop.class")).isNull();
     }
-    assertThatThrownBy(
-            () ->
-                trim(
-                    project, snapshot, new MavenDependencyTrimmer.ScanInputs(classIndex, Map.of())))
+    assertThatThrownBy(() -> trim(project, snapshot, new TrimScanInputs(classIndex, Map.of())))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Missing dynamic-root scan for retained artifact");
   }
@@ -117,10 +114,10 @@ final class MavenDependencyTrimmerTest {
     final List<Artifact> artifacts = List.of(fallback, sibling);
     final MavenProject project = project(fallback);
     project.setArtifacts(Set.copyOf(artifacts));
-    final List<MavenElisionService.ArtifactSnapshot> snapshots =
-        MavenElisionService.snapshots(artifacts);
+    final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots =
+        MavenArtifactInventory.snapshots(artifacts);
     final Map<Path, DependencyDynamicRoots.RootScan> scans = new java.util.LinkedHashMap<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : snapshots) {
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : snapshots) {
       final boolean isFallback = snapshot.coordinate().artifactId().equals("fallback");
       scans.put(
           snapshot.filePath(),
@@ -139,28 +136,22 @@ final class MavenDependencyTrimmerTest {
               : new DependencyDynamicRoots.RootScan(Set.of(), false));
     }
     final List<ArtifactFileRef> artifactRefs = new java.util.ArrayList<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : snapshots) {
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : snapshots) {
       artifactRefs.add(ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath()));
     }
     final ArtifactClassIndex classIndex = new JarIndexScanner().scan(artifactRefs);
-    final MavenDependencyTrimmer.TrimResult result =
+    final TrimResult result =
         MavenDependencyTrimmer.trim(
-            new MavenDependencyTrimmer.TrimRequest(
+            new TrimRequest(
                 project,
                 null,
                 snapshots,
-                new MavenDependencyTrimmer.ScanInputs(classIndex, scans),
+                new TrimScanInputs(classIndex, scans),
                 snapshots.stream()
-                    .map(MavenElisionService.ArtifactSnapshot::coordinate)
+                    .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
                     .collect(java.util.stream.Collectors.toSet()),
-                TraceData.of(Set.of("sample.Keep")),
-                Set.of(),
-                Set.of(),
-                Set.of(),
-                List.of(),
-                false,
-                List.of(),
-                false));
+                new TrimEvidence(TraceData.of(Set.of("sample.Keep")), Set.of(), Set.of(), Set.of()),
+                new TrimPolicy(List.of(), false, List.of(), false)));
 
     assertThat(Files.readAllBytes(fallbackWithMetadata)).containsExactly(fallbackBytes);
     assertThat(result.records()).hasSize(1);
@@ -221,12 +212,12 @@ final class MavenDependencyTrimmerTest {
     final Artifact artifact = runtimeArtifact(jar);
     final MavenProject project = project(artifact);
     final Path normalizedJar = jar.toAbsolutePath().normalize();
-    final MavenElisionService.ArtifactSnapshot snapshot =
-        new MavenElisionService.ArtifactSnapshot(artifact, coordinate, normalizedJar);
+    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
+        new ElisionAnalysisModel.ArtifactSnapshot(artifact, coordinate, normalizedJar);
     final ArtifactFileRef artifactRef = ArtifactFileRef.fromPath(coordinate, normalizedJar);
     final ArtifactClassIndex classIndex = new JarIndexScanner().scan(List.of(artifactRef));
-    final MavenDependencyTrimmer.ScanInputs scanInputs =
-        new MavenDependencyTrimmer.ScanInputs(
+    final TrimScanInputs scanInputs =
+        new TrimScanInputs(
             classIndex, Map.of(normalizedJar, new DependencyDynamicRoots.RootScan(Set.of(), true)));
     final String previousJavaHome = System.getProperty("java.home");
     final Path manifest = tempDir.resolve("build/elided-artifacts/.trim-analysis-cache.json");
@@ -247,26 +238,20 @@ final class MavenDependencyTrimmerTest {
     assertThat(jar).isRegularFile();
   }
 
-  private MavenDependencyTrimmer.TrimResult trim(
+  private TrimResult trim(
       final MavenProject project,
-      final MavenElisionService.ArtifactSnapshot snapshot,
-      final MavenDependencyTrimmer.ScanInputs scanInputs)
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot,
+      final TrimScanInputs scanInputs)
       throws IOException, MojoFailureException {
     return MavenDependencyTrimmer.trim(
-        new MavenDependencyTrimmer.TrimRequest(
+        new TrimRequest(
             project,
             null,
             List.of(snapshot),
             scanInputs,
             Set.of(snapshot.coordinate()),
-            TraceData.of(Set.of("sample.Keep")),
-            Set.of(),
-            Set.of(),
-            Set.of(),
-            List.of(),
-            false,
-            List.of(),
-            false));
+            new TrimEvidence(TraceData.of(Set.of("sample.Keep")), Set.of(), Set.of(), Set.of()),
+            new TrimPolicy(List.of(), false, List.of(), false)));
   }
 
   private Path compileJar() throws IOException {

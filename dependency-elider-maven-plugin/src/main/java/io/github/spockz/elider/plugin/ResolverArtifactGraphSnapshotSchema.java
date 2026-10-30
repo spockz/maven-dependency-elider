@@ -1,4 +1,5 @@
-/* WHY: Names and exact field sets define the JDK-only graph payload shared across Maven realms. */
+/* WHY: Names and exact field sets define the JDK-only graph payload shared
+ * across Maven realms. */
 
 package io.github.spockz.elider.plugin;
 

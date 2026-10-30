@@ -1,4 +1,5 @@
-/* WHY: Captures Maven's mediated graph after existing Resolver transformers run. */
+/* WHY: Captures Maven's mediated graph after existing Resolver transformers
+ * run. */
 
 package io.github.spockz.elider.plugin;
 

@@ -1,4 +1,5 @@
-/* WHY: Converts detached artifact payloads to report coordinates without leaking Aether objects. */
+/* WHY: Converts detached artifact payloads to report coordinates without
+ * leaking Aether objects. */
 
 package io.github.spockz.elider.plugin;
 

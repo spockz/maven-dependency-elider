@@ -1,0 +1,99 @@
+/* WHY: Prepares isolated candidate and unchanged-program pools using one
+ * archive session. */
+
+package io.github.spockz.elider.plugin;
+
+import io.github.spockz.elider.plugin.SingleReleasePlatforms.PlatformPools;
+import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseInventory;
+import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseLayout;
+import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
+import io.github.spockz.elider.trimmer.TrimAnalysisSession;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+
+/** Prepares isolated candidate and unchanged-program pools. */
+final class SingleReleasePoolPreparer {
+  private SingleReleasePoolPreparer() {}
+
+  /* package */ static Map<
+          ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+      prepareCandidates(
+          final SingleReleaseLayout layout,
+          final List<Path> fullClasspath,
+          final PlatformPools pools,
+          final TrimAnalysisSession analysisSession,
+          final int trimWorkers)
+          throws IOException {
+    final List<DependencyJarTrimmer.PreparedAnalysis> results =
+        ParallelTrimExecutor.mapParallel(
+            layout.candidates(),
+            trimWorkers,
+            candidate -> {
+              final Path path = candidate.filePath().toAbsolutePath().normalize();
+              final List<Path> siblings =
+                  fullClasspath.stream().filter(value -> !value.equals(path)).toList();
+              return analysisSession.prepareWithUnchangedPassThroughLibraries(
+                  path, siblings, pools.compiler(), layout.unchangedPassThroughClasses());
+            });
+    final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        preparedCandidates = TrimCollections.orderedMap();
+    for (int index = 0; index < layout.candidates().size(); index++) {
+      preparedCandidates.put(layout.candidates().get(index), results.get(index));
+    }
+    return preparedCandidates;
+  }
+
+  /* package */ static Map<
+          ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+      preparePrograms(
+          final SingleReleaseInventory inventory,
+          final SingleReleaseLayout layout,
+          final List<Path> fullClasspath,
+          final PlatformPools pools,
+          final TrimAnalysisSession analysisSession,
+          final int trimWorkers)
+          throws IOException {
+    final List<DependencyJarTrimmer.PreparedAnalysis> results =
+        ParallelTrimExecutor.mapParallel(
+            layout.unchangedPrograms(),
+            trimWorkers,
+            program -> {
+              final Path path =
+                  inventory
+                      .analysisPaths()
+                      .getOrDefault(program, program.filePath().toAbsolutePath().normalize());
+              final List<Path> siblings =
+                  fullClasspath.stream().filter(value -> !value.equals(path)).toList();
+              return layout.skippedProgramCoordinates().contains(program.coordinate())
+                  ? analysisSession.prepareUnchangedPassThrough(
+                      path, siblings, pools.runtime(), layout.unchangedPassThroughClasses())
+                  : analysisSession.prepareWithUnchangedPassThroughLibraries(
+                      path, siblings, pools.runtime(), layout.unchangedPassThroughClasses());
+            });
+    final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        preparedPrograms = TrimCollections.orderedMap();
+    for (int index = 0; index < layout.unchangedPrograms().size(); index++) {
+      preparedPrograms.put(layout.unchangedPrograms().get(index), results.get(index));
+    }
+    return preparedPrograms;
+  }
+
+  /* package */ record PreparedPools(
+      Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis> candidates,
+      Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis> programs) {}
+
+  /* package */ static PreparedPools prepare(
+      final SingleReleaseInventory inventory,
+      final SingleReleaseLayout layout,
+      final List<Path> classpath,
+      final PlatformPools pools,
+      final int workers)
+      throws IOException {
+    final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
+    return new PreparedPools(
+        prepareCandidates(layout, classpath, pools, session, workers),
+        preparePrograms(inventory, layout, classpath, pools, session, workers));
+  }
+}

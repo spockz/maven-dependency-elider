@@ -62,10 +62,10 @@ final class MavenElisionReportWriterTest {
     Files.write(originalTrimmedJar, new byte[4096]);
     final Artifact removedArtifact = artifact(removedCoordinate, removedJar);
     final Artifact trimmedArtifact = artifact(trimmedCoordinate, originalTrimmedJar);
-    final MavenElisionService.ArtifactSnapshot removedSnapshot =
-        new MavenElisionService.ArtifactSnapshot(removedArtifact, removedCoordinate, removedJar);
-    final MavenElisionService.ArtifactSnapshot trimmedSnapshot =
-        new MavenElisionService.ArtifactSnapshot(
+    final ElisionAnalysisModel.ArtifactSnapshot removedSnapshot =
+        new ElisionAnalysisModel.ArtifactSnapshot(removedArtifact, removedCoordinate, removedJar);
+    final ElisionAnalysisModel.ArtifactSnapshot trimmedSnapshot =
+        new ElisionAnalysisModel.ArtifactSnapshot(
             trimmedArtifact, trimmedCoordinate, originalTrimmedJar);
     final ArtifactTrimRecord trimRecord =
         new ArtifactTrimRecord(
@@ -83,23 +83,15 @@ final class MavenElisionReportWriterTest {
         new ElisionDecision(
             Set.of(trimmedCoordinate), Set.of(removedCoordinate), Map.of(), Map.of(), 0L);
     final MavenProject project = project();
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            List.of(removedSnapshot, trimmedSnapshot),
-            false,
-            List.of(),
+    final ElisionAnalysisModel.Analysis analysis =
+        new ElisionAnalysisModel.Analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                List.of(removedSnapshot, trimmedSnapshot), false, List.of()),
             decision,
             decision,
-            new ClassUsageReport(List.of()),
-            Optional.empty(),
-            List.of(trimRecord),
-            List.of(),
-            List.of(),
-            List.of(),
-            0,
-            0L,
-            0,
-            null,
+            new ElisionAnalysisModel.AnalysisEvidence(
+                new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null),
+            new TrimResult(List.of(trimRecord), List.of(), List.of(), List.of(), 0, 0L, 0, null),
             null,
             MediatedGraphReportTestSupport.reportForOutputs(
                 removedCoordinate, trimmedCoordinate, GROUP_ID + ":consumer:" + PROJECT_VERSION));
