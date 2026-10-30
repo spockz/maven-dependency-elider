@@ -26,20 +26,23 @@ import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
+import org.apache.maven.model.PluginManagement;
 import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.toolchain.ToolchainManager;
 import org.codehaus.plexus.PlexusContainer;
-import org.eclipse.aether.DefaultRepositorySystemSession;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
-/** Verifies opt-in proof assessment, output freshness, ownership, and rollback. */
+/** WHY: Groups publication and rollback cases around one shared fixture. */
 @DisplayName("ADR-0008: Maven precondition publication and rollback")
 @SuppressWarnings({
   "PMD.AvoidAccessibilityAlteration",
@@ -47,6 +50,7 @@ import org.objectweb.asm.Opcodes;
   "PMD.CommentDefaultAccessModifier",
   "PMD.CouplingBetweenObjects",
   "PMD.ExcessiveImports",
+  "PMD.GodClass",
   "PMD.TooManyMethods",
   "PMD.UnitTestContainsTooManyAsserts",
   "checkstyle:AbbreviationAsWordInName"
@@ -122,6 +126,63 @@ final class ADR0008MavenPreconditionPublicationTest {
     final Fixture fixture = fixture("incomplete", false, false);
     Files.writeString(fixture.sourceRoot().resolve("Unknown.scala"), "class Unknown\n");
     configure(fixture, true);
+
+    fixture.mojo().execute();
+
+    assertThat(fixture.vex()).doesNotExist();
+    assertThat(MavenElisionReportWriter.read(fixture.summary()).inactivePreconditionCves())
+        .isEmpty();
+  }
+
+  @Test
+  void sessionCompilerOverrideSuppressesPreconditionPublication() throws Exception {
+    final Fixture fixture = fixture("compiler-override", false, false);
+    configure(fixture, true);
+    fixture.session().getUserProperties().setProperty("maven.compiler.proc", "full");
+
+    assertThatThrownBy(fixture.mojo()::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("annotation processing to be disabled");
+
+    assertThat(fixture.vex()).doesNotExist();
+    assertThat(fixture.summary()).doesNotExist();
+  }
+
+  @Test
+  void downstreamProviderGeneratorsSuppressPublicationWithoutFailingTheBuild() throws Exception {
+    for (final String phase :
+        List.of("generate-test-sources", "process-classes", "process-test-classes")) {
+      final Fixture fixture = fixture("provider-generator-" + phase, false, false);
+      configure(fixture, true);
+      addUnknownGenerator(fixture, phase);
+
+      fixture.mojo().execute();
+
+      assertThat(fixture.vex()).doesNotExist();
+      assertThat(MavenElisionReportWriter.read(fixture.summary()).inactivePreconditionCves())
+          .isEmpty();
+    }
+  }
+
+  @Test
+  void testCompileSourceRootOverrideSuppressesPreconditionPublication() throws Exception {
+    final Fixture fixture = fixture("test-compile-source-override", false, false);
+    configure(fixture, true);
+    final Plugin compiler = new Plugin();
+    compiler.setGroupId("org.apache.maven.plugins");
+    compiler.setArtifactId("maven-compiler-plugin");
+    final PluginExecution execution = new PluginExecution();
+    execution.setId("default-testCompile");
+    final Xpp3Dom configuration = new Xpp3Dom("configuration");
+    final Xpp3Dom proc = new Xpp3Dom("proc");
+    proc.setValue("none");
+    configuration.addChild(proc);
+    final Xpp3Dom testRoots = new Xpp3Dom("compileSourceRoots");
+    testRoots.setValue(fixture.basedir().resolve("external-test-sources").toString());
+    configuration.addChild(testRoots);
+    execution.setConfiguration(configuration);
+    compiler.addExecution(execution);
+    fixture.project().getBuild().addPlugin(compiler);
 
     fixture.mojo().execute();
 
@@ -336,33 +397,78 @@ final class ADR0008MavenPreconditionPublicationTest {
       final String name, final boolean retainedCoordinate, final boolean sourceProvider)
       throws IOException {
     final Path basedir = temporaryDirectory.resolve(name);
-    final Path sourceRoot = basedir.resolve("src/main/java");
-    final Path testSourceRoot = basedir.resolve("src/test/java");
-    final Path productionOutput = basedir.resolve("target/classes");
-    final Path testOutput = basedir.resolve("target/test-classes");
-    final Path resourceRoot = basedir.resolve("src/main/resources");
-    final Path testResourceRoot = basedir.resolve("src/test/resources");
-    Files.createDirectories(sourceRoot);
-    Files.createDirectories(testSourceRoot);
-    Files.createDirectories(productionOutput);
-    Files.createDirectories(testOutput);
-    Files.createDirectories(resourceRoot);
-    Files.createDirectories(testResourceRoot);
-    if (sourceProvider) {
-      final Path source = sourceRoot.resolve("org/example/prerequisite/EntryPoint.java");
-      Files.createDirectories(source.getParent());
-      Files.writeString(
-          source, "package org.example.prerequisite; public final class EntryPoint {}\n");
+    final ProjectRoots roots = createProjectRoots(basedir);
+    writeSourceProvider(roots.sourceRoot(), sourceProvider);
+    final ArtifactSet artifactSet = createArtifacts(basedir, retainedCoordinate);
+    final MavenProject project = createProject(basedir, roots, artifactSet.artifacts());
+    final MavenSession session = newSession(project);
+    final ElideMojo mojo = newMojo(session);
+    final Path buildDirectory = basedir.resolve("target");
+    final Path trace = basedir.resolve("runtime.lst");
+    writeTrace(trace, retainedCoordinate);
+    return new Fixture(
+        project,
+        session,
+        mojo,
+        artifactSet.affected(),
+        basedir,
+        artifactSet.affectedJar(),
+        roots.sourceRoot(),
+        roots.resourceRoot(),
+        buildDirectory.resolve("class-usage.json"),
+        buildDirectory.resolve("summary.json"),
+        buildDirectory.resolve("sbom.json"),
+        buildDirectory.resolve("baseline-sbom.json"),
+        buildDirectory.resolve("dependency-elider.openvex.json"),
+        trace,
+        retainedCoordinate);
+  }
+
+  private static ProjectRoots createProjectRoots(final Path basedir) throws IOException {
+    final ProjectRoots roots =
+        new ProjectRoots(
+            basedir.resolve("src/main/java"),
+            basedir.resolve("src/test/java"),
+            basedir.resolve("target/classes"),
+            basedir.resolve("target/test-classes"),
+            basedir.resolve("src/main/resources"),
+            basedir.resolve("src/test/resources"));
+    Files.createDirectories(roots.sourceRoot());
+    Files.createDirectories(roots.testSourceRoot());
+    Files.createDirectories(roots.productionOutput());
+    Files.createDirectories(roots.testOutput());
+    Files.createDirectories(roots.resourceRoot());
+    Files.createDirectories(roots.testResourceRoot());
+    return roots;
+  }
+
+  private static void writeSourceProvider(final Path sourceRoot, final boolean enabled)
+      throws IOException {
+    if (!enabled) {
+      return;
     }
+    final Path source = sourceRoot.resolve("org/example/prerequisite/EntryPoint.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(
+        source, "package org.example.prerequisite; public final class EntryPoint {}\n");
+  }
+
+  private static ArtifactSet createArtifacts(final Path basedir, final boolean retainPrerequisite)
+      throws IOException {
     final Path affectedJar = basedir.resolve("affected.jar");
     writeJar(affectedJar, "sample/Keep", null);
     final Artifact affected = runtimeArtifact("affected", affectedJar);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(affected));
-    if (retainedCoordinate) {
+    if (retainPrerequisite) {
       final Path prerequisiteJar = basedir.resolve("prerequisite.jar");
       writeJar(prerequisiteJar, "org/example/prerequisite/EntryPoint", null);
       artifacts.add(runtimeArtifact("prerequisite", prerequisiteJar));
     }
+    return new ArtifactSet(affected, affectedJar, artifacts);
+  }
+
+  private static MavenProject createProject(
+      final Path basedir, final ProjectRoots roots, final Set<Artifact> artifacts) {
     final MavenProject project = new MavenProject();
     project.setFile(basedir.resolve("pom.xml").toFile());
     project.setGroupId("org.example");
@@ -373,42 +479,51 @@ final class ADR0008MavenPreconditionPublicationTest {
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
     project.getProperties().setProperty("maven.compiler.release", "21");
-    project.addCompileSourceRoot(sourceRoot.toString());
-    project.addTestCompileSourceRoot(testSourceRoot.toString());
+    project.getProperties().setProperty("maven.compiler.proc", "none");
+    project.addCompileSourceRoot(roots.sourceRoot().toString());
+    project.addTestCompileSourceRoot(roots.testSourceRoot().toString());
+    project.setBuild(createBuild(basedir, roots));
+    addResources(project, roots);
+    return project;
+  }
+
+  private static Build createBuild(final Path basedir, final ProjectRoots roots) {
     final Build build = new Build();
     build.setDirectory(basedir.resolve("target").toString());
-    build.setOutputDirectory(productionOutput.toString());
-    build.setTestOutputDirectory(testOutput.toString());
-    project.setBuild(build);
+    build.setOutputDirectory(roots.productionOutput().toString());
+    build.setTestOutputDirectory(roots.testOutput().toString());
+    final Plugin compiler = new Plugin();
+    compiler.setGroupId("org.apache.maven.plugins");
+    compiler.setArtifactId("maven-compiler-plugin");
+    compiler.setVersion("3.13.0");
+    final PluginManagement management = new PluginManagement();
+    management.addPlugin(compiler);
+    management.addPlugin(surefirePlugin());
+    build.setPluginManagement(management);
+    final Plugin surefire = surefirePlugin();
+    final PluginExecution defaultTest = new PluginExecution();
+    defaultTest.setId("default-test");
+    defaultTest.setPhase("test");
+    defaultTest.setGoals(List.of("test"));
+    surefire.addExecution(defaultTest);
+    build.addPlugin(surefire);
+    return build;
+  }
+
+  private static void addResources(final MavenProject project, final ProjectRoots roots) {
     final Resource productionResources = new Resource();
-    productionResources.setDirectory(resourceRoot.toString());
+    productionResources.setDirectory(roots.resourceRoot().toString());
     project.addResource(productionResources);
     final Resource testResources = new Resource();
-    testResources.setDirectory(testResourceRoot.toString());
+    testResources.setDirectory(roots.testResourceRoot().toString());
     project.addTestResource(testResources);
-    final ElideMojo mojo = newMojo();
-    final Path buildDirectory = basedir.resolve("target");
-    final Path trace = basedir.resolve("runtime.lst");
-    Files.writeString(
-        trace,
-        retainedCoordinate
-            ? "sample.Keep\norg.example.prerequisite.EntryPoint\n"
-            : "sample.Keep\n");
-    return new Fixture(
-        project,
-        mojo,
-        affected,
-        basedir,
-        affectedJar,
-        sourceRoot,
-        resourceRoot,
-        buildDirectory.resolve("class-usage.json"),
-        buildDirectory.resolve("summary.json"),
-        buildDirectory.resolve("sbom.json"),
-        buildDirectory.resolve("baseline-sbom.json"),
-        buildDirectory.resolve("dependency-elider.openvex.json"),
-        trace,
-        retainedCoordinate);
+  }
+
+  private static void writeTrace(final Path trace, final boolean retainedCoordinate)
+      throws IOException {
+    final String content =
+        retainedCoordinate ? "sample.Keep\norg.example.prerequisite.EntryPoint\n" : "sample.Keep\n";
+    Files.writeString(trace, content);
   }
 
   private void configure(final Fixture fixture, final boolean proofEnabled) {
@@ -525,14 +640,36 @@ final class ADR0008MavenPreconditionPublicationTest {
     return artifact;
   }
 
-  private static ElideMojo newMojo() {
+  private static void addUnknownGenerator(final Fixture fixture, final String phase) {
+    final Plugin generator = new Plugin();
+    generator.setGroupId("com.example");
+    generator.setArtifactId("provider-generator");
+    final PluginExecution execution = new PluginExecution();
+    execution.setId("generate-providers");
+    execution.setPhase(phase);
+    execution.setGoals(List.of("generate"));
+    generator.addExecution(execution);
+    fixture.project().getBuild().addPlugin(generator);
+  }
+
+  private static MavenSession newSession(final MavenProject project) {
+    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+    request.setGoals(List.of("clean", "verify"));
+    final MavenSession session = new MavenSession(testContainer(), request, null, project);
+    session.getUserProperties().setProperty("skipTests", "true");
+    return session;
+  }
+
+  private static Plugin surefirePlugin() {
+    final Plugin plugin = new Plugin();
+    plugin.setGroupId("org.apache.maven.plugins");
+    plugin.setArtifactId("maven-surefire-plugin");
+    plugin.setVersion("3.5.2");
+    return plugin;
+  }
+
+  private static ElideMojo newMojo(final MavenSession session) {
     final ElideMojo mojo = new ElideMojo();
-    final MavenSession session =
-        new MavenSession(
-            testContainer(),
-            new DefaultRepositorySystemSession(),
-            new DefaultMavenExecutionRequest(),
-            null);
     set(mojo, "session", session);
     return mojo;
   }
@@ -564,8 +701,19 @@ final class ADR0008MavenPreconditionPublicationTest {
     }
   }
 
+  private record ProjectRoots(
+      Path sourceRoot,
+      Path testSourceRoot,
+      Path productionOutput,
+      Path testOutput,
+      Path resourceRoot,
+      Path testResourceRoot) {}
+
+  private record ArtifactSet(Artifact affected, Path affectedJar, Set<Artifact> artifacts) {}
+
   private record Fixture(
       MavenProject project,
+      MavenSession session,
       ElideMojo mojo,
       Artifact affected,
       Path basedir,

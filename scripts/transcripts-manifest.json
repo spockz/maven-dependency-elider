@@ -98,6 +98,9 @@
       ],
       "goal": "report",
       "expectedExitCode": 0,
+      "requiredOutput": [
+        "CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18"
+      ],
       "maxGraphRows": 3
     },
     {

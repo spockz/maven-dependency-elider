@@ -168,6 +168,9 @@ main() {
         -Dmaven.compiler.proc=none
       )
     fi
+    if [[ $fixture == example-cve-safe-class-app ]]; then
+      elision_options+=(-DskipTests=true)
+    fi
 
     run_timed "$baseline_seconds" run_fixture_maven "$fixture_dir" -f "$pom" clean verify \
       -Delide.mode=baseline -Delider.verifyElision=false

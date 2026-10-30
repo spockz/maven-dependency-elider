@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Resource;
 import org.apache.maven.project.MavenProject;
 
@@ -55,12 +56,14 @@ final class MavenPreconditionProviderRoots {
 
   static Capture capture(
       final MavenProject project,
+      final MavenSession session,
       final MavenElisionService.Analysis analysis,
       final Collection<Path> stages)
       throws IOException {
     if (project == null || project.getBuild() == null) {
       throw new IOException(MAVEN_PREFIX + "project build roots are unavailable");
     }
+    MavenPreconditionGenerationGuard.requireKnownProviderGeneration(project, session);
     if (MavenElisionService.hasUnknownSourceGeneration(project)) {
       throw new IOException(MAVEN_PREFIX + "build has an unsupported or unknown source generator");
     }
@@ -92,6 +95,17 @@ final class MavenPreconditionProviderRoots {
     final List<RootFiles> roots = new ArrayList<>();
     addSourceRoots(roots, "production-source", project, project.getCompileSourceRoots());
     addSourceRoots(roots, "test-source", project, project.getTestCompileSourceRoots());
+    final Path buildDirectory = resolvedBuildDirectory(project);
+    addSourceRoots(
+        roots,
+        "generated-production-source",
+        project,
+        List.of(buildDirectory.resolve("generated-sources/annotations").toString()));
+    addSourceRoots(
+        roots,
+        "generated-test-source",
+        project,
+        List.of(buildDirectory.resolve("generated-test-sources/test-annotations").toString()));
     addDirectoryRoot(
         roots,
         "production-output",
@@ -116,6 +130,21 @@ final class MavenPreconditionProviderRoots {
       }
     }
     return List.copyOf(roots);
+  }
+
+  private static Path resolvedBuildDirectory(final MavenProject project) throws IOException {
+    final String configuredDirectory = project.getBuild().getDirectory();
+    if (configuredDirectory == null
+        || configuredDirectory.isBlank()
+        || configuredDirectory.contains("${")
+        || configuredDirectory.contains("}")) {
+      throw new IOException("Maven build directory is unavailable or unresolved");
+    }
+    final Path directory = Path.of(configuredDirectory);
+    if (!directory.isAbsolute() && project.getBasedir() == null) {
+      throw new IOException("Maven build directory has no project base directory");
+    }
+    return resolveProjectPath(project, configuredDirectory).toAbsolutePath().normalize();
   }
 
   private static void addSourceRoots(

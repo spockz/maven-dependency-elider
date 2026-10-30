@@ -204,8 +204,8 @@
 - **Base:** `main` at `c15974c4b512931d1a47d66766ca3ba8e40691ee`
 - **Worktree/branch:** `.scratch/worktrees/track-vex-precondition-gated-generation` / `track/vex-precondition-gated-generation`
 - **Scope:** Proof-backed `requires_dependency` VEX for retained components, strict metadata, serializers, Maven publication, fixtures, and user/contributor documentation.
-- **Acceptance:** Both schemas validate; OpenVEX omits justification only for precondition evidence and includes impact statement; CycloneDX uses `requires_dependency`; no statements when the prerequisite is retained or evidence is incomplete; statements bind to retained bytes; report categories stay distinct; `make check` and `make test-examples` pass.
-- **Baseline:** Clean `main` passed `make check` with repository JDK 21. The handover was copied into the new worktree and updated to reflect the selected exact-class proof scope and completed delivery.
+- **Acceptance:** Both schemas validate; OpenVEX omits justification only for precondition evidence and includes impact statement; CycloneDX uses `requires_dependency`; no statements when the prerequisite is retained or evidence is incomplete; statements bind to retained bytes; report categories stay distinct. Final Java lint/plugin suites and `make test-examples` pass. Full `make check` was not run after the final guard changes because it invokes prohibited Node.js targets.
+- **Baseline:** Clean `main` passed `make check` with repository JDK 21. The handover was copied into the new worktree and updated to reflect the user-confirmed exact-class proof plus complete-inventory opt-in.
 
 ### Architectural review and working scope
 
@@ -221,7 +221,7 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 | `vex-precondition-gated-generation` | 2 | Immutable attestation and fail-closed prerequisite proof | Approved (`163f36f`) |
 | `vex-precondition-gated-generation` | 3 | CycloneDX/OpenVEX serialization and schema tests | Approved (`8017edc`) |
 | `vex-precondition-gated-generation` | 4 | Maven assessment and transactional publisher integration | Approved and verified (`ec60c76`, `5042488`, `f4654a6`) |
-| `vex-precondition-gated-generation` | 5 | Fixture assertions and final verification | Verified; review closeout pending transcript-scope clarification |
+| `vex-precondition-gated-generation` | 5 | Fixture assertions and final verification | Verified; reviewer approved final proof-boundary changes |
 
 ### Deviations
 
@@ -229,7 +229,7 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 - Consolidate the five proposed tracks into one ordered track because their evidence model, serializers, assessment, and publisher have direct dependencies.
 - Correct the fixture's affected coordinate to Logback Core, as named by the advisory.
 - Replace the in-flight implementer once after the daemon restart ended the original worker before its Slice 1 fixup completed; the dedicated reviewer resumed unchanged.
-- Transcript targets are absent and RQ-0009 tracks that workflow as open research. The reviewer raised a context discrepancy about whether WP-VEX-02 must also include transcript generation/checking; user clarification is pending.
+- The README report transcript now includes the safe-class precondition finding, and the transcript manifest requires that exact Logback Core report line. The safe-class report command passed against the verified fixture snapshot. A full transcript refresh/check was not completed: its unrelated `analyze-cve-unused-app` invocation remained CPU-bound for over eight minutes, so the refresh was interrupted after confirming that the safe-class report renders the expected line.
 
 ### Slice 1 evidence
 
@@ -285,5 +285,5 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 ### Slice 5 evidence: fixture and final gates
 
 - `example-cve-safe-class-app` opts into `preconditionClassPathComplete`, identifies `org.codehaus.janino.ClassBodyEvaluator` used by Logback Core 1.5.18's conditional-script path, and maps the advisory to `ch.qos.logback:logback-core`. Its verifier checks the OpenVEX impact statement and omitted justification, plus CycloneDX `requires_dependency`.
-- Final `make check` passed: 226 core, 308 plugin, 15 lifecycle integration, and 8 SBOM-comparison tests; formatting, Checkstyle, PMD 7.28, SpotBugs, and Markdown lint (49 files, 0 issues) passed. Log: `/tmp/wp-vex-02-make-check-final-20261030-r3.log`; SHA-256 `7ed2aa306cb2d7182083ed3448acdd2e20397c64087c7a3128d3177677026bc7`.
+- After the final guard changes, `make fmt` and `make lint-java` passed; focused ADR-0008 proof tests passed 58/58; `make test-plugin` passed 340 plugin tests and 15 lifecycle integration tests.
 - `make test-examples` passed all four fixtures. The safe-class report lists `CVE-2025-11226` inactive for `ch.qos.logback:logback-core:jar:1.5.18`; the fixture verifier confirmed both serializers and schema validity. Log: `/tmp/wp-vex-02-test-examples-final-20261030-r2.log`; SHA-256 `c6d15304de822652d01c142ddc0be1dd270b1045970215ce0b44bc022fe2e616`.

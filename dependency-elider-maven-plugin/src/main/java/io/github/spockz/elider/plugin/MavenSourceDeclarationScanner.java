@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.sun.source.tree.AssertTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.SwitchExpressionTree;
@@ -101,6 +102,9 @@ final class MavenSourceDeclarationScanner {
     /** Mutable declaration set local to this single-threaded source parse. */
     private final Set<String> discoveredNames;
 
+    /** Tracks whether assertions can trigger an interface-generated helper class. */
+    private boolean currentTypeIsInterface;
+
     DeclarationScanner(final String packagePrefix, final Set<String> discoveredNames) {
       super();
       this.packagePrefix = packagePrefix;
@@ -122,7 +126,22 @@ final class MavenSourceDeclarationScanner {
         throw new InvalidSourceDeclaration(binaryName);
       }
       discoveredNames.add(binaryName);
-      return super.visitClass(tree, binaryName);
+      final boolean enclosingInterface = currentTypeIsInterface;
+      currentTypeIsInterface = tree.getKind() == Tree.Kind.INTERFACE;
+      try {
+        return super.visitClass(tree, binaryName);
+      } finally {
+        currentTypeIsInterface = enclosingInterface;
+      }
+    }
+
+    @Override
+    public Void visitAssert(final AssertTree tree, final String owner) {
+      if (currentTypeIsInterface) {
+        throw new InvalidSourceDeclaration(
+            "assertions in interfaces can create compiler-generated class providers");
+      }
+      return super.visitAssert(tree, owner);
     }
 
     @Override

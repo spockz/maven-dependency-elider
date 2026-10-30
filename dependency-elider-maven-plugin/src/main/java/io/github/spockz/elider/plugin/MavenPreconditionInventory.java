@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 
 /** Captures the effective retained artifact view and exact proof-inventory state. */
@@ -46,12 +47,35 @@ final class MavenPreconditionInventory {
         final MavenElisionService.Analysis analysis,
         final Collection<Path> actualStages)
         throws IOException {
-      verifyFresh(project, plan, analysis, knownOutputs, actualStages);
+      verifyFresh(project, null, plan, analysis, knownOutputs, actualStages);
+    }
+
+    /** Rechecks using the same Maven property views as capture. */
+    void verifyFresh(
+        final MavenProject project,
+        final MavenSession session,
+        final MavenElisionService.ApplyPlan plan,
+        final MavenElisionService.Analysis analysis,
+        final Collection<Path> actualStages)
+        throws IOException {
+      verifyFresh(project, session, plan, analysis, knownOutputs, actualStages);
     }
 
     /** Rejects target changes as well as provider-root, staging-path, and digest drift. */
     void verifyFresh(
         final MavenProject project,
+        final MavenElisionService.ApplyPlan plan,
+        final MavenElisionService.Analysis analysis,
+        final Collection<Path> actualOutputs,
+        final Collection<Path> actualStages)
+        throws IOException {
+      verifyFresh(project, null, plan, analysis, actualOutputs, actualStages);
+    }
+
+    /** Rejects drift after rechecking compiler safety. */
+    void verifyFresh(
+        final MavenProject project,
+        final MavenSession session,
         final MavenElisionService.ApplyPlan plan,
         final MavenElisionService.Analysis analysis,
         final Collection<Path> actualOutputs,
@@ -71,7 +95,7 @@ final class MavenPreconditionInventory {
       MavenElisionService.verifyCurrentViews(project, analysis);
       MavenPreconditionStages.validateExpected(knownStages, stages);
       final Snapshot current =
-          captureInternal(project, plan, analysis, true, knownOutputs, knownStages);
+          captureInternal(project, session, plan, analysis, true, knownOutputs, knownStages);
       if (!matches(current)) {
         throw new IOException("Precondition provider inventory changed before publication");
       }
@@ -96,7 +120,19 @@ final class MavenPreconditionInventory {
       final boolean optIn,
       final Collection<Path> knownOutputs)
       throws IOException {
-    return captureInternal(project, plan, analysis, optIn, knownOutputs, List.of());
+    return captureInternal(project, null, plan, analysis, optIn, knownOutputs, List.of());
+  }
+
+  /** Captures proof providers with the active Maven session. */
+  static Snapshot capture(
+      final MavenProject project,
+      final MavenSession session,
+      final MavenElisionService.ApplyPlan plan,
+      final MavenElisionService.Analysis analysis,
+      final boolean optIn,
+      final Collection<Path> knownOutputs)
+      throws IOException {
+    return captureInternal(project, session, plan, analysis, optIn, knownOutputs, List.of());
   }
 
   /** Captures the inventory while binding the transaction's exact staging paths. */
@@ -108,11 +144,25 @@ final class MavenPreconditionInventory {
       final Collection<Path> knownOutputs,
       final Collection<Path> knownStages)
       throws IOException {
-    return captureInternal(project, plan, analysis, optIn, knownOutputs, knownStages);
+    return captureInternal(project, null, plan, analysis, optIn, knownOutputs, knownStages);
+  }
+
+  /** Captures proof providers and transaction stages with the active session. */
+  static Snapshot capture(
+      final MavenProject project,
+      final MavenSession session,
+      final MavenElisionService.ApplyPlan plan,
+      final MavenElisionService.Analysis analysis,
+      final boolean optIn,
+      final Collection<Path> knownOutputs,
+      final Collection<Path> knownStages)
+      throws IOException {
+    return captureInternal(project, session, plan, analysis, optIn, knownOutputs, knownStages);
   }
 
   private static Snapshot captureInternal(
       final MavenProject project,
+      final MavenSession session,
       final MavenElisionService.ApplyPlan plan,
       final MavenElisionService.Analysis analysis,
       final boolean optIn,
@@ -132,11 +182,12 @@ final class MavenPreconditionInventory {
           false);
     }
     try {
+      MavenCompilerGenerationGuard.requireSafeCompilerConfiguration(project, session);
       final List<ArtifactFileRef> verifiedArtifactFiles =
           MavenPreconditionArtifactInventory.capture(plan, analysis, true);
       MavenPreconditionStages.validateIfPresent(stages);
       final MavenPreconditionProviderRoots.Capture roots =
-          MavenPreconditionProviderRoots.capture(project, analysis, stages);
+          MavenPreconditionProviderRoots.capture(project, session, analysis, stages);
       final List<Provider> providers =
           new ArrayList<>(
               MavenPreconditionArtifactInventory.dependencyProviders(verifiedArtifactFiles));

@@ -70,7 +70,12 @@ final class MavenElisionOutputPublisher {
       request.afterStaging().run();
       outputs.verifyStageDigests(stages.digests());
       inventory.verifyFresh(
-          request.project(), plan, request.analysis(), outputTargets, stages.paths());
+          request.project(),
+          request.session(),
+          plan,
+          request.analysis(),
+          outputTargets,
+          stages.paths());
       cleanupStaleVex(request, assessment, staleVexDigest, outputs);
       outputs.publish(stages.digests());
       publishViewsAndPlan(request, plan);
@@ -96,6 +101,7 @@ final class MavenElisionOutputPublisher {
       throws IOException {
     return MavenPreconditionInventory.capture(
         request.project(),
+        request.session(),
         plan,
         request.analysis(),
         request.preconditionProofEnabled(),

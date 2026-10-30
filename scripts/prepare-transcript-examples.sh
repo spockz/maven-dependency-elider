@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# WHY: Prepares the example artifacts and runtime traces needed for transcripts without compiling or running tests.
+# WHY: Prepares example artifacts and runtime traces for transcripts; the safe-class fixture compiles test sources so its complete provider inventory can be proven.
 set -euo pipefail
 
 main() {
@@ -144,11 +144,15 @@ main() {
       "-Delide.cveCacheDirectory=$cache_dir"
       -Delide.mode=elision
       "-Delide.traceFiles=$trace"
-      -Dmaven.test.skip=true
       -Delide.trimJars=true
       -Delide.sourceRootsComplete=true
       -Dmaven.compiler.proc=none
     )
+    if [[ $fixture == example-cve-safe-class-app ]]; then
+      elision_options+=(-DskipTests=true)
+    else
+      elision_options+=(-Dmaven.test.skip=true)
+    fi
     case "$fixture" in
       example-basic-app)
         elision_options+=(

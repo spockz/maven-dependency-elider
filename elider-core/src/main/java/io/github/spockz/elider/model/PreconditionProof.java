@@ -31,6 +31,13 @@ public final class PreconditionProof {
   /** Prefix used to distinguish multi-release archive variants. */
   private static final String VERSIONED_PREFIX = "META-INF/versions/";
 
+  /** Descriptor basename for javac plugins not disabled by proc=none. */
+  private static final String JAVAC_PLUGIN_SERVICE_FILE_NAME = "com.sun.source.util.Plugin";
+
+  /** Classpath service descriptor path checked in archives. */
+  private static final String JAVAC_PLUGIN_SERVICE_ENTRY =
+      "META-INF/services/" + JAVAC_PLUGIN_SERVICE_FILE_NAME;
+
   /** First legal multi-release JAR version. */
   private static final int MINIMUM_MULTI_RELEASE_VERSION = 9;
 
@@ -203,6 +210,14 @@ public final class PreconditionProof {
   }
 
   private static Set<String> readApplicationResource(final Path path) throws IOException {
+    final Path fileNamePath = path.getFileName();
+    if (fileNamePath == null) {
+      throw new IOException("Application resource path has no filename: " + path);
+    }
+    if (JAVAC_PLUGIN_SERVICE_FILE_NAME.equals(fileNamePath.toString())) {
+      throw new IOException(
+          "Javac plugin service provider can generate classes during compilation");
+    }
     final byte[] header;
     try (InputStream input = Files.newInputStream(path)) {
       header = input.readNBytes(CLASS_FILE_HEADER_LENGTH);
@@ -212,10 +227,6 @@ public final class PreconditionProof {
     }
     if (isZipFile(header)) {
       return readArchiveClasses(path);
-    }
-    final Path fileNamePath = path.getFileName();
-    if (fileNamePath == null) {
-      throw new IOException("Application resource path has no filename: " + path);
     }
     final String fileName = fileNamePath.toString().toLowerCase(Locale.ROOT);
     if (fileName.endsWith(CLASS_SUFFIX) || fileName.endsWith(".jar") || fileName.endsWith(".zip")) {
@@ -260,6 +271,10 @@ public final class PreconditionProof {
       return;
     }
     final String entryName = entry.getName();
+    if (JAVAC_PLUGIN_SERVICE_ENTRY.equals(entryName)) {
+      throw new IOException(
+          "Javac plugin service provider can generate classes during compilation");
+    }
     final byte[] header = readArchiveEntryHeader(archive, entry);
     if (entryName.endsWith(CLASS_SUFFIX)) {
       if (!isClassFile(header)) {
