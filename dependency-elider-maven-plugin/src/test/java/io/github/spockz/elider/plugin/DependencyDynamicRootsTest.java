@@ -19,7 +19,9 @@ import org.junit.jupiter.api.io.TempDir;
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
   "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.AtLeastOneConstructor"
+  "PMD.AtLeastOneConstructor",
+  "PMD.TooManyMethods",
+  "PMD.AvoidDuplicateLiterals"
 })
 final class DependencyDynamicRootsTest {
   /** Test service interface name. */
@@ -172,6 +174,118 @@ final class DependencyDynamicRootsTest {
     assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of(), true))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("-H:CustomFlag");
+  }
+
+  @Test
+  void extractsArrayAndDescriptorRootsInReflectConfig() throws IOException {
+    final String reflectConfig =
+        "[\n"
+            + "  {\n"
+            + "    \"name\": \"kotlin.internal.jdk8.JDK8PlatformImplementations\",\n"
+            + "    \"allDeclaredConstructors\": true\n"
+            + "  },\n"
+            + "  {\n"
+            + "    \"name\": \"kotlin.KotlinVersion\",\n"
+            + "    \"allPublicMethods\": true,\n"
+            + "    \"allDeclaredFields\": true,\n"
+            + "    \"allDeclaredMethods\": true,\n"
+            + "    \"allDeclaredConstructors\": true\n"
+            + "  },\n"
+            + "  {\n"
+            + "    \"name\": \"kotlin.KotlinVersion[]\"\n"
+            + "  },\n"
+            + "  {\n"
+            + "    \"name\": \"kotlin.KotlinVersion$Companion\"\n"
+            + "  },\n"
+            + "  {\n"
+            + "    \"name\": \"kotlin.KotlinVersion$Companion[]\"\n"
+            + "  },\n"
+            + "  {\n"
+            + "    \"name\": \"[Lorg.example.Widget;\"\n"
+            + "  },\n"
+            + "  {\n"
+            + "    \"name\": \"[[Lorg/example/MultiLevel;\"\n"
+            + "  },\n"
+            + "  {\n"
+            + "    \"name\": \"int[]\"\n"
+            + "  },\n"
+            + "  {\n"
+            + "    \"name\": \"[B\"\n"
+            + "  },\n"
+            + "  {\n"
+            + "    \"name\": \"int\"\n"
+            + "  }\n"
+            + "]";
+
+    final Path jar =
+        nativeImageJar(
+            "Args = \"-H:ReflectionConfigurationResources=${.}/reflect-config.json\"\n",
+            "META-INF/native-image/test/reflect-config.json",
+            reflectConfig);
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+
+    assertThat(scan.roots())
+        .containsExactlyInAnyOrder(
+            "kotlin.internal.jdk8.JDK8PlatformImplementations",
+            "kotlin.KotlinVersion",
+            "kotlin.KotlinVersion$Companion",
+            "org.example.Widget",
+            "org.example.MultiLevel");
+    assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
+  void rejectsMalformedArrayOrClassNamesInReflectConfig() throws IOException {
+    final Path jar =
+        nativeImageJar(
+            "Args = \"-H:ReflectionConfigurationResources=${.}/reflect-config.json\"\n",
+            "META-INF/native-image/test/reflect-config.json",
+            "[{\"name\":\"invalid..ClassName[]\"}]");
+
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Reflect configuration lacks a valid class name");
+  }
+
+  @Test
+  void extractsRootsFromUnifiedReachabilityMetadata() throws IOException {
+    final String reachabilityMetadata =
+        "{\n"
+            + "  \"reflection\": [\n"
+            + "    {\"type\": \"boolean\"},\n"
+            + "    {\"type\": \"boolean[]\"},\n"
+            + "    {\"type\": \"byte[]\"},\n"
+            + "    {\"type\": \"com.fasterxml.jackson.core.Versioned\"},\n"
+            + "    {\"type\": \"com.fasterxml.jackson.databind.deser."
+            + "BeanDeserializerModifier[]\"},\n"
+            + "    {\"type\": \"com.fasterxml.jackson.databind.deser.Deserializers[]\"}\n"
+            + "  ],\n"
+            + "  \"serialization\": [\n"
+            + "    {\"type\": \"org.example.SerializablePayload\"}\n"
+            + "  ],\n"
+            + "  \"jni\": [\n"
+            + "    {\"name\": \"org.example.NativeLibraryBridge\"}\n"
+            + "  ]\n"
+            + "}";
+
+    final Path jar = tempDir.resolve("reachability-metadata-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+      out.putNextEntry(new JarEntry("META-INF/native-image/test/group/reachability-metadata.json"));
+      out.write(reachabilityMetadata.getBytes(StandardCharsets.UTF_8));
+      out.closeEntry();
+    }
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+
+    assertThat(scan.roots())
+        .containsExactlyInAnyOrder(
+            "com.fasterxml.jackson.core.Versioned",
+            "com.fasterxml.jackson.databind.deser.BeanDeserializerModifier",
+            "com.fasterxml.jackson.databind.deser.Deserializers",
+            "org.example.SerializablePayload",
+            "org.example.NativeLibraryBridge");
+    assertThat(scan.requiresPassThrough()).isFalse();
   }
 
   private Path nativeImageJar(final String args) throws IOException {

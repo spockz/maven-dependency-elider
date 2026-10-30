@@ -45,12 +45,12 @@ class GraalVmConfigReaderTest {
     final Path malformed = tempDir.resolve("malformed.json");
     final Path invalidName = tempDir.resolve("invalid-name.json");
     final Path trailingRoot = tempDir.resolve("trailing.json");
-    final Path arrayName = tempDir.resolve("array-name.json");
+    final Path malformedArray = tempDir.resolve("malformed-array.json");
     final Path duplicateName = tempDir.resolve("duplicate.json");
     Files.writeString(malformed, "[{\"name\":42}]");
     Files.writeString(invalidName, "[{\"name\":\"not a class\"}]");
     Files.writeString(trailingRoot, "[{\"name\":\"org.example.Valid\"}] []");
-    Files.writeString(arrayName, "[{\"name\":\"[Lorg.example.Widget;\"}]");
+    Files.writeString(malformedArray, "[{\"name\":\"invalid..name[]\"}]");
     Files.writeString(
         duplicateName, "[{\"name\":\"org.example.First\",\"name\":\"org.example.Second\"}]");
     final GraalVmConfigReader reader = new GraalVmConfigReader();
@@ -58,9 +58,66 @@ class GraalVmConfigReaderTest {
     assertThatIOException().isThrownBy(() -> reader.read(malformed));
     assertThatIOException().isThrownBy(() -> reader.read(invalidName));
     assertThatIOException().isThrownBy(() -> reader.read(trailingRoot));
-    assertThatIOException().isThrownBy(() -> reader.read(arrayName));
+    assertThatIOException().isThrownBy(() -> reader.read(malformedArray));
     assertThatIOException().isThrownBy(() -> reader.read(duplicateName));
     assertThatIOException().isThrownBy(() -> reader.read(tempDir.resolve("classes.log")));
+  }
+
+  @Test
+  void extractsArrayDescriptorsAndSourceArraysIntoComponentClasses() throws IOException {
+    final Path config = tempDir.resolve("array-reflect-config.json");
+    Files.writeString(
+        config,
+        "[\n"
+            + "  {\"name\": \"kotlin.internal.jdk8.JDK8PlatformImplementations\"},\n"
+            + "  {\"name\": \"kotlin.KotlinVersion\"},\n"
+            + "  {\"name\": \"kotlin.KotlinVersion[]\"},\n"
+            + "  {\"name\": \"kotlin.KotlinVersion$Companion\"},\n"
+            + "  {\"name\": \"kotlin.KotlinVersion$Companion[]\"},\n"
+            + "  {\"name\": \"[Lorg.example.Widget;\"},\n"
+            + "  {\"name\": \"int[]\"},\n"
+            + "  {\"name\": \"[B\"}\n"
+            + "]");
+
+    final TraceData result = new GraalVmConfigReader().read(config);
+
+    assertThat(result.loadedClassesDotFormat())
+        .containsExactlyInAnyOrder(
+            "kotlin.internal.jdk8.JDK8PlatformImplementations",
+            "kotlin.KotlinVersion",
+            "kotlin.KotlinVersion$Companion",
+            "org.example.Widget");
+  }
+
+  @Test
+  void extractsRootsFromUnifiedReachabilityMetadata() throws IOException {
+    final Path config = tempDir.resolve("reachability-metadata.json");
+    Files.writeString(
+        config,
+        "{\n"
+            + "  \"reflection\": [\n"
+            + "    {\"type\": \"boolean\"},\n"
+            + "    {\"type\": \"byte[]\"},\n"
+            + "    {\"type\": \"com.fasterxml.jackson.core.Versioned\"},\n"
+            + "    {\"type\": \"com.fasterxml.jackson.databind.deser."
+            + "BeanDeserializerModifier[]\"}\n"
+            + "  ],\n"
+            + "  \"serialization\": [\n"
+            + "    {\"type\": \"org.example.SerializablePayload\"}\n"
+            + "  ],\n"
+            + "  \"jni\": [\n"
+            + "    {\"name\": \"org.example.NativeLibraryBridge\"}\n"
+            + "  ]\n"
+            + "}");
+
+    final TraceData result = new GraalVmConfigReader().read(config);
+
+    assertThat(result.loadedClassesDotFormat())
+        .containsExactlyInAnyOrder(
+            "com.fasterxml.jackson.core.Versioned",
+            "com.fasterxml.jackson.databind.deser.BeanDeserializerModifier",
+            "org.example.SerializablePayload",
+            "org.example.NativeLibraryBridge");
   }
 
   @Test

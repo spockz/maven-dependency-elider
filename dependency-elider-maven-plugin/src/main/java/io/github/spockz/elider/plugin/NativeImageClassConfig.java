@@ -12,11 +12,24 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /** Validates supported native-image metadata. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.GodClass",
+  "PMD.TooManyMethods",
+  "PMD.CyclomaticComplexity"
+})
 final class NativeImageClassConfig {
   /** Shared parser configured for native-image metadata JSON. */
   private static final ObjectMapper JSON =
       new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+
+  /** Primitive type names recognized in reflection metadata. */
+  private static final Set<String> PRIMITIVE_TYPES =
+      Set.of("boolean", "byte", "char", "short", "int", "long", "float", "double", "void");
+
+  /** Primitive type descriptor characters recognized in JVM descriptors. */
+  private static final Set<Character> PRIMITIVE_DESCRIPTORS =
+      Set.of('Z', 'B', 'C', 'S', 'I', 'J', 'F', 'D', 'V');
 
   private NativeImageClassConfig() {}
 
@@ -32,11 +45,37 @@ final class NativeImageClassConfig {
         if (parser.nextToken() != null) {
           throw new IOException("Trailing data in native-image configuration: " + name);
         }
-        if (document == null || !document.isArray()) {
+        if (document == null) {
           throw new IOException("Malformed native-image configuration: " + name);
         }
-        readElements(document, name, roots);
+        if (document.isArray()) {
+          readElements(document, name, roots);
+        } else if (document.isObject() && isUnifiedReachabilityMetadata(name)) {
+          readUnifiedDocument(document, name, roots);
+        } else {
+          throw new IOException("Malformed native-image configuration: " + name);
+        }
       }
+    }
+  }
+
+  private static void readUnifiedDocument(
+      final JsonNode document, final String name, final Set<String> roots) throws IOException {
+    readUnifiedSection(document.get("reflection"), name, roots);
+    readUnifiedSection(document.get("jni"), name, roots);
+    readUnifiedSection(document.get("serialization"), name, roots);
+  }
+
+  private static void readUnifiedSection(
+      final JsonNode section, final String name, final Set<String> roots) throws IOException {
+    if (section == null) {
+      return;
+    }
+    if (!section.isArray()) {
+      throw new IOException("Malformed reachability metadata section in " + name);
+    }
+    for (final JsonNode element : section) {
+      readReflectionElement(element, name, roots);
     }
   }
 
@@ -53,13 +92,95 @@ final class NativeImageClassConfig {
 
   private static void readReflectionElement(
       final JsonNode element, final String name, final Set<String> roots) throws IOException {
-    final JsonNode className = element.get("name");
-    if (className == null
-        || !className.isTextual()
-        || !NativeImageDynamicRoots.isBinaryClassName(className.textValue())) {
+    final JsonNode className =
+        element.hasNonNull("name") ? element.get("name") : element.get("type");
+    if (className == null || !className.isTextual()) {
       throw new IOException("Reflect configuration lacks a valid class name: " + name);
     }
-    roots.add(className.textValue());
+    final String componentClass = extractComponentClass(className.textValue());
+    if (componentClass == null) {
+      throw new IOException("Reflect configuration lacks a valid class name: " + name);
+    }
+    if (!componentClass.isEmpty()) {
+      roots.add(componentClass);
+    }
+    final JsonNode condition = element.get("condition");
+    if (condition != null) {
+      readReflectionCondition(condition, name, roots);
+    }
+  }
+
+  private static void readReflectionCondition(
+      final JsonNode condition, final String name, final Set<String> roots) throws IOException {
+    if (!condition.isObject()) {
+      throw new IOException("Malformed reflect condition: " + name);
+    }
+    final JsonNode conditionClass = condition.get("typeReachable");
+    if (conditionClass != null) {
+      if (!conditionClass.isTextual()) {
+        throw new IOException("Malformed reflect condition class name: " + name);
+      }
+      final String conditionRoot = extractComponentClass(conditionClass.textValue());
+      if (conditionRoot == null) {
+        throw new IOException("Malformed reflect condition class name: " + name);
+      }
+      if (!conditionRoot.isEmpty()) {
+        roots.add(conditionRoot);
+      }
+    }
+  }
+
+  @SuppressWarnings({
+    "PMD.CognitiveComplexity",
+    "PMD.CyclomaticComplexity",
+    "PMD.AvoidDeeplyNestedIfStmts"
+  })
+  static String extractComponentClass(final String value) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    final String trimmed = value.trim();
+
+    if (trimmed.startsWith("[")) {
+      int index = 0;
+      while (index < trimmed.length() && trimmed.charAt(index) == '[') {
+        index++;
+      }
+      final String element = trimmed.substring(index);
+      if (element.startsWith("L") && element.endsWith(";") && element.length() > 2) {
+        final String className = element.substring(1, element.length() - 1).replace('/', '.');
+        if (NativeImageDynamicRoots.isBinaryClassName(className)) {
+          return className;
+        }
+      } else if (element.length() == 1 && PRIMITIVE_DESCRIPTORS.contains(element.charAt(0))) {
+        return "";
+      }
+      return null;
+    }
+
+    if (trimmed.endsWith("[]")) {
+      String elementType = trimmed;
+      while (elementType.endsWith("[]")) {
+        elementType = elementType.substring(0, elementType.length() - 2).trim();
+      }
+      if (PRIMITIVE_TYPES.contains(elementType)) {
+        return "";
+      }
+      if (NativeImageDynamicRoots.isBinaryClassName(elementType)) {
+        return elementType;
+      }
+      return null;
+    }
+
+    if (PRIMITIVE_TYPES.contains(trimmed)) {
+      return "";
+    }
+
+    if (NativeImageDynamicRoots.isBinaryClassName(trimmed)) {
+      return trimmed;
+    }
+
+    return null;
   }
 
   private static void readProxyElement(
@@ -76,6 +197,7 @@ final class NativeImageClassConfig {
     readProxyObjectInterfaces(element.get("interfaces"), name, roots);
   }
 
+  @SuppressWarnings("PMD.CyclomaticComplexity")
   private static void readProxyCondition(
       final JsonNode condition, final String name, final Set<String> roots) throws IOException {
     if (condition != null) {
@@ -84,12 +206,14 @@ final class NativeImageClassConfig {
       }
       validateFields(condition, Set.of("typeReachable"), "proxy condition", name);
       final JsonNode conditionClass = condition.get("typeReachable");
-      if (conditionClass == null
-          || !conditionClass.isTextual()
-          || !NativeImageDynamicRoots.isBinaryClassName(conditionClass.textValue())) {
+      if (conditionClass == null || !conditionClass.isTextual()) {
         throw new IOException("Malformed proxy condition class name: " + name);
       }
-      roots.add(conditionClass.textValue());
+      final String conditionRoot = extractComponentClass(conditionClass.textValue());
+      if (conditionRoot == null || conditionRoot.isEmpty()) {
+        throw new IOException("Malformed proxy condition class name: " + name);
+      }
+      roots.add(conditionRoot);
     }
   }
 
@@ -131,7 +255,13 @@ final class NativeImageClassConfig {
         || name.endsWith("-jni.json");
   }
 
+  private static boolean isUnifiedReachabilityMetadata(final String name) {
+    return name.endsWith("reachability-metadata.json");
+  }
+
   static boolean isNativeImageClassConfig(final String name) {
-    return isReflectionConfig(name) || name.endsWith("proxy-config.json");
+    return isReflectionConfig(name)
+        || name.endsWith("proxy-config.json")
+        || isUnifiedReachabilityMetadata(name);
   }
 }
