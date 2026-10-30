@@ -186,6 +186,7 @@ Or configure the execution permanently in `pom.xml`:
 Packaging is modeled only for maven-shade-plugin 3.6.0 with one `package`/`shade` execution and one built-in manifest transformer whose `mainClass` is resolved. The inherited signature-only resource exclusions in the examples are allowed. Other Shade filters, transformers, inputs, dependencies, source-JAR properties, or custom maven-jar-plugin configuration suppress proof.
 If the requested lifecycle reaches `test`, the guard also requires the standard Maven Surefire Plugin 3.5.2 `default-test` execution and explicit `-DskipTests=true`. Test source compilation remains enabled and its classes stay in the inventory; baseline fixture runs do not skip their tests.
 | `elide.sourceRootsComplete` | `false` | Set `true` only if all production and generated sources exist before `INITIALIZE` with no downstream generation. When `false`, all compile-classpath JARs and classes are conservatively retained. |
+| `elide.productionClassesComplete` | `false` | Asserts that production output contains all compiled production classes. With the Maven extension enabled, this rebinds the default `elide` execution from `initialize` to `process-classes`; the output directory defaults to `${project.build.outputDirectory}` and must contain at least one `.class` file. This assertion is separate from trusted precondition capture: direct CLI goals and missing/other phases keep conservative provider-generation guards. It cannot be combined with `elide.sourceRootsComplete=true`. |
 | `elide.trimRoots` | *(none)* | Comma-separated additional root classes (e.g. `com.example.AppRoot`). |
 | `elide.trimSkipArtifacts` | *(none)* | Comma-separated coordinates of retained JARs to keep byte-identical. Their classes serve as roots for sibling closure. |
 | `elide.mrjarStrategy` | `vertical-shading` | With `trimJars=true`, `vertical-shading` elevates and trims the configured compiler release view. Higher-tier entries are preserved while their analyzed bodies retain sibling dependencies. Set to `pass-through` to preserve the entire multi-release input JAR byte-identically; when another dependency is trimmed, the unchanged MRJAR still contributes closure through the Maven runtime release. |
@@ -209,9 +210,11 @@ Set `-Delide.trimWorkers=2` to cap trimming at two workers. This setting limits 
 * **Exact Pass-Through (`trimSkipArtifacts`)**: Pins specified dependencies byte-identical while allowing their classes to resolve external links into trimmed sibling dependencies.
 * **Native-image argument policy**: `allowedNativeImageArgs` accepts names only (for example `-H:EnableURLProtocols`, without a value after `=`). Unknown arguments fail closed unless `failOnUnsupportedNativeImageArgs=false`; in fallback mode, the archive containing the unknown argument remains unchanged and its classes participate in sibling link closure.
 
-### Inspecting the Post-Elision Dependency Tree
+### Using Post-Compile Elision and Inspecting the Dependency Tree
 
-With `.mvn/extensions.xml` and an active initialize-bound elider execution, run `dependency:tree` to inspect the post-elision graph directly:
+For projects with source generators or annotation processors, enable the extension and set `elide.productionClassesComplete=true`, or bind the `elide` execution explicitly to `process-classes`. The extension can rebind an initialize-bound execution before Maven creates the lifecycle plan. Use the normal lifecycle so generation and compilation run before capture. A direct `mvn dependency-elider:elide` invocation does not establish this capture point. Unknown writers at `process-classes` or later remain unsupported; `skipTests` also leaves `testCompile` enabled, so test-compiler safeguards continue to apply.
+
+With `.mvn/extensions.xml` and an active `initialize` or `process-classes` elider execution, run `dependency:tree` to inspect the post-elision graph directly. A process-classes binding injects that phase before the tree request unless an equal or later lifecycle phase already appears before it:
 
 ```sh
 mvn dependency:tree

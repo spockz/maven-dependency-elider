@@ -17,6 +17,7 @@ final class EliderPluginConfiguration {
   private static final String ELIDER_ARTIFACT_ID = "dependency-elider-maven-plugin";
   private static final String ELIDE_GOAL = "elide";
   private static final String INITIALIZE_PHASE = "initialize";
+  private static final String PROCESS_CLASSES_PHASE = "process-classes";
 
   private EliderPluginConfiguration() {}
 
@@ -65,16 +66,26 @@ final class EliderPluginConfiguration {
 
   static void requireInitializeBinding(final PluginExecution execution, final MavenProject project)
       throws MavenExecutionException {
-    final String phase = execution.getPhase();
-    if (phase != null && !phase.isBlank() && !INITIALIZE_PHASE.equals(phase)) {
+    effectivePhase(execution, project);
+  }
+
+  static String effectivePhase(final PluginExecution execution, final MavenProject project)
+      throws MavenExecutionException {
+    final String configuredPhase = execution.getPhase();
+    final String phase =
+        configuredPhase == null || configuredPhase.isBlank() ? INITIALIZE_PHASE : configuredPhase;
+    if (!INITIALIZE_PHASE.equals(phase) && !PROCESS_CLASSES_PHASE.equals(phase)) {
       throw failure(
           project,
           "Automatic dependency:tree preparation requires dependency-elider:elide bound to "
               + INITIALIZE_PHASE
+              + " or "
+              + PROCESS_CLASSES_PHASE
               + " (found "
               + phase
               + ")");
     }
+    return phase;
   }
 
   static void requireExecutionIdentity(

@@ -4,7 +4,6 @@ package io.github.spockz.elider.plugin;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import org.apache.maven.MavenExecutionException;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
@@ -13,8 +12,8 @@ import org.apache.maven.project.MavenProject;
 final class EliderGoalOrder {
   static final int ONE_MATCH = 1;
 
-  private static final Set<String> PREPARED_PHASES =
-      Set.of(
+  private static final List<String> PREPARED_PHASE_ORDER =
+      List.of(
           "initialize",
           "generate-sources",
           "process-sources",
@@ -62,10 +61,19 @@ final class EliderGoalOrder {
   static void validateCleanOrdering(
       final List<String> goals, final int treeIndex, final MavenProject project)
       throws MavenExecutionException {
+    validateCleanOrdering(goals, treeIndex, project, "initialize");
+  }
+
+  static void validateCleanOrdering(
+      final List<String> goals,
+      final int treeIndex,
+      final MavenProject project,
+      final String requiredPhase)
+      throws MavenExecutionException {
     final int lastCleanBeforeTree = lastCleanBefore(goals, treeIndex);
     if (lastCleanBeforeTree >= 0
         && hasPreparedLifecycleAfter(goals, -1, lastCleanBeforeTree)
-        && !hasPreparedLifecycleAfter(goals, lastCleanBeforeTree, treeIndex)) {
+        && !hasPreparedLifecycleAfter(goals, lastCleanBeforeTree, treeIndex, requiredPhase)) {
       throw EliderPluginConfiguration.failure(
           project,
           "Cannot prepare dependency:tree after clean invalidated earlier lifecycle outputs");
@@ -81,8 +89,21 @@ final class EliderGoalOrder {
 
   static boolean hasPreparedLifecycleAfter(
       final List<String> goals, final int lastCleanIndex, final int treeIndex) {
+    return hasPreparedLifecycleAfter(goals, lastCleanIndex, treeIndex, "initialize");
+  }
+
+  static boolean hasPreparedLifecycleAfter(
+      final List<String> goals,
+      final int lastCleanIndex,
+      final int treeIndex,
+      final String requiredPhase) {
+    final int requiredPhaseIndex = PREPARED_PHASE_ORDER.indexOf(requiredPhase);
+    if (requiredPhaseIndex < 0) {
+      return false;
+    }
     for (int index = lastCleanIndex + 1; index < treeIndex; index++) {
-      if (PREPARED_PHASES.contains(goals.get(index))) {
+      final int goalPhaseIndex = PREPARED_PHASE_ORDER.indexOf(goals.get(index));
+      if (goalPhaseIndex >= requiredPhaseIndex) {
         return true;
       }
     }

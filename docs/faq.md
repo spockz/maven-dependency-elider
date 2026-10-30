@@ -57,6 +57,8 @@ MRJAR linkage analysis covers implementation tiers from the configured compiler 
 
 Leave `elide.sourceRootsComplete=false`, the default. This conservatively keeps compile-visible JARs and their classes available for trimming. Set it to `true` only when all production and generated sources are available before the elider runs and no later generator adds compile references.
 
+For a project that generates production code during the build, enable the Maven extension and set `elide.productionClassesComplete=true`, or bind `dependency-elider:elide` to `process-classes`. The elider then uses the compiled output after `compile`; the directory must contain at least one `.class` file. A direct `mvn dependency-elider:elide` goal does not run the lifecycle or establish that capture point, so it keeps the conservative precondition-proof checks. `skipTests` does not skip test compilation, and compiler processor safeguards still apply to `testCompile`.
+
 ### What happens to JARs with a root `module-info.class`?
 
 On the classpath, such JARs are kept byte-identical with a warning. Set `-Delide.failOnUnsupportedModuleInfo=true` to fail instead. JPMS module-path behavior is not supported.

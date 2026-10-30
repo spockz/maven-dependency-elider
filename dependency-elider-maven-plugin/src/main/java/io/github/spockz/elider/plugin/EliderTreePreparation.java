@@ -39,14 +39,7 @@ final class EliderTreePreparation {
       throws MavenExecutionException {
     final MavenProject project = configurations.getFirst().project();
     final int treeIndex = EliderGoalOrder.firstTreeIndex(goals);
-    EliderGoalOrder.validateCleanOrdering(goals, treeIndex, project);
     final int lastCleanIndex = EliderGoalOrder.lastCleanBefore(goals, treeIndex);
-    if (EliderGoalOrder.hasPreparedLifecycleAfter(goals, lastCleanIndex, treeIndex)
-        || EliderGoalOrder.hasMatchingExecutionAfter(
-            goals, configurations, lastCleanIndex, treeIndex)) {
-      return;
-    }
-    requireSingleProjectReactor(session, request);
     final EliderPluginConfiguration.ElideConfiguration configuration =
         requireSingleConfiguration(configurations, request);
     if (configuration.executions().size() != ONE_CONFIGURED_EXECUTION) {
@@ -56,21 +49,34 @@ final class EliderTreePreparation {
               + "dependency-elider:elide execution");
     }
     final PluginExecution execution = configuration.executions().getFirst();
-    EliderPluginConfiguration.requireInitializeBinding(execution, project);
+    final String requiredPhase = EliderPluginConfiguration.effectivePhase(execution, project);
     EliderPluginConfiguration.requireExecutionIdentity(configuration.plugin(), execution, project);
+    EliderGoalOrder.validateCleanOrdering(goals, treeIndex, project, requiredPhase);
+    if (EliderGoalOrder.hasPreparedLifecycleAfter(goals, lastCleanIndex, treeIndex, requiredPhase)
+        || EliderGoalOrder.hasMatchingExecutionAfter(
+            goals, configurations, lastCleanIndex, treeIndex)) {
+      return;
+    }
+    requireSingleProjectReactor(session, request);
+    EliderPluginConfiguration.requireInitializeBinding(execution, project);
 
+    final boolean processClassesBinding = "process-classes".equals(requiredPhase);
     final List<String> preparedGoals =
         EliderGoalOrder.insertBeforeTree(
             goals,
             treeIndex,
-            EliderGoalMatcher.configuredElideGoal(configuration.plugin(), execution));
-    final SessionData data = EliderPreparationState.sessionData(session);
-    if (!data.set(
-        EliderPreparationState.PREPARATION_STATE_KEY,
-        null,
-        EliderPreparationState.pending(execution.getId(), project.getId()))) {
-      throw EliderPluginConfiguration.failure(
-          project, "Tree preparation state is already present in this session");
+            processClassesBinding
+                ? "process-classes"
+                : EliderGoalMatcher.configuredElideGoal(configuration.plugin(), execution));
+    if (!processClassesBinding) {
+      final SessionData data = EliderPreparationState.sessionData(session);
+      if (!data.set(
+          EliderPreparationState.PREPARATION_STATE_KEY,
+          null,
+          EliderPreparationState.pending(execution.getId(), project.getId()))) {
+        throw EliderPluginConfiguration.failure(
+            project, "Tree preparation state is already present in this session");
+      }
     }
     request.setGoals(preparedGoals);
   }

@@ -77,19 +77,9 @@ final class MavenElisionService {
       int trimWorkers,
       String mrjarStrategy,
       List<String> allowedNativeImageArgs,
-      boolean failOnUnsupportedNativeImageArgs) {
-    AnalysisOptions {
-      if (trimWorkers < MavenDependencyTrimmer.MIN_TRIM_WORKERS) {
-        throw new IllegalArgumentException("trimWorkers must be at least 1");
-      }
-      if (!MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING.equals(mrjarStrategy)
-          && !MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(mrjarStrategy)) {
-        throw new IllegalArgumentException(
-            "elide.mrjarStrategy must be vertical-shading or pass-through");
-      }
-      allowedNativeImageArgs = canonicalAllowedNativeImageArgs(allowedNativeImageArgs);
-    }
-
+      boolean failOnUnsupportedNativeImageArgs,
+      boolean productionClassesComplete,
+      boolean trustedProcessClassesContext) {
     AnalysisOptions(
         final List<File> traceFiles,
         final List<String> excludedArtifacts,
@@ -121,7 +111,43 @@ final class MavenElisionService {
           trimWorkers,
           mrjarStrategy,
           List.of(),
-          true);
+          true,
+          false,
+          false);
+    }
+
+    AnalysisOptions(
+        final List<File> traceFiles,
+        final List<String> excludedArtifacts,
+        final File productionOutput,
+        final MavenSession session,
+        final boolean sourceRootsComplete,
+        final boolean trimJars,
+        final List<String> explicitTrimRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> explicitPassThroughArtifacts,
+        final boolean failOnUnsupportedModuleInfo,
+        final boolean testResolutionContext,
+        final boolean conservativeServiceLoaderRoots) {
+      this(
+          traceFiles,
+          excludedArtifacts,
+          productionOutput,
+          session,
+          sourceRootsComplete,
+          trimJars,
+          explicitTrimRoots,
+          failOnUnsupportedMultiRelease,
+          explicitPassThroughArtifacts,
+          failOnUnsupportedModuleInfo,
+          testResolutionContext,
+          conservativeServiceLoaderRoots,
+          MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+          MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+          List.of(),
+          true,
+          false,
+          false);
     }
 
     AnalysisOptions(
@@ -154,7 +180,9 @@ final class MavenElisionService {
           MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
           mrjarStrategy,
           List.of(),
-          true);
+          true,
+          false,
+          false);
     }
 
     AnalysisOptions(
@@ -187,7 +215,47 @@ final class MavenElisionService {
           trimWorkers,
           MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
           List.of(),
-          true);
+          true,
+          false,
+          false);
+    }
+
+    AnalysisOptions(
+        final List<File> traceFiles,
+        final List<String> excludedArtifacts,
+        final File productionOutput,
+        final MavenSession session,
+        final boolean sourceRootsComplete,
+        final boolean trimJars,
+        final List<String> explicitTrimRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> explicitPassThroughArtifacts,
+        final boolean failOnUnsupportedModuleInfo,
+        final boolean testResolutionContext,
+        final boolean conservativeServiceLoaderRoots,
+        final int trimWorkers,
+        final String mrjarStrategy,
+        final boolean productionClassesComplete,
+        final boolean trustedProcessClassesContext) {
+      this(
+          traceFiles,
+          excludedArtifacts,
+          productionOutput,
+          session,
+          sourceRootsComplete,
+          trimJars,
+          explicitTrimRoots,
+          failOnUnsupportedMultiRelease,
+          explicitPassThroughArtifacts,
+          failOnUnsupportedModuleInfo,
+          testResolutionContext,
+          conservativeServiceLoaderRoots,
+          trimWorkers,
+          mrjarStrategy,
+          List.of(),
+          true,
+          productionClassesComplete,
+          trustedProcessClassesContext);
     }
 
     AnalysisOptions(
@@ -222,7 +290,9 @@ final class MavenElisionService {
           trimWorkers,
           MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
           allowedNativeImageArgs,
-          failOnUnsupportedNativeImageArgs);
+          failOnUnsupportedNativeImageArgs,
+          false,
+          false);
     }
 
     AnalysisOptions(
@@ -237,7 +307,11 @@ final class MavenElisionService {
         final List<String> explicitPassThroughArtifacts,
         final boolean failOnUnsupportedModuleInfo,
         final boolean testResolutionContext,
-        final boolean conservativeServiceLoaderRoots) {
+        final boolean conservativeServiceLoaderRoots,
+        final int trimWorkers,
+        final String mrjarStrategy,
+        final List<String> allowedNativeImageArgs,
+        final boolean failOnUnsupportedNativeImageArgs) {
       this(
           traceFiles,
           excludedArtifacts,
@@ -251,10 +325,12 @@ final class MavenElisionService {
           failOnUnsupportedModuleInfo,
           testResolutionContext,
           conservativeServiceLoaderRoots,
-          MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-          MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-          List.of(),
-          true);
+          trimWorkers,
+          mrjarStrategy,
+          allowedNativeImageArgs,
+          failOnUnsupportedNativeImageArgs,
+          false,
+          false);
     }
 
     AnalysisOptions(
@@ -285,7 +361,9 @@ final class MavenElisionService {
           MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
           MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
           List.of(),
-          true);
+          true,
+          false,
+          false);
     }
   }
 
@@ -404,6 +482,12 @@ final class MavenElisionService {
     final File productionOutput = options.productionOutput();
     final MavenSession session = options.session();
     final boolean sourceRootsComplete = options.sourceRootsComplete();
+    final boolean productionClassesComplete = options.productionClassesComplete();
+    if (sourceRootsComplete && productionClassesComplete) {
+      throw new IOException(
+          "elide.sourceRootsComplete=true and elide.productionClassesComplete=true "
+              + "are mutually exclusive");
+    }
     final boolean trimJars = options.trimJars();
     final List<String> explicitTrimRoots = options.explicitTrimRoots();
     final List<String> explicitPassThroughArtifacts = options.explicitPassThroughArtifacts();
@@ -429,9 +513,17 @@ final class MavenElisionService {
     }
     final TraceData trace = new CompositeTraceReader().readAll(toPaths(traceFiles));
     final ArtifactClassIndex index = new JarIndexScanner().scan(scanCandidates);
+    final ProductionBytecodeInputs productionInputs =
+        productionBytecodeInputs(productionOutput, productionClassesComplete);
     final CompilerInputs compilerInputs =
-        compilerInputs(project, session, scanCandidates, index, sourceRootsComplete);
-    final ProductionBytecodeInputs productionInputs = productionBytecodeInputs(productionOutput);
+        compilerInputs(
+            project,
+            session,
+            scanCandidates,
+            index,
+            sourceRootsComplete,
+            productionClassesComplete,
+            productionInputs.scan());
     final Set<String> provenServiceInterfaces = new HashSet<>();
     if (productionOutput != null && productionOutput.isDirectory()) {
       provenServiceInterfaces.addAll(
@@ -691,7 +783,9 @@ final class MavenElisionService {
           effective.graphProjection(),
           trimResult.generationCommit(),
           mediatedGraph,
-          prepared.dynamicRootInputs().unprovenServiceRootsByCoordinate());
+          prepared.dynamicRootInputs().unprovenServiceRootsByCoordinate(),
+          prepared.options().productionClassesComplete(),
+          prepared.options().trustedProcessClassesContext());
     } catch (final IOException | RuntimeException failure) {
       closeGenerationAfterFailure(trimResult.generationCommit(), failure);
       throw failure;
@@ -1162,7 +1256,9 @@ final class MavenElisionService {
       final MavenSession session,
       final List<ArtifactFileRef> candidates,
       final ArtifactClassIndex index,
-      final boolean sourceRootsComplete)
+      final boolean sourceRootsComplete,
+      final boolean productionClassesComplete,
+      final Optional<BytecodeReferenceScan> bytecodeScan)
       throws IOException {
     final List<String> classpath;
     try {
@@ -1185,7 +1281,7 @@ final class MavenElisionService {
     if (sourceRootsComplete) {
       final List<Path> sources =
           JavaSourceReferenceScanner.sourceFiles(project.getCompileSourceRoots());
-      verifySourceRootsComplete(project, sources);
+      verifySourceRootsComplete(project, session, sources);
       if (sources.stream().anyMatch(MavenElisionService::isModuleDescriptor)) {
         throw new IOException("Source attribution does not support Java module descriptors");
       }
@@ -1201,6 +1297,21 @@ final class MavenElisionService {
               .collect(java.util.stream.Collectors.toSet()),
           requiredClasses,
           sourceScan.declaredTypes());
+    } else if (productionClassesComplete) {
+      final BytecodeReferenceScan scan =
+          bytecodeScan.orElseThrow(
+              () ->
+                  new IOException(
+                      "elide.productionClassesComplete=true requires a production bytecode scan"));
+      requiredClasses.addAll(scan.referencedClasses());
+      compileVisibleArtifacts.removeIf(
+          artifact -> !sourceClassesByArtifact(artifact, requiredClasses, indexedClasses));
+      return new CompilerInputs(
+          compileVisibleArtifacts.stream()
+              .map(ArtifactFileRef::coordinate)
+              .collect(java.util.stream.Collectors.toSet()),
+          requiredClasses,
+          classNamesInOutput(scan.scope()));
     } else {
       compileVisibleArtifacts.forEach(
           artifact -> requiredClasses.addAll(indexedClasses.getOrDefault(artifact, Set.of())));
@@ -1225,7 +1336,8 @@ final class MavenElisionService {
   }
 
   private static void verifySourceRootsComplete(
-      final MavenProject project, final List<Path> currentSources) throws IOException {
+      final MavenProject project, final MavenSession session, final List<Path> currentSources)
+      throws IOException {
     if (currentSources.isEmpty()) {
       throw new IOException(
           "elide.sourceRootsComplete=true requires current production Java sources");
@@ -1235,17 +1347,27 @@ final class MavenElisionService {
         throw new IOException("A declared production source root is not present: " + root);
       }
     }
-    if (hasUnknownSourceGeneration(project)) {
+    if (hasUnknownSourceGeneration(project, session)) {
       throw new IOException(
-          "elide.sourceRootsComplete=true conflicts with a source-generation lifecycle execution");
+          "elide.sourceRootsComplete=true conflicts with a source-generation lifecycle execution; "
+              + "use -Delide.productionClassesComplete=true or bind dependency-elider:elide to "
+              + "process-classes to analyze compiled bytecode");
     }
   }
 
   static boolean hasUnknownSourceGeneration(final MavenProject project) {
+    return hasUnknownSourceGeneration(project, null);
+  }
+
+  static boolean hasUnknownSourceGeneration(
+      final MavenProject project, final MavenSession session) {
     final org.apache.maven.model.Build build = project.getBuild();
     if (build == null
         || !Set.of("jar", "pom", "war", "maven-plugin").contains(project.getPackaging())
         || !build.getExtensions().isEmpty()) {
+      return true;
+    }
+    if (MavenCompilerSettings.hasConfiguredAnnotationProcessing(project, session)) {
       return true;
     }
     for (final Plugin plugin : build.getPlugins()) {
@@ -1317,14 +1439,24 @@ final class MavenElisionService {
   private record ProductionBytecodeInputs(
       String fingerprint, Optional<BytecodeReferenceScan> scan) {}
 
-  private static ProductionBytecodeInputs productionBytecodeInputs(final File output)
-      throws IOException {
+  private static ProductionBytecodeInputs productionBytecodeInputs(
+      final File output, final boolean productionClassesComplete) throws IOException {
     if (output == null) {
+      if (productionClassesComplete) {
+        throw new IOException(
+            "elide.productionClassesComplete=true requires a production class output directory");
+      }
       return new ProductionBytecodeInputs("none", Optional.empty());
     }
     final Path path = output.toPath();
     final String before = ProductionOutputFingerprint.fingerprint(path);
     final BytecodeReferenceScan scan = new ProductionBytecodeReferenceScanner().scan(path);
+    if (productionClassesComplete && scan.classFilesScanned() == 0) {
+      throw new IOException(
+          "elide.productionClassesComplete=true requires compiled production class files in "
+              + path.toAbsolutePath().normalize()
+              + "; run 'mvn compile' first or bind to process-classes");
+    }
     final String after = ProductionOutputFingerprint.fingerprint(path);
     if (!before.equals(after)) {
       throw new IOException("Production output changed during bytecode analysis");
@@ -1515,7 +1647,51 @@ final class MavenElisionService {
       ResolverArtifactGraphProjection graphProjection,
       TrimOutputGenerationCommitHandle generationCommit,
       MediatedGraphReport mediatedGraph,
-      Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots) {
+      Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots,
+      boolean productionClassesComplete,
+      boolean trustedProcessClassesContext) {
+    Analysis(
+        final List<ArtifactSnapshot> resolvedSnapshots,
+        final boolean directArtifactsPresent,
+        final List<ArtifactSnapshot> directSnapshots,
+        final ElisionDecision decision,
+        final ElisionDecision effectiveDecision,
+        final ClassUsageReport classUsageReport,
+        final Optional<BytecodeReferenceScan> bytecodeScan,
+        final List<ArtifactTrimRecord> trimRecords,
+        final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+        final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+        final List<ArtifactCoordinate> configuredPassThroughArtifacts,
+        final int trimCacheHits,
+        final long maximumTrimCacheHitNanos,
+        final int trimAnalysisRuns,
+        final ResolverArtifactGraphProjection graphProjection,
+        final TrimOutputGenerationCommitHandle generationCommit,
+        final MediatedGraphReport mediatedGraph,
+        final Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots) {
+      this(
+          resolvedSnapshots,
+          directArtifactsPresent,
+          directSnapshots,
+          decision,
+          effectiveDecision,
+          classUsageReport,
+          bytecodeScan,
+          trimRecords,
+          multiReleasePassthroughArtifacts,
+          moduleInfoPassthroughArtifacts,
+          configuredPassThroughArtifacts,
+          trimCacheHits,
+          maximumTrimCacheHitNanos,
+          trimAnalysisRuns,
+          graphProjection,
+          generationCommit,
+          mediatedGraph,
+          unprovenServiceRoots,
+          false,
+          false);
+    }
+
     @SuppressWarnings("PMD.ExcessiveParameterList")
     // Keeps the legacy adapter while the result fields stay named.
     Analysis(
@@ -1554,7 +1730,9 @@ final class MavenElisionService {
           graphProjection,
           generationCommit,
           mediatedGraph,
-          Map.of());
+          Map.of(),
+          false,
+          false);
     }
 
     Analysis(
@@ -1590,7 +1768,9 @@ final class MavenElisionService {
           null,
           null,
           null,
-          unprovenServiceRoots);
+          unprovenServiceRoots,
+          false,
+          false);
     }
 
     @SuppressWarnings("PMD.ExcessiveParameterList")
@@ -1626,7 +1806,10 @@ final class MavenElisionService {
           trimAnalysisRuns,
           null,
           null,
-          null);
+          null,
+          Map.of(),
+          false,
+          false);
     }
 
     Analysis(
@@ -1653,7 +1836,10 @@ final class MavenElisionService {
           0,
           null,
           null,
-          null);
+          null,
+          Map.of(),
+          false,
+          false);
     }
 
     Analysis(

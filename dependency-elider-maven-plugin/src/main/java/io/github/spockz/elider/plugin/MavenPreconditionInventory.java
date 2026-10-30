@@ -182,7 +182,8 @@ final class MavenPreconditionInventory {
           false);
     }
     try {
-      MavenCompilerGenerationGuard.requireSafeCompilerConfiguration(project, session);
+      MavenCompilerGenerationGuard.requireSafeCompilerConfiguration(
+          project, session, analysis.trustedProcessClassesContext());
       final List<ArtifactFileRef> verifiedArtifactFiles =
           MavenPreconditionArtifactInventory.capture(plan, analysis, true);
       MavenPreconditionStages.validateIfPresent(stages);

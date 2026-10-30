@@ -52,6 +52,12 @@ We introduce **Post-Compile Production Bytecode Completeness (`elide.productionC
    * When `elide.preconditionClassPathComplete=true` is evaluated with `productionClassesComplete=true` (at `process-classes`), lifecycle phases `generate-sources` through `compile` have already completed and their emitted `.class` files in `target/classes` are directly hashed by `MavenPreconditionProviderRoots.capture`.
    * Pre-capture source generators (`generate-sources`..`process-resources`) and `maven-compiler-plugin` annotation processor settings for `compile` are permitted when `productionClassesComplete=true`, while unmodeled provider-generating executions in phases after `process-classes` remain rejected.
    * Conversely, at `initialize` (`sourceRootsComplete=true`), `MavenElisionService.hasUnknownSourceGeneration` is tightened to also reject `maven-compiler-plugin` configurations that declare `annotationProcessorPaths`, `annotationProcessors`, or `proc` values other than `none`, with an error message directing the user to `elide.productionClassesComplete=true` / `process-classes`.
+   * The class-output assertion and lifecycle provenance are separate values. Only a Mojo execution whose source is `MojoExecution.Source.LIFECYCLE` and whose exact phase is `process-classes` gets the trusted precondition-capture context. A direct CLI goal or a missing/other phase may use an explicitly supplied bytecode-completeness assertion for attribution, but keeps the existing conservative provider-generation guards.
+   * Only configured writers in phases strictly before `process-classes` can be accepted as pre-capture writers. Unknown writers at the capture phase or later are rejected, including later-bound compiler executions. `skipTests` does not skip `testCompile`; its processor safeguards remain active.
+
+5. **Complete Root-Member Capture and Platform Options**:
+   * Every declared source-root member remains part of the provider inventory and its digest. `.java` members are parsed for declarations; other regular files in a mixed source root are captured as resource providers. Known source forms the Java scanner cannot parse, including `.scala`, `.kt`, `.kts`, and `.groovy`, keep the inventory incomplete after capture. No root member is filtered out.
+   * Trimming resolves the target Java platform from release/source/target settings without using arbitrary compiler arguments. Processor arguments may be present, but arguments that override release, target, preview, system/boot class path, modules, or output locations are rejected. Explicit `fork=false` and `enablePreview=false` are accepted; selected toolchains and non-javac compilers remain unsupported.
 
 ---
 
@@ -62,3 +68,4 @@ We introduce **Post-Compile Production Bytecode Completeness (`elide.productionC
   * Existing `initialize`-bound projects and test suites remain 100% compatible.
 * **Negative / Trade-offs**:
   * When `elide` runs at `process-classes`, `compile` executes against the un-elided compile classpath; elision and trimming take effect immediately after `compile` for `test-compile`, `test`, `package`, SBOM/VEX generation, and `dependency:tree`.
+  * The trusted capture behavior depends on the Maven extension and its lifecycle source metadata; direct CLI goal invocations cannot claim a post-compile provider inventory.

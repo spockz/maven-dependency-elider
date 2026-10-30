@@ -144,3 +144,13 @@ During research, an alternative was evaluated: having the plugin trigger a secon
   * Verify `mvn dependency:tree` with `elide` bound to `process-classes` (or `-Delide.productionClassesComplete=true`) schedules `process-classes` before `dependency:tree` via `EliderTreePreparation`.
 * **Static Analysis & Regression Gate**:
   * Pass `make check` cleanly with zero regressions across existing `initialize`-bound tests.
+
+## 6. Implementation Evidence and Limits
+
+The implementation now separates the output-completeness assertion from the trusted capture context. The latter is propagated only when the Mojo execution reports `MojoExecution.Source.LIFECYCLE` and the exact phase `process-classes`. Direct CLI goal invocations can use explicitly supplied compiled output for static attribution, but they do not relax provider-generation guards. Same-phase and later unknown writers remain rejected; compile executions explicitly bound after `process-classes` are also rejected.
+
+`MavenCompilerSettings.platformReleaseOptions` resolves only supported release/source/target settings for trimming and rejects compiler arguments that override platform or output selection. A mixed source root retains all regular members: Java files contribute parsed declarations and other files become digest-bound resource providers. Source-like files in languages the scanner cannot parse (`.scala`, `.kt`, `.kts`, `.groovy`) are captured before the inventory is rejected as incomplete.
+
+The real Maven lifecycle test `extensionRebindsElideAfterGeneratedBytecodeExists` generates a Java class with the AntRun `generate-sources` execution, checks that the produced class references the retained dependency, enables the extension property, and runs a post-elision `dependency:tree` request. Unit tests cover compiled-bytecode attribution, missing class output, source-root resource members, and process-classes writer ordering. The Maven Compiler Plugin `testCompile` safeguard remains active even when `skipTests` is true because that flag does not skip test compilation.
+
+Remaining boundary: trusted VEX inventory requires the packaged Maven extension and a real lifecycle-sourced `process-classes` execution. Direct Mojo invocation, a missing lifecycle phase, and other phases remain conservative. The process-classes mode also takes effect only after production compilation; it cannot remove dependencies from that compile invocation.

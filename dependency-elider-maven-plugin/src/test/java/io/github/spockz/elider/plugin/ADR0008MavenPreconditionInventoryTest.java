@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -66,6 +67,9 @@ import org.objectweb.asm.Opcodes;
 final class ADR0008MavenPreconditionInventoryTest {
   /** Maven artifact type used by all provider fixtures. */
   private static final String JAR_TYPE = "jar";
+
+  /** Lifecycle phase used to prove trusted production capture boundaries. */
+  private static final String PROCESS_CLASSES_PHASE = "process-classes";
 
   /** Shared failure text for stale provider snapshots. */
   private static final String INVENTORY_CHANGED = "provider inventory changed";
@@ -747,6 +751,47 @@ final class ADR0008MavenPreconditionInventoryTest {
     }
 
     @Test
+    @DisplayName("ADR-0008/trusted capture preserves the test compile processor safeguard")
+    void trustedCaptureAllowsCompileProcessorButKeepsTestCompileSafeguard() throws IOException {
+      final Fixture fixture = fixture("trusted-compile-processors");
+      fixture.project().getProperties().remove(PROCESSING_PROPERTY);
+      final Plugin compiler = compilerPlugin();
+      final PluginExecution compile = new PluginExecution();
+      compile.setId(DEFAULT_COMPILE);
+      compile.setGoals(List.of(GOAL_COMPILE));
+      final Xpp3Dom compileConfiguration = new Xpp3Dom("configuration");
+      compileConfiguration.addChild(new Xpp3Dom("annotationProcessorPaths"));
+      compile.setConfiguration(compileConfiguration);
+      compiler.addExecution(compile);
+      final PluginExecution testCompile = new PluginExecution();
+      testCompile.setId(DEFAULT_TEST_COMPILE);
+      testCompile.setGoals(List.of("testCompile"));
+      testCompile.setConfiguration(configuration(PROCESSING_SETTING, PROCESSING_NONE));
+      compiler.addExecution(testCompile);
+      fixture.project().getBuild().addPlugin(compiler);
+      final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+      request.setGoals(List.of(PROCESS_CLASSES_PHASE));
+      final MavenSession session = new MavenSession(null, request, null, fixture.project());
+      session.getUserProperties().setProperty(SKIP_TESTS, TRUE);
+
+      assertThatCode(
+              () ->
+                  MavenCompilerGenerationGuard.requireSafeCompilerConfiguration(
+                      fixture.project(), session, true))
+          .doesNotThrowAnyException();
+
+      testCompile.setConfiguration(new Xpp3Dom("configuration"));
+
+      assertThatThrownBy(
+              () ->
+                  MavenCompilerGenerationGuard.requireSafeCompilerConfiguration(
+                      fixture.project(), session, true))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining(
+              "explicit proc=none is required for compiler execution default-testCompile");
+    }
+
+    @Test
     void customCompilerExecutionsCannotReplaceLifecycleFallbackOrSkipNullConfigurations()
         throws IOException {
       final Fixture customExecutions = fixture("custom-compiler-executions");
@@ -1082,7 +1127,7 @@ final class ADR0008MavenPreconditionInventoryTest {
               "validate",
               "generate-test-sources",
               "process-test-resources",
-              "process-classes",
+              PROCESS_CLASSES_PHASE,
               "process-test-classes",
               GOAL_PACKAGE)) {
         final Fixture fixture = fixture("generator-" + phase);
@@ -1109,6 +1154,26 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       assertThat(extensionSnapshot.complete()).isFalse();
       assertThat(extensionSnapshot.classProviders().detail()).contains("plugin extension");
+    }
+
+    @Test
+    @DisplayName("ADR-0008/trusted process-classes rejects same-phase and later writers")
+    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+    void trustedProcessClassesRejectsSamePhaseAndLaterWriters() throws IOException {
+      for (final String phase : List.of(PROCESS_CLASSES_PHASE, "verify")) {
+        final Fixture fixture = fixture("trusted-writer-" + phase);
+        addUnknownGenerator(fixture, phase);
+        final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+        request.setGoals(List.of(PROCESS_CLASSES_PHASE));
+        final MavenSession session = new MavenSession(null, request, null, fixture.project());
+
+        assertThatThrownBy(
+                () ->
+                    MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
+                        fixture.project(), session, true))
+            .isInstanceOf(IOException.class)
+            .hasMessageContaining("unmodeled");
+      }
     }
 
     @Test
@@ -1768,7 +1833,24 @@ final class ADR0008MavenPreconditionInventoryTest {
   }
 
   @Test
-  void unknownSourceFileShapeMakesInventoryIncomplete() throws IOException {
+  void nonJavaSourceRootMemberIsRetainedAsAHashedResourceProvider() throws IOException {
+    final Fixture fixture = fixture();
+    Files.createDirectories(fixture.productionSources());
+    Files.writeString(fixture.productionSources().resolve("resource.txt"), "resource body");
+
+    final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
+
+    assertThat(snapshot.complete()).isTrue();
+    assertThat(snapshot.classProviders().providers())
+        .anySatisfy(
+            provider ->
+                assertThat(provider.path())
+                    .isEqualTo(fixture.productionSources().resolve("resource.txt")));
+  }
+
+  @Test
+  @DisplayName("ADR-0008/unparsed source languages keep untrusted inventories incomplete")
+  void unparsedSourceLanguageKeepsInventoryIncomplete() throws IOException {
     final Fixture fixture = fixture();
     Files.createDirectories(fixture.productionSources());
     Files.writeString(fixture.productionSources().resolve("generated.scala"), "class Unknown");

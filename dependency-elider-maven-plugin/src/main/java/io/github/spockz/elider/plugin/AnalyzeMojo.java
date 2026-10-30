@@ -41,6 +41,10 @@ public final class AnalyzeMojo extends AbstractMojo {
   @Parameter(property = "elide.sourceRootsComplete", defaultValue = DEFAULT_FALSE)
   private boolean sourceRootsComplete;
 
+  /** Asserts that production output contains every compiled production class. */
+  @Parameter(property = "elide.productionClassesComplete", defaultValue = DEFAULT_FALSE)
+  private boolean productionClassesComplete;
+
   /** Enables dry-run intra-JAR trimming prediction. */
   @Parameter(property = "elide.trimJars", defaultValue = DEFAULT_FALSE)
   private boolean trimJars;
@@ -138,7 +142,7 @@ public final class AnalyzeMojo extends AbstractMojo {
                   new MavenElisionService.AnalysisOptions(
                       traceFiles,
                       excludedArtifacts,
-                      productionOutput,
+                      effectiveProductionOutput(),
                       session,
                       sourceRootsComplete,
                       trimJars,
@@ -151,7 +155,9 @@ public final class AnalyzeMojo extends AbstractMojo {
                       trimWorkers,
                       mrjarStrategy,
                       allowedNativeImageArgs,
-                      failOnUnsupportedNativeImageArgs));
+                      failOnUnsupportedNativeImageArgs,
+                      productionClassesComplete,
+                      false));
       MavenClassUsageReportWriter.write(
           reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
@@ -164,6 +170,17 @@ public final class AnalyzeMojo extends AbstractMojo {
       throw new MojoFailureException(
           "Dependency analysis failed closed: " + exception.getMessage(), exception);
     }
+  }
+
+  private File effectiveProductionOutput() {
+    if (productionOutput != null || !productionClassesComplete) {
+      return productionOutput;
+    }
+    if (project == null || project.getBuild() == null) {
+      return null;
+    }
+    final String outputDirectory = project.getBuild().getOutputDirectory();
+    return outputDirectory == null || outputDirectory.isBlank() ? null : new File(outputDirectory);
   }
 
   private MavenVulnerabilityAssessment.Result assessVulnerabilities(

@@ -19,6 +19,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -37,6 +38,10 @@ import org.apache.maven.project.MavenProject;
   "PMD.UseConcurrentHashMap"
 })
 final class MavenPreconditionProviderRoots {
+  /** Source languages not parsed by the Java declaration scanner. */
+  private static final List<String> UNSUPPORTED_SOURCE_SUFFIXES =
+      List.of(".scala", ".kt", ".kts", ".groovy");
+
   /** Java source suffix accepted by the independent source declaration scanner. */
   private static final String JAVA_SUFFIX = ".java";
 
@@ -63,8 +68,10 @@ final class MavenPreconditionProviderRoots {
     if (project == null || project.getBuild() == null) {
       throw new IOException(MAVEN_PREFIX + "project build roots are unavailable");
     }
-    MavenPreconditionGenerationGuard.requireKnownProviderGeneration(project, session);
-    if (MavenElisionService.hasUnknownSourceGeneration(project)) {
+    MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
+        project, session, analysis.trustedProcessClassesContext());
+    if (!analysis.trustedProcessClassesContext()
+        && MavenElisionService.hasUnknownSourceGeneration(project, session)) {
       throw new IOException(MAVEN_PREFIX + "build has an unsupported or unknown source generator");
     }
     final List<Path> normalizedStages =
@@ -73,6 +80,9 @@ final class MavenPreconditionProviderRoots {
     final Map<Path, String> sourceDigests = sourceDigests(rootsBeforeScan);
     final List<String> membersBeforeScan = rootMembers(rootsBeforeScan);
     final List<Provider> providers = applicationProviders(rootsBeforeScan);
+    if (!analysis.trustedProcessClassesContext()) {
+      rejectUnsupportedSourceFiles(rootsBeforeScan);
+    }
     verifyCapturedRootDigests(rootsBeforeScan, providers, sourceDigests);
     final List<RootFiles> rootsAfterScan = declaredRoots(project, analysis, normalizedStages);
     final List<String> membersAfterScan = rootMembers(rootsAfterScan);
@@ -107,26 +117,16 @@ final class MavenPreconditionProviderRoots {
         project,
         List.of(buildDirectory.resolve("generated-test-sources/test-annotations").toString()));
     addDirectoryRoot(
-        roots,
-        "production-output",
-        project,
-        project.getBuild().getOutputDirectory(),
-        false,
-        stages);
+        roots, "production-output", project, project.getBuild().getOutputDirectory(), stages);
     addDirectoryRoot(
-        roots, "test-output", project, project.getBuild().getTestOutputDirectory(), false, stages);
+        roots, "test-output", project, project.getBuild().getTestOutputDirectory(), stages);
     addResources(roots, "production-resource", project, project.getBuild().getResources(), stages);
     addResources(roots, "test-resource", project, project.getBuild().getTestResources(), stages);
     if (analysis.bytecodeScan().isPresent()) {
       final Path scannedOutput = analysis.bytecodeScan().orElseThrow().scope();
       if (!containsRoot(roots, scannedOutput)) {
         addDirectoryRoot(
-            roots,
-            "configured-production-output",
-            project,
-            scannedOutput.toString(),
-            false,
-            stages);
+            roots, "configured-production-output", project, scannedOutput.toString(), stages);
       }
     }
     return List.copyOf(roots);
@@ -160,7 +160,7 @@ final class MavenPreconditionProviderRoots {
       if (configuredRoot == null || configuredRoot.isBlank()) {
         throw new IOException(MAVEN_PREFIX + kind + " root is blank");
       }
-      roots.add(scanRoot(kind, resolveProjectPath(project, configuredRoot), true, List.of()));
+      roots.add(scanRoot(kind, resolveProjectPath(project, configuredRoot), List.of()));
     }
   }
 
@@ -178,8 +178,7 @@ final class MavenPreconditionProviderRoots {
       if (resource.getDirectory() == null || resource.getDirectory().isBlank()) {
         throw new IOException(MAVEN_PREFIX + kind + " root is blank");
       }
-      roots.add(
-          scanRoot(kind, resolveProjectPath(project, resource.getDirectory()), false, stages));
+      roots.add(scanRoot(kind, resolveProjectPath(project, resource.getDirectory()), stages));
     }
   }
 
@@ -188,13 +187,12 @@ final class MavenPreconditionProviderRoots {
       final String kind,
       final MavenProject project,
       final String configuredRoot,
-      final boolean source,
       final List<Path> stages)
       throws IOException {
     if (configuredRoot == null || configuredRoot.isBlank()) {
       throw new IOException(MAVEN_PREFIX + kind + " root is unavailable");
     }
-    roots.add(scanRoot(kind, resolveProjectPath(project, configuredRoot), source, stages));
+    roots.add(scanRoot(kind, resolveProjectPath(project, configuredRoot), stages));
   }
 
   private static Path resolveProjectPath(final MavenProject project, final String configuredPath) {
@@ -206,8 +204,7 @@ final class MavenPreconditionProviderRoots {
   }
 
   private static RootFiles scanRoot(
-      final String kind, final Path configuredRoot, final boolean source, final List<Path> stages)
-      throws IOException {
+      final String kind, final Path configuredRoot, final List<Path> stages) throws IOException {
     final Path root = configuredRoot.toAbsolutePath().normalize();
     if (Files.isSymbolicLink(root)) {
       throw new IOException("Declared Maven provider root is a symbolic link: " + root);
@@ -227,9 +224,6 @@ final class MavenPreconditionProviderRoots {
     }
     final Set<Path> excludedStages = new LinkedHashSet<>(stages);
     final List<Path> members = regularMembers(canonicalRoot, excludedStages);
-    if (source && members.stream().anyMatch(path -> !path.toString().endsWith(JAVA_SUFFIX))) {
-      throw new IOException("Unsupported non-Java source in declared root: " + canonicalRoot);
-    }
     return new RootFiles(kind, canonicalRoot.toString(), true, members);
   }
 
@@ -275,11 +269,40 @@ final class MavenPreconditionProviderRoots {
 
   private static void addSourceProviders(
       final RootFiles root, final Map<Path, Provider> providersByPath) throws IOException {
-    final Map<Path, Set<String>> declarations = MavenSourceDeclarationScanner.scan(root.members());
-    for (final Path source : root.members()) {
+    final List<Path> javaSources =
+        root.members().stream().filter(path -> path.toString().endsWith(JAVA_SUFFIX)).toList();
+    final Map<Path, Set<String>> declarations = MavenSourceDeclarationScanner.scan(javaSources);
+    for (final Path source : javaSources) {
       providersByPath.put(
           source,
           Provider.applicationSourceFile(source, declarations.getOrDefault(source, Set.of())));
+    }
+    addFileProviders(
+        new RootFiles(
+            root.kind(),
+            root.configuredPath(),
+            root.exists(),
+            root.members().stream()
+                .filter(path -> !path.toString().endsWith(JAVA_SUFFIX))
+                .toList()),
+        providersByPath);
+  }
+
+  private static void rejectUnsupportedSourceFiles(final List<RootFiles> roots) throws IOException {
+    for (final RootFiles root : roots) {
+      if (!root.kind().endsWith("-source")) {
+        continue;
+      }
+      for (final Path member : root.members()) {
+        final Path fileName = member.getFileName();
+        if (fileName == null) {
+          throw new IOException("Cannot determine declared source member name: " + member);
+        }
+        final String name = fileName.toString().toLowerCase(Locale.ROOT);
+        if (UNSUPPORTED_SOURCE_SUFFIXES.stream().anyMatch(name::endsWith)) {
+          throw new IOException("Unsupported non-Java source in declared root: " + member);
+        }
+      }
     }
   }
 
@@ -303,11 +326,15 @@ final class MavenPreconditionProviderRoots {
     return roots.stream().anyMatch(root -> normalized.toString().equals(root.configuredPath()));
   }
 
+  @SuppressWarnings("PMD.CognitiveComplexity")
   private static Map<Path, String> sourceDigests(final List<RootFiles> roots) throws IOException {
     final Map<Path, String> digests = new HashMap<>();
     for (final RootFiles root : roots) {
       if (root.kind().endsWith("-source")) {
         for (final Path source : root.members()) {
+          if (!source.toString().endsWith(JAVA_SUFFIX)) {
+            continue;
+          }
           final String current = ArtifactFileDigest.sha256(source);
           final String previous = digests.putIfAbsent(source, current);
           if (previous != null && !previous.equals(current)) {

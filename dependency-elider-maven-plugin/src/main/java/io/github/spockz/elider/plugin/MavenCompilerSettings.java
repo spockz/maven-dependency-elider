@@ -21,9 +21,14 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 
 /** Resolves supported javac options for source attribution. */
 @SuppressWarnings({
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.CommentSize",
+  "PMD.CognitiveComplexity",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CyclomaticComplexity",
   "PMD.GodClass",
+  "PMD.NPathComplexity",
+  "PMD.SimplifyBooleanReturns",
   "PMD.TooManyMethods"
 })
 final class MavenCompilerSettings {
@@ -102,6 +107,289 @@ final class MavenCompilerSettings {
       return List.of("-source", source, "-target", target);
     }
     return List.of("unspecified-compiler-release");
+  }
+
+  /** Resolves only the platform release used by bytecode trimming after compilation. */
+  static List<String> platformReleaseOptions(final MavenProject project, final MavenSession session)
+      throws IOException {
+    rejectSelectedToolchain(session);
+    final List<Xpp3Dom> configurations = compilerConfigurations(project);
+    rejectUnsupportedPlatformSettings(
+        configurations,
+        project.getProperties(),
+        session == null ? new Properties() : session.getUserProperties());
+    final String release =
+        value("release", "maven.compiler.release", project, session, configurations);
+    final String source =
+        value("source", "maven.compiler.source", project, session, configurations);
+    final String target =
+        value("target", "maven.compiler.target", project, session, configurations);
+    if (release != null && (source != null || target != null)) {
+      throw new IOException("Cannot attribute source with both compiler release and source/target");
+    }
+    if (release != null) {
+      return List.of("--release", release);
+    }
+    if (source != null && target != null) {
+      return List.of("-source", source, "-target", target);
+    }
+    throw new IOException(
+        "Source attribution requires effective compiler release or source/target settings");
+  }
+
+  /** Reports processor settings that can generate source during the normal compile lifecycle. */
+  static boolean hasConfiguredAnnotationProcessing(final MavenProject project) {
+    return hasConfiguredAnnotationProcessing(project, null);
+  }
+
+  /** Reports effective processor settings across project and Maven session properties. */
+  static boolean hasConfiguredAnnotationProcessing(
+      final MavenProject project, final MavenSession session) {
+    final List<Xpp3Dom> configurations = compilerConfigurations(project);
+    for (final Xpp3Dom configuration : configurations) {
+      for (final String name :
+          List.of(
+              "annotationProcessorPaths",
+              "annotationProcessors",
+              "annotationProcessorPath",
+              "processorpath",
+              "generatedSourcesDirectory")) {
+        if (hasValue(configuration.getChild(name))) {
+          return true;
+        }
+      }
+      final Xpp3Dom proc = configuration.getChild("proc");
+      final boolean processingDisabled =
+          proc != null
+              && proc.getValue() != null
+              && "none".equalsIgnoreCase(proc.getValue().trim());
+      if (!processingDisabled
+          && (hasProcessorOptions(configuration.getChild("compilerArgs"))
+              || hasProcessorOptions(configuration.getChild("compilerArgument"))
+              || hasProcessorOptions(configuration.getChild("compilerArguments")))) {
+        return true;
+      }
+    }
+    final Properties properties = new Properties();
+    properties.putAll(project.getProperties());
+    if (session != null && session.getSystemProperties() != null) {
+      properties.putAll(session.getSystemProperties());
+    }
+    if (session != null && session.getUserProperties() != null) {
+      properties.putAll(session.getUserProperties());
+    }
+    final String configuredProc = properties.getProperty("maven.compiler.proc");
+    final boolean processingDisabled =
+        configuredProc != null && "none".equalsIgnoreCase(configuredProc.trim());
+    for (final String name :
+        List.of(
+            "maven.compiler.annotationProcessorPaths",
+            "maven.compiler.annotationProcessors",
+            "maven.compiler.annotationProcessorPath",
+            "maven.compiler.processorpath",
+            "maven.compiler.processorPath")) {
+      final String value = properties.getProperty(name);
+      if (value != null && !value.isBlank()) {
+        return true;
+      }
+    }
+    if (!processingDisabled
+        && List.of(
+                "maven.compiler.compilerArgs",
+                "maven.compiler.compilerArgument",
+                "maven.compiler.compilerArguments")
+            .stream()
+            .map(properties::getProperty)
+            .anyMatch(MavenCompilerSettings::hasProcessorOption)) {
+      return true;
+    }
+    if (configuredProc != null && !configuredProc.isBlank() && !processingDisabled) {
+      return true;
+    }
+    return false;
+  }
+
+  private static void rejectUnsupportedPlatformSettings(
+      final List<Xpp3Dom> configurations,
+      final Properties projectProperties,
+      final Properties userProperties)
+      throws IOException {
+    rejectSelectedPlatformProperties(projectProperties);
+    rejectSelectedPlatformProperties(userProperties);
+    for (final Xpp3Dom configuration : configurations) {
+      for (final String name : List.of("executable", "jdkToolchain")) {
+        if (hasValue(configuration.getChild(name))) {
+          throw new IOException("Cannot determine compiler platform with configured " + name);
+        }
+      }
+      rejectCompilerArgumentOverrides(configuration.getChild("compilerArgs"));
+      rejectCompilerArgumentOverrides(configuration.getChild("compilerArgument"));
+      rejectCompilerArgumentOverrides(configuration.getChild("compilerArguments"));
+      rejectEnabledBoolean(configuration.getChild("fork"), "fork");
+      rejectEnabledBoolean(configuration.getChild("enablePreview"), "enablePreview");
+      final Xpp3Dom compilerIdNode = configuration.getChild("compilerId");
+      final String compilerId = compilerIdNode == null ? null : compilerIdNode.getValue();
+      if (compilerId != null && !"javac".equals(compilerId)) {
+        throw new IOException("Cannot determine compiler platform with non-javac compilerId");
+      }
+    }
+  }
+
+  private static void rejectSelectedPlatformProperties(final Properties properties)
+      throws IOException {
+    for (final String name : List.of("maven.compiler.executable", "maven.compiler.jdkToolchain")) {
+      final String value = properties.getProperty(name);
+      if (value != null && !value.isBlank()) {
+        throw new IOException("Cannot determine compiler platform with configured " + name);
+      }
+    }
+    rejectEnabledProperty(properties, "maven.compiler.fork");
+    rejectEnabledProperty(properties, "maven.compiler.enablePreview");
+    final String compilerId = properties.getProperty("maven.compiler.compilerId");
+    if (compilerId != null && !compilerId.isBlank() && !"javac".equals(compilerId)) {
+      throw new IOException("Cannot determine compiler platform with non-javac compilerId");
+    }
+    for (final String name :
+        List.of(
+            "maven.compiler.compilerArgs",
+            "maven.compiler.compilerArgument",
+            "maven.compiler.compilerArguments")) {
+      rejectPlatformArgumentText(properties.getProperty(name));
+    }
+  }
+
+  private static void rejectEnabledBoolean(final Xpp3Dom node, final String name)
+      throws IOException {
+    if (node != null
+        && node.getValue() != null
+        && !node.getValue().isBlank()
+        && !SAFE_FALSE.equalsIgnoreCase(node.getValue().trim())) {
+      throw new IOException("Cannot determine compiler platform with configured " + name);
+    }
+  }
+
+  private static void rejectEnabledProperty(final Properties properties, final String name)
+      throws IOException {
+    final String value = properties.getProperty(name);
+    if (value != null && !value.isBlank() && !SAFE_FALSE.equalsIgnoreCase(value.trim())) {
+      throw new IOException("Cannot determine compiler platform with configured " + name);
+    }
+  }
+
+  private static void rejectCompilerArgumentOverrides(final Xpp3Dom configuration)
+      throws IOException {
+    if (configuration == null) {
+      return;
+    }
+    final List<String> overridePrefixes =
+        List.of(
+            "--release",
+            "-source",
+            "--source",
+            "-target",
+            "--target",
+            "--enable-preview",
+            "-system",
+            "--system",
+            "-bootclasspath",
+            "--boot-class-path",
+            "-d",
+            "-s",
+            "-h",
+            "--patch-module",
+            "--module-path",
+            "-p");
+    for (final Xpp3Dom child : configuration.getChildren()) {
+      final String argument = child.getValue() == null ? child.getName() : child.getValue().trim();
+      if (overridePrefixes.stream()
+          .anyMatch(prefix -> argument.equals(prefix) || argument.startsWith(prefix + "="))) {
+        throw new IOException(
+            "Cannot determine compiler platform with compiler argument " + argument);
+      }
+    }
+    final String value = configuration.getValue();
+    rejectPlatformArgumentText(value, overridePrefixes);
+  }
+
+  private static void rejectPlatformArgumentText(final String text) throws IOException {
+    rejectPlatformArgumentText(
+        text,
+        List.of(
+            "--release",
+            "-source",
+            "--source",
+            "-target",
+            "--target",
+            "--enable-preview",
+            "-system",
+            "--system",
+            "-bootclasspath",
+            "--boot-class-path",
+            "-d",
+            "-s",
+            "-h",
+            "--patch-module",
+            "--module-path",
+            "-p",
+            "release",
+            "source",
+            "target",
+            "enablePreview",
+            "system",
+            "bootclasspath",
+            "outputDirectory"));
+  }
+
+  private static void rejectPlatformArgumentText(
+      final String text, final List<String> overridePrefixes) throws IOException {
+    if (text == null) {
+      return;
+    }
+    for (final String token : text.trim().split("\\s+")) {
+      if (overridePrefixes.stream()
+          .anyMatch(prefix -> token.equals(prefix) || token.startsWith(prefix + "="))) {
+        throw new IOException("Cannot determine compiler platform with compiler argument " + token);
+      }
+    }
+  }
+
+  private static boolean hasProcessorOptions(final Xpp3Dom configuration) {
+    if (configuration == null) {
+      return false;
+    }
+    for (final Xpp3Dom child : configuration.getChildren()) {
+      if (hasProcessorOption(child.getValue()) || hasProcessorOption(child.getName())) {
+        return true;
+      }
+      for (final Xpp3Dom argument : child.getChildren()) {
+        if (hasProcessorOption(argument.getValue()) || hasProcessorOption(argument.getName())) {
+          return true;
+        }
+      }
+    }
+    return hasProcessorOption(configuration.getValue());
+  }
+
+  private static boolean hasProcessorOption(final String value) {
+    if (value == null) {
+      return false;
+    }
+    for (final String token : value.trim().split("\\s+")) {
+      if (List.of(
+                  "-processor",
+                  "-processorpath",
+                  "--processor-path",
+                  "--processor-module-path",
+                  "-proc:only",
+                  "-proc:full")
+              .contains(token)
+          || token.startsWith("-processor=")
+          || token.startsWith("-processorpath=")
+          || token.startsWith("--processor-path=")) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static void rejectSelectedToolchain(final MavenSession session) throws IOException {

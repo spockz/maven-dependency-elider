@@ -48,6 +48,10 @@ public final class ElideMojo extends AbstractMojo {
   @Parameter(property = "elide.sourceRootsComplete", defaultValue = DEFAULT_FALSE)
   private boolean sourceRootsComplete;
 
+  /** Asserts that production output contains every compiled production class. */
+  @Parameter(property = "elide.productionClassesComplete", defaultValue = DEFAULT_FALSE)
+  private boolean productionClassesComplete;
+
   /**
    * Enables per-JAR class trimming.
    *
@@ -290,10 +294,13 @@ public final class ElideMojo extends AbstractMojo {
   }
 
   private MavenElisionService.AnalysisOptions analysisOptions() {
+    final boolean trustedProcessClassesContext = trustedProcessClassesContext();
+    final boolean useProductionClasses =
+        productionClassesComplete || (trustedProcessClassesContext && !sourceRootsComplete);
     return new MavenElisionService.AnalysisOptions(
         traceFiles,
         excludedArtifacts,
-        productionOutput,
+        effectiveProductionOutput(useProductionClasses),
         session,
         sourceRootsComplete,
         trimJars,
@@ -306,7 +313,26 @@ public final class ElideMojo extends AbstractMojo {
         trimWorkers,
         mrjarStrategy,
         allowedNativeImageArgs,
-        failOnUnsupportedNativeImageArgs);
+        failOnUnsupportedNativeImageArgs,
+        useProductionClasses,
+        trustedProcessClassesContext);
+  }
+
+  private File effectiveProductionOutput(final boolean useProductionClasses) {
+    if (productionOutput != null || !useProductionClasses) {
+      return productionOutput;
+    }
+    if (project == null || project.getBuild() == null) {
+      return null;
+    }
+    final String outputDirectory = project.getBuild().getOutputDirectory();
+    return outputDirectory == null || outputDirectory.isBlank() ? null : new File(outputDirectory);
+  }
+
+  private boolean trustedProcessClassesContext() {
+    return mojoExecution != null
+        && EliderPreparationState.source(mojoExecution) == MojoExecution.Source.LIFECYCLE
+        && "process-classes".equals(mojoExecution.getLifecyclePhase());
   }
 
   /** Creates a Mojo instance for Maven injection. */

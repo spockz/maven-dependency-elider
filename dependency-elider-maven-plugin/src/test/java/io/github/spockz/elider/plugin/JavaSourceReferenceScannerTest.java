@@ -33,6 +33,7 @@ import org.apache.maven.project.MavenProject;
 import org.apache.maven.toolchain.Toolchain;
 import org.apache.maven.toolchain.ToolchainManager;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassReader;
@@ -259,6 +260,94 @@ final class JavaSourceReferenceScannerTest {
     assertThatThrownBy(() -> MavenCompilerSettings.options(project, null, List.of()))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("configured compiler mode");
+  }
+
+  @Test
+  @DisplayName("ADR-0010/platform release options preserve non-platform compiler options")
+  void platformReleaseOptionsAllowNonPlatformCompilerOptions() throws IOException {
+    final MavenProject project = new MavenProject();
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Xpp3Dom configuration = new Xpp3Dom("configuration");
+    final Xpp3Dom processors = new Xpp3Dom("annotationProcessorPaths");
+    processors.addChild(new Xpp3Dom("path"));
+    configuration.addChild(processors);
+    final Xpp3Dom compilerArgs = new Xpp3Dom("compilerArgs");
+    final Xpp3Dom processorArgument = new Xpp3Dom("arg");
+    processorArgument.setValue("-Agenerated=enabled");
+    compilerArgs.addChild(processorArgument);
+    configuration.addChild(compilerArgs);
+    final Xpp3Dom fork = new Xpp3Dom("fork");
+    fork.setValue("false");
+    configuration.addChild(fork);
+    final Xpp3Dom preview = new Xpp3Dom("enablePreview");
+    preview.setValue("false");
+    configuration.addChild(preview);
+    project.getBuild().addPlugin(compilerPlugin(configuration));
+
+    assertThat(MavenCompilerSettings.platformReleaseOptions(project, null))
+        .containsExactly("--release", "21");
+  }
+
+  @Test
+  @DisplayName("ADR-0010/platform release options reject output overrides")
+  void platformReleaseOptionsRejectOutputCompilerOverride() {
+    final MavenProject project = new MavenProject();
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Xpp3Dom configuration = new Xpp3Dom("configuration");
+    final Xpp3Dom compilerArgs = new Xpp3Dom("compilerArgs");
+    final Xpp3Dom output = new Xpp3Dom("arg");
+    output.setValue("-d");
+    compilerArgs.addChild(output);
+    configuration.addChild(compilerArgs);
+    project.getBuild().addPlugin(compilerPlugin(configuration));
+
+    assertThatThrownBy(() -> MavenCompilerSettings.platformReleaseOptions(project, null))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("compiler argument -d");
+  }
+
+  @Test
+  @DisplayName("ADR-0010/source completeness detects processors unless processing is disabled")
+  void sourceCompletenessDetectsProcessorArgumentsUnlessProcessingIsDisabled() {
+    final MavenProject project = new MavenProject();
+    project
+        .getProperties()
+        .setProperty("maven.compiler.compilerArgs", "-processor example.Processor");
+
+    assertThat(MavenCompilerSettings.hasConfiguredAnnotationProcessing(project)).isTrue();
+
+    project.getProperties().setProperty("maven.compiler.compilerArgs", "-proc:only");
+    assertThat(MavenCompilerSettings.hasConfiguredAnnotationProcessing(project)).isTrue();
+
+    project.getProperties().setProperty("maven.compiler.compilerArguments", "-proc:full");
+    assertThat(MavenCompilerSettings.hasConfiguredAnnotationProcessing(project)).isTrue();
+
+    project.getProperties().setProperty("maven.compiler.proc", "none");
+
+    assertThat(MavenCompilerSettings.hasConfiguredAnnotationProcessing(project)).isFalse();
+  }
+
+  @Test
+  @DisplayName("ADR-0010/source completeness sees processor modes from Maven session properties")
+  void sourceCompletenessSeesSessionProcessorMode() {
+    final MavenProject project = new MavenProject();
+    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+    final MavenSession session = new MavenSession(null, request, null, project);
+    session.getUserProperties().setProperty("maven.compiler.proc", "full");
+
+    assertThat(MavenCompilerSettings.hasConfiguredAnnotationProcessing(project, session)).isTrue();
+  }
+
+  @Test
+  @DisplayName("ADR-0010/platform release options inspect compiler argument properties")
+  void platformReleaseOptionsInspectCompilerArgumentProperties() {
+    final MavenProject project = new MavenProject();
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    project.getProperties().setProperty("maven.compiler.compilerArgument", "-target 8");
+
+    assertThatThrownBy(() -> MavenCompilerSettings.platformReleaseOptions(project, null))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("compiler argument -target");
   }
 
   @Test

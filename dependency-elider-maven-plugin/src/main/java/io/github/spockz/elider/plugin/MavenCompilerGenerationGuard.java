@@ -115,6 +115,12 @@ final class MavenCompilerGenerationGuard {
 
   static void requireSafeCompilerConfiguration(
       final MavenProject project, final MavenSession session) throws IOException {
+    requireSafeCompilerConfiguration(project, session, false);
+  }
+
+  static void requireSafeCompilerConfiguration(
+      final MavenProject project, final MavenSession session, final boolean trustedProcessClasses)
+      throws IOException {
     if (project == null || project.getBuild() == null) {
       throw unsupported("Maven build configuration is unavailable");
     }
@@ -123,11 +129,34 @@ final class MavenCompilerGenerationGuard {
     requireSupportedCompilerPluginVersion(project.getBuild(), propertySources);
     final CompilerConfigurations configurations = configurations(project.getBuild());
     requireSupportedTargetLevels(configurations, propertySources);
+    if (trustedProcessClasses) {
+      requireSafeTrustedTestCompile(configurations, propertySources);
+      return;
+    }
     final List<String> fallbackProcValues = rootProcValues(configurations, propertySources);
     if (!fallbackProcValues.isEmpty()) {
       requireOnlyNone(fallbackProcValues, "root compiler configuration", propertySources);
     }
     requireSafeExecutionProcessing(configurations, propertySources, !fallbackProcValues.isEmpty());
+  }
+
+  private static void requireSafeTrustedTestCompile(
+      final CompilerConfigurations configurations, final List<Properties> propertySources)
+      throws IOException {
+    final List<String> fallbackProcValues = rootProcValues(configurations, propertySources);
+    if (!fallbackProcValues.isEmpty()) {
+      requireOnlyNone(fallbackProcValues, "root compiler configuration", propertySources);
+    }
+    final boolean globalFallback = !fallbackProcValues.isEmpty();
+    for (final Xpp3Dom root : configurations.root()) {
+      rejectUnsupportedConfiguration(root);
+    }
+    rejectUnsupportedProperties(propertySources);
+    requireSafeGoalProcessing(
+        CompileGoal.TEST_COMPILE,
+        configurations.executions().get(CompileGoal.TEST_COMPILE),
+        propertySources,
+        globalFallback);
   }
 
   private static List<String> rootProcValues(

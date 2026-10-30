@@ -140,12 +140,12 @@ final class ADR0008MavenPreconditionPublicationTest {
     configure(fixture, true);
     fixture.session().getUserProperties().setProperty("maven.compiler.proc", "full");
 
-    assertThatThrownBy(fixture.mojo()::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("annotation processing to be disabled");
+    fixture.mojo().execute();
 
     assertThat(fixture.vex()).doesNotExist();
-    assertThat(fixture.summary()).doesNotExist();
+    assertThat(fixture.summary()).exists();
+    assertThat(MavenElisionReportWriter.read(fixture.summary()).inactivePreconditionCves())
+        .isEmpty();
   }
 
   @Test

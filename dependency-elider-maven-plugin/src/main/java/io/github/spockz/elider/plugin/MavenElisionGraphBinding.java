@@ -170,6 +170,7 @@ final class MavenElisionGraphBinding {
     fields.add(
         "java-home=" + Path.of(System.getProperty("java.home")).toAbsolutePath().normalize());
     fields.add(Boolean.toString(options.sourceRootsComplete()));
+    fields.add(Boolean.toString(options.productionClassesComplete()));
     fields.add(Boolean.toString(options.trimJars()));
     fields.add(options.mrjarStrategy());
     fields.add(Boolean.toString(options.failOnUnsupportedModuleInfo()));

@@ -43,7 +43,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
-import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
@@ -240,6 +239,7 @@ final class MavenDependencyTrimmer {
       List<String> explicitRoots,
       List<String> explicitPassThroughCoordinates,
       boolean sourceRootsComplete,
+      boolean productionClassesComplete,
       String mrjarStrategy,
       boolean failOnUnsupportedModuleInfo,
       TrimOutputGenerationPublisher.MoveOperation move) {
@@ -405,6 +405,7 @@ final class MavenDependencyTrimmer {
       List<String> explicitRoots,
       List<String> explicitPassThroughCoordinates,
       boolean sourceRootsComplete,
+      boolean productionClassesComplete,
       String mrjarStrategy,
       boolean failOnUnsupportedModuleInfo) {}
 
@@ -685,19 +686,13 @@ final class MavenDependencyTrimmer {
             options.explicitTrimRoots(),
             options.explicitPassThroughArtifacts(),
             options.sourceRootsComplete(),
+            options.productionClassesComplete(),
             options.mrjarStrategy(),
             options.failOnUnsupportedModuleInfo(),
             move);
     final MavenProject project = request.project();
-    final List<String> compileClasspath;
-    try {
-      compileClasspath = project.getCompileClasspathElements();
-    } catch (final DependencyResolutionRequiredException exception) {
-      throw new IOException(
-          "Cannot resolve the effective compile classpath for JAR trimming", exception);
-    }
     final List<String> compilerOptions =
-        MavenCompilerSettings.options(project, request.session(), compileClasspath);
+        MavenCompilerSettings.platformReleaseOptions(project, request.session());
     final Path javaHome =
         Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
     final int release = releaseFromOptions(compilerOptions, javaHome);
@@ -711,15 +706,8 @@ final class MavenDependencyTrimmer {
   static TrimResult trim(final TrimRequest request) throws IOException, MojoFailureException {
     final MavenProject project = request.project();
     final MavenSession session = request.session();
-    final List<String> compileClasspath;
-    try {
-      compileClasspath = project.getCompileClasspathElements();
-    } catch (final DependencyResolutionRequiredException exception) {
-      throw new IOException(
-          "Cannot resolve the effective compile classpath for JAR trimming", exception);
-    }
     final List<String> compilerOptions =
-        MavenCompilerSettings.options(project, session, compileClasspath);
+        MavenCompilerSettings.platformReleaseOptions(project, session);
     final Path javaHome =
         Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
     final int release = releaseFromOptions(compilerOptions, javaHome);
@@ -815,15 +803,8 @@ final class MavenDependencyTrimmer {
       final TieringDecision decision)
       throws IOException, MojoFailureException {
     final MavenProject project = request.project();
-    final List<String> compileClasspath;
-    try {
-      compileClasspath = project.getCompileClasspathElements();
-    } catch (final DependencyResolutionRequiredException exception) {
-      throw new IOException(
-          "Cannot resolve the effective compile classpath for analysis", exception);
-    }
     final List<String> compilerOptions =
-        MavenCompilerSettings.options(project, request.session(), compileClasspath);
+        MavenCompilerSettings.platformReleaseOptions(project, request.session());
     final Path javaHome =
         Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
     final int release = releaseFromOptions(compilerOptions, javaHome);
@@ -1265,15 +1246,8 @@ final class MavenDependencyTrimmer {
     if (!request.trimEnabled()) {
       return runtimeRelease;
     }
-    final List<String> compileClasspath;
-    try {
-      compileClasspath = request.project().getCompileClasspathElements();
-    } catch (final DependencyResolutionRequiredException exception) {
-      throw new IOException(
-          "Cannot resolve the effective compile classpath for analysis", exception);
-    }
     final List<String> compilerOptions =
-        MavenCompilerSettings.options(request.project(), request.session(), compileClasspath);
+        MavenCompilerSettings.platformReleaseOptions(request.project(), request.session());
     return releaseFromOptions(compilerOptions, javaHome);
   }
 
@@ -2496,6 +2470,7 @@ final class MavenDependencyTrimmer {
             output.explicitRoots().stream().sorted().toList(),
             output.explicitPassThroughCoordinates().stream().sorted().toList(),
             output.sourceRootsComplete(),
+            output.productionClassesComplete(),
             request.mrjarStrategy(),
             output.failOnUnsupportedModuleInfo());
     try {
