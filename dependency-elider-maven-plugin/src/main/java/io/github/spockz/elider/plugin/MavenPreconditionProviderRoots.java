@@ -80,9 +80,7 @@ final class MavenPreconditionProviderRoots {
     final Map<Path, String> sourceDigests = sourceDigests(rootsBeforeScan);
     final List<String> membersBeforeScan = rootMembers(rootsBeforeScan);
     final List<Provider> providers = applicationProviders(rootsBeforeScan);
-    if (!analysis.trustedProcessClassesContext()) {
-      rejectUnsupportedSourceFiles(rootsBeforeScan);
-    }
+    rejectUnsupportedSourceFiles(rootsBeforeScan);
     verifyCapturedRootDigests(rootsBeforeScan, providers, sourceDigests);
     final List<RootFiles> rootsAfterScan = declaredRoots(project, analysis, normalizedStages);
     final List<String> membersAfterScan = rootMembers(rootsAfterScan);

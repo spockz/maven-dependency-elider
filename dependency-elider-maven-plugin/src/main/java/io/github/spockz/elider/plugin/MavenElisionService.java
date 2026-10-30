@@ -653,6 +653,7 @@ final class MavenElisionService {
         prepared.directArtifactsPresent(),
         prepared.directSnapshots(),
         prepared.rawDecision(),
+        prepared.rawDecision(),
         prepared.classUsageReport(),
         prepared.bytecodeScan(),
         trimResult.records(),
@@ -662,7 +663,12 @@ final class MavenElisionService {
         trimResult.cacheHits(),
         trimResult.maximumCacheHitNanos(),
         trimResult.analysisRuns(),
-        prepared.dynamicRootInputs().unprovenServiceRootsByCoordinate());
+        null,
+        null,
+        null,
+        prepared.dynamicRootInputs().unprovenServiceRootsByCoordinate(),
+        options.productionClassesComplete(),
+        options.trustedProcessClassesContext());
   }
 
   private static boolean requiresTierAwareMrjarTrim(final PreparedAnalysis prepared)

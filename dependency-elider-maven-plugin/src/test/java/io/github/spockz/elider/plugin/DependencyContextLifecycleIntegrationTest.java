@@ -39,6 +39,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
 
 /** Verifies artifact-view changes across a real Maven lifecycle. */
 @SuppressWarnings({
@@ -602,34 +604,33 @@ final class DependencyContextLifecycleIntegrationTest {
     final Path settings = writeSettings(evidenceDirectory);
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
     final Path consumer = Files.createDirectories(evidenceDirectory.resolve("consumer"));
-    final Path keepJar = repositoryArtifact(localRepository, "keep-library");
     final Path trace = consumer.resolve(TRACE_FILE);
-    Files.writeString(trace, KEEP_ENTRY_ROOT);
+    Files.writeString(trace, "io.github.spockz.elider.fixture.drop.DropEntry\n");
+    writeUnusedLibrary(localRepository);
     writeConsumerExtensions(
         Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
     final String pom =
         """
         <?xml version="1.0" encoding="UTF-8"?>
-        <!-- WHY: Exercises extension rebinding after a generate-sources execution emits real bytecode. -->
+        <!-- WHY: Exercises extension rebinding after Maven compiles source emitted during generate-sources. -->
         <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
           <modelVersion>4.0.0</modelVersion><groupId>io.github.spockz.elider.test</groupId><artifactId>process-classes-consumer</artifactId><version>1.0.0</version><packaging>jar</packaging>
           <properties><maven.compiler.release>21</maven.compiler.release><elide.traceFiles>${project.basedir}/trace.txt</elide.traceFiles><elide.summaryFile>${project.build.directory}/dependency-elider-report.json</elide.summaryFile></properties>
           <dependencies>
             <dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>drop-library</artifactId><version>1.0.0</version></dependency>
             <dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>keep-library</artifactId><version>1.0.0</version></dependency>
+            <dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>unused-library</artifactId><version>1.0.0</version></dependency>
           </dependencies>
           <build><plugins>
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.1.0</version><executions><execution><id>generate-bytecode</id><phase>generate-sources</phase><goals><goal>run</goal></goals><configuration><target>
-              <mkdir dir="${project.build.directory}/generated-bytecode"/><mkdir dir="${project.build.outputDirectory}"/>
-              <echo file="${project.build.directory}/generated-bytecode/GeneratedUse.java">package generated; public final class GeneratedUse { io.github.spockz.elider.fixture.keep.KeepEntry value; }</echo>
-              <javac srcdir="${project.build.directory}/generated-bytecode" destdir="${project.build.outputDirectory}" source="21" target="21" includeantruntime="false"><classpath><pathelement location="KEEP_JAR_PATH"/></classpath></javac>
+              <mkdir dir="${project.build.sourceDirectory}/generated"/>
+              <echo file="${project.build.sourceDirectory}/generated/GeneratedUse.java">package generated; public final class GeneratedUse { public static String create() { return io.github.spockz.elider.fixture.keep.KeepEntry.value(); } }</echo>
             </target></configuration></execution></executions></plugin>
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><release>21</release><proc>none</proc></configuration></plugin>
             <plugin><groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version><executions><execution><id>run-elider</id><phase>initialize</phase><goals><goal>elide</goal></goals></execution></executions></plugin>
           </plugins></build>
         </project>
-        """
-            .replace("KEEP_JAR_PATH", keepJar.toString().replace("\\", "\\\\"));
+        """;
     Files.writeString(consumer.resolve(POM_XML), pom);
     final Path log = evidenceDirectory.resolve("process-classes.log");
 
@@ -646,7 +647,8 @@ final class DependencyContextLifecycleIntegrationTest {
         "dependency:tree");
 
     final String output = Files.readString(log);
-    assertThat(output).contains(BUILD_SUCCESS).contains("Whole artifacts: 1 / 2");
+    assertThat(output).contains(BUILD_SUCCESS).contains("Whole artifacts: 1 / 3");
+    assertThat(output).contains("keep-library", "drop-library").doesNotContain("unused-library");
     assertThat(output).contains("dependency-elider:0.1.0-SNAPSHOT:elide (run-elider)");
     final int elideGoal = output.indexOf("elide (run-elider)");
     final int treeGoal = output.indexOf("dependency:3.7.0:tree (default-cli)");
@@ -2012,6 +2014,47 @@ final class DependencyContextLifecycleIntegrationTest {
             + "-"
             + VERSION
             + ".jar");
+  }
+
+  private static void writeUnusedLibrary(final Path localRepository) throws IOException {
+    final Path artifactDirectory =
+        localRepository
+            .resolve(GROUP_ID.replace('.', '/'))
+            .resolve("unused-library")
+            .resolve(VERSION);
+    Files.createDirectories(artifactDirectory);
+    Files.writeString(
+        artifactDirectory.resolve("unused-library-" + VERSION + ".pom"),
+        "<project><modelVersion>4.0.0</modelVersion><groupId>"
+            + GROUP_ID
+            + "</groupId><artifactId>unused-library</artifactId><version>"
+            + VERSION
+            + "</version></project>");
+    try (JarOutputStream archive =
+        new JarOutputStream(
+            Files.newOutputStream(
+                artifactDirectory.resolve("unused-library-" + VERSION + ".jar")))) {
+      // WHY: Artifact pruning requires an indexable class.
+      archive.putNextEntry(new JarEntry("META-INF/MANIFEST.MF"));
+      archive.write("Manifest-Version: 1.0\n\n".getBytes(StandardCharsets.UTF_8));
+      archive.closeEntry();
+      archive.putNextEntry(new JarEntry("com/example/unused/Unreferenced.class"));
+      archive.write(unreferencedClassBytes());
+      archive.closeEntry();
+    }
+  }
+
+  private static byte[] unreferencedClassBytes() {
+    final ClassWriter classWriter = new ClassWriter(0);
+    classWriter.visit(
+        Opcodes.V21,
+        Opcodes.ACC_PUBLIC,
+        "com/example/unused/Unreferenced",
+        null,
+        "java/lang/Object",
+        null);
+    classWriter.visitEnd();
+    return classWriter.toByteArray();
   }
 
   private static void writeReplacementJar(final Path output) throws IOException {

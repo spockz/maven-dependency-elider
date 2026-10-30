@@ -307,6 +307,36 @@ final class JavaSourceReferenceScannerTest {
   }
 
   @Test
+  @DisplayName("ADR-0010/platform release options reject compiler argument map overrides")
+  void platformReleaseOptionsRejectCompilerArgumentMapTarget() {
+    final MavenProject project = new MavenProject();
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Xpp3Dom configuration = new Xpp3Dom("configuration");
+    final Xpp3Dom compilerArguments = new Xpp3Dom("compilerArguments");
+    final Xpp3Dom target = new Xpp3Dom("target");
+    target.setValue("8");
+    compilerArguments.addChild(target);
+    configuration.addChild(compilerArguments);
+    project.getBuild().addPlugin(compilerPlugin(configuration));
+
+    assertThatThrownBy(() -> MavenCompilerSettings.platformReleaseOptions(project, null))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("compiler argument target");
+  }
+
+  @Test
+  @DisplayName("ADR-0010/platform release options reject compiler argument files")
+  void platformReleaseOptionsRejectCompilerArgumentFiles() {
+    final MavenProject project = new MavenProject();
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    project.getProperties().setProperty("maven.compiler.compilerArgs", "@platform.args");
+
+    assertThatThrownBy(() -> MavenCompilerSettings.platformReleaseOptions(project, null))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("compiler argument @platform.args");
+  }
+
+  @Test
   @DisplayName("ADR-0010/source completeness detects processors unless processing is disabled")
   void sourceCompletenessDetectsProcessorArgumentsUnlessProcessingIsDisabled() {
     final MavenProject project = new MavenProject();

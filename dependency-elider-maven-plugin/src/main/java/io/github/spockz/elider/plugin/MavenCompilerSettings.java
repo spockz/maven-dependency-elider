@@ -47,6 +47,37 @@ final class MavenCompilerSettings {
   /** Number of settings that is not a conflict. */
   private static final int SINGLE_VALUE_COUNT = 1;
 
+  /** Platform or output options that raw javac arguments can override. */
+  private static final List<String> PLATFORM_ARGUMENT_OVERRIDES =
+      List.of(
+          "--release",
+          "-source",
+          "--source",
+          "-target",
+          "--target",
+          "--enable-preview",
+          "-system",
+          "--system",
+          "-bootclasspath",
+          "--boot-class-path",
+          "-d",
+          "-s",
+          "-h",
+          "--patch-module",
+          "--module-path",
+          "-p",
+          "release",
+          "source",
+          "target",
+          "enablePreview",
+          "system",
+          "bootclasspath",
+          "bootClasspath",
+          "modulePath",
+          "modulepath",
+          "outputDirectory",
+          "generatedSourcesDirectory");
+
   private MavenCompilerSettings() {}
 
   /** Resolves supported javac options or rejects unmodeled settings. */
@@ -281,73 +312,21 @@ final class MavenCompilerSettings {
     if (configuration == null) {
       return;
     }
-    final List<String> overridePrefixes =
-        List.of(
-            "--release",
-            "-source",
-            "--source",
-            "-target",
-            "--target",
-            "--enable-preview",
-            "-system",
-            "--system",
-            "-bootclasspath",
-            "--boot-class-path",
-            "-d",
-            "-s",
-            "-h",
-            "--patch-module",
-            "--module-path",
-            "-p");
     for (final Xpp3Dom child : configuration.getChildren()) {
-      final String argument = child.getValue() == null ? child.getName() : child.getValue().trim();
-      if (overridePrefixes.stream()
-          .anyMatch(prefix -> argument.equals(prefix) || argument.startsWith(prefix + "="))) {
-        throw new IOException(
-            "Cannot determine compiler platform with compiler argument " + argument);
-      }
+      rejectPlatformArgumentText(child.getName());
+      rejectPlatformArgumentText(child.getValue());
     }
-    final String value = configuration.getValue();
-    rejectPlatformArgumentText(value, overridePrefixes);
+    rejectPlatformArgumentText(configuration.getValue());
   }
 
   private static void rejectPlatformArgumentText(final String text) throws IOException {
-    rejectPlatformArgumentText(
-        text,
-        List.of(
-            "--release",
-            "-source",
-            "--source",
-            "-target",
-            "--target",
-            "--enable-preview",
-            "-system",
-            "--system",
-            "-bootclasspath",
-            "--boot-class-path",
-            "-d",
-            "-s",
-            "-h",
-            "--patch-module",
-            "--module-path",
-            "-p",
-            "release",
-            "source",
-            "target",
-            "enablePreview",
-            "system",
-            "bootclasspath",
-            "outputDirectory"));
-  }
-
-  private static void rejectPlatformArgumentText(
-      final String text, final List<String> overridePrefixes) throws IOException {
     if (text == null) {
       return;
     }
     for (final String token : text.trim().split("\\s+")) {
-      if (overridePrefixes.stream()
-          .anyMatch(prefix -> token.equals(prefix) || token.startsWith(prefix + "="))) {
+      if (token.startsWith("@")
+          || PLATFORM_ARGUMENT_OVERRIDES.stream()
+              .anyMatch(prefix -> token.equals(prefix) || token.startsWith(prefix + "="))) {
         throw new IOException("Cannot determine compiler platform with compiler argument " + token);
       }
     }

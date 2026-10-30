@@ -98,6 +98,9 @@ final class ADR0008MavenPreconditionInventoryTest {
   /** WHY: Maven plugin fixtures use the canonical plugin group ID. */
   private static final String MAVEN_PLUGIN_GROUP = "org.apache.maven.plugins";
 
+  /** Maven's standard resources plugin key used by phase guard fixtures. */
+  private static final String MAVEN_RESOURCES_PLUGIN = "maven-resources-plugin";
+
   /** WHY: Maven lifecycle fixture goals are asserted by exact names. */
   private static final String GOAL_VERIFY = "verify";
 
@@ -1172,8 +1175,69 @@ final class ADR0008MavenPreconditionInventoryTest {
                     MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
                         fixture.project(), session, true))
             .isInstanceOf(IOException.class)
-            .hasMessageContaining("unmodeled");
+            .hasMessageContaining("lifecycle writer");
       }
+    }
+
+    @Test
+    @DisplayName("ADR-0008/trusted capture rejects supported writers bound at capture phase")
+    void trustedProcessClassesRejectsCompilerAndResourceWritersAtCapturePhase() throws IOException {
+      for (final Plugin writer :
+          List.of(
+              lifecyclePlugin(
+                  MAVEN_PLUGIN_GROUP, "maven-compiler-plugin", "compile-at-capture", "compile"),
+              lifecyclePlugin(
+                  MAVEN_PLUGIN_GROUP,
+                  MAVEN_RESOURCES_PLUGIN,
+                  "resources-at-capture",
+                  "resources"))) {
+        final Fixture fixture = fixture("same-phase-supported-writer-" + writer.getArtifactId());
+        final PluginExecution execution = writer.getExecutions().get(0);
+        execution.setPhase(PROCESS_CLASSES_PHASE);
+        assertTrustedWriterRejected(fixture, writer);
+      }
+    }
+
+    @Test
+    @DisplayName("ADR-0008/trusted capture rejects resource writers before the requested endpoint")
+    void trustedProcessClassesRejectsLaterResourceWriters() throws IOException {
+      final Fixture fixture = fixture("trusted-later-resource-writer");
+      final Plugin writer =
+          lifecyclePlugin(
+              MAVEN_PLUGIN_GROUP,
+              MAVEN_RESOURCES_PLUGIN,
+              "resources-before-verify",
+              "resources",
+              "process-test-resources");
+
+      assertTrustedWriterRejected(fixture, writer);
+    }
+
+    @Test
+    @DisplayName("ADR-0008/trusted capture preserves package and Shade validation")
+    void trustedCaptureKeepsRequestedPackageValidation() throws IOException {
+      final Fixture packageWithoutClean = fixture("trusted-package-without-clean");
+      final MavenSession packageSession = sessionForGoals(packageWithoutClean.project(), "package");
+      assertThatThrownBy(
+              () ->
+                  MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
+                      packageWithoutClean.project(), packageSession, true))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("requires a clean goal before packaging");
+
+      final Fixture unsafeShade = fixture("trusted-package-unsafe-shade");
+      final Plugin shade = shadePlugin();
+      shade.setConfiguration(shadeRootConfiguration());
+      pluginConfiguration(shade).addChild(setting("extraArtifacts", "com.example:unscanned"));
+      unsafeShade.project().getBuild().addPlugin(shade);
+      final MavenSession cleanPackageSession =
+          sessionForGoals(unsafeShade.project(), GOAL_CLEAN, "package");
+      assertThatThrownBy(
+              () ->
+                  MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
+                      unsafeShade.project(), cleanPackageSession, true))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("unmodeled Maven Shade Plugin root option");
     }
 
     @Test
@@ -1528,7 +1592,7 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       final Plugin resources = new Plugin();
       resources.setGroupId(MAVEN_PLUGIN_GROUP);
-      resources.setArtifactId("maven-resources-plugin");
+      resources.setArtifactId(MAVEN_RESOURCES_PLUGIN);
       final PluginExecution productionResources = new PluginExecution();
       productionResources.setId("default-resources");
       productionResources.setPhase("process-resources");
@@ -2066,7 +2130,7 @@ final class ADR0008MavenPreconditionInventoryTest {
   private static Plugin resourcesPlugin() {
     final Plugin plugin = new Plugin();
     plugin.setGroupId(MAVEN_PLUGIN_GROUP);
-    plugin.setArtifactId("maven-resources-plugin");
+    plugin.setArtifactId(MAVEN_RESOURCES_PLUGIN);
     return plugin;
   }
 
@@ -2110,6 +2174,43 @@ final class ADR0008MavenPreconditionInventoryTest {
     execution.setGoals(List.of("generate"));
     generator.addExecution(execution);
     fixture.project().getBuild().addPlugin(generator);
+  }
+
+  private void assertTrustedWriterRejected(final Fixture fixture, final Plugin writer)
+      throws IOException {
+    fixture.project().getBuild().addPlugin(writer);
+    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+    request.setGoals(List.of(PROCESS_CLASSES_PHASE));
+    final MavenSession session = new MavenSession(null, request, null, fixture.project());
+
+    assertThatThrownBy(
+            () ->
+                MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
+                    fixture.project(), session, true))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("lifecycle writer");
+  }
+
+  private static Plugin lifecyclePlugin(
+      final String group, final String artifact, final String executionId, final String goal) {
+    return lifecyclePlugin(group, artifact, executionId, goal, PROCESS_CLASSES_PHASE);
+  }
+
+  private static Plugin lifecyclePlugin(
+      final String group,
+      final String artifact,
+      final String executionId,
+      final String goal,
+      final String phase) {
+    final Plugin plugin = new Plugin();
+    plugin.setGroupId(group);
+    plugin.setArtifactId(artifact);
+    final PluginExecution execution = new PluginExecution();
+    execution.setId(executionId);
+    execution.setPhase(phase);
+    execution.setGoals(List.of(goal));
+    plugin.addExecution(execution);
+    return plugin;
   }
 
   private static Plugin enforcerPlugin() {

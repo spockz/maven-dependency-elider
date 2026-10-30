@@ -304,9 +304,7 @@ final class MavenPreconditionGenerationGuard {
       throw unsupported("custom or unavailable Maven packaging");
     }
     requireSafeGoalOrder(session);
-    final int requestedPhaseIndex =
-        LIFECYCLE_PHASES.indexOf(
-            trustedProcessClasses ? PHASE_PROCESS_CLASSES : requestedDefaultPhase(session));
+    final int requestedPhaseIndex = LIFECYCLE_PHASES.indexOf(requestedDefaultPhase(session));
     requireSafeSurefireIfTestsRun(project, session, build);
     requireDeclaredRootsAndResourcesAreModeled(build);
     final boolean shadePackageWillRun =
@@ -1216,24 +1214,39 @@ final class MavenPreconditionGenerationGuard {
       throws IOException {
     final String phase = executionPhase(group, artifact, execution);
     final int phaseIndex = LIFECYCLE_PHASES.indexOf(phase);
-    if (phaseIndex > NO_PHASE && phaseIndex > requestedPhaseIndex) {
-      if (trustedProcessClasses && phaseIndex >= LIFECYCLE_PHASES.indexOf(PHASE_PROCESS_CLASSES)) {
+    if (trustedProcessClasses && phaseIndex >= LIFECYCLE_PHASES.indexOf(PHASE_PROCESS_CLASSES)) {
+      if (phaseIndex == LIFECYCLE_PHASES.indexOf(PHASE_PROCESS_CLASSES)
+          && isEliderAtCapturePhase(group, artifact, execution)) {
+        return;
+      }
+      if (phaseIndex > LIFECYCLE_PHASES.indexOf(PHASE_PROCESS_CLASSES)) {
         if (isPlugin(group, artifact, COMPILER)) {
-          if (!isDefaultTestCompileExecution(execution, phase)) {
-            throw unsupported("Maven Compiler Plugin execution is bound after process-classes");
+          if (isDefaultTestCompileExecution(execution, phase)) {
+            return;
           }
+          throw unsupported("Maven Compiler Plugin execution is bound after process-classes");
+        }
+        if (isKnownPostCapturePlugin(group, artifact, phase)) {
           return;
         }
-        if (!isKnownPostCapturePlugin(group, artifact, phase)) {
-          throw unsupported(
-              "unmodeled lifecycle writer after process-classes: "
-                  + group
-                  + ":"
-                  + artifact
-                  + " at "
-                  + phase);
-        }
+        throw unsupported(
+            "unmodeled lifecycle writer after process-classes: "
+                + group
+                + ":"
+                + artifact
+                + " at "
+                + phase);
       }
+      final Set<String> goals = executionGoals(group, artifact, execution);
+      throw unsupported(
+          "lifecycle writer bound at process-classes capture phase: "
+              + group
+              + ":"
+              + artifact
+              + " goals "
+              + goals);
+    }
+    if (phaseIndex > NO_PHASE && phaseIndex > requestedPhaseIndex) {
       return;
     }
     if (PHASE_CLEAN.equals(phase) && isSafeDefaultCleanExecution(plugin, execution)) {
@@ -1404,6 +1417,14 @@ final class MavenPreconditionGenerationGuard {
         && "test-compile".equals(phase)
         && (execution.getGoals().isEmpty()
             || execution.getGoals().equals(List.of(GOAL_TEST_COMPILE)));
+  }
+
+  private static boolean isEliderAtCapturePhase(
+      final String group, final String artifact, final PluginExecution execution) {
+    return ELIDER_GROUP.equals(group)
+        && ELIDER.equals(artifact)
+        && isEliderExecution(executionGoals(group, artifact, execution))
+        && PHASE_PROCESS_CLASSES.equals(execution.getPhase());
   }
 
   private static boolean isSupportedShadeExecution(
