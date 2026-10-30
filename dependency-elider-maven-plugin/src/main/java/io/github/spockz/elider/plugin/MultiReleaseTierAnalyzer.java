@@ -711,7 +711,12 @@ final class MultiReleaseTierAnalyzer {
               request.trimWorkers(),
               snapshot ->
                   prepareProgram(
-                      snapshot, projection, inventory, skippedIdentities, unchangedClasses, session));
+                      snapshot,
+                      projection,
+                      inventory,
+                      skippedIdentities,
+                      unchangedClasses,
+                      session));
       final Map<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
           prepared = new LinkedHashMap<>();
       for (int index = 0; index < preparable.size(); index++) {
@@ -796,8 +801,7 @@ final class MultiReleaseTierAnalyzer {
               context.programEntries().stream()
                   .filter(
                       entry ->
-                          !rootsForProgram(
-                                  context, entry.getKey(), candidates.get(entry.getKey()))
+                          !rootsForProgram(context, entry.getKey(), candidates.get(entry.getKey()))
                               .isEmpty())
                   .toList();
       final List<DependencyJarTrimmer.TrimAnalysis> analyses =
@@ -808,10 +812,10 @@ final class MultiReleaseTierAnalyzer {
                   entry
                       .getValue()
                       .analyze(
-                          rootsForProgram(context, entry.getKey(), candidates.get(entry.getKey()))));
+                          rootsForProgram(
+                              context, entry.getKey(), candidates.get(entry.getKey()))));
       for (int index = 0; index < entries.size(); index++) {
-        final Map.Entry<
-                MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        final Map.Entry<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
             entry = entries.get(index);
         final MavenElisionService.ArtifactSnapshot owner = entry.getKey();
         final TierCandidate candidate = candidates.get(owner);
@@ -878,11 +882,9 @@ final class MultiReleaseTierAnalyzer {
                 return candidateAnalysis(candidate, localRoots, entry.getValue());
               });
       for (int index = 0; index < entries.size(); index++) {
-        final Map.Entry<
-                MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        final Map.Entry<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
             entry = entries.get(index);
         final MavenElisionService.ArtifactSnapshot snapshot = entry.getKey();
-        final TierCandidate candidate = candidates.get(snapshot);
         final DependencyJarTrimmer.TrimAnalysis analysis = analyses.get(index);
         if (context.release() == targetRelease) {
           targetAnalyses.put(snapshot.coordinate(), analysis);
@@ -1125,18 +1127,25 @@ final class MultiReleaseTierAnalyzer {
     private List<
             Map.Entry<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>>
         candidateEntries() {
-      return List.copyOf(candidatePrepared.entrySet());
+      return orderedEntries(candidatePrepared);
     }
 
     private List<
             Map.Entry<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>>
         programEntries() {
-      return List.copyOf(programPrepared.entrySet());
+      return orderedEntries(programPrepared);
     }
 
     private MultiReleaseCandidateInfo multiReleaseInfo(
         final MavenElisionService.ArtifactSnapshot snapshot) {
       return multiReleaseCandidates.get(snapshot);
     }
+  }
+
+  private static <V> List<Map.Entry<MavenElisionService.ArtifactSnapshot, V>> orderedEntries(
+      final Map<MavenElisionService.ArtifactSnapshot, V> entries) {
+    return entries.entrySet().stream()
+        .sorted(Map.Entry.comparingByKey(MavenDependencyTrimmer.artifactSnapshotOrder()))
+        .toList();
   }
 }

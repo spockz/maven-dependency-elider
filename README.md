@@ -258,7 +258,8 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 | Resolver extension and mediated artifact graph | Required; fixture verified | Graph-aware decisions require `.mvn/extensions.xml`. Without it, original repository artifacts remain visible. |
 | Bare production `dependency:tree` | Example and fixture verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1 | With `.mvn/extensions.xml` and an active initialize-bound execution, `dependency:tree` automatically runs elision first. See [production lifecycle tests](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIntegrationTest.java#L583) and [tree assertions](examples/run-elision-cycle.sh#L808). |
 | Class reachability and safe dependency removal | Unit tested; fixture verified | Covers explicit roots, source references, framework metadata, and graph leaves with retention across ancestors, cycles, and diamonds. |
-| Multi-release dependency JARs | Conservative pass-through | Retained multi-release JARs remain byte-identical; multi-release candidate archives are not trimmed. Optional strict mode can reject them. |
+| Multi-release dependency JARs | Supported; vertical shading by default | With `elide.trimJars=true`, the configured compiler target is elevated and trimmed; upper tiers are preserved, with sibling closure analyzed through the Maven runtime release. `elide.mrjarStrategy=pass-through` preserves MRJAR bytes. |
+| Kotlin/JVM libraries and source roots | Partial; JVM bytecode only | Kotlin-compiled dependency bytecode is analyzed through ordinary JVM references. Kotlin metadata is parsed for sibling class isolation but metadata-only references are not closure roots; Kotlin sources are not scanned. See the [Kotlin support matrix](docs/faq.md#what-kotlin-features-are-supported). |
 | JARs with root `module-info.class` | Conservative pass-through on classpath | Retained JARs with root module descriptors are not trimmed. JPMS module-path linkage is unsupported. |
 | ServiceLoader SPI roots and conservative exclusion | Supported; positive proof with conservative fallback | Detects constant `ServiceLoader` calls in application bytecode. Unproven SPI roots are retained by default (`<conservativeServiceLoaderRoots>true`); if vulnerable code is kept due to unproven SPI roots, the CVE is reported under conservative exclusions with POM override guidance. |
 | Multi-symbol vulnerability interpretation | Strict fail-closed (open design question) | When an advisory maps multiple vulnerable classes across wide version ranges (e.g. Jackson Core `CVE-2026-68494`), all mapped classes must be present in the original JAR for proof of absence. |
@@ -447,7 +448,8 @@ Process exit status: 0
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
-[INFO] Program classes pruned from retained JARs: 3409 (uncompressed omitted .class payload bytes: 8.49 MiB; excludes module descriptors and archive metadata)
+[INFO] Program classes pruned from retained JARs: 3429 (uncompressed omitted .class payload bytes: 8.57 MiB; excludes module descriptors and archive metadata)
+[INFO]   - com.fasterxml.jackson.core:jackson-core:jar:2.18.2 (compile): 20 classes, 82.33 KiB
 [INFO]   - com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile): 53 classes, 92.44 KiB
 [INFO]   - com.fasterxml.jackson.datatype:jackson-datatype-jsr310:jar:2.18.2 (compile): 4 classes, 18.07 KiB
 [INFO]   - com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime): 21 classes, 14.79 KiB
@@ -462,6 +464,7 @@ Process exit status: 0
 [INFO]   - org.springframework:spring-jcl:jar:6.1.14 (compile): 1 classes, 1.24 KiB
 [INFO]   - org.springframework:spring-webmvc:jar:6.1.14 (compile): 146 classes, 524.46 KiB
 [INFO]   - org.webjars:webjars-locator-core:jar:0.58 (runtime): 1 classes, 10.66 KiB
+[INFO]   - org.yaml:snakeyaml:jar:2.2 (compile): 0 classes, 2.65 KiB
 [INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
@@ -476,7 +479,7 @@ Process exit status: 0
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n7} [RETAINED, CLASS_TRIMMED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.google.code.findbugs:jsr305:jar:3.0.2 (runtime) {nodeId=n15} [RETAINED, CLASS_TRIMMED]
-[INFO]   ... 89 dependency graph rows elided (sha256:5082109f83310856c6f3acf66c18c39611673d69a08ee28c82234ddc38f21744)
+[INFO]   ... 89 dependency graph rows elided (sha256:e6937888bdd78a897958920bd8fded79829b88d17211bacbad38ba400a18cbee)
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
@@ -511,7 +514,8 @@ Process exit status: 0
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
-[INFO] Program classes pruned from retained JARs: 310 (uncompressed omitted .class payload bytes: 985.54 KiB; excludes module descriptors and archive metadata)
+[INFO] Program classes pruned from retained JARs: 330 (uncompressed omitted .class payload bytes: 1.04 MiB; excludes module descriptors and archive metadata)
+[INFO]   - com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile): 20 classes, 82.33 KiB
 [INFO]   - com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile): 70 classes, 163.47 KiB
 [INFO]   - org.apache.commons:commons-text:jar:1.9 (compile): 132 classes, 388.41 KiB
 [INFO]   - org.codehaus.janino:commons-compiler:jar:3.1.12 (compile): 51 classes, 96.78 KiB
@@ -526,7 +530,7 @@ Process exit status: 0
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n3} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
-[INFO]   ... 23 dependency graph rows elided (sha256:5cce3d43de14f83342509d9d36b89de07db34786f505418566e4a51c4126d74c)
+[INFO]   ... 23 dependency graph rows elided (sha256:8a675b0fd592f936ac623440cdc52ef26f9fcd2f560856078b665a575c9587c0)
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>

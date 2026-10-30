@@ -52,12 +52,13 @@ type commandResult struct {
 }
 
 var (
-	snapshotAt = regexp.MustCompile(`(?m)^(\[INFO\] Snapshot: last successful elide run at )[^\s]+`)
-	buildTime  = regexp.MustCompile(`(?m)^(\[INFO\] Total time:)\s*.*$`)
-	finishedAt = regexp.MustCompile(`(?m)^(\[INFO\] Finished at:)\s*.*$`)
-	processID  = regexp.MustCompile(`(?i)\b(pid|process id)(\s*[:=]\s*)[0-9]+`)
-	markerID   = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	safeArg    = regexp.MustCompile(`^[A-Za-z0-9_./:=,@%+${}-]+$`)
+	snapshotAt   = regexp.MustCompile(`(?m)^(\[INFO\] Snapshot: last successful elide run at )[^\s]+`)
+	buildTime    = regexp.MustCompile(`(?m)^(\[INFO\] Total time:)\s*.*$`)
+	finishedAt   = regexp.MustCompile(`(?m)^(\[INFO\] Finished at:)\s*.*$`)
+	cacheHitTime = regexp.MustCompile(`maximum validated hit [0-9.]+ ms`)
+	processID    = regexp.MustCompile(`(?i)\b(pid|process id)(\s*[:=]\s*)[0-9]+`)
+	markerID     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	safeArg      = regexp.MustCompile(`^[A-Za-z0-9_./:=,@%+${}-]+$`)
 )
 
 func main() {
@@ -451,6 +452,7 @@ func normalizeOutput(output, root, evidencePath string) []string {
 		line = snapshotAt.ReplaceAllString(line, "${1}<TIMESTAMP>")
 		line = buildTime.ReplaceAllString(line, "${1} <BUILD_TIME>")
 		line = finishedAt.ReplaceAllString(line, "${1} <TIMESTAMP>")
+		line = cacheHitTime.ReplaceAllString(line, "maximum validated hit <CACHE_HIT_TIME>")
 		line = processID.ReplaceAllString(line, "${1}${2}<PID>")
 		line = strings.TrimRight(line, " \t")
 		result = append(result, line)

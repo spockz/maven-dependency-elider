@@ -104,16 +104,26 @@ final class JavaSourceReferenceScanner {
 
   static List<Path> sourceFiles(final Collection<String> sourceRoots) throws IOException {
     final List<Path> sources = new ArrayList<>();
+    final List<Path> unsupportedKotlinSources = new ArrayList<>();
     for (final String root : sourceRoots) {
       final Path rootPath = Path.of(root);
       if (Files.isDirectory(rootPath)) {
         try (java.util.stream.Stream<Path> paths = Files.walk(rootPath)) {
-          sources.addAll(
-              paths
-                  .filter(path -> Files.isRegularFile(path) && path.toString().endsWith(".java"))
-                  .toList());
+          for (final Path path : paths.filter(Files::isRegularFile).toList()) {
+            final String name = path.toString();
+            if (name.endsWith(".java")) {
+              sources.add(path);
+            } else if (name.endsWith(".kt") || name.endsWith(".kts")) {
+              unsupportedKotlinSources.add(path);
+            }
+          }
         }
       }
+    }
+    if (!unsupportedKotlinSources.isEmpty()) {
+      throw new IOException(
+          "Source attribution does not support Kotlin source files: "
+              + unsupportedKotlinSources.getFirst());
     }
     return sources;
   }

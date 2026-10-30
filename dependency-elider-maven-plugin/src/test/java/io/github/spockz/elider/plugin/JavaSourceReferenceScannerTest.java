@@ -62,6 +62,18 @@ final class JavaSourceReferenceScannerTest {
   }
 
   @Test
+  void rejectsMixedKotlinSourcesInsteadOfUnderstatingReferences() throws IOException {
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("mixed-src"));
+    Files.writeString(sourceRoot.resolve("Example.java"), "package app; class Example {}\n");
+    Files.writeString(sourceRoot.resolve("Example.kt"), "package app\nclass KotlinExample\n");
+
+    assertThatThrownBy(() -> JavaSourceReferenceScanner.sourceFiles(List.of(sourceRoot.toString())))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Source attribution does not support Kotlin source files")
+        .hasMessageContaining("Example.kt");
+  }
+
+  @Test
   void findsConstantOwnersGenericBoundsAndAnnotationTypes() throws IOException {
     final Path dependencyJar = compileDependencyJar();
     final Path sourceRoot = Files.createDirectories(tempDir.resolve("app-src"));

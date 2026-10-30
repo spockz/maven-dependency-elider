@@ -978,6 +978,60 @@ final class ElideMojoTest {
   }
 
   @Test
+  void mrjarStrategyPassThroughKeepsSpringOptionalLinksSafe()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final SpringOptionalMrjarInput input = springOptionalMrjarInput("spring-optional");
+    final Artifact springAop = runtimeArtifact("spring-aop", input.springAopPath());
+    final Artifact springCore = runtimeArtifact("spring-core", input.springCorePath());
+    final Artifact candidate = runtimeArtifact("optional-link-candidate", input.candidatePath());
+    final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(springAop, springCore, candidate));
+    final MavenProject project = projectForArtifacts("spring-optional-link", artifacts);
+    project.getProperties().setProperty("maven.compiler.release", "11");
+    final List<java.io.File> trace =
+        List.of(writeTrace("org.springframework.aop.AopRoot\ncandidate.Entry\n").toFile());
+    final List<String> configuredPassThrough = List.of("org.example:spring-aop:1.0:jar:");
+    final byte[] originalSpringAop = Files.readAllBytes(input.springAopPath());
+    final byte[] originalSpringCore = Files.readAllBytes(input.springCorePath());
+
+    final ElideMojo verticalShadingMojo = newMojo();
+    verticalShadingMojo.setLog(new SystemStreamLog());
+    set(verticalShadingMojo, "project", project);
+    set(verticalShadingMojo, "traceFiles", trace);
+    set(verticalShadingMojo, "reportFile", tempDir.resolve("spring-default-report.json").toFile());
+    set(verticalShadingMojo, "trimJars", true);
+    set(verticalShadingMojo, "trimSkipArtifacts", configuredPassThrough);
+
+    assertThatThrownBy(verticalShadingMojo::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("unresolved references")
+        .hasMessageContaining("kotlin/coroutines/Continuation");
+    assertThat(springAop.getFile().toPath()).isEqualTo(input.springAopPath());
+    assertThat(springCore.getFile().toPath()).isEqualTo(input.springCorePath());
+    assertThat(candidate.getFile().toPath()).isEqualTo(input.candidatePath());
+
+    final ElideMojo passThroughMojo = newMojo();
+    passThroughMojo.setLog(new SystemStreamLog());
+    set(passThroughMojo, "project", project);
+    set(passThroughMojo, "traceFiles", trace);
+    set(passThroughMojo, "reportFile", tempDir.resolve("spring-pass-through-report.json").toFile());
+    set(passThroughMojo, "trimJars", true);
+    set(passThroughMojo, "mrjarStrategy", "pass-through");
+    set(passThroughMojo, "trimSkipArtifacts", configuredPassThrough);
+
+    passThroughMojo.execute();
+
+    assertThat(springAop.getFile().toPath()).isEqualTo(input.springAopPath());
+    assertThat(Files.readAllBytes(input.springAopPath())).isEqualTo(originalSpringAop);
+    assertThat(springCore.getFile().toPath()).isEqualTo(input.springCorePath());
+    assertThat(Files.readAllBytes(input.springCorePath())).isEqualTo(originalSpringCore);
+    assertThat(candidate.getFile().toPath()).isNotEqualTo(input.candidatePath());
+    try (JarFile trimmed = new JarFile(candidate.getFile())) {
+      assertThat(trimmed.getEntry("candidate/Keep.class")).isNotNull();
+      assertThat(trimmed.getEntry("candidate/Drop.class")).isNull();
+    }
+  }
+
+  @Test
   void disabledTrimmingKeepsRuntimeProjectionWhenCompilerReleaseExceedsRuntime()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final MultiReleaseFixture fixture = multiReleaseFixture("mr-no-trim");
@@ -2058,7 +2112,8 @@ final class ElideMojoTest {
         options.mrjarStrategy(),
         options.trimJars(),
         prepared.dynamicRootInputs().provenServiceInterfaces(),
-        options.conservativeServiceLoaderRoots());
+        options.conservativeServiceLoaderRoots(),
+        options.trimWorkers());
   }
 
   private static Set<ArtifactCoordinate> union(
@@ -2159,6 +2214,64 @@ final class ElideMojoTest {
     build.setDirectory(tempDir.resolve(name + "-build").toString());
     project.setBuild(build);
     return new MultiReleaseFixture(root, candidate, multiReleasePath, candidatePath, project);
+  }
+
+  private SpringOptionalMrjarInput springOptionalMrjarInput(final String name) throws IOException {
+    final Path candidatePath =
+        compileJarSources(
+            name + "-candidate",
+            Map.of(
+                "Keep.java",
+                "package candidate; public class Keep { public void touch() {} }",
+                "Entry.java",
+                "package candidate; public class Entry {}",
+                "Drop.java",
+                "package candidate; public class Drop {}"),
+            null,
+            8);
+    final Path optionalTypePath =
+        compileJarSources(
+            name + "-optional-kotlin-types",
+            Map.of("Continuation.java", "package kotlin.coroutines; public class Continuation {}"),
+            null,
+            8);
+    final Path coreCompileClasspath =
+        Path.of(candidatePath + java.io.File.pathSeparator + optionalTypePath);
+    final String coreClass =
+        "package org.springframework.core; public class CoroutinesUtils { "
+            + "public static void invoke() { new candidate.Keep().touch(); "
+            + "new kotlin.coroutines.Continuation(); } }";
+    final Path coreBase =
+        compileJarSources(
+            name + "-spring-core-base",
+            Map.of("CoroutinesUtils.java", coreClass),
+            coreCompileClasspath,
+            8);
+    final Path coreTarget =
+        compileJarSources(
+            name + "-spring-core-target",
+            Map.of("CoroutinesUtils.java", coreClass),
+            coreCompileClasspath,
+            11);
+    final Path coreUpper =
+        compileJarSources(
+            name + "-spring-core-upper",
+            Map.of("CoroutinesUtils.java", coreClass),
+            coreCompileClasspath,
+            17);
+    final Path springCorePath =
+        writeMultiReleaseJar(
+            name + "-spring-core.jar", coreBase, null, coreTarget, coreUpper, Map.of());
+    final Path springAopPath =
+        compileJarSources(
+            name + "-spring-aop",
+            Map.of(
+                "AopRoot.java",
+                "package org.springframework.aop; public class AopRoot { "
+                    + "public static void invoke() { "
+                    + "org.springframework.core.CoroutinesUtils.invoke(); } }"),
+            springCorePath);
+    return new SpringOptionalMrjarInput(springAopPath, springCorePath, candidatePath);
   }
 
   private MavenProject projectForArtifacts(final String name, final Set<Artifact> artifacts) {
@@ -2274,6 +2387,9 @@ final class ElideMojoTest {
       Path multiReleasePath,
       Path candidatePath,
       MavenProject project) {}
+
+  private record SpringOptionalMrjarInput(
+      Path springAopPath, Path springCorePath, Path candidatePath) {}
 
   private static byte[] jarEntryBytes(final Path archive, final String entryName)
       throws IOException {

@@ -4,7 +4,7 @@
 * **Status**: Open
 * **Category**: Bytecode Slicing & Provenance Metadata
 * **Date**: 2026-10-24
-* **Last Updated**: 2026-10-25
+* **Last Updated**: 2026-10-30
 
 Abbreviations: Architecture Decision Record (ADR), Abstract Syntax Tree (AST), Bytecode Manipulation (ASM), Common Vulnerabilities and Exposures (CVE), Software Bill of Materials (SBOM), Vulnerability Exploitability eXchange (VEX), Project Object Model (POM), Secure Hash Algorithm (SHA).
 
@@ -28,6 +28,7 @@ However, slicing a third-party JAR introduces three unresolved challenges:
   * The **Effective / Consumer POM** (Maven 3 flattened POM vs. Maven 4 Consumer POM)?
   * **CycloneDX 1.6 SBOMs** using schema-valid `pedigree` and `properties` data?
   * **OpenVEX and CycloneDX VEX** documents using vulnerability-to-product evidence and valid status justifications?
+* **RQ-0001.4**: What Kotlin/JVM metadata, source semantics, and unresolved optional-link cases must be modeled before the trimmer can claim equivalent reachability safety for Kotlin libraries and applications?
 
 ---
 
@@ -135,6 +136,25 @@ The trimmer records class-removal provenance but has no CVE knowledge and does n
   ]
 }
 ```
+
+---
+
+### 2.5 Kotlin/JVM Support Boundary
+
+Kotlin support is partial. The user-facing [Kotlin support matrix](../faq.md#what-kotlin-features-are-supported) defines the current limits; this section records the remaining bytecode-analysis and source-analysis work for this research question.
+
+| Kotlin input or feature | Current behavior | Gap before broader support |
+| :--- | :--- | :--- |
+| Kotlin-compiled library bytecode | Analyzed as ordinary JVM bytecode. Class references present in class-file structures and instructions participate in reachability. | Verify the stated boundary with compiler-produced fixtures across a declared Kotlin compiler/JDK matrix. |
+| `kotlin.Metadata` on sibling library classes | Parsed and validated; metadata-bearing classes are reparsed per analysis context because ProGuard may mutate metadata. Metadata is not itself a reachability source. | Add metadata-aware reference traversal where Kotlin metadata contains class links absent from ordinary JVM references. |
+| References encoded only in Kotlin metadata | Not followed for candidate or sibling-library closure. Candidate classes are read without Kotlin metadata initialization, and the reference visitor does not visit Kotlin metadata. | Initialize supported metadata on candidate classes and use ProGuard's Kotlin reference visitor, with context isolation and fail-closed behavior for unsupported or malformed metadata. |
+| Application `.kt` and `.kts` sources | Not scanned. `elide.sourceRootsComplete=true` rejects Kotlin files; with the default `false`, compile-visible artifacts are retained conservatively. | Use Kotlin compiler semantic analysis to derive source roots and honor compiler version, classpath, plugins, source sets, and generated-source inputs before accepting source completeness. |
+| Missing optional Kotlin/coroutine references | A reachable unresolved reference in a candidate being transformed fails closed. An unchanged owner can be retained with `trimSkipArtifacts`; MRJAR owners also have `mrjarStrategy=pass-through`. Resolved sibling links still contribute roots. | Define and test a narrow pass-through policy for owners with genuinely optional links. Do not globally ignore unresolved references, since that would hide required links. |
+| Kotlin metadata in supplied platform classes | Unsupported; the internal platform snapshot rejects metadata-bearing classes. | Either add metadata-aware platform-pool support with isolation tests or retain an explicit unsupported boundary. |
+
+Current evidence is narrow: `ArchiveSnapshotTemplateTest` uses a real Kotlin class resource to verify metadata parsing and per-context isolation, not metadata-only reachability. The Spring regression uses synthetic Java bytecode with an absent `kotlin.coroutines.Continuation`; it tests the fail-closed/pass-through policy, not Kotlin compiler output. Kotlin compiler and plugin-version combinations have not been independently verified.
+
+Broader Kotlin support requires separate proof for three behaviors: (1) metadata-only links retain the referenced class and its transitive closure; (2) Kotlin source declarations retain the same compile-visible classes that Kotlin compilation requires; and (3) optional unresolved links preserve the owner safely without suppressing required references into sibling trim candidates. Tests must use compiler-produced `.class` files and real `.kt`/`.kts` sources, include positive and fail-closed cases, and record the compiler/plugin/JDK combinations actually exercised.
 
 ---
 

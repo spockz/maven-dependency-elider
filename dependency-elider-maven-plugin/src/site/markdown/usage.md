@@ -68,7 +68,7 @@ $ ./mvnw \
   -Delide.trimJars=true \
   -Delide.sourceRootsComplete=true \
   -Dmaven.compiler.proc=none \
-  -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar: \
+  -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-core:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar: \
   -Delide.cveCacheDirectory=$TRANSCRIPT_EVIDENCE/vulnerability-cache \
   -Delide.reportFile=$PROJECT_ROOT/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json
 Process exit status: 0
@@ -83,7 +83,7 @@ Process exit status: 0
 [INFO]   Artifacts that would be elided by this analysis: 0 / 25 (0.0%)
 [INFO]   Estimated original JAR bytes for those artifacts: 0 B (sum of original on-disk input JAR sizes; final package delta may differ)
 [INFO]   Program class entries in JARs that would be dropped: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
-[INFO]   JAR trim cache: 0 validated hit(s), 22 analysis run(s)
+[INFO]   JAR trim cache: 6 validated hit(s), 0 analysis run(s); maximum validated hit <CACHE_HIT_TIME>
 [INFO]   Avoided CVEs (artifacts that would be dropped): none matched the available vulnerability mappings
 [INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming):
 [INFO]     CVE-2022-42889 org.apache.commons:commons-text:jar:1.9

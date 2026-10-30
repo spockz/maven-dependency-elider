@@ -857,7 +857,13 @@ final class MavenDependencyTrimmer {
     final TrimAnalysisSession analysisSession = new TrimAnalysisSession(new DependencyJarTrimmer());
     final SingleReleaseRootPlan roots =
         singleReleaseRootPlan(
-            request, inventory, layout, fullClasspath, pools, analysisSession, request.trimWorkers());
+            request,
+            inventory,
+            layout,
+            fullClasspath,
+            pools,
+            analysisSession,
+            request.trimWorkers());
     final SingleReleaseClosure closure =
         analyzeSingleReleaseClosure(inventory, layout, roots, request.trimWorkers());
     return inMemoryResult(
@@ -1209,14 +1215,10 @@ final class MavenDependencyTrimmer {
           mapParallel(
               programEntries,
               trimWorkers,
-              entry ->
-                  entry
-                      .getValue()
-                      .analyze(inventory.classesByArtifact().get(entry.getKey())));
+              entry -> entry.getValue().analyze(inventory.classesByArtifact().get(entry.getKey())));
       analysisRuns += programAnalyses.size();
       for (int index = 0; index < programEntries.size(); index++) {
-        final Map.Entry<
-                MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
+        final Map.Entry<MavenElisionService.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
             entry = programEntries.get(index);
         final DependencyJarTrimmer.TrimAnalysis analysis = programAnalyses.get(index);
         rootsChanged |=
@@ -1241,8 +1243,7 @@ final class MavenDependencyTrimmer {
               entry -> entry.getValue().analyze(roots.candidateRoots().get(entry.getKey())));
       analysisRuns += candidateAnalyses.size();
       for (int index = 0; index < candidateEntries.size(); index++) {
-        final MavenElisionService.ArtifactSnapshot candidate =
-            candidateEntries.get(index).getKey();
+        final MavenElisionService.ArtifactSnapshot candidate = candidateEntries.get(index).getKey();
         final DependencyJarTrimmer.TrimAnalysis analysis = candidateAnalyses.get(index);
         finalAnalyses.put(candidate.coordinate(), analysis);
         rootsChanged |=
@@ -2528,35 +2529,7 @@ final class MavenDependencyTrimmer {
   }
 
   static Set<String> logicalClassNames(final Path archivePath) throws IOException {
-    final Set<String> classNames = new TreeSet<>();
-    final String versionsPrefix = "META-INF/versions/";
-    try (JarFile archive = new JarFile(archivePath.toFile())) {
-      final var entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final String entry = entries.nextElement().getName();
-        if (!entry.endsWith(CLASS_SUFFIX)) {
-          continue;
-        }
-        final String logicalName;
-        if (entry.startsWith(versionsPrefix)) {
-          final int releaseEnd = entry.indexOf('/', versionsPrefix.length());
-          if (releaseEnd < 0 || releaseEnd == entry.length() - 1) {
-            throw new IOException("Malformed multi-release class entry " + entry);
-          }
-          logicalName = entry.substring(releaseEnd + 1);
-        } else {
-          logicalName = entry;
-        }
-        if (!"module-info.class".equals(logicalName)
-            && !logicalName.endsWith("/module-info.class")) {
-          classNames.add(
-              logicalName
-                  .substring(0, logicalName.length() - CLASS_SUFFIX.length())
-                  .replace('/', '.'));
-        }
-      }
-    }
-    return Set.copyOf(classNames);
+    return MultiReleaseClassInventory.logicalClassNames(archivePath);
   }
 
   static Path outputPath(final MavenProject project, final ArtifactCoordinate coordinate) {

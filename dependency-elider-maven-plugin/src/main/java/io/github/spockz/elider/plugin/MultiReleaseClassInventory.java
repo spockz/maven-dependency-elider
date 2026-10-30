@@ -57,6 +57,27 @@ final class MultiReleaseClassInventory {
     return Set.copyOf(classNames);
   }
 
+  static Set<String> logicalClassNames(final Path archivePath) throws IOException {
+    final Set<String> classNames = new TreeSet<>();
+    try (JarFile archive = new JarFile(archivePath.toFile())) {
+      final Enumeration<JarEntry> entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        final JarEntry entry = entries.nextElement();
+        if (entry.isDirectory() || !entry.getName().endsWith(CLASS_SUFFIX)) {
+          continue;
+        }
+        final String logicalName = logicalClassName(entry.getName());
+        if (!isModuleDescriptor(logicalName)) {
+          classNames.add(
+              logicalName
+                  .substring(0, logicalName.length() - CLASS_SUFFIX.length())
+                  .replace('/', '.'));
+        }
+      }
+    }
+    return Set.copyOf(classNames);
+  }
+
   static String logicalClassName(final String entryName) throws IOException {
     if (!entryName.startsWith(VERSIONS_PREFIX)) {
       return entryName;
