@@ -134,7 +134,19 @@ final class MavenDependencyTrimmer {
   }
 
   record ScanInputs(
-      ArtifactClassIndex classIndex, Map<Path, DependencyDynamicRoots.RootScan> dynamicRootScans) {}
+      ArtifactClassIndex classIndex,
+      Map<Path, DependencyDynamicRoots.RootScan> dynamicRootScans,
+      List<NativeImageConsumedInput> consumedInputs) {
+    ScanInputs {
+      consumedInputs = NativeImageConsumedInput.ordered(consumedInputs);
+    }
+
+    ScanInputs(
+        final ArtifactClassIndex classIndex,
+        final Map<Path, DependencyDynamicRoots.RootScan> dynamicRootScans) {
+      this(classIndex, dynamicRootScans, List.of());
+    }
+  }
 
   private record CacheManifest(
       int schemaVersion, String formatId, String fingerprint, List<CacheEntry> entries) {}
@@ -151,7 +163,12 @@ final class MavenDependencyTrimmer {
       String engineVersion,
       JdkPlatformContext platformContext,
       List<Integer> analyzedTiers,
-      String outputContext) {}
+      String outputContext,
+      List<String> consumedInputIdentities) {
+    FingerprintOptions {
+      consumedInputIdentities = consumedInputIdentities.stream().sorted().toList();
+    }
+  }
 
   private record CacheOutputMetadata(
       String originalSha1,
@@ -1650,7 +1667,8 @@ final class MavenDependencyTrimmer {
                 ENGINE_VERSION,
                 platformContext,
                 effectiveOutput.analysis().analyzedTiers(),
-                effectiveCacheContext(request, effectiveOutput)));
+                effectiveCacheContext(request, effectiveOutput),
+                consumedInputIdentities(request.scanInputs())));
     verifyEffectiveInputs(effectiveOutput, fingerprint);
     final List<String> platformIdentities =
         fingerprint.platformSnapshots().stream()
@@ -1697,6 +1715,7 @@ final class MavenDependencyTrimmer {
       final int runtimeRelease,
       final JdkPlatformContext platformContext)
       throws IOException, MojoFailureException {
+    NativeImageConsumedInput.verifyAll(request.scanInputs().consumedInputs());
     if (request.trimEnabled() && MRJAR_VERTICAL_SHADING.equals(request.mrjarStrategy())) {
       for (final MavenElisionService.ArtifactSnapshot snapshot :
           passThroughPlan(request).retained()) {
@@ -1751,7 +1770,8 @@ final class MavenDependencyTrimmer {
                 ENGINE_VERSION,
                 platformContext,
                 List.of(release, runtimeRelease),
-                null));
+                null,
+                consumedInputIdentities(scanInputs)));
     final String completeFingerprint = fingerprintSnapshot.value();
     final TrimResult cached =
         loadCache(
@@ -1764,6 +1784,7 @@ final class MavenDependencyTrimmer {
             configuredPassThroughCoordinates,
             cacheStart);
     if (cached != null) {
+      NativeImageConsumedInput.verifyAll(scanInputs.consumedInputs());
       return cached;
     }
     final Path analysisLibraryDirectory = analysisLibraryDirectory(project);
@@ -1810,6 +1831,7 @@ final class MavenDependencyTrimmer {
                 return preparedOutputCleanup.track(new PendingOutput(candidate, staged));
               },
               preparedOutputCleanup);
+      NativeImageConsumedInput.verifyAll(scanInputs.consumedInputs());
       final List<ArtifactTrimRecord> publishedRecords =
           publishOutputs(
               prepared.stream().map(PendingOutput::prepared).toList(), sanitizer::publish);
@@ -1830,6 +1852,7 @@ final class MavenDependencyTrimmer {
       }
       cacheEntries.add(entry);
     }
+    NativeImageConsumedInput.verifyAll(scanInputs.consumedInputs());
     storeCache(
         cacheManifestPath,
         new CacheManifest(
@@ -2944,6 +2967,10 @@ final class MavenDependencyTrimmer {
     if (options.outputContext() != null) {
       candidateIdentities.add("effective-output-context:" + options.outputContext());
     }
+    candidateIdentities.addAll(
+        options.consumedInputIdentities().stream()
+            .map(identity -> "native-image-input:" + identity)
+            .toList());
     candidateIdentities.add("runtime-release:" + options.runtimeRelease());
     final Set<Integer> tiers = new TreeSet<>(options.analyzedTiers());
     tiers.add(options.release());
@@ -2966,6 +2993,12 @@ final class MavenDependencyTrimmer {
             options.engineVersion(),
             inputDigests);
     return new FingerprintSnapshot(value, inputDigests, List.copyOf(platformSnapshots));
+  }
+
+  private static List<String> consumedInputIdentities(final ScanInputs scanInputs) {
+    return NativeImageConsumedInput.ordered(scanInputs.consumedInputs()).stream()
+        .map(NativeImageConsumedInput::identity)
+        .toList();
   }
 
   private static JdkPlatformContext.PlatformSnapshot platformSnapshot(

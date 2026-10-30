@@ -2,10 +2,15 @@
 
 package io.github.spockz.elider.plugin;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -50,7 +55,7 @@ final class NativeImageInput {
   /* package */
   static NativeImageInput file(final Path path, final NativeImageDescriptorKind kind) {
     final Path normalized = path.toAbsolutePath().normalize();
-    return new NativeImageInput(kind, normalized.toString(), new FileSource(normalized));
+    return new NativeImageInput(kind, normalized.toString(), new FileSource(normalized, kind));
   }
 
   /* package */
@@ -93,6 +98,11 @@ final class NativeImageInput {
     return inputSource.openSibling(relativeName);
   }
 
+  /* package */
+  List<NativeImageConsumedInput> consumedInputs() {
+    return inputSource.consumedInputs();
+  }
+
   /** WHY: Archive and filesystem sources share descriptor-relative sibling semantics. */
   private interface Source {
     /** WHY: Reader code consumes streams so schema parsers remain source-neutral. */
@@ -100,6 +110,9 @@ final class NativeImageInput {
 
     /** WHY: Predefined class bytes are resolved relative to their descriptor source. */
     InputStream openSibling(String relativeName) throws IOException;
+
+    /** WHY: External source bytes join the cache identity; archive entries already do. */
+    List<NativeImageConsumedInput> consumedInputs();
   }
 
   private record ArchiveSource(JarFile archive, JarEntry entry) implements Source {
@@ -119,15 +132,38 @@ final class NativeImageInput {
       }
       return archive.getInputStream(entry);
     }
+
+    @Override
+    public List<NativeImageConsumedInput> consumedInputs() {
+      return List.of();
+    }
   }
 
-  private record FileSource(Path path) implements Source {
+  /** WHY: Parser and cache identity share each captured byte array. */
+  private static final class FileSource implements Source {
+    /** WHY: The path remains logical for descriptor-relative sibling lookup. */
+    private final Path path;
+
+    /** WHY: The declared kind distinguishes otherwise arbitrary external filenames. */
+    private final NativeImageDescriptorKind kind;
+
+    /** WHY: A shared input can be opened by concurrent readers. */
+    private final Map<String, CapturedFile> capturedFiles = new ConcurrentHashMap<>();
+
+    /** WHY: Serializes capture and snapshot insertion as one byte-identity operation. */
+    private final ReentrantLock captureLock = new ReentrantLock();
+
+    private FileSource(final Path path, final NativeImageDescriptorKind kind) {
+      this.path = path;
+      this.kind = kind;
+    }
+
     @Override
     public InputStream open() throws IOException {
       if (!Files.isRegularFile(path)) {
         throw new IOException("Native-image descriptor is missing: " + path);
       }
-      return Files.newInputStream(path);
+      return new ByteArrayInputStream(capture(path, "descriptor:" + kind).bytes());
     }
 
     @Override
@@ -148,7 +184,49 @@ final class NativeImageInput {
       if (!realSibling.startsWith(realParent)) {
         throw new IOException("Native-image sibling path escapes descriptor directory: " + path);
       }
-      return Files.newInputStream(realSibling);
+      return new ByteArrayInputStream(capture(sibling, "predefined-classdata").bytes());
+    }
+
+    @Override
+    public List<NativeImageConsumedInput> consumedInputs() {
+      return capturedFiles.values().stream().map(CapturedFile::snapshot).toList();
+    }
+
+    private CapturedFile capture(final Path logicalPath, final String role) throws IOException {
+      captureLock.lock();
+      try {
+        return captureUnderLock(logicalPath, role);
+      } finally {
+        captureLock.unlock();
+      }
+    }
+
+    private CapturedFile captureUnderLock(final Path logicalPath, final String role)
+        throws IOException {
+      final Path normalized = logicalPath.toAbsolutePath().normalize();
+      final String key = role + "|" + normalized;
+      final CapturedFile existing = capturedFiles.get(key);
+      if (existing != null) {
+        return existing;
+      }
+      final Path canonical = normalized.toRealPath();
+      final byte[] bytes = Files.readAllBytes(canonical);
+      if (!canonical.equals(normalized.toRealPath())) {
+        throw new IOException("Native-image input target changed while being read: " + normalized);
+      }
+      final CapturedFile captured =
+          new CapturedFile(
+              bytes,
+              new NativeImageConsumedInput(
+                  normalized,
+                  canonical,
+                  role,
+                  bytes.length,
+                  NativeImageConsumedInput.digest(bytes)));
+      capturedFiles.put(key, captured);
+      return captured;
     }
   }
+
+  private record CapturedFile(byte[] bytes, NativeImageConsumedInput snapshot) {}
 }

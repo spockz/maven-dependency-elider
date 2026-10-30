@@ -61,13 +61,15 @@ final class DependencyDynamicRoots {
       Set<String> nonServiceRoots,
       Set<java.nio.file.Path> resourceProviders,
       java.util.List<NativeImageDynamicRoots.UnsupportedArgument> unsupportedNativeImageArgs,
-      String nativeImagePolicy) {
+      String nativeImagePolicy,
+      Set<NativeImageConsumedInput> consumedInputs) {
     RootScan {
       roots = Set.copyOf(roots);
       serviceDescriptors = Set.copyOf(serviceDescriptors);
       nonServiceRoots = Set.copyOf(nonServiceRoots);
       resourceProviders = Set.copyOf(resourceProviders);
       unsupportedNativeImageArgs = java.util.List.copyOf(unsupportedNativeImageArgs);
+      consumedInputs = Set.copyOf(consumedInputs);
     }
 
     RootScan(final Set<String> roots, final boolean declaresClassRoots) {
@@ -79,7 +81,8 @@ final class DependencyDynamicRoots {
           roots,
           Set.of(),
           java.util.List.of(),
-          "default");
+          "default",
+          Set.of());
     }
 
     RootScan(
@@ -98,7 +101,8 @@ final class DependencyDynamicRoots {
           nonServiceRoots,
           Set.of(),
           unsupportedNativeImageArgs,
-          nativeImagePolicy);
+          nativeImagePolicy,
+          Set.of());
     }
 
     boolean requiresPassThrough() {
@@ -174,6 +178,9 @@ final class DependencyDynamicRoots {
 
     /** Archives that supplied classpath configuration resources. */
     private final Set<java.nio.file.Path> resourceProviders = new LinkedHashSet<>();
+
+    /** External descriptor and predefined sibling bytes consumed by this archive scan. */
+    private final Set<NativeImageConsumedInput> consumedInputs = new LinkedHashSet<>();
 
     /** Unsupported options that require conservative archive retention. */
     private final java.util.List<NativeImageDynamicRoots.UnsupportedArgument>
@@ -282,7 +289,8 @@ final class DependencyDynamicRoots {
               allowedArguments,
               failOnUnsupported,
               scanContext,
-              resourceProviders);
+              resourceProviders,
+              consumedInputs);
       declaresClassRoots |= result.declaresClassRoots();
       requiresArtifactRetention |= result.requiresArtifactRetention();
       unsupportedNativeImageArgs.addAll(result.unsupportedArguments());
@@ -303,7 +311,8 @@ final class DependencyDynamicRoots {
           "fail="
               + failOnUnsupported
               + ";allowed="
-              + String.join(",", new java.util.TreeSet<>(allowedArguments)));
+              + String.join(",", new java.util.TreeSet<>(allowedArguments)),
+          consumedInputs);
     }
   }
 

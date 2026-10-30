@@ -31,8 +31,21 @@ final class NativeImageClassConfig {
   /* package */
   static boolean readNativeImageClassConfig(final NativeImageInput input, final Set<String> roots)
       throws IOException {
+    return readNativeImageClassConfig(input, roots, null);
+  }
+
+  /* package */
+  static boolean readNativeImageClassConfig(
+      final NativeImageInput input,
+      final Set<String> roots,
+      final Set<NativeImageConsumedInput> consumedInputs)
+      throws IOException {
     final JsonNode document = readDocument(input.open(), input.name());
-    return dispatch(document, input, roots);
+    final boolean result = dispatch(document, input, roots);
+    if (consumedInputs != null) {
+      consumedInputs.addAll(input.consumedInputs());
+    }
+    return result;
   }
 
   private static JsonNode readDocument(final InputStream input, final String name)

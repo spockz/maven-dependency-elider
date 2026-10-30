@@ -25,9 +25,21 @@ final class NativeImageResourceConfig {
   /* package */
   static void readNativeImageResourceConfig(final NativeImageInput input, final Set<String> roots)
       throws IOException {
+    readNativeImageResourceConfig(input, roots, null);
+  }
+
+  /* package */
+  static void readNativeImageResourceConfig(
+      final NativeImageInput input,
+      final Set<String> roots,
+      final Set<NativeImageConsumedInput> consumedInputs)
+      throws IOException {
     if (input.kind() != NativeImageDescriptorKind.RESOURCES) {
       throw new IOException("Unsupported native-image resource descriptor kind: " + input.name());
     }
     NativeImageResourceDocument.read(input, roots);
+    if (consumedInputs != null) {
+      consumedInputs.addAll(input.consumedInputs());
+    }
   }
 }

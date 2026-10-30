@@ -29,7 +29,8 @@ final class MavenElisionGraphBinding {
       final List<MavenElisionService.ArtifactSnapshot> inventory,
       final ElisionDecision rawDecision,
       final TraceData trace,
-      final Set<String> requiredRoots)
+      final Set<String> requiredRoots,
+      final List<NativeImageConsumedInput> consumedInputs)
       throws IOException {
     final String projectKey = projectKey(project);
     final String inventoryFingerprint;
@@ -45,7 +46,13 @@ final class MavenElisionGraphBinding {
     }
     final String operationFingerprint =
         operationFingerprint(
-            project, options, inventoryFingerprint, trace, requiredRoots, rawDecision);
+            project,
+            options,
+            inventoryFingerprint,
+            trace,
+            requiredRoots,
+            rawDecision,
+            consumedInputs);
     if (!MavenElisionGraphInventory.matchesDecision(inventory, rawDecision)) {
       return failClosed(
           projectKey,
@@ -101,6 +108,17 @@ final class MavenElisionGraphBinding {
             .orElseThrow(
                 () -> new IllegalStateException("Selected graph capture pair disappeared"));
     return new Result(evaluation, inventoryFingerprint, operationFingerprint, pair);
+  }
+
+  static Result bind(
+      final MavenProject project,
+      final MavenElisionService.AnalysisOptions options,
+      final List<MavenElisionService.ArtifactSnapshot> inventory,
+      final ElisionDecision rawDecision,
+      final TraceData trace,
+      final Set<String> requiredRoots)
+      throws IOException {
+    return bind(project, options, inventory, rawDecision, trace, requiredRoots, List.of());
   }
 
   static void verifyInventoryFingerprint(
@@ -160,7 +178,8 @@ final class MavenElisionGraphBinding {
       final String inventoryFingerprint,
       final TraceData trace,
       final Set<String> requiredRoots,
-      final ElisionDecision decision)
+      final ElisionDecision decision,
+      final List<NativeImageConsumedInput> consumedInputs)
       throws IOException {
     final List<String> fields = new ArrayList<>();
     fields.add(inventoryFingerprint);
@@ -181,6 +200,8 @@ final class MavenElisionGraphBinding {
     fields.addAll(sorted(options.explicitPassThroughArtifacts()));
     fields.addAll(sorted(trace.loadedClassesDotFormat()));
     fields.addAll(sorted(requiredRoots));
+    NativeImageConsumedInput.ordered(consumedInputs)
+        .forEach(input -> fields.add("native-image-input=" + input.identity()));
     fields.addAll(sorted(decision.retainedArtifacts().stream().map(Object::toString).toList()));
     fields.addAll(sorted(decision.elidedArtifacts().stream().map(Object::toString).toList()));
     return sha256(fields);

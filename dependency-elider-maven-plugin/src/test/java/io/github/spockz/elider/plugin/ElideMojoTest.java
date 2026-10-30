@@ -1794,7 +1794,7 @@ final class ElideMojoTest {
                 original,
                 Map.of(
                     "META-INF/native-image/test/native-image.properties",
-                    "Args=-H:Class=example.NativeEntry\n"))
+                    "Args=-H:UnknownOption=value\n"))
             .toFile());
     final Path input = used.getFile().toPath();
     final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
@@ -1813,7 +1813,7 @@ final class ElideMojoTest {
 
     assertThatThrownBy(mojo::execute)
         .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Unsupported native-image argument '-H:Class'")
+        .hasMessageContaining("Unsupported native-image argument '-H:UnknownOption'")
         .hasMessageContaining("META-INF/native-image/test/native-image.properties")
         .hasMessageContaining("<allowedNativeImageArgs>")
         .hasMessageContaining("org.example:native-image-unsupported")

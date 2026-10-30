@@ -590,13 +590,20 @@ final class MavenElisionService {
     final ElisionDecision decision = retainNonJarArtifacts(jarDecision, resolvedSnapshots);
     final MavenElisionGraphBinding.Result graphBinding =
         MavenElisionGraphBinding.bind(
-            project, options, resolvedSnapshots, decision, trace, pruningRequiredClasses);
+            project,
+            options,
+            resolvedSnapshots,
+            decision,
+            trace,
+            pruningRequiredClasses,
+            dynamicRootInputs.consumedInputs());
     MavenElisionGraphBinding.verifyInventoryFingerprint(
         resolvedSnapshots, graphBinding.inventoryFingerprint());
     if (!inputFingerprint.equals(graphBinding.inventoryFingerprint())) {
       throw new IOException("Resolved artifact inventory changed during analysis preparation");
     }
     verifyProjectInventory(project, directPresent, inputFingerprint, directInputFingerprint);
+    NativeImageConsumedInput.verifyAll(dynamicRootInputs.consumedInputs());
     return new PreparedAnalysis(
         project,
         options,
@@ -620,6 +627,7 @@ final class MavenElisionService {
   }
 
   Analysis finish(final PreparedAnalysis prepared) throws IOException, MojoFailureException {
+    verifyPreparedInventory(prepared);
     if (requiresTierAwareMrjarTrim(prepared)) {
       final Analysis analysis = finishEffectiveOutputs(finishAnalysis(prepared));
       if (analysis.generationCommit() != null) {
@@ -646,7 +654,9 @@ final class MavenElisionService {
                     session,
                     prepared.resolvedSnapshots(),
                     new MavenDependencyTrimmer.ScanInputs(
-                        prepared.index(), prepared.dynamicRootInputs().scansByPath()),
+                        prepared.index(),
+                        prepared.dynamicRootInputs().scansByPath(),
+                        prepared.dynamicRootInputs().consumedInputs()),
                     new HashSet<>(prepared.rawDecision().retainedArtifacts()),
                     prepared.trace(),
                     prepared.pruningRequiredClasses(),
@@ -829,6 +839,7 @@ final class MavenElisionService {
   }
 
   static void verifyPreparedInventory(final PreparedAnalysis prepared) throws IOException {
+    NativeImageConsumedInput.verifyAll(prepared.dynamicRootInputs().consumedInputs());
     verifyProjectInventory(
         prepared.project(),
         prepared.directArtifactsPresent(),
@@ -869,7 +880,9 @@ final class MavenElisionService {
         options.session(),
         prepared.resolvedSnapshots(),
         new MavenDependencyTrimmer.ScanInputs(
-            prepared.index(), prepared.dynamicRootInputs().scansByPath()),
+            prepared.index(),
+            prepared.dynamicRootInputs().scansByPath(),
+            prepared.dynamicRootInputs().consumedInputs()),
         new HashSet<>(effectiveDecision.retainedArtifacts()),
         prepared.trace(),
         prepared.sourceRequiredClasses(),
@@ -1205,13 +1218,16 @@ final class MavenElisionService {
         resourceProviderArtifacts.add(candidate.coordinate());
       }
     }
+    final Set<NativeImageConsumedInput> consumedInputs = new LinkedHashSet<>();
+    scansByPath.values().forEach(scan -> consumedInputs.addAll(scan.consumedInputs()));
     return new DynamicRootInputs(
         classNames,
         declaringArtifacts,
         resourceProviderArtifacts,
         scansByPath,
         unprovenRootsByCoordinate,
-        provenServiceInterfaces);
+        provenServiceInterfaces,
+        NativeImageConsumedInput.ordered(consumedInputs));
   }
 
   private static Set<String> requiredClassesForTrimming(
@@ -1536,7 +1552,8 @@ final class MavenElisionService {
       Set<ArtifactCoordinate> resourceProviderArtifacts,
       Map<Path, DependencyDynamicRoots.RootScan> scansByPath,
       Map<ArtifactCoordinate, Set<String>> unprovenServiceRootsByCoordinate,
-      Set<String> provenServiceInterfaces) {
+      Set<String> provenServiceInterfaces,
+      List<NativeImageConsumedInput> consumedInputs) {
     DynamicRootInputs {
       classNames = Set.copyOf(classNames);
       declaringArtifacts = Set.copyOf(declaringArtifacts);
@@ -1544,13 +1561,31 @@ final class MavenElisionService {
       scansByPath = Map.copyOf(scansByPath);
       unprovenServiceRootsByCoordinate = Map.copyOf(unprovenServiceRootsByCoordinate);
       provenServiceInterfaces = Set.copyOf(provenServiceInterfaces);
+      consumedInputs = NativeImageConsumedInput.ordered(consumedInputs);
     }
 
     DynamicRootInputs(
         final Set<String> classNames,
         final Set<ArtifactCoordinate> declaringArtifacts,
         final Map<Path, DependencyDynamicRoots.RootScan> scansByPath) {
-      this(classNames, declaringArtifacts, Set.of(), scansByPath, Map.of(), Set.of());
+      this(classNames, declaringArtifacts, Set.of(), scansByPath, Map.of(), Set.of(), List.of());
+    }
+
+    DynamicRootInputs(
+        final Set<String> classNames,
+        final Set<ArtifactCoordinate> declaringArtifacts,
+        final Set<ArtifactCoordinate> resourceProviderArtifacts,
+        final Map<Path, DependencyDynamicRoots.RootScan> scansByPath,
+        final Map<ArtifactCoordinate, Set<String>> unprovenServiceRootsByCoordinate,
+        final Set<String> provenServiceInterfaces) {
+      this(
+          classNames,
+          declaringArtifacts,
+          resourceProviderArtifacts,
+          scansByPath,
+          unprovenServiceRootsByCoordinate,
+          provenServiceInterfaces,
+          List.of());
     }
   }
 
