@@ -74,6 +74,7 @@ final class NativeImageDynamicRoots {
     final List<UnsupportedArgument> unsupported = new ArrayList<>();
     for (final String argument : arguments) {
       try {
+        NativeImageIndirectionGuard.validate(argument);
         if (NativeImageServiceLoaderPolicy.read(argument, propertiesEntry, serviceLoaderPolicy)) {
           requiresArtifactRetention = true;
           continue;

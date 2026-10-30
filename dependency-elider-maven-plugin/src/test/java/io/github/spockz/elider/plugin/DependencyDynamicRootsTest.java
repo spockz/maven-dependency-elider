@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -945,6 +946,88 @@ final class DependencyDynamicRootsTest {
 
     assertThat(scan.roots()).isEmpty();
     assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
+  void rejectsAuditedIndirectionsBeforeUnknownArgumentFallback() throws IOException {
+    final List<String> indirections =
+        List.of(
+            "@args.txt",
+            "-cp=deps/*",
+            "-classpath",
+            "--class-path=deps/*",
+            "-p=modules",
+            "--module-path=modules",
+            "--add-modules=example.module",
+            "--limit-modules=java.base",
+            "-jar=application.jar",
+            "-m=example.module/Main",
+            "--module=example.module/Main",
+            "--configurations-path=configs",
+            "--exclude-config=config.json",
+            "--bundle-apply=resource-config.json",
+            "--language:js",
+            "--tool:insight",
+            "--macro:truffle",
+            "-Vfeature=value",
+            "-H:Module=example.module",
+            "-J--class-path=deps/*",
+            "-J--module-path=modules",
+            "-J-javaagent:agent.jar",
+            "-J-agentlib:jdwp",
+            "MainClass");
+
+    for (final String argument : indirections) {
+      final Path jar = nativeImageJar("Args = " + argument + "\n");
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of(), false))
+          .as(argument)
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("native-image indirection");
+    }
+  }
+
+  @Test
+  void rejectsMalformedIndirectionFormsButAllowsNearMissOptions() throws IOException {
+    final List<String> malformed =
+        List.of(
+            "@",
+            "-cp",
+            "--class-path=",
+            "-p=",
+            "--module-path=",
+            "--add-modules=",
+            "--limit-modules=",
+            "-jar",
+            "-m",
+            "-m=",
+            "--module=",
+            "--configurations-path=",
+            "--exclude-config=",
+            "--bundle-apply",
+            "--language:",
+            "--tool:",
+            "--macro:",
+            "-V",
+            "-V=bad",
+            "-Vfeature=",
+            "-H:Module=");
+    for (final String argument : malformed) {
+      final Path jar = nativeImageJar("Args = " + argument + "\n");
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of(), false))
+          .as(argument)
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("native-image indirection");
+    }
+
+    final Path allowed =
+        nativeImageJar(
+            "Args = --bundle-create -Version -march=native -pgo -mystery --pgo --gc=G1 "
+                + "-J-Dcustom.value=@file -Dcustom.value=@file "
+                + "-H:UnknownFlag=value -H:IncludeResources=asset@name\\.dat\n");
+    final DependencyDynamicRoots.RootScan scan =
+        DependencyDynamicRoots.scan(allowed, Set.of(), false);
+
+    assertThat(scan.roots()).isEmpty();
   }
 
   private Path nativeImageJar(final String args) throws IOException {
