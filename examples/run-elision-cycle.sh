@@ -170,7 +170,8 @@ MANIFEST
     )
   fi
 
-  for fixture in "${fixture_names[@]}"; do
+  run_fixture_worker() (
+    local fixture=$1
     fixture_dir="$repo_root/examples/$fixture"
     pom="$fixture_dir/pom.xml"
     jar_file="$fixture_dir/target/$fixture-0.1.0-SNAPSHOT.jar"
@@ -374,6 +375,10 @@ MANIFEST
         "$baseline_package_bytes" "$final_package_bytes" \
         "$((baseline_package_bytes - final_package_bytes))"
     fi
+  )
+
+  for fixture in "${fixture_names[@]}"; do
+    run_fixture_worker "$fixture"
   done
 
   run_reactor_fixture "$repo_root/examples/example-multi-module-reactor" "$test_dir"
