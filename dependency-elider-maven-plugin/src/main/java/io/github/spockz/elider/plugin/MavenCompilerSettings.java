@@ -157,6 +157,43 @@ final class MavenCompilerSettings {
         value("source", "maven.compiler.source", project, session, configurations);
     final String target =
         value("target", "maven.compiler.target", project, session, configurations);
+    return sourceLevelOptions(release, source, target, false);
+  }
+
+  /** Resolves post-compile source attribution options without invoking configured processors. */
+  static List<String> postCompileSourceOptions(
+      final MavenProject project, final MavenSession session) throws IOException {
+    rejectSelectedToolchain(session);
+    final List<Xpp3Dom> configurations = compilerConfigurations(project);
+    rejectUnsupportedPlatformSettings(
+        configurations,
+        project.getProperties(),
+        session == null ? new Properties() : session.getUserProperties());
+    final String release =
+        value("release", "maven.compiler.release", project, session, configurations);
+    final String source =
+        value("source", "maven.compiler.source", project, session, configurations);
+    final String target =
+        value("target", "maven.compiler.target", project, session, configurations);
+    final List<String> options = new ArrayList<>(sourceLevelOptions(release, source, target, true));
+    final String encoding =
+        value("encoding", "maven.compiler.encoding", project, session, configurations);
+    final String projectEncoding =
+        project.getProperties().getProperty("project.build.sourceEncoding");
+    final String effectiveEncoding = encoding == null ? projectEncoding : encoding;
+    if (effectiveEncoding != null && !effectiveEncoding.isBlank()) {
+      options.addAll(List.of("-encoding", effectiveEncoding));
+    }
+    options.add("-proc:none");
+    return List.copyOf(options);
+  }
+
+  private static List<String> sourceLevelOptions(
+      final String release,
+      final String source,
+      final String target,
+      final boolean allowJavacDefault)
+      throws IOException {
     if (release != null && (source != null || target != null)) {
       throw new IOException("Cannot attribute source with both compiler release and source/target");
     }
@@ -165,6 +202,9 @@ final class MavenCompilerSettings {
     }
     if (source != null && target != null) {
       return List.of("-source", source, "-target", target);
+    }
+    if (allowJavacDefault && source == null && target == null) {
+      return List.of();
     }
     throw new IOException(
         "Source attribution requires effective compiler release or source/target settings");

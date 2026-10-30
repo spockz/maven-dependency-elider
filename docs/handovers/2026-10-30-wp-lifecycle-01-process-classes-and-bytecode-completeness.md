@@ -1,7 +1,7 @@
 <!-- WHY: Defines the work package specification, track decomposition, and step-by-step implementation guide for post-compile process-classes elision and production bytecode completeness (RQ-0017, ADR-0010). -->
 # Work Package Handover: WP-LIFECYCLE-01 Post-Compile `process-classes` Execution & Production Bytecode Completeness
 
-* **Status**: Implemented (Follow-up investigation open on inlined constants)
+* **Status**: Implemented (including inlined-constant follow-up)
 * **Owning Thread / Session**: Primary Coordinating Session
 * **Date**: 2026-10-30
 * **Target Branch / Base**: `main`
@@ -471,18 +471,23 @@ make check-transcripts
 
 ---
 
-## 5. Known Boundaries, Shortcomings, and Open Follow-Up Investigations
+## 5. Known Boundaries, Shortcomings, and Follow-Up Evidence
 
 ### 5.1 Compile-Time Inlined Constants and Non-Emitted Symbols
 
-A key shortcoming identified in post-compile `process-classes` execution is the handling of compile-time inlined constants:
+The compile-time inlined-constant gap is addressed with a hybrid post-compile source and bytecode reference union:
 
 * **Mechanism**: When production source code references a `public static final` primitive or `String` constant from a dependency JAR, `javac` performs constant folding and embeds the literal value directly into bytecode instructions. The consuming `.class` file in `target/classes` contains **no symbolic reference** to the constant-defining class in its constant pool.
 * **Failure Risk**:
   * `ProductionBytecodeReferenceScanner` inspects `target/classes` and sees zero references to the constant-defining class.
   * If the dependency is not invoked at runtime (and absent from runtime telemetry), `dependency-elider` treats the dependency as unneeded bloat and prunes it from the in-memory Maven artifact set.
   * If unit tests in `src/test/java` reference the constant class (e.g. for assertions), subsequent `test-compile` fails with `cannot find symbol`.
-* **Proposed Follow-Up (see [RQ-0017](../research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md))**:
-  * Implement a hybrid union model at `process-classes`:
+* **Implemented behavior (see [RQ-0017](../research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md) and [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md))**:
+  * In `productionClassesComplete` mode, attribute every `.java` source from declared compile roots after production compile and compute:
     $$\text{Required Roots} = \text{BytecodeReferences}(\text{target/classes}) \ \cup \ \text{SourceReferences}(\text{CompileSourceRoots})$$
-  * Because all source generation and annotation processing is complete by `process-classes`, the source roots are stable and can be scanned (via AST or a lightweight import scanner) to retain constant-defining types without re-running full compiler attribution.
+  * The completed output directory joins the compile dependencies on the attribution classpath, so generated classes and methods resolve. The source pass uses effective release/source/target and encoding settings, forces `-proc:none`, and does not invoke configured processors again.
+  * The union feeds whole-artifact pruning and JAR trim roots. Tests verify that bytecode contains no constant-owner reference while both artifact-only analysis and trimming keep the owner; an unrelated class in the same JAR is removed. Failed attribution exercises the explicit fallback that retains every compile-visible coordinate and all indexed classes for those coordinates.
+  * Source references remain separate from bytecode/runtime report categories and do not establish runtime reachability or VEX proof. The class-use report remains bytecode and telemetry evidence; CVE/VEX status still depends on existing trim or complete precondition evidence.
+* **Limits**:
+  * The source union may retain source-only references that emitted bytecode does not use. It does not guarantee dependencies referenced only by test sources.
+  * Missing or empty compile source roots, unsupported source forms (`.kt`, `.kts`, `.scala`, `.groovy`), unsupported compiler/platform modes, and javac attribution errors produce a warning and retain every compile-visible artifact and its indexed classes. This fallback applies only to post-compile mode.

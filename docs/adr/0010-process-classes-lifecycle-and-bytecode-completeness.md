@@ -33,10 +33,12 @@ We introduce **Post-Compile Production Bytecode Completeness (`elide.productionC
    * When `ElideMojo` executes in the `process-classes` lifecycle phase (and `sourceRootsComplete=false`), `productionClassesComplete` is automatically enabled.
    * `productionClassesComplete=true` and `sourceRootsComplete=true` are mutually exclusive; setting both fails closed.
    * When `productionClassesComplete=true` and `productionOutput` is not explicitly configured, `productionOutput` defaults to `${project.build.outputDirectory}` (`target/classes`). The directory must exist and contain at least one compiled `.class` file (`scannedClassFileCount() > 0`).
-   * In `MavenElisionService.prepare`, `productionBytecodeInputs(productionOutput)` is evaluated before `compilerInputs`. When `productionClassesComplete=true`, `compilerInputs` uses the `BytecodeReferenceScan` of `target/classes` in place of source scanning or full compile-scope pinning:
-     * `requiredClasses` = `bytecodeScan.referencedClasses()`
-     * `compileVisibleCoordinates` = `compileVisibleArtifacts` whose indexed classes intersect `bytecodeScan.referencedClasses()`
+   * In `MavenElisionService.prepare`, `productionBytecodeInputs(productionOutput)` is evaluated before `compilerInputs`. When `productionClassesComplete=true`, `compilerInputs` unions references from `target/classes` bytecode with semantically attributed references from all declared compile source roots. This source pass uses the completed output directory on its classpath and forces `-proc:none`; it does not pass configured processor arguments or rerun annotation processors.
+     * `requiredClasses` = `bytecodeScan.referencedClasses()` ∪ attributed compile-source references
+     * `compileVisibleCoordinates` = `compileVisibleArtifacts` whose indexed classes intersect that union
      * `declaredClasses` = `classNamesInOutput(bytecodeScan.scope())`
+   * The source union preserves dependencies used only through compile-time-inlined primitive or `String` constants. It also intentionally may keep source-only references that do not appear in emitted bytecode. Missing or empty source roots, unsupported source languages or compiler modes, and incomplete javac attribution trigger an explicit conservative fallback: all compile-visible artifacts and their indexed classes are retained, and the goal summary warns with the reason. This fallback is confined to post-compile mode.
+   * Source-union references seed both whole-artifact pruning and JAR trimming. They are not added to `BytecodeReferenceScan`, class-use categories, runtime telemetry, or runtime reachability claims. The class-usage report continues to describe bytecode and runtime evidence only; source-root retention is separate compile evidence. It does not guarantee dependencies used only by test sources.
    * Static link-closure across `target/classes` and retained dependency JARs is enforced by the fixed-point bytecode reachability loop in `MavenElisionService.finishAnalysis` (`newlyReachedDrops` $\rightarrow$ `promoteForBytecode`).
 
 2. **Lifecycle Binding & Dynamic Phase Rebinding (`EliderLifecycleParticipant`)**:
@@ -69,3 +71,4 @@ We introduce **Post-Compile Production Bytecode Completeness (`elide.productionC
 * **Negative / Trade-offs**:
   * When `elide` runs at `process-classes`, `compile` executes against the un-elided compile classpath; elision and trimming take effect immediately after `compile` for `test-compile`, `test`, `package`, SBOM/VEX generation, and `dependency:tree`.
   * The trusted capture behavior depends on the Maven extension and its lifecycle source metadata; direct CLI goal invocations cannot claim a post-compile provider inventory.
+  * The source supplement can retain dependencies referenced only by source and not by emitted bytecode. If semantic attribution fails (including sources that rely on compiler-generated members such as Lombok accessors), the post-compile fallback retains all compile-visible artifacts and their indexed classes. Test-only references are outside this production-root guarantee.

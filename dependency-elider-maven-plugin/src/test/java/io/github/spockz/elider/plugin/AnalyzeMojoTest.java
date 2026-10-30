@@ -243,6 +243,12 @@ final class AnalyzeMojoTest {
     writer.visitField(Opcodes.ACC_PRIVATE, "used", "Lused/Sample;", null, null).visitEnd();
     writer.visitEnd();
     Files.write(applicationClass, writer.toByteArray());
+    final Path sourceRoot = Files.createDirectories(target.resolve("source-root"));
+    final Path applicationSource = sourceRoot.resolve("app/Main.java");
+    Files.createDirectories(applicationSource.getParent());
+    Files.writeString(
+        applicationSource, "package app; public final class Main { used.Sample value; }\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
     final Path trace = tempDir.resolve("bytecode-default-output.lst");
     Files.writeString(trace, "used/Sample\n");
     final Path report = target.resolve("dependency-elider-class-usage.json");
@@ -485,9 +491,7 @@ final class AnalyzeMojoTest {
       throws IOException {
     final Path file = fileFor(fileName);
     try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(file))) {
-      output.putNextEntry(new ZipEntry(classEntry));
-      output.write(new byte[] {0});
-      output.closeEntry();
+      writeClassEntry(output, classEntry.substring(0, classEntry.length() - ".class".length()));
     }
     final Artifact artifact =
         new DefaultArtifact(

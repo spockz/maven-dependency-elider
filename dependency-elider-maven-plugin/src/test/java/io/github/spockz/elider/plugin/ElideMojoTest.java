@@ -164,6 +164,12 @@ final class ElideMojoTest {
     Files.write(applicationClass, writer.toByteArray());
     final Path trace = tempDir.resolve("process-classes-processor.lst");
     Files.writeString(trace, "sample.Keep\n");
+    final Path sourceRoot = tempDir.resolve("process-classes-processor-source");
+    final Path applicationSource = sourceRoot.resolve("app/Main.java");
+    Files.createDirectories(applicationSource.getParent());
+    Files.writeString(
+        applicationSource, "package app; public final class Main { sample.Keep value; }\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
 
     final ElideMojo mojo = newMojo();
     set(mojo, "project", project);

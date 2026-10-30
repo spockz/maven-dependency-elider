@@ -610,7 +610,8 @@ final class MavenElisionService {
         productionOutputFingerprint,
         inputFingerprint,
         directInputFingerprint,
-        graphBinding);
+        graphBinding,
+        compilerInputs.sourceAttributionFallback());
   }
 
   Analysis finish(final PreparedAnalysis prepared) throws IOException, MojoFailureException {
@@ -680,7 +681,8 @@ final class MavenElisionService {
         null,
         prepared.dynamicRootInputs().unprovenServiceRootsByCoordinate(),
         options.productionClassesComplete(),
-        options.trustedProcessClassesContext());
+        options.trustedProcessClassesContext(),
+        prepared.sourceAttributionFallback());
   }
 
   private static boolean requiresTierAwareMrjarTrim(final PreparedAnalysis prepared)
@@ -803,7 +805,8 @@ final class MavenElisionService {
           mediatedGraph,
           prepared.dynamicRootInputs().unprovenServiceRootsByCoordinate(),
           prepared.options().productionClassesComplete(),
-          prepared.options().trustedProcessClassesContext());
+          prepared.options().trustedProcessClassesContext(),
+          prepared.sourceAttributionFallback());
     } catch (final IOException | RuntimeException failure) {
       closeGenerationAfterFailure(trimResult.generationCommit(), failure);
       throw failure;
@@ -1314,22 +1317,17 @@ final class MavenElisionService {
               .map(ArtifactFileRef::coordinate)
               .collect(java.util.stream.Collectors.toSet()),
           requiredClasses,
-          sourceScan.declaredTypes());
+          sourceScan.declaredTypes(),
+          null);
     } else if (productionClassesComplete) {
-      final BytecodeReferenceScan scan =
-          bytecodeScan.orElseThrow(
-              () ->
-                  new IOException(
-                      "elide.productionClassesComplete=true requires a production bytecode scan"));
-      requiredClasses.addAll(scan.referencedClasses());
-      compileVisibleArtifacts.removeIf(
-          artifact -> !sourceClassesByArtifact(artifact, requiredClasses, indexedClasses));
-      return new CompilerInputs(
-          compileVisibleArtifacts.stream()
-              .map(ArtifactFileRef::coordinate)
-              .collect(java.util.stream.Collectors.toSet()),
-          requiredClasses,
-          classNamesInOutput(scan.scope()));
+      return postCompileCompilerInputs(
+          project,
+          session,
+          classpath,
+          candidates,
+          compileVisibleArtifacts,
+          indexedClasses,
+          bytecodeScan);
     } else {
       compileVisibleArtifacts.forEach(
           artifact -> requiredClasses.addAll(indexedClasses.getOrDefault(artifact, Set.of())));
@@ -1337,7 +1335,101 @@ final class MavenElisionService {
     final Set<ArtifactCoordinate> compileVisibleCoordinates = new HashSet<>();
     compileVisibleArtifacts.forEach(
         artifact -> compileVisibleCoordinates.add(artifact.coordinate()));
-    return new CompilerInputs(compileVisibleCoordinates, requiredClasses, Set.of());
+    return new CompilerInputs(compileVisibleCoordinates, requiredClasses, Set.of(), null);
+  }
+
+  private static CompilerInputs postCompileCompilerInputs(
+      final MavenProject project,
+      final MavenSession session,
+      final List<String> classpath,
+      final List<ArtifactFileRef> candidates,
+      final Set<ArtifactFileRef> compileVisibleArtifacts,
+      final Map<ArtifactFileRef, Set<String>> indexedClasses,
+      final Optional<BytecodeReferenceScan> bytecodeScan)
+      throws IOException {
+    final BytecodeReferenceScan scan =
+        bytecodeScan.orElseThrow(
+            () ->
+                new IOException(
+                    "elide.productionClassesComplete=true requires a production bytecode scan"));
+    final Set<String> requiredClasses = new HashSet<>(scan.referencedClasses());
+    if (!scan.complete()) {
+      return conservativePostCompileInputs(
+          compileVisibleArtifacts,
+          indexedClasses,
+          requiredClasses,
+          "Production bytecode reference scan is incomplete");
+    }
+    try {
+      final List<Path> sourceFiles = postCompileSourceFiles(project);
+      final List<String> sourceClasspath = new ArrayList<>(classpath);
+      final Set<Path> normalizedClasspath = normalizedPaths(sourceClasspath);
+      for (final ArtifactFileRef candidate : candidates) {
+        if (compileVisibleArtifacts.contains(candidate)
+            && normalizedClasspath.add(candidate.filePath().toAbsolutePath().normalize())) {
+          sourceClasspath.add(candidate.filePath().toAbsolutePath().normalize().toString());
+        }
+      }
+      final Path output = scan.scope();
+      if (normalizedClasspath.add(output)) {
+        sourceClasspath.add(output.toString());
+      }
+      final List<String> sourceOptions =
+          MavenCompilerSettings.postCompileSourceOptions(project, session);
+      final JavaSourceReferenceScanner.SourceScan sourceScan =
+          new JavaSourceReferenceScanner()
+              .scanFilesDetailed(sourceFiles, sourceClasspath, sourceOptions);
+      requiredClasses.addAll(sourceScan.referencedTypes());
+    } catch (final IOException exception) {
+      return conservativePostCompileInputs(
+          compileVisibleArtifacts, indexedClasses, requiredClasses, exception.getMessage());
+    }
+    compileVisibleArtifacts.removeIf(
+        artifact -> !sourceClassesByArtifact(artifact, requiredClasses, indexedClasses));
+    return new CompilerInputs(
+        compileVisibleArtifacts.stream()
+            .map(ArtifactFileRef::coordinate)
+            .collect(java.util.stream.Collectors.toSet()),
+        requiredClasses,
+        classNamesInOutput(scan.scope()),
+        null);
+  }
+
+  private static List<Path> postCompileSourceFiles(final MavenProject project) throws IOException {
+    final List<String> roots = project.getCompileSourceRoots();
+    if (roots.isEmpty()) {
+      throw new IOException("No compile source roots are declared");
+    }
+    for (final String root : roots) {
+      if (!Files.isDirectory(Path.of(root))) {
+        throw new IOException("Compile source root is missing: " + root);
+      }
+    }
+    final List<Path> sources = JavaSourceReferenceScanner.sourceFiles(roots);
+    if (sources.isEmpty()) {
+      throw new IOException("No Java source files are present in compile source roots");
+    }
+    if (sources.stream().anyMatch(MavenElisionService::isModuleDescriptor)) {
+      throw new IOException("Source attribution does not support Java module descriptors");
+    }
+    return sources;
+  }
+
+  private static CompilerInputs conservativePostCompileInputs(
+      final Set<ArtifactFileRef> compileVisibleArtifacts,
+      final Map<ArtifactFileRef, Set<String>> indexedClasses,
+      final Set<String> bytecodeReferences,
+      final String reason) {
+    final Set<String> retainedClasses = new HashSet<>(bytecodeReferences);
+    compileVisibleArtifacts.forEach(
+        artifact -> retainedClasses.addAll(indexedClasses.getOrDefault(artifact, Set.of())));
+    return new CompilerInputs(
+        compileVisibleArtifacts.stream()
+            .map(ArtifactFileRef::coordinate)
+            .collect(java.util.stream.Collectors.toSet()),
+        retainedClasses,
+        Set.of(),
+        reason == null || reason.isBlank() ? "Source attribution is incomplete" : reason);
   }
 
   private static boolean sourceClassesByArtifact(
@@ -1446,7 +1538,8 @@ final class MavenElisionService {
   private record CompilerInputs(
       Set<ArtifactCoordinate> compileVisibleCoordinates,
       Set<String> requiredClasses,
-      Set<String> declaredClasses) {
+      Set<String> declaredClasses,
+      String sourceAttributionFallback) {
     private CompilerInputs {
       compileVisibleCoordinates = Set.copyOf(compileVisibleCoordinates);
       requiredClasses = Set.copyOf(requiredClasses);
@@ -1620,7 +1713,51 @@ final class MavenElisionService {
       String productionOutputFingerprint,
       String inputFingerprint,
       String directInputFingerprint,
-      MavenElisionGraphBinding.Result graphBinding) {
+      MavenElisionGraphBinding.Result graphBinding,
+      String sourceAttributionFallback) {
+    PreparedAnalysis(
+        final MavenProject project,
+        final AnalysisOptions options,
+        final List<ArtifactSnapshot> resolvedSnapshots,
+        final boolean directArtifactsPresent,
+        final List<ArtifactSnapshot> directSnapshots,
+        final ElisionDecision rawDecision,
+        final ClassUsageReport classUsageReport,
+        final Optional<BytecodeReferenceScan> bytecodeScan,
+        final List<ArtifactFileRef> scanCandidates,
+        final TraceData trace,
+        final ArtifactClassIndex index,
+        final DynamicRootInputs dynamicRootInputs,
+        final Set<String> projectOutputClasses,
+        final Set<String> sourceRequiredClasses,
+        final Set<String> pruningRequiredClasses,
+        final String productionOutputFingerprint,
+        final String inputFingerprint,
+        final String directInputFingerprint,
+        final MavenElisionGraphBinding.Result graphBinding) {
+      this(
+          project,
+          options,
+          resolvedSnapshots,
+          directArtifactsPresent,
+          directSnapshots,
+          rawDecision,
+          classUsageReport,
+          bytecodeScan,
+          scanCandidates,
+          trace,
+          index,
+          dynamicRootInputs,
+          projectOutputClasses,
+          sourceRequiredClasses,
+          pruningRequiredClasses,
+          productionOutputFingerprint,
+          inputFingerprint,
+          directInputFingerprint,
+          graphBinding,
+          null);
+    }
+
     PreparedAnalysis {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);
@@ -1667,7 +1804,53 @@ final class MavenElisionService {
       MediatedGraphReport mediatedGraph,
       Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots,
       boolean productionClassesComplete,
-      boolean trustedProcessClassesContext) {
+      boolean trustedProcessClassesContext,
+      String sourceAttributionFallback) {
+    Analysis(
+        final List<ArtifactSnapshot> resolvedSnapshots,
+        final boolean directArtifactsPresent,
+        final List<ArtifactSnapshot> directSnapshots,
+        final ElisionDecision decision,
+        final ElisionDecision effectiveDecision,
+        final ClassUsageReport classUsageReport,
+        final Optional<BytecodeReferenceScan> bytecodeScan,
+        final List<ArtifactTrimRecord> trimRecords,
+        final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+        final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+        final List<ArtifactCoordinate> configuredPassThroughArtifacts,
+        final int trimCacheHits,
+        final long maximumTrimCacheHitNanos,
+        final int trimAnalysisRuns,
+        final ResolverArtifactGraphProjection graphProjection,
+        final TrimOutputGenerationCommitHandle generationCommit,
+        final MediatedGraphReport mediatedGraph,
+        final Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots,
+        final boolean productionClassesComplete,
+        final boolean trustedProcessClassesContext) {
+      this(
+          resolvedSnapshots,
+          directArtifactsPresent,
+          directSnapshots,
+          decision,
+          effectiveDecision,
+          classUsageReport,
+          bytecodeScan,
+          trimRecords,
+          multiReleasePassthroughArtifacts,
+          moduleInfoPassthroughArtifacts,
+          configuredPassThroughArtifacts,
+          trimCacheHits,
+          maximumTrimCacheHitNanos,
+          trimAnalysisRuns,
+          graphProjection,
+          generationCommit,
+          mediatedGraph,
+          unprovenServiceRoots,
+          productionClassesComplete,
+          trustedProcessClassesContext,
+          null);
+    }
+
     Analysis(
         final List<ArtifactSnapshot> resolvedSnapshots,
         final boolean directArtifactsPresent,

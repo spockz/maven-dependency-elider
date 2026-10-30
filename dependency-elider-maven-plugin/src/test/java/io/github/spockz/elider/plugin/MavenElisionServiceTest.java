@@ -458,6 +458,7 @@ final class MavenElisionServiceTest {
         source, "package app; public final class GeneratedType { library.Used value; }\n");
     CompilationFixtureSupport.compile(
         output, List.of(source), 21, "-classpath", used.getFile().getPath());
+    project.addCompileSourceRoot(tempDir.resolve("compiled-production-src").toString());
     project.getBuild().setOutputDirectory(output.toString());
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Plugin generator = new Plugin();
@@ -509,6 +510,246 @@ final class MavenElisionServiceTest {
     assertThat(analysis.decision().elidedArtifacts())
         .containsExactly(coordinateFor("bytecode-unused", "compile"));
   }
+
+  @Test
+  @DisplayName("ADR-0010/post-compile source-bytecode union retains inlined constant owners")
+  void inlinedConstantOwnerIsRetainedForArtifactAndJarTrimming() throws Exception {
+    final ConstantFixture fixture = constantFixture("inlined-constant");
+    final MavenElisionService.Analysis artifactAnalysis =
+        new MavenElisionService().analyze(fixture.project(), postCompileOptions(fixture, false));
+
+    assertThat(artifactAnalysis.bytecodeScan().orElseThrow().referencedClasses())
+        .doesNotContain("library.Constants");
+    assertThat(artifactAnalysis.classUsageReport().classes())
+        .anySatisfy(
+            usage -> {
+              assertThat(usage.className()).isEqualTo("library.Constants");
+              assertThat(usage.category().name()).isEqualTo("NEITHER_REFERENCED_NOR_OBSERVED");
+              assertThat(usage.applicationBytecodeReferenced()).isFalse();
+              assertThat(usage.runtimeObserved()).isFalse();
+            });
+    assertThat(artifactAnalysis.decision().retainedArtifacts())
+        .contains(coordinateFor("inlined-constant", "compile"));
+    assertThat(
+            artifactAnalysis
+                .decision()
+                .getRetainedClasses(coordinateFor("inlined-constant", "compile")))
+        .contains("library.Constants")
+        .doesNotContain("library.Dead");
+
+    final MavenElisionService.Analysis trimAnalysis =
+        new MavenElisionService().analyze(fixture.project(), postCompileOptions(fixture, true));
+
+    assertThat(trimAnalysis.trimRecords())
+        .anySatisfy(
+            record -> {
+              assertThat(record.coordinate())
+                  .isEqualTo(coordinateFor("inlined-constant", "compile"));
+              assertThat(record.totalClasses()).isEqualTo(2);
+              assertThat(record.retainedClasses()).isEqualTo(1);
+            });
+    assertThat(trimAnalysis.sourceAttributionFallback()).isNull();
+
+    final MavenElisionService service = new MavenElisionService();
+    final MavenElisionService.PreparedAnalysis sourcePrepared =
+        service.prepare(fixture.project(), postCompileOptions(fixture, false));
+    Files.writeString(
+        fixture.source(),
+        "package app; public final class Consumer { "
+            + "String value = \"constant\"; generated.Model model; }\n");
+    final MavenElisionService.PreparedAnalysis bytecodeOnlyPrepared =
+        service.prepare(fixture.project(), postCompileOptions(fixture, false));
+    assertThat(bytecodeOnlyPrepared.graphBinding().operationFingerprint())
+        .isNotEqualTo(sourcePrepared.graphBinding().operationFingerprint());
+  }
+
+  @Test
+  @DisplayName("ADR-0010/post-compile attribution failure retains all compile evidence")
+  void incompletePostCompileAttributionFallsBackConservatively() throws Exception {
+    final Artifact first = resolvedArtifact("fallback-first", "compile", "fallback-first.jar");
+    first.setFile(
+        CompilationFixtureSupport.compileToJar(
+                tempDir.resolve("fallback-first.jar"),
+                tempDir.resolve("fallback-first-src"),
+                Map.of(
+                    "library/Api.java",
+                    "package library; public final class Api {}\n",
+                    "library/ApiHelper.java",
+                    "package library; public final class ApiHelper {}\n"),
+                null)
+            .toFile());
+    final Artifact second = resolvedArtifact("fallback-second", "compile", "fallback-second.jar");
+    second.setFile(compileJar("fallback-second.jar", "other.Unused").toFile());
+    final Artifact runtime =
+        resolvedArtifact("fallback-runtime", "runtime", "fallback-runtime.jar");
+    runtime.setFile(compileJar("fallback-runtime.jar", "observed.Entry").toFile());
+    final MavenProject project =
+        projectWith(new LinkedHashSet<>(List.of(first, second, runtime)), null);
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Path output = Files.createDirectories(tempDir.resolve("fallback-output"));
+    project.getBuild().setOutputDirectory(output.toString());
+    final Path compiledClass = output.resolve("app/UsesGeneratedMember.class");
+    Files.createDirectories(compiledClass.getParent());
+    Files.write(compiledClass, emptyClass("app/UsesGeneratedMember"));
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("fallback-source-root"));
+    final Path source = sourceRoot.resolve("app/UsesGeneratedMember.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(
+        source,
+        "package app; public final class UsesGeneratedMember { "
+            + "library.Api generated = library.Api.builder(); }\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
+    final Path trace = tempDir.resolve("fallback-runtime.lst");
+    Files.writeString(trace, "observed/Entry\n");
+    final MavenElisionService.AnalysisOptions options =
+        new MavenElisionService.AnalysisOptions(
+            List.of(trace.toFile()),
+            List.of(),
+            output.toFile(),
+            null,
+            false,
+            true,
+            List.of(),
+            false,
+            List.of(),
+            false,
+            true,
+            true,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+            List.of(),
+            true,
+            true,
+            false);
+
+    final MavenElisionService.Analysis analysis =
+        new MavenElisionService().analyze(project, options);
+
+    assertThat(analysis.sourceAttributionFallback())
+        .contains("Cannot resolve production source references");
+    assertThat(analysis.decision().retainedArtifacts())
+        .contains(
+            coordinateFor("fallback-first", "compile"),
+            coordinateFor("fallback-second", "compile"),
+            coordinateFor("fallback-runtime", "runtime"));
+    assertThat(analysis.decision().getRetainedClasses(coordinateFor("fallback-first", "compile")))
+        .containsExactlyInAnyOrder("library.Api", "library.ApiHelper");
+    assertThat(analysis.decision().getRetainedClasses(coordinateFor("fallback-second", "compile")))
+        .containsExactly("other.Unused");
+    final RecordingMavenLog log = new RecordingMavenLog();
+    ElisionSummary.reportAnalysis(log, analysis, null, true);
+    assertThat(log.warnings()).anyMatch(message -> message.contains("used conservative fallback"));
+  }
+
+  @Test
+  @DisplayName("ADR-0010/post-compile source options accept default javac and disable processors")
+  void postCompileSourceOptionsUseDefaultJavacWithoutProcessors() throws IOException {
+    assertThat(MavenCompilerSettings.postCompileSourceOptions(new MavenProject(), null))
+        .containsExactly("-proc:none");
+  }
+
+  private ConstantFixture constantFixture(final String name) throws IOException {
+    final Path fixtureRoot = Files.createTempDirectory(tempDir, name + "-");
+    final Path jar =
+        CompilationFixtureSupport.compileToJar(
+            fixtureRoot.resolve(name + ".jar"),
+            fixtureRoot.resolve(name + "-library-src"),
+            Map.of(
+                "library/Constants.java",
+                "package library; public final class Constants { "
+                    + "public static final String VALUE = \"constant\"; }\n",
+                "library/Dead.java",
+                "package library; public final class Dead {}\n"),
+            null);
+    final Artifact constantLibrary = resolvedArtifact(name, "compile", name + ".jar");
+    constantLibrary.setFile(jar.toFile());
+    try (java.util.jar.JarFile archive = new java.util.jar.JarFile(jar.toFile())) {
+      assertThat(archive.getEntry("library/Constants.class"))
+          .as("archive entries: %s", archive.stream().map(java.util.jar.JarEntry::getName).toList())
+          .isNotNull();
+    }
+    final Artifact runtime = resolvedArtifact(name + "-runtime", "runtime", name + "-runtime.jar");
+    runtime.setFile(
+        CompilationFixtureSupport.compileToJar(
+                fixtureRoot.resolve(name + "-runtime.jar"),
+                fixtureRoot.resolve(name + "-runtime-src"),
+                Map.of("observed/Entry.java", "package observed; public class Entry {}\n"),
+                null)
+            .toFile());
+    final MavenProject project =
+        projectWith(new LinkedHashSet<>(List.of(constantLibrary, runtime)), null);
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Path output = Files.createDirectories(fixtureRoot.resolve(name + "-output"));
+    project.getBuild().setOutputDirectory(output.toString());
+    final Path modelSource = fixtureRoot.resolve(name + "-generated-src/generated/Model.java");
+    Files.createDirectories(modelSource.getParent());
+    Files.writeString(modelSource, "package generated; public final class Model {}\n");
+    CompilationFixtureSupport.compile(output, List.of(modelSource));
+    final Path sourceRoot = Files.createDirectories(fixtureRoot.resolve(name + "-source-root"));
+    final Path source = sourceRoot.resolve("app/Consumer.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(
+        source,
+        "package app; public final class Consumer { "
+            + "String value = library.Constants.VALUE; generated.Model model; }\n");
+    CompilationFixtureSupport.compile(
+        output, List.of(source), 21, "-classpath", jar + File.pathSeparator + output);
+    project.addCompileSourceRoot(sourceRoot.toString());
+    final Plugin compiler = new Plugin();
+    compiler.setGroupId("org.apache.maven.plugins");
+    compiler.setArtifactId("maven-compiler-plugin");
+    compiler.setVersion("3.13.0");
+    final Xpp3Dom compilerConfiguration = new Xpp3Dom("configuration");
+    final Xpp3Dom processorPaths = new Xpp3Dom("annotationProcessorPaths");
+    processorPaths.addChild(new Xpp3Dom("path"));
+    compilerConfiguration.addChild(processorPaths);
+    final Xpp3Dom processors = new Xpp3Dom("annotationProcessors");
+    processors.addChild(new Xpp3Dom("annotationProcessor", "missing.MustNotRun"));
+    compilerConfiguration.addChild(processors);
+    compiler.setConfiguration(compilerConfiguration);
+    project.getBuild().addPlugin(compiler);
+    final Path trace = fixtureRoot.resolve(name + "-runtime.lst");
+    Files.writeString(trace, "observed/Entry\n");
+    return new ConstantFixture(project, output, trace, source);
+  }
+
+  private static MavenElisionService.AnalysisOptions postCompileOptions(
+      final ConstantFixture fixture, final boolean trimJars) {
+    return new MavenElisionService.AnalysisOptions(
+        List.of(fixture.trace().toFile()),
+        List.of(),
+        fixture.output().toFile(),
+        null,
+        false,
+        trimJars,
+        List.of(),
+        false,
+        List.of(),
+        false,
+        true,
+        true,
+        MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+        MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+        List.of(),
+        true,
+        true,
+        false);
+  }
+
+  private static byte[] emptyClass(final String internalName) {
+    final org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+    writer.visit(
+        org.objectweb.asm.Opcodes.V21,
+        org.objectweb.asm.Opcodes.ACC_PUBLIC,
+        internalName,
+        null,
+        "java/lang/Object",
+        null);
+    writer.visitEnd();
+    return writer.toByteArray();
+  }
+
+  private record ConstantFixture(MavenProject project, Path output, Path trace, Path source) {}
 
   @Test
   @DisplayName("ADR-0010/source and bytecode completeness assertions are mutually exclusive")

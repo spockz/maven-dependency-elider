@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.test;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,10 +49,19 @@ public final class CompilationFixtureSupport {
             outputDirectory.toString()));
     arguments.addAll(List.of(extraArgs));
     sources.forEach(source -> arguments.add(source.toString()));
-    final int result = compiler.run(null, null, null, arguments.toArray(String[]::new));
+    final ByteArrayOutputStream compilerErrors = new ByteArrayOutputStream();
+    final int result = compiler.run(null, null, compilerErrors, arguments.toArray(String[]::new));
     if (result != 0) {
       throw new IOException(
-          "Compilation failed with exit code " + result + " for sources: " + sources);
+          "Compilation failed with exit code "
+              + result
+              + " for sources: "
+              + sources
+              + System.lineSeparator()
+              + "Arguments: "
+              + arguments
+              + System.lineSeparator()
+              + compilerErrors.toString(java.nio.charset.StandardCharsets.UTF_8));
     }
   }
 
@@ -77,7 +87,8 @@ public final class CompilationFixtureSupport {
     if (parent == null) {
       throw new IOException("JAR file has no parent directory: " + jarFile);
     }
-    final Path classesDir = parent.resolve(jarFile.getFileName().toString() + "-classes");
+    Files.createDirectories(parent);
+    final Path classesDir = Files.createTempDirectory(parent, jarFile.getFileName() + "-classes-");
     Files.createDirectories(sourceDirectory);
     Files.createDirectories(classesDir);
     final List<Path> sourceFiles = new ArrayList<>();

@@ -70,7 +70,7 @@ final class JavaSourceReferenceScannerTest {
 
     assertThatThrownBy(() -> JavaSourceReferenceScanner.sourceFiles(List.of(sourceRoot.toString())))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("Source attribution does not support Kotlin source files")
+        .hasMessageContaining("Source attribution does not support non-Java source files")
         .hasMessageContaining("Example.kt");
   }
 

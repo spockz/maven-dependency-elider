@@ -84,6 +84,7 @@ final class ElisionSummary {
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment,
       final boolean trimJars)
       throws IOException {
+    reportSourceAttributionFallback(log, analysis);
     if (!log.isInfoEnabled()) {
       return;
     }
@@ -126,6 +127,7 @@ final class ElisionSummary {
       final MavenElisionService.Analysis analysis,
       final MavenElisionReportSnapshot reportSnapshot,
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment) {
+    reportSourceAttributionFallback(log, analysis);
     if (!log.isInfoEnabled()) {
       return;
     }
@@ -188,6 +190,17 @@ final class ElisionSummary {
                 + "; maximum validated hit "
                 + analysis.maximumTrimCacheHitNanos() / 1_000_000.0
                 + " ms");
+  }
+
+  private static void reportSourceAttributionFallback(
+      final Log log, final MavenElisionService.Analysis analysis) {
+    final String fallback = analysis.sourceAttributionFallback();
+    if (fallback != null) {
+      log.warn(
+          "Post-compile source attribution used conservative fallback; all compile-visible "
+              + "artifacts and indexed classes were retained: "
+              + fallback);
+    }
   }
 
   private static void reportCves(
