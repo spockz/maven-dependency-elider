@@ -13,21 +13,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
-import org.apache.maven.execution.DefaultMavenExecutionRequest;
-import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
-import org.apache.maven.execution.ProjectDependencyGraph;
 import org.apache.maven.model.Build;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
-import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
-import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -39,8 +35,7 @@ import org.objectweb.asm.Opcodes;
   "PMD.AvoidAccessibilityAlteration",
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
-  "PMD.TooManyMethods",
-  "PMD.ExcessiveImports"
+  "PMD.TooManyMethods"
 })
 final class AnalyzeMojoTest {
   /** WHY: CVE fixtures use one stable vulnerable symbol in mappings and assertions. */
@@ -462,35 +457,10 @@ final class AnalyzeMojoTest {
     leaf.setVersion("1.0.0");
     leaf.setPackaging("jar");
 
-    final ProjectDependencyGraph graph =
-        new ProjectDependencyGraph() {
-          @Override
-          public List<MavenProject> getAllProjects() {
-            return List.of(intermediate, leaf);
-          }
-
-          @Override
-          public List<MavenProject> getSortedProjects() {
-            return List.of(intermediate, leaf);
-          }
-
-          @Override
-          public List<MavenProject> getDownstreamProjects(
-              final MavenProject project, final boolean transitive) {
-            return intermediate.equals(project) ? List.of(leaf) : List.of();
-          }
-
-          @Override
-          public List<MavenProject> getUpstreamProjects(
-              final MavenProject project, final boolean transitive) {
-            return leaf.equals(project) ? List.of(intermediate) : List.of();
-          }
-        };
-
-    final MavenExecutionRequest request = new DefaultMavenExecutionRequest();
-    final DefaultRepositorySystemSession repoSession = MavenRepositorySystemUtils.newSession();
-    final MavenSession session = new MavenSession(null, repoSession, request, null);
-    session.setProjectDependencyGraph(graph);
+    final MavenSession session =
+        ReactorLeafModuleDetectorTest.createSession(
+            new ReactorLeafModuleDetectorTest.StubProjectDependencyGraph(
+                List.of(intermediate, leaf), Map.of(intermediate, List.of(leaf))));
 
     set(mojo, "project", intermediate);
     set(mojo, "session", session);

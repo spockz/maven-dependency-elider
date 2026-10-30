@@ -211,7 +211,6 @@ public final class ElideMojo extends AbstractMojo {
 
   /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
   @Override
-  @SuppressWarnings("PMD.CyclomaticComplexity")
   public void execute() throws MojoFailureException {
     final String executionId = mojoExecution == null ? null : mojoExecution.getExecutionId();
     final String projectId = project == null ? null : project.getId();
@@ -221,22 +220,7 @@ public final class ElideMojo extends AbstractMojo {
       return;
     }
     try {
-      if (skip) {
-        publishEmptyPlan();
-        EliderPreparationState.completeInjectedCliPreparation(
-            session, executionId, projectId, executionSource);
-        return;
-      }
-      if (leafOnly && ReactorLeafModuleDetector.isIntermediateReactorModule(project, session)) {
-        if (getLog().isInfoEnabled()) {
-          getLog()
-              .info(
-                  "Skipping dependency elision on intermediate reactor module: "
-                      + (project == null ? "unknown" : project.getArtifactId()));
-        }
-        publishEmptyPlan();
-        EliderPreparationState.completeInjectedCliPreparation(
-            session, executionId, projectId, executionSource);
+      if (shouldSkipElision(executionId, projectId, executionSource)) {
         return;
       }
       executeAnalysis();
@@ -246,6 +230,30 @@ public final class ElideMojo extends AbstractMojo {
       throw new MojoFailureException(
           "Dependency elision failed: " + exception.getMessage(), exception);
     }
+  }
+
+  private boolean shouldSkipElision(
+      final String executionId, final String projectId, final MojoExecution.Source executionSource)
+      throws IOException {
+    if (skip) {
+      publishEmptyPlan();
+      EliderPreparationState.completeInjectedCliPreparation(
+          session, executionId, projectId, executionSource);
+      return true;
+    }
+    if (leafOnly && ReactorLeafModuleDetector.isIntermediateReactorModule(project, session)) {
+      if (getLog().isInfoEnabled()) {
+        getLog()
+            .info(
+                "Skipping dependency elision on intermediate reactor module: "
+                    + (project == null ? "unknown" : project.getArtifactId()));
+      }
+      publishEmptyPlan();
+      EliderPreparationState.completeInjectedCliPreparation(
+          session, executionId, projectId, executionSource);
+      return true;
+    }
+    return false;
   }
 
   private void publishEmptyPlan() throws IOException {

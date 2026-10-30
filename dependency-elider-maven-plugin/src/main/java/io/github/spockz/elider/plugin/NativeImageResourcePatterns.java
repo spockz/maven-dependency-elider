@@ -26,25 +26,35 @@ final class NativeImageResourcePatterns {
     }
   }
 
-  @SuppressWarnings("PMD.CyclomaticComplexity")
   static void readCondition(final JsonNode condition, final Set<String> roots, final String name)
       throws IOException {
     if (!condition.isObject() || condition.size() != 1) {
       throw new IOException("Malformed native-image condition: " + name);
     }
     final String conditionType = condition.fieldNames().next();
-    final JsonNode className = condition.get(conditionType);
-    if ((!"typeReachable".equals(conditionType) && !"typeReached".equals(conditionType))
-        || !className.isTextual()) {
+    if (!isValidConditionType(conditionType)) {
       throw new IOException("Unsupported native-image condition: " + name);
     }
-    final String componentClass =
-        NativeImageClassConfig.extractComponentClass(className.textValue());
+    final JsonNode className = condition.get(conditionType);
+    final String componentClass = parseConditionClass(className, name);
+    roots.add(componentClass);
+  }
+
+  private static boolean isValidConditionType(final String type) {
+    return "typeReachable".equals(type) || "typeReached".equals(type);
+  }
+
+  private static String parseConditionClass(final JsonNode node, final String name)
+      throws IOException {
+    if (node == null || !node.isTextual()) {
+      throw new IOException("Unsupported native-image condition: " + name);
+    }
+    final String componentClass = NativeImageClassConfig.extractComponentClass(node.textValue());
     if (componentClass == null
         || componentClass.isEmpty()
         || !NativeImageDynamicRoots.isBinaryClassName(componentClass)) {
       throw new IOException("Unsupported native-image condition: " + name);
     }
-    roots.add(componentClass);
+    return componentClass;
   }
 }

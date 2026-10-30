@@ -119,7 +119,7 @@ final class ReactorLeafModuleDetectorTest {
     return project;
   }
 
-  private static MavenSession createSession(final ProjectDependencyGraph graph) {
+  /* default */ static MavenSession createSession(final ProjectDependencyGraph graph) {
     final MavenExecutionRequest request = new DefaultMavenExecutionRequest();
     final DefaultRepositorySystemSession repoSession = MavenRepositorySystemUtils.newSession();
     final MavenSession session = new MavenSession(null, repoSession, request, null);
@@ -128,7 +128,7 @@ final class ReactorLeafModuleDetectorTest {
   }
 
   @SuppressWarnings({"PMD.CommentRequired", "PMD.CommentDefaultAccessModifier"})
-  private static final class StubProjectDependencyGraph implements ProjectDependencyGraph {
+  /* default */ static final class StubProjectDependencyGraph implements ProjectDependencyGraph {
     private final List<MavenProject> allProjects;
     private final Map<MavenProject, List<MavenProject>> downstream;
 

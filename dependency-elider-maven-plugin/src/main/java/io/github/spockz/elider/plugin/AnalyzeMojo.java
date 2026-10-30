@@ -137,15 +137,8 @@ public final class AnalyzeMojo extends AbstractMojo {
 
   /** Runs analysis and reports a conservative summary without mutating Maven state. */
   @Override
-  @SuppressWarnings("PMD.CyclomaticComplexity")
   public void execute() throws MojoFailureException {
-    if (leafOnly && ReactorLeafModuleDetector.isIntermediateReactorModule(project, session)) {
-      if (getLog().isInfoEnabled()) {
-        getLog()
-            .info(
-                "Skipping dependency analysis on intermediate reactor module: "
-                    + (project == null ? "unknown" : project.getArtifactId()));
-      }
+    if (shouldSkipAnalysis()) {
       return;
     }
     try {
@@ -221,5 +214,18 @@ public final class AnalyzeMojo extends AbstractMojo {
             ? List.of()
             : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
     return new MavenVulnerabilityAssessment(getLog()).assess(config, manualMappings, analysis);
+  }
+
+  private boolean shouldSkipAnalysis() {
+    if (leafOnly && ReactorLeafModuleDetector.isIntermediateReactorModule(project, session)) {
+      if (getLog().isInfoEnabled()) {
+        getLog()
+            .info(
+                "Skipping dependency analysis on intermediate reactor module: "
+                    + (project == null ? "unknown" : project.getArtifactId()));
+      }
+      return true;
+    }
+    return false;
   }
 }
