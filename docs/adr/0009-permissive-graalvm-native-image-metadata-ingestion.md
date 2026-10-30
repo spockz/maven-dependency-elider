@@ -24,11 +24,11 @@ The available audit is GraalVM Native Image 21.0.12+7.1's `native-image --expert
 
 ### Argument handling
 
-* Parse audited reference-bearing options. A recognized option with an empty, malformed, missing, or unreadable reference fails with a diagnostic.
+* Parse audited reference-bearing options. A recognized option with a malformed or unreadable reference fails with a diagnostic. Empty values fail unless the option's documented initialization semantics make the empty target whole-scope.
 * Accept syntactically valid options outside the audited inventory without inferring roots. Unknown options that carry class references are outside the guarantee.
 * Do not expose `allowedNativeImageArgs` or `failOnUnsupportedNativeImageArgs`; these unreleased controls are removed rather than retained as inert switches.
 * Reject `@argfile`, classpath/module-path, and other recognized indirections that could hide roots unless the input is explicitly modeled and completely read. Do not silently treat a recognized unreadable reference as an unknown option.
-* Bare initialization options specify whole-image policy and add no package roots. An explicitly empty `--initialize-at-build-time=` or `--initialize-at-run-time=` value is malformed.
+* Bare and explicitly empty `--initialize-at-build-time` and `--initialize-at-run-time` forms are whole-inventory retention targets. Native Image may reject the build-time empty form unless its deprecated override is enabled, and documents the runtime empty form as unsupported. Retention inference does not promise Native Image build acceptance.
 
 ### Audited direct and policy options
 
