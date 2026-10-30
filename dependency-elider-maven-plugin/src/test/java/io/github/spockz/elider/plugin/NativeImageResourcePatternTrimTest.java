@@ -102,6 +102,47 @@ import org.junit.jupiter.api.Test;
             true);
   }
 
+  /* package */
+  @Test
+  void matchingOrdinaryResourceRetainsClasslessRuntimeArchive() throws Exception {
+    final Fixture fixture = fixture(false, false, true);
+    final Path declaring =
+        appendEntries(
+            fixture.snapshot("a").filePath(),
+            "a-with-resource-only-include.jar",
+            Map.of(
+                "META-INF/native-image/test/native-image.properties",
+                "Args = -H:IncludeResources=runtime/provider\\.dat\n"),
+            Map.of());
+    final Path provider =
+        appendEntries(
+            fixture.snapshot("b").filePath(),
+            "b-resource-only-runtime.jar",
+            Map.of("runtime/provider.dat", "provided"),
+            Map.of());
+    replaceArtifactFile(fixture, "a", declaring);
+    replaceArtifactFile(fixture, "b", provider);
+    final Path trace = temporaryDirectory.resolve("resource-only-trace.lst");
+    Files.writeString(trace, "closure.a.Entry\n");
+
+    final MavenElisionService.PreparedAnalysis prepared =
+        new MavenElisionService()
+            .prepare(
+                fixture.mavenProject(),
+                MavenElisionServiceEffectiveAnalysisFixtures.options(
+                    List.of(trace.toFile()), null, true));
+
+    assertThat(
+            List.of(
+                prepared.dynamicRootInputs().classNames(),
+                prepared.dynamicRootInputs().resourceProviderArtifacts(),
+                prepared.rawDecision().retainedArtifacts()))
+        .containsExactly(
+            java.util.Set.of(),
+            java.util.Set.of(fixture.coordinate("b")),
+            java.util.Set.of(fixture.coordinate("a"), fixture.coordinate("b")));
+  }
+
   private Path appendEntries(
       final Path source,
       final String destinationName,

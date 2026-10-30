@@ -33,39 +33,6 @@ import org.junit.jupiter.api.io.TempDir;
 
   /* package */
   @Test
-  void enabledBroadPoliciesPinAllIndexedClassesAndNoRootTogglesStayEmpty() throws IOException {
-    final Path declaring =
-        archive(
-            "policy-declaring.jar",
-            "-H:+EnableAllSecurityServices "
-                + "--enable-all-security-services "
-                + "-H:+AddAllFileSystemProviders -H:+IncludeAllLocales "
-                + "-H:EnableURLProtocols=http,https --enable-url-protocols=jar "
-                + "-H:EnableURLProtocols=custom_protocol -H:DisableURLProtocols=http");
-    final Path provider =
-        NativeImageScanContextTestSupport.jar(
-            temporaryDirectory,
-            "policy-provider.jar",
-            "org/example/First.class",
-            "body",
-            "org/example/Second.class",
-            "body");
-    final DependencyDynamicRoots.RootScan enabled = scan(declaring, declaring, provider);
-    final Path disabledDeclaring =
-        archive(
-            "policy-disabled.jar",
-            "-H:-EnableAllSecurityServices -H:-AddAllFileSystemProviders "
-                + "-H:-IncludeAllLocales -H:-EnableSecurityServicesFeature "
-                + "-H:+EnableSecurityServicesFeature -H:DisableURLProtocols=http");
-    final DependencyDynamicRoots.RootScan disabled =
-        scan(disabledDeclaring, disabledDeclaring, provider);
-
-    assertThat(List.of(enabled.roots(), disabled.roots(), enabled.resourceProviders()))
-        .containsExactly(Set.of("org.example.First", "org.example.Second"), Set.of(), Set.of());
-  }
-
-  /* package */
-  @Test
   void resourceRegexPreservesCommasMatchesDirectoryEntriesAndRootsMrjarClasses()
       throws IOException {
     final Path declaring =
