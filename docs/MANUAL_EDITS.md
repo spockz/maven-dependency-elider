@@ -54,3 +54,7 @@ The compile-time constant retention implementation and its tests/docs used repos
 ## 2026-10-30: WP-Test01 Track 3 example scheduling
 
 The fixture scheduler, tests, Make target, README, contributor register, and RQ-0003 updates used repository-native `apply_patch`. Shell traces diagnosed scheduler synchronization and wrapper invocation issues; the corrected supported wrapper runs passed. No semantic editing or navigation tool was available or invoked, so no semantic-edit fallback or comparative claim is recorded. Track 3's final reviewed head is `451fbef41a9c3606b61494db6e99360d7360d61f`; see the track's final review and completion receipts.
+
+## 2026-10-30: WP-Test01 Track 4 transcript scheduling
+
+The Go transcript runner, barrier-based tests, Make target, contributor guidance, and RQ-0009 updates used repository-native `apply_patch` and `gofmt`. No semantic source-edit operation was available or invoked, so no fallback or comparative efficiency claim is recorded. The final reviewed Track 4 head is `5d575e36dbea4a20c82989d0f431128806476f61`; see its implementation and independent-review receipts.
