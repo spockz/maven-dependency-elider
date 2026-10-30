@@ -132,3 +132,7 @@ Totals in available evidence: zero semantic calls; one sandbox access failure be
 | Git integration | Fast-forwarded local `main` from `4670821` to the verified transcript implementation, then advanced it with the final documentation commit. The destination's modified research README and two untracked research documents remained untouched. | `git merge --ff-only` integrated the checked commits; no semantic-tool operation was available or invoked. Command runtime was not separately measured. |
 
 No semantic call count, efficiency advantage, speedup, or token saving is inferred from unavailable history. The observed local workflow avoided semantic-tool setup, while the delayed app artifact lookup and unavailable app terminal reduced wrap-up efficiency. Runtime comparison remains inconclusive because there were no semantic calls and no comparable complete semantic/local measurements.
+
+## 2026-10-30: WP-NATIVE-01 final integration
+
+The default shell runner began failing before executing commands with a bubblewrap capability error; the required post-merge `make check` completed through the reviewed execution path. The tool catalog had no Gemini review bridge or cross-thread send-message operation, so the MRJAR investigation was read through the available read-only thread tool. The repository's existing Node.js SBOM test ran under explicit user authorization; no new Node.js tooling was introduced.
