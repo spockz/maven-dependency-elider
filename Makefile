@@ -23,7 +23,7 @@ endif
 
 .DEFAULT_GOAL := check
 
-.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-reactor-example test-sbom-comparison scan-sbom verify-docs site serve
+.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-reactor-example test-example-scheduler test-sbom-comparison scan-sbom verify-docs site serve
 
 check: ## Format, run Java checks/tests and Markdown lint concurrently, then verify command transcripts
 	$(MAKE) --no-print-directory fmt
@@ -36,7 +36,7 @@ update-transcripts: ## Re-run configured example goals and update their document
 check-transcripts: ## Verify configured command transcripts without rewriting documentation
 	$(GO) run scripts/update-transcripts.go --check
 
-check-parallel: java-check lint-markdown test-sbom-comparison
+check-parallel: java-check lint-markdown test-example-scheduler test-sbom-comparison
 
 java-check:
 	$(MAKE) --no-print-directory lint-java
@@ -90,6 +90,9 @@ test-examples: ## Run baseline and trace-driven package checks for single-projec
 
 test-reactor-example: ## Verify sequential and threaded multi-module reactor builds and reports
 	REACTOR_ONLY=true JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS) -T $(MAVEN_THREADS)" ./examples/run-elision-cycle.sh
+
+test-example-scheduler: ## Verify bounded standalone example fixture worker behavior
+	bash ./examples/test-fixture-scheduler.sh
 
 test-sbom-comparison: ## Test package-level OSV SBOM comparison behavior with a fake scanner
 	$(NODE) --test scripts/compare-sbom-inventories.test.js

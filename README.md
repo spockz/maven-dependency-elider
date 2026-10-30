@@ -359,6 +359,15 @@ Run the full end-to-end verification suite across all fixtures:
 make test-examples
 ```
 
+The five standalone fixture lifecycles run with at most two workers by default.
+Set `EXAMPLE_JOBS=1` for a serial comparison or another positive integer to change
+the worker limit; scheduling starts after shared plugin and support setup completes.
+Each fixture still runs its baseline, trace, elision, report, archive, and runtime
+checks in order. Worker logs are captured under the run's `.scratch` evidence
+directory during the run and replayed in fixture-list order; failed runs retain the
+evidence directory for diagnosis. The multi-module reactor checks run after all
+standalone workers finish.
+
 Run only the multi-module reactor checks:
 
 ```sh

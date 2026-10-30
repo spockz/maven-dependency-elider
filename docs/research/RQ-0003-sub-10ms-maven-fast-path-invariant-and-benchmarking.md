@@ -4,7 +4,7 @@
 * **Status**: Open
 * **Category**: Performance & Benchmarking
 * **Date**: 2026-10-24
-* **Last Updated**: 2026-10-26
+* **Last Updated**: 2026-10-30
 
 Abbreviations: Java Microbenchmark Harness (JMH), Solid State Drive (SSD), Non-Volatile Memory Express (NVMe), Central Directory (CEN), Virtual Threads (Loom), Central Processing Unit (CPU).
 
@@ -223,3 +223,14 @@ The three matched post-7.6 example cycles measured median added time of **+1.977
 * **Implementer / reviewed commit**: Maven trimming track; `8b3c4c4` (`Reuse Maven invocation dependency scans`), rebased without code changes and integrated as `e7c0a69`.
 * **Focused and full verification**: post-merge `make check` passed with repository GraalVM 21; 116 core tests, 64 plugin tests, static analysis, formatting, and Markdown lint passed. The trim-boundary test verifies supplied dynamic roots affect output and missing scan evidence fails explicitly. The JMH benchmark computes dynamic-root input inside each measured operation, preserving its previous measurement boundary.
 * **Review verdict**: approved after the initial reviewer model hit capacity; replacement review accepted the complete implementation. Receipt: `.scratch/reviews/track-plugin-trimming-performance.md`.
+
+## 6. Five-fixture lifecycle scheduling evidence (2026-10-30)
+
+The example runner now schedules the five standalone fixtures with a default maximum of two workers. The bound takes effect only after plugin installation, support classpath resolution/compilation and contract checks, and generated MRJAR installation. Each fixture keeps baseline, trace, elision, report, archive, and runtime checks sequential. The multi-module reactor starts after every standalone worker joins and retains its sequential and `-T 4` report, repository, and runtime assertions. `EXAMPLE_JOBS=1` provides the serial comparison.
+
+| Setting | Command wall time | Standalone fixture statuses | Reactor status | Evidence log |
+| --- | ---: | --- | --- | --- |
+| `EXAMPLE_JOBS=1` | 194.019 s | Five passed | Passed | `/tmp/wp-test01-track3-fixup-serial.log` |
+| `EXAMPLE_JOBS=2` | 124.045 s | Five passed | Passed | `/tmp/wp-test01-track3-fixup-parallel.log` |
+
+Both runs used GraalVM JDK 21.0.12+7.1, the repository Maven wrapper (Apache Maven 3.9.11), and the same already-warm local Maven repository. The serial run immediately preceded the parallel run. A full repository check was active in the `track-native-image-02` sibling worktree during this measurement window, so CPU contention was present; this is one observed pair, not a controlled benchmark, and no speedup target or performance claim is inferred. The wall time covers shared setup, all five standalone lifecycles, and the sequential plus threaded reactor checks. The separate `make test-reactor-example` and `make check-transcripts` gates also passed. Synchronization-based shell tests cover overlap, the worker bound, ordered output, complete ordinary-failure aggregation, early-worker failure boundaries, queued INT/TERM status and unstarted fixtures, timeout-owned process-group cleanup, and invalid limits rejected before bootstrap. Standalone app timeouts use foreground process-group mode so worker interruption reaches the timeout command and its child.
