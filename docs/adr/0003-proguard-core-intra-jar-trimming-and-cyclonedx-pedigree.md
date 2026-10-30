@@ -39,6 +39,7 @@ Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2
    * Strip digital signature block files (`META-INF/*.SF`, `META-INF/*.DSA`, `META-INF/*.RSA`, `META-INF/SIG-*`).
    * Cleanse `META-INF/MANIFEST.MF` by purging section digest headers.
    * Preserve all non-class resources (`META-INF/services/`, license and NOTICE files, XML schemas, properties).
+   * **Multi-Release Archive Sanitization and Vertical Shading**: For a retained candidate with `META-INF/versions/`, select each class's effective baseline version $V_{\text{base}} = \max\{v \in S(C) \mid v \le T\}$ and write that implementation at the archive root. Omit superseded lower-version bytecodes. Preserve every physical class entry above $T$ byte-for-byte, including higher-tier overrides and helpers. Keep `Multi-Release: true` if and only if versioned entries remain; otherwise remove the attribute so the output is a standard single-release archive.
 
 4. **In-Memory Redirection (ADR-0002)**:
    Redirect the in-memory artifact file pointer via `artifact.setFile(trimmedJarPath)` during the `INITIALIZE` phase so that downstream packaging plugins (`maven-shade-plugin`, `spring-boot-maven-plugin:repackage`, assembly) bundle the trimmed JARs into terminal distributions without bespoke adapters.
@@ -48,7 +49,7 @@ Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2
    * `component.hashes`: The actual SHA-256 digest of the trimmed file on disk.
    * `component.pedigree.ancestors`: The original upstream Maven Central coordinate and original Central SHA-256 digest.
    * `component.pedigree.patches`: Unofficial patch descriptor noting the count of pruned classes.
-   * `component.properties`: Structured metrics (`elider:status=trimmed`, logical `elider:retainedClasses` and `elider:totalClasses`, physical ZIP entry counts, and MRJAR transformation status).
+   * `component.properties`: Structured metrics: `elider:status=trimmed`; logical `elider:retainedClasses` and `elider:totalClasses`, counting unique binary classes across all tiers; and physical `elider:inputPhysicalEntries` and `elider:outputPhysicalEntries`, counting ZIP entries. `elider:mrjarStatus=elevated_and_trimmed` identifies a transformed MRJAR. An unchanged MRJAR has no trim record; if a component-level status is emitted for it, use `passed_through`. Ordinary single-release trim records use `not_multi_release`.
 
 6. **Multi-Release Vertical Shading**:
    * When `trimJars=true`, use the Maven compiler `--release` value as the target tier $T$. Reject a target newer than the Maven runtime release $R$.
@@ -63,12 +64,15 @@ Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2
 * **Per-JAR Boundary Preservation**: Trimming must produce separate, individually attributable trimmed JARs for each dependency; whole-program monolithic flattening is prohibited.
 * **Link Closure Completeness**: In the target view and analyzed tier breakpoints through $R$, no retained class may reference an omitted superclass, interface, field type, method descriptor, or other required class in the same or a trimmed sibling JAR.
 * **MRJAR Closure Completeness**: Every analyzed class-tier breakpoint between $T$ and $R$ contributes to the unioned closure. Class entries above $T$ remain physically intact; entries above $R$ are outside the sibling-link proof boundary.
+* **JEP 238 Multi-Release Structural Integrity**: Every surviving higher-tier public or protected override has its target-baseline implementation at the root. Trimmed output must pass `jar --validate` without missing-base warnings.
+* **Upper-Tier Forward-Execution Preservation**: Class entries above $T$ and their internal helpers pass through byte-for-byte because their closure is not used to prune those tiers. This preserves forward execution on newer JREs; sibling links above $R$ remain unverified.
 * **Logical and Physical Metrics**: Class totals count unique logical class names across tiers; input and output ZIP-entry totals count physical entries.
 * **Original Immutability**: Original JARs in the local repository cache (`~/.m2/repository`) must never be modified. All trimmed outputs are isolated under the project build directory (`target/elided-artifacts/`).
 * **Signature Sanitization**: Any trimmed JAR containing signature block files must have those signatures stripped to prevent JVM class-loading security exceptions.
 
 ## Consequences
 
-* Unreferenced classes and dormant vulnerability gadgets are physically omitted from final fat JARs, Spring Boot executable archives, and container images.
+* Unreferenced classes and dormant vulnerability gadgets in the trimmed baseline and lower tiers are physically omitted from final fat JARs, Spring Boot executable archives, and container images. A multi-tier omission claim is made only when the mapped vulnerable class is absent from the root and every versioned tier; classes preserved above $T$ are not claimed removed.
+* Vertical shading retains the target baseline required by surviving overrides and preserves every upper-tier class and helper byte-for-byte, allowing distributions to retain newer-JRE behavior while removing proven-unreachable code from tiers that are transformed.
 * Downstream vulnerability scanners consuming the CycloneDX 1.6 SBOM can reconcile the trimmed JAR's disk hash while maintaining verifiable ancestry back to the official Maven Central package.
 * Trimming requires additional build-time analysis. The existing single-release JMH operation measured a same-request warmed cache hit at 0.093 ms and a fresh-context cache hit at 93.465 ms; only the warmed operation meets the $<10\text{ ms}$ target. These measurements do not establish whole-build latency or MRJAR cache performance. See [RQ-0003](../research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md).
