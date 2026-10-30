@@ -14,6 +14,11 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
 /** Tests dependency dynamic roots scanning and effective roots partitioning. */
 @SuppressWarnings({
@@ -245,29 +250,27 @@ final class DependencyDynamicRootsTest {
 
     assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("Reflect configuration lacks a valid class name");
+        .hasMessageContaining("Malformed standalone type descriptor");
   }
 
   @Test
   void extractsRootsFromUnifiedReachabilityMetadata() throws IOException {
     final String reachabilityMetadata =
-        "{\n"
-            + "  \"reflection\": [\n"
-            + "    {\"type\": \"boolean\"},\n"
-            + "    {\"type\": \"boolean[]\"},\n"
-            + "    {\"type\": \"byte[]\"},\n"
-            + "    {\"type\": \"com.fasterxml.jackson.core.Versioned\"},\n"
-            + "    {\"type\": \"com.fasterxml.jackson.databind.deser."
-            + "BeanDeserializerModifier[]\"},\n"
-            + "    {\"type\": \"com.fasterxml.jackson.databind.deser.Deserializers[]\"}\n"
-            + "  ],\n"
-            + "  \"serialization\": [\n"
-            + "    {\"type\": \"org.example.SerializablePayload\"}\n"
-            + "  ],\n"
-            + "  \"jni\": [\n"
-            + "    {\"name\": \"org.example.NativeLibraryBridge\"}\n"
-            + "  ]\n"
-            + "}";
+        """
+        {
+          "comment": "schema 1.2",
+          "reflection": [
+            {"type":"org.example.Primary","condition":{"typeReached":"org.example.Gate"},
+             "methods":[{"name":"make","parameterTypes":["org.example.Argument[]"]}]},
+            {"type":{"proxy":["org.example.ProxyApi"]}},
+            {"type":{"lambda":{"declaringClass":"org.example.LambdaOwner",
+              "interfaces":["org.example.LambdaApi"]}}}
+          ],
+          "resources": [{"bundle":"org.example.Messages",
+            "condition":{"typeReached":"org.example.BundleGate"}}],
+          "foreign": {"directUpcalls":[{"class":"org.example.Callback","method":"invoke"}]}
+        }
+        """;
 
     final Path jar = tempDir.resolve("reachability-metadata-" + System.nanoTime() + ".jar");
     try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
@@ -280,12 +283,341 @@ final class DependencyDynamicRootsTest {
 
     assertThat(scan.roots())
         .containsExactlyInAnyOrder(
-            "com.fasterxml.jackson.core.Versioned",
-            "com.fasterxml.jackson.databind.deser.BeanDeserializerModifier",
-            "com.fasterxml.jackson.databind.deser.Deserializers",
-            "org.example.SerializablePayload",
-            "org.example.NativeLibraryBridge");
+            "org.example.Primary",
+            "org.example.Gate",
+            "org.example.Argument",
+            "org.example.ProxyApi",
+            "org.example.LambdaOwner",
+            "org.example.LambdaApi",
+            "org.example.Messages",
+            "org.example.BundleGate",
+            "org.example.Callback");
     assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
+  void readsStandaloneSerializationAndReflectionSecondaryTypes() throws IOException {
+    final Path jar = tempDir.resolve("native-image-descriptors-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+      put(
+          out,
+          "META-INF/native-image/test/serialization-config.json",
+          """
+          [{"name":"org.example.Payload",
+            "lambdaCapturingTypes":["org.example.Captured[]"],
+            "customTargetConstructorClass":"org.example.Target"}]
+          """);
+      put(
+          out,
+          "META-INF/native-image/test/reflect-config.json",
+          """
+          [{"name":"org.example.Reflective",
+            "methods":[{"name":"open","parameterTypes":["org.example.MethodParameter"]}]}]
+          """);
+    }
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+    assertThat(scan.roots())
+        .contains(
+            "org.example.Payload",
+            "org.example.Captured",
+            "org.example.Target",
+            "org.example.Reflective",
+            "org.example.MethodParameter");
+
+    final Path schemaJar = tempDir.resolve("serialization-schema-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(schemaJar))) {
+      put(
+          out,
+          "META-INF/native-image/test/serialization-config.json",
+          """
+          {"types":[{"name":"org.example.SchemaPayload",
+            "customTargetConstructorClass":"org.example.SchemaTarget",
+            "condition":{"typeReachable":"org.example.SerializationGate"}}],
+           "lambdaCapturingTypes":[{"name":"org.example.Capturer",
+            "condition":{"typeReachable":"org.example.LambdaGate"}}],
+           "proxies":[{"interfaces":["org.example.SerializableProxy"],
+            "condition":{"typeReachable":"org.example.ProxyGate"}}]}
+          """);
+    }
+    assertThat(DependencyDynamicRoots.scan(schemaJar).roots())
+        .contains(
+            "org.example.SchemaPayload",
+            "org.example.SchemaTarget",
+            "org.example.SerializationGate",
+            "org.example.Capturer",
+            "org.example.LambdaGate",
+            "org.example.SerializableProxy",
+            "org.example.ProxyGate");
+
+    final Path emptySchema = tempDir.resolve("serialization-empty-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(emptySchema))) {
+      put(
+          out,
+          "META-INF/native-image/test/serialization-config.json",
+          "{\"types\":[],\"lambdaCapturingTypes\":[],\"proxies\":[]}");
+    }
+    assertThat(DependencyDynamicRoots.scan(emptySchema).roots()).isEmpty();
+
+    final Path missingSections =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/serialization-config.json",
+            "{}");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(missingSections))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Malformed serialization types");
+
+    final Path unsupported = tempDir.resolve("unsupported-unified-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(unsupported))) {
+      put(out, "META-INF/native-image/test/reachability-metadata.json", "{\"serialization\": []}");
+    }
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(unsupported))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Unsupported native-image reachability metadata field serialization");
+  }
+
+  @Test
+  void rejectsDuplicateKeysAndTrailingMetadataJson() throws IOException {
+    for (final String json :
+        new String[] {"[{\"name\":\"a.A\",\"name\":\"b.B\"}]", "[{\"name\":\"a.A\"}] {}"}) {
+      final Path jar = nativeImageConfigJar(json);
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar)).isInstanceOf(IOException.class);
+    }
+  }
+
+  @Test
+  void keepsStandaloneConditionsClassOnlyAndRejectsAmbiguousKeys() throws IOException {
+    final Path objectCondition =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/reflect-config.json",
+            "[{\"name\":\"org.example.Type\",\"condition\":{\"typeReached\":"
+                + "{\"proxy\":[\"org.example.Proxy\"]}}}]");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(objectCondition))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("condition class name");
+
+    final Path ambiguousCondition =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/reflect-config.json",
+            "[{\"name\":\"org.example.Type\",\"condition\":{"
+                + "\"typeReached\":\"org.example.One\","
+                + "\"typeReachable\":\"org.example.Two\"}}]");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(ambiguousCondition))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("native-image condition");
+  }
+
+  @Test
+  void acceptsPinnedReflectionBooleansAndRejectsUnsupportedAliases() throws IOException {
+    final Path valid =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/reflect-config.json",
+            "[{\"name\":\"org.example.ReflectFlags\",\"allDeclaredConstructors\":true,"
+                + "\"allPublicConstructors\":true,\"allDeclaredMethods\":true,"
+                + "\"allPublicMethods\":true,\"allDeclaredFields\":true,"
+                + "\"allPublicFields\":true,\"allDeclaredClasses\":true,"
+                + "\"allPublicClasses\":true,\"allRecordComponents\":true,"
+                + "\"allPermittedSubclasses\":true,\"allNestMembers\":true,"
+                + "\"allSigners\":true,\"queryAllDeclaredConstructors\":true,"
+                + "\"queryAllPublicConstructors\":true,\"queryAllDeclaredMethods\":true,"
+                + "\"queryAllPublicMethods\":true,\"unsafeAllocated\":true}]");
+    assertThat(DependencyDynamicRoots.scan(valid).roots()).contains("org.example.ReflectFlags");
+
+    final Path unsupported =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/reflect-config.json",
+            "[{\"type\":\"org.example.TypeAlias\"}]");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(unsupported))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Unsupported native-image reflect entry field type");
+  }
+
+  @Test
+  void validatesDenyLambdaFieldsAndResourceGlobSchemas() throws IOException {
+    final Path invalidDenyLambda =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/serialization-deny-config.json",
+            "{\"types\":[],\"lambdaCapturingTypes\":["
+                + "{\"name\":\"org.example.DenyLambda\","
+                + "\"customTargetConstructorClass\":\"org.example.Invalid\"}],"
+                + "\"proxies\":[]}");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(invalidDenyLambda))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Unsupported native-image serialization-deny lambda type field");
+
+    final Path emptyReason =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/reachability-metadata.json",
+            "{\"reflection\":[{\"type\":\"org.example.EmptyReason\","
+                + "\"reason\":\"\"}],\"resources\":[{\"glob\":"
+                + "\"sample\\\\.txt\",\"reason\":[\"\"]}]}");
+    assertThat(DependencyDynamicRoots.scan(emptyReason).roots())
+        .contains("org.example.EmptyReason");
+
+    final Path resourceConfig =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/resource-config.json",
+            "{\"bundles\":[{\"name\":\"org.example.Messages\","
+                + "\"locales\":[\"fr\"]}],\"globs\":[{\"glob\":"
+                + "\"sample/**\",\"condition\":{"
+                + "\"typeReachable\":\"org.example.GlobGate\"},"
+                + "\"module\":\"m.test\"}]}");
+    assertThat(DependencyDynamicRoots.scan(resourceConfig).roots())
+        .contains("org.example.Messages", "org.example.GlobGate");
+
+    final Path bundleOnly =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/resource-config.json",
+            "{\"bundles\":[{\"name\":\"org.example.BundleOnly\",\"locales\":[\"de\"]}]}");
+    assertThat(DependencyDynamicRoots.scan(bundleOnly).roots())
+        .containsExactly("org.example.BundleOnly");
+
+    final Path unknownGlobField =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/resource-config.json",
+            "{\"globs\":[{\"glob\":\"sample/**\",\"unknown\":true}]}");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(unknownGlobField))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Unsupported native-image resource pattern field unknown");
+  }
+
+  private Path nativeImageConfigJar(final String json) throws IOException {
+    final Path jar = tempDir.resolve("malformed-config-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+      put(out, "META-INF/native-image/test/reflect-config.json", json);
+    }
+    return jar;
+  }
+
+  @Test
+  void resolvesHashOnlyPredefinedClassesFromAssociatedBytecode() throws IOException {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(
+        Opcodes.V21, Opcodes.ACC_PUBLIC, "org/example/Generated", null, "java/lang/Object", null);
+    writer.visitNestHost("org/example/GeneratedOuter");
+    writer.visitNestMember("org/example/GeneratedInner");
+    writer.visitPermittedSubclass("org/example/GeneratedPermitted");
+    writer
+        .visitField(
+            Opcodes.ACC_PRIVATE,
+            "dependency",
+            "Ljava/util/List;",
+            "Ljava/util/List<Lorg/example/GenericType;>;",
+            null)
+        .visitEnd();
+    final MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC, "load", "()V", null, null);
+    method.visitCode();
+    method.visitLdcInsn(Type.getType("Lorg/example/LdcType;"));
+    method.visitInsn(Opcodes.POP);
+    method.visitInvokeDynamicInsn(
+        "run",
+        "()Ljava/lang/Runnable;",
+        new Handle(
+            Opcodes.H_INVOKESTATIC,
+            "org/example/BootstrapOwner",
+            "bootstrap",
+            "()Ljava/lang/Object;",
+            false),
+        Type.getObjectType("org/example/BootstrapArgument"));
+    method.visitInsn(Opcodes.POP);
+    method.visitInsn(Opcodes.RETURN);
+    method.visitMaxs(1, 1);
+    method.visitEnd();
+    writer.visitEnd();
+    final Path jar = tempDir.resolve("predefined-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+      put(
+          out,
+          "META-INF/native-image/test/predefined-classes-config.json",
+          """
+          [{"type":"agent-extracted",
+            "classes":[{"hash":"0123456789abcdef0123456789abcdef","nameInfo":null}]}]
+          """);
+      out.putNextEntry(
+          new JarEntry(
+              "META-INF/native-image/test/agent-extracted-predefined-classes/"
+                  + "0123456789abcdef0123456789abcdef.classdata"));
+      out.write(writer.toByteArray());
+      out.closeEntry();
+    }
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+    assertThat(scan.roots())
+        .contains(
+            "org.example.Generated",
+            "java.util.List",
+            "org.example.GenericType",
+            "org.example.LdcType",
+            "org.example.GeneratedOuter",
+            "org.example.GeneratedInner",
+            "org.example.GeneratedPermitted",
+            "org.example.BootstrapOwner",
+            "org.example.BootstrapArgument");
+
+    final Path missing = tempDir.resolve("predefined-missing-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(missing))) {
+      put(
+          out,
+          "META-INF/native-image/test/predefined-classes-config.json",
+          """
+          [{"type":"agent-extracted",
+            "classes":[{"hash":"0123456789abcdef0123456789abcdef"}]}]
+          """);
+    }
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(missing))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Unresolved predefined class hash");
+  }
+
+  @Test
+  void validatesNonRootForeignAndSerializationDenyDescriptors() throws IOException {
+    final Path jar = tempDir.resolve("non-root-descriptors-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+      put(
+          out,
+          "META-INF/native-image/test/foreign-config.json",
+          """
+          {"downcalls":[{"descriptor":"(int,int)int",
+            "options":{"firstVariadicArg":1,"captureCallState":true,"trivial":false}}]}
+          """);
+      put(out, "META-INF/native-image/test/empty/foreign-config.json", "{}");
+      put(
+          out,
+          "META-INF/native-image/test/serialization-deny-config.json",
+          """
+          {"types":[{"name":"org.example.Denied",
+            "customTargetConstructorClass":"org.example.DenyConstructor"}],
+           "lambdaCapturingTypes":[],
+           "proxies":[{"interfaces":["org.example.DeniedProxy"]}]}
+          """);
+      put(
+          out,
+          "META-INF/native-image/test/object-inlining-config.json",
+          """
+          {"value_fields":{"org.example.Inlined":["field"]},
+           "value_field_types":{"org.example.FieldType":["prefix.*"]},
+           "value_graph_types":{"org.example.GraphType":["!excluded.*","*"]}}
+          """);
+    }
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+    assertThat(scan.roots())
+        .containsExactlyInAnyOrder(
+            "org.example.Inlined", "org.example.FieldType", "org.example.GraphType");
+  }
+
+  private static void put(final JarOutputStream out, final String name, final String content)
+      throws IOException {
+    out.putNextEntry(new JarEntry(name));
+    out.write(content.getBytes(StandardCharsets.UTF_8));
+    out.closeEntry();
   }
 
   @Test
@@ -347,7 +679,8 @@ final class DependencyDynamicRootsTest {
             + "      }\n"
             + "    ]\n"
             + "  },\n"
-            + "  \"bundles\": []\n"
+            + "  \"bundles\": [{\"name\":\"org.example.Messages\",\n"
+            + "    \"classNames\":[\"org.example.Message_fr\"]}]\n"
             + "}";
 
     final Path jar = tempDir.resolve("netty-epoll-" + System.nanoTime() + ".jar");
@@ -361,7 +694,9 @@ final class DependencyDynamicRootsTest {
 
     final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
-    assertThat(scan.roots()).contains("io.netty.channel.epoll.Native");
+    assertThat(scan.roots())
+        .contains(
+            "io.netty.channel.epoll.Native", "org.example.Messages", "org.example.Message_fr");
     assertThat(scan.requiresPassThrough()).isFalse();
   }
 

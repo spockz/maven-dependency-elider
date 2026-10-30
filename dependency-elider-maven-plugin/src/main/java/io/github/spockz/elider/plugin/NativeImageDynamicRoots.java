@@ -223,7 +223,7 @@ final class NativeImageDynamicRoots {
       if (trimmed.isEmpty()) {
         continue;
       }
-      final String component = NativeImageClassConfig.extractComponentClass(trimmed);
+      final String component = NativeImageTypeDescriptor.extractComponentClass(trimmed);
       if (component == null || component.isEmpty() || !isBinaryClassName(component)) {
         throw new IOException(
             "Unsupported native-image class name in " + propertiesEntry.getName() + ": " + trimmed);
