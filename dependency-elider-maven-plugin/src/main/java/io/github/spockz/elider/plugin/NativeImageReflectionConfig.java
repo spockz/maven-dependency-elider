@@ -17,12 +17,19 @@ final class NativeImageReflectionConfig {
   private NativeImageReflectionConfig() {}
 
   /* package */
-  static void read(final JsonNode document, final String name, final Set<String> roots)
+  static void read(
+      final JsonNode document,
+      final String name,
+      final NativeImageDescriptorKind kind,
+      final Set<String> roots)
       throws IOException {
+    if (!document.isArray()) {
+      throw new IOException("Malformed native-image reflection configuration: " + name);
+    }
     for (final JsonNode element : document) {
-      if (name.endsWith("proxy-config.json")) {
+      if (kind == NativeImageDescriptorKind.PROXY) {
         readProxy(element, name, roots);
-      } else if (NativeImageClassConfig.isReflectionConfig(name)) {
+      } else if (kind == NativeImageDescriptorKind.REFLECTION) {
         readStandaloneReflection(element, name, roots);
       } else {
         throw new IOException("Unsupported native-image class configuration: " + name);

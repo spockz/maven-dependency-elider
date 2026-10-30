@@ -6,8 +6,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 import org.objectweb.asm.ClassReader;
 
 /** Reads classdata associated with predefined-class configuration entries. */
@@ -15,17 +13,17 @@ final class NativeImagePredefinedBytecode {
   private NativeImagePredefinedBytecode() {}
 
   /* package */
-  static Set<String> read(final JarFile archive, final String configName, final String hash)
-      throws IOException {
-    final JarEntry entry = archive.getJarEntry(bytecodePath(configName, hash));
-    if (entry == null || entry.isDirectory()) {
-      throw new IOException("Unresolved predefined class hash " + hash + " in " + configName);
-    }
+  static Set<String> read(final NativeImageInput input, final String hash) throws IOException {
     final byte[] bytes;
-    try (InputStream input = archive.getInputStream(entry)) {
-      bytes = input.readAllBytes();
+    try {
+      try (InputStream data = input.openSibling(bytecodePath(hash))) {
+        bytes = data.readAllBytes();
+      }
+    } catch (IOException exception) {
+      throw new IOException(
+          "Unresolved predefined class hash " + hash + " in " + input.name(), exception);
     }
-    return parseClass(bytes, configName, hash);
+    return parseClass(bytes, input.name(), hash);
   }
 
   private static Set<String> parseClass(
@@ -40,11 +38,7 @@ final class NativeImagePredefinedBytecode {
     return Set.copyOf(references);
   }
 
-  private static String bytecodePath(final String configName, final String hash) {
-    final int slash = configName.lastIndexOf('/');
-    return configName.substring(0, slash + 1)
-        + "agent-extracted-predefined-classes/"
-        + hash
-        + ".classdata";
+  private static String bytecodePath(final String hash) {
+    return "agent-extracted-predefined-classes/" + hash + ".classdata";
   }
 }

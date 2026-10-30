@@ -18,10 +18,11 @@ final class NativeImageResourceDocument {
   private NativeImageResourceDocument() {}
 
   /* package */
-  static void read(final InputStream input, final String name, final Set<String> roots)
-      throws IOException {
+  static void read(final NativeImageInput input, final Set<String> roots) throws IOException {
+    final String name = input.name();
     final JsonNode document;
-    try (JsonParser parser = JSON.getFactory().createParser(input)) {
+    try (InputStream source = input.open();
+        JsonParser parser = JSON.getFactory().createParser(source)) {
       document = JSON.readTree(parser);
       if (parser.nextToken() != null) {
         throw new IOException("Trailing data in native-image resource configuration: " + name);

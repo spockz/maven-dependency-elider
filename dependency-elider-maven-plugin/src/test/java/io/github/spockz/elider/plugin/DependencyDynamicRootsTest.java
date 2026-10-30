@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -37,6 +38,64 @@ final class DependencyDynamicRootsTest {
 
   /** Temporary test directory. */
   @TempDir Path tempDir;
+
+  @Test
+  void readsArbitraryNamedDescriptorsAndFilesystemPredefinedSiblings() throws IOException {
+    final Set<String> roots = new java.util.LinkedHashSet<>();
+    final Path reflectionFile = tempDir.resolve("reflection.payload");
+    Files.writeString(
+        reflectionFile, "[{\"name\":\"org.example.ExplicitKind\"}]", StandardCharsets.UTF_8);
+    NativeImageClassConfig.readNativeImageClassConfig(
+        NativeImageInput.file(reflectionFile, NativeImageDescriptorKind.REFLECTION), roots);
+
+    final Path archivePath = tempDir.resolve("explicit-kind-archive.jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(archivePath))) {
+      put(out, "metadata.payload", "[{\"name\":\"org.example.ArchiveKind\"}]");
+    }
+    try (JarFile archive = new JarFile(archivePath.toFile())) {
+      NativeImageClassConfig.readNativeImageClassConfig(
+          NativeImageInput.archiveEntry(
+              archive, "metadata.payload", NativeImageDescriptorKind.REFLECTION),
+          roots);
+    }
+
+    final Path resourceFile = tempDir.resolve("resource.payload");
+    Files.writeString(
+        resourceFile,
+        "{\"bundles\":[{\"name\":\"org.example.ExplicitBundle\"}]}",
+        StandardCharsets.UTF_8);
+    NativeImageResourceConfig.readNativeImageResourceConfig(
+        NativeImageInput.file(resourceFile, NativeImageDescriptorKind.RESOURCES), roots);
+
+    final String hash = "0123456789abcdef0123456789abcdef";
+    final Path predefinedFile = tempDir.resolve("predefined.payload");
+    Files.writeString(
+        predefinedFile,
+        "[{\"type\":\"agent-extracted\",\"classes\":[{\"hash\":\"" + hash + "\"}]}]",
+        StandardCharsets.UTF_8);
+    final Path classData = tempDir.resolve("agent-extracted-predefined-classes");
+    Files.createDirectories(classData);
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(
+        Opcodes.V21,
+        Opcodes.ACC_PUBLIC,
+        "org/example/FilesystemGenerated",
+        null,
+        "org/example/FilesystemDependency",
+        null);
+    writer.visitEnd();
+    Files.write(classData.resolve(hash + ".classdata"), writer.toByteArray());
+    NativeImageClassConfig.readNativeImageClassConfig(
+        NativeImageInput.file(predefinedFile, NativeImageDescriptorKind.PREDEFINED_CLASSES), roots);
+
+    assertThat(roots)
+        .contains(
+            "org.example.ExplicitKind",
+            "org.example.ArchiveKind",
+            "org.example.ExplicitBundle",
+            "org.example.FilesystemGenerated",
+            "org.example.FilesystemDependency");
+  }
 
   @Test
   void distinguishesProvenAndUnprovenServiceRoots() throws IOException {

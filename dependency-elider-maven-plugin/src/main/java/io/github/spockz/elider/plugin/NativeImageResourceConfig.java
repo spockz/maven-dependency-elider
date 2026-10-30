@@ -3,9 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Set;
-import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /** Validates supported native-image metadata. */
@@ -20,12 +18,16 @@ final class NativeImageResourceConfig {
   /* package */
   static void readNativeImageResourceConfig(
       final JarFile archive, final String name, final Set<String> roots) throws IOException {
-    final JarEntry entry = archive.getJarEntry(name);
-    if (entry == null || entry.isDirectory()) {
-      throw new IOException("Native-image resource configuration is missing: " + name);
+    readNativeImageResourceConfig(
+        NativeImageInput.archiveEntry(archive, name, NativeImageDescriptorKind.RESOURCES), roots);
+  }
+
+  /* package */
+  static void readNativeImageResourceConfig(final NativeImageInput input, final Set<String> roots)
+      throws IOException {
+    if (input.kind() != NativeImageDescriptorKind.RESOURCES) {
+      throw new IOException("Unsupported native-image resource descriptor kind: " + input.name());
     }
-    try (InputStream input = archive.getInputStream(entry)) {
-      NativeImageResourceDocument.read(input, name, roots);
-    }
+    NativeImageResourceDocument.read(input, roots);
   }
 }
