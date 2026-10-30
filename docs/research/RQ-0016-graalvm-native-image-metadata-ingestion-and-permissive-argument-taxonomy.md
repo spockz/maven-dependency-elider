@@ -19,6 +19,8 @@ How can dependency trimming retain classes named by GraalVM Native Image metadat
 
 The implementation audit is pinned to GraalVM Native Image 21.0.12+7.1 `native-image --expert-options-all` and `native-image --help`. Its exact root-bearing inputs include `--features`/`-H:Features`, `-H:Class`/`--main-class`, `--initialize-at-build-time`, `--initialize-at-run-time`, `-H:ClassInitialization`, initialization/object tracing options, `-H:AdditionalSecurityProviders`, `-H:AdditionalSecurityServiceTypes`, `-H:IncludeResourceBundles`, `-H:LinkAtBuildTime`/`--link-at-build-time`, and `-H:LinkAtBuildTimePaths`/`--link-at-build-time-paths`. Configuration inputs include the reflection, JNI, dynamic-proxy, serialization, serialization-deny, predefined-class, resource, foreign, and object-inlining `ConfigurationFiles`/`ConfigurationResources` pairs, `-H:ReachabilityMetadataResources`, `-H:ConfigurationFileDirectories`, and `-H:ConfigurationResourceRoots`. The option table in [ADR-0009](../adr/0009-permissive-graalvm-native-image-metadata-ingestion.md) specifies each value shape and parser action. These are exact names, not prefix rules.
 
+`LinkAtBuildTimePaths` entries are separated by the host platform's `File.pathSeparator` (for example, `:` on Unix-like systems and `;` on Windows), as in the pinned launcher. Every normalized logical path token, including symlink aliases of one indexed archive, is part of graph/cache identity and is revalidated after graph preparation, before cache-hit consumption, before output publication, before cache-manifest storage, and before a prepared analysis is consumed.
+
 ## 2. Handling Contract
 
 1. Recognized class, package, and configuration references are parsed as roots or fail clearly if malformed or unreadable.

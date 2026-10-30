@@ -201,7 +201,7 @@ final class NativeImageDynamicRoots {
     }
     final java.util.Optional<Boolean> directRoot =
         NativeImageDirectRoots.read(
-            argument, propertiesEntry, roots, scanContext, resourceProviders);
+            argument, propertiesEntry, roots, scanContext, resourceProviders, consumedInputs);
     if (directRoot.isPresent()) {
       return directRoot.get();
     }
@@ -235,6 +235,20 @@ final class NativeImageDynamicRoots {
   }
 
   static boolean isBinaryClassName(final String name) {
-    return name.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*");
+    if (name == null || name.isEmpty()) {
+      return false;
+    }
+    for (final String segment : name.split("\\.", -1)) {
+      if (!isJavaIdentifierSegment(segment)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static boolean isJavaIdentifierSegment(final String segment) {
+    return !segment.isEmpty()
+        && Character.isJavaIdentifierStart(segment.codePointAt(0))
+        && segment.codePoints().skip(1).allMatch(Character::isJavaIdentifierPart);
   }
 }

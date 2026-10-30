@@ -32,7 +32,8 @@ final class NativeImageDirectRoots {
       final JarEntry propertiesEntry,
       final Set<String> roots,
       final NativeImageScanContext scanContext,
-      final Set<java.nio.file.Path> resourceProviders)
+      final Set<java.nio.file.Path> resourceProviders,
+      final Set<NativeImageConsumedInput> consumedInputs)
       throws IOException {
     final Optional<Boolean> initialization =
         NativeImageInitializationRoots.read(argument, propertiesEntry, roots, scanContext);
@@ -40,7 +41,8 @@ final class NativeImageDirectRoots {
       return initialization;
     }
     final Optional<Boolean> linkAtBuildTime =
-        NativeImageLinkAtBuildTimeRoots.read(argument, propertiesEntry, roots, scanContext);
+        NativeImageLinkAtBuildTimeRoots.read(
+            argument, propertiesEntry, roots, scanContext, consumedInputs);
     if (linkAtBuildTime.isPresent()) {
       return linkAtBuildTime;
     }

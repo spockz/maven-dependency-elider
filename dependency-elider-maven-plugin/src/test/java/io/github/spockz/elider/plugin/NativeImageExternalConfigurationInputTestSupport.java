@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -47,6 +48,16 @@ import java.util.jar.JarOutputStream;
     assertThat(scan.consumedInputs())
         .extracting(input -> input.logicalPath().getFileName().toString())
         .contains("predefined.payload", hash + ".classdata");
+  }
+
+  /* package */ static void assertRetargetRejectedBeforePublication(
+      final MavenElisionService service,
+      final MavenElisionService.PreparedAnalysis prepared,
+      final Path outputDirectory) {
+    assertThatThrownBy(() -> service.finish(prepared))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("input target changed after preparation");
+    assertThat(outputDirectory).doesNotExist();
   }
 
   /* package */ static Path appendEntries(

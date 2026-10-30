@@ -275,4 +275,38 @@ import org.objectweb.asm.Opcodes;
     NativeImageConfigurationPointerTestSupport.assertMutationRejectedBeforePublication(
         service, prepared, temporaryDirectory.resolve("build/elided-artifacts"));
   }
+
+  /* package */
+  @Test
+  void linkPathSymlinkRetargetFailsBeforeOutputPublication()
+      throws IOException, MojoFailureException {
+    final Fixture fixture = fixture(false, false, false);
+    final Path firstTarget = fixture.snapshot("b").filePath();
+    final Path secondTarget = fixture.snapshot("c").filePath();
+    final Path logicalPath = temporaryDirectory.resolve("link-at-build-target.jar");
+    Files.createSymbolicLink(logicalPath, firstTarget);
+    final Path declaring =
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
+            fixture.snapshot("a").filePath(),
+            "a-with-link-path.jar",
+            java.util.Map.of(
+                "META-INF/native-image/test/native-image.properties",
+                "Args = -H:LinkAtBuildTimePaths=" + logicalPath + "\n"));
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
+    final Path trace = temporaryDirectory.resolve("link-path-trace.lst");
+    Files.writeString(trace, "closure.a.Entry\n");
+    final MavenElisionService service = new MavenElisionService();
+    final MavenElisionService.PreparedAnalysis prepared =
+        service.prepare(
+            fixture.mavenProject(),
+            MavenElisionServiceEffectiveAnalysisFixtures.options(
+                List.of(trace.toFile()), null, true));
+    Files.delete(logicalPath);
+    Files.createSymbolicLink(logicalPath, secondTarget);
+    final Path outputDirectory = temporaryDirectory.resolve("build/elided-artifacts");
+
+    NativeImageExternalConfigurationInputTestSupport.assertRetargetRejectedBeforePublication(
+        service, prepared, outputDirectory);
+  }
 }

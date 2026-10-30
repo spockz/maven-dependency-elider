@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,6 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.jar.JarEntry;
+import java.util.regex.Pattern;
 
 /** Reads the bounded class and indexed-archive forms of LinkAtBuildTime options. */
 /* package */ final class NativeImageLinkAtBuildTimeRoots {
@@ -26,7 +28,8 @@ import java.util.jar.JarEntry;
       final String argument,
       final JarEntry propertiesEntry,
       final Set<String> roots,
-      final NativeImageScanContext context)
+      final NativeImageScanContext context,
+      final Set<NativeImageConsumedInput> consumedInputs)
       throws IOException {
     if (isBareClassOption(argument)) {
       return Optional.of(NativeImageClassRootParsing.addWholeInventory(context, roots));
@@ -43,7 +46,11 @@ import java.util.jar.JarEntry;
       if (argument.startsWith(prefix)) {
         return Optional.of(
             addIndexedPathClasses(
-                argument.substring(prefix.length()), propertiesEntry, roots, context));
+                argument.substring(prefix.length()),
+                propertiesEntry,
+                roots,
+                context,
+                consumedInputs));
       }
     }
     if (isBarePathOption(argument)) {
@@ -56,7 +63,8 @@ import java.util.jar.JarEntry;
       final String values,
       final JarEntry propertiesEntry,
       final Set<String> roots,
-      final NativeImageScanContext context)
+      final NativeImageScanContext context,
+      final Set<NativeImageConsumedInput> consumedInputs)
       throws IOException {
     if (values.isBlank()) {
       throw malformedPathList(propertiesEntry, values);
@@ -71,12 +79,19 @@ import java.util.jar.JarEntry;
                             + propertiesEntry.getName()));
     final Set<Path> visited = new LinkedHashSet<>();
     boolean foundClasses = false;
-    for (final String rawPath : values.split(",", -1)) {
+    for (final String rawPath : values.split(Pattern.quote(File.pathSeparator), -1)) {
       final String value = rawPath.trim();
       if (value.isEmpty()) {
         throw malformedPathList(propertiesEntry, values);
       }
-      final Path canonical = resolveIndexedPath(value, propertiesEntry, invocationBase);
+      final Path logicalPath = resolveIndexedPath(value, propertiesEntry, invocationBase);
+      final NativeImageConsumedInput pathReference =
+          NativeImageConsumedInput.archiveReference(logicalPath);
+      if (isModulePath(pathReference.canonicalPath())) {
+        throw unsupportedModulePath(value);
+      }
+      consumedInputs.add(pathReference);
+      final Path canonical = pathReference.canonicalPath();
       if (visited.add(canonical)) {
         final Set<String> classes = context.indexedArchiveClasses(canonical);
         roots.addAll(classes);
@@ -94,15 +109,24 @@ import java.util.jar.JarEntry;
         requested.isAbsolute()
             ? requested.normalize()
             : invocationBase.resolve(requested).normalize();
-    final Path fileName = resolved.getFileName();
-    if (fileName != null && fileName.toString().endsWith(".jmod")) {
-      throw new IOException(
-          "Native-image link-at-build-time module paths are unsupported: " + value);
+    if (isModulePath(resolved)) {
+      throw unsupportedModulePath(value);
     }
     if (!Files.exists(resolved)) {
       throw new IOException("Native-image link-at-build-time path is missing: " + value);
     }
-    return resolved.toRealPath();
+    return resolved;
+  }
+
+  private static boolean isModulePath(final Path path) {
+    final Path fileName = path.getFileName();
+    return fileName != null
+        && fileName.toString().toLowerCase(java.util.Locale.ROOT).endsWith(".jmod");
+  }
+
+  private static IOException unsupportedModulePath(final String value) {
+    return new IOException(
+        "Native-image link-at-build-time module paths are unsupported: " + value);
   }
 
   private static Path path(final String value, final JarEntry propertiesEntry) throws IOException {
