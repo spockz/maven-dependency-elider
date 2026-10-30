@@ -35,17 +35,7 @@ Whole-artifact removal runs only when a compatible mediated graph proves the exa
 
 ### GraalVM native-image metadata
 
-The plugin reads modeled feature, initialization, reflection-configuration, and resource-configuration roots from dependency `native-image.properties`. Unknown arguments fail closed by default. To permit a reviewed non-root option, configure its name only:
-
-```xml
-<configuration>
-  <allowedNativeImageArgs>
-    <allowedNativeImageArg>-H:EnableURLProtocols</allowedNativeImageArg>
-  </allowedNativeImageArgs>
-</configuration>
-```
-
-For a bounded fallback, `-Delide.failOnUnsupportedNativeImageArgs=false` retains the archive containing an unknown argument byte-identically and skips trimming it. Other dependencies remain eligible for elision and trimming.
+The plugin models class roots and supported reachability descriptors from dependency `META-INF/native-image/**` metadata. Its audited option inventory is bounded to GraalVM Native Image 21.0.12+7.1; recognized class, package, configuration, and indirection inputs are parsed or reported as errors. Syntactically valid options outside the inventory are accepted without inferred roots, so unknown future options that name classes are not covered by a universal completeness guarantee. Configuration paths and descriptor schemas are documented in [ADR-0009](docs/adr/0009-permissive-graalvm-native-image-metadata-ingestion.md).
 
 ---
 

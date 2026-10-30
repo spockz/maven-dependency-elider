@@ -1,5 +1,5 @@
-<!-- WHY: Defines the argument ingestion taxonomy, name-only allowed list semantics, and fail-closed diagnostic design for GraalVM native-image.properties. -->
-# ADR-0009: Permissive GraalVM Native-Image Argument Ingestion and Name-Only Allowed Lists
+<!-- WHY: Defines the audited GraalVM Native Image input boundary, root inference rules, and permissive handling of unrelated arguments. -->
+# ADR-0009: Bounded GraalVM Native Image Root Inference
 
 * **Status**: Accepted
 * **Date**: 2026-10-30
@@ -7,8 +7,8 @@
 <!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
 | Key | Value |
 | :--- | :--- |
-| summary | Ingest GraalVM native-image properties with name-only allowed argument matching, built-in non-class flag recognition, and actionable fail-closed diagnostics. |
-| description | Recognize benign GraalVM compiler flags without aborting build analysis; provide `elide.allowedNativeImageArgs` matching argument names before `=` to let developers allow unmodeled non-class flags, while defaulting to fail-closed with actionable diagnostics. |
+| summary | Infer dynamic roots from an explicit GraalVM Native Image 21.0.12+7.1 input inventory while accepting unrelated and unknown valid arguments. |
+| description | Model audited class/package options, configuration paths, and descriptor schemas; fail on malformed recognized references and accept valid unmodeled options without roots. |
 | role | architecture |
 | scope | dynamic-reachability |
 | area | plugin-core |
@@ -16,87 +16,41 @@
 
 ## Context
 
-To protect applications compiled into GraalVM native images from runtime reflection failures, `maven-dependency-elider` scans dependency archives for `META-INF/native-image/**/native-image.properties`. Dynamic class roots and reflection targets declared in these descriptors are extracted and retained during intra-JAR trimming.
+Native Image metadata can preserve classes that bytecode analysis cannot discover, including reflection, JNI, proxy, serialization, feature, and initialization targets. Rejecting every unfamiliar compiler argument makes ordinary dependencies unusable. Treating every unfamiliar argument as harmless and claiming complete roots would also be unsafe: future options may declare classes.
 
-Previously, `NativeImageDynamicRoots.java` enforced an extreme, brittle fail-closed policy:
-
-1. It rejected any property string containing single or double quotes.
-2. It whitelisted only six explicit arguments (`--features=`, `--initialize-at-build-time=`, `-H:ReflectionConfigurationResources=`, `-H:ResourceConfigurationResources=`, `--enable-http`, `--enable-https`).
-3. Encountering *any* other argument caused an immediate `IOException`, terminating the entire Maven build.
-
-In real-world projects importing widely-used libraries such as `com.squareup.okhttp3:okhttp-jvm:5.3.2`, `native-image.properties` contains arguments like:
-
-```properties
-Args = -H:+AddAllCharsets --enable-http --enable-https --features=okhttp3.internal.graal.OkHttpFeature --report-unsupported-elements-at-runtime
-```
-
-Flags like `-H:+AddAllCharsets` (instructing native-image to include JDK charsets) and `--report-unsupported-elements-at-runtime` (deferring compile-time errors for uncalled bytecodes) tune the ahead-of-time compiler and declare **zero** dependency class roots. Aborting the entire build when encountering standard compiler flags renders the elider unusable on standard libraries.
+The available audit is GraalVM Native Image 21.0.12+7.1's `native-image --expert-options-all`. This decision bounds completeness to the explicit modeled inventory below and the documented descriptor schemas. It makes no universal claim for arbitrary future or unknown options.
 
 ## Decision
 
-The project adopts a permissive, name-only argument ingestion policy with built-in non-class flag recognition, user-configurable allowed lists, and actionable fail-closed diagnostics.
+### Argument handling
 
-### 1. Built-in Recognition of Common Non-Class Compiler Flags and Runtime Initialization
+* Parse audited reference-bearing options. A recognized option with an empty, malformed, missing, or unreadable reference fails with a diagnostic.
+* Accept syntactically valid options outside the audited inventory without inferring roots. Unknown options that carry class references are outside the guarantee.
+* Do not expose `allowedNativeImageArgs` or `failOnUnsupportedNativeImageArgs`; these unreleased controls are removed rather than retained as inert switches.
+* Reject `@argfile`, classpath/module-path, and other recognized indirections that could hide roots unless the input is explicitly modeled and completely read. Do not silently treat a recognized unreadable reference as an unknown option.
+* Bare initialization options specify whole-image policy and add no package roots. An explicitly empty `--initialize-at-build-time=` or `--initialize-at-run-time=` value is malformed.
 
-The core parser in `NativeImageDynamicRoots` recognizes standard GraalVM compiler, platform, and initialization flags:
+### Audited direct and policy options
 
-* Non-root compiler options safely consumed without error:
-  * `-H:+AddAllCharsets` and `-H:-AddAllCharsets`
-  * `--report-unsupported-elements-at-runtime`
-  * `--enable-http` and `--enable-https`
-  * Standalone `--initialize-at-build-time` and `--initialize-at-run-time` (when specifying whole-image initialization policy without explicit class lists)
-* Class-initialization directives parsed for dynamic class/package roots:
-  * `--initialize-at-build-time=<classes|packages>`
-  * `--initialize-at-run-time=<classes|packages>` (used widely in Netty libraries such as `netty-codec-http`, `netty-codec-compression`, and `netty-resolver-dns`)
+The implementation inventory is pinned to GraalVM Native Image 21.0.12+7.1. It includes:
 
-### 2. Dual Reachability Condition Recognition (`typeReachable` and `typeReached`)
+* Class or package references: `--features`, `-H:Features`, `-H:Class`, `--main-class`, class-initialization options (`--initialize-at-build-time`, `--initialize-at-run-time`, `-H:ClassInitialization`), class tracing options (`--trace-class-initialization`, `-H:TraceClassInitialization`, `--trace-object-instantiation`, `-H:TraceObjectInstantiation`), and security provider/service type options (`-H:AdditionalSecurityProviders`, `-H:AdditionalSecurityServiceTypes`). Package targets are represented explicitly and expanded over the complete dependency archive class index at package boundaries.
+* Resource bundle options retain bundle class names and declared conditions where they represent types. Resource regexes and resource payloads are not class roots.
+* Configuration pointers: reflection, JNI, dynamic proxy, serialization, predefined classes, reachability metadata, and resource configuration `*Resources` and `*Files` options; configuration-file directories and resource roots; and the audited foreign and object-inlining configuration inputs. `Resources` resolve as classpath resources; `Files` resolve as filesystem files. `ConfigurationResourceRoots` are classpath directories and may span candidate archives. `ConfigurationFileDirectories` resolve from the Maven invocation base directory, which is passed explicitly. Duplicate classpath resource paths have deterministic resolution. Directory/resource-root traversal is deterministic, deduplicated, and cycle controlled. Missing, escaping, or malformed paths fail explicitly.
+* Inclusion or analysis policy toggles that change reachability without naming individual classes are explicitly inventoried and handled according to their semantics; they are not treated as unknown class-name lists.
 
-GraalVM native-image configuration files (including `resource-config.json`, `reflect-config.json`, and `proxy-config.json`) declare conditional inclusions triggered when a type is reached during static analysis. The parser accepts both the standard GraalVM attribute `"typeReachable"` and the legacy variant `"typeReached"` (e.g. in `netty-transport-classes-epoll`), resolving class roots or array component types into trimming roots without throwing unsupported condition exceptions.
+The complete audited option names, value shapes, and parser actions are maintained with the implementation and its regression tests. This summary is not a wildcard rule for all `-H:` or `--` options.
 
-### 3. Name-Only Allowed Arguments (`elide.allowedNativeImageArgs`)
+### Descriptor formats
 
-The plugin introduces a user-configurable property:
+Supported metadata includes `reflect-config.json`, `jni-config.json`, `proxy-config.json`, `serialization-config.json`, `predefined-classes-config.json`, `resource-config.json`, and the modeled sections/type forms of `reachability-metadata.json`.
 
-* Parameter: `@Parameter(property = "elide.allowedNativeImageArgs") private List<String> allowedNativeImageArgs;`
-* **Name-Only Matching**: The configuration matches **only the argument name**, ignoring any value:
-  * For flags with values (`-H:EnableURLProtocols=http,https`), the parser extracts the name before `=` (`-H:EnableURLProtocols`) and checks for presence in `allowedNativeImageArgs`.
-  * For flags without values (`--no-fallback`), the exact flag name is matched.
-* This avoids requiring users to replicate complex, version-specific argument values in their POM.
+Class roots include reflection/JNI principal types, conditions, and method parameter types; proxy interfaces and conditions; serialization types, lambda capturing types, proxy interfaces, and custom target constructor classes; and predefined class names when `nameInfo` is present. Predefined entries that provide only hashes require associated bytecode/reference data to be resolvable; otherwise the recognized input is rejected, not treated as root-free. Unified metadata supports its declared reflection, JNI, serialization, proxy, and type descriptor sections. Optional fields remain optional. Invalid JSON, duplicate keys, trailing values, unsupported modeled structure, and invalid type descriptors fail closed.
 
-### 4. Actionable Fail-Closed Default with Configurable Pass-Through Fallback
+### Package boundary
 
-To preserve the project's safety invariants:
-
-* Parameter: `@Parameter(property = "elide.failOnUnsupportedNativeImageArgs", defaultValue = "true") private boolean failOnUnsupportedNativeImageArgs;`
-* **Default Mode (`true`, Fail-Closed)**:
-  * If an unmodeled argument is encountered and not present in `allowedNativeImageArgs`, the build halts with an actionable diagnostic message:
-
-    ```text
-    [ERROR] Unsupported native-image argument '<name>' in <entryPath> (full argument: '<argument>').
-    [ERROR] Inspect the property in the dependency archive. If this argument does not declare dynamic class roots,
-    [ERROR] you can allow it by adding its name to <allowedNativeImageArgs> in pom.xml:
-    [ERROR]   <configuration>
-    [ERROR]     <allowedNativeImageArgs>
-    [ERROR]       <allowedNativeImageArg><name></allowedNativeImageArg>
-    [ERROR]     </allowedNativeImageArgs>
-    [ERROR]   </configuration>
-    [ERROR] Or via CLI: -Delide.allowedNativeImageArgs=<name>
-    ```
-
-* **Permissive Mode (`false`, Artifact Pass-Through)**:
-  * If `failOnUnsupportedNativeImageArgs=false`, the build logs the warning and marks the containing dependency JAR as a pass-through (ineligible for trimming, original bytes preserved), while allowing all other project dependencies to be elided and trimmed.
-
-### 5. Robust Tokenization and Quote Stripping
-
-The parser strips enclosing single (`'...'`) and double (`"..."`) quotes from individual argument tokens rather than rejecting them.
-
-## Invariants
-
-* Arguments that declare dynamic class or feature roots (`--features=`, `--initialize-at-build-time=`, `--initialize-at-run-time=`, `-H:ReflectionConfigurationResources=`) must always be parsed and retained as roots.
-* Unrecognized arguments fail closed by default unless explicitly allowed via `allowedNativeImageArgs` or `failOnUnsupportedNativeImageArgs=false`.
-* When fallback mode is active, the failure boundary is strictly bounded to the offending archive (pass-through retention). The engine never strips classes from an archive with unknown reflection instructions.
+Package initialization roots match classes in the named package and descendant packages, but not similarly prefixed sibling packages (for example `com.acme` matches `com.acme.Tool` and `com.acme.internal.Helper`, not `com.acmeextra.Tool`). Expansion uses all dependency archives, including multi-release class inventory, so packages can span JARs.
 
 ## Consequences
 
-* Resolves immediate build failures on popular libraries like OkHttp, Netty, and BouncyCastle without sacrificing safety.
-* Developers have a simple, one-line escape hatch (`allowedNativeImageArgs`) using flag names when upgrading dependencies that introduce new GraalVM compiler options.
+Valid compiler flags no longer force pass-through or stop analysis. A recognized unreadable reference cannot silently disappear from the root model. Root inference remains explicit and reviewable, with a clear boundary against unmodeled future options. The parser inventory, descriptor reader, tests, and user documentation must be updated together when this audited contract changes.

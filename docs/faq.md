@@ -69,7 +69,7 @@ It fails before changing Maven artifact pointers rather than assuming unknown me
 
 ### What happens when a dependency has an unsupported native-image argument?
 
-The default `elide.failOnUnsupportedNativeImageArgs=true` fails with the argument name, complete argument, and archive entry, plus a POM and CLI example for `elide.allowedNativeImageArgs`. The allowlist accepts names only, such as `-H:CustomFlag`; values after `=` are ignored. Modeled feature, initialization, and configuration-resource arguments are still parsed as roots even if listed in the allowlist. Set `elide.failOnUnsupportedNativeImageArgs=false` to retain only the archive containing an unsupported argument byte-identically and skip it during trimming; other dependencies remain eligible for elision and trimming. Its classes are included in link analysis so referenced classes in other archives remain available.
+Syntactically valid arguments outside the audited GraalVM Native Image 21.0.12+7.1 inventory are accepted without inferred class roots. The plugin does not promise that arbitrary future options cannot declare roots. Recognized class, package, configuration, and indirection inputs must be modeled; malformed values or unreadable referenced configuration fail with an error rather than being ignored. See [ADR-0009](adr/0009-permissive-graalvm-native-image-metadata-ingestion.md) for the modeled boundary.
 
 ### Does removing classes make a vulnerability finding go away?
 
