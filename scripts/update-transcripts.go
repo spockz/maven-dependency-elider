@@ -15,7 +15,11 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 )
+
+// maxTranscriptWorkers bounds Maven concurrency to the four configured fixture projects.
+const maxTranscriptWorkers = 4
 
 type manifest struct {
 	Why           string       `json:"$comment"`
@@ -113,12 +117,19 @@ func execute(update bool) (resultErr error) {
 			resultErr = fmt.Errorf("remove transcript fixture evidence at %s: %w", evidencePath, err)
 		}
 	}()
-	outputs := make(map[string]string, len(config.Invocations))
-	for _, item := range config.Invocations {
-		result, err := runInvocation(root, evidencePath, item)
-		if err != nil {
-			return err
-		}
+	return generateAndReconcile(root, evidencePath, config.Invocations, update, func(item invocation) (commandResult, error) {
+		return runInvocation(root, evidencePath, item)
+	})
+}
+
+func generateAndReconcile(root, evidencePath string, items []invocation, update bool, run func(invocation) (commandResult, error)) error {
+	results, err := runInvocations(root, evidencePath, items, maxTranscriptWorkers, run)
+	if err != nil {
+		return err
+	}
+	outputs := make(map[string]string, len(items))
+	for i, item := range items {
+		result := results[i]
 		transcript := renderCommand(item)
 		transcript += fmt.Sprintf("\nProcess exit status: %d\n", result.ExitCode) + result.Output
 		lines := normalizeOutput(transcript, root, evidencePath)
@@ -129,7 +140,7 @@ func execute(update bool) (resultErr error) {
 	}
 
 	documents := make(map[string]string)
-	for _, item := range config.Invocations {
+	for _, item := range items {
 		if _, exists := documents[item.TargetDocument]; exists {
 			continue
 		}
@@ -146,32 +157,165 @@ func execute(update bool) (resultErr error) {
 
 	generated := make(map[string]string, len(documents))
 	for document, content := range documents {
-		items := make([]invocation, 0)
-		for _, item := range config.Invocations {
+		documentInvocations := make([]invocation, 0)
+		for _, item := range items {
 			if item.TargetDocument == document {
-				items = append(items, item)
+				documentInvocations = append(documentInvocations, item)
 			}
 		}
-		updated, err := replaceBlocks(content, items, outputs)
+		updated, err := replaceBlocks(content, documentInvocations, outputs)
 		if err != nil {
 			return fmt.Errorf("validate transcript markers in %s: %w", document, err)
 		}
 		generated[document] = updated
 	}
 
-	changed := changedDocuments(documents, generated)
+	return reconcileDocuments(root, update, documents, generated)
+}
+
+func reconcileDocuments(root string, update bool, before, generated map[string]string) error {
+	changed := changedDocuments(before, generated)
 	if len(changed) == 0 {
 		fmt.Println("Configured command transcripts are up to date.")
 		return nil
 	}
 	for _, document := range changed {
 		fmt.Printf("--- %s (checked-in)\n+++ %s (generated)\n", document, document)
-		fmt.Print(unifiedDiff(documents[document], generated[document]))
+		fmt.Print(unifiedDiff(before[document], generated[document]))
 	}
 	if !update {
 		return fmt.Errorf("%d transcript document(s) are stale; run make update-transcripts to review and update them", len(changed))
 	}
 	return writeDocuments(root, changed, generated)
+}
+
+type fixtureBatch struct {
+	indices []int
+}
+
+func runInvocations(root, evidencePath string, items []invocation, workerLimit int, run func(invocation) (commandResult, error)) ([]commandResult, error) {
+	results := make([]commandResult, len(items))
+	if len(items) == 0 {
+		return results, nil
+	}
+	if workerLimit < 1 {
+		return nil, errors.New("transcript worker limit must be positive")
+	}
+
+	batches := make([]fixtureBatch, 0, len(items))
+	batchByPath := make(map[string]int, len(items))
+	for i, item := range items {
+		path, err := invocationFixturePath(root, evidencePath, item)
+		if err != nil {
+			return nil, err
+		}
+		batchIndex, exists := batchByPath[path]
+		if !exists {
+			batchIndex = len(batches)
+			batchByPath[path] = batchIndex
+			batches = append(batches, fixtureBatch{})
+		}
+		batches[batchIndex].indices = append(batches[batchIndex].indices, i)
+	}
+
+	workerCount := min(workerLimit, len(batches))
+	jobs := make(chan fixtureBatch, len(batches))
+	for _, batch := range batches {
+		jobs <- batch
+	}
+	close(jobs)
+
+	invocationErrors := make([]error, len(items))
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for batch := range jobs {
+				for _, index := range batch.indices {
+					result, err := run(items[index])
+					results[index] = result
+					invocationErrors[index] = err
+					if err != nil {
+						break
+					}
+				}
+			}
+		}()
+	}
+	workers.Wait()
+
+	for _, err := range invocationErrors {
+		if err != nil {
+			return nil, err
+		}
+	}
+	return results, nil
+}
+
+func invocationFixturePath(root, evidencePath string, item invocation) (string, error) {
+	if !isMavenCommand(item.Command) {
+		return "command:" + item.ID, nil
+	}
+
+	workingDirectory, err := resolveDirectory(root, item.WorkingDirectory)
+	if err != nil {
+		return "", err
+	}
+	file, found, err := mavenFileArgument(expandArgs(item.Args, root, evidencePath))
+	if err != nil {
+		return "", fmt.Errorf("transcript %s: %w", item.ID, err)
+	}
+	if !found {
+		file = "pom.xml"
+	}
+	if !filepath.IsAbs(file) {
+		file = filepath.Join(workingDirectory, file)
+	}
+	return safeRepositoryPath(root, file)
+}
+
+func isMavenCommand(command string) bool {
+	name := strings.ToLower(filepath.Base(command))
+	return name == "mvn" || name == "mvnw" || name == "mvn.cmd" || name == "mvnw.cmd"
+}
+
+func mavenFileArgument(args []string) (string, bool, error) {
+	file := ""
+	found := false
+	setFile := func(value string) error {
+		if found {
+			return errors.New("Maven invocation contains multiple -f/--file arguments")
+		}
+		if value == "" {
+			return errors.New("Maven invocation has an empty -f/--file argument")
+		}
+		file = value
+		found = true
+		return nil
+	}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "-f" || arg == "--file":
+			if i+1 >= len(args) {
+				return "", false, fmt.Errorf("Maven invocation has %s without a fixture path", arg)
+			}
+			i++
+			if err := setFile(args[i]); err != nil {
+				return "", false, err
+			}
+		case strings.HasPrefix(arg, "-f="):
+			if err := setFile(strings.TrimPrefix(arg, "-f=")); err != nil {
+				return "", false, err
+			}
+		case strings.HasPrefix(arg, "--file="):
+			if err := setFile(strings.TrimPrefix(arg, "--file=")); err != nil {
+				return "", false, err
+			}
+		}
+	}
+	return file, found, nil
 }
 
 func ensureJSONEnd(decoder *json.Decoder) error {

@@ -34,6 +34,7 @@ update-transcripts: ## Re-run configured example goals and update their document
 	$(GO) run scripts/update-transcripts.go --update
 
 check-transcripts: ## Verify configured command transcripts without rewriting documentation
+	$(GO) test scripts/update-transcripts.go scripts/update-transcripts_test.go
 	$(GO) run scripts/update-transcripts.go --check
 
 check-parallel: java-check lint-markdown test-example-scheduler test-sbom-comparison
