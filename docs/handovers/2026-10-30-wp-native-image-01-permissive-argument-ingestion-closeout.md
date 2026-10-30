@@ -15,6 +15,8 @@
 
 - Native-image `Args` tokenization respects quoted values, removes syntactic quotes, preserves backslashes, and rejects unmatched quotes or empty tokens.
 - Modeled class and resource roots are validated before name-only allowlist matching.
+- Supported runtime initialization flags: `--initialize-at-run-time` and `--initialize-at-build-time` extract class and package roots, with standalone flags recognized as non-root image configuration.
+- Supported conditional reachability: resource and proxy descriptors recognize both `typeReachable` and `typeReached` attributes without throwing unsupported condition errors.
 - Strict mode reports actionable details for unknown arguments. Permissive mode retains only the affected archive byte-identically, excludes it from both trim paths, and includes its classes in sibling link closure.
 - Native-image fallback and MRJAR vertical shading remain independent: fallback does not prevent other MRJARs from shading, and unchanged MRJAR tiers continue to contribute their required sibling closure.
 - Effective policy inputs participate in graph and trim-cache identity.

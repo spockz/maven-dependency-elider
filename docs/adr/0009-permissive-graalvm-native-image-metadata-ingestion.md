@@ -36,17 +36,24 @@ Flags like `-H:+AddAllCharsets` (instructing native-image to include JDK charset
 
 The project adopts a permissive, name-only argument ingestion policy with built-in non-class flag recognition, user-configurable allowed lists, and actionable fail-closed diagnostics.
 
-### 1. Built-in Recognition of Common Non-Class Compiler Flags
+### 1. Built-in Recognition of Common Non-Class Compiler Flags and Runtime Initialization
 
-The core parser in `NativeImageDynamicRoots` recognizes standard GraalVM compiler and platform flags that do not define class or resource roots:
+The core parser in `NativeImageDynamicRoots` recognizes standard GraalVM compiler, platform, and initialization flags:
 
-* `-H:+AddAllCharsets` and `-H:-AddAllCharsets`
-* `--report-unsupported-elements-at-runtime`
-* `--enable-http` and `--enable-https`
+* Non-root compiler options safely consumed without error:
+  * `-H:+AddAllCharsets` and `-H:-AddAllCharsets`
+  * `--report-unsupported-elements-at-runtime`
+  * `--enable-http` and `--enable-https`
+  * Standalone `--initialize-at-build-time` and `--initialize-at-run-time` (when specifying whole-image initialization policy without explicit class lists)
+* Class-initialization directives parsed for dynamic class/package roots:
+  * `--initialize-at-build-time=<classes|packages>`
+  * `--initialize-at-run-time=<classes|packages>` (used widely in Netty libraries such as `netty-codec-http`, `netty-codec-compression`, and `netty-resolver-dns`)
 
-These flags are safely consumed without error and without declaring dynamic roots.
+### 2. Dual Reachability Condition Recognition (`typeReachable` and `typeReached`)
 
-### 2. Name-Only Allowed Arguments (`elide.allowedNativeImageArgs`)
+GraalVM native-image configuration files (including `resource-config.json`, `reflect-config.json`, and `proxy-config.json`) declare conditional inclusions triggered when a type is reached during static analysis. The parser accepts both the standard GraalVM attribute `"typeReachable"` and the legacy variant `"typeReached"` (e.g. in `netty-transport-classes-epoll`), resolving class roots or array component types into trimming roots without throwing unsupported condition exceptions.
+
+### 3. Name-Only Allowed Arguments (`elide.allowedNativeImageArgs`)
 
 The plugin introduces a user-configurable property:
 
@@ -56,7 +63,7 @@ The plugin introduces a user-configurable property:
   * For flags without values (`--no-fallback`), the exact flag name is matched.
 * This avoids requiring users to replicate complex, version-specific argument values in their POM.
 
-### 3. Actionable Fail-Closed Default with Configurable Pass-Through Fallback
+### 4. Actionable Fail-Closed Default with Configurable Pass-Through Fallback
 
 To preserve the project's safety invariants:
 
@@ -79,13 +86,13 @@ To preserve the project's safety invariants:
 * **Permissive Mode (`false`, Artifact Pass-Through)**:
   * If `failOnUnsupportedNativeImageArgs=false`, the build logs the warning and marks the containing dependency JAR as a pass-through (ineligible for trimming, original bytes preserved), while allowing all other project dependencies to be elided and trimmed.
 
-### 4. Robust Tokenization and Quote Stripping
+### 5. Robust Tokenization and Quote Stripping
 
 The parser strips enclosing single (`'...'`) and double (`"..."`) quotes from individual argument tokens rather than rejecting them.
 
 ## Invariants
 
-* Arguments that declare dynamic class or feature roots (`--features=`, `--initialize-at-build-time=`, `-H:ReflectionConfigurationResources=`) must always be parsed and retained as roots.
+* Arguments that declare dynamic class or feature roots (`--features=`, `--initialize-at-build-time=`, `--initialize-at-run-time=`, `-H:ReflectionConfigurationResources=`) must always be parsed and retained as roots.
 * Unrecognized arguments fail closed by default unless explicitly allowed via `allowedNativeImageArgs` or `failOnUnsupportedNativeImageArgs=false`.
 * When fallback mode is active, the failure boundary is strictly bounded to the offending archive (pass-through retention). The engine never strips classes from an archive with unknown reflection instructions.
 

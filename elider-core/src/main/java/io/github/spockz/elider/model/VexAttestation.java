@@ -2,6 +2,8 @@
 
 package io.github.spockz.elider.model;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Objects;
@@ -10,7 +12,6 @@ import java.util.TreeSet;
 
 /** Immutable evidence for omitted-code or prerequisite-class VEX justifications. */
 @SuppressWarnings({
-  "PMD.DataClass",
   "PMD.AvoidFieldNameMatchingMethodName",
   "PMD.CommentDefaultAccessModifier",
   "PMD.TooManyMethods"
@@ -271,12 +272,21 @@ public final class VexAttestation {
     requireDependency(requiredDependency);
     requireClass(requiredClass);
     final Path normalizedPath =
-        Objects.requireNonNull(affectedArtifactPath, "affectedArtifactPath")
-            .toAbsolutePath()
-            .normalize();
+        canonicalizePath(Objects.requireNonNull(affectedArtifactPath, "affectedArtifactPath"));
     requireSha256(postElisionSha256, "postElisionSha256");
     requireSha256(inventorySha256, "inventorySha256");
     return normalizedPath;
+  }
+
+  private static Path canonicalizePath(final Path path) {
+    try {
+      if (Files.exists(path)) {
+        return path.toRealPath();
+      }
+    } catch (final IOException ignored) {
+      // Fall through to toAbsolutePath().normalize()
+    }
+    return path.toAbsolutePath().normalize();
   }
 
   private static void requireDependency(final String value) {

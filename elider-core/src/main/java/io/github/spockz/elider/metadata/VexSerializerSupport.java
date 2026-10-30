@@ -94,16 +94,27 @@ final class VexSerializerSupport {
       throw new IllegalArgumentException(
           "Precondition attestation must contain an exact post-elision SHA-256 digest");
     }
-    if (!component
-        .filePath()
-        .toAbsolutePath()
-        .normalize()
-        .equals(attestation.affectedArtifactPath())) {
+    if (!canonicalizePath(component.filePath())
+        .equals(canonicalizePath(attestation.affectedArtifactPath()))) {
       throw new IllegalArgumentException(
           "Precondition attestation path does not match post-elision component: "
               + CycloneDxSbomGenerator.componentPurl(attestation.coordinate()));
     }
     return expectedSha256;
+  }
+
+  private static java.nio.file.Path canonicalizePath(final java.nio.file.Path path) {
+    if (path == null) {
+      return null;
+    }
+    try {
+      if (java.nio.file.Files.exists(path)) {
+        return path.toRealPath();
+      }
+    } catch (final IOException ignored) {
+      // Fall through to toAbsolutePath().normalize()
+    }
+    return path.toAbsolutePath().normalize();
   }
 
   private static String omittedCodeSha256(final VexAttestation attestation) {

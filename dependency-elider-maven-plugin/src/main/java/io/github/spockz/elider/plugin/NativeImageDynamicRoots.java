@@ -168,8 +168,7 @@ final class NativeImageDynamicRoots {
     }
     if ("-H:ReflectionConfigurationResources".equals(argument)
         || "-H:ResourceConfigurationResources".equals(argument)
-        || "--features".equals(argument)
-        || "--initialize-at-build-time".equals(argument)) {
+        || "--features".equals(argument)) {
       throw new IOException(
           "Native-image root option has no value in "
               + propertiesEntry.getName()
@@ -192,6 +191,14 @@ final class NativeImageDynamicRoots {
       return readNativeImageClassNames(
           argument.substring("--initialize-at-build-time=".length()), propertiesEntry, roots);
     }
+    if (argument.startsWith("--initialize-at-run-time=")) {
+      return readNativeImageClassNames(
+          argument.substring("--initialize-at-run-time=".length()), propertiesEntry, roots);
+    }
+    if ("--initialize-at-build-time".equals(argument)
+        || "--initialize-at-run-time".equals(argument)) {
+      return false;
+    }
     if (argument.startsWith("--features=")) {
       return readNativeImageClassNames(
           argument.substring("--features=".length()), propertiesEntry, roots);
@@ -208,19 +215,23 @@ final class NativeImageDynamicRoots {
       final String values, final JarEntry propertiesEntry, final Set<String> roots)
       throws IOException {
     if (values.isBlank()) {
-      throw new IOException("Native-image class list is empty: " + propertiesEntry.getName());
+      return false;
     }
+    boolean added = false;
     for (final String className : values.split(",", -1)) {
-      if (!className.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*")) {
-        throw new IOException(
-            "Unsupported native-image class name in "
-                + propertiesEntry.getName()
-                + ": "
-                + className);
+      final String trimmed = className.trim();
+      if (trimmed.isEmpty()) {
+        continue;
       }
-      roots.add(className);
+      final String component = NativeImageClassConfig.extractComponentClass(trimmed);
+      if (component == null || component.isEmpty() || !isBinaryClassName(component)) {
+        throw new IOException(
+            "Unsupported native-image class name in " + propertiesEntry.getName() + ": " + trimmed);
+      }
+      roots.add(component);
+      added = true;
     }
-    return true;
+    return added;
   }
 
   private static void readNativeImageConfigResources(

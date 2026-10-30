@@ -115,7 +115,10 @@ final class NativeImageClassConfig {
     if (!condition.isObject()) {
       throw new IOException("Malformed reflect condition: " + name);
     }
-    final JsonNode conditionClass = condition.get("typeReachable");
+    JsonNode conditionClass = condition.get("typeReachable");
+    if (conditionClass == null) {
+      conditionClass = condition.get("typeReached");
+    }
     if (conditionClass != null) {
       if (!conditionClass.isTextual()) {
         throw new IOException("Malformed reflect condition class name: " + name);
@@ -204,8 +207,11 @@ final class NativeImageClassConfig {
       if (!condition.isObject()) {
         throw new IOException("Malformed proxy condition: " + name);
       }
-      validateFields(condition, Set.of("typeReachable"), "proxy condition", name);
-      final JsonNode conditionClass = condition.get("typeReachable");
+      validateFields(condition, Set.of("typeReachable", "typeReached"), "proxy condition", name);
+      JsonNode conditionClass = condition.get("typeReachable");
+      if (conditionClass == null) {
+        conditionClass = condition.get("typeReached");
+      }
       if (conditionClass == null || !conditionClass.isTextual()) {
         throw new IOException("Malformed proxy condition class name: " + name);
       }

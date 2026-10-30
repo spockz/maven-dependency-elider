@@ -19,9 +19,10 @@ public record ArtifactFileRef(
       throws IOException {
     Objects.requireNonNull(coordinate, "coordinate must not be null");
     Objects.requireNonNull(filePath, "filePath must not be null");
+    final Path realPath = filePath.toRealPath();
     final BasicFileAttributes attributes =
-        java.nio.file.Files.readAttributes(filePath, BasicFileAttributes.class);
+        java.nio.file.Files.readAttributes(realPath, BasicFileAttributes.class);
     return new ArtifactFileRef(
-        coordinate, filePath, attributes.lastModifiedTime().toMillis(), attributes.size());
+        coordinate, realPath, attributes.lastModifiedTime().toMillis(), attributes.size());
   }
 }

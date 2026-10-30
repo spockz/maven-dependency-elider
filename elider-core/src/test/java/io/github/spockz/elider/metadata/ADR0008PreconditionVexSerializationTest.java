@@ -265,6 +265,39 @@ class ADR0008PreconditionVexSerializationTest {
     }
   }
 
+  @Test
+  void symlinkedArtifactPathMatchesPreconditionAttestation(@TempDir final Path temp)
+      throws IOException {
+    final PreconditionVexTestFixture fixture = PreconditionVexTestFixture.proven(temp);
+    final ElisionDecision decision = retained(fixture.coordinate());
+    final Path symlinkDir = temp.resolve("symlink-dir");
+    try {
+      Files.createSymbolicLink(symlinkDir, temp);
+    } catch (final UnsupportedOperationException | IOException exception) {
+      return; // Skip if filesystem does not support symlinks
+    }
+    final Path symlinkPath = symlinkDir.resolve(fixture.inventory().filePath().getFileName());
+    final ArtifactFileRef symlinkInventory =
+        ArtifactFileRef.fromPath(fixture.coordinate(), symlinkPath);
+
+    final JsonNode cdx =
+        JSON.readTree(
+            CYCLONEDX.generate(
+                ROOT,
+                List.of(symlinkInventory),
+                decision,
+                CYCLONEDX_METADATA,
+                List.of(),
+                List.of(fixture.attestation())));
+    assertCycloneDxSchemaValid(cdx);
+
+    final JsonNode openVex =
+        JSON.readTree(
+            OPENVEX.generate(
+                ROOT, List.of(symlinkInventory), List.of(fixture.attestation()), OPENVEX_METADATA));
+    assertOpenVexSchemaValid(openVex);
+  }
+
   private static ElisionDecision retained(final ArtifactCoordinate coordinate) {
     return new ElisionDecision(Set.of(coordinate), Set.of(), Map.of(), Map.of(), 0);
   }

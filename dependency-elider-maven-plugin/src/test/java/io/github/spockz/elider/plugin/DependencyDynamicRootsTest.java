@@ -288,6 +288,96 @@ final class DependencyDynamicRootsTest {
     assertThat(scan.requiresPassThrough()).isFalse();
   }
 
+  @Test
+  void parsesNettyInitializeAtRunTimeAndBuildTimeRoots() throws IOException {
+    final Path jar =
+        nativeImageJar(
+            "Args = --initialize-at-build-time=io.netty \\\n"
+                + "       --initialize-at-run-time=io.netty.handler.codec.http.HttpObjectEncoder,"
+                + "io.netty.handler.codec.http.websocketx.WebSocket00FrameEncoder,"
+                + "io.netty.handler.codec.http.websocketx.extensions.compression.DeflateDecoder\n");
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+
+    assertThat(scan.roots())
+        .contains(
+            "io.netty",
+            "io.netty.handler.codec.http.HttpObjectEncoder",
+            "io.netty.handler.codec.http.websocketx.WebSocket00FrameEncoder",
+            "io.netty.handler.codec.http.websocketx.extensions.compression.DeflateDecoder");
+    assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
+  void parsesNettyCompressionAndResolverDnsArgs() throws IOException {
+    final Path compressionJar =
+        nativeImageJar(
+            "Args = --initialize-at-run-time=io.netty.handler.codec.compression.BrotliDecoder\n");
+    final DependencyDynamicRoots.RootScan compressionScan =
+        DependencyDynamicRoots.scan(compressionJar);
+    assertThat(compressionScan.roots())
+        .contains("io.netty.handler.codec.compression.BrotliDecoder");
+    assertThat(compressionScan.requiresPassThrough()).isFalse();
+
+    final Path dnsJar =
+        nativeImageJar(
+            "Args = --initialize-at-run-time=io.netty.resolver.dns."
+                + "DefaultDnsServerAddressStreamProvider \\\n"
+                + "       --initialize-at-run-time=io.netty.resolver.dns."
+                + "DnsServerAddressStreamProviders$DefaultProviderHolder\n");
+    final DependencyDynamicRoots.RootScan dnsScan = DependencyDynamicRoots.scan(dnsJar);
+    assertThat(dnsScan.roots())
+        .contains(
+            "io.netty.resolver.dns.DefaultDnsServerAddressStreamProvider",
+            "io.netty.resolver.dns.DnsServerAddressStreamProviders$DefaultProviderHolder");
+    assertThat(dnsScan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
+  void parsesNettyEpollResourceConditionWithTypeReachable() throws IOException {
+    final String resourceConfig =
+        "{\n"
+            + "  \"resources\": {\n"
+            + "    \"includes\": [\n"
+            + "      {\n"
+            + "        \"condition\": {\n"
+            + "          \"typeReachable\": \"io.netty.channel.epoll.Native\"\n"
+            + "        },\n"
+            + "        \"pattern\": \".*libnetty_transport_native_epoll_.*\\\\.so\"\n"
+            + "      }\n"
+            + "    ]\n"
+            + "  },\n"
+            + "  \"bundles\": []\n"
+            + "}";
+
+    final Path jar = tempDir.resolve("netty-epoll-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+      out.putNextEntry(
+          new JarEntry(
+              "META-INF/native-image/io.netty/netty-transport-classes-epoll/resource-config.json"));
+      out.write(resourceConfig.getBytes(StandardCharsets.UTF_8));
+      out.closeEntry();
+    }
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+
+    assertThat(scan.roots()).contains("io.netty.channel.epoll.Native");
+    assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
+  void acceptsStandaloneInitializeFlagsWithoutValue() throws IOException {
+    final Path jar =
+        nativeImageJar(
+            "Args = --initialize-at-build-time --initialize-at-run-time "
+                + "--report-unsupported-elements-at-runtime\n");
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+
+    assertThat(scan.roots()).isEmpty();
+    assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
   private Path nativeImageJar(final String args) throws IOException {
     return nativeImageJar(args, null, null);
   }
