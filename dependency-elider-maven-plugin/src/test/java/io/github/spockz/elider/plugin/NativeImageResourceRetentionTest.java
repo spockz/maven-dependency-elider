@@ -73,7 +73,7 @@ import org.junit.jupiter.api.Test;
   @Test
   void resourceOnlyPointerRetainsDeclaringAndProviderArchives()
       throws IOException, MojoFailureException {
-    final Fixture fixture = fixture(false, false, true);
+    final Fixture fixture = fixtureWithRuntimeA();
     final Path declaring =
         appendEntries(
             fixture.snapshot("a").filePath(),
@@ -136,6 +136,43 @@ import org.junit.jupiter.api.Test;
                 prepared.dynamicRootInputs().classNames(),
                 prepared.rawDecision().retainedArtifacts()))
         .containsExactly(Set.of(), Set.of(coordinate(fixture, "a"), coordinate(fixture, "b")));
+  }
+
+  /* package */
+  @Test
+  void autoDiscoveredUnifiedResourceOnlyDescriptorRetainsItsArchive()
+      throws IOException, MojoFailureException {
+    final Fixture fixture = fixtureWithRuntimeA();
+    final Path declaring =
+        appendEntries(
+            fixture.snapshot("a").filePath(),
+            "a-with-unified-resource-only-descriptor.jar",
+            Map.of(
+                "META-INF/native-image/test/reachability-metadata.json",
+                "{\"resources\":[{\"glob\":\"assets/**\"}]}"));
+    replaceArtifactFile(fixture, "a", declaring);
+    final Path trace = temporaryDirectory.resolve("unified-resource-only.lst");
+    Files.writeString(trace, "closure.c.Leaf\n");
+
+    final MavenElisionService.PreparedAnalysis prepared =
+        new MavenElisionService()
+            .prepare(
+                fixture.mavenProject(),
+                MavenElisionServiceEffectiveAnalysisFixtures.options(
+                    List.of(trace.toFile()), null, true));
+
+    final ArtifactCoordinate declaringCoordinate = coordinate(fixture, "a");
+    assertThat(
+            List.of(
+                prepared.dynamicRootInputs().classNames(),
+                prepared.dynamicRootInputs().declaringArtifacts().contains(declaringCoordinate),
+                prepared
+                    .dynamicRootInputs()
+                    .scansByPath()
+                    .get(declaring.toRealPath())
+                    .requiresArtifactRetention(),
+                prepared.rawDecision().retainedArtifacts().contains(declaringCoordinate)))
+        .containsExactly(Set.of(), true, true, true);
   }
 
   private Path appendEntries(

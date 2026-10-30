@@ -11,13 +11,17 @@ final class NativeImageClassConfigDispatcher {
   private NativeImageClassConfigDispatcher() {}
 
   /* package */
-  static void dispatch(
+  static boolean dispatch(
       final JsonNode document, final NativeImageInput input, final Set<String> roots)
       throws IOException {
-    if (dispatchReflectionOrSerialization(document, input, roots)
-        || dispatchCore(document, input, roots)
-        || dispatchSupplemental(document, input, roots)) {
-      return;
+    if (dispatchReflectionOrSerialization(document, input, roots)) {
+      return false;
+    }
+    if (input.kind() == NativeImageDescriptorKind.REACHABILITY_METADATA) {
+      return NativeImageUnifiedConfig.read(document, input.name(), roots);
+    }
+    if (dispatchCore(document, input, roots) || dispatchSupplemental(document, input, roots)) {
+      return false;
     }
     throw new IOException("Unsupported native-image class descriptor kind: " + input.name());
   }
@@ -55,10 +59,6 @@ final class NativeImageClassConfigDispatcher {
     return switch (input.kind()) {
       case PREDEFINED_CLASSES -> {
         NativeImagePredefinedConfig.read(document, input, roots);
-        yield true;
-      }
-      case REACHABILITY_METADATA -> {
-        NativeImageUnifiedConfig.read(document, input.name(), roots);
         yield true;
       }
       case SERIALIZATION_DENY -> {

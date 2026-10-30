@@ -19,20 +19,20 @@ final class NativeImageClassConfig {
 
   private NativeImageClassConfig() {}
 
-  static void readNativeImageClassConfig(
+  static boolean readNativeImageClassConfig(
       final JarFile archive, final String name, final Set<String> roots) throws IOException {
     final NativeImageDescriptorKind kind = NativeImageDescriptorKind.classConfigFor(name);
     if (kind == null) {
       throw new IOException("Unsupported native-image class configuration: " + name);
     }
-    readNativeImageClassConfig(NativeImageInput.archiveEntry(archive, name, kind), roots);
+    return readNativeImageClassConfig(NativeImageInput.archiveEntry(archive, name, kind), roots);
   }
 
   /* package */
-  static void readNativeImageClassConfig(final NativeImageInput input, final Set<String> roots)
+  static boolean readNativeImageClassConfig(final NativeImageInput input, final Set<String> roots)
       throws IOException {
     final JsonNode document = readDocument(input.open(), input.name());
-    dispatch(document, input, roots);
+    return dispatch(document, input, roots);
   }
 
   private static JsonNode readDocument(final InputStream input, final String name)
@@ -50,10 +50,10 @@ final class NativeImageClassConfig {
     }
   }
 
-  private static void dispatch(
+  private static boolean dispatch(
       final JsonNode document, final NativeImageInput input, final Set<String> roots)
       throws IOException {
-    NativeImageClassConfigDispatcher.dispatch(document, input, roots);
+    return NativeImageClassConfigDispatcher.dispatch(document, input, roots);
   }
 
   static boolean isReflectionConfig(final String name) {

@@ -14,10 +14,10 @@ final class NativeImageUnifiedResourcesConfig {
   private NativeImageUnifiedResourcesConfig() {}
 
   /* package */
-  static void readUnifiedResources(
+  static boolean readUnifiedResources(
       final JsonNode resources, final String name, final Set<String> roots) throws IOException {
     if (resources == null) {
-      return;
+      return false;
     }
     if (!resources.isArray()) {
       throw new IOException("Malformed reachability resources section: " + name);
@@ -25,6 +25,7 @@ final class NativeImageUnifiedResourcesConfig {
     for (final JsonNode item : resources) {
       readResource(item, name, roots);
     }
+    return !resources.isEmpty();
   }
 
   private static void readResource(final JsonNode item, final String name, final Set<String> roots)

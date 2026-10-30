@@ -222,7 +222,8 @@ final class DependencyDynamicRoots {
       } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
           && NativeImageDynamicRoots.isNativeImageClassConfig(name)) {
         declaresClassRoots = true;
-        NativeImageClassConfig.readNativeImageClassConfig(archive, name, nonServiceRoots);
+        requiresArtifactRetention |=
+            NativeImageClassConfig.readNativeImageClassConfig(archive, name, nonServiceRoots);
       } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
           && NativeImageDynamicRoots.isNativeImageResourceConfig(name)) {
         requiresArtifactRetention = true;
