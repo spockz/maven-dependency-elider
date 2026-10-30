@@ -75,18 +75,47 @@ final class NativeImageUnifiedResourcesConfig {
       throw new IOException("Malformed reachability resource entry: " + name);
     }
     NativeImageJsonSupport.requireText(item.get(glob ? GLOB : BUNDLE), "resource name", name);
+    if (bundle) {
+      validateBundleName(item.get(BUNDLE).textValue(), name);
+    }
     readOptionalModule(item, name);
     readReason(item, name);
     NativeImageRootSupport.readCondition(item.get(CONDITION), name, roots, true);
     if (bundle) {
-      final String bundleClass = bundleClass(item.get(BUNDLE).textValue(), name);
-      if (selections == null) {
-        roots.add(bundleClass);
-      } else {
-        selections.includeBundle(bundleClass, optionalModule(item), selectionGroup);
-      }
-    } else if (selections != null) {
-      selections.includeGlob(item.get(GLOB).textValue(), optionalModule(item), selectionGroup);
+      registerBundle(item.get(BUNDLE).textValue(), item, roots, selections, selectionGroup);
+    } else {
+      registerGlob(item.get(GLOB).textValue(), item, selections, selectionGroup);
+    }
+  }
+
+  private static void validateBundleName(final String bundleName, final String name)
+      throws IOException {
+    if (!NativeImageBundleResourceSupport.isBundleName(bundleName)) {
+      throw new IOException("Malformed resource bundle name: " + name);
+    }
+  }
+
+  private static void registerBundle(
+      final String bundleName,
+      final JsonNode item,
+      final Set<String> roots,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final String selectionGroup) {
+    if (selections != null) {
+      selections.includeBundle(bundleName, optionalModule(item), selectionGroup);
+    } else if (NativeImageDynamicRoots.isBinaryClassName(bundleName)) {
+      roots.add(bundleName);
+    }
+  }
+
+  private static void registerGlob(
+      final String glob,
+      final JsonNode item,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final String selectionGroup)
+      throws IOException {
+    if (selections != null) {
+      selections.includeGlob(glob, optionalModule(item), selectionGroup);
     }
   }
 
@@ -105,15 +134,5 @@ final class NativeImageUnifiedResourcesConfig {
     if (item.has(REASON)) {
       NativeImageRootSupport.validateStringOrStrings(item.get(REASON), name);
     }
-  }
-
-  private static String bundleClass(final String bundleName, final String name) throws IOException {
-    final String component = NativeImageTypeDescriptor.extractComponentClass(bundleName);
-    if (component == null
-        || component.isEmpty()
-        || !NativeImageDynamicRoots.isBinaryClassName(component)) {
-      throw new IOException("Malformed resource bundle class name: " + name);
-    }
-    return component;
   }
 }

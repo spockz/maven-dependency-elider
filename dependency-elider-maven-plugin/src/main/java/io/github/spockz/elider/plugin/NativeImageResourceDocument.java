@@ -46,7 +46,7 @@ final class NativeImageResourceDocument {
     final String identity = input.selectionIdentity();
     readResources(resources, roots, name, selections, identity + ":resources");
     NativeImageResourceBundles.read(bundles, roots, name, selections, identity + ":bundles");
-    NativeImageResourcePatterns.readGlobs(globs, roots, name, selections, identity + ":globs");
+    NativeImageResourcePatterns.readGlobs(globs, roots, name, selections, identity + ":resources");
   }
 
   private static void validateFields(final JsonNode document, final String name)

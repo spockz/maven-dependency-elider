@@ -3,9 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import java.io.IOException;
-import java.nio.file.FileSystems;
 import java.nio.file.Path;
-import java.nio.file.PathMatcher;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -18,14 +16,21 @@ final class NativeImageResourcePatternMatcher {
     throw new AssertionError("static resource pattern matcher");
   }
 
-  /* package */ record Selector(Pattern regex, PathMatcher glob, String module, String group) {}
+  /* package */ record Selector(Pattern regex, Pattern glob, String module, String group) {}
 
   /* package */ record BundleSelector(String name, String module, String group) {}
 
   /* package */ static Selector regex(
       final String expression, final String module, final String source) throws IOException {
+    final int separator = module == null ? expression.indexOf(':') : -1;
+    final String pattern = separator < 0 ? expression : expression.substring(separator + 1);
+    final String selectedModule = separator < 0 ? module : expression.substring(0, separator);
     try {
-      return new Selector(Pattern.compile(expression), null, module, source);
+      return new Selector(
+          Pattern.compile(pattern),
+          null,
+          selectedModule == null || selectedModule.isEmpty() ? null : selectedModule,
+          source);
     } catch (final PatternSyntaxException exception) {
       throw new IOException("Malformed native-image resource pattern in " + source, exception);
     }
@@ -34,9 +39,8 @@ final class NativeImageResourcePatternMatcher {
   /* package */ static Selector glob(
       final String expression, final String module, final String source) throws IOException {
     try {
-      return new Selector(
-          null, FileSystems.getDefault().getPathMatcher("glob:" + expression), module, source);
-    } catch (final IllegalArgumentException exception) {
+      return new Selector(null, NativeImageGlobPattern.compile(expression), module, source);
+    } catch (final PatternSyntaxException exception) {
       throw new IOException("Malformed native-image resource glob in " + source, exception);
     }
   }
@@ -105,8 +109,8 @@ final class NativeImageResourcePatternMatcher {
     return selector.regex() != null
         ? selector.regex().matcher(entryName).matches()
             || selector.regex().matcher(entryName + "/").matches()
-        : selector.glob().matches(Path.of(entryName))
-            || selector.glob().matches(Path.of(entryName + "/"));
+        : selector.glob().matcher(entryName).matches()
+            || selector.glob().matcher(entryName + "/").matches();
   }
 
   private static boolean matches(final BundleSelector selector, final String resourceName) {

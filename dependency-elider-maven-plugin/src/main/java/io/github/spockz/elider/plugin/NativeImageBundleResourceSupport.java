@@ -7,10 +7,19 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** Adds existing bundle classes and all matching archive providers to scan results. */
 final class NativeImageBundleResourceSupport {
+  /** WHY: Bundle names become resource paths and must not form path traversal. */
+  private static final Pattern BUNDLE_NAME =
+      Pattern.compile("[\\p{L}\\p{N}_$-]+(?:\\.[\\p{L}\\p{N}_$-]+)*");
+
   private NativeImageBundleResourceSupport() {}
+
+  /* package */ static boolean isBundleName(final String name) {
+    return name != null && BUNDLE_NAME.matcher(name).matches();
+  }
 
   /* package */
   static void include(

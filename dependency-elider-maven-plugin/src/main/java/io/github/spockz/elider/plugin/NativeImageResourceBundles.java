@@ -88,11 +88,13 @@ final class NativeImageResourceBundles {
       throws IOException {
     if (bundleName == null
         || !bundleName.isTextual()
-        || !NativeImageDynamicRoots.isBinaryClassName(bundleName.textValue())) {
+        || !NativeImageBundleResourceSupport.isBundleName(bundleName.textValue())) {
       throw new IOException("Malformed native-image bundle name: " + name);
     }
     if (selections == null) {
-      roots.add(bundleName.textValue());
+      if (NativeImageDynamicRoots.isBinaryClassName(bundleName.textValue())) {
+        roots.add(bundleName.textValue());
+      }
     } else {
       selections.includeBundle(bundleName.textValue(), null, selectionGroup);
     }
