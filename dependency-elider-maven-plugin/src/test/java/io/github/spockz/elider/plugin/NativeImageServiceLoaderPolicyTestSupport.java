@@ -89,9 +89,22 @@ import java.util.Set;
             "-H:ServiceLoaderFeatureExcludeServiceProviders=",
             "-H:ServiceLoaderFeatureExcludeServiceProviders=org.example..Provider")) {
       final Path malformed = archive(directory, "bad-" + argument.hashCode() + ".jar", argument);
-      assertThatThrownBy(() -> DependencyDynamicRoots.scan(malformed))
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(malformed, Set.of(), false))
           .as(argument)
-          .isInstanceOf(IOException.class);
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining(expectedDiagnostic(argument));
     }
+  }
+
+  private static String expectedDiagnostic(final String argument) {
+    if (argument.startsWith("-H:+UseServiceLoaderFeature")
+        || argument.startsWith("-H:-UseServiceLoaderFeature")
+        || "-H:UseServiceLoaderFeature".equals(argument)) {
+      return "Malformed ServiceLoader feature toggle";
+    }
+    if (argument.endsWith("ExcludeServices") || argument.endsWith("ExcludeServiceProviders")) {
+      return "has no value";
+    }
+    return "Unsupported native-image class name";
   }
 }

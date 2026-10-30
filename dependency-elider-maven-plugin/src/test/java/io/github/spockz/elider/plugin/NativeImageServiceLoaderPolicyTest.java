@@ -52,11 +52,20 @@ import org.junit.jupiter.api.io.TempDir;
   /* package */
   @Test
   void featureExclusionsFilterOnlyFeatureRootsAndNeverSubtractDirectRoots() throws IOException {
+    final Path enabled =
+        NativeImageServiceLoaderPolicyTestSupport.archive(
+            temporaryDirectory, "feature-enabled.jar", "-H:+UseServiceLoaderFeature");
     final Path serviceExcluded =
         NativeImageServiceLoaderPolicyTestSupport.archive(
             temporaryDirectory,
             "service-excluded.jar",
-            "-H:+UseServiceLoaderFeature -H:ServiceLoaderFeatureExcludeServices="
+            "-H:ServiceLoaderFeatureExcludeServices="
+                + NativeImageServiceLoaderPolicyTestSupport.SERVICE);
+    final Path serviceDirect =
+        NativeImageServiceLoaderPolicyTestSupport.archive(
+            temporaryDirectory,
+            "service-direct.jar",
+            "-H:ServiceLoaderFeatureExcludeServices="
                 + NativeImageServiceLoaderPolicyTestSupport.SERVICE
                 + " -H:Class="
                 + NativeImageServiceLoaderPolicyTestSupport.SERVICE);
@@ -64,30 +73,73 @@ import org.junit.jupiter.api.io.TempDir;
         NativeImageServiceLoaderPolicyTestSupport.archive(
             temporaryDirectory,
             "provider-excluded.jar",
-            "-H:+UseServiceLoaderFeature -H:ServiceLoaderFeatureExcludeServiceProviders="
+            "-H:ServiceLoaderFeatureExcludeServiceProviders="
+                + NativeImageServiceLoaderPolicyTestSupport.PROVIDER);
+    final Path providerDirect =
+        NativeImageServiceLoaderPolicyTestSupport.archive(
+            temporaryDirectory,
+            "provider-direct.jar",
+            "-H:ServiceLoaderFeatureExcludeServiceProviders="
                 + NativeImageServiceLoaderPolicyTestSupport.PROVIDER
-                + " -H:Class=org.example.Direct");
+                + " -H:Class="
+                + NativeImageServiceLoaderPolicyTestSupport.PROVIDER);
     final Path descriptor =
         NativeImageServiceLoaderPolicyTestSupport.serviceArchive(temporaryDirectory);
     final Path provider =
         NativeImageServiceLoaderPolicyTestSupport.providerArchive(temporaryDirectory);
+    final List<ArtifactFileRef> serviceCandidates =
+        NativeImageServiceLoaderPolicyTestSupport.candidates(
+            enabled, serviceExcluded, descriptor, provider);
     final Set<String> serviceFiltered =
+        NativeImageServiceLoaderPolicyTestSupport.scan(serviceCandidates, false).classNames();
+    final Set<String> serviceFilteredReverse =
+        NativeImageServiceLoaderPolicyTestSupport.scan(
+                NativeImageServiceLoaderPolicyTestSupport.reversed(serviceCandidates), false)
+            .classNames();
+    final Set<String> serviceDirectRoots =
         NativeImageServiceLoaderPolicyTestSupport.scan(
                 NativeImageServiceLoaderPolicyTestSupport.candidates(
-                    serviceExcluded, descriptor, provider),
+                    enabled, serviceDirect, descriptor, provider),
                 false)
             .classNames();
     final Set<String> providerFiltered =
         NativeImageServiceLoaderPolicyTestSupport.scan(
                 NativeImageServiceLoaderPolicyTestSupport.candidates(
-                    providerExcluded, descriptor, provider),
+                    enabled, providerExcluded, descriptor, provider),
                 false)
             .classNames();
+    final Set<String> providerDirectRoots =
+        NativeImageServiceLoaderPolicyTestSupport.scan(
+                NativeImageServiceLoaderPolicyTestSupport.candidates(
+                    enabled, providerDirect, descriptor, provider),
+                false)
+            .classNames();
+    final Set<String> conservativeRoots =
+        NativeImageServiceLoaderPolicyTestSupport.scan(
+                NativeImageServiceLoaderPolicyTestSupport.candidates(
+                    enabled, serviceExcluded, descriptor, provider),
+                true)
+            .classNames();
 
-    assertThat(List.of(serviceFiltered, providerFiltered))
+    assertThat(
+            List.of(
+                serviceFiltered,
+                serviceFilteredReverse,
+                serviceDirectRoots,
+                providerFiltered,
+                providerDirectRoots,
+                conservativeRoots))
         .containsExactly(
+            Set.of(),
+            Set.of(),
             Set.of(NativeImageServiceLoaderPolicyTestSupport.SERVICE),
-            Set.of(NativeImageServiceLoaderPolicyTestSupport.SERVICE, "org.example.Direct"));
+            Set.of(NativeImageServiceLoaderPolicyTestSupport.SERVICE),
+            Set.of(
+                NativeImageServiceLoaderPolicyTestSupport.SERVICE,
+                NativeImageServiceLoaderPolicyTestSupport.PROVIDER),
+            Set.of(
+                NativeImageServiceLoaderPolicyTestSupport.SERVICE,
+                NativeImageServiceLoaderPolicyTestSupport.PROVIDER));
   }
 
   /* package */
