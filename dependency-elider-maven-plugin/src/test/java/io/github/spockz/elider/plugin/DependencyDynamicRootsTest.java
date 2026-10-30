@@ -541,6 +541,24 @@ final class DependencyDynamicRootsTest {
         .hasMessageContaining("Unsupported native-image resource pattern field unknown");
   }
 
+  @Test
+  void rejectsLegacySerializationDenyNestedSections() throws IOException {
+    for (final String nestedField :
+        new String[] {
+          "\"proxies\":[{\"interfaces\":[\"org.example.DeniedProxy\"]}]",
+          "\"lambdaCapturingTypes\":[{\"name\":\"org.example.DeniedLambda\"}]"
+        }) {
+      final Path jar =
+          nativeImageJar(
+              "Args = --initialize-at-build-time\n",
+              "META-INF/native-image/test/serialization-deny-config.json",
+              "[{\"name\":\"org.example.Denied\"," + nestedField + "}]");
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Unsupported native-image serialization-deny entry field");
+    }
+  }
+
   private Path nativeImageConfigJar(final String json) throws IOException {
     final Path jar = tempDir.resolve("malformed-config-" + System.nanoTime() + ".jar");
     try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {

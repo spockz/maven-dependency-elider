@@ -57,19 +57,10 @@ final class NativeImageSerializationDenyConfig {
       throws IOException {
     NativeImageJsonSupport.requireObject(entry, "serialization-deny entry", name);
     NativeImageJsonSupport.validateFields(
-        entry,
-        Set.of(NAME, CONDITION, PROXIES, LAMBDA_TYPES, CUSTOM_TARGET),
-        "serialization-deny entry",
-        name);
+        entry, Set.of(NAME, CONDITION, CUSTOM_TARGET), "serialization-deny entry", name);
     NativeImageRootSupport.addRequiredClass(entry.get(NAME), DENY_TYPE, name, ignoredReferences);
     readOptionalClass(entry, CUSTOM_TARGET, name, ignoredReferences);
     NativeImageRootSupport.readCondition(entry.get(CONDITION), name, ignoredReferences, false);
-    if (entry.has(PROXIES)) {
-      readProxies(entry.get(PROXIES), name, ignoredReferences);
-    }
-    if (entry.has(LAMBDA_TYPES)) {
-      readLambdaTypes(entry.get(LAMBDA_TYPES), name, ignoredReferences);
-    }
   }
 
   private static void readTypes(
