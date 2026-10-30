@@ -45,16 +45,19 @@ final class MavenOutputFileJournal {
     }
   }
 
-  void installStaged(final Path staged, final Path target) throws IOException {
+  void installStaged(final Path staged, final Path target, final String expectedSha256)
+      throws IOException {
     if (!Files.isRegularFile(staged)) {
       throw new IOException("Staged output is missing: " + staged);
     }
+    verifyDigest(staged, expectedSha256, "Staged output changed before installation: ");
     backupExisting(target);
     try {
       moveOperation.move(staged, target);
       installed.add(target);
+      verifyDigest(target, expectedSha256, "Installed output digest differs from frozen stage: ");
     } catch (final IOException failure) {
-      if (!Files.exists(staged) && Files.exists(target)) {
+      if (!Files.exists(staged) && Files.exists(target) && !installed.contains(target)) {
         installed.add(target);
       }
       throw failure;
@@ -134,5 +137,12 @@ final class MavenOutputFileJournal {
   private void removeRestoredTargetState(final Path target) {
     backups.remove(target);
     installed.remove(target);
+  }
+
+  private static void verifyDigest(
+      final Path path, final String expectedSha256, final String message) throws IOException {
+    if (!Files.isRegularFile(path) || !ArtifactFileDigest.sha256(path).equals(expectedSha256)) {
+      throw new IOException(message + path);
+    }
   }
 }

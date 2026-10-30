@@ -141,6 +141,33 @@ final class MavenOutputTransactionTest {
 
   @Test
   @SuppressWarnings(ASSERTION_SUPPRESSION)
+  // Checks the journal verifies bytes after a move operation reports success.
+  void normalInstallMoveWithDifferentBytesRollsBack() throws Exception {
+    final Path target = temporaryDirectory.resolve("verified-report.json");
+    Files.writeString(target, "previous report");
+    final MavenOutputTransaction.MoveOperation move =
+        (source, destination) -> {
+          Files.move(source, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+          if (destination.equals(target) && source.getFileName().toString().contains(".staged-")) {
+            Files.writeString(destination, "different installed bytes");
+          }
+        };
+
+    try (MavenOutputTransaction transaction =
+        MavenOutputTransaction.forTargets(List.of(target), move)) {
+      final Path stage = transaction.stagedPath(target);
+      Files.writeString(stage, "expected report");
+      final java.util.Map<Path, String> expected = transaction.captureStageDigests(List.of(stage));
+      assertThatThrownBy(() -> transaction.publish(expected))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Installed output digest differs from frozen stage");
+    }
+
+    assertThat(target).hasContent("previous report");
+  }
+
+  @Test
+  @SuppressWarnings(ASSERTION_SUPPRESSION)
   // Checks stale-output deletion is restored if a later publication move fails.
   void failedPublicationRestoresTransactionallyDeletedOutput() throws Exception {
     final Path staleVex = temporaryDirectory.resolve("dependency-elider.openvex.json");

@@ -8,6 +8,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
@@ -165,6 +167,74 @@ final class ADR0008MavenPreconditionPublicationTest {
     assertThat(fixture.sbom()).hasContent("old SBOM");
     assertThat(fixture.baselineSbom()).hasContent("old baseline SBOM");
     assertThat(fixture.vex()).hasContent("old OpenVEX");
+  }
+
+  @Test
+  void validJsonStageTamperingAbortsAndRestoresPreviousOutputs() throws Exception {
+    final Fixture fixture = fixture("valid-json-stage-tamper", false, false);
+    configure(fixture, true);
+    writePreviousOutputs(fixture);
+    set(
+        fixture.mojo(),
+        "afterStaging",
+        (MavenElisionOutputPublisher.AfterStaging)
+            () -> {
+              final ObjectNode changed =
+                  (ObjectNode) JSON.readTree(stageFor(fixture.summary()).toFile());
+              changed.put("tampered", true);
+              JSON.writeValue(stageFor(fixture.summary()).toFile(), changed);
+            });
+
+    assertThatThrownBy(fixture.mojo()::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("Staged output changed after staging");
+
+    assertPreviousOutputs(fixture);
+  }
+
+  @Test
+  void coordinatedManifestAndSbomStageTamperingStillAborts() throws Exception {
+    final Fixture fixture = fixture("coordinated-stage-tamper", false, false);
+    configure(fixture, true);
+    writePreviousOutputs(fixture);
+    set(
+        fixture.mojo(),
+        "afterStaging",
+        (MavenElisionOutputPublisher.AfterStaging)
+            () -> {
+              final Path sbomStage = stageFor(fixture.sbom());
+              final ObjectNode changedSbom = (ObjectNode) JSON.readTree(sbomStage.toFile());
+              changedSbom.put("tampered", true);
+              JSON.writeValue(sbomStage.toFile(), changedSbom);
+              final String changedDigest = ArtifactFileDigest.sha256(sbomStage);
+
+              final Path manifestStage =
+                  stageFor(MavenGeneratedOutputs.manifestPath(fixture.project()));
+              final ObjectNode manifest = (ObjectNode) JSON.readTree(manifestStage.toFile());
+              final ArrayNode outputs = (ArrayNode) manifest.path("outputs");
+              final Path sbomTarget = fixture.sbom().toAbsolutePath().normalize();
+              boolean updatedSbomEntry = false;
+              for (final JsonNode output : outputs) {
+                final ObjectNode entry = (ObjectNode) output;
+                if (Path.of(entry.path("path").asText())
+                    .toAbsolutePath()
+                    .normalize()
+                    .equals(sbomTarget)) {
+                  entry.put("sha256", changedDigest);
+                  updatedSbomEntry = true;
+                }
+              }
+              if (!updatedSbomEntry) {
+                throw new IOException("SBOM stage was not recorded in generated-output manifest");
+              }
+              JSON.writeValue(manifestStage.toFile(), manifest);
+            });
+
+    assertThatThrownBy(fixture.mojo()::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("Staged output changed after staging");
+
+    assertPreviousOutputs(fixture);
   }
 
   @Test
@@ -381,6 +451,16 @@ final class ADR0008MavenPreconditionPublicationTest {
   private static void writeVex(final Path path, final String content) throws IOException {
     Files.createDirectories(path.getParent());
     Files.writeString(path, content);
+  }
+
+  private static Path stageFor(final Path target) throws IOException {
+    final String prefix = "." + target.getFileName() + ".staged-";
+    try (java.util.stream.Stream<Path> paths = Files.list(target.getParent())) {
+      return paths
+          .filter(path -> path.getFileName().toString().startsWith(prefix))
+          .findFirst()
+          .orElseThrow(() -> new IOException("Missing stage for output: " + target));
+    }
   }
 
   private static JsonNode component(final JsonNode sbom, final String artifactId) {

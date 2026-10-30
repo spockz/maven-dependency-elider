@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -76,6 +77,30 @@ final class MavenGeneratedOutputManifest {
     }
     Files.createDirectories(parent);
     JSON.writeValue(stage.toFile(), document);
+  }
+
+  static void validateStage(
+      final Path stage,
+      final Collection<Path> generated,
+      final Map<Path, String> frozenStageDigests)
+      throws IOException {
+    final Set<Path> expected = allowedPaths(generated);
+    final Set<Path> seen = new LinkedHashSet<>();
+    for (final JsonNode output : readOutputs(stage)) {
+      final Path path = MavenGeneratedOutputEntry.outputPath(output, stage);
+      final String digest = MavenGeneratedOutputEntry.outputDigest(output, stage);
+      if (!expected.contains(path) || !seen.add(path)) {
+        throw new IOException("Generated output manifest stage has an unexpected path: " + path);
+      }
+      final String frozenDigest = frozenStageDigests.get(path);
+      if (frozenDigest == null || !frozenDigest.equals(digest)) {
+        throw new IOException(
+            "Generated output manifest digest differs from frozen stage: " + path);
+      }
+    }
+    if (!seen.equals(expected)) {
+      throw new IOException("Generated output manifest stage is missing expected output entries");
+    }
   }
 
   static Optional<String> unchangedOwnedOutputDigest(final Path manifest, final Path target)

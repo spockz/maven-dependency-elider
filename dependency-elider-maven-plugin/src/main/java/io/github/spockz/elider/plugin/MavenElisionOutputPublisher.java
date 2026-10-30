@@ -77,11 +77,26 @@ final class MavenElisionOutputPublisher {
           baselineInventory,
           inventory,
           assessment);
+      final List<Path> installStages = installStages(outputs, request, assessment);
+      final Map<Path, String> stageDigests = outputs.captureStageDigests(installStages);
+      if (request.files().trimJars()) {
+        final List<Path> generatedOutputs =
+            MavenGeneratedOutputs.generatedOutputPaths(
+                request.project(),
+                request.files().sbom(),
+                request.files().baselineSbom(),
+                request.files().vex(),
+                hasVex(assessment));
+        MavenGeneratedOutputManifest.validateStage(
+            outputs.stagedPath(MavenGeneratedOutputs.manifestPath(request.project())),
+            generatedOutputs,
+            stageDigests);
+      }
       if (request.files().trimJars() && !hasVex(assessment)) {
         outputs.skipTarget(request.files().vex().toPath());
       }
       request.afterStaging().run();
-      final List<Path> installStages = installStages(outputs, request, assessment);
+      outputs.verifyStageDigests(stageDigests);
       inventory.verifyFresh(
           request.project(), plan, request.analysis(), outputTargets, installStages);
       if (request.files().trimJars() && !hasVex(assessment)) {
@@ -90,7 +105,7 @@ final class MavenElisionOutputPublisher {
           outputs.deleteTarget(request.files().vex().toPath(), staleVexDigest.orElseThrow());
         }
       }
-      outputs.publish();
+      outputs.publish(stageDigests);
       publishViewsAndPlan(request, plan);
       commitBoth(outputs, request.generation());
       cleanupCommitted(outputs, request.generation());

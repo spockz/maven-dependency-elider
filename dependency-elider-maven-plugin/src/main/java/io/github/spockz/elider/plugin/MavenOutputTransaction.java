@@ -3,7 +3,9 @@
 package io.github.spockz.elider.plugin;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -72,6 +74,33 @@ final class MavenOutputTransaction implements AutoCloseable {
     return List.copyOf(stagedToFinal.keySet());
   }
 
+  Map<Path, String> captureStageDigests(final List<Path> installStages) throws IOException {
+    final Map<Path, String> digests = new LinkedHashMap<>();
+    for (final Path requestedStage : installStages) {
+      final Path stage = requestedStage.toAbsolutePath().normalize();
+      final Path target = stagedToFinal.get(stage);
+      if (target == null) {
+        throw new IOException("Output stage was not reserved: " + stage);
+      }
+      if (!Files.isRegularFile(stage)) {
+        throw new IOException("Staged output is missing or not a regular file: " + stage);
+      }
+      if (digests.put(target, ArtifactFileDigest.sha256(stage)) != null) {
+        throw new IOException("Output stage was included more than once: " + stage);
+      }
+    }
+    return Collections.unmodifiableMap(new LinkedHashMap<>(digests));
+  }
+
+  void verifyStageDigests(final Map<Path, String> expectedDigests) throws IOException {
+    final Map<Path, String> frozen = immutableDigestPlan(expectedDigests);
+    validateInstallTargets(frozen);
+    for (final Map.Entry<Path, String> entry : frozen.entrySet()) {
+      final Path stage = stageForTarget(entry.getKey());
+      verifyDigest(stage, entry.getValue(), "Staged output changed after staging: ");
+    }
+  }
+
   void deleteTarget(final Path target, final String expectedSha256) throws IOException {
     if (published) {
       throw new IllegalStateException("Output transaction is already published");
@@ -100,15 +129,21 @@ final class MavenOutputTransaction implements AutoCloseable {
   }
 
   void publish() throws IOException {
+    publish(captureStageDigests(activeStagePaths()));
+  }
+
+  void publish(final Map<Path, String> expectedDigests) throws IOException {
     if (published) {
       throw new IllegalStateException("Staged output transaction is already published");
     }
+    final Map<Path, String> frozen = immutableDigestPlan(expectedDigests);
+    validateInstallTargets(frozen);
     try {
       for (final Map.Entry<Path, Path> entry : stagedToFinal.entrySet()) {
         if (deleteTargets.containsKey(entry.getValue())) {
           journal.deleteExisting(entry.getValue(), deleteTargets.get(entry.getValue()));
         } else if (!skippedTargets.contains(entry.getValue())) {
-          journal.installStaged(entry.getKey(), entry.getValue());
+          journal.installStaged(entry.getKey(), entry.getValue(), frozen.get(entry.getValue()));
         }
       }
       published = true;
@@ -146,5 +181,58 @@ final class MavenOutputTransaction implements AutoCloseable {
       throw failure;
     }
     rolledBack = true;
+  }
+
+  private List<Path> activeStagePaths() {
+    return stagedToFinal.entrySet().stream()
+        .filter(
+            entry ->
+                !deleteTargets.containsKey(entry.getValue())
+                    && !skippedTargets.contains(entry.getValue()))
+        .map(Map.Entry::getKey)
+        .toList();
+  }
+
+  private Map<Path, String> immutableDigestPlan(final Map<Path, String> expectedDigests)
+      throws IOException {
+    final Map<Path, String> normalized = new LinkedHashMap<>();
+    for (final Map.Entry<Path, String> entry : expectedDigests.entrySet()) {
+      final Path target = entry.getKey().toAbsolutePath().normalize();
+      final String digest = entry.getValue();
+      if (digest == null || !digest.matches("[0-9a-f]{64}")) {
+        throw new IOException("Output stage requires a SHA-256 digest: " + target);
+      }
+      if (!stagedToFinal.containsValue(target) || normalized.put(target, digest) != null) {
+        throw new IOException(
+            "Output stage digest plan contains an unknown or duplicate target: " + target);
+      }
+    }
+    return Collections.unmodifiableMap(normalized);
+  }
+
+  private void validateInstallTargets(final Map<Path, String> expectedDigests) throws IOException {
+    final Set<Path> activeTargets = new LinkedHashSet<>();
+    stagedToFinal.values().stream()
+        .filter(target -> !deleteTargets.containsKey(target) && !skippedTargets.contains(target))
+        .forEach(activeTargets::add);
+    if (!activeTargets.equals(expectedDigests.keySet())) {
+      throw new IOException("Output stage digest plan does not match the transaction install set");
+    }
+  }
+
+  private Path stageForTarget(final Path target) throws IOException {
+    return stagedToFinal.entrySet().stream()
+        .filter(entry -> entry.getValue().equals(target))
+        .map(Map.Entry::getKey)
+        .findFirst()
+        .orElseThrow(() -> new IOException("Output was not staged: " + target));
+  }
+
+  private static void verifyDigest(
+      final Path path, final String expectedDigest, final String mismatchMessage)
+      throws IOException {
+    if (!Files.isRegularFile(path) || !ArtifactFileDigest.sha256(path).equals(expectedDigest)) {
+      throw new IOException(mismatchMessage + path);
+    }
   }
 }
