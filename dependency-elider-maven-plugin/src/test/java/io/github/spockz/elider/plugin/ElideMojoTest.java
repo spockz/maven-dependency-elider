@@ -115,6 +115,7 @@ final class ElideMojoTest {
                 "Drop.java", "package sample; public final class Drop {}\n"),
             null);
     final Artifact dependency = runtimeArtifact("process-classes-processor", originalJar);
+    dependency.setScope("compile");
     final MavenProject project = project(dependency, new LinkedHashSet<>(List.of(dependency)));
     final Path output = tempDir.resolve("lifecycle-target/classes");
     final Path testOutput = tempDir.resolve("lifecycle-target/test-classes");
