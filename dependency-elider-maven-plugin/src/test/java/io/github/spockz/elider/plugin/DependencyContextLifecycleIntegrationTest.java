@@ -622,7 +622,7 @@ final class DependencyContextLifecycleIntegrationTest {
             <dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>unused-library</artifactId><version>1.0.0</version></dependency>
           </dependencies>
           <build><plugins>
-            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.1.0</version><executions><execution><id>generate-bytecode</id><phase>generate-sources</phase><goals><goal>run</goal></goals><configuration><target>
+            <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.1.0</version><dependencies><dependency><groupId>org.apache.ant</groupId><artifactId>ant</artifactId><version>1.10.15</version></dependency><dependency><groupId>org.apache.ant</groupId><artifactId>ant-launcher</artifactId><version>1.10.15</version></dependency></dependencies><executions><execution><id>generate-bytecode</id><phase>generate-sources</phase><goals><goal>run</goal></goals><configuration><target>
               <mkdir dir="${project.build.sourceDirectory}/generated"/>
               <echo file="${project.build.sourceDirectory}/generated/GeneratedUse.java">package generated; public final class GeneratedUse { public static String create() { return io.github.spockz.elider.fixture.keep.KeepEntry.value(); } }</echo>
             </target></configuration></execution></executions></plugin>

@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
@@ -18,9 +19,15 @@ import java.util.zip.ZipOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
+import org.apache.maven.execution.MavenExecutionRequest;
+import org.apache.maven.execution.MavenSession;
+import org.apache.maven.execution.ProjectDependencyGraph;
 import org.apache.maven.model.Build;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.repository.internal.MavenRepositorySystemUtils;
+import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -32,7 +39,8 @@ import org.objectweb.asm.Opcodes;
   "PMD.AvoidAccessibilityAlteration",
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
-  "PMD.TooManyMethods"
+  "PMD.TooManyMethods",
+  "PMD.ExcessiveImports"
 })
 final class AnalyzeMojoTest {
   /** WHY: CVE fixtures use one stable vulnerable symbol in mappings and assertions. */
@@ -436,6 +444,59 @@ final class AnalyzeMojoTest {
     assertThatThrownBy(() -> MavenElisionService.isJarCandidate(jar))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Resolved artifact has no regular file");
+  }
+
+  @Test
+  @DisplayName("ADR-0011: leafOnly skips intermediate module in AnalyzeMojo")
+  void leafOnlySkipsIntermediateReactorModule() throws Exception {
+    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final MavenProject intermediate = new MavenProject();
+    intermediate.setGroupId("io.github.spockz.test");
+    intermediate.setArtifactId("intermediate-core");
+    intermediate.setVersion("1.0.0");
+    intermediate.setPackaging("jar");
+
+    final MavenProject leaf = new MavenProject();
+    leaf.setGroupId("io.github.spockz.test");
+    leaf.setArtifactId("leaf-app");
+    leaf.setVersion("1.0.0");
+    leaf.setPackaging("jar");
+
+    final ProjectDependencyGraph graph =
+        new ProjectDependencyGraph() {
+          @Override
+          public List<MavenProject> getAllProjects() {
+            return List.of(intermediate, leaf);
+          }
+
+          @Override
+          public List<MavenProject> getSortedProjects() {
+            return List.of(intermediate, leaf);
+          }
+
+          @Override
+          public List<MavenProject> getDownstreamProjects(
+              final MavenProject project, final boolean transitive) {
+            return intermediate.equals(project) ? List.of(leaf) : List.of();
+          }
+
+          @Override
+          public List<MavenProject> getUpstreamProjects(
+              final MavenProject project, final boolean transitive) {
+            return leaf.equals(project) ? List.of(intermediate) : List.of();
+          }
+        };
+
+    final MavenExecutionRequest request = new DefaultMavenExecutionRequest();
+    final DefaultRepositorySystemSession repoSession = MavenRepositorySystemUtils.newSession();
+    final MavenSession session = new MavenSession(null, repoSession, request, null);
+    session.setProjectDependencyGraph(graph);
+
+    set(mojo, "project", intermediate);
+    set(mojo, "session", session);
+    set(mojo, "leafOnly", true);
+    // Skips without failing on missing trace files
+    assertThatCode(mojo::execute).doesNotThrowAnyException();
   }
 
   private static void set(final Object target, final String name, final Object value)

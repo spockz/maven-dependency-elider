@@ -45,6 +45,10 @@ public final class AnalyzeMojo extends AbstractMojo {
   @Parameter(property = "elide.productionClassesComplete", defaultValue = DEFAULT_FALSE)
   private boolean productionClassesComplete;
 
+  /** Restricts dependency analysis to leaf modules in multi-module reactors. */
+  @Parameter(property = "elide.leafOnly", defaultValue = DEFAULT_FALSE)
+  private boolean leafOnly;
+
   /** Enables dry-run intra-JAR trimming prediction. */
   @Parameter(property = "elide.trimJars", defaultValue = DEFAULT_FALSE)
   private boolean trimJars;
@@ -133,7 +137,17 @@ public final class AnalyzeMojo extends AbstractMojo {
 
   /** Runs analysis and reports a conservative summary without mutating Maven state. */
   @Override
+  @SuppressWarnings("PMD.CyclomaticComplexity")
   public void execute() throws MojoFailureException {
+    if (leafOnly && ReactorLeafModuleDetector.isIntermediateReactorModule(project, session)) {
+      if (getLog().isInfoEnabled()) {
+        getLog()
+            .info(
+                "Skipping dependency analysis on intermediate reactor module: "
+                    + (project == null ? "unknown" : project.getArtifactId()));
+      }
+      return;
+    }
     try {
       final MavenElisionService.Analysis analysis =
           new MavenElisionService()

@@ -42,6 +42,7 @@ import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.execution.ProjectDependencyGraph;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
@@ -54,6 +55,7 @@ import org.apache.maven.toolchain.ToolchainManager;
 import org.codehaus.plexus.PlexusContainer;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.eclipse.aether.DefaultRepositorySystemSession;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassReader;
@@ -103,7 +105,7 @@ final class ElideMojoTest {
   }
 
   @Test
-  @org.junit.jupiter.api.DisplayName(
+  @DisplayName(
       "ADR-0010/process-classes defaults bytecode evidence and trims with compile processors")
   void processClassesAutomaticallyUsesBytecodeWithCompileProcessorPathsAndTrimming()
       throws IOException, ReflectiveOperationException, MojoFailureException {
@@ -2928,6 +2930,112 @@ final class ElideMojoTest {
     final Field field = target.getClass().getDeclaredField(name);
     field.setAccessible(true);
     field.set(target, value);
+  }
+
+  @Test
+  @DisplayName("ADR-0011: leafOnly skips intermediate module in multi-module reactor")
+  void leafOnlySkipsIntermediateReactorModule() throws Exception {
+    final ElideMojo mojo = newMojo();
+    final MavenProject intermediate = new MavenProject();
+    intermediate.setGroupId("io.github.spockz.test");
+    intermediate.setArtifactId("intermediate-core");
+    intermediate.setVersion("1.0.0");
+    intermediate.setPackaging("jar");
+    intermediate.setFile(tempDir.resolve("pom.xml").toFile());
+
+    final MavenProject leaf = new MavenProject();
+    leaf.setGroupId("io.github.spockz.test");
+    leaf.setArtifactId("leaf-app");
+    leaf.setVersion("1.0.0");
+    leaf.setPackaging("jar");
+
+    final ProjectDependencyGraph graph =
+        new ProjectDependencyGraph() {
+          @Override
+          public List<MavenProject> getAllProjects() {
+            return List.of(intermediate, leaf);
+          }
+
+          @Override
+          public List<MavenProject> getSortedProjects() {
+            return List.of(intermediate, leaf);
+          }
+
+          @Override
+          public List<MavenProject> getDownstreamProjects(
+              final MavenProject project, final boolean transitive) {
+            return intermediate.equals(project) ? List.of(leaf) : List.of();
+          }
+
+          @Override
+          public List<MavenProject> getUpstreamProjects(
+              final MavenProject project, final boolean transitive) {
+            return leaf.equals(project) ? List.of(intermediate) : List.of();
+          }
+        };
+
+    final MavenSession session = (MavenSession) fieldValue(mojo, "session");
+    session.setProjectDependencyGraph(graph);
+
+    set(mojo, "project", intermediate);
+    set(mojo, "leafOnly", true);
+    mojo.execute();
+
+    final ResolverArtifactPlan plan = resolverPlan(mojo, intermediate);
+    assertThat(plan).isNotNull();
+    assertThat(plan.replacements()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("ADR-0011: leafOnly executes elision on leaf module in multi-module reactor")
+  void leafOnlyExecutesOnLeafModule() throws Exception {
+    final ElideMojo mojo = newMojo();
+    final MavenProject intermediate = new MavenProject();
+    intermediate.setGroupId("io.github.spockz.test");
+    intermediate.setArtifactId("intermediate-core");
+    intermediate.setVersion("1.0.0");
+    intermediate.setPackaging("jar");
+
+    final MavenProject leaf = new MavenProject();
+    leaf.setGroupId("io.github.spockz.test");
+    leaf.setArtifactId("leaf-app");
+    leaf.setVersion("1.0.0");
+    leaf.setPackaging("jar");
+    leaf.setFile(tempDir.resolve("pom.xml").toFile());
+
+    final ProjectDependencyGraph graph =
+        new ProjectDependencyGraph() {
+          @Override
+          public List<MavenProject> getAllProjects() {
+            return List.of(intermediate, leaf);
+          }
+
+          @Override
+          public List<MavenProject> getSortedProjects() {
+            return List.of(intermediate, leaf);
+          }
+
+          @Override
+          public List<MavenProject> getDownstreamProjects(
+              final MavenProject project, final boolean transitive) {
+            return intermediate.equals(project) ? List.of(leaf) : List.of();
+          }
+
+          @Override
+          public List<MavenProject> getUpstreamProjects(
+              final MavenProject project, final boolean transitive) {
+            return leaf.equals(project) ? List.of(intermediate) : List.of();
+          }
+        };
+
+    final MavenSession session = (MavenSession) fieldValue(mojo, "session");
+    session.setProjectDependencyGraph(graph);
+
+    set(mojo, "project", leaf);
+    set(mojo, "leafOnly", true);
+    assertThatThrownBy(mojo::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("At least one supported trace input is required");
   }
 
   private static Xpp3Dom dom(final String name, final String value) {

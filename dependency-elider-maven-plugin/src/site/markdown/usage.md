@@ -178,6 +178,7 @@ Or configure the execution permanently in `pom.xml`:
 | Option | Default | Description |
 | :--- | :--- | :--- |
 | `elide.skip` | `false` | Disables elision and trimming when set to `true`. |
+| `elide.leafOnly` | `false` | Restricts dependency elision and intra-JAR trimming to leaf modules in multi-module Maven reactors. Intermediate modules with downstream reactor dependents or `pom` packaging skip elision, allowing internal libraries to build and test against standard dependencies and leaving definitive elision to final application packaging modules. |
 | `elide.traceFiles` | *(none)* | Comma-separated paths to runtime telemetry traces (required). |
 | `elide.trimJars` | `false` | Enables ProGuard Core link closure to trim unreferenced classes from retained JARs. |
 | `elide.trimWorkers` | `4` | Maximum worker threads for JAR preparation, closure analysis, and archive sanitization. Actual concurrency is also capped by available processors and pending work; `1` runs sequentially. |

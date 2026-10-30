@@ -192,6 +192,10 @@ public final class ElideMojo extends AbstractMojo {
   @Parameter(property = "elide.skip", defaultValue = DEFAULT_FALSE)
   private boolean skip;
 
+  /** Restricts dependency elision to leaf modules in multi-module reactors. */
+  @Parameter(property = "elide.leafOnly", defaultValue = DEFAULT_FALSE)
+  private boolean leafOnly;
+
   /** Package callback used to test publication ordering. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   @FunctionalInterface
@@ -207,6 +211,7 @@ public final class ElideMojo extends AbstractMojo {
 
   /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
   @Override
+  @SuppressWarnings("PMD.CyclomaticComplexity")
   public void execute() throws MojoFailureException {
     final String executionId = mojoExecution == null ? null : mojoExecution.getExecutionId();
     final String projectId = project == null ? null : project.getId();
@@ -217,6 +222,18 @@ public final class ElideMojo extends AbstractMojo {
     }
     try {
       if (skip) {
+        publishEmptyPlan();
+        EliderPreparationState.completeInjectedCliPreparation(
+            session, executionId, projectId, executionSource);
+        return;
+      }
+      if (leafOnly && ReactorLeafModuleDetector.isIntermediateReactorModule(project, session)) {
+        if (getLog().isInfoEnabled()) {
+          getLog()
+              .info(
+                  "Skipping dependency elision on intermediate reactor module: "
+                      + (project == null ? "unknown" : project.getArtifactId()));
+        }
         publishEmptyPlan();
         EliderPreparationState.completeInjectedCliPreparation(
             session, executionId, projectId, executionSource);
