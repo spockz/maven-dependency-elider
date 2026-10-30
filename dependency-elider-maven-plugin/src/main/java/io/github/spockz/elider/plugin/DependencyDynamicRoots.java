@@ -62,7 +62,8 @@ final class DependencyDynamicRoots {
       Set<java.nio.file.Path> resourceProviders,
       java.util.List<NativeImageDynamicRoots.UnsupportedArgument> unsupportedNativeImageArgs,
       String nativeImagePolicy,
-      Set<NativeImageConsumedInput> consumedInputs) {
+      Set<NativeImageConsumedInput> consumedInputs,
+      NativeImagePolicyRoots.ResourcePatternSelection resourcePatterns) {
     RootScan {
       roots = Set.copyOf(roots);
       serviceDescriptors = Set.copyOf(serviceDescriptors);
@@ -70,6 +71,10 @@ final class DependencyDynamicRoots {
       resourceProviders = Set.copyOf(resourceProviders);
       unsupportedNativeImageArgs = java.util.List.copyOf(unsupportedNativeImageArgs);
       consumedInputs = Set.copyOf(consumedInputs);
+      resourcePatterns =
+          resourcePatterns == null
+              ? NativeImagePolicyRoots.ResourcePatternSelection.empty()
+              : resourcePatterns;
     }
 
     RootScan(final Set<String> roots, final boolean declaresClassRoots) {
@@ -82,7 +87,8 @@ final class DependencyDynamicRoots {
           Set.of(),
           java.util.List.of(),
           "default",
-          Set.of());
+          Set.of(),
+          NativeImagePolicyRoots.ResourcePatternSelection.empty());
     }
 
     RootScan(
@@ -102,7 +108,8 @@ final class DependencyDynamicRoots {
           Set.of(),
           unsupportedNativeImageArgs,
           nativeImagePolicy,
-          Set.of());
+          Set.of(),
+          NativeImagePolicyRoots.ResourcePatternSelection.empty());
     }
 
     boolean requiresPassThrough() {
@@ -178,6 +185,10 @@ final class DependencyDynamicRoots {
 
     /** Archives that supplied classpath configuration resources. */
     private final Set<java.nio.file.Path> resourceProviders = new LinkedHashSet<>();
+
+    /** Resource patterns deferred until all invocation properties are scanned. */
+    private final NativeImagePolicyRoots.ResourcePatterns resourcePatterns =
+        new NativeImagePolicyRoots.ResourcePatterns();
 
     /** External descriptor and predefined sibling bytes consumed by this archive scan. */
     private final Set<NativeImageConsumedInput> consumedInputs = new LinkedHashSet<>();
@@ -295,6 +306,8 @@ final class DependencyDynamicRoots {
       requiresArtifactRetention |= result.requiresArtifactRetention();
       unsupportedNativeImageArgs.addAll(result.unsupportedArguments());
       resourceProviders.addAll(result.resourceProviders());
+      result.resourcePatterns().includes().forEach(resourcePatterns::include);
+      result.resourcePatterns().excludes().forEach(resourcePatterns::exclude);
     }
 
     /** Freezes accumulated metadata into the result consumed by Maven pruning. */
@@ -312,7 +325,8 @@ final class DependencyDynamicRoots {
               + failOnUnsupported
               + ";allowed="
               + String.join(",", new java.util.TreeSet<>(allowedArguments)),
-          consumedInputs);
+          consumedInputs,
+          resourcePatterns.snapshot());
     }
   }
 

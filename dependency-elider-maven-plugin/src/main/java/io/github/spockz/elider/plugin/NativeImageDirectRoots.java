@@ -33,8 +33,14 @@ final class NativeImageDirectRoots {
       final Set<String> roots,
       final NativeImageScanContext scanContext,
       final Set<java.nio.file.Path> resourceProviders,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns resourcePatterns)
       throws IOException {
+    final Optional<Boolean> policy =
+        readPolicy(argument, propertiesEntry, roots, scanContext, resourcePatterns);
+    if (policy.isPresent()) {
+      return policy;
+    }
     final Optional<Boolean> initialization =
         NativeImageInitializationRoots.read(argument, propertiesEntry, roots, scanContext);
     if (initialization.isPresent()) {
@@ -46,15 +52,7 @@ final class NativeImageDirectRoots {
     if (linkAtBuildTime.isPresent()) {
       return linkAtBuildTime;
     }
-    if ("-H:ReflectionConfigurationResources".equals(argument)
-        || "-H:ResourceConfigurationResources".equals(argument)
-        || BARE_OPTIONS.contains(argument)) {
-      throw new IOException(
-          "Native-image root option has no value in "
-              + propertiesEntry.getName()
-              + ": "
-              + argument);
-    }
+    rejectBareOptions(argument, propertiesEntry);
     final Optional<Boolean> classOptions = readNamedClassOptions(argument, propertiesEntry, roots);
     if (classOptions.isPresent()) {
       return classOptions;
@@ -65,6 +63,30 @@ final class NativeImageDirectRoots {
     }
     return readResourceBundleOption(
         argument, propertiesEntry, roots, scanContext, resourceProviders);
+  }
+
+  private static void rejectBareOptions(final String argument, final JarEntry propertiesEntry)
+      throws IOException {
+    if ("-H:ReflectionConfigurationResources".equals(argument)
+        || "-H:ResourceConfigurationResources".equals(argument)
+        || BARE_OPTIONS.contains(argument)) {
+      throw new IOException(
+          "Native-image root option has no value in "
+              + propertiesEntry.getName()
+              + ": "
+              + argument);
+    }
+  }
+
+  private static Optional<Boolean> readPolicy(
+      final String argument,
+      final JarEntry propertiesEntry,
+      final Set<String> roots,
+      final NativeImageScanContext scanContext,
+      final NativeImagePolicyRoots.ResourcePatterns resourcePatterns)
+      throws IOException {
+    return NativeImagePolicyRoots.read(
+        argument, propertiesEntry, roots, scanContext, resourcePatterns);
   }
 
   private static Optional<Boolean> readNamedClassOptions(

@@ -1162,6 +1162,8 @@ final class MavenElisionService {
     final Map<Path, DependencyDynamicRoots.RootScan> scansByPath = new LinkedHashMap<>();
     final Map<ArtifactCoordinate, Set<String>> unprovenRootsByCoordinate = new LinkedHashMap<>();
     final Set<Path> resourceProviderPaths = new HashSet<>();
+    final List<NativeImagePolicyRoots.ResourcePatternSelection> resourcePatterns =
+        new ArrayList<>();
     for (final ArtifactFileRef candidate : candidates) {
       DependencyDynamicRoots.RootScan scan = scansByPath.get(candidate.filePath());
       if (scan == null) {
@@ -1183,6 +1185,7 @@ final class MavenElisionService {
           scan.effectiveRoots(provenServiceInterfaces, conservativeServiceLoaderRoots);
       classNames.addAll(effective.roots());
       resourceProviderPaths.addAll(scan.resourceProviders());
+      resourcePatterns.add(scan.resourcePatterns());
       if (effective.declaresRoots()
           || scan.requiresPassThrough()
           || scan.requiresArtifactRetention()) {
@@ -1212,6 +1215,8 @@ final class MavenElisionService {
             candidate.coordinate(), effective.unprovenConservativeRoots());
       }
     }
+    NativeImagePolicyRoots.applyResourcePatterns(
+        resourcePatterns, scanContext, classNames, resourceProviderPaths);
     final Set<ArtifactCoordinate> resourceProviderArtifacts = new HashSet<>();
     for (final ArtifactFileRef candidate : candidates) {
       if (resourceProviderPaths.contains(candidate.filePath().toRealPath())) {

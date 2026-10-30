@@ -27,9 +27,7 @@ import java.util.jar.JarFile;
       final Enumeration<JarEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
         final JarEntry entry = entries.nextElement();
-        if (!entry.isDirectory()) {
-          resources.merge(entry.getName(), 1, Integer::sum);
-        }
+        resources.merge(entry.getName(), 1, Integer::sum);
       }
     }
     return new NativeImageArchiveInventory(path, logicalClasses, Map.copyOf(resources));

@@ -39,7 +39,8 @@ final class NativeImageDynamicRoots {
       boolean requiresArtifactRetention,
       List<UnsupportedArgument> unsupportedArguments,
       Set<Path> resourceProviders,
-      Set<NativeImageConsumedInput> consumedInputs) {}
+      Set<NativeImageConsumedInput> consumedInputs,
+      NativeImagePolicyRoots.ResourcePatternSelection resourcePatterns) {}
 
   @SuppressWarnings("PMD.CyclomaticComplexity")
   static PropertiesResult readNativeImagePropertiesDetailed(
@@ -65,6 +66,8 @@ final class NativeImageDynamicRoots {
     }
     boolean declaresClassRoots = false;
     boolean requiresArtifactRetention = false;
+    final NativeImagePolicyRoots.ResourcePatterns resourcePatterns =
+        new NativeImagePolicyRoots.ResourcePatterns();
     final List<UnsupportedArgument> unsupported = new ArrayList<>();
     for (final String argument : arguments) {
       try {
@@ -76,8 +79,10 @@ final class NativeImageDynamicRoots {
                 roots,
                 scanContext,
                 resourceProviders,
-                consumedInputs);
+                consumedInputs,
+                resourcePatterns);
         requiresArtifactRetention |= isConfigurationResourceArgument(argument);
+        requiresArtifactRetention |= NativeImagePolicyRoots.requiresArtifactRetention(argument);
       } catch (final UnknownNativeImageArgument exception) {
         if (allowedArguments.contains(argumentName(argument))) {
           continue;
@@ -94,7 +99,8 @@ final class NativeImageDynamicRoots {
         requiresArtifactRetention,
         List.copyOf(unsupported),
         Set.copyOf(resourceProviders),
-        Set.copyOf(consumedInputs));
+        Set.copyOf(consumedInputs),
+        resourcePatterns.snapshot());
   }
 
   private static boolean isConfigurationResourceArgument(final String argument) {
@@ -185,7 +191,8 @@ final class NativeImageDynamicRoots {
       final Set<String> roots,
       final NativeImageScanContext scanContext,
       final Set<Path> resourceProviders,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns resourcePatterns)
       throws IOException {
     final java.util.Optional<Boolean> pointer =
         NativeImageConfigurationPointers.read(
@@ -201,7 +208,13 @@ final class NativeImageDynamicRoots {
     }
     final java.util.Optional<Boolean> directRoot =
         NativeImageDirectRoots.read(
-            argument, propertiesEntry, roots, scanContext, resourceProviders, consumedInputs);
+            argument,
+            propertiesEntry,
+            roots,
+            scanContext,
+            resourceProviders,
+            consumedInputs,
+            resourcePatterns);
     if (directRoot.isPresent()) {
       return directRoot.get();
     }
