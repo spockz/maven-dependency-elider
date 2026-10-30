@@ -21,6 +21,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies resource bundle providers participate in dynamic-root retention. */
 /* package */ final class NativeImageBundleRetentionTest {
+  /** Shared body for class resource fixtures. */
+  /* package */ static final String CLASS_BYTES = "class-bytes";
+
   /** WHY: Uses the requested locale-qualified bundle name in the fixture. */
   /* package */ private final String bundleName;
 
@@ -29,7 +32,7 @@ import org.junit.jupiter.api.io.TempDir;
 
   /* package */
   NativeImageBundleRetentionTest() {
-    bundleName = "org.example.Messages_en_US";
+    bundleName = "org.example.Messages_en__POSIX";
   }
 
   /* package */
@@ -53,7 +56,21 @@ import org.junit.jupiter.api.io.TempDir;
             "message=fr");
     final Path frenchClassProvider =
         NativeImageScanContextTestSupport.jar(
-            tempDir, "bundle-class-fr.jar", "org/example/Messages_fr.class", "class-bytes");
+            tempDir, "bundle-class-fr.jar", "org/example/Messages_fr.class", CLASS_BYTES);
+    final Path localeFamilyProvider =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "bundle-locales.jar",
+            "org/example/Messages_en-US.properties",
+            "message=hyphen",
+            "org/example/Messages__US.properties",
+            "message=empty-country",
+            "org/example/Messages_en__POSIX.properties",
+            "message=variant",
+            "org/example/Messages_en-US.class",
+            CLASS_BYTES,
+            "org/example/Messages__US.class",
+            CLASS_BYTES);
     final Path prefixCollision =
         NativeImageScanContextTestSupport.jar(
             tempDir,
@@ -68,6 +85,7 @@ import org.junit.jupiter.api.io.TempDir;
         candidate("french-properties-provider", frenchPropertiesProvider);
     final ArtifactFileRef frenchClassCandidate =
         candidate("french-class-provider", frenchClassProvider);
+    final ArtifactFileRef localeFamilyCandidate = candidate("locale-family", localeFamilyProvider);
     final ArtifactFileRef prefixCollisionCandidate = candidate("prefix-collision", prefixCollision);
     final DependencyDynamicRoots.RootScan scan =
         DependencyDynamicRoots.scan(
@@ -79,6 +97,7 @@ import org.junit.jupiter.api.io.TempDir;
                     basePropertiesCandidate,
                     frenchPropertiesCandidate,
                     frenchClassCandidate,
+                    localeFamilyCandidate,
                     prefixCollisionCandidate),
                 null),
             Set.of(),
@@ -86,13 +105,18 @@ import org.junit.jupiter.api.io.TempDir;
 
     assertThat(List.of(scan.roots(), scan.requiresArtifactRetention(), scan.resourceProviders()))
         .containsExactly(
-            Set.of("org.example.Messages_fr", "org.example.Messages_en_US"),
+            Set.of(
+                "org.example.Messages_fr",
+                "org.example.Messages_en_US",
+                "org.example.Messages_en-US",
+                "org.example.Messages__US"),
             true,
             Set.of(
                 classProvider.toRealPath(),
                 basePropertiesProvider.toRealPath(),
                 frenchPropertiesProvider.toRealPath(),
-                frenchClassProvider.toRealPath()));
+                frenchClassProvider.toRealPath(),
+                localeFamilyProvider.toRealPath()));
   }
 
   private ArtifactFileRef candidate(final String artifact, final Path path) throws IOException {
@@ -106,7 +130,7 @@ import org.junit.jupiter.api.io.TempDir;
     final Path archive = tempDir.resolve("bundle-class-mr.jar");
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(archive), manifest)) {
       output.putNextEntry(new JarEntry("META-INF/versions/17/org/example/Messages_en_US.class"));
-      output.write("class-bytes".getBytes(StandardCharsets.UTF_8));
+      output.write(CLASS_BYTES.getBytes(StandardCharsets.UTF_8));
       output.closeEntry();
     }
     return archive;

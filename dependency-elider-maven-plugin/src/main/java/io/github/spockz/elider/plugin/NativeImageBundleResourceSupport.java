@@ -32,14 +32,10 @@ final class NativeImageBundleResourceSupport {
 
   private static String baseName(final String requestedBundle) {
     final int separator = requestedBundle.indexOf('_');
-    if (separator <= 0 || !isLocale(requestedBundle.substring(separator + 1))) {
+    if (separator < 0) {
       return requestedBundle;
     }
     return requestedBundle.substring(0, separator);
-  }
-
-  private static boolean isLocale(final String suffix) {
-    return suffix.matches("[A-Za-z]{2,3}(_[A-Za-z0-9]{2,8})*");
   }
 
   private static String logicalResourceName(final String resource) {
@@ -52,8 +48,7 @@ final class NativeImageBundleResourceSupport {
       return false;
     }
     final String stem = resource.substring(0, resource.lastIndexOf('.'));
-    return stem.equals(base)
-        || (stem.startsWith(base + "_") && isLocale(stem.substring(base.length() + 1)));
+    return stem.equals(base) || (stem.startsWith(base + "_") && stem.length() > base.length() + 1);
   }
 
   private static void addClassResourceRoot(
