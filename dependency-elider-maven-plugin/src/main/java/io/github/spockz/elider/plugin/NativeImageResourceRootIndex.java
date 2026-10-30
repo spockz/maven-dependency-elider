@@ -43,8 +43,9 @@ import java.util.jar.JarEntry;
       return root;
     }
     final String name = propertiesEntry.getName();
-    final int parentEnd = name.lastIndexOf('/') + 1;
-    return root.replace("${.}", name.substring(0, parentEnd));
+    final int parentEnd = name.lastIndexOf('/');
+    final String parent = parentEnd < 0 ? "" : name.substring(0, parentEnd);
+    return root.replace("${.}", parent);
   }
 
   private static String resourceRootPrefix(final String root, final JarEntry propertiesEntry)

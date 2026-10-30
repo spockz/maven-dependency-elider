@@ -154,7 +154,8 @@ import org.junit.jupiter.api.Test;
   @Test
   void expandsDescriptorRelativeRootAcrossExactClasspathPrefix() throws IOException {
     final Path declaring =
-        declaringJar("-H:ConfigurationResourceRoots=${.}/configs,${.}/configs/${.}\n");
+        declaringJar(
+            "-H:ConfigurationResourceRoots=${.}/configs,${.}/configs/${.},${.}-extra,${.}${.}\n");
     final Path exactProvider =
         NativeImageScanContextTestSupport.jar(
             temporaryDirectory,
@@ -167,6 +168,10 @@ import org.junit.jupiter.api.Test;
         NativeImageScanContextTestSupport.jar(
             temporaryDirectory,
             "relative-root-suffix-provider.jar",
+            "META-INF/native-image/test-extra/reflect-config.json",
+            NativeImageScanContextTestSupport.reflection("org.example.HyphenSuffix"),
+            "META-INF/native-image/testMETA-INF/native-image/test/reflect-config.json",
+            NativeImageScanContextTestSupport.reflection("org.example.Adjacent"),
             "META-INF/native-image/test/configs-extra/reflect-config.json",
             NativeImageScanContextTestSupport.reflection("org.example.Suffix"),
             "unrelated/META-INF/native-image/test/configs/reflect-config.json",
@@ -182,7 +187,7 @@ import org.junit.jupiter.api.Test;
         DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
 
     NativeImageConfigurationDirectoriesTestSupport.assertDescriptorRelativeRootScan(
-        scan, exactProvider);
+        scan, exactProvider, suffixProvider);
   }
 
   private Path declaringJar(final String args) throws IOException {
