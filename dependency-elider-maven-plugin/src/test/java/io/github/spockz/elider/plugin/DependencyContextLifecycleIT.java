@@ -58,7 +58,7 @@ import org.objectweb.asm.Opcodes;
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.UseConcurrentHashMap"
 })
-final class DependencyContextLifecycleIntegrationTest {
+final class DependencyContextLifecycleIT {
   private static final String MAVEN_WRAPPER = "mvnw";
   private static final String POM_XML = "pom.xml";
   private static final String CLEAN_GOAL = "clean";
@@ -1926,6 +1926,17 @@ final class DependencyContextLifecycleIntegrationTest {
     command.add("--no-transfer-progress");
     command.add("-s");
     command.add(settings.toString());
+    final Path isolatedHome = logFile.getParent().resolve("maven-home");
+    Files.createDirectories(isolatedHome);
+    final Path isolatedVulnerabilityCache =
+        isolatedHome.resolve(".cache/dependency-elider/vulnerability-cache");
+    Files.createDirectories(isolatedVulnerabilityCache);
+    command.add("-Duser.home=" + isolatedHome);
+    command.add("-Delide.cveCacheDirectory=" + isolatedVulnerabilityCache);
+    // These probes do not verify vulnerability mappings.
+    // Remote feed refresh is outside their test boundary.
+    command.add("-Delide.osvSnapshotUri=");
+    command.add("-Delide.cveListGitUri=");
     command.add("-Dmaven.repo.local=" + localRepository);
     command.addAll(List.of(arguments));
     final ProcessBuilder processBuilder =
@@ -1933,7 +1944,18 @@ final class DependencyContextLifecycleIntegrationTest {
             .directory(workingDirectory.toFile())
             .redirectErrorStream(true)
             .redirectOutput(logFile.toFile());
-    processBuilder.environment().put("JAVA_HOME", System.getProperty("java.home"));
+    final Map<String, String> environment = processBuilder.environment();
+    environment.put("JAVA_HOME", System.getProperty("java.home"));
+    environment.put("HOME", isolatedHome.toString());
+    final String configuredMavenUserHome = environment.get("MAVEN_USER_HOME");
+    if (configuredMavenUserHome == null || configuredMavenUserHome.isBlank()) {
+      environment.put(
+          "MAVEN_USER_HOME", Path.of(System.getProperty("user.home"), ".m2").toString());
+    }
+    final String inheritedJavaToolOptions = environment.getOrDefault("JAVA_TOOL_OPTIONS", "");
+    environment.put(
+        "JAVA_TOOL_OPTIONS",
+        (inheritedJavaToolOptions + " -Duser.home=\"" + isolatedHome + "\"").strip());
     final Process process = processBuilder.start();
     final boolean exited;
     try {

@@ -12,8 +12,10 @@ OSV_SCANNER ?= osv-scanner
 DEPENDENCY_CHECK_VERSION ?= 13.0.0
 SERVE_PORT ?= 8080
 MAKE_JOBS ?= 12
-# Bound test JVMs separately because reactor -T can run multiple modules at once.
-TEST_FORKS ?= 4
+# Keep aggregate test concurrency bounded across reactor modules, forks, and JUnit classes.
+TEST_MAVEN_THREADS ?= 2
+TEST_FORKS ?= 2
+TEST_JUNIT_PARALLELISM ?= 2
 
 ifeq ($(MAKELEVEL),0)
 .NOTPARALLEL:
@@ -74,16 +76,14 @@ vuln: ## Check dependencies against the OWASP vulnerability database
 	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) org.owasp:dependency-check-maven:$(DEPENDENCY_CHECK_VERSION):check
 
 test-core: ## Run core library unit tests
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl elider-core -DforkCount=$(TEST_FORKS) -DreuseForks=true test
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl elider-core -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) test
 
-# Nested Maven installs write reactor targets, so the lifecycle test follows the forked unit suite.
 test-plugin: test-core ## Run core and plugin tests, isolating nested lifecycle builds
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -am install -DskipTests
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -Dtest='!DependencyContextLifecycleIntegrationTest' -DforkCount=$(TEST_FORKS) -DreuseForks=true test
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -Dtest=DependencyContextLifecycleIntegrationTest -DforkCount=1 -DreuseForks=true test
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl dependency-elider-maven-plugin -am install -DskipTests
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl dependency-elider-maven-plugin -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) verify
 
 test-all: ## Run the complete reactor verification suite
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) verify
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) verify
 
 test-examples: ## Run baseline and trace-driven package checks for single-project and reactor examples
 	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS) -T $(MAVEN_THREADS)" ./examples/run-elision-cycle.sh
