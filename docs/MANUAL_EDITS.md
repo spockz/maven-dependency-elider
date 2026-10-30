@@ -58,3 +58,7 @@ The fixture scheduler, tests, Make target, README, contributor register, and RQ-
 ## 2026-10-30: WP-Test01 Track 4 transcript scheduling
 
 The Go transcript runner, barrier-based tests, Make target, contributor guidance, and RQ-0009 updates used repository-native `apply_patch` and `gofmt`. No semantic source-edit operation was available or invoked, so no fallback or comparative efficiency claim is recorded. The final reviewed Track 4 head is `5d575e36dbea4a20c82989d0f431128806476f61`; see its implementation and independent-review receipts.
+
+## 2026-10-30: WP-Test01 final wrap-up
+
+This closeout changed documentation only, using a repository-native patch. The retained coordinator and 13 child logs contain no semantic source-edit operation. The extractor's two command candidates were manually reviewed as a `find` lookup and the read-only transcript inventory command; neither edited source. No manual source-edit fallback followed a failed semantic edit. `codex_app.read_thread` first rejected an oversized turn limit, then could not return one oversized turn; the local extractor recovered the retained semantic-call inventory. This is a history-reader output limitation, not a source-edit capability gap. Unrecorded or deleted history remains outside the evidence.
