@@ -4,6 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.networknt.schema.JsonSchema;
+import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.SpecVersion;
+import com.networknt.schema.ValidationMessage;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.ServerSocket;
@@ -22,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 public final class ExampleSupport {
@@ -759,14 +764,17 @@ public final class ExampleSupport {
   }
 
   private static void verifyCveSboms(final String[] arguments) throws IOException {
-    if (arguments.length != 5) {
+    if (arguments.length != 7) {
       throw new IllegalArgumentException(
-          "Usage: verify-cve-sboms FIXTURE BASELINE_SBOM POST_ELISION_SBOM VEX_FILE");
+          "Usage: verify-cve-sboms FIXTURE BASELINE_SBOM POST_ELISION_SBOM VEX_FILE "
+              + "CYCLONEDX_SCHEMA OPENVEX_SCHEMA");
     }
     final String fixture = arguments[1];
     final Path baselinePath = requireAbsolutePath(arguments[2], "BASELINE_SBOM");
     final Path postPath = requireAbsolutePath(arguments[3], "POST_ELISION_SBOM");
     final Path vexPath = requireAbsolutePath(arguments[4], "VEX_FILE");
+    final Path cycloneDxSchema = requireAbsolutePath(arguments[5], "CYCLONEDX_SCHEMA");
+    final Path openVexSchema = requireAbsolutePath(arguments[6], "OPENVEX_SCHEMA");
     final Path reportPath =
         requireAbsolutePath(
             postPath.getParent().resolve("dependency-elider-report.json").toString(),
@@ -775,6 +783,7 @@ public final class ExampleSupport {
     final JsonNode baseline = JSON.readTree(baselinePath.toFile());
     final JsonNode post = JSON.readTree(postPath.toFile());
     final JsonNode report = JSON.readTree(reportPath.toFile());
+    validateSchema(postPath, cycloneDxSchema, SpecVersion.VersionFlag.V7);
 
     final Set<String> before = componentNames(baseline);
     final Set<String> after = componentNames(post);
@@ -816,6 +825,7 @@ public final class ExampleSupport {
             "example-cve-unused-app must emit OpenVEX for proven absent Commons Text CVE");
       }
       final JsonNode vexJson = JSON.readTree(vexPath.toFile());
+      validateSchema(vexPath, openVexSchema, SpecVersion.VersionFlag.V202012);
       if (!"https://openvex.dev/ns/v0.2.0".equals(vexJson.path("@context").asText())) {
         throw new IOException("OpenVEX context must be https://openvex.dev/ns/v0.2.0");
       }
@@ -847,9 +857,144 @@ public final class ExampleSupport {
             "post-elision inventory must retain components whose code was not removed as a whole"
                 + " artifact");
       }
-      if (Files.exists(vexPath)) {
-        throw new IOException("inactive precondition CVE must not produce VEX");
+      if (!Files.exists(vexPath)) {
+        throw new IOException("inactive precondition CVE must produce OpenVEX");
       }
+      final JsonNode vexJson = JSON.readTree(vexPath.toFile());
+      validateSchema(vexPath, openVexSchema, SpecVersion.VersionFlag.V202012);
+      if (!"https://openvex.dev/ns/v0.2.0".equals(vexJson.path("@context").asText())) {
+        throw new IOException("OpenVEX context must be https://openvex.dev/ns/v0.2.0");
+      }
+      final JsonNode statements = vexJson.path("statements");
+      if (!statements.isArray() || statements.isEmpty()) {
+        throw new IOException("OpenVEX must contain at least one statement");
+      }
+      verifySafeClassPrecondition(report, post, vexJson);
+    }
+  }
+
+  private static void verifySafeClassPrecondition(
+      final JsonNode report, final JsonNode post, final JsonNode vex) throws IOException {
+    final String logbackCorePurl = "pkg:maven/ch.qos.logback/logback-core@1.5.18";
+    final JsonNode component =
+        singleMatching(
+            post.path("components"),
+            value -> "logback-core".equals(value.path("name").asText()),
+            "Logback Core component");
+    if (!logbackCorePurl.equals(component.path("purl").asText())
+        || !logbackCorePurl.equals(component.path("bom-ref").asText())) {
+      throw new IOException("CycloneDX component must identify the exact affected Logback Core");
+    }
+    final String sha256 = componentSha256(component);
+    final JsonNode finding =
+        singleMatching(
+            report.path("inactivePreconditionCves"),
+            value -> "CVE-2025-11226".equals(value.path("cveId").asText()),
+            "inactive-precondition report entry");
+    if (report.path("inactivePreconditionCves").size() != 1
+        || !"ch.qos.logback:logback-core:jar:1.5.18".equals(finding.path("coordinate").asText())) {
+      throw new IOException("Inactive finding must target the exact Logback Core coordinate");
+    }
+
+    final JsonNode vulnerability =
+        singleMatching(
+            post.path("vulnerabilities"),
+            value -> "CVE-2025-11226".equals(value.path("id").asText()),
+            "CycloneDX vulnerability");
+    final JsonNode analysis = vulnerability.path("analysis");
+    if (!"not_affected".equals(analysis.path("state").asText())
+        || !"requires_dependency".equals(analysis.path("justification").asText())
+        || !analysis.path("detail").asText().contains("org.codehaus.janino.ClassBodyEvaluator")) {
+      throw new IOException(
+          "CycloneDX precondition evidence must target the exact absent Janino class");
+    }
+    final JsonNode affected = vulnerability.path("affects");
+    if (!affected.isArray()
+        || affected.size() != 1
+        || !logbackCorePurl.equals(affected.get(0).path("ref").asText())) {
+      throw new IOException("CycloneDX vulnerability must affect only the exact Logback Core");
+    }
+
+    final JsonNode statement =
+        singleMatching(
+            vex.path("statements"),
+            value ->
+                "CVE-2025-11226"
+                    .equals(value.path("vulnerability").path("name").asText()),
+            "OpenVEX statement");
+    final String impact = statement.path("impact_statement").asText();
+    if (!"not_affected".equals(statement.path("status").asText())
+        || statement.has("justification")
+        || !impact.contains("org.codehaus.janino:janino")
+        || !impact.contains("org.codehaus.janino.ClassBodyEvaluator")) {
+      throw new IOException("OpenVEX statement has invalid precondition evidence");
+    }
+    final JsonNode products = statement.path("products");
+    if (!products.isArray() || products.size() != 1) {
+      throw new IOException("OpenVEX statement must have one product binding");
+    }
+    final JsonNode product = products.get(0);
+    if (!product.path("@id").asText().equals(product.path("identifiers").path("purl").asText())) {
+      throw new IOException("OpenVEX product identifiers must agree");
+    }
+    final JsonNode subcomponents = product.path("subcomponents");
+    final JsonNode subcomponent =
+        singleMatching(
+            subcomponents,
+            value ->
+                logbackCorePurl.equals(value.path("identifiers").path("purl").asText()),
+            "OpenVEX affected subcomponent");
+    if (subcomponents.size() != 1
+        || !logbackCorePurl.equals(subcomponent.path("@id").asText())
+        || !sha256.equals(subcomponent.path("hashes").path("sha-256").asText())) {
+      throw new IOException("OpenVEX must bind the exact Logback Core component and digest");
+    }
+  }
+
+  private static JsonNode singleMatching(
+      final JsonNode values, final Predicate<JsonNode> predicate, final String description)
+      throws IOException {
+    if (!values.isArray()) {
+      throw new IOException(description + " list is missing");
+    }
+    JsonNode match = null;
+    for (final JsonNode value : values) {
+      if (predicate.test(value)) {
+        if (match != null) {
+          throw new IOException("Multiple matching " + description + " entries");
+        }
+        match = value;
+      }
+    }
+    if (match == null) {
+      throw new IOException("Missing " + description);
+    }
+    return match;
+  }
+
+  private static String componentSha256(final JsonNode component) throws IOException {
+    final JsonNode hash =
+        singleMatching(
+            component.path("hashes"),
+            value -> "SHA-256".equals(value.path("alg").asText()),
+            "SHA-256 component hash");
+    final String digest = hash.path("content").asText();
+    if (!digest.matches("[0-9a-f]{64}")) {
+      throw new IOException("Logback Core SHA-256 is malformed");
+    }
+    return digest;
+  }
+
+  private static void validateSchema(
+      final Path documentPath,
+      final Path schemaPath,
+      final SpecVersion.VersionFlag version)
+      throws IOException {
+    final JsonSchema schema =
+        JsonSchemaFactory.getInstance(version).getSchema(JSON.readTree(schemaPath.toFile()));
+    final Set<ValidationMessage> errors = schema.validate(JSON.readTree(documentPath.toFile()));
+    if (!errors.isEmpty()) {
+      throw new IOException("Schema validation failed for " + documentPath + ": " + errors);
     }
   }
 

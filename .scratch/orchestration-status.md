@@ -197,3 +197,93 @@
 * **Review:** Critical architect and independent track reviewer approved the implementation after fixes for peer cancellation, staged-output cleanup ownership, and worker-count-independent failure wrapping. Receipts are preserved under `.scratch/reviews/parallel-01-*`; Gemini review tooling was unavailable.
 * **Validation:** Java compilation, `make fmt`, `make lint-java`, and nine `make test-examples` runs passed. Each example run passed all four fixtures; three worker caps (1, 4, 12) were measured three times. Spring Boot median `clean verify` times were 36.363 s, 32.962 s, and 20.127 s respectively; Basic showed no speedup. The example timer uses wall-clock time and fixed worker order, so performance evidence is directional. Archive hash parity and focused failure-path tests remain pending.
 * **State:** Integrated into local `main` by merge commit `5b73fcc`. Post-merge Java lint and the example lifecycle, including the multi-module reactor, passed. The task worktree and topic branch were removed after preserving ignored scratch evidence. Bit-exact parity and a robust performance claim remain unverified; see `docs/handovers/2026-10-28-wp-parallel-01-parallel-candidate-jar-trimming-closeout.md`.
+## WP-VEX-02: Precondition-Gated VEX Generation
+
+- **Owning thread/session:** Current coordinating session
+- **Source handover:** `docs/handovers/2026-10-29-wp-vex-02-precondition-gated-vex-generation.md`
+- **Base:** `main` at `c15974c4b512931d1a47d66766ca3ba8e40691ee`
+- **Worktree/branch:** `.scratch/worktrees/track-vex-precondition-gated-generation` / `track/vex-precondition-gated-generation`
+- **Scope:** Proof-backed `requires_dependency` VEX for retained components, strict metadata, serializers, Maven publication, fixtures, and user/contributor documentation.
+- **Acceptance:** Both schemas validate; OpenVEX omits justification only for precondition evidence and includes impact statement; CycloneDX uses `requires_dependency`; no statements when the prerequisite is retained or evidence is incomplete; statements bind to retained bytes; report categories stay distinct; `make check` and `make test-examples` pass.
+- **Baseline:** Clean `main` passed `make check` with repository JDK 21. The handover was copied into the new worktree and updated to reflect the selected exact-class proof scope and completed delivery.
+
+### Architectural review and working scope
+
+Coordinate absence alone cannot establish that a prerequisite class is absent; another dependency or application source may supply it. Working scope requires an exact prerequisite class, explicit `elide.preconditionClassPathComplete` opt-in, and content-bound inspection of class-bearing build inputs. Unknown sources suppress VEX. The opt-in limits the assertion to the declared Maven build inventory and does not cover external runtime injection. The fixture target is `ch.qos.logback:logback-core`.
+
+The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrimOutputWriter`. Existing output generation with `trimJars=true` already supports zero trim records; `trimJars=false` is out of scope.
+
+### Track/slice ledger
+
+| Track | Slice | Scope | State |
+|---|---|---|---|
+| `vex-precondition-gated-generation` | 1 | ADR-0008 and RQ-0013 decision, usage, FAQ, and contributor docs | Approved (`2f8272b`) |
+| `vex-precondition-gated-generation` | 2 | Immutable attestation and fail-closed prerequisite proof | Approved (`163f36f`) |
+| `vex-precondition-gated-generation` | 3 | CycloneDX/OpenVEX serialization and schema tests | Approved (`8017edc`) |
+| `vex-precondition-gated-generation` | 4 | Maven assessment and transactional publisher integration | Approved and verified (`ec60c76`, `5042488`, `f4654a6`) |
+| `vex-precondition-gated-generation` | 5 | Fixture assertions and final verification | Verified; review closeout pending transcript-scope clarification |
+
+### Deviations
+
+- Strengthen the handover's coordinate-only proof with exact prerequisite-class evidence and an explicit complete-inventory assertion; preserve the external-runtime limitation in ADR-0008 and RQ-0013.
+- Consolidate the five proposed tracks into one ordered track because their evidence model, serializers, assessment, and publisher have direct dependencies.
+- Correct the fixture's affected coordinate to Logback Core, as named by the advisory.
+- Replace the in-flight implementer once after the daemon restart ended the original worker before its Slice 1 fixup completed; the dedicated reviewer resumed unchanged.
+- Transcript targets are absent and RQ-0009 tracks that workflow as open research. The reviewer raised a context discrepancy about whether WP-VEX-02 must also include transcript generation/checking; user clarification is pending.
+
+### Slice 1 evidence
+
+- Dedicated review approved consolidated commit `2f8272b`; receipt: `.scratch/reviews/vex-precondition-gated-generation-slice-1.md`.
+- Post-rebase `make check` passed with 195 core tests, 261 plugin tests, 15 lifecycle integration tests, 8 SBOM-comparison tests, formatting, static analysis, and Markdown lint on 49 files. Log: `/tmp/wp-vex-02-slice1-final-make-check.log`.
+- The external Gemini review bridge and semantic edit tool are unavailable in this environment; the Gemini gate remains for track completion and integration, and deterministic changes used shell/git plus patch editing.
+- `make test-examples` passed for all four fixtures in the final integration gate.
+
+### Slice 2 evidence
+
+- Dedicated review approved consolidated commit `163f36f`; receipt: `.scratch/reviews/vex-precondition-gated-vex-generation-slice-2.md`.
+- Post-autosquash `make check` passed with 222 core tests, 264 plugin tests, 15 lifecycle integration tests, formatting, Markdown lint, Checkstyle, PMD, and SpotBugs. Log: `/tmp/wp-vex-02-slice2-post-autosquash-make-check.log`.
+- The ADR-0008 proof suite is selectable by `-Dtest=ADR0008PreconditionProofTest` and passed 24 tests. Focused reader and Maven mapping-bean tests passed 9 and 3 tests respectively.
+- The third fixup was folded into Slice 2 commit `163f36f` before post-rebase validation.
+
+### Slice 3 evidence
+
+- Dedicated review approved serializer commit `8017edc`; receipt: `.scratch/reviews/vex-precondition-gated-vex-generation-slice-3.md`.
+- Final `make check` passed with 226 core tests, 264 plugin tests, 15 lifecycle integration tests, Markdown lint 0 issues, and clean Checkstyle/PMD/SpotBugs. Log: `/tmp/wp-vex-02-slice3-make-check-5.log`.
+- Selectable ADR-0008 serializer tests passed 4/4 with `-Dtest=ADR0008PreconditionVexSerializationTest`; combined ADR/serializer focus passed 44 tests. CycloneDX 1.6 and OpenVEX 0.2.0 pinned schema tests cover both evidence types and conflict-order permutations.
+- Serializer validation binds to the exact retained component path and on-disk digest. Full provider-inventory freshness remains the Slice 4 publication gate.
+
+### Slice 4 architecture constraints
+
+- Collect and revalidate one shared post-elision inventory after effective trimming and validated plan construction, inside the generation commit-handle scope and before reports or output targets are selected.
+- Preserve `requiresDependency` and `requiresClass` through mapping normalization. Resolve mappings to exact candidate versions before proof.
+- The inventory opt-in must not set pruning's `sourceRootsComplete`; unknown, unreadable, unsupported, changed, or newly added providers suppress precondition evidence.
+- Revalidate both provider content digests and root membership before publication. Handle known generated SBOM/OpenVEX files explicitly if they are inside application resource roots.
+- Preserve inactive-prerequisite report semantics only when the exact prerequisite class is absent from the complete declared inventory. Keep omitted-code precedence; incomplete evidence must not imply a successful proof.
+- Keep generation within `MavenElisionOutputPublisher` and `MavenOutputTransaction`; preserve default opt-out and `trimJars=false` scope boundary.
+
+### Slice 4a evidence: inventory capture and freshness
+
+- Dedicated review approved the inventory seam through `eaadf8e`; receipt: `.scratch/reviews/vex-precondition-gated-vex-generation-slice-4a.md`.
+- `MavenPreconditionInventory` captures the effective retained artifacts, production/test source declarations, compiled outputs, and resource providers, then re-enumerates roots and checks digests before returning COMPLETE. Missing roots are fingerprinted; indeterminate states, unknown source generation, unsupported source forms/filesystem entries, and content or membership changes become incomplete evidence.
+- Proof-only capture is default-off and does not change source pruning completeness. Exact known output and staging paths are tracked; existing output targets remain providers, while stages are excluded only after JSON validation.
+- `-Dtest=ADR0008MavenPreconditionInventoryTest` passed 17/17 without skips. Final repository gate also passed after publisher integration.
+
+### Slice 4b evidence: assessment and report classification
+
+- Dedicated review approved `69050a6` plus fixup `c0936ab`; receipt: `.scratch/reviews/vex-precondition-gated-vex-generation-slice-4b.md`.
+- Assessment selects one proof policy per CVE and exact scope-free GAVCE after POM override resolution. Conflicting applicable metadata suppresses removed, omitted-code, and inactive-precondition classifications; equivalent overlapping ranges deduplicate. Omitted-code precedence runs only after mapping consistency checks.
+- Inactive-precondition findings require successful HIGH-confidence proof against a complete opted-in inventory. Scope variants deduplicate; successful precondition findings cannot coexist with conservative omission diagnostics.
+- `-Dtest=ADR0008MavenPreconditionAssessmentTest` passed 14/14. Full `make check` passed with 226 core, 295 plugin, and 15 lifecycle tests and Markdown lint on 49 files. Log: `/tmp/wp-vex-02-slice4b-fixup3-20261029.log`.
+- Independent semantic review found no remaining blockers. Goal invocation and transactional publisher integration are recorded in Slice 4c below.
+
+### Slice 4c evidence: Maven goal and transactional publication
+
+- Dedicated review approved publisher commit `ec60c76`, digest-integrity fix `5042488`, and PMD cleanup `f4654a6`. The review confirmed complete-inventory gating, owned stale-VEX deletion, separate rollback of Maven artifact views, immutable stage digests, post-move digest validation, and rollback on mismatch.
+- Publication assessment runs inside the trim-generation commit boundary and shares one verified inventory with CycloneDX and OpenVEX. When no attestations remain, no invalid empty OpenVEX document is written; unchanged owned VEX can be removed transactionally. Modified and unowned VEX are preserved. `trimJars=false` publication/cleanup remains out of scope.
+- Focused publication and transaction tests passed 18/18, including provider/output drift, valid-JSON stage tampering, coordinated SBOM/manifest tampering, altered-byte install, stale-output ownership, and resolver failure rollback.
+
+### Slice 5 evidence: fixture and final gates
+
+- `example-cve-safe-class-app` opts into `preconditionClassPathComplete`, identifies `org.codehaus.janino.ClassBodyEvaluator` used by Logback Core 1.5.18's conditional-script path, and maps the advisory to `ch.qos.logback:logback-core`. Its verifier checks the OpenVEX impact statement and omitted justification, plus CycloneDX `requires_dependency`.
+- Final `make check` passed: 226 core, 308 plugin, 15 lifecycle integration, and 8 SBOM-comparison tests; formatting, Checkstyle, PMD 7.28, SpotBugs, and Markdown lint (49 files, 0 issues) passed. Log: `/tmp/wp-vex-02-make-check-final-20261030-r3.log`; SHA-256 `7ed2aa306cb2d7182083ed3448acdd2e20397c64087c7a3128d3177677026bc7`.
+- `make test-examples` passed all four fixtures. The safe-class report lists `CVE-2025-11226` inactive for `ch.qos.logback:logback-core:jar:1.5.18`; the fixture verifier confirmed both serializers and schema validity. Log: `/tmp/wp-vex-02-test-examples-final-20261030-r2.log`; SHA-256 `c6d15304de822652d01c142ddc0be1dd270b1045970215ce0b44bc022fe2e616`.

@@ -524,7 +524,9 @@ verify_cve_sboms() {
   local post_elision=$3
   local vex=$4
   "$java" --class-path "$support_classpath" ExampleSupport \
-    verify-cve-sboms "$fixture" "$baseline" "$post_elision" "$vex"
+    verify-cve-sboms "$fixture" "$baseline" "$post_elision" "$vex" \
+    "$repo_root/elider-core/src/test/resources/schema/bom-1.6.schema.json" \
+    "$repo_root/elider-core/src/test/resources/schema/openvex-0.2.0.schema.json"
 }
 
 run_spring_boot_endpoint() {
@@ -851,12 +853,14 @@ verify_baseline_archive() {
       has_entry "$entries" 'org/apache/commons/text/similarity/LevenshteinDistance.class'
       has_entry "$entries" 'org/apache/commons/text/lookup/StringLookup.class'
       has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
+      has_entry "$entries" 'org/codehaus/janino/ClassBodyEvaluator.class'
       has_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       has_prefix "$entries" 'org/codehaus/commons/compiler/'
       has_prefix "$entries" 'org/springframework/'
       ;;
     example-cve-safe-class-app)
       has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
+      lacks_entry "$entries" 'org/codehaus/janino/ClassBodyEvaluator.class'
       lacks_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       ;;
   esac
@@ -899,12 +903,14 @@ verify_archive() {
       has_entry "$entries" 'org/apache/commons/text/similarity/LevenshteinDistance.class'
       lacks_entry "$entries" 'org/apache/commons/text/lookup/StringLookup.class'
       has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
+      has_entry "$entries" 'org/codehaus/janino/ClassBodyEvaluator.class'
       has_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       has_prefix "$entries" 'org/codehaus/commons/compiler/'
       has_prefix "$entries" 'org/springframework/'
       ;;
     example-cve-safe-class-app)
       has_entry "$entries" 'ch/qos/logback/classic/Logger.class'
+      lacks_entry "$entries" 'org/codehaus/janino/ClassBodyEvaluator.class'
       lacks_entry "$entries" 'org/codehaus/janino/ExpressionEvaluator.class'
       ;;
   esac
