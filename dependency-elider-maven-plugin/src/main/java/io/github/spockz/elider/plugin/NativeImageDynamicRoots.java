@@ -36,6 +36,7 @@ final class NativeImageDynamicRoots {
 
   record PropertiesResult(
       boolean declaresClassRoots,
+      boolean requiresArtifactRetention,
       List<UnsupportedArgument> unsupportedArguments,
       Set<Path> resourceProviders) {}
 
@@ -61,12 +62,14 @@ final class NativeImageDynamicRoots {
       throw new IOException("Unsupported native-image Args in " + propertiesEntry.getName());
     }
     boolean declaresClassRoots = false;
+    boolean requiresArtifactRetention = false;
     final List<UnsupportedArgument> unsupported = new ArrayList<>();
     for (final String argument : arguments) {
       try {
         declaresClassRoots |=
             readNativeImageArgument(
                 argument, archive, propertiesEntry, roots, scanContext, resourceProviders);
+        requiresArtifactRetention |= isConfigurationResourceArgument(argument);
       } catch (final UnknownNativeImageArgument exception) {
         if (allowedArguments.contains(argumentName(argument))) {
           continue;
@@ -79,7 +82,15 @@ final class NativeImageDynamicRoots {
       }
     }
     return new PropertiesResult(
-        declaresClassRoots, List.copyOf(unsupported), Set.copyOf(resourceProviders));
+        declaresClassRoots,
+        requiresArtifactRetention,
+        List.copyOf(unsupported),
+        Set.copyOf(resourceProviders));
+  }
+
+  private static boolean isConfigurationResourceArgument(final String argument) {
+    return argument.startsWith("-H:ReflectionConfigurationResources=")
+        || argument.startsWith("-H:ResourceConfigurationResources=");
   }
 
   /** Scans quote-delimited tokens while preserving non-syntactic characters verbatim. */

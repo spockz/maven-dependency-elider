@@ -69,6 +69,75 @@ import org.junit.jupiter.api.Test;
             Set.of(coordinate(fixture, "a"), coordinate(fixture, "b"), coordinate(fixture, "c")));
   }
 
+  /* package */
+  @Test
+  void resourceOnlyPointerRetainsDeclaringAndProviderArchives()
+      throws IOException, MojoFailureException {
+    final Fixture fixture = fixture(false, false, true);
+    final Path declaring =
+        appendEntries(
+            fixture.snapshot("a").filePath(),
+            "a-with-resource-only-pointer.jar",
+            Map.of(
+                "META-INF/native-image/test/native-image.properties",
+                "Args = -H:ResourceConfigurationResources=custom.payload\n"));
+    final Path provider =
+        appendEntries(
+            fixture.snapshot("b").filePath(),
+            "b-with-resource-only-descriptor.jar",
+            Map.of(
+                "custom.payload", "{\"resources\":{\"includes\":[{\"pattern\":\"assets/.*\"}]}}"));
+    replaceArtifactFile(fixture, "a", declaring);
+    replaceArtifactFile(fixture, "b", provider);
+    final Path trace = temporaryDirectory.resolve("resource-only-pointer.lst");
+    Files.writeString(trace, "closure.c.Leaf\n");
+
+    final MavenElisionService.PreparedAnalysis prepared =
+        new MavenElisionService()
+            .prepare(
+                fixture.mavenProject(),
+                MavenElisionServiceEffectiveAnalysisFixtures.options(
+                    List.of(trace.toFile()), null, true));
+
+    assertThat(
+            List.of(
+                prepared.dynamicRootInputs().classNames(),
+                prepared.rawDecision().retainedArtifacts()))
+        .containsExactly(
+            Set.of(),
+            Set.of(coordinate(fixture, "a"), coordinate(fixture, "b"), coordinate(fixture, "c")));
+  }
+
+  /* package */
+  @Test
+  void autoDiscoveredResourceOnlyDescriptorRetainsItsArchive()
+      throws IOException, MojoFailureException {
+    final Fixture fixture = fixture(false, false, true);
+    final Path provider =
+        appendEntries(
+            fixture.snapshot("b").filePath(),
+            "b-with-auto-resource-only-descriptor.jar",
+            Map.of(
+                "META-INF/native-image/test/resource-config.json",
+                "{\"resources\":{\"includes\":[{\"pattern\":\"assets/.*\"}]}}"));
+    replaceArtifactFile(fixture, "b", provider);
+    final Path trace = temporaryDirectory.resolve("auto-resource-only.lst");
+    Files.writeString(trace, "closure.a.Entry\n");
+
+    final MavenElisionService.PreparedAnalysis prepared =
+        new MavenElisionService()
+            .prepare(
+                fixture.mavenProject(),
+                MavenElisionServiceEffectiveAnalysisFixtures.options(
+                    List.of(trace.toFile()), null, true));
+
+    assertThat(
+            List.of(
+                prepared.dynamicRootInputs().classNames(),
+                prepared.rawDecision().retainedArtifacts()))
+        .containsExactly(Set.of(), Set.of(coordinate(fixture, "a"), coordinate(fixture, "b")));
+  }
+
   private Path appendEntries(
       final Path source, final String destinationName, final Map<String, String> additions)
       throws IOException {

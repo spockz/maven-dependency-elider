@@ -56,6 +56,7 @@ final class DependencyDynamicRoots {
   record RootScan(
       Set<String> roots,
       boolean declaresClassRoots,
+      boolean requiresArtifactRetention,
       Set<ServiceDescriptor> serviceDescriptors,
       Set<String> nonServiceRoots,
       Set<java.nio.file.Path> resourceProviders,
@@ -70,7 +71,15 @@ final class DependencyDynamicRoots {
     }
 
     RootScan(final Set<String> roots, final boolean declaresClassRoots) {
-      this(roots, declaresClassRoots, Set.of(), roots, Set.of(), java.util.List.of(), "default");
+      this(
+          roots,
+          declaresClassRoots,
+          false,
+          Set.of(),
+          roots,
+          Set.of(),
+          java.util.List.of(),
+          "default");
     }
 
     RootScan(
@@ -84,6 +93,7 @@ final class DependencyDynamicRoots {
       this(
           roots,
           declaresClassRoots,
+          false,
           serviceDescriptors,
           nonServiceRoots,
           Set.of(),
@@ -184,6 +194,9 @@ final class DependencyDynamicRoots {
     /** Whether this archive declares class roots. */
     private boolean declaresClassRoots;
 
+    /** Whether resource metadata must survive class trimming. */
+    private boolean requiresArtifactRetention;
+
     /** Creates mutable state for one archive using the invocation resource index. */
     private ScanState(
         final java.nio.file.Path jar,
@@ -212,6 +225,7 @@ final class DependencyDynamicRoots {
         NativeImageClassConfig.readNativeImageClassConfig(archive, name, nonServiceRoots);
       } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
           && NativeImageDynamicRoots.isNativeImageResourceConfig(name)) {
+        requiresArtifactRetention = true;
         NativeImageResourceConfig.readNativeImageResourceConfig(archive, name, nonServiceRoots);
       } else if (name.startsWith(NativeImageDynamicRoots.PREFIX) && name.endsWith(".properties")) {
         readNativeImageProperties(archive, entry);
@@ -269,6 +283,7 @@ final class DependencyDynamicRoots {
               scanContext,
               resourceProviders);
       declaresClassRoots |= result.declaresClassRoots();
+      requiresArtifactRetention |= result.requiresArtifactRetention();
       unsupportedNativeImageArgs.addAll(result.unsupportedArguments());
       resourceProviders.addAll(result.resourceProviders());
     }
@@ -279,6 +294,7 @@ final class DependencyDynamicRoots {
       return new RootScan(
           roots,
           declaresClassRoots,
+          requiresArtifactRetention,
           serviceDescriptors,
           nonServiceRoots,
           resourceProviders,

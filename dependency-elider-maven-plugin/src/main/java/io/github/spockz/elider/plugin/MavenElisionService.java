@@ -35,6 +35,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
+import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
@@ -1169,7 +1170,9 @@ final class MavenElisionService {
           scan.effectiveRoots(provenServiceInterfaces, conservativeServiceLoaderRoots);
       classNames.addAll(effective.roots());
       resourceProviderPaths.addAll(scan.resourceProviders());
-      if (effective.declaresRoots() || scan.requiresPassThrough()) {
+      if (effective.declaresRoots()
+          || scan.requiresPassThrough()
+          || scan.requiresArtifactRetention()) {
         declaringArtifacts.add(candidate.coordinate());
       }
       if (scan.requiresPassThrough()) {
@@ -1505,18 +1508,17 @@ final class MavenElisionService {
   }
 
   private static Path invocationBase(final MavenProject project, final MavenSession session) {
-    final File multiModuleBase =
-        session == null || session.getRequest() == null
-            ? null
-            : session.getRequest().getMultiModuleProjectDirectory();
-    return invocationBase(multiModuleBase, project.getBasedir());
+    return invocationBase(session == null ? null : session.getRequest(), project.getBasedir());
   }
 
-  /** Prefers the Maven reactor base over the current project directory. */
+  /** Uses Maven's invocation base, falling back to the project directory. */
   /* package */
-  static Path invocationBase(final File multiModuleBase, final File projectBase) {
-    final File selected = multiModuleBase == null ? projectBase : multiModuleBase;
-    return selected == null ? null : selected.toPath();
+  static Path invocationBase(final MavenExecutionRequest request, final File projectBase) {
+    final String requestBase = request == null ? null : request.getBaseDirectory();
+    if (requestBase != null && !requestBase.isBlank()) {
+      return Path.of(requestBase).toAbsolutePath().normalize();
+    }
+    return projectBase == null ? null : projectBase.toPath().toAbsolutePath().normalize();
   }
 
   /** Scans one dependency archive during an analysis invocation. */

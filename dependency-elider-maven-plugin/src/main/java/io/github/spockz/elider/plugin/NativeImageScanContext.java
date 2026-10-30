@@ -126,8 +126,10 @@ final class NativeImageScanContext {
       final JarEntry entry = entries.nextElement();
       if (!entry.isDirectory() && resourcePath.equals(entry.getName())) {
         found = true;
-        providers.add(archiveIdentity(Path.of(archive.getName())));
-        reader.read(NativeImageInput.archiveEntry(archive, entry, kind));
+        final Path provider = archiveIdentity(Path.of(archive.getName()));
+        providers.add(provider);
+        NativeImageInput.archiveEntry(archive, entry, kind)
+            .readDescriptor(reader, resourcePath, provider);
       }
     }
     return found;
@@ -172,7 +174,8 @@ final class NativeImageScanContext {
         if (!entry.isDirectory() && resourcePath.equals(entry.getName())) {
           found = true;
           providers.add(candidate.path());
-          reader.read(NativeImageInput.archiveEntry(archive, entry, kind));
+          NativeImageInput.archiveEntry(archive, entry, kind)
+              .readDescriptor(reader, resourcePath, candidate.path());
         }
       }
     }

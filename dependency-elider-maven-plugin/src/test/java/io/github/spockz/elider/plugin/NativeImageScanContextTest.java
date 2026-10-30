@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -129,20 +130,29 @@ import org.junit.jupiter.api.io.TempDir;
     final Path malformed =
         NativeImageScanContextTestSupport.jar(
             tempDir,
-            "malformed-provider.jar",
+            "z-malformed-provider.jar",
             NativeImageScanContextTestSupport.entries(
                 SHARED_RESOURCE, NativeImageScanContextTestSupport.MALFORMED_JSON));
+    final Path valid =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "a-valid-provider.jar",
+            NativeImageScanContextTestSupport.entries(
+                SHARED_RESOURCE,
+                NativeImageScanContextTestSupport.reflection("org.example.Valid")));
     final NativeImageScanContext malformedContext =
         NativeImageScanContext.create(
             List.of(
                 NativeImageScanContextTestSupport.candidate(
                     NativeImageScanContextTestSupport.DECLARING_ARTIFACT, declaring),
+                NativeImageScanContextTestSupport.candidate("a", valid),
                 NativeImageScanContextTestSupport.candidate("bad", malformed)),
             null);
     assertThatThrownBy(
             () -> DependencyDynamicRoots.scan(declaring, malformedContext, Set.of(), true))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining(SHARED_RESOURCE);
+        .hasMessageContaining(SHARED_RESOURCE)
+        .hasMessageContaining(malformed.toRealPath().toString());
   }
 
   /* package */
@@ -215,13 +225,19 @@ import org.junit.jupiter.api.io.TempDir;
   /* package */
   @Test
   void invocationBasePrefersMavenRequestThenFallsBackToProject() {
-    final File requestBase = tempDir.resolve("reactor").toFile();
+    final File requestBase = tempDir.resolve("invocation").toFile();
+    final File reactorBase = tempDir.resolve("reactor").toFile();
     final File projectBase = tempDir.resolve("module").toFile();
+    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+    request.setBaseDirectory(requestBase);
+    request.setMultiModuleProjectDirectory(reactorBase);
 
     assertThat(
             List.of(
-                Optional.ofNullable(MavenElisionService.invocationBase(requestBase, projectBase)),
-                Optional.ofNullable(MavenElisionService.invocationBase(null, projectBase)),
+                Optional.ofNullable(MavenElisionService.invocationBase(request, projectBase)),
+                Optional.ofNullable(
+                    MavenElisionService.invocationBase(
+                        new DefaultMavenExecutionRequest(), projectBase)),
                 Optional.ofNullable(MavenElisionService.invocationBase(null, null))))
         .containsExactly(
             Optional.of(requestBase.toPath()), Optional.of(projectBase.toPath()), Optional.empty());

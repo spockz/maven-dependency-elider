@@ -69,6 +69,26 @@ final class NativeImageInput {
   }
 
   /* package */
+  void readDescriptor(
+      final NativeImageScanContext.DescriptorReader reader,
+      final String resourcePath,
+      final Path provider)
+      throws IOException {
+    try {
+      reader.read(this);
+    } catch (final IOException exception) {
+      throw new IOException(
+          "Cannot parse native-image resource "
+              + resourcePath
+              + " from provider archive "
+              + provider
+              + ": "
+              + exception.getMessage(),
+          exception);
+    }
+  }
+
+  /* package */
   InputStream openSibling(final String relativeName) throws IOException {
     return inputSource.openSibling(relativeName);
   }
