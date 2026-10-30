@@ -181,6 +181,50 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final Path fallbackPath = fixture.snapshot("a").filePath();
     final String fallbackDigest =
         io.github.spockz.elider.trimmer.ArtifactDigests.read(fallbackPath).sha256();
+    final MavenElisionService service = new MavenElisionService();
+    final Path closureTrace = temporaryDirectory.resolve("native-image-fallback-closure.lst");
+    Files.writeString(closureTrace, "closure/c/Leaf\n");
+    final MavenElisionService.PreparedAnalysis closureRaw =
+        service.prepare(
+            fixture.mavenProject(),
+            new MavenElisionService.AnalysisOptions(
+                List.of(closureTrace.toFile()),
+                List.of(),
+                null,
+                null,
+                false,
+                true,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                true,
+                true,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                List.of(),
+                false));
+    assertThat(closureRaw.rawDecision().retainedArtifacts())
+        .contains(fixture.coordinate("a"), fixture.coordinate("c"))
+        .doesNotContain(fixture.coordinate("b"));
+    assertThat(closureRaw.dynamicRootInputs().classNames()).isEmpty();
+    assertThat(closureRaw.dynamicRootInputs().scansByPath().get(fallbackPath).requiresPassThrough())
+        .isTrue();
+    final ResolverArtifactGraphCapturePair closurePair =
+        MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
+    final EffectiveGraphPolicy.Evaluation closurePolicy =
+        EffectiveGraphPolicy.evaluatePair(closurePair, closureRaw.rawDecision());
+    final MavenElisionService.EffectiveAnalysis closureEffective =
+        service.finishAnalysis(
+            MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
+                closureRaw,
+                new MavenElisionGraphBinding.Result(
+                    closurePolicy,
+                    closureRaw.graphBinding().inventoryFingerprint(),
+                    closureRaw.graphBinding().operationFingerprint(),
+                    closurePair)));
+    assertThat(closureEffective.effectiveDecision().retainedArtifacts())
+        .contains(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c"));
+
     final Path trace = temporaryDirectory.resolve("native-image-fallback-runtime.lst");
     Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\nclosure/b/Middle\n");
     final MavenElisionService.AnalysisOptions options =
@@ -200,7 +244,6 @@ final class MavenElisionServiceEffectiveAnalysisTest
             MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
             List.of(),
             false);
-    final MavenElisionService service = new MavenElisionService();
     final MavenElisionService.PreparedAnalysis raw =
         service.prepare(fixture.mavenProject(), options);
     assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("a"));

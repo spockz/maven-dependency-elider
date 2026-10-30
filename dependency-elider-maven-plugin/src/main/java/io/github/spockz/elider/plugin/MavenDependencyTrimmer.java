@@ -2220,10 +2220,7 @@ final class MavenDependencyTrimmer {
         skippedIdentities,
         multiRelease.stream().map(MavenElisionService.ArtifactSnapshot::coordinate).toList(),
         moduleInfo.stream().map(MavenElisionService.ArtifactSnapshot::coordinate).toList(),
-        java.util.stream.Stream.concat(configuredOnly.stream(), nativeImageFallback.stream())
-            .distinct()
-            .map(MavenElisionService.ArtifactSnapshot::coordinate)
-            .toList());
+        configuredOnly.stream().map(MavenElisionService.ArtifactSnapshot::coordinate).toList());
   }
 
   private static CandidatePlan candidatePlan(

@@ -31,18 +31,6 @@ final class NativeImageDynamicRoots {
     return (PREFIX + "sbom.json").equals(name) || name.endsWith("/sbom.json");
   }
 
-  static boolean readNativeImageProperties(
-      final JarFile archive,
-      final JarEntry propertiesEntry,
-      final Set<String> roots,
-      final Set<String> allowedArguments,
-      final boolean failOnUnsupported)
-      throws IOException {
-    return readNativeImagePropertiesDetailed(
-            archive, propertiesEntry, roots, allowedArguments, failOnUnsupported)
-        .declaresClassRoots();
-  }
-
   record UnsupportedArgument(String entry, String name, String fullArgument) {}
 
   record PropertiesResult(

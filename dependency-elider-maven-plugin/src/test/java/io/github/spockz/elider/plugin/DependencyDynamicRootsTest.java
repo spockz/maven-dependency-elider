@@ -98,19 +98,31 @@ final class DependencyDynamicRootsTest {
   }
 
   @Test
+  void loadsJavaPropertiesContinuationBeforeTokenizingArgs() throws IOException {
+    final Path jar =
+        nativeImageJar("Args = --features=org.example.Feature \\\n" + "  --enable-http\n");
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+
+    assertThat(scan.roots()).contains("org.example.Feature");
+    assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
   void stripsQuotesAndAllowsArgumentsByName() throws IOException {
     final Path jar =
         nativeImageJar(
             "Args = \"-H:ReflectionConfigurationResources=${.}/reflect-config.json\" "
-                + "'--enable-http' -H:CustomFlag=some\\,value\n",
+                + "'--enable-http' -H:CustomFlag='some value'\n",
             "META-INF/native-image/test/reflect-config.json",
-            "[]");
+            "[{\"name\":\"org.example.Reflective\"}]");
 
     final DependencyDynamicRoots.RootScan scan =
         DependencyDynamicRoots.scan(
             jar, Set.of("-H:CustomFlag", "-H:ReflectionConfigurationResources"), true);
 
     assertThat(scan.requiresPassThrough()).isFalse();
+    assertThat(scan.roots()).contains("org.example.Reflective");
   }
 
   @Test
@@ -128,7 +140,8 @@ final class DependencyDynamicRootsTest {
         .hasMessageContaining("-H:UnknownOption")
         .hasMessageContaining("full argument: '-H:UnknownOption=value'")
         .hasMessageContaining("META-INF/native-image/test/native-image.properties")
-        .hasMessageContaining("<allowedNativeImageArgs>");
+        .hasMessageContaining("<allowedNativeImageArgs>")
+        .hasMessageContaining("Or via CLI: -Delide.allowedNativeImageArgs=-H:UnknownOption");
   }
 
   @Test
@@ -150,15 +163,15 @@ final class DependencyDynamicRootsTest {
   @Test
   void bindsAllowlistAndStrictnessToNativeImageScanPolicy() throws IOException {
     final Path jar = nativeImageJar("Args = -H:CustomFlag=value\n");
-    final DependencyDynamicRoots.RootScan strict = DependencyDynamicRoots.scan(jar, Set.of(), true);
     final DependencyDynamicRoots.RootScan allowed =
         DependencyDynamicRoots.scan(jar, Set.of("-H:CustomFlag"), true);
     final DependencyDynamicRoots.RootScan permissive =
         DependencyDynamicRoots.scan(jar, Set.of(), false);
 
-    assertThat(strict.nativeImagePolicy()).isNotEqualTo(allowed.nativeImagePolicy());
-    assertThat(strict.nativeImagePolicy()).isNotEqualTo(permissive.nativeImagePolicy());
     assertThat(allowed.nativeImagePolicy()).isNotEqualTo(permissive.nativeImagePolicy());
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of(), true))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("-H:CustomFlag");
   }
 
   private Path nativeImageJar(final String args) throws IOException {

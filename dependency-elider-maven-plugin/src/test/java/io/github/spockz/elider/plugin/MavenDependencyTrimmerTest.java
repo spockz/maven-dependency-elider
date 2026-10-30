@@ -86,6 +86,127 @@ final class MavenDependencyTrimmerTest {
   }
 
   @Test
+  // Archive scans and ZIP entry objects remain independent.
+  @SuppressWarnings({
+    "PMD.UseConcurrentHashMap",
+    "PMD.LiteralsFirstInComparisons",
+    "PMD.AvoidInstantiatingObjectsInLoops"
+  })
+  void legacyTrimKeepsFallbackArchiveBytesAndTrimsEligibleSibling() throws Exception {
+    final Path fallbackJar =
+        io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
+            tempDir.resolve("fallback.jar"),
+            tempDir.resolve("fallback-sources"),
+            Map.of(
+                "fallback/Keep.java", "package fallback; public class Keep {}\n",
+                "fallback/Drop.java", "package fallback; public class Drop {}\n"),
+            null);
+    final Path fallbackWithMetadata = tempDir.resolve("fallback-with-metadata.jar");
+    addUnsupportedArgs(fallbackJar, fallbackWithMetadata);
+    final Path siblingJar =
+        io.github.spockz.elider.test.CompilationFixtureSupport.compileToJar(
+            tempDir.resolve("sibling.jar"),
+            tempDir.resolve("sibling-sources"),
+            Map.of(
+                "sample/Keep.java", "package sample; public class Keep {}\n",
+                "sample/Drop.java", "package sample; public class Drop {}\n"),
+            null);
+    final byte[] fallbackBytes = Files.readAllBytes(fallbackWithMetadata);
+    final Artifact fallback = artifact("fallback", fallbackWithMetadata);
+    final Artifact sibling = artifact("sibling", siblingJar);
+    final List<Artifact> artifacts = List.of(fallback, sibling);
+    final MavenProject project = project(fallback);
+    project.setArtifacts(Set.copyOf(artifacts));
+    final List<MavenElisionService.ArtifactSnapshot> snapshots =
+        MavenElisionService.snapshots(artifacts);
+    final Map<Path, DependencyDynamicRoots.RootScan> scans = new java.util.LinkedHashMap<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : snapshots) {
+      final boolean isFallback = snapshot.coordinate().artifactId().equals("fallback");
+      scans.put(
+          snapshot.filePath(),
+          isFallback
+              ? new DependencyDynamicRoots.RootScan(
+                  Set.of(),
+                  false,
+                  Set.of(),
+                  Set.of(),
+                  List.of(
+                      new NativeImageDynamicRoots.UnsupportedArgument(
+                          "META-INF/native-image/test/native-image.properties",
+                          "-H:UnknownOption",
+                          "-H:UnknownOption=value")),
+                  "fail=false;allowed=")
+              : new DependencyDynamicRoots.RootScan(Set.of(), false));
+    }
+    final List<ArtifactFileRef> artifactRefs = new java.util.ArrayList<>();
+    for (final MavenElisionService.ArtifactSnapshot snapshot : snapshots) {
+      artifactRefs.add(ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath()));
+    }
+    final ArtifactClassIndex classIndex = new JarIndexScanner().scan(artifactRefs);
+    final MavenDependencyTrimmer.TrimResult result =
+        MavenDependencyTrimmer.trim(
+            new MavenDependencyTrimmer.TrimRequest(
+                project,
+                null,
+                snapshots,
+                new MavenDependencyTrimmer.ScanInputs(classIndex, scans),
+                snapshots.stream()
+                    .map(MavenElisionService.ArtifactSnapshot::coordinate)
+                    .collect(java.util.stream.Collectors.toSet()),
+                TraceData.of(Set.of("sample.Keep")),
+                Set.of(),
+                Set.of(),
+                Set.of(),
+                List.of(),
+                false,
+                List.of(),
+                false));
+
+    assertThat(Files.readAllBytes(fallbackWithMetadata)).containsExactly(fallbackBytes);
+    assertThat(result.records()).hasSize(1);
+    assertThat(result.records().getFirst().coordinate().artifactId()).isEqualTo("sibling");
+    assertThat(result.records().getFirst().retainedClasses())
+        .isLessThan(result.records().getFirst().totalClasses());
+  }
+
+  // ZIP entries must be recreated individually when copying an archive.
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  private void addUnsupportedArgs(final Path original, final Path destination) throws IOException {
+    try (JarFile archive = new JarFile(original.toFile());
+        java.util.jar.JarOutputStream output =
+            new java.util.jar.JarOutputStream(Files.newOutputStream(destination))) {
+      final java.util.Enumeration<java.util.jar.JarEntry> entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        final java.util.jar.JarEntry entry = entries.nextElement();
+        output.putNextEntry(new java.util.jar.JarEntry(entry.getName()));
+        try (java.io.InputStream input = archive.getInputStream(entry)) {
+          input.transferTo(output);
+        }
+        output.closeEntry();
+      }
+      output.putNextEntry(
+          new java.util.jar.JarEntry("META-INF/native-image/test/native-image.properties"));
+      output.write(
+          "Args = -H:UnknownOption=value\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      output.closeEntry();
+    }
+  }
+
+  private Artifact artifact(final String artifactId, final Path jar) {
+    final Artifact artifact =
+        new DefaultArtifact(
+            GROUP_ID,
+            artifactId,
+            VERSION,
+            "runtime",
+            JAR_TYPE,
+            null,
+            new DefaultArtifactHandler("jar"));
+    artifact.setFile(jar.toFile());
+    return artifact;
+  }
+
+  @Test
   void malformedSelectedPlatformClassOnCacheMissPublishesNoSuccessOutput() throws Exception {
     final Path jar = compileJar();
     final Path javaHome = Files.createDirectories(tempDir.resolve("malformed-jdk/lib")).getParent();

@@ -17,7 +17,7 @@ Dynamic Reachability & Native-Image Integration
 
 To safeguard applications compiled into GraalVM native images (or using libraries designed for ahead-of-time compilation), `maven-dependency-elider` inspects dependency JARs for embedded GraalVM reachability metadata under `META-INF/native-image/**`. Dynamic class roots and reflection targets identified in this metadata are seeded as retention roots so intra-JAR trimming does not purge classes needed by runtime reflection or native image features.
 
-The current implementation in [`NativeImageDynamicRoots.java`](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/NativeImageDynamicRoots.java) parses `native-image.properties` files via `readNativeImageProperties` under a strict fail-closed contract:
+Before WP-NATIVE-01, [`NativeImageDynamicRoots.java`](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/NativeImageDynamicRoots.java) parsed `native-image.properties` under a strict fail-closed contract that rejected any quote in Args:
 
 ```java
 // NativeImageDynamicRoots.java
@@ -78,7 +78,7 @@ Native-image options specified in `Args` fall into three distinct functional cat
 
 ### 2.2 Quoting and Whitespace Escaping
 
-`native-image.properties` follows standard Java properties format, but argument values frequently enclose parameters or regex patterns in quotes (e.g. `-H:IncludeResources=".*\\.properties"` or `--initialize-at-build-time='com.foo.Bar'`). The current check:
+`native-image.properties` follows standard Java properties format, but argument values frequently enclose parameters or regex patterns in quotes (e.g. `-H:IncludeResources=".*\\.properties"` or `--initialize-at-build-time='com.foo.Bar'`). The pre-WP check:
 
 ```java
 if (args.contains("\"") || args.contains("'")) { ... throw ... }
@@ -126,7 +126,7 @@ The accepted policy is implemented in [ADR-0009](../adr/0009-permissive-graalvm-
 
 `allowedNativeImageArgs` is validated as nonblank names without `=` and canonicalized in sorted, deduplicated order. With strict mode enabled, diagnostics include the argument name, full token, archive entry, POM snippet, and CLI form. With strict mode disabled, the scanner marks only the containing artifact; it is retained before whole-artifact pruning, skipped in both trim engines, and analyzed as unchanged link input. Other artifacts remain independently eligible for trimming and elision. Policy inputs participate in graph and trim-cache identity.
 
-Evidence is in [`NativeImageDynamicRoots`](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/NativeImageDynamicRoots.java), [`DependencyDynamicRootsTest`](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyDynamicRootsTest.java), and [`ElideMojoTest`](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/ElideMojoTest.java). Coverage includes the exact OkHttp Args sequence and feature root, quoted resource options, name-only allowance, unmatched quotes, strict diagnostics, and unsupported-artifact fallback state. End-to-end digest parity with a separate eligible trim target is tracked by the WP-NATIVE verification gate.
+Evidence is in [`NativeImageDynamicRoots`](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/NativeImageDynamicRoots.java), [`DependencyDynamicRootsTest`](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyDynamicRootsTest.java), [`ElideMojoTest`](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/ElideMojoTest.java), and [`MavenElisionServiceEffectiveAnalysisTest`](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/MavenElisionServiceEffectiveAnalysisTest.java). Tests cover the exact OkHttp Args sequence and feature root, Java-properties continuation, quoted resource/value parsing, a modeled reflection root despite allowlisting its option name, strict CLI diagnostics, cross-archive closure, byte-identical fallback, sibling class trimming, unused-artifact elision, and a fallback-to-allowlist cache-policy switch.
 
 ## 4. Remaining Research Questions
 
