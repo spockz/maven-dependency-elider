@@ -141,6 +141,82 @@ final class MavenOutputTransactionTest {
 
   @Test
   @SuppressWarnings(ASSERTION_SUPPRESSION)
+  // Checks stale-output deletion is restored if a later publication move fails.
+  void failedPublicationRestoresTransactionallyDeletedOutput() throws Exception {
+    final Path staleVex = temporaryDirectory.resolve("dependency-elider.openvex.json");
+    final Path report = temporaryDirectory.resolve(SUMMARY_FILE);
+    Files.writeString(staleVex, "previous OpenVEX");
+    Files.writeString(report, "previous report");
+    final AtomicBoolean failed = new AtomicBoolean();
+    final MavenOutputTransaction.MoveOperation move =
+        (source, target) -> {
+          if (source.getFileName().toString().contains(".staged-")
+              && target.equals(report)
+              && failed.compareAndSet(false, true)) {
+            throw new IOException("injected report installation failure");
+          }
+          Files.move(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        };
+
+    try (MavenOutputTransaction transaction =
+        MavenOutputTransaction.forTargets(List.of(staleVex, report), move)) {
+      transaction.deleteTarget(staleVex, ArtifactFileDigest.sha256(staleVex));
+      Files.writeString(transaction.stagedPath(report), "new report");
+      assertThatThrownBy(transaction::publish)
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("injected report installation failure");
+    }
+
+    assertThat(staleVex).hasContent("previous OpenVEX");
+    assertThat(report).hasContent("previous report");
+    assertThat(failed).isTrue();
+  }
+
+  @Test
+  void skippedTargetNeedsNoStageAndRemainsUnchanged() throws Exception {
+    final Path userFile = temporaryDirectory.resolve("user-owned.openvex.json");
+    Files.writeString(userFile, "user-owned OpenVEX");
+
+    try (MavenOutputTransaction transaction =
+        MavenOutputTransaction.forTargets(List.of(userFile))) {
+      transaction.skipTarget(userFile);
+      transaction.publish();
+      transaction.commit();
+      transaction.cleanupCommitted();
+    }
+
+    assertThat(userFile).hasContent("user-owned OpenVEX");
+  }
+
+  @Test
+  void failedStaleOutputDeletionRestoresCompletedBackupMove() throws Exception {
+    final Path staleVex = temporaryDirectory.resolve("dependency-elider.openvex.json");
+    Files.writeString(staleVex, "previous OpenVEX");
+    final AtomicBoolean failed = new AtomicBoolean();
+    final MavenOutputTransaction.MoveOperation move =
+        (source, target) -> {
+          Files.move(source, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+          if (source.equals(staleVex)
+              && target.getFileName().toString().contains(".backup-")
+              && failed.compareAndSet(false, true)) {
+            throw new IOException("injected stale VEX deletion failure");
+          }
+        };
+
+    try (MavenOutputTransaction transaction =
+        MavenOutputTransaction.forTargets(List.of(staleVex), move)) {
+      transaction.deleteTarget(staleVex, ArtifactFileDigest.sha256(staleVex));
+      assertThatThrownBy(transaction::publish)
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("injected stale VEX deletion failure");
+    }
+
+    assertThat(staleVex).hasContent("previous OpenVEX");
+    assertThat(failed).isTrue();
+  }
+
+  @Test
+  @SuppressWarnings(ASSERTION_SUPPRESSION)
   // Checks retry preserves targets whose backups were restored already.
   void retryAfterPartialRestoreKeepsAlreadyRestoredFile() throws Exception {
     final Path firstTarget = temporaryDirectory.resolve("first.json");

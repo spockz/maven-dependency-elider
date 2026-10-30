@@ -12,6 +12,9 @@ final class RecordingMavenLog implements Log {
   /** Informational lines captured from the Mojo. */
   private final List<String> recordedMessages = new ArrayList<>();
 
+  /** Warning lines captured from the Mojo. */
+  private final List<String> recordedWarnings = new ArrayList<>();
+
   /** Creates an empty logger for an isolated test. */
   @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.UncommentedEmptyConstructor"})
   RecordingMavenLog() {}
@@ -20,6 +23,11 @@ final class RecordingMavenLog implements Log {
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   List<String> messages() {
     return List.copyOf(recordedMessages);
+  }
+
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  List<String> warnings() {
+    return List.copyOf(recordedWarnings);
   }
 
   @Override
@@ -58,17 +66,23 @@ final class RecordingMavenLog implements Log {
 
   @Override
   public boolean isWarnEnabled() {
-    return false;
+    return true;
   }
 
   @Override
-  public void warn(final CharSequence content) {}
+  public void warn(final CharSequence content) {
+    recordedWarnings.add(content.toString());
+  }
 
   @Override
-  public void warn(final CharSequence content, final Throwable error) {}
+  public void warn(final CharSequence content, final Throwable error) {
+    recordedWarnings.add(content.toString());
+  }
 
   @Override
-  public void warn(final Throwable error) {}
+  public void warn(final Throwable error) {
+    recordedWarnings.add(error.toString());
+  }
 
   @Override
   public boolean isErrorEnabled() {

@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import java.io.IOException;
 import org.apache.maven.plugin.logging.Log;
 
 /** Emits goal completion and unchanged-artifact diagnostics. */
@@ -13,7 +14,10 @@ final class MavenElisionOutputLogger {
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static void completion(
       final MavenElisionOutputPublisher.Request request,
-      final MavenElisionReportSnapshot reportSnapshot) {
+      final MavenVulnerabilityAssessment.Result assessment)
+      throws IOException {
+    final MavenElisionReportSnapshot reportSnapshot =
+        MavenElisionReportSnapshot.from(request.project(), request.analysis(), assessment);
     final MavenElisionService.Analysis analysis = request.analysis();
     final Log log = request.log();
     if (log.isInfoEnabled() && request.files().trimJars() && analysis.trimCacheHits() > 0) {
@@ -26,15 +30,14 @@ final class MavenElisionOutputLogger {
               + " ms (target < 1.5 ms)");
     }
     if (request.files().trimJars()) {
-      ElisionSummary.reportTrimmed(
-          log, analysis, reportSnapshot, request.vulnerabilityAssessment());
+      ElisionSummary.reportTrimmed(log, analysis, reportSnapshot, assessment);
     } else {
       ElisionSummary.report(
           log,
           analysis.effectiveDecision(),
           analysis.resolvedSnapshots().size(),
           reportSnapshot,
-          request.vulnerabilityAssessment());
+          assessment);
     }
     if (log.isInfoEnabled()) {
       log.info(

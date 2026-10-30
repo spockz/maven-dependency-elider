@@ -44,19 +44,17 @@ final class MavenSbomWriter {
       final MavenElisionService.Analysis analysis,
       final Collection<VexAttestation> attestations)
       throws IOException {
-    final List<ArtifactFileRef> inventory = new ArrayList<>();
-    final Map<ArtifactCoordinate, Path> trimmedPaths = new ConcurrentHashMap<>();
-    for (final ArtifactTrimRecord record : analysis.trimRecords()) {
-      trimmedPaths.put(record.coordinate(), record.trimmedPath());
-    }
-    for (final Artifact artifact : plan.resolvedArtifacts()) {
-      final java.io.File artifactFile = artifact.getFile();
-      if (artifactFile != null) {
-        final ArtifactCoordinate coordinate = coordinate(artifact);
-        final Path inventoryPath = trimmedPaths.getOrDefault(coordinate, artifactFile.toPath());
-        inventory.add(ArtifactFileRef.fromPath(coordinate, inventoryPath));
-      }
-    }
+    write(project, output, plan, analysis, attestations, postInventory(plan, analysis));
+  }
+
+  static void write(
+      final MavenProject project,
+      final Path output,
+      final MavenElisionService.ApplyPlan plan,
+      final MavenElisionService.Analysis analysis,
+      final Collection<VexAttestation> attestations,
+      final List<ArtifactFileRef> inventory)
+      throws IOException {
     new CycloneDxSbomGenerator()
         .write(
             output,
@@ -106,11 +104,22 @@ final class MavenSbomWriter {
       final MavenElisionService.Analysis analysis,
       final Collection<VexAttestation> attestations)
       throws IOException {
+    writeOpenVex(project, output, plan, analysis, attestations, postInventory(plan, analysis));
+  }
+
+  static void writeOpenVex(
+      final MavenProject project,
+      final Path output,
+      final MavenElisionService.ApplyPlan plan,
+      final MavenElisionService.Analysis analysis,
+      final Collection<VexAttestation> attestations,
+      final List<ArtifactFileRef> inventory)
+      throws IOException {
     new OpenVexGenerator()
         .write(
             output,
             root(project),
-            postInventory(plan, analysis),
+            inventory,
             attestations,
             new OpenVexGenerator.DocumentMetadata(
                 "urn:uuid:" + UUID.randomUUID(), "Dependency Elider", "Tool", Instant.now(), 1));
@@ -146,7 +155,7 @@ final class MavenSbomWriter {
     Files.copy(source, absolute, StandardCopyOption.REPLACE_EXISTING);
   }
 
-  private static List<ArtifactFileRef> postInventory(
+  static List<ArtifactFileRef> postInventory(
       final MavenElisionService.ApplyPlan plan, final MavenElisionService.Analysis analysis)
       throws IOException {
     final List<ArtifactFileRef> inventory = new ArrayList<>();

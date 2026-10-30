@@ -2,7 +2,6 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
@@ -111,11 +110,17 @@ public final class ElideMojo extends AbstractMojo {
       defaultValue = "${project.build.directory}/baseline-sbom.cdx.json")
   private File baselineSbomFile;
 
-  /** OpenVEX output written only when omitted-code proof succeeds. */
+  /** Trim-mode OpenVEX output written when omitted-code or exact precondition proof succeeds. */
   @Parameter(
       property = "elide.vexFile",
       defaultValue = "${project.build.directory}/dependency-elider.openvex.json")
   private File vexFile;
+
+  /**
+   * Enables trim-mode proof only when every Maven class-bearing input is declared and inspectable.
+   */
+  @Parameter(property = "elide.preconditionClassPathComplete", defaultValue = DEFAULT_FALSE)
+  private boolean preconditionClassPathComplete;
 
   /** Optional local vulnerability-index cache directory. */
   @Parameter(property = "elide.cveCacheDirectory")
@@ -156,6 +161,10 @@ public final class ElideMojo extends AbstractMojo {
   /** Mutable for tests that inject plan publication failure. */
   @SuppressWarnings("PMD.ImmutableField")
   private PlanPublication planPublication = ResolverArtifactPlanPublisher::publish;
+
+  /** Optional post-staging mutation used to verify inventory freshness before publication. */
+  @SuppressWarnings("PMD.ImmutableField")
+  private MavenElisionOutputPublisher.AfterStaging afterStaging = () -> {};
 
   /** Maven switch that skips analysis and mutation. */
   @Parameter(property = "elide.skip", defaultValue = DEFAULT_FALSE)
@@ -205,15 +214,11 @@ public final class ElideMojo extends AbstractMojo {
   }
 
   private void executeAnalysis() throws IOException, MojoFailureException {
-    final List<ArtifactFileRef> baselineInventory =
-        trimJars ? MavenSbomWriter.captureOriginalInventory(project) : List.of();
     final MavenElisionService service = new MavenElisionService();
     final MavenElisionService.PreparedAnalysis prepared =
         service.prepare(project, analysisOptions());
     final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
     final MavenElisionService.Analysis analysis = service.finishEffectiveOutputs(effective);
-    final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
-        assessVulnerabilities(analysis);
     try (TrimOutputGenerationCommitHandle generation = analysis.generationCommit()) {
       MavenElisionOutputPublisher.publish(
           new MavenElisionOutputPublisher.Request(
@@ -234,13 +239,14 @@ public final class ElideMojo extends AbstractMojo {
                   trimJars),
               getLog(),
               planPublication,
-              baselineInventory,
-              vulnerabilityAssessment));
+              vulnerabilityCacheConfig(),
+              configuredVulnerabilityMappings(),
+              trimJars && preconditionClassPathComplete,
+              afterStaging));
     }
   }
 
-  private MavenVulnerabilityAssessment.Result assessVulnerabilities(
-      final MavenElisionService.Analysis analysis) throws IOException {
+  private CacheConfig vulnerabilityCacheConfig() {
     final Path cacheDirectory =
         cveCacheDirectory == null
             ? VulnerabilityCacheManager.defaultCacheDirectory()
@@ -258,11 +264,13 @@ public final class ElideMojo extends AbstractMojo {
             cveForceSync,
             session != null && session.isOffline(),
             VulnerabilityCacheManager.bundledEmptySeed());
-    final List<VulnerabilitySymbolMapping> manualMappings =
-        vulnerabilityMappings == null
-            ? List.of()
-            : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
-    return new MavenVulnerabilityAssessment(getLog()).assess(config, manualMappings, analysis);
+    return config;
+  }
+
+  private List<VulnerabilitySymbolMapping> configuredVulnerabilityMappings() {
+    return vulnerabilityMappings == null
+        ? List.of()
+        : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
   }
 
   private MavenElisionService.AnalysisOptions analysisOptions() {

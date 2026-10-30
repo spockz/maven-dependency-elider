@@ -4,8 +4,11 @@ package io.github.spockz.elider.plugin;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** Stages report files and restores prior files if a later publication step fails. */
@@ -16,6 +19,12 @@ final class MavenOutputTransaction implements AutoCloseable {
 
   /** File journal records completed moves even if an injected move then throws. */
   private final MavenOutputFileJournal journal;
+
+  /** Targets removed transactionally when a generated document is no longer eligible. */
+  private final Map<Path, String> deleteTargets = new LinkedHashMap<>();
+
+  /** Targets intentionally left untouched when cleanup is not backed by ownership evidence. */
+  private final Set<Path> skippedTargets = new LinkedHashSet<>();
 
   /** Whether all staged targets were installed. */
   private boolean published;
@@ -59,13 +68,48 @@ final class MavenOutputTransaction implements AutoCloseable {
         .orElseThrow(() -> new IOException("Output was not staged: " + absolute));
   }
 
+  List<Path> stagingPaths() {
+    return List.copyOf(stagedToFinal.keySet());
+  }
+
+  void deleteTarget(final Path target, final String expectedSha256) throws IOException {
+    if (published) {
+      throw new IllegalStateException("Output transaction is already published");
+    }
+    final Path absolute = target.toAbsolutePath().normalize();
+    if (!stagedToFinal.containsValue(absolute)) {
+      throw new IOException("Output was not staged: " + absolute);
+    }
+    if (expectedSha256 == null || !expectedSha256.matches("[0-9a-f]{64}")) {
+      throw new IOException("Output deletion requires a SHA-256 ownership digest: " + absolute);
+    }
+    skippedTargets.remove(absolute);
+    deleteTargets.put(absolute, expectedSha256);
+  }
+
+  void skipTarget(final Path target) throws IOException {
+    if (published) {
+      throw new IllegalStateException("Output transaction is already published");
+    }
+    final Path absolute = target.toAbsolutePath().normalize();
+    if (!stagedToFinal.containsValue(absolute)) {
+      throw new IOException("Output was not staged: " + absolute);
+    }
+    deleteTargets.remove(absolute);
+    skippedTargets.add(absolute);
+  }
+
   void publish() throws IOException {
     if (published) {
       throw new IllegalStateException("Staged output transaction is already published");
     }
     try {
       for (final Map.Entry<Path, Path> entry : stagedToFinal.entrySet()) {
-        journal.installStaged(entry.getKey(), entry.getValue());
+        if (deleteTargets.containsKey(entry.getValue())) {
+          journal.deleteExisting(entry.getValue(), deleteTargets.get(entry.getValue()));
+        } else if (!skippedTargets.contains(entry.getValue())) {
+          journal.installStaged(entry.getKey(), entry.getValue());
+        }
       }
       published = true;
     } catch (final IOException exception) {

@@ -11,6 +11,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -49,6 +52,58 @@ final class MavenGeneratedOutputManifest {
     }
     Files.createDirectories(parent);
     JSON.writeValue(manifest.toFile(), document);
+  }
+
+  static void writeStage(
+      final Path stage, final Collection<Path> generated, final Map<Path, Path> stagedByTarget)
+      throws IOException {
+    final ArrayNode outputs = JSON.createArrayNode();
+    for (final Path path : generated) {
+      final Path absolute = path.toAbsolutePath().normalize();
+      final Path staged = stagedByTarget.get(absolute);
+      if (staged == null || !Files.isRegularFile(staged)) {
+        throw new IOException("Generated output has no staged file: " + absolute);
+      }
+      final ObjectNode output = outputs.addObject();
+      output.put("path", absolute.toString());
+      output.put("sha256", ArtifactFileDigest.sha256(staged));
+    }
+    final ObjectNode document = JSON.createObjectNode();
+    document.set("outputs", outputs);
+    final Path parent = stage.getParent();
+    if (parent == null) {
+      throw new IOException("Generated output manifest stage must have a parent: " + stage);
+    }
+    Files.createDirectories(parent);
+    JSON.writeValue(stage.toFile(), document);
+  }
+
+  static Optional<String> unchangedOwnedOutputDigest(final Path manifest, final Path target)
+      throws IOException {
+    if (MavenPreconditionOutputState.definitelyAbsent(manifest)) {
+      return Optional.empty();
+    }
+    if (!Files.isRegularFile(manifest)) {
+      return Optional.empty();
+    }
+    final Path normalizedTarget = target.toAbsolutePath().normalize();
+    final Set<Path> seen = new HashSet<>();
+    Optional<String> matchingDigest = Optional.empty();
+    for (final JsonNode output : readOutputs(manifest)) {
+      final Path path = MavenGeneratedOutputEntry.outputPath(output, manifest);
+      final String digest = MavenGeneratedOutputEntry.outputDigest(output, manifest);
+      if (!seen.add(path)) {
+        throw new IOException("Duplicate generated output manifest path: " + path);
+      }
+      if (normalizedTarget.equals(path)) {
+        final boolean unchanged =
+            MavenGeneratedOutputEntry.matches(output, normalizedTarget, manifest);
+        if (unchanged) {
+          matchingDigest = Optional.of(digest);
+        }
+      }
+    }
+    return matchingDigest;
   }
 
   private static Set<Path> allowedPaths(final Collection<Path> paths) {

@@ -3,6 +3,9 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
+import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -11,6 +14,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
@@ -29,28 +33,68 @@ final class MavenElisionOutputPublisher {
     MavenElisionOutputLogger.passThroughWarnings(request.log(), request.analysis());
     final MavenElisionService.ApplyPlan plan =
         request.service().plan(request.project(), request.analysis());
-    final MavenElisionReportSnapshot reportSnapshot =
-        MavenElisionReportSnapshot.from(
-            request.project(), request.analysis(), request.vulnerabilityAssessment());
-    publishReportsAndViews(request, plan, reportSnapshot);
-    MavenElisionOutputLogger.completion(request, reportSnapshot);
+    final MavenVulnerabilityAssessment.Result assessment = publishReportsAndViews(request, plan);
+    MavenElisionOutputLogger.completion(request, assessment);
   }
 
-  private static void publishReportsAndViews(
-      final Request request,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionReportSnapshot reportSnapshot)
-      throws IOException {
+  private static MavenVulnerabilityAssessment.Result publishReportsAndViews(
+      final Request request, final MavenElisionService.ApplyPlan plan) throws IOException {
     final Path summary =
         MavenElisionReportWriter.outputPath(request.files().summary(), request.project());
-    try (MavenOutputTransaction outputs =
-        MavenOutputTransaction.forTargets(outputTargets(request, summary))) {
-      writeStagedReports(outputs, request, plan, reportSnapshot, summary);
+    final List<Path> outputTargets = outputTargets(request, summary);
+    try (MavenOutputTransaction outputs = MavenOutputTransaction.forTargets(outputTargets)) {
+      final List<ArtifactFileRef> baselineInventory =
+          request.files().trimJars()
+              ? MavenSbomWriter.captureOriginalInventory(request.project())
+              : List.of();
+      final MavenPreconditionInventory.Snapshot inventory =
+          MavenPreconditionInventory.capture(
+              request.project(),
+              plan,
+              request.analysis(),
+              request.preconditionProofEnabled(),
+              outputTargets,
+              outputs.stagingPaths());
+      final MavenVulnerabilityAssessment.Result assessment =
+          new MavenVulnerabilityAssessment(request.log())
+              .assess(
+                  request.cacheConfig(),
+                  request.vulnerabilityMappings(),
+                  request.analysis(),
+                  inventory);
+      final Optional<String> staleVexDigest =
+          request.files().trimJars() && !hasVex(assessment)
+              ? unchangedOwnedVexDigest(request, false)
+              : Optional.empty();
+      final MavenElisionReportSnapshot reportSnapshot =
+          MavenElisionReportSnapshot.from(request.project(), request.analysis(), assessment);
+      writeStagedReports(
+          outputs,
+          request,
+          plan,
+          reportSnapshot,
+          summary,
+          baselineInventory,
+          inventory,
+          assessment);
+      if (request.files().trimJars() && !hasVex(assessment)) {
+        outputs.skipTarget(request.files().vex().toPath());
+      }
+      request.afterStaging().run();
+      final List<Path> installStages = installStages(outputs, request, assessment);
+      inventory.verifyFresh(
+          request.project(), plan, request.analysis(), outputTargets, installStages);
+      if (request.files().trimJars() && !hasVex(assessment)) {
+        final Optional<String> currentVexDigest = unchangedOwnedVexDigest(request, true);
+        if (staleVexDigest.isPresent() && staleVexDigest.equals(currentVexDigest)) {
+          outputs.deleteTarget(request.files().vex().toPath(), staleVexDigest.orElseThrow());
+        }
+      }
       outputs.publish();
       publishViewsAndPlan(request, plan);
       commitBoth(outputs, request.generation());
-      recordGeneratedOutputs(request);
       cleanupCommitted(outputs, request.generation());
+      return assessment;
     }
   }
 
@@ -62,10 +106,9 @@ final class MavenElisionOutputPublisher {
     if (files.trimJars()) {
       targets.add(files.sbom().toPath());
       targets.add(files.baselineSbom().toPath());
+      targets.add(files.vex().toPath());
       targets.addAll(MavenSbomWriter.stagedPaths(request.project()));
-      if (hasVex(request)) {
-        targets.add(files.vex().toPath());
-      }
+      targets.add(MavenGeneratedOutputs.manifestPath(request.project()));
     }
     return targets;
   }
@@ -75,7 +118,10 @@ final class MavenElisionOutputPublisher {
       final Request request,
       final MavenElisionService.ApplyPlan plan,
       final MavenElisionReportSnapshot reportSnapshot,
-      final Path summary)
+      final Path summary,
+      final List<ArtifactFileRef> baselineInventory,
+      final MavenPreconditionInventory.Snapshot inventory,
+      final MavenVulnerabilityAssessment.Result assessment)
       throws IOException {
     final MavenElisionService.Analysis analysis = request.analysis();
     MavenClassUsageReportWriter.write(
@@ -83,56 +129,100 @@ final class MavenElisionOutputPublisher {
         analysis.classUsageReport(),
         analysis.bytecodeScan());
     if (request.files().trimJars()) {
-      final MavenVulnerabilityAssessment.Result assessment = request.vulnerabilityAssessment();
       final List<io.github.spockz.elider.model.VexAttestation> attestations =
-          assessment == null ? List.of() : assessment.attestations();
+          assessment.attestations();
       final Path sbom = outputs.stagedPath(request.files().sbom().toPath());
-      MavenSbomWriter.write(request.project(), sbom, plan, analysis, attestations);
+      MavenSbomWriter.write(
+          request.project(), sbom, plan, analysis, attestations, inventory.artifactFiles());
       MavenSbomWriter.writeBaseline(
           request.project(),
           outputs.stagedPath(request.files().baselineSbom().toPath()),
-          request.baselineInventory(),
+          baselineInventory,
           analysis);
-      if (hasVex(request)) {
+      if (hasVex(assessment)) {
         MavenSbomWriter.writeOpenVex(
             request.project(),
             outputs.stagedPath(request.files().vex().toPath()),
             plan,
             analysis,
-            attestations);
+            attestations,
+            inventory.artifactFiles());
       }
       final List<Path> stagedSboms = MavenSbomWriter.stagedPaths(request.project());
       for (final Path stagedSbom : stagedSboms) {
         MavenSbomWriter.stage(sbom, outputs.stagedPath(stagedSbom));
       }
+      final List<Path> generated =
+          MavenGeneratedOutputs.generatedOutputPaths(
+              request.project(),
+              request.files().sbom(),
+              request.files().baselineSbom(),
+              request.files().vex(),
+              hasVex(assessment));
+      MavenGeneratedOutputManifest.writeStage(
+          outputs.stagedPath(MavenGeneratedOutputs.manifestPath(request.project())),
+          generated,
+          stagedTargets(outputs, generated));
     }
     MavenElisionReportWriter.write(outputs.stagedPath(summary), reportSnapshot);
   }
 
-  private static boolean hasVex(final Request request) {
-    return request.vulnerabilityAssessment() != null
-        && !request.vulnerabilityAssessment().attestations().isEmpty();
+  private static Map<Path, Path> stagedTargets(
+      final MavenOutputTransaction outputs, final List<Path> generated) throws IOException {
+    final Map<Path, Path> stages = new java.util.LinkedHashMap<>();
+    for (final Path target : generated) {
+      final Path normalized = target.toAbsolutePath().normalize();
+      stages.put(normalized, outputs.stagedPath(normalized));
+    }
+    return stages;
   }
 
-  private static void recordGeneratedOutputs(final Request request) throws IOException {
-    if (!request.files().trimJars()) {
-      return;
+  private static List<Path> installStages(
+      final MavenOutputTransaction outputs,
+      final Request request,
+      final MavenVulnerabilityAssessment.Result assessment)
+      throws IOException {
+    final List<Path> stages = new ArrayList<>(outputs.stagingPaths());
+    if (request.files().trimJars() && !hasVex(assessment)) {
+      stages.remove(outputs.stagedPath(request.files().vex().toPath()));
     }
-    final List<Path> current =
-        MavenGeneratedOutputs.generatedOutputPaths(
-            request.project(),
-            request.files().sbom(),
-            request.files().baselineSbom(),
-            request.files().vex(),
-            hasVex(request));
-    MavenGeneratedOutputs.clearPrevious(
-        request.project(),
-        MavenGeneratedOutputs.currentOutputPaths(
-            request.project(),
-            request.files().sbom(),
-            request.files().baselineSbom(),
-            request.files().vex()));
-    MavenGeneratedOutputs.record(request.project(), current);
+    return List.copyOf(stages);
+  }
+
+  private static boolean hasVex(final MavenVulnerabilityAssessment.Result assessment) {
+    return assessment != null && !assessment.attestations().isEmpty();
+  }
+
+  private static Optional<String> unchangedOwnedVexDigest(
+      final Request request, final boolean logUnowned) {
+    final Path target = request.files().vex().toPath().toAbsolutePath().normalize();
+    try {
+      final Optional<String> digest =
+          MavenGeneratedOutputs.unchangedOwnedOutputDigest(request.project(), target);
+      if (digest.isPresent()) {
+        return digest;
+      }
+      if (logUnowned && !MavenPreconditionOutputState.definitelyAbsent(target)) {
+        request
+            .log()
+            .warn(
+                "Preserving OpenVEX output without matching generated-output ownership evidence: "
+                    + target);
+      }
+    } catch (final IOException failure) {
+      if (logUnowned) {
+        request
+            .log()
+            .warn(
+                "Preserving OpenVEX output because generated-output ownership could not be "
+                    + "verified: "
+                    + target
+                    + " ("
+                    + failure.getMessage()
+                    + ")");
+      }
+    }
+    return Optional.empty();
   }
 
   @SuppressWarnings(
@@ -141,7 +231,8 @@ final class MavenElisionOutputPublisher {
   private static void publishViewsAndPlan(
       final Request request, final MavenElisionService.ApplyPlan plan) throws IOException {
     final MavenProject project = request.project();
-    final Set<Artifact> originalArtifacts = project.getArtifacts();
+    final Set<Artifact> originalArtifacts = new LinkedHashSet<>(project.getArtifacts());
+    final Set<Artifact> originalResolvedArtifacts = resolvedArtifactView(project);
     final Map<Artifact, File> originalFiles = originalArtifactFiles(plan);
     try {
       MavenArtifactViewUpdater.apply(plan, request.analysis().trimRecords());
@@ -156,9 +247,16 @@ final class MavenElisionOutputPublisher {
               request.analysis().trimRecords(),
               request.analysis().graphProjection());
     } catch (final IOException | RuntimeException failure) {
-      restoreProjectViews(project, originalArtifacts, originalFiles);
+      restoreProjectViews(project, originalArtifacts, originalResolvedArtifacts, originalFiles);
       throw failure;
     }
+  }
+
+  private static Set<Artifact> resolvedArtifactView(final MavenProject project) {
+    final MavenProject snapshot = project.clone();
+    snapshot.setArtifactFilter(artifact -> true);
+    snapshot.setArtifacts(null);
+    return new LinkedHashSet<>(snapshot.getArtifacts());
   }
 
   @SuppressWarnings(
@@ -174,11 +272,11 @@ final class MavenElisionOutputPublisher {
   private static void restoreProjectViews(
       final MavenProject project,
       final Set<Artifact> originalArtifacts,
+      final Set<Artifact> originalResolvedArtifacts,
       final Map<Artifact, File> originalFiles) {
     originalFiles.forEach(Artifact::setFile);
-    final Set<Artifact> restored = new LinkedHashSet<>(originalArtifacts);
-    project.setResolvedArtifacts(restored);
-    project.setArtifacts(restored);
+    project.setResolvedArtifacts(new LinkedHashSet<>(originalResolvedArtifacts));
+    project.setArtifacts(new LinkedHashSet<>(originalArtifacts));
   }
 
   private static void commitBoth(
@@ -213,6 +311,11 @@ final class MavenElisionOutputPublisher {
   record ReportFiles(
       File classUsage, File sbom, File baselineSbom, File vex, File summary, boolean trimJars) {}
 
+  @FunctionalInterface
+  interface AfterStaging {
+    void run() throws IOException;
+  }
+
   record Request(
       MavenProject project,
       MavenSession session,
@@ -222,6 +325,12 @@ final class MavenElisionOutputPublisher {
       ReportFiles files,
       Log log,
       ElideMojo.PlanPublication planPublication,
-      List<io.github.spockz.elider.model.ArtifactFileRef> baselineInventory,
-      MavenVulnerabilityAssessment.Result vulnerabilityAssessment) {}
+      CacheConfig cacheConfig,
+      List<VulnerabilitySymbolMapping> vulnerabilityMappings,
+      boolean preconditionProofEnabled,
+      AfterStaging afterStaging) {
+    Request {
+      vulnerabilityMappings = List.copyOf(vulnerabilityMappings);
+    }
+  }
 }

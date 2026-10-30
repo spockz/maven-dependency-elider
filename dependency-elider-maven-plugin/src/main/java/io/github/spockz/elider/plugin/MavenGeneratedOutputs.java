@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import org.apache.maven.model.Build;
 import org.apache.maven.project.MavenProject;
 
@@ -28,6 +29,12 @@ final class MavenGeneratedOutputs {
   static void record(final MavenProject project, final Collection<Path> generated)
       throws IOException {
     MavenGeneratedOutputManifest.write(manifestPath(project), generated);
+  }
+
+  static Optional<String> unchangedOwnedOutputDigest(final MavenProject project, final Path output)
+      throws IOException {
+    return MavenGeneratedOutputManifest.unchangedOwnedOutputDigest(
+        manifestPath(project), output.toAbsolutePath().normalize());
   }
 
   static List<Path> currentOutputPaths(
@@ -82,7 +89,7 @@ final class MavenGeneratedOutputs {
     return Path.of(projectDirectory.getPath());
   }
 
-  private static Path manifestPath(final MavenProject project) {
+  static Path manifestPath(final MavenProject project) {
     final Path directory = buildDirectory(project);
     final Path manifest = directory.resolve("dependency-elider-generated-outputs.json");
     return manifest.toAbsolutePath().normalize();

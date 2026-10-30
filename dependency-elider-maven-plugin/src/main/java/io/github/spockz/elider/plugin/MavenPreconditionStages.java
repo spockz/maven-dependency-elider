@@ -26,6 +26,17 @@ final class MavenPreconditionStages {
     }
   }
 
+  static void validateExpected(final List<Path> stages, final List<Path> required)
+      throws IOException {
+    for (final Path stage : stages) {
+      if (required.contains(stage)) {
+        validateStage(stage);
+      } else if (!MavenPreconditionOutputState.definitelyAbsent(stage)) {
+        throw new IOException("Unexpected generated output staging file: " + stage);
+      }
+    }
+  }
+
   static void validateGenerated(final List<Path> stages) throws IOException {
     for (final Path stage : stages) {
       if (MavenPreconditionOutputState.definitelyAbsent(stage)) {

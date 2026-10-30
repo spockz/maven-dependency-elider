@@ -61,6 +61,21 @@ final class MavenOutputFileJournal {
     }
   }
 
+  void deleteExisting(final Path target, final String expectedSha256) throws IOException {
+    if (MavenPreconditionOutputState.definitelyAbsent(target)) {
+      return;
+    }
+    if (!Files.isRegularFile(target)) {
+      throw new IOException("Owned generated output is not a regular file: " + target);
+    }
+    backupExisting(target);
+    final Path backup = backups.get(target);
+    if (backup != null && !ArtifactFileDigest.sha256(backup).equals(expectedSha256)) {
+      throw new IOException(
+          "Owned generated output changed before transactional cleanup: " + target);
+    }
+  }
+
   IOException rollback(final Iterable<Path> stagedPaths) {
     IOException failure = removeInstalledTargets();
     failure = collectRestoreFailures(failure);

@@ -65,12 +65,13 @@ final class MavenPreconditionInventory {
             "Precondition generated output targets changed after inventory capture");
       }
       final List<Path> stages = MavenPreconditionOutputState.normalizedPaths(actualStages);
-      if (!knownStages.equals(stages)) {
-        throw new IOException("Precondition output staging paths changed after inventory capture");
+      if (!knownStages.containsAll(stages)) {
+        throw new IOException("Unreserved precondition output staging path");
       }
       MavenElisionService.verifyCurrentViews(project, analysis);
-      MavenPreconditionStages.validateGenerated(stages);
-      final Snapshot current = captureInternal(project, plan, analysis, true, knownOutputs, stages);
+      MavenPreconditionStages.validateExpected(knownStages, stages);
+      final Snapshot current =
+          captureInternal(project, plan, analysis, true, knownOutputs, knownStages);
       if (!matches(current)) {
         throw new IOException("Precondition provider inventory changed before publication");
       }

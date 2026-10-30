@@ -24,6 +24,13 @@ final class MavenGeneratedOutputEntry {
     }
   }
 
+  static boolean matches(final JsonNode output, final Path target, final Path manifest)
+      throws IOException {
+    return outputPath(output, manifest).equals(target)
+        && Files.isRegularFile(target)
+        && ArtifactFileDigest.sha256(target).equals(outputDigest(output, manifest));
+  }
+
   static void validateFields(
       final JsonNode object, final Set<String> supported, final Path manifest) throws IOException {
     final java.util.Iterator<String> keys = object.fieldNames();
@@ -36,7 +43,7 @@ final class MavenGeneratedOutputEntry {
     }
   }
 
-  private static Path outputPath(final JsonNode output, final Path manifest) throws IOException {
+  static Path outputPath(final JsonNode output, final Path manifest) throws IOException {
     if (!output.isObject()) {
       throw new IOException("Malformed generated output entry in " + manifest);
     }
@@ -48,8 +55,7 @@ final class MavenGeneratedOutputEntry {
     return Path.of(pathNode.textValue()).toAbsolutePath().normalize();
   }
 
-  private static String outputDigest(final JsonNode output, final Path manifest)
-      throws IOException {
+  static String outputDigest(final JsonNode output, final Path manifest) throws IOException {
     final JsonNode digest = output.get("sha256");
     if (digest == null || !digest.isTextual() || !digest.textValue().matches("[0-9a-f]{64}")) {
       throw new IOException("Malformed generated output digest in " + manifest);
