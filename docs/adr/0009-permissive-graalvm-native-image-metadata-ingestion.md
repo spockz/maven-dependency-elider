@@ -7,8 +7,8 @@
 <!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
 | Key | Value |
 | :--- | :--- |
-| summary | Infer dynamic roots from an explicit GraalVM Native Image 21.0.12+7.1 input inventory while accepting unrelated and unknown valid arguments. |
-| description | Model audited class/package options, configuration paths, and descriptor schemas; fail on malformed recognized references and accept valid unmodeled options without roots. |
+| summary | Model the audited GraalVM Native Image 21.0.12+7.1 class, package, configuration, and reachability inputs with explicit bounded semantics. |
+| description | Parse enumerated reference inputs or fail clearly; accept valid unknown options without inferred roots and make no completeness claim for them. |
 | role | architecture |
 | scope | dynamic-reachability |
 | area | plugin-core |
@@ -32,20 +32,55 @@ The available audit is GraalVM Native Image 21.0.12+7.1's `native-image --expert
 
 ### Audited direct and policy options
 
-The implementation inventory is pinned to GraalVM Native Image 21.0.12+7.1. It includes:
+The option inventory below is the audited boundary. Option names are exact; no `-H:` or `--` prefix rule is implied.
 
-* Class or package references: `--features`, `-H:Features`, `-H:Class`, `--main-class`, class-initialization options (`--initialize-at-build-time`, `--initialize-at-run-time`, `-H:ClassInitialization`), class tracing options (`--trace-class-initialization`, `-H:TraceClassInitialization`, `--trace-object-instantiation`, `-H:TraceObjectInstantiation`), and security provider/service type options (`-H:AdditionalSecurityProviders`, `-H:AdditionalSecurityServiceTypes`). Package targets are represented explicitly and expanded over the complete dependency archive class index at package boundaries.
-* Resource bundle options retain bundle class names and declared conditions where they represent types. Resource regexes and resource payloads are not class roots.
-* Configuration pointers: reflection, JNI, dynamic proxy, serialization, predefined classes, reachability metadata, and resource configuration `*Resources` and `*Files` options; configuration-file directories and resource roots; and the audited foreign and object-inlining configuration inputs. `Resources` resolve as classpath resources; `Files` resolve as filesystem files. `ConfigurationResourceRoots` are classpath directories and may span candidate archives. `ConfigurationFileDirectories` resolve from the Maven invocation base directory, which is passed explicitly. Duplicate classpath resource paths have deterministic resolution. Directory/resource-root traversal is deterministic, deduplicated, and cycle controlled. Missing, escaping, or malformed paths fail explicitly.
-* Inclusion or analysis policy toggles that change reachability without naming individual classes are explicitly inventoried and handled according to their semantics; they are not treated as unknown class-name lists.
+| Exact option(s) | Value shape | Root action |
+| :--- | :--- | :--- |
+| `--features`, `-H:Features` | Comma-separated binary class names | Add each feature class as a class root. |
+| `-H:Class`, `--main-class` | One binary class name | Add the entry class as a class root. |
+| `--initialize-at-build-time`, `--initialize-at-run-time` | Bare means whole-image policy; `=<class-or-package-list>` | Bare form adds no named roots; list form records explicit class/package roots. An empty explicit value is invalid. |
+| `-H:ClassInitialization` | Comma-separated `class:strategy` entries | Parse and add each named class; validate the strategy. |
+| `--trace-class-initialization`, `-H:TraceClassInitialization`; `--trace-object-instantiation`, `-H:TraceObjectInstantiation` | Comma-separated binary class names | Add each named class as a root. |
+| `-H:AdditionalSecurityProviders`, `-H:AdditionalSecurityServiceTypes` | Comma-separated binary class names | Add each named type as a root. |
+| `-H:IncludeResourceBundles` | Comma-separated bundle names | Retain resource bundles; add a type root when a bundle name is a valid binary class name. |
+| `-H:LinkAtBuildTime`, `--link-at-build-time` | Comma-separated type names; bare means all classes in the applicable scope | Add named types; bare form is a broad policy and pins the applicable dependency scope. |
+| `-H:LinkAtBuildTimePaths`, `--link-at-build-time-paths` | Comma-separated classpath/module-path entries | Resolve entries and add their indexed classes as roots; unresolved/unsupported indirection is an error. |
+| `-H:ReflectionConfigurationFiles`, `-H:JNIConfigurationFiles`, `-H:DynamicProxyConfigurationFiles`, `-H:SerializationConfigurationFiles`, `-H:PredefinedClassesConfigurationFiles`, `-H:ResourceConfigurationFiles`, `-H:ForeignConfigurationFiles`, `-H:ObjectInliningConfigurationFiles` | Comma-separated filesystem paths | Resolve relative to the explicitly supplied Maven invocation base; parse with the option's schema/semantics or fail. |
+| `-H:ReflectionConfigurationResources`, `-H:JNIConfigurationResources`, `-H:DynamicProxyConfigurationResources`, `-H:SerializationConfigurationResources`, `-H:PredefinedClassesConfigurationResources`, `-H:ResourceConfigurationResources`, `-H:ForeignResources`, `-H:ObjectInliningConfigurationResources`, `-H:ReachabilityMetadataResources` | Comma-separated classpath resource names | Process all matching entries sorted by normalized artifact coordinate then normalized archive path, and entries by name; deduplicate resulting roots. Parse with the option's schema/semantics or fail. |
+| `-H:ConfigurationFileDirectories` | Comma-separated filesystem directories | Resolve from the invocation base; traverse directly contained metadata deterministically with cycle/dedup controls. |
+| `-H:ConfigurationResourceRoots` | Comma-separated classpath directory roots | Traverse matching resources across all candidate archives deterministically with cycle/dedup controls. |
 
-The complete audited option names, value shapes, and parser actions are maintained with the implementation and its regression tests. This summary is not a wildcard rule for all `-H:` or `--` options.
+`-H:ForeignConfigurationFiles` and `-H:ForeignResources` parse the audited foreign schema; a direct-upcall `class` is a class root. Object-inlining configuration is parsed as its own input format and contributes each declared class/type reference. Missing, escaping, or malformed paths fail explicitly.
+
+These audited options affect reachability but do not declare positive class roots; apply only the listed behavior:
+
+| Exact option(s) | Effect and parser action |
+| :--- | :--- |
+| `-H:+EnableAllSecurityServices`, `-H:-EnableAllSecurityServices`, `--enable-all-security-services` | Broad security-service inclusion policy. Enabled forms pin the complete dependency class scope because the included service classes are not enumerated by this option. |
+| `-H:EnableURLProtocols`, `-H:DisableURLProtocols`, `--enable-url-protocols` | URL protocol handler inclusion/exclusion. Parse protocol names; enabled protocols pin dependency scope that may supply handlers, exclusions add no roots. |
+| `-H:+UseServiceLoaderFeature`, `-H:-UseServiceLoaderFeature` | Enables/disables automatic ServiceLoader registration. When enabled, retain services/providers only from parsed `META-INF/services` descriptors. |
+| `-H:ServiceLoaderFeatureExcludeServices`, `-H:ServiceLoaderFeatureExcludeServiceProviders` | Comma-separated excluded service/provider names; validate names and do not add them as roots. |
+| `-H:SerializationDenyConfigurationFiles`, `-H:SerializationDenyConfigurationResources` | Deny-listed serialization types are not positive roots; still resolve and validate these recognized references. |
+
+The following additional audited options do not name a class root. They are handled according to their narrower no-root or broad-policy semantics:
+
+| Exact option(s) | Value/effect | Parser action |
+| :--- | :--- | :--- |
+| `-H:+AddAllCharsets`, `-H:-AddAllCharsets`, `-H:+ReportUnsupportedElementsAtRuntime`, `-H:-ReportUnsupportedElementsAtRuntime`, `-H:+AllowIncompleteClasspath`, `-H:-AllowIncompleteClasspath`, `-H:+PrintAnalysisCallTree`, `-H:-PrintAnalysisCallTree`, `--report-unsupported-elements-at-runtime`, `--report-exception-stack-traces`, `--allow-incomplete-classpath`, `--verbose`, `--diagnostics-mode` | Diagnostic or JDK image configuration | Accept without dependency class roots. |
+| `--enable-http`, `--enable-https` | JDK HTTP/HTTPS support | Accept without dependency class roots. |
+| `-H:+AddAllFileSystemProviders`, `-H:-AddAllFileSystemProviders`, `-H:+IncludeAllLocales`, `-H:-IncludeAllLocales` | Enables providers/locales available from the image classpath | Enabled forms pin the applicable dependency scope; disabled forms add no roots. |
+| `--no-fallback`, `--force-fallback`, `--auto-fallback`, `--install-exit-handlers`, `--static`, `--shared`, `--libc=<value>`, `-O0`, `-O1`, `-O2`, `-O3`, `-Os`, `-Ob`, `-march=<value>`, `--pgo`, `--pgo-instrument`, `--gc=<value>`, `-H:+SpawnIsolates`, `-H:-SpawnIsolates`, `-H:MaxHeapSize=<value>`, `-H:Name=<value>`, `--enable-sbom`, `--enable-preview`, `--enable-monitoring=<value>` | Linker, fallback, optimization, runtime, monitoring, or output settings | Accept without dependency class roots. |
+| `-H:IncludeResources`, `-H:ExcludeResources` | Resource-name regular expressions | Parse as resource selection; do not treat patterns as class names. |
+
+Other syntactically valid options are accepted without inferred roots. Unknown future options that name classes remain outside the guarantee. The list above is explicit; it does not imply a general `-H:` or `--` no-root rule.
+
+The earlier work-package handover also lists `--force-fallback`, `-H:+AddAllLocales`, `-H:±ReportUnsupportedElementsAtRuntime`, `-H:±AllowIncompleteClasspath`, `--libc=<value>`, `-H:±SpawnIsolates`, `-H:MaxHeapSize=<value>`, `-H:Name=<value>`, and `-H:±PrintAnalysisCallTree` among non-class examples. Where that spelling is not present in the pinned inventory above, it follows the valid-unknown acceptance rule and is not asserted as an audited no-root option.
 
 ### Descriptor formats
 
-Supported metadata includes `reflect-config.json`, `jni-config.json`, `proxy-config.json`, `serialization-config.json`, `predefined-classes-config.json`, `resource-config.json`, and the modeled sections/type forms of `reachability-metadata.json`.
+Supported standalone JSON schemas are version 1.0.0 for `reflect-config.json`, `jni-config.json`, `proxy-config.json`, `serialization-config.json`, `predefined-classes-config.json`, and `resource-config.json`. Unified `reachability-metadata.json` uses schema version 1.2.0. Foreign configuration files use the foreign section shape in schema 1.2.0; object-inlining files use the separately audited Native Image format.
 
-Class roots include reflection/JNI principal types, conditions, and method parameter types; proxy interfaces and conditions; serialization types, lambda capturing types, proxy interfaces, and custom target constructor classes; and predefined class names when `nameInfo` is present. Predefined entries that provide only hashes require associated bytecode/reference data to be resolvable; otherwise the recognized input is rejected, not treated as root-free. Unified metadata supports its declared reflection, JNI, serialization, proxy, and type descriptor sections. Optional fields remain optional. Invalid JSON, duplicate keys, trailing values, unsupported modeled structure, and invalid type descriptors fail closed.
+Standalone class roots include reflection/JNI principal types, conditions, and method parameter types; proxy interfaces and conditions; serialization types, `lambdaCapturingTypes`, proxy interfaces, and `customTargetConstructorClass`; and predefined types when `nameInfo` is present. Resource configuration bundles retain `name`, every optional `classNames` type, and condition types. `nameInfo` is optional: for hash-only entries, resolve the associated bytecode/reference data from `agent-extracted-predefined-classes`; reject only when those bytes cannot be resolved. Unified schema 1.2.0 supports exactly `reflection`, `resources`, and `foreign` top-level sections. Reflection types may be class names, proxy descriptors, or lambda descriptors; methods include parameter types. Resources support conditional `glob` and `bundle` entries. Foreign supports downcalls, upcalls, and direct upcalls; each direct-upcall `class` is a class root. The schema does not define top-level `jni`, `serialization`, or `proxy` sections; those keys are rejected. Invalid JSON, duplicate keys, trailing values, unsupported fields, and invalid type descriptors fail closed.
 
 ### Package boundary
 
