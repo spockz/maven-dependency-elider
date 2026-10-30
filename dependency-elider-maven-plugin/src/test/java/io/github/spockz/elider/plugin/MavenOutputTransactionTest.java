@@ -18,6 +18,15 @@ final class MavenOutputTransactionTest {
   /** Shared report filename for transaction paths. */
   private static final String SUMMARY_FILE = "summary.json";
 
+  /** Stage suffix used to identify the source side of an injected move. */
+  private static final String STAGED_SUFFIX = ".staged-";
+
+  /** Previous report content used by rollback assertions. */
+  private static final String PREVIOUS_REPORT = "previous report";
+
+  /** Previous OpenVEX content used by rollback assertions. */
+  private static final String PREVIOUS_OPENVEX = "previous OpenVEX";
+
   /** PMD rule for assertions spanning one filesystem transaction invariant. */
   private static final String ASSERTION_SUPPRESSION = "PMD.UnitTestContainsTooManyAsserts";
 
@@ -39,7 +48,7 @@ final class MavenOutputTransactionTest {
     final AtomicBoolean injected = new AtomicBoolean();
     final MavenOutputTransaction.MoveOperation move =
         (source, target) -> {
-          if (source.getFileName().toString().contains(".staged-")
+          if (source.getFileName().toString().contains(STAGED_SUFFIX)
               && target.equals(secondTarget)
               && injected.compareAndSet(false, true)) {
             throw new IOException("injected second target failure");
@@ -120,7 +129,7 @@ final class MavenOutputTransactionTest {
     final MavenOutputTransaction.MoveOperation move =
         (source, destination) -> {
           Files.move(source, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-          if (source.getFileName().toString().contains(".staged-")
+          if (source.getFileName().toString().contains(STAGED_SUFFIX)
               && destination.equals(target)
               && injected.compareAndSet(false, true)) {
             throw new IOException("injected completed install move failure");
@@ -144,11 +153,12 @@ final class MavenOutputTransactionTest {
   // Checks the journal verifies bytes after a move operation reports success.
   void normalInstallMoveWithDifferentBytesRollsBack() throws Exception {
     final Path target = temporaryDirectory.resolve("verified-report.json");
-    Files.writeString(target, "previous report");
+    Files.writeString(target, PREVIOUS_REPORT);
     final MavenOutputTransaction.MoveOperation move =
         (source, destination) -> {
           Files.move(source, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-          if (destination.equals(target) && source.getFileName().toString().contains(".staged-")) {
+          if (destination.equals(target)
+              && source.getFileName().toString().contains(STAGED_SUFFIX)) {
             Files.writeString(destination, "different installed bytes");
           }
         };
@@ -163,7 +173,7 @@ final class MavenOutputTransactionTest {
           .hasMessageContaining("Installed output digest differs from frozen stage");
     }
 
-    assertThat(target).hasContent("previous report");
+    assertThat(target).hasContent(PREVIOUS_REPORT);
   }
 
   @Test
@@ -172,12 +182,12 @@ final class MavenOutputTransactionTest {
   void failedPublicationRestoresTransactionallyDeletedOutput() throws Exception {
     final Path staleVex = temporaryDirectory.resolve("dependency-elider.openvex.json");
     final Path report = temporaryDirectory.resolve(SUMMARY_FILE);
-    Files.writeString(staleVex, "previous OpenVEX");
-    Files.writeString(report, "previous report");
+    Files.writeString(staleVex, PREVIOUS_OPENVEX);
+    Files.writeString(report, PREVIOUS_REPORT);
     final AtomicBoolean failed = new AtomicBoolean();
     final MavenOutputTransaction.MoveOperation move =
         (source, target) -> {
-          if (source.getFileName().toString().contains(".staged-")
+          if (source.getFileName().toString().contains(STAGED_SUFFIX)
               && target.equals(report)
               && failed.compareAndSet(false, true)) {
             throw new IOException("injected report installation failure");
@@ -194,8 +204,8 @@ final class MavenOutputTransactionTest {
           .hasMessageContaining("injected report installation failure");
     }
 
-    assertThat(staleVex).hasContent("previous OpenVEX");
-    assertThat(report).hasContent("previous report");
+    assertThat(staleVex).hasContent(PREVIOUS_OPENVEX);
+    assertThat(report).hasContent(PREVIOUS_REPORT);
     assertThat(failed).isTrue();
   }
 
@@ -216,9 +226,10 @@ final class MavenOutputTransactionTest {
   }
 
   @Test
+  @SuppressWarnings(ASSERTION_SUPPRESSION)
   void failedStaleOutputDeletionRestoresCompletedBackupMove() throws Exception {
     final Path staleVex = temporaryDirectory.resolve("dependency-elider.openvex.json");
-    Files.writeString(staleVex, "previous OpenVEX");
+    Files.writeString(staleVex, PREVIOUS_OPENVEX);
     final AtomicBoolean failed = new AtomicBoolean();
     final MavenOutputTransaction.MoveOperation move =
         (source, target) -> {
@@ -238,7 +249,7 @@ final class MavenOutputTransactionTest {
           .hasMessageContaining("injected stale VEX deletion failure");
     }
 
-    assertThat(staleVex).hasContent("previous OpenVEX");
+    assertThat(staleVex).hasContent(PREVIOUS_OPENVEX);
     assertThat(failed).isTrue();
   }
 
@@ -254,7 +265,7 @@ final class MavenOutputTransactionTest {
     final AtomicBoolean restoreFailure = new AtomicBoolean();
     final MavenOutputTransaction.MoveOperation move =
         (source, destination) -> {
-          if (source.getFileName().toString().contains(".staged-")
+          if (source.getFileName().toString().contains(STAGED_SUFFIX)
               && destination.equals(secondTarget)
               && installFailure.compareAndSet(false, true)) {
             throw new IOException("injected install failure");

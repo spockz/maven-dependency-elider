@@ -27,7 +27,7 @@ import org.apache.maven.project.MavenProject;
     defaultPhase = LifecyclePhase.INITIALIZE,
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
-@SuppressWarnings({"PMD.TooManyFields", "PMD.CouplingBetweenObjects", "PMD.ImmutableField"})
+@SuppressWarnings({"PMD.TooManyFields", "PMD.ImmutableField"})
 public final class ElideMojo extends AbstractMojo {
   /** Maven's annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
@@ -110,14 +110,20 @@ public final class ElideMojo extends AbstractMojo {
       defaultValue = "${project.build.directory}/baseline-sbom.cdx.json")
   private File baselineSbomFile;
 
-  /** Trim-mode OpenVEX output written when omitted-code or exact precondition proof succeeds. */
+  /**
+   * Trim-mode OpenVEX output.
+   *
+   * <p>Written when omitted-code or exact precondition proof succeeds.
+   */
   @Parameter(
       property = "elide.vexFile",
       defaultValue = "${project.build.directory}/dependency-elider.openvex.json")
   private File vexFile;
 
   /**
-   * Enables trim-mode proof only when every Maven class-bearing input is declared and inspectable.
+   * Enables opt-in proof.
+   *
+   * <p>Every Maven class-bearing input must be declared and inspectable.
    */
   @Parameter(property = "elide.preconditionClassPathComplete", defaultValue = DEFAULT_FALSE)
   private boolean preconditionClassPathComplete;
@@ -162,7 +168,11 @@ public final class ElideMojo extends AbstractMojo {
   @SuppressWarnings("PMD.ImmutableField")
   private PlanPublication planPublication = ResolverArtifactPlanPublisher::publish;
 
-  /** Optional post-staging mutation used to verify inventory freshness before publication. */
+  /**
+   * Test mutation hook for report stages.
+   *
+   * <p>Verifies inventory freshness before publication.
+   */
   @SuppressWarnings("PMD.ImmutableField")
   private MavenElisionOutputPublisher.AfterStaging afterStaging = () -> {};
 
@@ -255,16 +265,14 @@ public final class ElideMojo extends AbstractMojo {
         osvSnapshotUri == null || osvSnapshotUri.isBlank() ? null : URI.create(osvSnapshotUri);
     final URI cveListGit =
         cveListGitUri == null || cveListGitUri.isBlank() ? null : URI.create(cveListGitUri);
-    final CacheConfig config =
-        new CacheConfig(
-            cacheDirectory,
-            osvSource,
-            cveListGit,
-            Duration.ofHours(cveCacheTtlHours),
-            cveForceSync,
-            session != null && session.isOffline(),
-            VulnerabilityCacheManager.bundledEmptySeed());
-    return config;
+    return new CacheConfig(
+        cacheDirectory,
+        osvSource,
+        cveListGit,
+        Duration.ofHours(cveCacheTtlHours),
+        cveForceSync,
+        session != null && session.isOffline(),
+        VulnerabilityCacheManager.bundledEmptySeed());
   }
 
   private List<VulnerabilitySymbolMapping> configuredVulnerabilityMappings() {

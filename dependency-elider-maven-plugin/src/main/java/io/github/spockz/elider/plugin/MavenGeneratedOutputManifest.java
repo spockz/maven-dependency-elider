@@ -25,6 +25,9 @@ final class MavenGeneratedOutputManifest {
   private static final ObjectMapper JSON =
       new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
+  /** Manifest field containing the owned output records. */
+  private static final String OUTPUTS_FIELD = "outputs";
+
   private MavenGeneratedOutputManifest() {}
 
   static void clear(final Path manifest, final Collection<Path> allowedOutputs) throws IOException {
@@ -46,7 +49,7 @@ final class MavenGeneratedOutputManifest {
       }
     }
     final ObjectNode document = JSON.createObjectNode();
-    document.set("outputs", outputs);
+    document.set(OUTPUTS_FIELD, outputs);
     final Path parent = manifest.getParent();
     if (parent == null) {
       throw new IOException("Generated output manifest must have a parent directory: " + manifest);
@@ -70,7 +73,7 @@ final class MavenGeneratedOutputManifest {
       output.put("sha256", ArtifactFileDigest.sha256(staged));
     }
     final ObjectNode document = JSON.createObjectNode();
-    document.set("outputs", outputs);
+    document.set(OUTPUTS_FIELD, outputs);
     final Path parent = stage.getParent();
     if (parent == null) {
       throw new IOException("Generated output manifest stage must have a parent: " + stage);
@@ -85,8 +88,21 @@ final class MavenGeneratedOutputManifest {
       final Map<Path, String> frozenStageDigests)
       throws IOException {
     final Set<Path> expected = allowedPaths(generated);
+    final Set<Path> seen =
+        validateStageEntries(stage, readOutputs(stage), expected, frozenStageDigests);
+    if (!seen.equals(expected)) {
+      throw new IOException("Generated output manifest stage is missing expected output entries");
+    }
+  }
+
+  private static Set<Path> validateStageEntries(
+      final Path stage,
+      final JsonNode outputs,
+      final Set<Path> expected,
+      final Map<Path, String> frozenStageDigests)
+      throws IOException {
     final Set<Path> seen = new LinkedHashSet<>();
-    for (final JsonNode output : readOutputs(stage)) {
+    for (final JsonNode output : outputs) {
       final Path path = MavenGeneratedOutputEntry.outputPath(output, stage);
       final String digest = MavenGeneratedOutputEntry.outputDigest(output, stage);
       if (!expected.contains(path) || !seen.add(path)) {
@@ -98,9 +114,7 @@ final class MavenGeneratedOutputManifest {
             "Generated output manifest digest differs from frozen stage: " + path);
       }
     }
-    if (!seen.equals(expected)) {
-      throw new IOException("Generated output manifest stage is missing expected output entries");
-    }
+    return seen;
   }
 
   static Optional<String> unchangedOwnedOutputDigest(final Path manifest, final Path target)
@@ -152,11 +166,11 @@ final class MavenGeneratedOutputManifest {
         throw new IOException("Trailing data in dependency elider output manifest: " + manifest);
       }
     }
-    final JsonNode outputs = document == null ? null : document.get("outputs");
+    final JsonNode outputs = document == null ? null : document.get(OUTPUTS_FIELD);
     if (document == null || !document.isObject() || outputs == null || !outputs.isArray()) {
       throw new IOException("Malformed dependency elider output ownership manifest: " + manifest);
     }
-    MavenGeneratedOutputEntry.validateFields(document, Set.of("outputs"), manifest);
+    MavenGeneratedOutputEntry.validateFields(document, Set.of(OUTPUTS_FIELD), manifest);
     return outputs;
   }
 }

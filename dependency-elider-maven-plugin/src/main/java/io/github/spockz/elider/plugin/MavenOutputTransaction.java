@@ -5,8 +5,7 @@ package io.github.spockz.elider.plugin;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -14,8 +13,12 @@ import java.util.Set;
 import java.util.UUID;
 
 /** Stages report files and restores prior files if a later publication step fails. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
+// Target mutations and their rollback state must share one transaction lifecycle.
 final class MavenOutputTransaction implements AutoCloseable {
+  /** Error text used when a final path was not reserved by this transaction. */
+  private static final String OUTPUT_NOT_STAGED = "Output was not staged: ";
+
   /** Ordered staged-to-final mapping preserves publication and rollback order. */
   private final Map<Path, Path> stagedToFinal;
 
@@ -23,9 +26,10 @@ final class MavenOutputTransaction implements AutoCloseable {
   private final MavenOutputFileJournal journal;
 
   /** Targets removed transactionally when a generated document is no longer eligible. */
-  private final Map<Path, String> deleteTargets = new LinkedHashMap<>();
+  @SuppressWarnings("PMD.UseConcurrentHashMap") // Mutated only on the serialized publication path.
+  private final Map<Path, String> deleteTargets = new HashMap<>();
 
-  /** Targets intentionally left untouched when cleanup is not backed by ownership evidence. */
+  /** Targets left untouched when cleanup lacks ownership evidence. */
   private final Set<Path> skippedTargets = new LinkedHashSet<>();
 
   /** Whether all staged targets were installed. */
@@ -67,15 +71,16 @@ final class MavenOutputTransaction implements AutoCloseable {
         .filter(entry -> entry.getValue().equals(absolute))
         .map(Map.Entry::getKey)
         .findFirst()
-        .orElseThrow(() -> new IOException("Output was not staged: " + absolute));
+        .orElseThrow(() -> new IOException(OUTPUT_NOT_STAGED + absolute));
   }
 
   List<Path> stagingPaths() {
     return List.copyOf(stagedToFinal.keySet());
   }
 
+  @SuppressWarnings("PMD.UseConcurrentHashMap") // Frozen digest map is consumed synchronously.
   Map<Path, String> captureStageDigests(final List<Path> installStages) throws IOException {
-    final Map<Path, String> digests = new LinkedHashMap<>();
+    final Map<Path, String> digests = new HashMap<>();
     for (final Path requestedStage : installStages) {
       final Path stage = requestedStage.toAbsolutePath().normalize();
       final Path target = stagedToFinal.get(stage);
@@ -89,7 +94,7 @@ final class MavenOutputTransaction implements AutoCloseable {
         throw new IOException("Output stage was included more than once: " + stage);
       }
     }
-    return Collections.unmodifiableMap(new LinkedHashMap<>(digests));
+    return Map.copyOf(digests);
   }
 
   void verifyStageDigests(final Map<Path, String> expectedDigests) throws IOException {
@@ -107,7 +112,7 @@ final class MavenOutputTransaction implements AutoCloseable {
     }
     final Path absolute = target.toAbsolutePath().normalize();
     if (!stagedToFinal.containsValue(absolute)) {
-      throw new IOException("Output was not staged: " + absolute);
+      throw new IOException(OUTPUT_NOT_STAGED + absolute);
     }
     if (expectedSha256 == null || !expectedSha256.matches("[0-9a-f]{64}")) {
       throw new IOException("Output deletion requires a SHA-256 ownership digest: " + absolute);
@@ -122,7 +127,7 @@ final class MavenOutputTransaction implements AutoCloseable {
     }
     final Path absolute = target.toAbsolutePath().normalize();
     if (!stagedToFinal.containsValue(absolute)) {
-      throw new IOException("Output was not staged: " + absolute);
+      throw new IOException(OUTPUT_NOT_STAGED + absolute);
     }
     deleteTargets.remove(absolute);
     skippedTargets.add(absolute);
@@ -193,9 +198,10 @@ final class MavenOutputTransaction implements AutoCloseable {
         .toList();
   }
 
+  @SuppressWarnings("PMD.UseConcurrentHashMap") // Immutable snapshot has no concurrent writers.
   private Map<Path, String> immutableDigestPlan(final Map<Path, String> expectedDigests)
       throws IOException {
-    final Map<Path, String> normalized = new LinkedHashMap<>();
+    final Map<Path, String> normalized = new HashMap<>();
     for (final Map.Entry<Path, String> entry : expectedDigests.entrySet()) {
       final Path target = entry.getKey().toAbsolutePath().normalize();
       final String digest = entry.getValue();
@@ -207,7 +213,7 @@ final class MavenOutputTransaction implements AutoCloseable {
             "Output stage digest plan contains an unknown or duplicate target: " + target);
       }
     }
-    return Collections.unmodifiableMap(normalized);
+    return Map.copyOf(normalized);
   }
 
   private void validateInstallTargets(final Map<Path, String> expectedDigests) throws IOException {
@@ -225,7 +231,7 @@ final class MavenOutputTransaction implements AutoCloseable {
         .filter(entry -> entry.getValue().equals(target))
         .map(Map.Entry::getKey)
         .findFirst()
-        .orElseThrow(() -> new IOException("Output was not staged: " + target));
+        .orElseThrow(() -> new IOException(OUTPUT_NOT_STAGED + target));
   }
 
   private static void verifyDigest(

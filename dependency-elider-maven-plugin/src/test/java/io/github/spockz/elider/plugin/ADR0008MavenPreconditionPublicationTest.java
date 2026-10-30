@@ -42,6 +42,7 @@ import org.objectweb.asm.Opcodes;
 /** Verifies opt-in proof assessment, output freshness, ownership, and rollback. */
 @DisplayName("ADR-0008: Maven precondition publication and rollback")
 @SuppressWarnings({
+  "PMD.AvoidAccessibilityAlteration",
   "PMD.AtLeastOneConstructor",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CouplingBetweenObjects",
@@ -51,8 +52,19 @@ import org.objectweb.asm.Opcodes;
   "checkstyle:AbbreviationAsWordInName"
 })
 final class ADR0008MavenPreconditionPublicationTest {
+  /** Private Mojo field used by the staging hook tests. */
+  private static final String AFTER_STAGING_FIELD = "afterStaging";
+
+  /** Previously generated VEX bytes preserved during rollback tests. */
+  private static final String PREVIOUS_GENERATED_OPENVEX = "previous generated OpenVEX";
+
+  /** Plexus lookup method name used by the test container proxy. */
+  private static final String LOOKUP_METHOD = "lookup";
+
+  /** JSON reader and writer for report assertions and staged-file tampering cases. */
   private static final ObjectMapper JSON = new ObjectMapper();
 
+  /** Isolated project and output root for each publication scenario. */
   @TempDir Path temporaryDirectory;
 
   @Test
@@ -62,7 +74,7 @@ final class ADR0008MavenPreconditionPublicationTest {
 
     fixture.mojo().execute();
 
-    assertThat(fixture.affected().getFile().toPath()).isEqualTo(fixture.affectedJar());
+    assertThat(artifactFile(fixture.affected())).isEqualTo(fixture.affectedJar());
     final JsonNode sbom = JSON.readTree(fixture.sbom().toFile());
     final JsonNode affectedComponent = component(sbom, "affected");
     final String sha256 = ArtifactFileDigest.sha256(fixture.affectedJar());
@@ -130,7 +142,7 @@ final class ADR0008MavenPreconditionPublicationTest {
       writePreviousOutputs(fixture);
       set(
           fixture.mojo(),
-          "afterStaging",
+          AFTER_STAGING_FIELD,
           (MavenElisionOutputPublisher.AfterStaging)
               () -> {
                 if (addProvider) {
@@ -154,7 +166,7 @@ final class ADR0008MavenPreconditionPublicationTest {
     writePreviousOutputs(fixture);
     set(
         fixture.mojo(),
-        "afterStaging",
+        AFTER_STAGING_FIELD,
         (MavenElisionOutputPublisher.AfterStaging)
             () -> Files.writeString(fixture.summary(), "concurrent summary update"));
 
@@ -176,7 +188,7 @@ final class ADR0008MavenPreconditionPublicationTest {
     writePreviousOutputs(fixture);
     set(
         fixture.mojo(),
-        "afterStaging",
+        AFTER_STAGING_FIELD,
         (MavenElisionOutputPublisher.AfterStaging)
             () -> {
               final ObjectNode changed =
@@ -199,7 +211,7 @@ final class ADR0008MavenPreconditionPublicationTest {
     writePreviousOutputs(fixture);
     set(
         fixture.mojo(),
-        "afterStaging",
+        AFTER_STAGING_FIELD,
         (MavenElisionOutputPublisher.AfterStaging)
             () -> {
               final Path sbomStage = stageFor(fixture.sbom());
@@ -242,7 +254,7 @@ final class ADR0008MavenPreconditionPublicationTest {
       throws Exception {
     final Fixture owned = fixture("owned-stale-vex", false, false);
     configure(owned, false);
-    writeVex(owned.vex(), "previous generated OpenVEX");
+    writeVex(owned.vex(), PREVIOUS_GENERATED_OPENVEX);
     MavenGeneratedOutputManifest.write(
         MavenGeneratedOutputs.manifestPath(owned.project()), List.of(owned.vex()));
     owned.mojo().execute();
@@ -251,7 +263,7 @@ final class ADR0008MavenPreconditionPublicationTest {
 
     final Fixture modified = fixture("modified-stale-vex", false, false);
     configure(modified, false);
-    writeVex(modified.vex(), "previous generated OpenVEX");
+    writeVex(modified.vex(), PREVIOUS_GENERATED_OPENVEX);
     MavenGeneratedOutputManifest.write(
         MavenGeneratedOutputs.manifestPath(modified.project()), List.of(modified.vex()));
     writeVex(modified.vex(), "user modified OpenVEX");
@@ -278,15 +290,14 @@ final class ADR0008MavenPreconditionPublicationTest {
     final Fixture fixture = fixture("rollback-stale-vex", false, false);
     configure(fixture, false);
     final Set<Artifact> originalArtifacts = new LinkedHashSet<>(fixture.project().getArtifacts());
-    final Path resolvedOnlyJar =
-        fixture.project().getBasedir().toPath().resolve("resolved-only.jar");
+    final Path resolvedOnlyJar = fixture.basedir().resolve("resolved-only.jar");
     writeJar(resolvedOnlyJar, "other/ResolvedOnly", null);
     final Artifact resolvedOnly = runtimeArtifact("resolved-only", resolvedOnlyJar);
     final Set<Artifact> originalResolvedArtifacts = new LinkedHashSet<>(originalArtifacts);
     originalResolvedArtifacts.add(resolvedOnly);
     fixture.project().setResolvedArtifacts(originalResolvedArtifacts);
     fixture.project().setArtifacts(new LinkedHashSet<>(originalArtifacts));
-    writeVex(fixture.vex(), "previous generated OpenVEX");
+    writeVex(fixture.vex(), PREVIOUS_GENERATED_OPENVEX);
     final Path manifest = MavenGeneratedOutputs.manifestPath(fixture.project());
     MavenGeneratedOutputManifest.write(manifest, List.of(fixture.vex()));
     final byte[] priorManifest = Files.readAllBytes(manifest);
@@ -302,7 +313,7 @@ final class ADR0008MavenPreconditionPublicationTest {
         .isInstanceOf(MojoFailureException.class)
         .hasMessageContaining("injected resolver publication failure");
 
-    assertThat(fixture.vex()).hasContent("previous generated OpenVEX");
+    assertThat(fixture.vex()).hasContent(PREVIOUS_GENERATED_OPENVEX);
     assertThat(Files.readAllBytes(manifest)).isEqualTo(priorManifest);
     assertThat(fixture.project().getArtifacts()).containsExactlyElementsOf(originalArtifacts);
     assertThat(resolvedArtifactView(fixture.project()))
@@ -314,6 +325,11 @@ final class ADR0008MavenPreconditionPublicationTest {
     snapshot.setArtifactFilter(artifact -> true);
     snapshot.setArtifacts(null);
     return new LinkedHashSet<>(snapshot.getArtifacts());
+  }
+
+  @SuppressWarnings("PMD.LawOfDemeter") // Maven Artifact exposes its file through a File accessor.
+  private static Path artifactFile(final Artifact artifact) {
+    return artifact.getFile().toPath();
   }
 
   private Fixture fixture(
@@ -382,6 +398,7 @@ final class ADR0008MavenPreconditionPublicationTest {
         project,
         mojo,
         affected,
+        basedir,
         affectedJar,
         sourceRoot,
         resourceRoot,
@@ -410,10 +427,7 @@ final class ADR0008MavenPreconditionPublicationTest {
     set(mojo, "sbomFile", fixture.sbom().toFile());
     set(mojo, "baselineSbomFile", fixture.baselineSbom().toFile());
     set(mojo, "vexFile", fixture.vex().toFile());
-    set(
-        mojo,
-        "cveCacheDirectory",
-        fixture.project().getBasedir().toPath().resolve("cache").toFile());
+    set(mojo, "cveCacheDirectory", fixture.basedir().resolve("cache").toFile());
     set(mojo, "osvSnapshotUri", null);
     set(mojo, "cveListGitUri", null);
     if (proofEnabled) {
@@ -530,7 +544,7 @@ final class ADR0008MavenPreconditionPublicationTest {
             PlexusContainer.class.getClassLoader(),
             new Class<?>[] {PlexusContainer.class},
             (proxy, method, arguments) -> {
-              if ("lookup".equals(method.getName())) {
+              if (LOOKUP_METHOD.equals(method.getName())) {
                 return Proxy.newProxyInstance(
                     ToolchainManager.class.getClassLoader(),
                     new Class<?>[] {ToolchainManager.class},
@@ -554,6 +568,7 @@ final class ADR0008MavenPreconditionPublicationTest {
       MavenProject project,
       ElideMojo mojo,
       Artifact affected,
+      Path basedir,
       Path affectedJar,
       Path sourceRoot,
       Path resourceRoot,
