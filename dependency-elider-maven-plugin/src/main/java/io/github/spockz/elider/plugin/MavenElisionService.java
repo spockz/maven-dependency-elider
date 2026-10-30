@@ -80,6 +80,18 @@ final class MavenElisionService {
       boolean failOnUnsupportedNativeImageArgs,
       boolean productionClassesComplete,
       boolean trustedProcessClassesContext) {
+    AnalysisOptions {
+      if (trimWorkers < MavenDependencyTrimmer.MIN_TRIM_WORKERS) {
+        throw new IllegalArgumentException("trimWorkers must be at least 1");
+      }
+      if (!MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING.equals(mrjarStrategy)
+          && !MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(mrjarStrategy)) {
+        throw new IllegalArgumentException(
+            "elide.mrjarStrategy must be vertical-shading or pass-through");
+      }
+      allowedNativeImageArgs = canonicalAllowedNativeImageArgs(allowedNativeImageArgs);
+    }
+
     AnalysisOptions(
         final List<File> traceFiles,
         final List<String> excludedArtifacts,

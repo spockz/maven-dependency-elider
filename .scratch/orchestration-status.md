@@ -363,3 +363,12 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 * The dedicated reviewer approved after verifying exact target-tier class bytes, Jackson Core's upper Java 22 tier, and strict failure handling in the shell assertions. The whole-system architect approved constructors/defaults, root precedence, fallback retention/closure, independent MRJAR behavior, cache identity, and combined regression coverage. Stale FAQ/RQ wording was corrected and Markdown lint passed afterward. The Gemini review bridge is not available in this environment; review followed the documented fail-open path.
 * The referenced MRJAR thread's investigation traced the Spring failure to transcript setup using default vertical shading while the existing example-cycle workflow explicitly selected `pass-through` for optional Kotlin links. The read-only thread tool was available, but no cross-thread message tool was present, so the coordinator inspected that resolution rather than sending a live follow-up. The integrated transcript drift check passes.
 * Whole-system integration is complete on `main`. The versioned closeout is `docs/handovers/2026-10-30-wp-native-image-01-permissive-argument-ingestion-closeout.md`; transient reviewer and wrap-up receipts are under `.scratch/reviews/`.
+
+## WP-LIFECYCLE-01: Process-Classes and Bytecode Completeness
+
+- Source handover: `docs/handovers/2026-10-30-wp-lifecycle-01-process-classes-and-bytecode-completeness.md`.
+- Rebased the completed lifecycle implementation onto local `main` at `d71b085`; the rebased implementation commits are `5c99c2c`, `d6e91d1`, `973e990`, and `4f9e7db`.
+- Resolved overlaps in `AnalyzeMojo`, `ElideMojo`, and `MavenElisionService` by retaining both Native Image option handling and trusted lifecycle capture. The merged options record preserves existing Native Image validation and defaults.
+- The independent Review Triangle receipt is `.scratch/worktrees/track-wp-lifecycle-01/.scratch/reviews/wp-lifecycle-01-slice-1.md`; its approval covers the pre-rebase lifecycle range, while the combined tree was checked below.
+- Post-rebase `make check` passed: 244 core tests, 431 plugin tests, 16 lifecycle integration tests, static analysis, Markdown lint, and transcript checks. Command transcripts are up to date.
+- The real Maven fixture covers generated source compilation and dependency-tree ordering. As recorded in the review receipt, it does not run a real annotation processor or establish post-elision test/package consumer behavior.
