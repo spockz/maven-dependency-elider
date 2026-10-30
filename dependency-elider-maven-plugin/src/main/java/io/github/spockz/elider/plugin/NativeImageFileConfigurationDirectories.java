@@ -24,7 +24,7 @@ import java.util.jar.JarEntry;
     final Path invocationBase = invocationBase(context, propertiesEntry);
     final Set<Path> visitedDirectories = new HashSet<>();
     final Set<Path> snapshottedDirectories = new HashSet<>();
-    final Set<Path> visitedDescriptors = new HashSet<>();
+    final Set<DescriptorIdentity> visitedDescriptors = new HashSet<>();
     boolean foundRoots = false;
     for (final String reference :
         NativeImageConfigurationDirectorySupport.references(values, propertiesEntry)) {
@@ -36,18 +36,34 @@ import java.util.jar.JarEntry;
         consumedInputs.add(NativeImageConsumedInput.directoryMembership(directory, members));
       }
       if (visitedDirectories.add(canonicalDirectory)) {
-        for (final Path descriptor : descriptorFiles(directory, members)) {
-          if (!visitedDescriptors.add(descriptor.toRealPath())) {
-            continue;
-          }
-          final NativeImageDescriptorKind kind =
-              NativeImageConfigurationDirectorySupport.kindFor(
-                  java.util.Objects.requireNonNull(descriptor.getFileName()).toString());
-          final int priorRoots = roots.size();
-          NativeImageConfigurationPointers.readTypedDescriptor(
-              NativeImageInput.file(descriptor, kind), kind, roots, consumedInputs);
-          foundRoots |= roots.size() > priorRoots;
-        }
+        foundRoots |= readDirectory(directory, members, visitedDescriptors, roots, consumedInputs);
+      }
+    }
+    return foundRoots;
+  }
+
+  private static boolean readDirectory(
+      final Path directory,
+      final List<String> members,
+      final Set<DescriptorIdentity> visitedDescriptors,
+      final Set<String> roots,
+      final Set<NativeImageConsumedInput> consumedInputs)
+      throws IOException {
+    boolean foundRoots = false;
+    for (final Path descriptor : descriptorFiles(directory, members)) {
+      final NativeImageDescriptorKind kind =
+          NativeImageConfigurationDirectorySupport.kindFor(
+              java.util.Objects.requireNonNull(descriptor.getFileName()).toString());
+      final Path resolutionParent =
+          kind == NativeImageDescriptorKind.PREDEFINED_CLASSES
+              ? java.util.Objects.requireNonNull(descriptor.getParent())
+              : null;
+      if (visitedDescriptors.add(
+          new DescriptorIdentity(descriptor.toRealPath(), kind, resolutionParent))) {
+        final int priorRoots = roots.size();
+        NativeImageConfigurationPointers.readTypedDescriptor(
+            NativeImageInput.file(descriptor, kind), kind, roots, consumedInputs);
+        foundRoots |= roots.size() > priorRoots;
       }
     }
     return foundRoots;
@@ -111,4 +127,7 @@ import java.util.jar.JarEntry;
         .map(directory::resolve)
         .toList();
   }
+
+  private record DescriptorIdentity(
+      Path canonicalPath, NativeImageDescriptorKind kind, Path resolutionParent) {}
 }

@@ -73,6 +73,13 @@ import java.util.Set;
             Set.of(first.toRealPath(), second.toRealPath()));
   }
 
+  /* package */ static void assertDescriptorRelativeRootScan(
+      final DependencyDynamicRoots.RootScan scan, final Path provider) throws IOException {
+    assertThat(List.of(scan.roots(), scan.resourceProviders()))
+        .containsExactly(
+            Set.of("org.example.Relative", "org.example.Repeated"), Set.of(provider.toRealPath()));
+  }
+
   /* package */ static void assertEmptyResourceRoot(final DependencyDynamicRoots.RootScan scan) {
     assertThat(List.of(scan.roots(), scan.resourceProviders())).containsExactly(Set.of(), Set.of());
   }

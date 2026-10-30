@@ -25,14 +25,18 @@ import java.util.List;
           throw new IOException("Native-image configuration child has no filename: " + child);
         }
         final NativeImageDescriptorKind kind = kindFor(fileName.toString());
-        if (kind != null && Files.isRegularFile(child)) {
-          final Path canonicalChild = child.toRealPath();
-          if (!canonicalChild.startsWith(canonicalDirectory)) {
-            throw new IOException(
-                "Native-image configuration file escapes its directory: " + child);
-          }
-          entries.add(fileName + "\u0000" + kind.name() + "\u0000" + canonicalChild);
+        if (kind == null) {
+          continue;
         }
+        if (!Files.isRegularFile(child)) {
+          throw new IOException(
+              "Native-image configuration descriptor is not a regular file: " + child);
+        }
+        final Path canonicalChild = child.toRealPath();
+        if (!canonicalChild.startsWith(canonicalDirectory)) {
+          throw new IOException("Native-image configuration file escapes its directory: " + child);
+        }
+        entries.add(fileName + "\u0000" + kind.name() + "\u0000" + canonicalChild);
       }
     }
     entries.sort(Comparator.naturalOrder());
