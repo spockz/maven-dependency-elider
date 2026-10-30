@@ -19,18 +19,22 @@ import java.util.jar.JarFile;
 /** Holds invocation resources and logical classes in deterministic archive order. */
 final class NativeImageScanContext {
   /** Resolves paths back to the indexed archive metadata. */
-  private final Map<Path, ArchiveInventory> archivesByPath;
+  private final Map<Path, NativeImageArchiveInventory> archivesByPath;
 
   /** Lists every classpath archive containing each exact resource path. */
-  private final Map<String, List<ArchiveInventory>> resourcesByPath;
+  private final Map<String, List<NativeImageArchiveInventory>> resourcesByPath;
+
+  /** Combines logical classes so package selectors cross archive boundaries. */
+  private final Set<String> allLogicalClasses;
 
   /** Carries Maven's invocation directory for later external configuration pointers. */
-  private final Optional<Path> invocationBaseDirectory;
+  private final Optional<Path> invocationBase;
 
-  private NativeImageScanContext(final List<ArchiveInventory> archives, final Path invocationBase) {
-    final Map<Path, ArchiveInventory> byPath = new ConcurrentHashMap<>();
-    final Map<String, List<ArchiveInventory>> byResource = new ConcurrentHashMap<>();
-    for (final ArchiveInventory archive : archives) {
+  private NativeImageScanContext(
+      final List<NativeImageArchiveInventory> archives, final Path invocationBase) {
+    final Map<Path, NativeImageArchiveInventory> byPath = new ConcurrentHashMap<>();
+    final Map<String, List<NativeImageArchiveInventory>> byResource = new ConcurrentHashMap<>();
+    for (final NativeImageArchiveInventory archive : archives) {
       byPath.put(archive.path(), archive);
       for (final String resource : archive.resources().keySet()) {
         addResourceProvider(byResource, resource, archive);
@@ -42,7 +46,10 @@ final class NativeImageScanContext {
             .collect(
                 java.util.stream.Collectors.toUnmodifiableMap(
                     Map.Entry::getKey, entry -> List.copyOf(entry.getValue())));
-    this.invocationBaseDirectory = Optional.ofNullable(invocationBase);
+    final Set<String> classes = new java.util.TreeSet<>();
+    archives.forEach(archive -> classes.addAll(archive.logicalClasses()));
+    this.allLogicalClasses = java.util.Collections.unmodifiableSet(classes);
+    this.invocationBase = Optional.ofNullable(invocationBase);
   }
 
   /* package */
@@ -56,7 +63,7 @@ final class NativeImageScanContext {
                         candidate -> candidate.filePath().toAbsolutePath().normalize().toString()))
             .toList();
     final Set<Path> indexedPaths = ConcurrentHashMap.newKeySet();
-    final List<ArchiveInventory> inventories = new ArrayList<>();
+    final List<NativeImageArchiveInventory> inventories = new ArrayList<>();
     for (final ArtifactFileRef candidate : ordered) {
       final Path realPath = candidate.filePath().toRealPath();
       if (indexedPaths.add(realPath)) {
@@ -75,23 +82,24 @@ final class NativeImageScanContext {
   }
 
   /* package */
-  Optional<Path> invocationBase() {
-    return invocationBaseDirectory;
-  }
-
   /* package */
-  Set<String> logicalClasses(final Path archive) throws IOException {
-    final ArchiveInventory inventory = archivesByPath.get(archive.toRealPath());
+  Set<String> logicalClasses(final Optional<Path> archive) throws IOException {
+    if (archive.isEmpty()) {
+      return allLogicalClasses;
+    }
+    final NativeImageArchiveInventory inventory =
+        archivesByPath.get(archive.orElseThrow().toRealPath());
     return inventory == null ? Set.of() : inventory.logicalClasses();
   }
 
   /* package */
-  Path archiveIdentity(final Path archive) throws IOException {
-    final Path realPath = archive.toRealPath();
-    if (!archivesByPath.containsKey(realPath)) {
-      throw new IOException("Native-image archive is outside the invocation inventory: " + archive);
-    }
-    return realPath;
+  Optional<Path> invocationBaseDirectory() {
+    return invocationBase;
+  }
+
+  /* package */
+  Map<String, List<NativeImageArchiveInventory>> resourceIndex() {
+    return resourcesByPath;
   }
 
   /* package */
@@ -101,12 +109,12 @@ final class NativeImageScanContext {
       final DescriptorReader reader,
       final Set<Path> providers)
       throws IOException {
-    final List<ArchiveInventory> candidates = resourcesByPath.get(resourcePath);
+    final List<NativeImageArchiveInventory> candidates = resourcesByPath.get(resourcePath);
     if (candidates == null) {
       return false;
     }
     boolean found = false;
-    for (final ArchiveInventory candidate : candidates) {
+    for (final NativeImageArchiveInventory candidate : candidates) {
       found |= readClasspathArchiveResource(candidate, resourcePath, kind, reader, providers);
     }
     return found;
@@ -126,7 +134,11 @@ final class NativeImageScanContext {
       final JarEntry entry = entries.nextElement();
       if (!entry.isDirectory() && resourcePath.equals(entry.getName())) {
         found = true;
-        final Path provider = archiveIdentity(Path.of(archive.getName()));
+        final Path provider = Path.of(archive.getName()).toRealPath();
+        if (!archivesByPath.containsKey(provider)) {
+          throw new IOException(
+              "Native-image archive is outside the invocation inventory: " + provider);
+        }
         providers.add(provider);
         NativeImageInput.archiveEntry(archive, entry, kind)
             .readDescriptor(reader, resourcePath, provider);
@@ -135,7 +147,7 @@ final class NativeImageScanContext {
     return found;
   }
 
-  private static ArchiveInventory inventory(final Path path) throws IOException {
+  private static NativeImageArchiveInventory inventory(final Path path) throws IOException {
     final Set<String> logicalClasses = MultiReleaseClassInventory.logicalClassNames(path);
     final Map<String, Integer> resources = new ConcurrentHashMap<>();
     try (JarFile archive = new JarFile(path.toFile())) {
@@ -149,18 +161,18 @@ final class NativeImageScanContext {
         resources.merge(name, 1, Integer::sum);
       }
     }
-    return new ArchiveInventory(path, logicalClasses, Map.copyOf(resources));
+    return new NativeImageArchiveInventory(path, logicalClasses, Map.copyOf(resources));
   }
 
   private static void addResourceProvider(
-      final Map<String, List<ArchiveInventory>> byResource,
+      final Map<String, List<NativeImageArchiveInventory>> byResource,
       final String resource,
-      final ArchiveInventory archive) {
+      final NativeImageArchiveInventory archive) {
     byResource.computeIfAbsent(resource, ignored -> new ArrayList<>()).add(archive);
   }
 
   private static boolean readClasspathArchiveResource(
-      final ArchiveInventory candidate,
+      final NativeImageArchiveInventory candidate,
       final String resourcePath,
       final NativeImageDescriptorKind kind,
       final DescriptorReader reader,
@@ -190,8 +202,4 @@ final class NativeImageScanContext {
     /** Reads one descriptor while preserving the parser's source-specific diagnostics. */
     void read(NativeImageInput input) throws IOException;
   }
-
-  /** Metadata used to resolve resources and logical classes for one archive. */
-  private record ArchiveInventory(
-      Path path, Set<String> logicalClasses, Map<String, Integer> resources) {}
 }

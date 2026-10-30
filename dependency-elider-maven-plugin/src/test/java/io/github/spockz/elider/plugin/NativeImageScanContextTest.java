@@ -26,6 +26,9 @@ import org.junit.jupiter.api.io.TempDir;
   /** Shared resource name used to prove duplicate archive scanning. */
   private static final String SHARED_RESOURCE = "shared.payload";
 
+  /** Class entry body is ignored by the logical inventory reader. */
+  private static final String CLASS_ENTRY_CONTENT = "bytecode";
+
   /** Temporary archive directory. */
   /* package */ @TempDir Path tempDir;
 
@@ -241,5 +244,86 @@ import org.junit.jupiter.api.io.TempDir;
                 Optional.ofNullable(MavenElisionService.invocationBase(null, null))))
         .containsExactly(
             Optional.of(requestBase.toPath()), Optional.of(projectBase.toPath()), Optional.empty());
+  }
+
+  /* package */
+  @Test
+  void packageTargetsExpandAcrossArchivesAtExactPackageBoundariesAndMrJarTiers()
+      throws IOException {
+    final Path declaring =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "package-declaring.jar",
+            NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+            "Args = --initialize-at-run-time=org.example.pkg "
+                + "-H:ClassInitialization=org.example.pkg.deep:build_time "
+                + "-H:ClassInitialization=org.example.pkg.versioned:rerun\n",
+            "org/example/decl/Entry.class",
+            CLASS_ENTRY_CONTENT);
+    final Path exactPackageClass =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "package-exact.jar",
+            "org/example/pkg.class",
+            CLASS_ENTRY_CONTENT,
+            "org/example/pkg/Exact.class",
+            CLASS_ENTRY_CONTENT);
+    final Path descendantPackageClass =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "package-descendant.jar",
+            "org/example/pkg/deep/Child.class",
+            CLASS_ENTRY_CONTENT,
+            "org/example/pkgExtra/Sibling.class",
+            CLASS_ENTRY_CONTENT);
+    final Path versionedPackageClass =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "package-versioned.jar",
+            "META-INF/versions/17/org/example/pkg/versioned/Mr.class",
+            "bytecode");
+    final NativeImageScanContext context =
+        NativeImageScanContext.create(
+            List.of(
+                NativeImageScanContextTestSupport.candidate("declaring", declaring),
+                NativeImageScanContextTestSupport.candidate("exact", exactPackageClass),
+                NativeImageScanContextTestSupport.candidate("descendant", descendantPackageClass),
+                NativeImageScanContextTestSupport.candidate("versioned", versionedPackageClass)),
+            null);
+
+    final DependencyDynamicRoots.RootScan scan =
+        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+
+    assertThat(scan.roots())
+        .containsExactlyInAnyOrder(
+            "org.example.pkg",
+            "org.example.pkg.Exact",
+            "org.example.pkg.deep.Child",
+            "org.example.pkg.versioned.Mr");
+  }
+
+  /* package */
+  @Test
+  void wholeInitializationOptionsRootEveryLogicalClass() throws IOException {
+    final String[] wholeScopeArguments = {
+      "--initialize-at-build-time", "--initialize-at-run-time=", "-H:ClassInitialization=:rerun"
+    };
+    final Set<String> expected = Set.of("org.example.One", "org.example.Two");
+    final List<Set<String>> observed = new java.util.ArrayList<>();
+    for (final String argument : wholeScopeArguments) {
+      final Path archive =
+          NativeImageScanContextTestSupport.jar(
+              tempDir,
+              "whole-scope-" + argument.replaceAll("[^A-Za-z]", "") + ".jar",
+              NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+              "Args = " + argument + "\n",
+              "org/example/One.class",
+              CLASS_ENTRY_CONTENT,
+              "org/example/Two.class",
+              CLASS_ENTRY_CONTENT);
+      observed.add(DependencyDynamicRoots.scan(archive).roots());
+    }
+
+    assertThat(observed).containsExactly(expected, expected, expected);
   }
 }

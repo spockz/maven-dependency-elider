@@ -194,6 +194,67 @@ final class DependencyDynamicRootsTest {
   }
 
   @Test
+  void parsesAuditedDirectClassRootOptions() throws IOException {
+    final Path jar =
+        nativeImageJar(
+            "Args = --features=org.example.FeatureOne,org.example.FeatureTwo "
+                + "-H:Features=org.example.HFeature "
+                + "-H:Class=org.example.Entry --main-class=org.example.Main "
+                + "--trace-class-initialization=org.example.InitTrace "
+                + "-H:TraceClassInitialization=org.example.HInitTrace "
+                + "--trace-object-instantiation=org.example.ObjectTrace "
+                + "-H:TraceObjectInstantiation=org.example.HObjectTrace "
+                + "-H:AdditionalSecurityProviders=org.example.Provider "
+                + "-H:AdditionalSecurityServiceTypes=org.example.SecurityType "
+                + "-H:IncludeResourceBundles=org.example.Messages,org.example.MoreMessages,"
+                + "Legacy-Bundle\n");
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+
+    assertThat(scan.roots())
+        .containsExactlyInAnyOrder(
+            "org.example.FeatureOne",
+            "org.example.FeatureTwo",
+            "org.example.HFeature",
+            "org.example.Entry",
+            "org.example.Main",
+            "org.example.InitTrace",
+            "org.example.HInitTrace",
+            "org.example.ObjectTrace",
+            "org.example.HObjectTrace",
+            "org.example.Provider",
+            "org.example.SecurityType");
+    assertThat(scan.requiresPassThrough()).isFalse();
+  }
+
+  @Test
+  void rejectsMalformedClassOnlyListsAndInitializationStrategies() throws IOException {
+    for (final String argument :
+        new String[] {
+          "--features=",
+          "--features=org.example.One,,org.example.Two",
+          "-H:Features=org.example.Bad-Name",
+          "-H:Class=org.example.One,org.example.Two",
+          "--main-class=org.example.Bad-Name",
+          "--trace-object-instantiation=org.example.One,",
+          "-H:AdditionalSecurityProviders=org.example.Bad-Name",
+          "-H:AdditionalSecurityServiceTypes=",
+          "-H:IncludeResourceBundles=org.example.One,,org.example.Two",
+          "-H:ClassInitialization",
+          "-H:ClassInitialization=",
+          "-H:ClassInitialization=org.example.Type",
+          "-H:ClassInitialization=org.example.Type:runtime",
+          "-H:ClassInitialization=org.example.Type:run_time,",
+          "--initialize-at-build-time=,org.example.Type"
+        }) {
+      final Path jar = nativeImageJar("Args = " + argument + "\n");
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
+          .as(argument)
+          .isInstanceOf(IOException.class);
+    }
+  }
+
+  @Test
   void rejectsMalformedUnifiedMethodParameterTypes() throws IOException {
     for (final String parameter : new String[] {"org.example.Bad-Name", "void[]"}) {
       final Path jar =
@@ -793,17 +854,19 @@ final class DependencyDynamicRootsTest {
   @Test
   void parsesNettyInitializeAtRunTimeAndBuildTimeRoots() throws IOException {
     final Path jar =
-        nativeImageJar(
+        nativeImageJarWithClasses(
             "Args = --initialize-at-build-time=io.netty \\\n"
                 + "       --initialize-at-run-time=io.netty.handler.codec.http.HttpObjectEncoder,"
                 + "io.netty.handler.codec.http.websocketx.WebSocket00FrameEncoder,"
-                + "io.netty.handler.codec.http.websocketx.extensions.compression.DeflateDecoder\n");
+                + "io.netty.handler.codec.http.websocketx.extensions.compression.DeflateDecoder\n",
+            "io.netty.handler.codec.http.HttpObjectEncoder",
+            "io.netty.handler.codec.http.websocketx.WebSocket00FrameEncoder",
+            "io.netty.handler.codec.http.websocketx.extensions.compression.DeflateDecoder");
 
     final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
     assertThat(scan.roots())
         .contains(
-            "io.netty",
             "io.netty.handler.codec.http.HttpObjectEncoder",
             "io.netty.handler.codec.http.websocketx.WebSocket00FrameEncoder",
             "io.netty.handler.codec.http.websocketx.extensions.compression.DeflateDecoder");
@@ -813,8 +876,9 @@ final class DependencyDynamicRootsTest {
   @Test
   void parsesNettyCompressionAndResolverDnsArgs() throws IOException {
     final Path compressionJar =
-        nativeImageJar(
-            "Args = --initialize-at-run-time=io.netty.handler.codec.compression.BrotliDecoder\n");
+        nativeImageJarWithClasses(
+            "Args = --initialize-at-run-time=io.netty.handler.codec.compression.BrotliDecoder\n",
+            "io.netty.handler.codec.compression.BrotliDecoder");
     final DependencyDynamicRoots.RootScan compressionScan =
         DependencyDynamicRoots.scan(compressionJar);
     assertThat(compressionScan.roots())
@@ -822,11 +886,13 @@ final class DependencyDynamicRootsTest {
     assertThat(compressionScan.requiresPassThrough()).isFalse();
 
     final Path dnsJar =
-        nativeImageJar(
+        nativeImageJarWithClasses(
             "Args = --initialize-at-run-time=io.netty.resolver.dns."
                 + "DefaultDnsServerAddressStreamProvider \\\n"
                 + "       --initialize-at-run-time=io.netty.resolver.dns."
-                + "DnsServerAddressStreamProviders$DefaultProviderHolder\n");
+                + "DnsServerAddressStreamProviders$DefaultProviderHolder\n",
+            "io.netty.resolver.dns.DefaultDnsServerAddressStreamProvider",
+            "io.netty.resolver.dns.DnsServerAddressStreamProviders$DefaultProviderHolder");
     final DependencyDynamicRoots.RootScan dnsScan = DependencyDynamicRoots.scan(dnsJar);
     assertThat(dnsScan.roots())
         .contains(
@@ -898,6 +964,18 @@ final class DependencyDynamicRootsTest {
         out.putNextEntry(new JarEntry(extraName));
         out.write(extraContent.getBytes(StandardCharsets.UTF_8));
         out.closeEntry();
+      }
+    }
+    return jar;
+  }
+
+  private Path nativeImageJarWithClasses(final String args, final String... classNames)
+      throws IOException {
+    final Path jar = tempDir.resolve("native-image-classes-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+      put(out, "META-INF/native-image/test/native-image.properties", args);
+      for (final String className : classNames) {
+        put(out, className.replace('.', '/') + ".class", "class");
       }
     }
     return jar;

@@ -207,7 +207,7 @@ final class DependencyDynamicRoots {
       this.scanContext = scanContext;
       this.allowedArguments = allowedArguments;
       this.failOnUnsupported = failOnUnsupported;
-      this.jarClasses = scanContext.logicalClasses(jar);
+      this.jarClasses = scanContext.logicalClasses(java.util.Optional.of(jar));
     }
 
     /** Dispatches one archive entry to its supported dynamic-root reader. */

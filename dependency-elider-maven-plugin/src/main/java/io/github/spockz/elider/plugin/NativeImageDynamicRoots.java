@@ -90,7 +90,8 @@ final class NativeImageDynamicRoots {
 
   private static boolean isConfigurationResourceArgument(final String argument) {
     return argument.startsWith("-H:ReflectionConfigurationResources=")
-        || argument.startsWith("-H:ResourceConfigurationResources=");
+        || argument.startsWith("-H:ResourceConfigurationResources=")
+        || argument.startsWith("-H:IncludeResourceBundles=");
   }
 
   /** Scans quote-delimited tokens while preserving non-syntactic characters verbatim. */
@@ -178,6 +179,12 @@ final class NativeImageDynamicRoots {
       final NativeImageScanContext scanContext,
       final Set<Path> resourceProviders)
       throws IOException {
+    final java.util.Optional<Boolean> directRoot =
+        NativeImageDirectRoots.read(
+            argument, propertiesEntry, roots, scanContext, resourceProviders);
+    if (directRoot.isPresent()) {
+      return directRoot.get();
+    }
     if (argument.startsWith("-H:ReflectionConfigurationResources=")) {
       readNativeImageConfigResources(
           archive,
@@ -188,15 +195,6 @@ final class NativeImageDynamicRoots {
           scanContext,
           resourceProviders);
       return true;
-    }
-    if ("-H:ReflectionConfigurationResources".equals(argument)
-        || "-H:ResourceConfigurationResources".equals(argument)
-        || "--features".equals(argument)) {
-      throw new IOException(
-          "Native-image root option has no value in "
-              + propertiesEntry.getName()
-              + ": "
-              + argument);
     }
     if (argument.startsWith("-H:ResourceConfigurationResources=")) {
       readNativeImageConfigResources(
@@ -212,51 +210,12 @@ final class NativeImageDynamicRoots {
     if ("--enable-http".equals(argument) || "--enable-https".equals(argument)) {
       return false;
     }
-    if (argument.startsWith("--initialize-at-build-time=")) {
-      return readNativeImageClassNames(
-          argument.substring("--initialize-at-build-time=".length()), propertiesEntry, roots);
-    }
-    if (argument.startsWith("--initialize-at-run-time=")) {
-      return readNativeImageClassNames(
-          argument.substring("--initialize-at-run-time=".length()), propertiesEntry, roots);
-    }
-    if ("--initialize-at-build-time".equals(argument)
-        || "--initialize-at-run-time".equals(argument)) {
-      return false;
-    }
-    if (argument.startsWith("--features=")) {
-      return readNativeImageClassNames(
-          argument.substring("--features=".length()), propertiesEntry, roots);
-    }
     if ("-H:+AddAllCharsets".equals(argument)
         || "-H:-AddAllCharsets".equals(argument)
         || "--report-unsupported-elements-at-runtime".equals(argument)) {
       return false;
     }
     throw new UnknownNativeImageArgument();
-  }
-
-  private static boolean readNativeImageClassNames(
-      final String values, final JarEntry propertiesEntry, final Set<String> roots)
-      throws IOException {
-    if (values.isBlank()) {
-      return false;
-    }
-    boolean added = false;
-    for (final String className : values.split(",", -1)) {
-      final String trimmed = className.trim();
-      if (trimmed.isEmpty()) {
-        continue;
-      }
-      final String component = NativeImageTypeDescriptor.extractComponentClass(trimmed);
-      if (component == null || component.isEmpty() || !isBinaryClassName(component)) {
-        throw new IOException(
-            "Unsupported native-image class name in " + propertiesEntry.getName() + ": " + trimmed);
-      }
-      roots.add(component);
-      added = true;
-    }
-    return added;
   }
 
   private static void readNativeImageConfigResources(

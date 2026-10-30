@@ -178,6 +178,15 @@ import org.junit.jupiter.api.Test;
   private Path appendEntries(
       final Path source, final String destinationName, final Map<String, String> additions)
       throws IOException {
+    return appendEntries(source, destinationName, additions, Map.of());
+  }
+
+  private Path appendEntries(
+      final Path source,
+      final String destinationName,
+      final Map<String, String> additions,
+      final Map<String, byte[]> classAdditions)
+      throws IOException {
     final Path destination = temporaryDirectory.resolve(destinationName);
     try (JarFile archive = new JarFile(source.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
@@ -187,6 +196,9 @@ import org.junit.jupiter.api.Test;
       }
       for (final Map.Entry<String, String> addition : additions.entrySet()) {
         writeEntry(output, addition.getKey(), addition.getValue().getBytes(StandardCharsets.UTF_8));
+      }
+      for (final Map.Entry<String, byte[]> addition : classAdditions.entrySet()) {
+        writeEntry(output, addition.getKey(), addition.getValue());
       }
     }
     return destination;
