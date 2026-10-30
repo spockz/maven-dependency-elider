@@ -26,11 +26,7 @@ final class NativeImageResourcePatternMatcher {
     final String pattern = separator < 0 ? expression : expression.substring(separator + 1);
     final String selectedModule = separator < 0 ? module : expression.substring(0, separator);
     try {
-      return new Selector(
-          Pattern.compile(pattern),
-          null,
-          selectedModule == null || selectedModule.isEmpty() ? null : selectedModule,
-          source);
+      return new Selector(Pattern.compile(pattern), null, selectedModule, source);
     } catch (final PatternSyntaxException exception) {
       throw new IOException("Malformed native-image resource pattern in " + source, exception);
     }
@@ -39,7 +35,11 @@ final class NativeImageResourcePatternMatcher {
   /* package */ static Selector glob(
       final String expression, final String module, final String source) throws IOException {
     try {
-      return new Selector(null, NativeImageGlobPattern.compile(expression), module, source);
+      return new Selector(
+          null,
+          NativeImageGlobPattern.compile(expression),
+          module == null || module.isEmpty() ? null : module,
+          source);
     } catch (final PatternSyntaxException exception) {
       throw new IOException("Malformed native-image resource glob in " + source, exception);
     }

@@ -36,9 +36,11 @@ import org.junit.jupiter.api.Test;
             "META-INF/native-image/test/resource-config.json",
             "{\"resources\":{\"includes\":[{\"pattern\":"
                 + "\"ALL-UNNAMED:assets/regex\\\\.dat\"}],\"excludes\":[{\"pattern\":"
-                + "\"named.module:assets/regex\\\\.dat\"}]},\"globs\":["
+                + "\"named.module:assets/regex\\\\.dat\"},{\"pattern\":"
+                + "\":assets/regex\\\\.dat\"}]},\"globs\":["
                 + "{\"glob\":\"assets/**/selected.dat\"},"
                 + "{\"glob\":\"assets/*/one.dat\"},"
+                + "{\"glob\":\"assets/empty-module.dat\",\"module\":\"\"},"
                 + "{\"glob\":\"assets/literal[1].dat\"},"
                 + "{\"glob\":\"assets/**/Only.class\",\"module\":\"ALL-UNNAMED\"}]}");
     final Path direct =
@@ -62,6 +64,9 @@ import org.junit.jupiter.api.Test;
     final Path regex =
         NativeImageDescriptorResourceMatcherTestSupport.archive(
             temporaryDirectory, "regex-module.jar", "assets/regex.dat", "x");
+    final Path emptyModuleGlob =
+        NativeImageDescriptorResourceMatcherTestSupport.archive(
+            temporaryDirectory, "glob-empty-module.jar", "assets/empty-module.dat", "x");
     final Path rootClass =
         NativeImageDescriptorResourceMatcherTestSupport.classArchive(
             temporaryDirectory, "glob-root-class.jar", "assets/Only.class");
@@ -76,6 +81,7 @@ import org.junit.jupiter.api.Test;
             nested,
             singleSegment,
             multipleSegments,
+            emptyModuleGlob,
             literal,
             nearLiteral,
             regex,
@@ -88,6 +94,7 @@ import org.junit.jupiter.api.Test;
                 direct.toRealPath(),
                 nested.toRealPath(),
                 singleSegment.toRealPath(),
+                emptyModuleGlob.toRealPath(),
                 literal.toRealPath(),
                 regex.toRealPath(),
                 rootClass.toRealPath(),
