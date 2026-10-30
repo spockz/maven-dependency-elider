@@ -372,3 +372,16 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 - The independent Review Triangle receipt is `.scratch/worktrees/track-wp-lifecycle-01/.scratch/reviews/wp-lifecycle-01-slice-1.md`; its approval covers the pre-rebase lifecycle range, while the combined tree was checked below.
 - Post-rebase `make check` passed: 244 core tests, 431 plugin tests, 16 lifecycle integration tests, static analysis, Markdown lint, and transcript checks. Command transcripts are up to date.
 - The real Maven fixture covers generated source compilation and dependency-tree ordering. As recorded in the review receipt, it does not run a real annotation processor or establish post-elision test/package consumer behavior.
+
+## WP-LIFECYCLE-02: Compile-Time Constant Retention
+
+- **Source follow-up:** Section 5.1 of `docs/handovers/2026-10-30-wp-lifecycle-01-process-classes-and-bytecode-completeness.md`; linked to RQ-0017 and ADR-0010.
+- **Base:** current local `main` at `89b3af15809a46941fa37350d85075cdca850073`.
+- **Task branch:** `codex/wp-lifecycle-constants`.
+- **Scope:** In `productionClassesComplete` mode, union Java source references with production-bytecode references so compile-time inlined constants retain their defining types. If source attribution is unsupported or incomplete, conservatively retain all compile-visible artifacts and indexed classes with an explicit reason.
+- **Invariants:** Keep the source and bytecode completeness flags mutually exclusive; do not change trusted `process-classes` provenance or precondition VEX guards. The source supplement must not run annotation processors.
+- **Acceptance:** Cover constant-only dependency retention and explicit conservative fallback; update RQ-0017, ADR-0010, user/contributor docs, and this handover; pass focused tests and `make check`.
+- **Implementation:** `c74a3b7a02db8ffc1971470a3c393c8f30351715` (`Retain constant owners in post-compile analysis`), fast-forwarded to local `main`.
+- **Verification:** focused regressions and `make check` passed (448 plugin tests, 16 lifecycle integration tests, formatting, lint, static analysis, Markdown, and transcript checks).
+- **Review:** architect approved the design; independent reviewer approved all four review areas in `.scratch/reviews/wp-lifecycle-02-slice-1.md`.
+- **Track state:** complete. Source-derived roots remain separate from bytecode/runtime class-use and VEX evidence; the behavior may retain unused source-only classes and does not cover test-only references.
