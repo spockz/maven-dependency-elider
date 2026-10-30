@@ -461,7 +461,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
                 List.of(trace.toFile()), null, false),
-            path ->
+            (path, context) ->
                 new DependencyDynamicRoots.RootScan(
                     path.equals(declaringJar) ? Set.of("optional.unresolved.Api") : Set.of(),
                     true));

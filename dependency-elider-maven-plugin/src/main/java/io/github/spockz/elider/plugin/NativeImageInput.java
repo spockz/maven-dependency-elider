@@ -29,8 +29,22 @@ final class NativeImageInput {
 
   /* package */
   static NativeImageInput archiveEntry(
-      final JarFile archive, final String entryName, final NativeImageDescriptorKind kind) {
-    return new NativeImageInput(kind, entryName, new ArchiveSource(archive, entryName));
+      final JarFile archive, final String entryName, final NativeImageDescriptorKind kind)
+      throws IOException {
+    final JarEntry entry = archive.getJarEntry(entryName);
+    if (entry == null || entry.isDirectory()) {
+      throw new IOException("Native-image descriptor is missing: " + entryName);
+    }
+    return archiveEntry(archive, entry, kind);
+  }
+
+  /* package */
+  static NativeImageInput archiveEntry(
+      final JarFile archive, final JarEntry entry, final NativeImageDescriptorKind kind) {
+    if (entry.isDirectory()) {
+      throw new IllegalArgumentException("Native-image input cannot be a directory: " + entry);
+    }
+    return new NativeImageInput(kind, entry.getName(), new ArchiveSource(archive, entry));
   }
 
   /* package */
@@ -68,18 +82,15 @@ final class NativeImageInput {
     InputStream openSibling(String relativeName) throws IOException;
   }
 
-  private record ArchiveSource(JarFile archive, String entryName) implements Source {
+  private record ArchiveSource(JarFile archive, JarEntry entry) implements Source {
     @Override
     public InputStream open() throws IOException {
-      final JarEntry entry = archive.getJarEntry(entryName);
-      if (entry == null || entry.isDirectory()) {
-        throw new IOException("Native-image descriptor is missing: " + entryName);
-      }
       return archive.getInputStream(entry);
     }
 
     @Override
     public InputStream openSibling(final String relativeName) throws IOException {
+      final String entryName = entry.getName();
       final int slash = entryName.lastIndexOf('/');
       final String siblingName = entryName.substring(0, slash + 1) + relativeName;
       final JarEntry entry = archive.getJarEntry(siblingName);

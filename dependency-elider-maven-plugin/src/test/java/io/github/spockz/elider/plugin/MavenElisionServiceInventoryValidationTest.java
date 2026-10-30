@@ -37,7 +37,7 @@ final class MavenElisionServiceInventoryValidationTest
                     .prepare(
                         fixture.mavenProject(),
                         options,
-                        path -> {
+                        (path, context) -> {
                           if (fixture.snapshot("a").filePath().equals(path)) {
                             Files.writeString(path, "changed while scanning");
                           }
@@ -66,7 +66,7 @@ final class MavenElisionServiceInventoryValidationTest
                     .prepare(
                         fixture.mavenProject(),
                         options(trace),
-                        path -> {
+                        (path, context) -> {
                           if (fixture.snapshot("a").filePath().equals(path)) {
                             artifact.setFile(replacement.toFile());
                           }

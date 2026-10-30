@@ -21,9 +21,7 @@ import java.util.jar.JarFile;
   "PMD.CommentDefaultAccessModifier",
   "PMD.CognitiveComplexity",
   "PMD.CyclomaticComplexity",
-  "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.AssignmentInOperand",
-  "PMD.AvoidDeeplyNestedIfStmts",
   "PMD.GodClass"
 })
 final class DependencyDynamicRoots {
@@ -60,17 +58,37 @@ final class DependencyDynamicRoots {
       boolean declaresClassRoots,
       Set<ServiceDescriptor> serviceDescriptors,
       Set<String> nonServiceRoots,
+      Set<java.nio.file.Path> resourceProviders,
       java.util.List<NativeImageDynamicRoots.UnsupportedArgument> unsupportedNativeImageArgs,
       String nativeImagePolicy) {
     RootScan {
       roots = Set.copyOf(roots);
       serviceDescriptors = Set.copyOf(serviceDescriptors);
       nonServiceRoots = Set.copyOf(nonServiceRoots);
+      resourceProviders = Set.copyOf(resourceProviders);
       unsupportedNativeImageArgs = java.util.List.copyOf(unsupportedNativeImageArgs);
     }
 
     RootScan(final Set<String> roots, final boolean declaresClassRoots) {
-      this(roots, declaresClassRoots, Set.of(), roots, java.util.List.of(), "default");
+      this(roots, declaresClassRoots, Set.of(), roots, Set.of(), java.util.List.of(), "default");
+    }
+
+    RootScan(
+        final Set<String> roots,
+        final boolean declaresClassRoots,
+        final Set<ServiceDescriptor> serviceDescriptors,
+        final Set<String> nonServiceRoots,
+        final java.util.List<NativeImageDynamicRoots.UnsupportedArgument>
+            unsupportedNativeImageArgs,
+        final String nativeImagePolicy) {
+      this(
+          roots,
+          declaresClassRoots,
+          serviceDescriptors,
+          nonServiceRoots,
+          Set.of(),
+          unsupportedNativeImageArgs,
+          nativeImagePolicy);
     }
 
     boolean requiresPassThrough() {
@@ -104,7 +122,7 @@ final class DependencyDynamicRoots {
   private DependencyDynamicRoots() {}
 
   static RootScan scan(final java.nio.file.Path jar) throws IOException {
-    return scan(jar, Set.of(), true);
+    return scan(jar, NativeImageScanContext.singleArchive(jar), Set.of(), true);
   }
 
   static RootScan scan(
@@ -112,90 +130,164 @@ final class DependencyDynamicRoots {
       final Set<String> allowedArguments,
       final boolean failOnUnsupported)
       throws IOException {
-    final Set<String> roots = new LinkedHashSet<>();
-    final Set<String> nonServiceRoots = new LinkedHashSet<>();
-    final Set<ServiceDescriptor> serviceDescriptors = new LinkedHashSet<>();
-    boolean declaresClassRoots = false;
-    final java.util.List<NativeImageDynamicRoots.UnsupportedArgument> unsupportedNativeImageArgs =
-        new java.util.ArrayList<>();
+    return scan(
+        jar, NativeImageScanContext.singleArchive(jar), allowedArguments, failOnUnsupported);
+  }
+
+  static RootScan scan(
+      final java.nio.file.Path jar,
+      final NativeImageScanContext scanContext,
+      final Set<String> allowedArguments,
+      final boolean failOnUnsupported)
+      throws IOException {
+    final ScanState state = new ScanState(jar, scanContext, allowedArguments, failOnUnsupported);
     try (JarFile archive = new JarFile(jar.toFile())) {
-      final Set<String> jarClasses =
-          archive.stream()
-              .map(JarEntry::getName)
-              .filter(name -> name.endsWith(".class"))
-              .map(name -> name.substring(0, name.length() - ".class".length()).replace('/', '.'))
-              .collect(java.util.stream.Collectors.toSet());
       final Enumeration<JarEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
         final JarEntry entry = entries.nextElement();
-        if (entry.isDirectory()) {
-          continue;
-        }
-        final String name = entry.getName();
-        if (name.startsWith(SERVICES)) {
-          declaresClassRoots = true;
-          final String service = name.substring(SERVICES.length());
-          if (service.isBlank() || service.contains("/")) {
-            throw new IOException("Unsupported service descriptor path: " + name);
-          }
-          final Set<String> providers = new LinkedHashSet<>();
-          try (BufferedReader reader =
-              new BufferedReader(
-                  new InputStreamReader(archive.getInputStream(entry), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-              final String provider = line.split("#", 2)[0].trim();
-              if (!provider.isEmpty()) {
-                if (!provider.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*")) {
-                  throw new IOException("Malformed service provider in " + name + ": " + provider);
-                }
-                providers.add(provider);
-              }
-            }
-          }
-          serviceDescriptors.add(new ServiceDescriptor(service, providers));
-          roots.add(service);
-          roots.addAll(providers);
-        } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
-            && NativeImageDynamicRoots.isNativeImageClassConfig(name)) {
-          declaresClassRoots = true;
-          NativeImageClassConfig.readNativeImageClassConfig(archive, name, nonServiceRoots);
-        } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
-            && NativeImageDynamicRoots.isNativeImageResourceConfig(name)) {
-          NativeImageResourceConfig.readNativeImageResourceConfig(archive, name, nonServiceRoots);
-        } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
-            && name.endsWith(".properties")) {
-          final NativeImageDynamicRoots.PropertiesResult propertiesResult =
-              NativeImageDynamicRoots.readNativeImagePropertiesDetailed(
-                  archive, entry, nonServiceRoots, allowedArguments, failOnUnsupported);
-          declaresClassRoots |= propertiesResult.declaresClassRoots();
-          unsupportedNativeImageArgs.addAll(propertiesResult.unsupportedArguments());
-        } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
-            && !NativeImageDynamicRoots.isNativeImageSbom(name)
-            && name.endsWith(".json")) {
-          throw new IOException("Unsupported native-image class metadata: " + name);
-        } else if (SPRING_FACTORIES.equals(name)) {
-          declaresClassRoots |= readSpringFactories(archive.getInputStream(entry), nonServiceRoots);
-        } else if (SPRING_IMPORTS.equals(name)) {
-          declaresClassRoots = true;
-          readSpringImports(archive.getInputStream(entry), nonServiceRoots, name);
-        } else if (SPRING_METADATA.equals(name)) {
-          declaresClassRoots = true;
-          readSpringMetadata(archive.getInputStream(entry), nonServiceRoots, jarClasses);
-        }
+        state.scanEntry(archive, entry);
       }
     }
-    roots.addAll(nonServiceRoots);
-    return new RootScan(
-        roots,
-        declaresClassRoots,
-        serviceDescriptors,
-        nonServiceRoots,
-        java.util.List.copyOf(unsupportedNativeImageArgs),
-        "fail="
-            + failOnUnsupported
-            + ";allowed="
-            + String.join(",", new java.util.TreeSet<>(allowedArguments)));
+    return state.finish();
+  }
+
+  /** Accumulates one archive's metadata while keeping entry dispatch small. */
+  private static final class ScanState {
+    /** Service and non-service roots combined for the final result. */
+    private final Set<String> roots = new LinkedHashSet<>();
+
+    /** Class roots declared by metadata that does not need service proof. */
+    private final Set<String> nonServiceRoots = new LinkedHashSet<>();
+
+    /** Service descriptors retained until reachability proof is applied. */
+    private final Set<ServiceDescriptor> serviceDescriptors = new LinkedHashSet<>();
+
+    /** Archives that supplied classpath configuration resources. */
+    private final Set<java.nio.file.Path> resourceProviders = new LinkedHashSet<>();
+
+    /** Unsupported options that require conservative archive retention. */
+    private final java.util.List<NativeImageDynamicRoots.UnsupportedArgument>
+        unsupportedNativeImageArgs = new java.util.ArrayList<>();
+
+    /** Complete candidate inventory used by resource and package resolution. */
+    private final NativeImageScanContext scanContext;
+
+    /** Legacy argument exception policy applied during this scan. */
+    private final Set<String> allowedArguments;
+
+    /** Whether unsupported options fail immediately. */
+    private final boolean failOnUnsupported;
+
+    /** Logical class names in the declaring archive. */
+    private final Set<String> jarClasses;
+
+    /** Whether this archive declares class roots. */
+    private boolean declaresClassRoots;
+
+    /** Creates mutable state for one archive using the invocation resource index. */
+    private ScanState(
+        final java.nio.file.Path jar,
+        final NativeImageScanContext scanContext,
+        final Set<String> allowedArguments,
+        final boolean failOnUnsupported)
+        throws IOException {
+      this.scanContext = scanContext;
+      this.allowedArguments = allowedArguments;
+      this.failOnUnsupported = failOnUnsupported;
+      this.jarClasses = scanContext.logicalClasses(jar);
+    }
+
+    /** Dispatches one archive entry to its supported dynamic-root reader. */
+    private void scanEntry(final JarFile archive, final JarEntry entry) throws IOException {
+      if (entry.isDirectory()) {
+        return;
+      }
+      final String name = entry.getName();
+      if (name.startsWith(SERVICES)) {
+        declaresClassRoots = true;
+        readServiceDescriptor(archive, entry);
+      } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
+          && NativeImageDynamicRoots.isNativeImageClassConfig(name)) {
+        declaresClassRoots = true;
+        NativeImageClassConfig.readNativeImageClassConfig(archive, name, nonServiceRoots);
+      } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
+          && NativeImageDynamicRoots.isNativeImageResourceConfig(name)) {
+        NativeImageResourceConfig.readNativeImageResourceConfig(archive, name, nonServiceRoots);
+      } else if (name.startsWith(NativeImageDynamicRoots.PREFIX) && name.endsWith(".properties")) {
+        readNativeImageProperties(archive, entry);
+      } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
+          && !NativeImageDynamicRoots.isNativeImageSbom(name)
+          && name.endsWith(".json")) {
+        throw new IOException("Unsupported native-image class metadata: " + name);
+      } else if (SPRING_FACTORIES.equals(name)) {
+        declaresClassRoots |= readSpringFactories(archive.getInputStream(entry), nonServiceRoots);
+      } else if (SPRING_IMPORTS.equals(name)) {
+        declaresClassRoots = true;
+        readSpringImports(archive.getInputStream(entry), nonServiceRoots, name);
+      } else if (SPRING_METADATA.equals(name)) {
+        declaresClassRoots = true;
+        readSpringMetadata(archive.getInputStream(entry), nonServiceRoots, jarClasses);
+      }
+    }
+
+    private void readServiceDescriptor(final JarFile archive, final JarEntry entry)
+        throws IOException {
+      final String name = entry.getName();
+      final String service = name.substring(SERVICES.length());
+      if (service.isBlank() || service.contains("/")) {
+        throw new IOException("Unsupported service descriptor path: " + name);
+      }
+      final Set<String> providers = new LinkedHashSet<>();
+      try (BufferedReader reader =
+          new BufferedReader(
+              new InputStreamReader(archive.getInputStream(entry), StandardCharsets.UTF_8))) {
+        String line;
+        while ((line = reader.readLine()) != null) {
+          final String provider = line.split("#", 2)[0].trim();
+          if (!provider.isEmpty()) {
+            if (!provider.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*")) {
+              throw new IOException("Malformed service provider in " + name + ": " + provider);
+            }
+            providers.add(provider);
+          }
+        }
+      }
+      serviceDescriptors.add(new ServiceDescriptor(service, providers));
+      roots.add(service);
+      roots.addAll(providers);
+    }
+
+    private void readNativeImageProperties(final JarFile archive, final JarEntry entry)
+        throws IOException {
+      final NativeImageDynamicRoots.PropertiesResult result =
+          NativeImageDynamicRoots.readNativeImagePropertiesDetailed(
+              archive,
+              entry,
+              nonServiceRoots,
+              allowedArguments,
+              failOnUnsupported,
+              scanContext,
+              resourceProviders);
+      declaresClassRoots |= result.declaresClassRoots();
+      unsupportedNativeImageArgs.addAll(result.unsupportedArguments());
+      resourceProviders.addAll(result.resourceProviders());
+    }
+
+    /** Freezes accumulated metadata into the result consumed by Maven pruning. */
+    private RootScan finish() {
+      roots.addAll(nonServiceRoots);
+      return new RootScan(
+          roots,
+          declaresClassRoots,
+          serviceDescriptors,
+          nonServiceRoots,
+          resourceProviders,
+          java.util.List.copyOf(unsupportedNativeImageArgs),
+          "fail="
+              + failOnUnsupported
+              + ";allowed="
+              + String.join(",", new java.util.TreeSet<>(allowedArguments)));
+    }
   }
 
   private static boolean readSpringFactories(final InputStream input, final Set<String> roots)

@@ -75,7 +75,7 @@ final class MavenElisionServiceTest {
     final MavenElisionService.DynamicRootInputs inputs =
         MavenElisionService.dynamicRoots(
             candidates,
-            path -> {
+            (path, context) -> {
               scannedPaths.add(path);
               return expectedScan;
             });

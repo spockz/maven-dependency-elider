@@ -477,9 +477,10 @@ final class MavenElisionService {
     return prepare(
         project,
         options,
-        path ->
+        (path, context) ->
             DependencyDynamicRoots.scan(
                 path,
+                context,
                 Set.copyOf(options.allowedNativeImageArgs()),
                 options.failOnUnsupportedNativeImageArgs()));
   }
@@ -525,6 +526,8 @@ final class MavenElisionService {
     }
     final TraceData trace = new CompositeTraceReader().readAll(toPaths(traceFiles));
     final ArtifactClassIndex index = new JarIndexScanner().scan(scanCandidates);
+    final NativeImageScanContext scanContext =
+        NativeImageScanContext.create(scanCandidates, invocationBase(project, session));
     final ProductionBytecodeInputs productionInputs =
         productionBytecodeInputs(productionOutput, productionClassesComplete);
     final CompilerInputs compilerInputs =
@@ -547,6 +550,7 @@ final class MavenElisionService {
         dynamicRoots(
             scanCandidates,
             dynamicRootScanner,
+            scanContext,
             provenServiceInterfaces,
             options.conservativeServiceLoaderRoots());
     final Set<String> pruningRequiredClasses =
@@ -559,6 +563,7 @@ final class MavenElisionService {
     final Set<ArtifactCoordinate> keepForPruning =
         new HashSet<>(compilerInputs.compileVisibleCoordinates());
     keepForPruning.addAll(dynamicRootInputs.declaringArtifacts());
+    keepForPruning.addAll(dynamicRootInputs.resourceProviderArtifacts());
     keepForPruning.addAll(dynamicRootArtifactOwners(dynamicRootInputs, index, scanCandidates));
     if (trimJars) {
       keepForPruning.addAll(
@@ -1114,12 +1119,19 @@ final class MavenElisionService {
   }
 
   static DynamicRootInputs dynamicRoots(final List<ArtifactFileRef> candidates) throws IOException {
-    return dynamicRoots(candidates, DependencyDynamicRoots::scan, Set.of(), true);
+    final NativeImageScanContext context = NativeImageScanContext.create(candidates, null);
+    return dynamicRoots(
+        candidates,
+        (path, scanContext) -> DependencyDynamicRoots.scan(path, scanContext, Set.of(), true),
+        context,
+        Set.of(),
+        true);
   }
 
   static DynamicRootInputs dynamicRoots(
       final List<ArtifactFileRef> candidates, final DynamicRootScanner scanner) throws IOException {
-    return dynamicRoots(candidates, scanner, Set.of(), true);
+    return dynamicRoots(
+        candidates, scanner, NativeImageScanContext.create(candidates, null), Set.of(), true);
   }
 
   // Reuse per-path scans while applying each artifact's fallback policy.
@@ -1127,6 +1139,7 @@ final class MavenElisionService {
   static DynamicRootInputs dynamicRoots(
       final List<ArtifactFileRef> candidates,
       final DynamicRootScanner scanner,
+      final NativeImageScanContext scanContext,
       final Set<String> provenServiceInterfaces,
       final boolean conservativeServiceLoaderRoots)
       throws IOException {
@@ -1134,11 +1147,12 @@ final class MavenElisionService {
     final Set<ArtifactCoordinate> declaringArtifacts = new HashSet<>();
     final Map<Path, DependencyDynamicRoots.RootScan> scansByPath = new LinkedHashMap<>();
     final Map<ArtifactCoordinate, Set<String>> unprovenRootsByCoordinate = new LinkedHashMap<>();
+    final Set<Path> resourceProviderPaths = new HashSet<>();
     for (final ArtifactFileRef candidate : candidates) {
       DependencyDynamicRoots.RootScan scan = scansByPath.get(candidate.filePath());
       if (scan == null) {
         try {
-          scan = scanner.scan(candidate.filePath());
+          scan = scanner.scan(candidate.filePath(), scanContext);
         } catch (final IOException exception) {
           throw new IOException(
               "Cannot scan dependency artifact "
@@ -1154,6 +1168,7 @@ final class MavenElisionService {
       final DependencyDynamicRoots.EffectiveRoots effective =
           scan.effectiveRoots(provenServiceInterfaces, conservativeServiceLoaderRoots);
       classNames.addAll(effective.roots());
+      resourceProviderPaths.addAll(scan.resourceProviders());
       if (effective.declaresRoots() || scan.requiresPassThrough()) {
         declaringArtifacts.add(candidate.coordinate());
       }
@@ -1181,9 +1196,16 @@ final class MavenElisionService {
             candidate.coordinate(), effective.unprovenConservativeRoots());
       }
     }
+    final Set<ArtifactCoordinate> resourceProviderArtifacts = new HashSet<>();
+    for (final ArtifactFileRef candidate : candidates) {
+      if (resourceProviderPaths.contains(candidate.filePath().toRealPath())) {
+        resourceProviderArtifacts.add(candidate.coordinate());
+      }
+    }
     return new DynamicRootInputs(
         classNames,
         declaringArtifacts,
+        resourceProviderArtifacts,
         scansByPath,
         unprovenRootsByCoordinate,
         provenServiceInterfaces);
@@ -1482,23 +1504,41 @@ final class MavenElisionService {
     return new ProductionBytecodeInputs(before, Optional.of(scan));
   }
 
+  private static Path invocationBase(final MavenProject project, final MavenSession session) {
+    final File multiModuleBase =
+        session == null || session.getRequest() == null
+            ? null
+            : session.getRequest().getMultiModuleProjectDirectory();
+    return invocationBase(multiModuleBase, project.getBasedir());
+  }
+
+  /** Prefers the Maven reactor base over the current project directory. */
+  /* package */
+  static Path invocationBase(final File multiModuleBase, final File projectBase) {
+    final File selected = multiModuleBase == null ? projectBase : multiModuleBase;
+    return selected == null ? null : selected.toPath();
+  }
+
   /** Scans one dependency archive during an analysis invocation. */
   @FunctionalInterface
   interface DynamicRootScanner {
     /** Returns the dynamic roots declared by the archive. */
-    DependencyDynamicRoots.RootScan scan(Path path) throws IOException;
+    DependencyDynamicRoots.RootScan scan(Path path, NativeImageScanContext context)
+        throws IOException;
   }
 
   /** Holds invocation roots and the scans reused by retained-JAR trimming. */
   record DynamicRootInputs(
       Set<String> classNames,
       Set<ArtifactCoordinate> declaringArtifacts,
+      Set<ArtifactCoordinate> resourceProviderArtifacts,
       Map<Path, DependencyDynamicRoots.RootScan> scansByPath,
       Map<ArtifactCoordinate, Set<String>> unprovenServiceRootsByCoordinate,
       Set<String> provenServiceInterfaces) {
     DynamicRootInputs {
       classNames = Set.copyOf(classNames);
       declaringArtifacts = Set.copyOf(declaringArtifacts);
+      resourceProviderArtifacts = Set.copyOf(resourceProviderArtifacts);
       scansByPath = Map.copyOf(scansByPath);
       unprovenServiceRootsByCoordinate = Map.copyOf(unprovenServiceRootsByCoordinate);
       provenServiceInterfaces = Set.copyOf(provenServiceInterfaces);
@@ -1508,7 +1548,7 @@ final class MavenElisionService {
         final Set<String> classNames,
         final Set<ArtifactCoordinate> declaringArtifacts,
         final Map<Path, DependencyDynamicRoots.RootScan> scansByPath) {
-      this(classNames, declaringArtifacts, scansByPath, Map.of(), Set.of());
+      this(classNames, declaringArtifacts, Set.of(), scansByPath, Map.of(), Set.of());
     }
   }
 

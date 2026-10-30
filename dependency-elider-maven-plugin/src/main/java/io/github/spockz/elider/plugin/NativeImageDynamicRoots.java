@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -34,7 +35,9 @@ final class NativeImageDynamicRoots {
   record UnsupportedArgument(String entry, String name, String fullArgument) {}
 
   record PropertiesResult(
-      boolean declaresClassRoots, List<UnsupportedArgument> unsupportedArguments) {}
+      boolean declaresClassRoots,
+      List<UnsupportedArgument> unsupportedArguments,
+      Set<Path> resourceProviders) {}
 
   @SuppressWarnings("PMD.CyclomaticComplexity")
   static PropertiesResult readNativeImagePropertiesDetailed(
@@ -42,7 +45,9 @@ final class NativeImageDynamicRoots {
       final JarEntry propertiesEntry,
       final Set<String> roots,
       final Set<String> allowedArguments,
-      final boolean failOnUnsupported)
+      final boolean failOnUnsupported,
+      final NativeImageScanContext scanContext,
+      final Set<Path> resourceProviders)
       throws IOException {
     final Properties properties = new Properties();
     try (InputStream input = archive.getInputStream(propertiesEntry)) {
@@ -59,7 +64,9 @@ final class NativeImageDynamicRoots {
     final List<UnsupportedArgument> unsupported = new ArrayList<>();
     for (final String argument : arguments) {
       try {
-        declaresClassRoots |= readNativeImageArgument(argument, archive, propertiesEntry, roots);
+        declaresClassRoots |=
+            readNativeImageArgument(
+                argument, archive, propertiesEntry, roots, scanContext, resourceProviders);
       } catch (final UnknownNativeImageArgument exception) {
         if (allowedArguments.contains(argumentName(argument))) {
           continue;
@@ -71,7 +78,8 @@ final class NativeImageDynamicRoots {
             new UnsupportedArgument(propertiesEntry.getName(), argumentName(argument), argument));
       }
     }
-    return new PropertiesResult(declaresClassRoots, List.copyOf(unsupported));
+    return new PropertiesResult(
+        declaresClassRoots, List.copyOf(unsupported), Set.copyOf(resourceProviders));
   }
 
   /** Scans quote-delimited tokens while preserving non-syntactic characters verbatim. */
@@ -155,15 +163,19 @@ final class NativeImageDynamicRoots {
       final String argument,
       final JarFile archive,
       final JarEntry propertiesEntry,
-      final Set<String> roots)
+      final Set<String> roots,
+      final NativeImageScanContext scanContext,
+      final Set<Path> resourceProviders)
       throws IOException {
     if (argument.startsWith("-H:ReflectionConfigurationResources=")) {
       readNativeImageConfigResources(
           archive,
           propertiesEntry.getName(),
           argument.substring("-H:ReflectionConfigurationResources=".length()),
-          true,
-          roots);
+          NativeImageDescriptorKind.REFLECTION,
+          roots,
+          scanContext,
+          resourceProviders);
       return true;
     }
     if ("-H:ReflectionConfigurationResources".equals(argument)
@@ -180,8 +192,10 @@ final class NativeImageDynamicRoots {
           archive,
           propertiesEntry.getName(),
           argument.substring("-H:ResourceConfigurationResources=".length()),
-          false,
-          roots);
+          NativeImageDescriptorKind.RESOURCES,
+          roots,
+          scanContext,
+          resourceProviders);
       return false;
     }
     if ("--enable-http".equals(argument) || "--enable-https".equals(argument)) {
@@ -238,30 +252,62 @@ final class NativeImageDynamicRoots {
       final JarFile archive,
       final String propertiesEntry,
       final String references,
-      final boolean classConfig,
-      final Set<String> roots)
+      final NativeImageDescriptorKind kind,
+      final Set<String> roots,
+      final NativeImageScanContext scanContext,
+      final Set<Path> resourceProviders)
       throws IOException {
     if (references.isBlank()) {
       throw new IOException(
           "Native-image configuration resource path is empty: " + propertiesEntry);
     }
     for (final String reference : references.split(",", -1)) {
-      final String path = resolveNativeImageConfigPath(propertiesEntry, reference.trim());
-      final JarEntry configEntry = archive.getJarEntry(path);
-      if (configEntry == null || configEntry.isDirectory()) {
-        throw new IOException("Native-image configuration resource is missing: " + path);
-      }
-      if (classConfig) {
-        NativeImageClassConfig.readNativeImageClassConfig(archive, path, roots);
-      } else {
-        NativeImageResourceConfig.readNativeImageResourceConfig(archive, path, roots);
-      }
+      final String trimmed = reference.trim();
+      final boolean descriptorRelative = trimmed.startsWith("${.}/");
+      final String path =
+          resolveNativeImageConfigPath(propertiesEntry, trimmed, descriptorRelative);
+      readNativeImageConfigResource(
+          archive, path, descriptorRelative, kind, roots, scanContext, resourceProviders);
+    }
+  }
+
+  private static void readNativeImageConfigResource(
+      final JarFile archive,
+      final String path,
+      final boolean descriptorRelative,
+      final NativeImageDescriptorKind kind,
+      final Set<String> roots,
+      final NativeImageScanContext scanContext,
+      final Set<Path> resourceProviders)
+      throws IOException {
+    final NativeImageScanContext.DescriptorReader reader =
+        kind == NativeImageDescriptorKind.REFLECTION
+            ? input -> NativeImageClassConfig.readNativeImageClassConfig(input, roots)
+            : input -> NativeImageResourceConfig.readNativeImageResourceConfig(input, roots);
+    final boolean found;
+    try {
+      found =
+          descriptorRelative
+              ? scanContext.readDescriptorRelativeResource(
+                  archive, path, kind, reader, resourceProviders)
+              : scanContext.readClasspathResource(path, kind, reader, resourceProviders);
+    } catch (final IOException exception) {
+      throw new IOException(
+          "Cannot read native-image configuration resource: "
+              + path
+              + ": "
+              + exception.getMessage(),
+          exception);
+    }
+    if (!found) {
+      throw new IOException("Native-image configuration resource is missing: " + path);
     }
   }
 
   private static String resolveNativeImageConfigPath(
-      final String propertiesEntry, final String reference) throws IOException {
-    final String relative = reference.startsWith("${.}/") ? reference.substring(5) : reference;
+      final String propertiesEntry, final String reference, final boolean descriptorRelative)
+      throws IOException {
+    final String relative = descriptorRelative ? reference.substring(5) : reference;
     if (relative.isBlank()
         || relative.startsWith("/")
         || relative.contains("\\")
@@ -271,7 +317,9 @@ final class NativeImageDynamicRoots {
       throw new IOException(
           "Unsupported native-image configuration path in " + propertiesEntry + ": " + reference);
     }
-    return propertiesEntry.substring(0, propertiesEntry.lastIndexOf('/') + 1) + relative;
+    return descriptorRelative
+        ? propertiesEntry.substring(0, propertiesEntry.lastIndexOf('/') + 1) + relative
+        : relative;
   }
 
   static boolean isBinaryClassName(final String name) {
