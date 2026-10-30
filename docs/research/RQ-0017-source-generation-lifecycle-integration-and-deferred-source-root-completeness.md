@@ -46,46 +46,83 @@ Enterprise projects that use modern Java frameworks almost universally rely on s
 
 ---
 
-## 2. Core Architectural Dynamics & Potential Solutions
+## 2. The Primary Architectural Proposal: Programmatic Double-Pass Compilation
+
+To preserve the project's unique selling proposition (USP)—**guaranteeing that code compiles cleanly against the elided classpath in a single Maven run**—while supporting all code generators and annotation processors without hardcoded heuristics, the leading proposal introduces a **Programmatic Double-Pass Compilation Pattern**:
+
+### 2.1 The Execution Workflow
+
+```text
+Pass 1: Full Discovery & Generation (Full Classpath)
+├── 1. [generate-sources]  (OpenAPI, Protobuf, Avro generate .java files)
+└── 2. [compile]           (javac + MapStruct/Lombok compile into target/classes)
+
+Elision & Verification Hook
+├── 3. [process-classes]   <=== DEPENDENCY-ELIDER RUNS HERE!
+│      ├── Reads compiled bytecode in target/classes (human + generated)
+│      ├── Performs link-closure dependency analysis
+│      ├── Mutates project.getArtifacts() & sets artifact filters in memory
+│      ├── Atomically clears target/classes
+│      └── Programmatically re-invokes compiler:compile on ELIDED classpath!
+│          └── If javac succeeds -> USP IS PROVEN! All code compiles without dropped JARs!
+
+Downstream Lifecycle Continues (Elided Classpath)
+├── 4. [test-compile]      (Compiles tests against elided classpath)
+├── 5. [test]              (Surefire runs against elided classpath)
+└── 6. [package]           (Packages elided/trimmed artifacts)
+```
+
+### 2.2 Orchestration Trade-Offs: Programmatic Invocation vs. POM XML Settings
+
+| Dimension | Programmatic (`BuildPluginManager.executeMojo`) | POM Settings (`<executions>` in `pom.xml`) |
+| :--- | :--- | :--- |
+| **Developer Ergonomics** | **Zero configuration.** The user just adds Dependency Elider. Everything happens automatically in `mvn clean verify`. | **High friction.** Every project must modify its POM, duplicate compiler executions, and maintain boilerplate XML. |
+| **Compiler Settings Parity** | **Guaranteed zero drift.** Elider inspects the project's existing `maven-compiler-plugin` execution and clones its exact configuration (`release`, `compilerArgs`, etc.). | **Risk of configuration drift.** If a developer updates compiler flags in one execution but forgets the other, the two passes diverge. |
+| **Atomic State Control** | **Total control.** Elider wipes `target/classes`, swaps the artifact pointers in memory, and immediately triggers `javac` before any other plugin can see a dirty state. | **Fragile lifecycle ordering.** Other plugins bound to `process-classes` might run between executions or see inconsistent states. |
+| **IDE Compatibility** | **Completely transparent.** IntelliJ, Eclipse, and VSCode import the POM as a normal single-compiler build without confusion. | **IDE confusion.** IDEs often struggle with duplicate compiler plugin executions in the same build, triggering duplicate incremental compilation cycles. |
+| **Incremental Compilation Safety** | Clears `target/classes` or sets `compiler.forceJavacCompilerUse = true` so `javac` does not skip the second pass. | Same issue: `javac` skips compilation unless `target/classes` is cleared. |
+
+### 2.3 Why This Solves the Annotation Processor Problem
+
+* **Zero Knowledge of Processors**: Elider never needs to know what MapStruct, Lombok, or Dagger do. `javac` runs them during Round 1.
+* **Ground-Truth Bytecode**: In `target/classes`, all generated mapper classes, builder classes, and protobuf stubs exist as compiled JVM bytecode with explicit constant pool references and method invocations.
+* **Fail-Fast Safety**: If an annotation processor generated code that references a dropped dependency, Round 2 fails immediately at compile time.
+
+---
+
+## 3. Alternative Architectural Dynamics & Considerations
 
 ### Option 1: Two-Stage Lifecycle Split (Graph Mediation at `INITIALIZE`, Slicing at `PROCESS-SOURCES`)
 
 * **Concept**: Split the elider's responsibilities across two lifecycle hooks:
   1. *Early Phase (`INITIALIZE`)*: Hook repository session resolution and record baseline graph structure.
-  2. *Post-Generation Phase (`PROCESS-SOURCES` or `PROCESS-CLASSES`)*: Execute source attribution after `target/generated-sources` are populated by Maven lifecycle plugins.
-* **Challenge**: Can Maven compile classpaths be safely mutated *after* `INITIALIZE` without triggering the re-resolution cache invalidation problems documented in [RQ-0006](RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md) and [ADR-0002](../adr/0002-in-memory-artifact-mutation-for-downstream-packaging-transparency.md)?
+  2. *Post-Generation Phase (`PROCESS-SOURCES`)*: Execute source attribution after `target/generated-sources` are populated by Maven lifecycle plugins, but before `javac` compiles.
+* **Scope**: Solves file-based code generators (OpenAPI, Protobuf), but does not cover annotation processors running inside `javac` (MapStruct, Lombok).
 
 ### Option 2: Pre-Execution Generator Dry-Run / Warmup
 
 * **Concept**: During the `INITIALIZE` phase, the plugin detects configured generator plugins in the POM (e.g. `openapi-generator-maven-plugin`, `protobuf-maven-plugin`) and triggers a targeted, in-process execution of their generator goals before source scanning begins.
 * **Challenge**: Invoking sibling plugins out-of-band within the Maven session can have unintended side effects on project state, file timestamps, and plugin descriptors.
 
-### Option 3: Persistent Compiled Bytecode Baseline (`target/classes` or Compiler Evidence Cache)
+### Option 3: User-Trust Opt-In (`elide.trustSourceGenerators=true`)
 
-* **Concept**: Instead of parsing raw `.java` source code at `INITIALIZE`, the elider utilizes the output of the compiler from a warm build or previous run (`target/classes`).
-  * If `target/classes` exists and is up to date, the elider inspects the actual compiled class files (which already incorporate all generated sources and annotation processor outputs).
-  * Static bytecode scanning of `target/classes` is faster and more accurate than parsing uncompiled source text with regular expressions or lightweight Java AST parsers.
-* **Challenge**: Requires a baseline build or clean-compile cycle before elision can activate.
-
-### Option 4: Known-Generator Modeling in `MavenPreconditionGenerationGuard`
-
-* **Concept**: Rather than treating all executions in `generate-sources` as hostile, expand `MavenPreconditionGenerationGuard` to recognize standard code generators and register their target output directories (e.g. `target/generated-sources/annotations`, `target/generated-sources/openapi`) as known dynamic sources.
+* **Concept**: Rather than treating all executions in `generate-sources` as hostile, allow users to assert that their generators/processors only map between project entities. The plugin scans explicit source types in `src/main/java`, prunes dependencies, and lets `javac` compile in a single pass. If a generator needed a dropped dependency, `javac` fails cleanly.
 
 ---
 
-## 3. Research Questions
+## 4. Research Questions
 
-1. **Resolution Hook Timing**:
-   * What is the latest lifecycle phase where Maven allows transparent in-memory mutation of `project.getArtifacts()` and `project.setArtifactFilter()` without downstream plugins (like `maven-compiler-plugin`) reverting to the un-elided repository artifacts?
-   * If elision runs at `process-sources`, does `maven-compiler-plugin` see the trimmed/elided compile classpath?
-2. **Annotation Processor Discovery**:
-   * How should annotation processors configured inside `<annotationProcessorPaths>` in `maven-compiler-plugin` be handled? Can their processor classes be treated as compile-time dependencies without forcing their transitive libraries into runtime packaging?
-3. **Ergonomic Workarounds for Today**:
-   * What configuration advice should be given to users whose builds fail due to `generate-sources`? Can they bind the elider to a profile or run a two-pass build (`mvn compile && mvn dependency-elider:analyze`)?
+1. **`BuildPluginManager` Programmatic Invocation**:
+   * How cleanly does `BuildPluginManager.executeMojo` re-execute `maven-compiler-plugin:compile` across Maven 3.9 and Maven 4?
+   * How should incremental compilation (`useIncrementalCompilation`) be disabled on the verification pass to guarantee `javac` actually runs?
+2. **Re-resolution Cache Behavior**:
+   * Does mutating `project.getArtifacts()` at `process-classes` persist reliably through `test-compile`, Surefire, and packaging without Maven's `DependencyContext` triggering graph re-resolution?
+3. **Compilation Overhead Benchmarks**:
+   * What is the wall-clock overhead of the second `javac` pass on representative mid-size and large enterprise projects?
 
 ---
 
-## 4. Evidence Gates
+## 5. Evidence Gates
 
 * **MapStruct / OpenAPI Reference Fixture**:
   * Create a standalone example fixture utilizing `generate-sources` (e.g., MapStruct or OpenAPI generator).
