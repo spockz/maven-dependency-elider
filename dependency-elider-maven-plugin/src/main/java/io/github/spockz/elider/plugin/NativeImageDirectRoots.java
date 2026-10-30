@@ -39,6 +39,11 @@ final class NativeImageDirectRoots {
     if (initialization.isPresent()) {
       return initialization;
     }
+    final Optional<Boolean> linkAtBuildTime =
+        NativeImageLinkAtBuildTimeRoots.read(argument, propertiesEntry, roots, scanContext);
+    if (linkAtBuildTime.isPresent()) {
+      return linkAtBuildTime;
+    }
     if ("-H:ReflectionConfigurationResources".equals(argument)
         || "-H:ResourceConfigurationResources".equals(argument)
         || BARE_OPTIONS.contains(argument)) {

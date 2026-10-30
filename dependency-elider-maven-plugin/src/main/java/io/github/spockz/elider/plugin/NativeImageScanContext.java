@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactFileRef;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -37,7 +38,7 @@ final class NativeImageScanContext {
     for (final NativeImageArchiveInventory archive : archives) {
       byPath.put(archive.path(), archive);
       for (final String resource : archive.resources().keySet()) {
-        addResourceProvider(byResource, resource, archive);
+        NativeImageArchiveCatalog.addResourceProvider(byResource, resource, archive);
       }
     }
     this.archivesByPath = java.util.Collections.unmodifiableMap(byPath);
@@ -67,7 +68,7 @@ final class NativeImageScanContext {
     for (final ArtifactFileRef candidate : ordered) {
       final Path realPath = candidate.filePath().toRealPath();
       if (indexedPaths.add(realPath)) {
-        inventories.add(inventory(realPath));
+        inventories.add(NativeImageArchiveCatalog.inventory(realPath));
       }
     }
     final Path normalizedBase =
@@ -78,7 +79,7 @@ final class NativeImageScanContext {
   /* package */
   static NativeImageScanContext singleArchive(final Path archive) throws IOException {
     final Path realPath = archive.toRealPath();
-    return new NativeImageScanContext(List.of(inventory(realPath)), null);
+    return new NativeImageScanContext(List.of(NativeImageArchiveCatalog.inventory(realPath)), null);
   }
 
   /* package */
@@ -90,6 +91,25 @@ final class NativeImageScanContext {
     final NativeImageArchiveInventory inventory =
         archivesByPath.get(archive.orElseThrow().toRealPath());
     return inventory == null ? Set.of() : inventory.logicalClasses();
+  }
+
+  /* package */ Set<String> indexedArchiveClasses(final Path archive) throws IOException {
+    if (Files.isDirectory(archive)) {
+      throw new IOException(
+          "Native-image link-at-build-time directory paths are unsupported: " + archive);
+    }
+    if (!Files.isRegularFile(archive)) {
+      throw new IOException("Native-image link-at-build-time path is missing: " + archive);
+    }
+    final Path realPath = archive.toRealPath();
+    final NativeImageArchiveInventory inventory = archivesByPath.get(realPath);
+    if (inventory == null) {
+      throw new IOException(
+          "Native-image link-at-build-time path does not match an indexed archive identity; "
+              + "module paths are unsupported: "
+              + archive);
+    }
+    return inventory.logicalClasses();
   }
 
   /* package */
@@ -115,7 +135,9 @@ final class NativeImageScanContext {
     }
     boolean found = false;
     for (final NativeImageArchiveInventory candidate : candidates) {
-      found |= readClasspathArchiveResource(candidate, resourcePath, kind, reader, providers);
+      found |=
+          NativeImageArchiveCatalog.readClasspathResource(
+              candidate, resourcePath, kind, reader, providers);
     }
     return found;
   }
@@ -142,53 +164,6 @@ final class NativeImageScanContext {
         providers.add(provider);
         NativeImageInput.archiveEntry(archive, entry, kind)
             .readDescriptor(reader, resourcePath, provider);
-      }
-    }
-    return found;
-  }
-
-  private static NativeImageArchiveInventory inventory(final Path path) throws IOException {
-    final Set<String> logicalClasses = MultiReleaseClassInventory.logicalClassNames(path);
-    final Map<String, Integer> resources = new ConcurrentHashMap<>();
-    try (JarFile archive = new JarFile(path.toFile())) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
-        if (entry.isDirectory()) {
-          continue;
-        }
-        final String name = entry.getName();
-        resources.merge(name, 1, Integer::sum);
-      }
-    }
-    return new NativeImageArchiveInventory(path, logicalClasses, Map.copyOf(resources));
-  }
-
-  private static void addResourceProvider(
-      final Map<String, List<NativeImageArchiveInventory>> byResource,
-      final String resource,
-      final NativeImageArchiveInventory archive) {
-    byResource.computeIfAbsent(resource, ignored -> new ArrayList<>()).add(archive);
-  }
-
-  private static boolean readClasspathArchiveResource(
-      final NativeImageArchiveInventory candidate,
-      final String resourcePath,
-      final NativeImageDescriptorKind kind,
-      final DescriptorReader reader,
-      final Set<Path> providers)
-      throws IOException {
-    boolean found = false;
-    try (JarFile archive = new JarFile(candidate.path().toFile())) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
-        if (!entry.isDirectory() && resourcePath.equals(entry.getName())) {
-          found = true;
-          providers.add(candidate.path());
-          NativeImageInput.archiveEntry(archive, entry, kind)
-              .readDescriptor(reader, resourcePath, candidate.path());
-        }
       }
     }
     return found;
