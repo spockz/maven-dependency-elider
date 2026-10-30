@@ -32,7 +32,7 @@ import org.junit.jupiter.api.io.TempDir;
 
   /* package */
   NativeImageBundleRetentionTest() {
-    bundleName = "org.example.Messages_en__POSIX";
+    bundleName = "org.example.Messages_en-US";
   }
 
   /* package */
@@ -67,8 +67,6 @@ import org.junit.jupiter.api.io.TempDir;
             "message=empty-country",
             "org/example/Messages_en__POSIX.properties",
             "message=variant",
-            "org/example/Messages_en-US.class",
-            CLASS_BYTES,
             "org/example/Messages__US.class",
             CLASS_BYTES);
     final Path prefixCollision =
@@ -108,7 +106,6 @@ import org.junit.jupiter.api.io.TempDir;
             Set.of(
                 "org.example.Messages_fr",
                 "org.example.Messages_en_US",
-                "org.example.Messages_en-US",
                 "org.example.Messages__US"),
             true,
             Set.of(

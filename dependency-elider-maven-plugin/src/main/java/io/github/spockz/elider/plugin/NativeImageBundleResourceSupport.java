@@ -57,7 +57,8 @@ final class NativeImageBundleResourceSupport {
       return;
     }
     final String className = resource.substring(0, resource.length() - 6).replace('/', '.');
-    if (archive.logicalClasses().contains(className)) {
+    if (NativeImageDynamicRoots.isBinaryClassName(className)
+        && archive.logicalClasses().contains(className)) {
       roots.add(className);
     }
   }
