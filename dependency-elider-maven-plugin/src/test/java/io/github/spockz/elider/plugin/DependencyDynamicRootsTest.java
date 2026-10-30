@@ -105,6 +105,29 @@ final class DependencyDynamicRootsTest {
   }
 
   @Test
+  void rejectsMalformedUnifiedMethodParameterTypes() throws IOException {
+    for (final String parameter : new String[] {"org.example.Bad-Name", "void[]"}) {
+      final Path jar =
+          nativeImageJar(
+              "Args = --initialize-at-build-time\n",
+              "META-INF/native-image/test/reachability-metadata.json",
+              "{\"reflection\":[{\"type\":\"org.example.Owner\","
+                  + "\"methods\":[{\"name\":\"call\",\"parameterTypes\":[\""
+                  + parameter
+                  + "\"]}]}]}");
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Malformed reachability method parameter type");
+    }
+  }
+
+  @Test
+  void rejectsVoidArraysAsClassNames() {
+    assertThat(NativeImageTypeDescriptor.extractComponentClass("void[]")).isNull();
+    assertThat(NativeImageTypeDescriptor.extractComponentClass("void[][]")).isNull();
+  }
+
+  @Test
   void loadsJavaPropertiesContinuationBeforeTokenizingArgs() throws IOException {
     final Path jar =
         nativeImageJar("Args = --features=org.example.Feature \\\n" + "  --enable-http\n");
@@ -304,7 +327,6 @@ final class DependencyDynamicRootsTest {
           "META-INF/native-image/test/serialization-config.json",
           """
           [{"name":"org.example.Payload",
-            "lambdaCapturingTypes":["org.example.Captured[]"],
             "customTargetConstructorClass":"org.example.Target"}]
           """);
       put(
@@ -319,10 +341,29 @@ final class DependencyDynamicRootsTest {
     assertThat(scan.roots())
         .contains(
             "org.example.Payload",
-            "org.example.Captured",
             "org.example.Target",
             "org.example.Reflective",
             "org.example.MethodParameter");
+
+    final Path invalidLegacySections =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/serialization-config.json",
+            "[{\"name\":\"org.example.Payload\","
+                + "\"lambdaCapturingTypes\":[\"org.example.Captured\"]}]");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(invalidLegacySections))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Unsupported native-image legacy serialization entry field");
+
+    final Path invalidLegacyProxies =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/serialization-config.json",
+            "[{\"name\":\"org.example.Payload\","
+                + "\"proxies\":[{\"interfaces\":[\"org.example.Proxy\"]}]}]");
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(invalidLegacyProxies))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Unsupported native-image legacy serialization entry field");
 
     final Path schemaJar = tempDir.resolve("serialization-schema-" + System.nanoTime() + ".jar");
     try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(schemaJar))) {
@@ -357,6 +398,16 @@ final class DependencyDynamicRootsTest {
           "{\"types\":[],\"lambdaCapturingTypes\":[],\"proxies\":[]}");
     }
     assertThat(DependencyDynamicRoots.scan(emptySchema).roots()).isEmpty();
+
+    final Path omittedProxies =
+        tempDir.resolve("serialization-no-proxies-" + System.nanoTime() + ".jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(omittedProxies))) {
+      put(
+          out,
+          "META-INF/native-image/test/serialization-config.json",
+          "{\"types\":[],\"lambdaCapturingTypes\":[]}");
+    }
+    assertThat(DependencyDynamicRoots.scan(omittedProxies).roots()).isEmpty();
 
     final Path missingSections =
         nativeImageJar(
@@ -514,6 +565,14 @@ final class DependencyDynamicRootsTest {
             "Ljava/util/List<Lorg/example/GenericType;>;",
             null)
         .visitEnd();
+    writer
+        .visitField(
+            Opcodes.ACC_PRIVATE,
+            "nestedDependency",
+            "Ljava/util/List;",
+            "Ljava/util/List<Lorg/example/GenericOuter<Lorg/example/GenericArgument;>.Inner;>;",
+            null)
+        .visitEnd();
     final MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC, "load", "()V", null, null);
     method.visitCode();
     method.visitLdcInsn(Type.getType("Lorg/example/LdcType;"));
@@ -555,12 +614,16 @@ final class DependencyDynamicRootsTest {
             "org.example.Generated",
             "java.util.List",
             "org.example.GenericType",
+            "org.example.GenericOuter",
+            "org.example.GenericOuter$Inner",
+            "org.example.GenericArgument",
             "org.example.LdcType",
             "org.example.GeneratedOuter",
             "org.example.GeneratedInner",
             "org.example.GeneratedPermitted",
             "org.example.BootstrapOwner",
             "org.example.BootstrapArgument");
+    assertThat(scan.roots()).doesNotContain("org.example.GenericArgument$Inner");
 
     final Path missing = tempDir.resolve("predefined-missing-" + System.nanoTime() + ".jar");
     try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(missing))) {

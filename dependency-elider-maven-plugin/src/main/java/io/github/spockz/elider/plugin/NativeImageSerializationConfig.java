@@ -36,7 +36,9 @@ final class NativeImageSerializationConfig {
         document, Set.of("types", LAMBDA_TYPES, PROXIES), "serialization configuration", name);
     readTypes(document.get("types"), name, roots);
     readLambdaTypes(document.get(LAMBDA_TYPES), name, roots);
-    readProxies(document.get(PROXIES), name, roots);
+    if (document.has(PROXIES)) {
+      readProxies(document.get(PROXIES), name, roots);
+    }
   }
 
   /* package */
@@ -44,17 +46,10 @@ final class NativeImageSerializationConfig {
       throws IOException {
     NativeImageJsonSupport.requireObject(entry, "legacy serialization entry", name);
     NativeImageJsonSupport.validateFields(
-        entry,
-        Set.of(NAME, CUSTOM_TARGET, LAMBDA_TYPES, PROXIES, CONDITION),
-        "legacy serialization entry",
-        name);
+        entry, Set.of(NAME, CUSTOM_TARGET, CONDITION), "legacy serialization entry", name);
     NativeImageRootSupport.addRequiredClass(entry.get(NAME), SERIALIZATION_TYPE, name, roots);
     readOptionalClass(entry, CUSTOM_TARGET, name, roots);
     NativeImageRootSupport.readCondition(entry.get(CONDITION), name, roots, false);
-    NativeImageRootSupport.readTypeArray(entry.get(LAMBDA_TYPES), name, roots, true);
-    if (entry.has(PROXIES)) {
-      readProxies(entry.get(PROXIES), name, roots);
-    }
   }
 
   private static void readTypes(final JsonNode types, final String name, final Set<String> roots)

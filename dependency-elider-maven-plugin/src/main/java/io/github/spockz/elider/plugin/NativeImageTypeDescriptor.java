@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import java.io.IOException;
 import java.util.Set;
 
 /** Extracts component classes while rejecting malformed descriptors. */
@@ -31,6 +32,16 @@ final class NativeImageTypeDescriptor {
     return extractScalarClass(trimmed);
   }
 
+  /* package */
+  static String requireComponentClass(final String value, final String errorMessage)
+      throws IOException {
+    final String component = extractComponentClass(value);
+    if (component == null) {
+      throw new IOException(errorMessage);
+    }
+    return component;
+  }
+
   private static String extractJvmArrayClass(final String value) {
     int index = 0;
     while (index < value.length() && value.charAt(index) == '[') {
@@ -53,8 +64,8 @@ final class NativeImageTypeDescriptor {
     while (element.endsWith("[]")) {
       element = element.substring(0, element.length() - 2);
     }
-    if (isPrimitive(element) && !"void".equals(element)) {
-      return "";
+    if (isPrimitive(element)) {
+      return "void".equals(element) ? null : "";
     }
     return validateClassName(element);
   }

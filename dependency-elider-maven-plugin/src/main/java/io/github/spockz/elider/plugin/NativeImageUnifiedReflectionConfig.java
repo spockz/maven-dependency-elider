@@ -107,8 +107,10 @@ final class NativeImageUnifiedReflectionConfig {
       if (!isTypeName(value)) {
         throw new IOException("Malformed reachability method parameter type: " + name);
       }
-      final String component = NativeImageTypeDescriptor.extractComponentClass(value);
-      if (component != null && !component.isEmpty()) {
+      final String component =
+          NativeImageTypeDescriptor.requireComponentClass(
+              value, "Malformed reachability method parameter type: " + name);
+      if (!component.isEmpty()) {
         roots.add(component);
       }
     }

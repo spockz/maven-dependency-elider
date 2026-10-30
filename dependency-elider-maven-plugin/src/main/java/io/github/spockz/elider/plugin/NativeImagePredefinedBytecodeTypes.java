@@ -88,6 +88,11 @@ final class NativeImagePredefinedBytecodeTypes {
             currentClass = currentClass + "$" + name;
             addInternalName(currentClass, roots);
           }
+
+          @Override
+          public SignatureVisitor visitTypeArgument(final char wildcard) {
+            return signatureVisitor(roots);
+          }
         };
     try {
       new SignatureReader(signature).accept(visitor);
@@ -137,6 +142,11 @@ final class NativeImagePredefinedBytecodeTypes {
       public void visitInnerClassType(final String name) {
         currentClass = currentClass + "$" + name;
         addInternalName(currentClass, roots);
+      }
+
+      @Override
+      public SignatureVisitor visitTypeArgument(final char wildcard) {
+        return signatureVisitor(roots);
       }
     };
   }
