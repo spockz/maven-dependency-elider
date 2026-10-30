@@ -24,7 +24,8 @@ final class NativeImageConfigurationDirectories {
       final Set<String> roots,
       final NativeImageScanContext context,
       final Set<Path> resourceProviders,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
       throws IOException {
     if (argument.startsWith("-H:ConfigurationFileDirectories=")) {
       return NativeImageFileConfigurationDirectories.read(
@@ -32,7 +33,8 @@ final class NativeImageConfigurationDirectories {
           propertiesEntry,
           roots,
           context,
-          consumedInputs);
+          consumedInputs,
+          selections);
     }
     if (argument.startsWith("-H:ConfigurationResourceRoots=")) {
       return NativeImageResourceConfigurationDirectories.read(
@@ -41,7 +43,8 @@ final class NativeImageConfigurationDirectories {
           roots,
           context,
           resourceProviders,
-          consumedInputs);
+          consumedInputs,
+          selections);
     }
     throw new IOException(
         "Native-image configuration directory option has no value in "

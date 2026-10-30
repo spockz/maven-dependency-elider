@@ -8,21 +8,55 @@ import java.util.Set;
 
 /** Reads the selected legacy resource and glob descriptor forms. */
 final class NativeImageResourcePatterns {
+  /** WHY: The parser distinguishes legacy regex entries from glob extensions. */
+  private static final String GLOB_FIELD = "glob";
+
+  /** WHY: Module selectors are the only optional field on glob entries. */
+  private static final String MODULE_FIELD = "module";
+
+  /** WHY: Legacy resource patterns use a separate descriptor field name. */
+  private static final String PATTERN_FIELD = "pattern";
+
   private NativeImageResourcePatterns() {}
 
-  /* package */
-  static void read(final JsonNode patterns, final Set<String> roots, final String name)
+  /* package */ static void read(
+      final JsonNode patterns,
+      final Set<String> roots,
+      final String name,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final boolean excluded,
+      final String selectionGroup)
       throws IOException {
-    readEntries(patterns, roots, name, "pattern", Set.of("condition"));
+    readEntries(
+        patterns,
+        roots,
+        name,
+        PATTERN_FIELD,
+        Set.of("condition"),
+        selections,
+        excluded,
+        selectionGroup);
   }
 
-  /* package */
-  static void readGlobs(final JsonNode globs, final Set<String> roots, final String name)
+  /* package */ static void readGlobs(
+      final JsonNode globs,
+      final Set<String> roots,
+      final String name,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final String selectionGroup)
       throws IOException {
     if (globs == null) {
       return;
     }
-    readEntries(globs, roots, name, "glob", Set.of("condition", "module"));
+    readEntries(
+        globs,
+        roots,
+        name,
+        GLOB_FIELD,
+        Set.of("condition", MODULE_FIELD),
+        selections,
+        false,
+        selectionGroup);
   }
 
   private static void readEntries(
@@ -30,7 +64,10 @@ final class NativeImageResourcePatterns {
       final Set<String> roots,
       final String name,
       final String valueField,
-      final Set<String> optionalFields)
+      final Set<String> optionalFields,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final boolean excluded,
+      final String selectionGroup)
       throws IOException {
     if (!entries.isArray()) {
       throw new IOException("Malformed native-image " + valueField + " entries: " + name);
@@ -38,7 +75,7 @@ final class NativeImageResourcePatterns {
     final Set<String> supported = new java.util.HashSet<>(optionalFields);
     supported.add(valueField);
     for (final JsonNode entry : entries) {
-      readEntry(entry, roots, name, valueField, supported);
+      readEntry(entry, roots, name, valueField, supported, selections, excluded, selectionGroup);
     }
   }
 
@@ -47,34 +84,38 @@ final class NativeImageResourcePatterns {
       final Set<String> roots,
       final String name,
       final String valueField,
-      final Set<String> supported)
+      final Set<String> supported,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final boolean excluded,
+      final String selectionGroup)
       throws IOException {
     if (!entry.isObject()) {
       throw new IOException("Malformed native-image " + valueField + " entry: " + name);
     }
     validateFields(entry, supported, name);
-    validateValue(entry.get(valueField), valueField, name);
+    final String expression = validateValue(entry.get(valueField), valueField, name);
     validateModule(entry, name);
-    readEntryCondition(entry.get("condition"), roots, name);
+    if (selections != null) {
+      final String module = entry.has(MODULE_FIELD) ? entry.get(MODULE_FIELD).textValue() : null;
+      selections.addDescriptorSelector(valueField, expression, module, excluded, selectionGroup);
+    }
+    final JsonNode condition = entry.get("condition");
+    if (condition != null) {
+      NativeImageResourceCondition.read(condition, roots, name);
+    }
   }
 
-  private static void validateValue(
+  private static String validateValue(
       final JsonNode value, final String valueField, final String name) throws IOException {
-    if (value == null || !value.isTextual()) {
+    if (value == null || !value.isTextual() || value.textValue().isEmpty()) {
       throw new IOException("Malformed native-image " + valueField + ": " + name);
     }
+    return value.textValue();
   }
 
   private static void validateModule(final JsonNode entry, final String name) throws IOException {
-    if (entry.has("module") && !entry.get("module").isTextual()) {
+    if (entry.has(MODULE_FIELD) && !entry.get(MODULE_FIELD).isTextual()) {
       throw new IOException("Malformed native-image resource module: " + name);
-    }
-  }
-
-  private static void readEntryCondition(
-      final JsonNode condition, final Set<String> roots, final String name) throws IOException {
-    if (condition != null) {
-      readCondition(condition, roots, name);
     }
   }
 
@@ -88,38 +129,5 @@ final class NativeImageResourcePatterns {
             "Unsupported native-image resource pattern field " + field + " in " + name);
       }
     }
-  }
-
-  /* package */
-  static void readCondition(final JsonNode condition, final Set<String> roots, final String name)
-      throws IOException {
-    if (!condition.isObject() || condition.size() != 1) {
-      throw new IOException("Malformed native-image condition: " + name);
-    }
-    final String conditionType = condition.fieldNames().next();
-    if (!isValidConditionType(conditionType)) {
-      throw new IOException("Unsupported native-image condition: " + name);
-    }
-    final JsonNode className = condition.get(conditionType);
-    final String componentClass = parseConditionClass(className, name);
-    roots.add(componentClass);
-  }
-
-  private static boolean isValidConditionType(final String type) {
-    return "typeReachable".equals(type) || "typeReached".equals(type);
-  }
-
-  private static String parseConditionClass(final JsonNode node, final String name)
-      throws IOException {
-    if (node == null || !node.isTextual()) {
-      throw new IOException("Unsupported native-image condition: " + name);
-    }
-    final String componentClass = NativeImageTypeDescriptor.extractComponentClass(node.textValue());
-    if (componentClass == null
-        || componentClass.isEmpty()
-        || !NativeImageDynamicRoots.isBinaryClassName(componentClass)) {
-      throw new IOException("Unsupported native-image condition: " + name);
-    }
-    return componentClass;
   }
 }

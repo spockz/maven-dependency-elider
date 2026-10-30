@@ -462,7 +462,6 @@ final class DependencyDynamicRootsTest {
             "org.example.ProxyApi",
             "org.example.LambdaOwner",
             "org.example.LambdaApi",
-            "org.example.Messages",
             "org.example.BundleGate",
             "org.example.Callback");
     assertThat(scan.requiresPassThrough()).isFalse();
@@ -671,15 +670,14 @@ final class DependencyDynamicRootsTest {
                 + "\"typeReachable\":\"org.example.GlobGate\"},"
                 + "\"module\":\"m.test\"}]}");
     assertThat(DependencyDynamicRoots.scan(resourceConfig).roots())
-        .contains("org.example.Messages", "org.example.GlobGate");
+        .containsExactly("org.example.GlobGate");
 
     final Path bundleOnly =
         nativeImageJar(
             "Args = --initialize-at-build-time\n",
             "META-INF/native-image/test/resource-config.json",
             "{\"bundles\":[{\"name\":\"org.example.BundleOnly\",\"locales\":[\"de\"]}]}");
-    assertThat(DependencyDynamicRoots.scan(bundleOnly).roots())
-        .containsExactly("org.example.BundleOnly");
+    assertThat(DependencyDynamicRoots.scan(bundleOnly).roots()).isEmpty();
 
     final Path unknownGlobField =
         nativeImageJar(
@@ -931,8 +929,8 @@ final class DependencyDynamicRootsTest {
     final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
     assertThat(scan.roots())
-        .contains(
-            "io.netty.channel.epoll.Native", "org.example.Messages", "org.example.Message_fr");
+        .contains("io.netty.channel.epoll.Native", "org.example.Message_fr")
+        .doesNotContain("org.example.Messages");
     assertThat(scan.requiresPassThrough()).isFalse();
   }
 

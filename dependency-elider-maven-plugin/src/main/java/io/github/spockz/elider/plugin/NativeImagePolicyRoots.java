@@ -32,40 +32,95 @@ final class NativeImagePolicyRoots {
   private static final Set<String> SECURITY_FEATURE_POLICIES =
       Set.of("-H:+EnableSecurityServicesFeature", "-H:-EnableSecurityServicesFeature");
 
+  /** WHY: Descriptor readers route glob entries through the glob matcher. */
+  private static final String RESOURCE_GLOB_FIELD = "glob";
+
   /** Collects patterns until exclusions can be applied across the invocation. */
   /* package */ static final class ResourcePatterns {
     /** Include selectors that may add class roots and providers. */
-    private final List<Pattern> includes = new ArrayList<>();
+    private final List<NativeImageResourcePatternMatcher.Selector> includes = new ArrayList<>();
 
     /** Exclude selectors applied before any include selector. */
-    private final List<Pattern> excludes = new ArrayList<>();
+    private final List<NativeImageResourcePatternMatcher.Selector> excludes = new ArrayList<>();
+
+    /** Bundle selectors resolve against all candidates. */
+    private final List<NativeImageResourcePatternMatcher.BundleSelector> bundles =
+        new ArrayList<>();
 
     /* package */
     void include(final Pattern pattern) {
-      includes.add(pattern);
+      includes.add(new NativeImageResourcePatternMatcher.Selector(pattern, null, null, "cli"));
     }
 
     /* package */
     void exclude(final Pattern pattern) {
-      excludes.add(pattern);
+      excludes.add(new NativeImageResourcePatternMatcher.Selector(pattern, null, null, "cli"));
+    }
+
+    /* package */ void merge(final ResourcePatternSelection selection) {
+      includes.addAll(selection.includes());
+      excludes.addAll(selection.excludes());
+      bundles.addAll(selection.bundles());
+    }
+
+    /* package */ void includeRegex(
+        final String expression, final String module, final String source) throws IOException {
+      includes.add(NativeImageResourcePatternMatcher.regex(expression, module, source));
+    }
+
+    /* package */ void excludeRegex(
+        final String expression, final String module, final String source) throws IOException {
+      excludes.add(NativeImageResourcePatternMatcher.regex(expression, module, source));
+    }
+
+    /* package */ void includeGlob(
+        final String expression, final String module, final String source) throws IOException {
+      includes.add(NativeImageResourcePatternMatcher.glob(expression, module, source));
+    }
+
+    /* package */ void addDescriptorSelector(
+        final String field,
+        final String expression,
+        final String module,
+        final boolean excluded,
+        final String source)
+        throws IOException {
+      if (RESOURCE_GLOB_FIELD.equals(field)) {
+        if (excluded) {
+          throw new IOException("Unsupported native-image glob exclusion: " + source);
+        }
+        includeGlob(expression, module, source);
+      } else if (excluded) {
+        excludeRegex(expression, module, source);
+      } else {
+        includeRegex(expression, module, source);
+      }
+    }
+
+    /* package */ void includeBundle(final String name, final String module, final String source) {
+      bundles.add(new NativeImageResourcePatternMatcher.BundleSelector(name, module, source));
     }
 
     /* package */
     ResourcePatternSelection snapshot() {
-      return new ResourcePatternSelection(includes, excludes);
+      return new ResourcePatternSelection(includes, excludes, bundles);
     }
   }
 
   /** Immutable option values carried from archive scans into invocation aggregation. */
-  /* package */ record ResourcePatternSelection(List<Pattern> includes, List<Pattern> excludes) {
+  /* package */ record ResourcePatternSelection(
+      List<NativeImageResourcePatternMatcher.Selector> includes,
+      List<NativeImageResourcePatternMatcher.Selector> excludes,
+      List<NativeImageResourcePatternMatcher.BundleSelector> bundles) {
     ResourcePatternSelection {
       includes = List.copyOf(includes);
       excludes = List.copyOf(excludes);
+      bundles = List.copyOf(bundles);
     }
 
     /* package */
     static ResourcePatternSelection empty() {
-      return new ResourcePatternSelection(List.of(), List.of());
+      return new ResourcePatternSelection(List.of(), List.of(), List.of());
     }
   }
 
@@ -76,15 +131,16 @@ final class NativeImagePolicyRoots {
       final Set<String> roots,
       final Set<java.nio.file.Path> resourceProviders)
       throws IOException {
-    final List<Pattern> includes = new ArrayList<>();
-    final List<Pattern> excludes = new ArrayList<>();
+    final List<NativeImageResourcePatternMatcher.Selector> includes = new ArrayList<>();
+    final List<NativeImageResourcePatternMatcher.Selector> excludes = new ArrayList<>();
+    final List<NativeImageResourcePatternMatcher.BundleSelector> bundles = new ArrayList<>();
     for (final ResourcePatternSelection selection : selections) {
       includes.addAll(selection.includes());
       excludes.addAll(selection.excludes());
+      bundles.addAll(selection.bundles());
     }
-    return !includes.isEmpty()
-        && NativeImageResourcePatternMatcher.apply(
-            includes, excludes, scanContext.resourceIndex(), roots, resourceProviders);
+    return NativeImageResourcePatternMatcher.apply(
+        includes, excludes, bundles, scanContext.resourceIndex(), roots, resourceProviders);
   }
 
   private NativeImagePolicyRoots() {

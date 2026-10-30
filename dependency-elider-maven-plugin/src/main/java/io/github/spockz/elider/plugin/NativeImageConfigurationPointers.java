@@ -106,12 +106,19 @@ final class NativeImageConfigurationPointers {
       final Set<String> roots,
       final NativeImageScanContext scanContext,
       final Set<Path> resourceProviders,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
       throws IOException {
     if (NativeImageConfigurationDirectories.isOption(argument)) {
       return Optional.of(
           NativeImageConfigurationDirectories.read(
-              argument, propertiesEntry, roots, scanContext, resourceProviders, consumedInputs));
+              argument,
+              propertiesEntry,
+              roots,
+              scanContext,
+              resourceProviders,
+              consumedInputs,
+              selections));
     }
     for (final Pointer pointer : POINTERS) {
       if (argument.equals(pointer.option())) {
@@ -129,9 +136,11 @@ final class NativeImageConfigurationPointers {
               roots,
               scanContext,
               resourceProviders,
-              consumedInputs);
+              consumedInputs,
+              selections);
         } else {
-          readFiles(values, pointer, propertiesEntry, roots, scanContext, consumedInputs);
+          readFiles(
+              values, pointer, propertiesEntry, roots, scanContext, consumedInputs, selections);
         }
         return Optional.of(pointer.declaresClassRoots());
       }
@@ -147,7 +156,8 @@ final class NativeImageConfigurationPointers {
       final Set<String> roots,
       final NativeImageScanContext scanContext,
       final Set<Path> resourceProviders,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
       throws IOException {
     for (final String reference : references(values, propertiesEntry)) {
       final boolean descriptorRelative = reference.startsWith("${.}/");
@@ -155,7 +165,7 @@ final class NativeImageConfigurationPointers {
           NativeImageDynamicRoots.resolveNativeImageConfigPath(
               propertiesEntry.getName(), reference, descriptorRelative);
       final NativeImageScanContext.DescriptorReader reader =
-          input -> readTypedDescriptor(input, pointer.kind(), roots, consumedInputs);
+          input -> readTypedDescriptor(input, pointer.kind(), roots, consumedInputs, selections);
       final boolean found;
       try {
         found =
@@ -184,7 +194,8 @@ final class NativeImageConfigurationPointers {
       final JarEntry propertiesEntry,
       final Set<String> roots,
       final NativeImageScanContext scanContext,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
       throws IOException {
     final Path invocationBase =
         scanContext
@@ -197,7 +208,7 @@ final class NativeImageConfigurationPointers {
     for (final String reference : references(values, propertiesEntry)) {
       final Path logicalPath = resolveFilePath(reference, invocationBase, propertiesEntry);
       final NativeImageInput input = NativeImageInput.file(logicalPath, pointer.kind());
-      readTypedDescriptor(input, pointer.kind(), roots, consumedInputs);
+      readTypedDescriptor(input, pointer.kind(), roots, consumedInputs, selections);
     }
   }
 
@@ -252,13 +263,24 @@ final class NativeImageConfigurationPointers {
       final Set<String> roots,
       final Set<NativeImageConsumedInput> consumedInputs)
       throws IOException {
+    readTypedDescriptor(input, kind, roots, consumedInputs, null);
+  }
+
+  /* package */ static void readTypedDescriptor(
+      final NativeImageInput input,
+      final NativeImageDescriptorKind kind,
+      final Set<String> roots,
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
+      throws IOException {
     if (input.kind() != kind) {
       throw new IOException("Native-image descriptor kind mismatch: " + input.name());
     }
     if (kind == NativeImageDescriptorKind.RESOURCES) {
-      NativeImageResourceConfig.readNativeImageResourceConfig(input, roots, consumedInputs);
+      NativeImageResourceConfig.readNativeImageResourceConfig(
+          input, roots, consumedInputs, selections);
     } else {
-      NativeImageClassConfig.readNativeImageClassConfig(input, roots, consumedInputs);
+      NativeImageClassConfig.readNativeImageClassConfig(input, roots, consumedInputs, selections);
     }
   }
 

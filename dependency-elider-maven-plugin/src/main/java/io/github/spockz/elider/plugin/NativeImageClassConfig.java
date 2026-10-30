@@ -40,8 +40,17 @@ final class NativeImageClassConfig {
       final Set<String> roots,
       final Set<NativeImageConsumedInput> consumedInputs)
       throws IOException {
+    return readNativeImageClassConfig(input, roots, consumedInputs, null);
+  }
+
+  /* package */ static boolean readNativeImageClassConfig(
+      final NativeImageInput input,
+      final Set<String> roots,
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
+      throws IOException {
     final JsonNode document = readDocument(input.open(), input.name());
-    final boolean result = dispatch(document, input, roots);
+    final boolean result = dispatch(document, input, roots, selections);
     if (consumedInputs != null) {
       consumedInputs.addAll(input.consumedInputs());
     }
@@ -64,9 +73,12 @@ final class NativeImageClassConfig {
   }
 
   private static boolean dispatch(
-      final JsonNode document, final NativeImageInput input, final Set<String> roots)
+      final JsonNode document,
+      final NativeImageInput input,
+      final Set<String> roots,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
       throws IOException {
-    return NativeImageClassConfigDispatcher.dispatch(document, input, roots);
+    return NativeImageClassConfigDispatcher.dispatch(document, input, roots, selections);
   }
 
   static boolean isReflectionConfig(final String name) {

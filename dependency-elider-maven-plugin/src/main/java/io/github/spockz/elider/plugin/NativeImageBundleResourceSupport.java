@@ -33,6 +33,13 @@ final class NativeImageBundleResourceSupport {
     }
   }
 
+  /* package */ static boolean matches(final String requestedBundle, final String resource) {
+    final String logicalResource = logicalResourceName(resource);
+    return bundleFamilies(requestedBundle).stream()
+        .map(family -> family.replace('.', '/'))
+        .anyMatch(base -> isBundleResource(logicalResource, base));
+  }
+
   private static Set<String> bundleFamilies(final String requestedBundle) {
     final Set<String> families = new LinkedHashSet<>();
     families.add(lastComponentBaseName(requestedBundle));

@@ -19,6 +19,14 @@ final class NativeImageResourceDocument {
 
   /* package */
   static void read(final NativeImageInput input, final Set<String> roots) throws IOException {
+    read(input, roots, null);
+  }
+
+  /* package */ static void read(
+      final NativeImageInput input,
+      final Set<String> roots,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
+      throws IOException {
     final String name = input.name();
     final JsonNode document;
     try (InputStream source = input.open();
@@ -35,9 +43,10 @@ final class NativeImageResourceDocument {
     final JsonNode resources = document.get("resources");
     final JsonNode bundles = document.get("bundles");
     final JsonNode globs = document.get("globs");
-    readResources(resources, roots, name);
-    NativeImageResourceBundles.read(bundles, roots, name);
-    NativeImageResourcePatterns.readGlobs(globs, roots, name);
+    final String identity = input.selectionIdentity();
+    readResources(resources, roots, name, selections, identity + ":resources");
+    NativeImageResourceBundles.read(bundles, roots, name, selections, identity + ":bundles");
+    NativeImageResourcePatterns.readGlobs(globs, roots, name, selections, identity + ":globs");
   }
 
   private static void validateFields(final JsonNode document, final String name)
@@ -52,21 +61,31 @@ final class NativeImageResourceDocument {
   }
 
   private static void readResources(
-      final JsonNode resources, final Set<String> roots, final String name) throws IOException {
+      final JsonNode resources,
+      final Set<String> roots,
+      final String name,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final String selectionGroup)
+      throws IOException {
     if (resources == null) {
       return;
     }
     if (resources.isArray()) {
-      NativeImageResourcePatterns.read(resources, roots, name);
+      NativeImageResourcePatterns.read(resources, roots, name, selections, false, selectionGroup);
     } else if (resources.isObject()) {
-      readResourceSections(resources, roots, name);
+      readResourceSections(resources, roots, name, selections, selectionGroup);
     } else {
       throw new IOException("Malformed native-image resources section: " + name);
     }
   }
 
   private static void readResourceSections(
-      final JsonNode resources, final Set<String> roots, final String name) throws IOException {
+      final JsonNode resources,
+      final Set<String> roots,
+      final String name,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final String selectionGroup)
+      throws IOException {
     if (!resources.has("includes")) {
       throw new IOException("Missing native-image resource includes: " + name);
     }
@@ -80,7 +99,8 @@ final class NativeImageResourceDocument {
       if (!patterns.isArray()) {
         throw new IOException("Malformed native-image resource patterns: " + name);
       }
-      NativeImageResourcePatterns.read(patterns, roots, name);
+      NativeImageResourcePatterns.read(
+          patterns, roots, name, selections, "excludes".equals(key), selectionGroup);
     }
   }
 }

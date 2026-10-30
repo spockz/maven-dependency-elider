@@ -200,7 +200,7 @@ final class NativeImageDynamicRoots {
       final NativeImageScanContext scanContext,
       final Set<Path> resourceProviders,
       final Set<NativeImageConsumedInput> consumedInputs,
-      final NativeImagePolicyRoots.ResourcePatterns resourcePatterns)
+      final NativeImagePolicyRoots.ResourcePatterns descriptorSelections)
       throws IOException {
     final java.util.Optional<Boolean> pointer =
         NativeImageConfigurationPointers.read(
@@ -210,7 +210,8 @@ final class NativeImageDynamicRoots {
             roots,
             scanContext,
             resourceProviders,
-            consumedInputs);
+            consumedInputs,
+            descriptorSelections);
     if (pointer.isPresent()) {
       return pointer.orElseThrow();
     }
@@ -222,7 +223,7 @@ final class NativeImageDynamicRoots {
             scanContext,
             resourceProviders,
             consumedInputs,
-            resourcePatterns);
+            descriptorSelections);
     if (directRoot.isPresent()) {
       return directRoot.get();
     }

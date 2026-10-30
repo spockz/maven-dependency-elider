@@ -19,7 +19,8 @@ import java.util.jar.JarEntry;
       final JarEntry propertiesEntry,
       final Set<String> roots,
       final NativeImageScanContext context,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
       throws IOException {
     final Path invocationBase = invocationBase(context, propertiesEntry);
     final Set<Path> visitedDirectories = new HashSet<>();
@@ -36,7 +37,9 @@ import java.util.jar.JarEntry;
         consumedInputs.add(NativeImageConsumedInput.directoryMembership(directory, members));
       }
       if (visitedDirectories.add(canonicalDirectory)) {
-        foundRoots |= readDirectory(directory, members, visitedDescriptors, roots, consumedInputs);
+        foundRoots |=
+            readDirectory(
+                directory, members, visitedDescriptors, roots, consumedInputs, selections);
       }
     }
     return foundRoots;
@@ -47,7 +50,8 @@ import java.util.jar.JarEntry;
       final List<String> members,
       final Set<DescriptorIdentity> visitedDescriptors,
       final Set<String> roots,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
       throws IOException {
     boolean foundRoots = false;
     for (final Path descriptor : descriptorFiles(directory, members)) {
@@ -62,7 +66,7 @@ import java.util.jar.JarEntry;
           new DescriptorIdentity(descriptor.toRealPath(), kind, resolutionParent))) {
         final int priorRoots = roots.size();
         NativeImageConfigurationPointers.readTypedDescriptor(
-            NativeImageInput.file(descriptor, kind), kind, roots, consumedInputs);
+            NativeImageInput.file(descriptor, kind), kind, roots, consumedInputs, selections);
         foundRoots |= roots.size() > priorRoots;
       }
     }

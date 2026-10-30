@@ -21,6 +21,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies resource bundle providers participate in dynamic-root retention. */
 /* package */ final class NativeImageBundleRetentionTest {
+  /** WHY: All synthetic coordinates use the same fixture release. */
+  private static final String VERSION = "1.0";
+
+  /** WHY: Package coordinates and class names share this fixture namespace. */
+  private static final String PACKAGE_NAME = "org.example";
+
   /** Shared body for class resource fixtures. */
   /* package */ static final String CLASS_BYTES = "class-bytes";
 
@@ -154,13 +160,91 @@ import org.junit.jupiter.api.io.TempDir;
             Set.of(provider.toRealPath()));
   }
 
+  /* package */
+  @Test
+  void descriptorBundlesResolveExistingLocaleProvidersAcrossArchives() throws IOException {
+    for (final String descriptor :
+        List.of(
+            "{\"resources\":{\"includes\":[{\"pattern\":\"never\"}],"
+                + "\"excludes\":[{\"pattern\":\"org/example/Messages.*\"}]},"
+                + "\"bundles\":[{\"name\":\"org.example.Messages_en_US\"}],"
+                + "\"globs\":[{\"glob\":\"assets/**\"}]}",
+            "{\"resources\":[{\"bundle\":\"org.example.Messages_en_US\","
+                + "\"module\":\"ALL-UNNAMED\"}]}")) {
+      final String descriptorName =
+          descriptor.contains("\"bundle\"")
+              ? "META-INF/native-image/test/reachability-metadata.json"
+              : "META-INF/native-image/test/resource-config.json";
+      final Path declaring =
+          NativeImageScanContextTestSupport.jar(
+              tempDir,
+              "descriptor-bundle-" + Math.abs(descriptor.hashCode()) + ".jar",
+              descriptorName,
+              descriptor);
+      final Path baseProvider =
+          NativeImageScanContextTestSupport.jar(
+              tempDir,
+              "descriptor-bundle-base.jar",
+              "org/example/Messages.properties",
+              "base=value",
+              "org/example/MessagesExtra.properties",
+              "near-miss=value");
+      final Path localeProvider =
+          NativeImageScanContextTestSupport.jar(
+              tempDir,
+              "descriptor-bundle-locale.jar",
+              "org/example/Messages_fr.properties",
+              "fr=value",
+              "org/example/Messages_fr.class",
+              CLASS_BYTES,
+              "org/example/Messages_en_US.class",
+              CLASS_BYTES);
+      final Path assetProvider =
+          NativeImageScanContextTestSupport.jar(
+              tempDir, "descriptor-bundle-asset.jar", "assets/selected.dat", "selected");
+      final List<ArtifactFileRef> candidates =
+          List.of(
+              NativeImageScanContextTestSupport.candidate("descriptor", declaring),
+              NativeImageScanContextTestSupport.candidate("bundle-base", baseProvider),
+              NativeImageScanContextTestSupport.candidate("bundle-locale", localeProvider),
+              NativeImageScanContextTestSupport.candidate("bundle-asset", assetProvider));
+      final NativeImageScanContext context = NativeImageScanContext.create(candidates, null);
+      final MavenElisionService.DynamicRootInputs roots =
+          MavenElisionService.dynamicRoots(
+              candidates,
+              (path, scanContext) -> DependencyDynamicRoots.scan(path, scanContext, Set.of(), true),
+              context,
+              Set.of(),
+              false);
+
+      final Set<ArtifactCoordinate> expectedProviders =
+          descriptor.contains("\"globs\"")
+              ? Set.of(
+                  ArtifactCoordinate.of(PACKAGE_NAME, "bundle-base", VERSION),
+                  ArtifactCoordinate.of(PACKAGE_NAME, "bundle-locale", VERSION),
+                  ArtifactCoordinate.of(PACKAGE_NAME, "bundle-asset", VERSION))
+              : Set.of(
+                  ArtifactCoordinate.of(PACKAGE_NAME, "bundle-base", VERSION),
+                  ArtifactCoordinate.of(PACKAGE_NAME, "bundle-locale", VERSION));
+      assertThat(
+              List.of(
+                  roots.classNames(),
+                  roots.resourceProviderArtifacts(),
+                  roots.classNames().contains("org.example.Messages")))
+          .containsExactly(
+              Set.of("org.example.Messages_fr", "org.example.Messages_en_US"),
+              expectedProviders,
+              false);
+    }
+  }
+
   private ArtifactFileRef candidate(final String artifact, final Path path) throws IOException {
-    return ArtifactFileRef.fromPath(ArtifactCoordinate.of("org.example", artifact, "1.0"), path);
+    return ArtifactFileRef.fromPath(ArtifactCoordinate.of("org.example", artifact, VERSION), path);
   }
 
   private Path multiReleaseBundleClass() throws IOException {
     final Manifest manifest = new Manifest();
-    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, VERSION);
     manifest.getMainAttributes().putValue("Multi-Release", "true");
     final Path archive = tempDir.resolve("bundle-class-mr.jar");
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(archive), manifest)) {

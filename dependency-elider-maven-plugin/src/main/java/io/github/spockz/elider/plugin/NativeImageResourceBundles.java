@@ -14,6 +14,25 @@ final class NativeImageResourceBundles {
   /* package */
   static void read(final JsonNode bundles, final Set<String> roots, final String name)
       throws IOException {
+    read(bundles, roots, name, null);
+  }
+
+  /* package */ static void read(
+      final JsonNode bundles,
+      final Set<String> roots,
+      final String name,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
+      throws IOException {
+    read(bundles, roots, name, selections, name);
+  }
+
+  /* package */ static void read(
+      final JsonNode bundles,
+      final Set<String> roots,
+      final String name,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final String selectionGroup)
+      throws IOException {
     if (bundles == null) {
       return;
     }
@@ -21,22 +40,27 @@ final class NativeImageResourceBundles {
       throw new IOException("Malformed native-image bundles section: " + name);
     }
     for (final JsonNode bundle : bundles) {
-      readBundle(bundle, roots, name);
+      readBundle(bundle, roots, name, selections, selectionGroup);
     }
   }
 
-  private static void readBundle(final JsonNode bundle, final Set<String> roots, final String name)
+  private static void readBundle(
+      final JsonNode bundle,
+      final Set<String> roots,
+      final String name,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final String selectionGroup)
       throws IOException {
     if (!bundle.isObject()) {
       throw new IOException("Malformed native-image bundle name: " + name);
     }
     validateFields(bundle, name);
-    addBundleName(bundle.get("name"), roots, name);
+    addBundleName(bundle.get("name"), roots, name, selections, selectionGroup);
     validateLocales(bundle.get("locales"), name);
     addBundleClasses(bundle.get("classNames"), roots, name);
     final JsonNode condition = bundle.get("condition");
     if (condition != null) {
-      NativeImageResourcePatterns.readCondition(condition, roots, name);
+      NativeImageResourceCondition.read(condition, roots, name);
     }
   }
 
@@ -56,13 +80,22 @@ final class NativeImageResourceBundles {
   }
 
   private static void addBundleName(
-      final JsonNode bundleName, final Set<String> roots, final String name) throws IOException {
+      final JsonNode bundleName,
+      final Set<String> roots,
+      final String name,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final String selectionGroup)
+      throws IOException {
     if (bundleName == null
         || !bundleName.isTextual()
         || !NativeImageDynamicRoots.isBinaryClassName(bundleName.textValue())) {
       throw new IOException("Malformed native-image bundle name: " + name);
     }
-    roots.add(bundleName.textValue());
+    if (selections == null) {
+      roots.add(bundleName.textValue());
+    } else {
+      selections.includeBundle(bundleName.textValue(), null, selectionGroup);
+    }
   }
 
   private static void addBundleClasses(

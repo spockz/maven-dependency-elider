@@ -3,11 +3,14 @@
 package io.github.spockz.elider.plugin;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /** Applies whole-string Native Image resource selectors to indexed archive entries. */
 final class NativeImageResourcePatternMatcher {
@@ -15,10 +18,33 @@ final class NativeImageResourcePatternMatcher {
     throw new AssertionError("static resource pattern matcher");
   }
 
-  /* package */
-  static boolean apply(
-      final List<Pattern> includes,
-      final List<Pattern> excludes,
+  /* package */ record Selector(Pattern regex, PathMatcher glob, String module, String group) {}
+
+  /* package */ record BundleSelector(String name, String module, String group) {}
+
+  /* package */ static Selector regex(
+      final String expression, final String module, final String source) throws IOException {
+    try {
+      return new Selector(Pattern.compile(expression), null, module, source);
+    } catch (final PatternSyntaxException exception) {
+      throw new IOException("Malformed native-image resource pattern in " + source, exception);
+    }
+  }
+
+  /* package */ static Selector glob(
+      final String expression, final String module, final String source) throws IOException {
+    try {
+      return new Selector(
+          null, FileSystems.getDefault().getPathMatcher("glob:" + expression), module, source);
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException("Malformed native-image resource glob in " + source, exception);
+    }
+  }
+
+  /* package */ static boolean apply(
+      final List<Selector> includes,
+      final List<Selector> excludes,
+      final List<BundleSelector> bundles,
       final Map<String, List<NativeImageArchiveInventory>> resourceIndex,
       final Set<String> roots,
       final Set<Path> providers)
@@ -27,7 +53,7 @@ final class NativeImageResourcePatternMatcher {
     for (final Map.Entry<String, List<NativeImageArchiveInventory>> resource :
         resourceIndex.entrySet().stream().sorted(Map.Entry.comparingByKey()).toList()) {
       final String resourceName = resource.getKey();
-      if (!matchesAny(includes, resourceName) || matchesAny(excludes, resourceName)) {
+      if (!selected(includes, excludes, bundles, resourceName)) {
         continue;
       }
       for (final NativeImageArchiveInventory archive : resource.getValue()) {
@@ -38,15 +64,66 @@ final class NativeImageResourcePatternMatcher {
     return addedClassRoot;
   }
 
-  private static boolean matchesAny(final List<Pattern> patterns, final String resourceName) {
-    final String entryName =
-        resourceName.endsWith("/")
-            ? resourceName.substring(0, resourceName.length() - 1)
-            : resourceName;
-    return patterns.stream()
-        .anyMatch(
-            pattern ->
-                pattern.matcher(entryName).matches() || pattern.matcher(entryName + "/").matches());
+  /* package */ static boolean apply(
+      final List<Pattern> includes,
+      final List<Pattern> excludes,
+      final Map<String, List<NativeImageArchiveInventory>> resourceIndex,
+      final Set<String> roots,
+      final Set<Path> providers)
+      throws IOException {
+    return apply(
+        includes.stream().map(pattern -> new Selector(pattern, null, null, "cli")).toList(),
+        excludes.stream().map(pattern -> new Selector(pattern, null, null, "cli")).toList(),
+        List.of(),
+        resourceIndex,
+        roots,
+        providers);
+  }
+
+  private static boolean selected(
+      final List<Selector> includes,
+      final List<Selector> excludes,
+      final List<BundleSelector> bundles,
+      final String resourceName) {
+    return includes.stream()
+            .anyMatch(
+                include ->
+                    matches(include, resourceName)
+                        && !excluded(excludes, include.group(), resourceName))
+        || bundles.stream()
+            .anyMatch(
+                bundle ->
+                    matches(bundle, resourceName)
+                        && !excluded(excludes, bundle.group(), resourceName));
+  }
+
+  private static boolean matches(final Selector selector, final String resourceName) {
+    if (selector.module() != null && !"ALL-UNNAMED".equals(selector.module())) {
+      return false;
+    }
+    final String entryName = stripDirectorySlash(resourceName);
+    return selector.regex() != null
+        ? selector.regex().matcher(entryName).matches()
+            || selector.regex().matcher(entryName + "/").matches()
+        : selector.glob().matches(Path.of(entryName))
+            || selector.glob().matches(Path.of(entryName + "/"));
+  }
+
+  private static boolean matches(final BundleSelector selector, final String resourceName) {
+    return (selector.module() == null || "ALL-UNNAMED".equals(selector.module()))
+        && NativeImageBundleResourceSupport.matches(selector.name(), resourceName);
+  }
+
+  private static boolean excluded(
+      final List<Selector> excludes, final String group, final String resourceName) {
+    return excludes.stream()
+        .anyMatch(exclude -> group.equals(exclude.group()) && matches(exclude, resourceName));
+  }
+
+  private static String stripDirectorySlash(final String resourceName) {
+    return resourceName.endsWith("/")
+        ? resourceName.substring(0, resourceName.length() - 1)
+        : resourceName;
   }
 
   private static boolean addClassResourceRoot(

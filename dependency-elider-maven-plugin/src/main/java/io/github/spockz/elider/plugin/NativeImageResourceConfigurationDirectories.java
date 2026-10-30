@@ -18,7 +18,8 @@ import java.util.jar.JarEntry;
       final Set<String> roots,
       final NativeImageScanContext context,
       final Set<Path> resourceProviders,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
       throws IOException {
     boolean foundRoots = false;
     final Set<String> processedResources = new HashSet<>();
@@ -30,7 +31,13 @@ import java.util.jar.JarEntry;
         if (processedResources.add(resource)) {
           foundRoots |=
               readResource(
-                  resource, propertiesEntry, roots, context, resourceProviders, consumedInputs);
+                  resource,
+                  propertiesEntry,
+                  roots,
+                  context,
+                  resourceProviders,
+                  consumedInputs,
+                  selections);
         }
       }
     }
@@ -43,7 +50,8 @@ import java.util.jar.JarEntry;
       final Set<String> roots,
       final NativeImageScanContext context,
       final Set<Path> resourceProviders,
-      final Set<NativeImageConsumedInput> consumedInputs)
+      final Set<NativeImageConsumedInput> consumedInputs,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
       throws IOException {
     final NativeImageDescriptorKind kind =
         NativeImageConfigurationDirectorySupport.kindFor(resource);
@@ -53,7 +61,7 @@ import java.util.jar.JarEntry;
         kind,
         input ->
             NativeImageConfigurationPointers.readTypedDescriptor(
-                input, kind, roots, consumedInputs),
+                input, kind, roots, consumedInputs, selections),
         resourceProviders)) {
       throw new IOException(
           "Native-image configuration resource is missing in "

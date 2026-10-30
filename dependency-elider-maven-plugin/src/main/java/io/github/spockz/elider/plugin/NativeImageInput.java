@@ -68,6 +68,10 @@ final class NativeImageInput {
     return displayName;
   }
 
+  /* package */ String selectionIdentity() {
+    return inputSource.identity();
+  }
+
   /* package */
   InputStream open() throws IOException {
     return inputSource.open();
@@ -108,6 +112,9 @@ final class NativeImageInput {
     /** WHY: Reader code consumes streams so schema parsers remain source-neutral. */
     InputStream open() throws IOException;
 
+    /** WHY: Keep each descriptor's include and exclude group distinct. */
+    String identity();
+
     /** WHY: Predefined class bytes are resolved relative to their descriptor source. */
     InputStream openSibling(String relativeName) throws IOException;
 
@@ -116,6 +123,11 @@ final class NativeImageInput {
   }
 
   private record ArchiveSource(JarFile archive, JarEntry entry) implements Source {
+    @Override
+    public String identity() {
+      return archive.getName() + "!/" + entry.getName();
+    }
+
     @Override
     public InputStream open() throws IOException {
       return archive.getInputStream(entry);
@@ -156,6 +168,11 @@ final class NativeImageInput {
     private FileSource(final Path path, final NativeImageDescriptorKind kind) {
       this.path = path;
       this.kind = kind;
+    }
+
+    @Override
+    public String identity() {
+      return path.toString();
     }
 
     @Override

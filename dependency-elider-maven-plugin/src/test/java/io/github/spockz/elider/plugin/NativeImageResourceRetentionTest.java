@@ -23,6 +23,9 @@ import org.junit.jupiter.api.Test;
 /** Verifies resource-provider artifact retention during Maven pruning. */
 /* package */ final class NativeImageResourceRetentionTest
     extends MavenDependencyTrimmerInMemoryClosureSupport {
+  /** WHY: Every fixture keeps only the declaring application class from its trace. */
+  private static final String ENTRY_TRACE = "closure.a.Entry\n";
+
   /** Creates this focused archive-retention test group. */
   /* package */ NativeImageResourceRetentionTest() {
     super();
@@ -48,7 +51,7 @@ import org.junit.jupiter.api.Test;
     replaceArtifactFile(fixture, "a", declaring);
     replaceArtifactFile(fixture, "b", provider);
     final Path trace = temporaryDirectory.resolve("cross-archive-resource.lst");
-    Files.writeString(trace, "closure.a.Entry\n");
+    Files.writeString(trace, ENTRY_TRACE);
 
     final MavenElisionService.PreparedAnalysis prepared =
         new MavenElisionService()
@@ -73,7 +76,7 @@ import org.junit.jupiter.api.Test;
   @Test
   void resourceOnlyPointerRetainsDeclaringAndProviderArchives()
       throws IOException, MojoFailureException {
-    final Fixture fixture = fixtureWithRuntimeA();
+    final Fixture fixture = fixture(false, false, true);
     final Path declaring =
         appendEntries(
             fixture.snapshot("a").filePath(),
@@ -86,11 +89,20 @@ import org.junit.jupiter.api.Test;
             fixture.snapshot("b").filePath(),
             "b-with-resource-only-descriptor.jar",
             Map.of(
-                "custom.payload", "{\"resources\":{\"includes\":[{\"pattern\":\"assets/.*\"}]}}"));
+                "custom.payload", "{\"resources\":{\"includes\":[{\"pattern\":\"assets/.*\"}]}}"),
+            Map.of(
+                "closure/b/Unused.class",
+                Files.readAllBytes(temporaryDirectory.resolve("classes/closure/b/Unused.class"))));
+    final Path assetProvider =
+        appendEntries(
+            fixture.snapshot("c").filePath(),
+            "c-with-selected-resource.jar",
+            Map.of("assets/selected.dat", "selected"));
     replaceArtifactFile(fixture, "a", declaring);
     replaceArtifactFile(fixture, "b", provider);
+    replaceArtifactFile(fixture, "c", assetProvider);
     final Path trace = temporaryDirectory.resolve("resource-only-pointer.lst");
-    Files.writeString(trace, "closure.c.Leaf\n");
+    Files.writeString(trace, ENTRY_TRACE);
 
     final MavenElisionService.PreparedAnalysis prepared =
         new MavenElisionService()
@@ -98,14 +110,24 @@ import org.junit.jupiter.api.Test;
                 fixture.mavenProject(),
                 MavenElisionServiceEffectiveAnalysisFixtures.options(
                     List.of(trace.toFile()), null, true));
+    final boolean descriptorProviderHasClass =
+        prepared.index().classesByArtifact().entrySet().stream()
+            .anyMatch(
+                entry ->
+                    entry.getKey().coordinate().equals(coordinate(fixture, "b"))
+                        && entry.getValue().contains("closure.b.Unused"));
 
     assertThat(
             List.of(
                 prepared.dynamicRootInputs().classNames(),
-                prepared.rawDecision().retainedArtifacts()))
+                prepared.dynamicRootInputs().resourceProviderArtifacts(),
+                prepared.rawDecision().retainedArtifacts(),
+                descriptorProviderHasClass))
         .containsExactly(
             Set.of(),
-            Set.of(coordinate(fixture, "a"), coordinate(fixture, "b"), coordinate(fixture, "c")));
+            Set.of(coordinate(fixture, "b"), coordinate(fixture, "c")),
+            Set.of(coordinate(fixture, "a"), coordinate(fixture, "b"), coordinate(fixture, "c")),
+            true);
   }
 
   /* package */
@@ -122,7 +144,7 @@ import org.junit.jupiter.api.Test;
                 "{\"resources\":{\"includes\":[{\"pattern\":\"assets/.*\"}]}}"));
     replaceArtifactFile(fixture, "b", provider);
     final Path trace = temporaryDirectory.resolve("auto-resource-only.lst");
-    Files.writeString(trace, "closure.a.Entry\n");
+    Files.writeString(trace, ENTRY_TRACE);
 
     final MavenElisionService.PreparedAnalysis prepared =
         new MavenElisionService()
@@ -142,7 +164,7 @@ import org.junit.jupiter.api.Test;
   @Test
   void autoDiscoveredUnifiedResourceOnlyDescriptorRetainsItsArchive()
       throws IOException, MojoFailureException {
-    final Fixture fixture = fixtureWithRuntimeA();
+    final Fixture fixture = fixture(false, false, true);
     final Path declaring =
         appendEntries(
             fixture.snapshot("a").filePath(),
@@ -151,8 +173,17 @@ import org.junit.jupiter.api.Test;
                 "META-INF/native-image/test/reachability-metadata.json",
                 "{\"resources\":[{\"glob\":\"assets/**\"}]}"));
     replaceArtifactFile(fixture, "a", declaring);
+    final Path resourceProvider =
+        appendEntries(
+            fixture.snapshot("b").filePath(),
+            "b-with-unified-selected-resource.jar",
+            Map.of("assets/selected.dat", "selected"),
+            Map.of(
+                "closure/b/Unused.class",
+                Files.readAllBytes(temporaryDirectory.resolve("classes/closure/b/Unused.class"))));
+    replaceArtifactFile(fixture, "b", resourceProvider);
     final Path trace = temporaryDirectory.resolve("unified-resource-only.lst");
-    Files.writeString(trace, "closure.c.Leaf\n");
+    Files.writeString(trace, ENTRY_TRACE);
 
     final MavenElisionService.PreparedAnalysis prepared =
         new MavenElisionService()
@@ -162,17 +193,26 @@ import org.junit.jupiter.api.Test;
                     List.of(trace.toFile()), null, true));
 
     final ArtifactCoordinate declaringCoordinate = coordinate(fixture, "a");
+    final boolean providerHasClass =
+        prepared.index().classesByArtifact().entrySet().stream()
+            .anyMatch(
+                entry ->
+                    entry.getKey().coordinate().equals(coordinate(fixture, "b"))
+                        && entry.getValue().contains("closure.b.Unused"));
     assertThat(
             List.of(
                 prepared.dynamicRootInputs().classNames(),
+                prepared.dynamicRootInputs().resourceProviderArtifacts(),
                 prepared.dynamicRootInputs().declaringArtifacts().contains(declaringCoordinate),
                 prepared
                     .dynamicRootInputs()
                     .scansByPath()
                     .get(declaring.toRealPath())
                     .requiresArtifactRetention(),
-                prepared.rawDecision().retainedArtifacts().contains(declaringCoordinate)))
-        .containsExactly(Set.of(), true, true, true);
+                prepared.rawDecision().retainedArtifacts().contains(declaringCoordinate),
+                prepared.rawDecision().retainedArtifacts().contains(coordinate(fixture, "b")),
+                providerHasClass))
+        .containsExactly(Set.of(), Set.of(coordinate(fixture, "b")), true, true, true, true, true);
   }
 
   private Path appendEntries(

@@ -14,11 +14,21 @@ final class NativeImageClassConfigDispatcher {
   static boolean dispatch(
       final JsonNode document, final NativeImageInput input, final Set<String> roots)
       throws IOException {
+    return dispatch(document, input, roots, null);
+  }
+
+  /* package */ static boolean dispatch(
+      final JsonNode document,
+      final NativeImageInput input,
+      final Set<String> roots,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
+      throws IOException {
     if (dispatchReflectionOrSerialization(document, input, roots)) {
       return false;
     }
     if (input.kind() == NativeImageDescriptorKind.REACHABILITY_METADATA) {
-      return NativeImageUnifiedConfig.read(document, input.name(), roots);
+      return NativeImageUnifiedConfig.read(
+          document, input.name(), roots, selections, input.selectionIdentity());
     }
     if (dispatchCore(document, input, roots) || dispatchSupplemental(document, input, roots)) {
       return false;

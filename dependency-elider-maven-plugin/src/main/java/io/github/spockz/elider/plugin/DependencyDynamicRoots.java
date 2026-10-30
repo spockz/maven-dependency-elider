@@ -277,11 +277,20 @@ final class DependencyDynamicRoots {
           && NativeImageDynamicRoots.isNativeImageClassConfig(name)) {
         declaresClassRoots = true;
         requiresArtifactRetention |=
-            NativeImageClassConfig.readNativeImageClassConfig(archive, name, nonServiceRoots);
+            NativeImageClassConfig.readNativeImageClassConfig(
+                NativeImageInput.archiveEntry(
+                    archive, name, NativeImageDescriptorKind.classConfigFor(name)),
+                nonServiceRoots,
+                null,
+                resourcePatterns);
       } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
           && NativeImageDynamicRoots.isNativeImageResourceConfig(name)) {
         requiresArtifactRetention = true;
-        NativeImageResourceConfig.readNativeImageResourceConfig(archive, name, nonServiceRoots);
+        NativeImageResourceConfig.readNativeImageResourceConfig(
+            NativeImageInput.archiveEntry(archive, name, NativeImageDescriptorKind.RESOURCES),
+            nonServiceRoots,
+            null,
+            resourcePatterns);
       } else if (name.startsWith(NativeImageDynamicRoots.PREFIX) && name.endsWith(".properties")) {
         readNativeImageProperties(archive, entry);
       } else if (name.startsWith(NativeImageDynamicRoots.PREFIX)
@@ -342,8 +351,7 @@ final class DependencyDynamicRoots {
       requiresArtifactRetention |= result.requiresArtifactRetention();
       unsupportedNativeImageArgs.addAll(result.unsupportedArguments());
       resourceProviders.addAll(result.resourceProviders());
-      result.resourcePatterns().includes().forEach(resourcePatterns::include);
-      result.resourcePatterns().excludes().forEach(resourcePatterns::exclude);
+      resourcePatterns.merge(result.resourcePatterns());
       serviceLoaderPolicy.merge(result.serviceLoaderPolicy());
     }
 

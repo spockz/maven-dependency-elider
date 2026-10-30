@@ -13,6 +13,25 @@ final class NativeImageUnifiedConfig {
   /* package */
   static boolean read(final JsonNode document, final String name, final Set<String> roots)
       throws IOException {
+    return read(document, name, roots, null);
+  }
+
+  /* package */ static boolean read(
+      final JsonNode document,
+      final String name,
+      final Set<String> roots,
+      final NativeImagePolicyRoots.ResourcePatterns selections)
+      throws IOException {
+    return read(document, name, roots, selections, name);
+  }
+
+  /* package */ static boolean read(
+      final JsonNode document,
+      final String name,
+      final Set<String> roots,
+      final NativeImagePolicyRoots.ResourcePatterns selections,
+      final String selectionGroup)
+      throws IOException {
     NativeImageJsonSupport.requireObject(document, "reachability metadata", name);
     NativeImageJsonSupport.validateFields(
         document,
@@ -26,7 +45,7 @@ final class NativeImageUnifiedConfig {
         document.get("reflection"), name, roots);
     final boolean requiresArtifactRetention =
         NativeImageUnifiedResourcesConfig.readUnifiedResources(
-            document.get("resources"), name, roots);
+            document.get("resources"), name, roots, selections, selectionGroup);
     NativeImageUnifiedForeignConfig.readUnifiedForeign(document.get("foreign"), name, roots);
     return requiresArtifactRetention;
   }
