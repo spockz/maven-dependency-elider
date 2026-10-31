@@ -10,8 +10,13 @@ import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
+import io.github.spockz.elider.model.CveAffectedEntryContext;
+import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
+import io.github.spockz.elider.model.OsvAdvisoryRecord;
+import io.github.spockz.elider.model.OsvAffectedPackage;
+import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import java.io.IOException;
@@ -32,15 +37,18 @@ import java.util.TreeSet;
   "PMD.GodClass",
   "PMD.TooManyMethods",
   "PMD.CyclomaticComplexity",
-  "PMD.AvoidDuplicateLiterals"
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.CouplingBetweenObjects",
+  "PMD.AvoidInstantiatingObjectsInLoops",
+  "PMD.UseConcurrentHashMap"
 })
 public final class AdvisoryEvidenceReader {
   /** Root fields allowed by schema version one. */
-  private static final Set<String> ROOT_FIELDS = Set.of("schemaVersion", "evidence");
+  private static final Set<String> ROOT_FIELDS = Set.of("schemaVersion", "records");
 
   /** Scope fields required for every evidence item. */
   private static final Set<String> SCOPE_FIELDS =
-      Set.of("cveId", "affectedCoordinate", "versionRangeSpec");
+      Set.of("cveId", "affectedCoordinate", "versionRangeSpec", "ecosystem", "packageName");
 
   /** Complete Maven coordinate fields persisted by the codec. */
   private static final Set<String> COORDINATE_FIELDS =
@@ -64,7 +72,7 @@ public final class AdvisoryEvidenceReader {
   }
 
   /** Reads schema version one and only the four cacheable advisory-source variants. */
-  public List<AdvisoryEvidence> read(final InputStream input) throws IOException {
+  public List<OsvAdvisoryRecord> read(final InputStream input) throws IOException {
     Objects.requireNonNull(input, "input");
     final JsonNode root;
     try (JsonParser parser = mapper.getFactory().createParser(input)) {
@@ -81,15 +89,218 @@ public final class AdvisoryEvidenceReader {
         || root.path("schemaVersion").intValue() != 1) {
       throw new IOException("Unsupported advisory evidence schemaVersion");
     }
-    final JsonNode items = root.get("evidence");
+    final JsonNode items = root.get("records");
     if (items == null || !items.isArray()) {
-      throw new IOException("evidence must be an array");
+      throw new IOException("records must be an array");
     }
-    final List<AdvisoryEvidence> result = new ArrayList<>();
+    final List<OsvAdvisoryRecord> result = new ArrayList<>();
+    final Set<String> recordIds = new HashSet<>();
     for (final JsonNode item : items) {
-      result.add(readEvidence(item));
+      final OsvAdvisoryRecord record;
+      try {
+        record = readRecord(item);
+      } catch (final IllegalArgumentException exception) {
+        throw new IOException("Invalid OSV record: " + exception.getMessage(), exception);
+      }
+      if (!recordIds.add(record.osvId())) {
+        throw new IOException("Duplicate OSV record ID: " + record.osvId());
+      }
+      result.add(record);
     }
     return List.copyOf(result);
+  }
+
+  private OsvAdvisoryRecord readRecord(final JsonNode node) throws IOException {
+    requireObject(node, "OSV record");
+    requireFields(
+        node,
+        Set.of("osvId", "aliases", "affectedPackages", "cnaAffectedEntries", "evidence"),
+        "OSV record");
+    final List<AdvisoryEvidence> evidence = new ArrayList<>();
+    final JsonNode evidenceNodes = node.get("evidence");
+    if (!evidenceNodes.isArray()) {
+      throw new IOException("record evidence must be an array");
+    }
+    for (final JsonNode item : evidenceNodes) {
+      evidence.add(readEvidence(item));
+    }
+    final List<CveAffectedEntryContext> cnaEntries = new ArrayList<>();
+    final JsonNode cnaNodes = node.get("cnaAffectedEntries");
+    if (!cnaNodes.isArray()) {
+      throw new IOException("cnaAffectedEntries must be an array");
+    }
+    for (final JsonNode entry : cnaNodes) {
+      cnaEntries.add(readCnaEntry(entry));
+    }
+    final List<OsvAffectedPackage> affectedPackages = new ArrayList<>();
+    final JsonNode packageNodes = node.get("affectedPackages");
+    if (!packageNodes.isArray()) {
+      throw new IOException("affectedPackages must be an array");
+    }
+    for (final JsonNode affectedPackage : packageNodes) {
+      affectedPackages.add(readAffectedPackage(affectedPackage));
+    }
+    try {
+      return new OsvAdvisoryRecord(
+          requiredText(node, "osvId"),
+          readStringSet(node.get("aliases"), "aliases"),
+          affectedPackages,
+          cnaEntries,
+          evidence);
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException("Invalid OSV record: " + exception.getMessage(), exception);
+    }
+  }
+
+  private OsvAffectedPackage readAffectedPackage(final JsonNode node) throws IOException {
+    requireObject(node, "affected package");
+    requireFields(
+        node,
+        Set.of("ecosystem", "packageName", "coordinate", "versions", "ranges"),
+        "affected package");
+    final JsonNode coordinate = node.get("coordinate");
+    requireObject(coordinate, "affected package coordinate");
+    requireFields(coordinate, COORDINATE_FIELDS, "affected package coordinate");
+    final List<String> versions = readListOfText(node.get("versions"), "versions");
+    final JsonNode rangesNode = node.get("ranges");
+    if (!rangesNode.isArray()) {
+      throw new IOException("ranges must be an array");
+    }
+    final List<OsvAffectedRange> ranges = new ArrayList<>();
+    for (final JsonNode rangeNode : rangesNode) {
+      requireObject(rangeNode, "OSV range");
+      requireFields(rangeNode, Set.of("type", "repo", "events"), "OSV range");
+      final JsonNode eventsNode = rangeNode.get("events");
+      if (!eventsNode.isArray()) {
+        throw new IOException("range events must be an array");
+      }
+      final List<Map<String, String>> events = new ArrayList<>();
+      for (final JsonNode eventNode : eventsNode) {
+        requireObject(eventNode, "OSV range event");
+        final Map<String, String> values = new LinkedHashMap<>();
+        final Iterator<Map.Entry<String, JsonNode>> fields = eventNode.fields();
+        while (fields.hasNext()) {
+          final Map.Entry<String, JsonNode> field = fields.next();
+          if (!field.getValue().isTextual()
+              || values.putIfAbsent(field.getKey(), field.getValue().textValue()) != null) {
+            throw new IOException("OSV range event fields must be unique strings");
+          }
+        }
+        events.add(values);
+      }
+      ranges.add(
+          new OsvAffectedRange(
+              requiredText(rangeNode, "type"), optionalText(rangeNode, "repo"), events));
+    }
+    return new OsvAffectedPackage(
+        requiredText(node, "ecosystem"),
+        requiredText(node, "packageName"),
+        new ArtifactCoordinate(
+            requiredText(coordinate, "groupId"),
+            requiredText(coordinate, "artifactId"),
+            optionalText(coordinate, "version"),
+            requiredText(coordinate, "type"),
+            requiredTextAllowBlank(coordinate, "classifier"),
+            requiredText(coordinate, "scope")),
+        versions,
+        ranges);
+  }
+
+  private static List<String> readListOfText(final JsonNode node, final String field)
+      throws IOException {
+    if (node == null || !node.isArray()) {
+      throw new IOException(field + " must be an array");
+    }
+    final List<String> values = new ArrayList<>();
+    for (final JsonNode value : node) {
+      if (!value.isTextual() || value.textValue().isBlank()) {
+        throw new IOException(field + " must contain non-blank strings");
+      }
+      values.add(value.textValue());
+    }
+    return List.copyOf(values);
+  }
+
+  private CveAffectedEntryContext readCnaEntry(final JsonNode node) throws IOException {
+    requireObject(node, "CNA affected entry");
+    requireFields(
+        node,
+        Set.of(
+            "entryIdentity",
+            "vendor",
+            "product",
+            "packageUrl",
+            "collectionUrl",
+            "defaultStatus",
+            "versions",
+            "programFiles",
+            "programRoutines"),
+        "CNA affected entry");
+    final List<CveVersionClaim> versions = readCnaVersions(node.get("versions"));
+    return new CveAffectedEntryContext(
+        requiredText(node, "entryIdentity"),
+        optionalText(node, "vendor"),
+        requiredText(node, "product"),
+        optionalText(node, "packageUrl"),
+        optionalText(node, "collectionUrl"),
+        optionalText(node, "defaultStatus"),
+        versions,
+        Set.copyOf(readStringSet(node.get("programFiles"), "programFiles")),
+        Set.copyOf(readStringSet(node.get("programRoutines"), "programRoutines")));
+  }
+
+  private List<CveVersionClaim> readCnaVersions(final JsonNode versionNodes) throws IOException {
+    if (versionNodes == null || !versionNodes.isArray()) {
+      throw new IOException("CNA versions must be an array");
+    }
+    final List<CveVersionClaim> versions = new ArrayList<>();
+    for (final JsonNode version : versionNodes) {
+      versions.add(readCnaVersion(version));
+    }
+    return List.copyOf(versions);
+  }
+
+  private CveVersionClaim readCnaVersion(final JsonNode version) throws IOException {
+    requireObject(version, "CNA version");
+    requireFields(
+        version,
+        Set.of("version", "status", "versionType", "lessThan", "lessThanOrEqual", "changes"),
+        "CNA version");
+    return new CveVersionClaim(
+        requiredText(version, "version"),
+        requiredText(version, "status"),
+        optionalText(version, "versionType"),
+        optionalText(version, "lessThan"),
+        optionalText(version, "lessThanOrEqual"),
+        readCnaChanges(version.get("changes")));
+  }
+
+  private List<Map<String, String>> readCnaChanges(final JsonNode changeNodes) throws IOException {
+    if (changeNodes == null) {
+      return List.of();
+    }
+    if (!changeNodes.isArray()) {
+      throw new IOException("CNA version changes must be an array");
+    }
+    final List<Map<String, String>> changes = new ArrayList<>();
+    for (final JsonNode change : changeNodes) {
+      requireObject(change, "CNA version change");
+      changes.add(readCnaChange(change));
+    }
+    return List.copyOf(changes);
+  }
+
+  private Map<String, String> readCnaChange(final JsonNode change) throws IOException {
+    final Map<String, String> fields = new LinkedHashMap<>();
+    final Iterator<Map.Entry<String, JsonNode>> changeFields = change.fields();
+    while (changeFields.hasNext()) {
+      final Map.Entry<String, JsonNode> field = changeFields.next();
+      if (!field.getValue().isTextual()) {
+        throw new IOException("CNA version change fields must be strings");
+      }
+      fields.put(field.getKey(), field.getValue().textValue());
+    }
+    return Map.copyOf(fields);
   }
 
   private AdvisoryEvidence readEvidence(final JsonNode node) throws IOException {
@@ -188,7 +399,7 @@ public final class AdvisoryEvidenceReader {
     requireObject(coordinate, "affectedCoordinate");
     requireFields(coordinate, COORDINATE_FIELDS, "affectedCoordinate");
     return new AdvisoryScope(
-        requiredText(node, "cveId"),
+        optionalText(node, "cveId"),
         new ArtifactCoordinate(
             requiredText(coordinate, "groupId"),
             requiredText(coordinate, "artifactId"),
@@ -196,7 +407,9 @@ public final class AdvisoryEvidenceReader {
             requiredText(coordinate, "type"),
             requiredTextAllowBlank(coordinate, "classifier"),
             requiredText(coordinate, "scope")),
-        requiredText(node, "versionRangeSpec"));
+        requiredText(node, "versionRangeSpec"),
+        requiredText(node, "ecosystem"),
+        requiredText(node, "packageName"));
   }
 
   private AdvisoryProvenance readProvenance(final JsonNode node) throws IOException {

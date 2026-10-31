@@ -6,18 +6,22 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.engine.ClassUsageReport;
+import io.github.spockz.elider.model.AdvisoryProvenance;
+import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.model.EvidenceOrigin;
+import io.github.spockz.elider.model.OsvAdvisoryRecord;
+import io.github.spockz.elider.model.OsvAffectedPackage;
+import io.github.spockz.elider.model.PackageAdvisoryEvidence;
 import io.github.spockz.elider.model.PreconditionClassInventory;
 import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
 import io.github.spockz.elider.model.PreconditionProof;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping.ConfidenceLevel;
+import io.github.spockz.elider.scanner.AdvisoryEvidenceWriter;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
@@ -299,9 +303,11 @@ final class ADR0008MavenPreconditionAssessmentTest {
               assessment.assess(
                   cache, ConfiguredVulnerabilityMappings.empty(), analysis, inventory);
           assertAll(
-              "cached HIGH has no owner assertion",
+              "cached package evidence has no owner assertion",
               () -> assertThat(result.attestations()).isEmpty(),
-              () -> assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty());
+              () -> assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty(),
+              () -> assertThat(result.potentiallyConservativeCves()).isEmpty(),
+              () -> assertThat(result.matchedAdvisoryEvidence()).hasSize(1));
         },
         () -> {
           final MavenVulnerabilityAssessment.Result result =
@@ -641,25 +647,31 @@ final class ADR0008MavenPreconditionAssessmentTest {
 
   private static byte[] mappingDocument(final VulnerabilitySymbolMapping mapping)
       throws IOException {
-    final ObjectMapper mapper = new ObjectMapper();
-    final ObjectNode root = mapper.createObjectNode();
-    final ObjectNode row = root.putArray("mappings").addObject();
-    row.put("cveId", mapping.cveId());
-    final ObjectNode coordinate = row.putObject("affectedCoordinate");
-    coordinate.put("groupId", mapping.affectedCoordinate().groupId());
-    coordinate.put("artifactId", mapping.affectedCoordinate().artifactId());
-    coordinate.put("version", mapping.affectedCoordinate().version());
-    coordinate.put("type", mapping.affectedCoordinate().type());
-    coordinate.put("classifier", mapping.affectedCoordinate().classifier());
-    coordinate.put("scope", mapping.affectedCoordinate().scope());
-    row.put("versionRangeSpec", mapping.versionRangeSpec());
-    final ArrayNode classes = row.putArray("vulnerableClasses");
-    mapping.vulnerableClasses().forEach(classes::add);
-    row.putNull("sourceAdvisoryUrl");
-    row.put("confidenceLevel", mapping.confidenceLevel().name());
-    row.put("requiresDependency", mapping.requiresDependency());
-    row.put("requiresClass", mapping.requiresClass());
-    return mapper.writeValueAsBytes(root);
+    final ArtifactCoordinate coordinate =
+        ArtifactCoordinate.of(
+            mapping.affectedCoordinate().groupId(),
+            mapping.affectedCoordinate().artifactId(),
+            null);
+    final AdvisoryScope scope =
+        new AdvisoryScope(
+            mapping.cveId(),
+            coordinate,
+            mapping.versionRangeSpec(),
+            "Maven",
+            coordinate.groupId() + ":" + coordinate.artifactId());
+    final OsvAdvisoryRecord record =
+        new OsvAdvisoryRecord(
+            "GHSA-cache-fixture",
+            Set.of(mapping.cveId()),
+            List.of(
+                new OsvAffectedPackage(
+                    "Maven", scope.packageName(), coordinate, List.of(), List.of())),
+            List.of(),
+            List.of(
+                new PackageAdvisoryEvidence(
+                    scope,
+                    new AdvisoryProvenance(EvidenceOrigin.OSV, "GHSA-cache-fixture", null, null))));
+    return new AdvisoryEvidenceWriter().encode(List.of(record));
   }
 
   private static VulnerabilitySymbolMapping mapping(

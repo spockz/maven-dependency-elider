@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -466,9 +467,7 @@ final class ElideMojoTest {
                 + "; excludes module descriptors and archive sanitation metadata)");
     assertThat(log.messages()).doesNotContain("  Classes removed: 0 / N/A (N/A; stage not run)");
     assertThat(log.messages())
-        .contains(
-            "POM vulnerability mapping overrides cached mapping for "
-                + "CVE-2026-10001 org.example:runtime-dependency:jar:1.0")
+        .noneMatch(message -> message.contains("POM vulnerability mapping overrides cached"))
         .noneMatch(message -> message.contains("sample.Drop"));
     assertThat(log.messages())
         .anyMatch(line -> line.startsWith("  Mitigated CVEs (vulnerable code pruned by trimming):"))
@@ -489,7 +488,28 @@ final class ElideMojoTest {
     }
     assertThat(tempDir.resolve("build/dependency-elider-sbom.cdx.json")).isRegularFile();
     assertThat(tempDir.resolve("build/baseline-sbom.cdx.json")).isRegularFile();
-    assertThat(tempDir.resolve("build/dependency-elider.openvex.json")).isRegularFile();
+    final JsonNode vexDocument =
+        new ObjectMapper()
+            .readTree(tempDir.resolve("build/dependency-elider.openvex.json").toFile());
+    assertAll(
+        "the configured POM assertion proves the omitted class "
+            + "while cached advisory evidence stays review-only",
+        () -> {
+          final JsonNode vexStatement = vexDocument.path("statements").get(0);
+          assertAll(
+              () ->
+                  assertThat(vexStatement.path("vulnerability").path("name").asText())
+                      .isEqualTo("CVE-2026-10001"),
+              () -> assertThat(vexStatement.path("status").asText()).isEqualTo("not_affected"),
+              () ->
+                  assertThat(vexStatement.path("justification").asText())
+                      .isEqualTo("vulnerable_code_not_present"),
+              () ->
+                  assertThat(vexStatement.path("impact_statement").asText())
+                      .contains(
+                          "Mapped vulnerable classes and their original nested "
+                              + "classes are absent"));
+        });
     assertThat(tempDir.resolve("build/classes/META-INF/sbom/application.cdx.json")).isRegularFile();
     assertThat(tempDir.resolve("build/classes/META-INF/native-image/sbom.json")).isRegularFile();
     final ObjectMapper sbomMapper = new ObjectMapper();

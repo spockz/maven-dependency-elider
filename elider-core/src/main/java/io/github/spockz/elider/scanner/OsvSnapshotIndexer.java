@@ -1,24 +1,36 @@
-/* WHY: Indexes OSV Maven advisories and extracts verified class symbols. */
+/* WHY: Preserves OSV-owned Maven scopes and separate review-only source evidence. */
 
 package io.github.spockz.elider.scanner;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.spockz.elider.model.AdvisoryProvenance;
+import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping.ConfidenceLevel;
+import io.github.spockz.elider.model.CveAffectedEntryContext;
+import io.github.spockz.elider.model.CveVersionClaim;
+import io.github.spockz.elider.model.EvidenceOrigin;
+import io.github.spockz.elider.model.HeuristicCandidateEvidence;
+import io.github.spockz.elider.model.OsvAdvisoryRecord;
+import io.github.spockz.elider.model.OsvAffectedPackage;
+import io.github.spockz.elider.model.OsvAffectedRange;
+import io.github.spockz.elider.model.PackageAdvisoryEvidence;
+import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashSet;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
@@ -26,23 +38,27 @@ import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-/** Indexes OSV Maven advisories and correlates class symbols. */
+/** Indexes OSV Maven advisories and retains source-attribution candidates for review. */
 @SuppressWarnings({
   "PMD.TooManyMethods",
   "PMD.CyclomaticComplexity",
   "PMD.GodClass",
+  "PMD.ExcessiveImports",
+  "PMD.CouplingBetweenObjects",
   "PMD.CognitiveComplexity",
   "PMD.AvoidLiteralsInIfCondition",
   "PMD.AvoidDeeplyNestedIfStmts",
   "PMD.AssignmentInOperand",
+  "PMD.UseConcurrentHashMap",
   "PMD.ShortVariable",
   "PMD.CommentRequired",
-  "PMD.AvoidDuplicateLiterals",
-  "PMD.NPathComplexity",
   "PMD.CommentSize",
   "PMD.AvoidInstantiatingObjectsInLoops"
 })
 public final class OsvSnapshotIndexer {
+  private static final String CONTAINERS_FIELD = "containers";
+  private static final String NAME_FIELD = "name";
+  private static final String VERSIONS_FIELD = "versions";
   private static final Pattern CVE_PATTERN = Pattern.compile("^CVE-[0-9]{4}-[0-9]{4,}$");
   private static final Pattern FQCN_PATTERN =
       Pattern.compile("\\b([a-z][a-z0-9_]*(\\.[a-z0-9_]+)+\\.[A-Z][a-zA-Z0-9_]*)\\b");
@@ -66,89 +82,724 @@ public final class OsvSnapshotIndexer {
   }
 
   /**
-   * Reads an OSV advisory ZIP stream and builds vulnerability mappings.
+   * Reads an OSV advisory ZIP stream and builds OSV-owned evidence groups.
    *
    * @param zipStream the raw input stream of all.zip
    * @param cveListGitDir optional local checkout of CVEList v5 (nullable)
-   * @return list of extracted vulnerability mappings with proven class symbols
+   * @return list of typed records preserving each OSV owner
    * @throws IOException if reading the zip stream fails
    */
-  public List<VulnerabilitySymbolMapping> indexZip(
-      final InputStream zipStream, final Path cveListGitDir) throws IOException {
+  public List<OsvAdvisoryRecord> indexZip(final InputStream zipStream, final Path cveListGitDir)
+      throws IOException {
     Objects.requireNonNull(zipStream, "zipStream");
-    final List<VulnerabilitySymbolMapping> mappings = new ArrayList<>();
-    final Set<String> seen = new LinkedHashSet<>();
+    final List<OsvAdvisoryRecord> records = new ArrayList<>();
+    final Set<String> seen = new HashSet<>();
     try (ZipInputStream zis = new ZipInputStream(zipStream)) {
       ZipEntry entry;
       while ((entry = zis.getNextEntry()) != null) {
         if (!entry.isDirectory() && entry.getName().toLowerCase(Locale.ROOT).endsWith(".json")) {
           final byte[] bytes = zis.readAllBytes();
-          final JsonNode root = mapper.readTree(bytes);
-          for (final VulnerabilitySymbolMapping mapping : parseAdvisories(root, cveListGitDir)) {
-            final String key = mapping.cveId() + "\u0000" + mapping.affectedCoordinate().toId();
-            if (seen.add(key)) {
-              mappings.add(mapping);
-            }
+          final JsonNode root = readSingleJsonDocument(bytes, "OSV record");
+          if (!root.isObject()) {
+            throw new IOException("OSV record in " + entry.getName() + " must be a JSON object");
+          }
+          final JsonNode idNode = root.get("id");
+          if (idNode == null || !idNode.isTextual() || idNode.textValue().isBlank()) {
+            throw new IOException("OSV record in " + entry.getName() + " has no ID");
+          }
+          final String recordId = idNode.textValue();
+          if (!seen.add(recordId)) {
+            throw new IOException("Duplicate OSV record ID: " + recordId);
+          }
+          final OsvAdvisoryRecord record;
+          try {
+            record = parseAdvisory(root, cveListGitDir, bytes);
+          } catch (final IllegalArgumentException exception) {
+            throw new IOException("Invalid OSV record in " + entry.getName(), exception);
+          }
+          if (record != null) {
+            records.add(record);
           }
         }
         zis.closeEntry();
       }
     }
-    return Collections.unmodifiableList(mappings);
+    return List.copyOf(records);
   }
 
-  /** Parses all applicable Maven mappings for a single OSV advisory JSON record. */
-  public List<VulnerabilitySymbolMapping> parseAdvisories(
-      final JsonNode root, final Path cveListGitDir) {
-    if (root == null || !root.isObject() || root.hasNonNull("withdrawn")) {
-      return List.of();
+  /** Parses one OSV record, retaining its identity even when no CVE alias exists. */
+  public OsvAdvisoryRecord parseAdvisory(
+      final JsonNode root, final Path cveListGitDir, final byte[] sourceBytes) {
+    if (root == null || !root.isObject()) {
+      throw new IllegalArgumentException("OSV record must be a JSON object");
+    }
+    final JsonNode idNode = root.get("id");
+    if (idNode == null || !idNode.isTextual() || idNode.textValue().isBlank()) {
+      throw new IllegalArgumentException("OSV record ID must be a non-blank string");
+    }
+    final String osvId = idNode.textValue();
+    if (root.has("withdrawn")) {
+      if (!root.path("withdrawn").isTextual() || root.path("withdrawn").asText().isBlank()) {
+        throw new IllegalArgumentException("withdrawn must be a non-blank timestamp");
+      }
+      return null;
+    }
+    final Set<String> aliases = new TreeSet<>();
+    final JsonNode aliasNodes = root.get("aliases");
+    if (aliasNodes != null) {
+      if (!aliasNodes.isArray()) {
+        throw new IllegalArgumentException("aliases must be an array");
+      }
+      for (final JsonNode alias : aliasNodes) {
+        if (!alias.isTextual() || alias.textValue().isBlank()) {
+          throw new IllegalArgumentException("aliases must contain non-blank strings");
+        }
+        aliases.add(alias.textValue());
+      }
     }
     final String cveId = resolveCveId(root);
-    if (cveId == null) {
-      return List.of();
+    final String osvDigest = sha256(sourceBytes);
+    final List<OsvAffectedPackage> affectedPackages = new ArrayList<>();
+    final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence = new ArrayList<>();
+    final List<AdvisoryScope> scopes =
+        readAffectedEntries(root, cveId, osvId, osvDigest, affectedPackages, evidence);
+    final List<CveAffectedEntryContext> cnaEntries = new ArrayList<>();
+    final String cvePath = locateCveRecord(cveListGitDir, cveId);
+    if (cvePath != null) {
+      final Path path = Path.of(cvePath);
+      try {
+        final byte[] cveBytes = Files.readAllBytes(path);
+        final JsonNode cveRoot = readSingleJsonDocument(cveBytes, "CVE source record");
+        if (!cveRoot.isObject()) {
+          throw new IllegalArgumentException("CVE source record must be a JSON object");
+        }
+        validateCveSourceShape(cveRoot);
+        final JsonNode affected = cveRoot.path(CONTAINERS_FIELD).path("cna").path("affected");
+        if (affected.isArray()) {
+          for (int index = 0; index < affected.size(); index++) {
+            final JsonNode entry = affected.get(index);
+            final CveAffectedEntryContext context = readCnaContext(entry, index);
+            cnaEntries.add(context);
+            for (final AdvisoryScope scope : scopes) {
+              if (matchesPackageUrl(context.packageUrl(), scope)) {
+                addStructuredEvidence(entry, scope, cveId, sha256(cveBytes), evidence);
+              }
+            }
+          }
+        }
+        addCveTextEvidence(cveRoot, scopes, cveId, sha256(cveBytes), evidence);
+      } catch (final IOException exception) {
+        throw new IllegalArgumentException("Could not read CVE source record " + cveId, exception);
+      }
     }
-    final JsonNode affectedArray = root.path("affected");
-    if (!affectedArray.isArray()) {
-      return List.of();
-    }
-    final List<VulnerabilitySymbolMapping> result = new ArrayList<>();
-    for (final JsonNode affected : affectedArray) {
-      parseAffectedItem(root, affected, cveId, cveListGitDir).ifPresent(result::add);
-    }
-    return result;
+    return new OsvAdvisoryRecord(osvId, aliases, affectedPackages, cnaEntries, evidence);
   }
 
-  private Optional<VulnerabilitySymbolMapping> parseAffectedItem(
-      final JsonNode root, final JsonNode affected, final String cveId, final Path cveListGitDir) {
+  private static List<AdvisoryScope> readAffectedEntries(
+      final JsonNode root,
+      final String cveId,
+      final String osvId,
+      final String digest,
+      final List<OsvAffectedPackage> affectedPackages,
+      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
+    final JsonNode affectedArray = root.get("affected");
+    if (affectedArray == null || !affectedArray.isArray()) {
+      throw new IllegalArgumentException("affected must be an array");
+    }
+    final List<AdvisoryScope> scopes = new ArrayList<>();
+    for (final JsonNode affected : affectedArray) {
+      final OsvAffectedPackage affectedPackage = readAffectedPackage(affected);
+      if (affectedPackage != null) {
+        affectedPackages.add(affectedPackage);
+      }
+      final AdvisoryScope scope = cveId == null ? null : readOsvScope(affected, cveId);
+      if (scope != null) {
+        scopes.add(scope);
+        evidence.add(
+            new PackageAdvisoryEvidence(
+                scope, new AdvisoryProvenance(EvidenceOrigin.OSV, osvId, null, digest)));
+        addTextEvidence(root, scope, osvId, digest, evidence);
+        addReferenceEvidence(root.path("references"), scope, osvId, digest, evidence);
+      }
+    }
+    return scopes;
+  }
+
+  private JsonNode readSingleJsonDocument(final byte[] bytes, final String description)
+      throws IOException {
+    try (JsonParser parser = mapper.getFactory().createParser(bytes)) {
+      parser.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+      final JsonNode root = mapper.readTree(parser);
+      if (root == null || parser.nextToken() != null) {
+        throw new IOException(description + " must contain exactly one JSON document");
+      }
+      return root;
+    }
+  }
+
+  private static OsvAffectedPackage readAffectedPackage(final JsonNode affected) {
+    if (!affected.isObject()) {
+      throw new IllegalArgumentException("affected entries must be objects");
+    }
+    final JsonNode pkg = affected.get("package");
+    if (pkg == null || !pkg.isObject()) {
+      throw new IllegalArgumentException("affected package must be an object");
+    }
+    final String ecosystem = requiredSourceText(pkg, "ecosystem");
+    final String packageName = requiredSourceText(pkg, NAME_FIELD);
+    final JsonNode versionsNode = affected.get(VERSIONS_FIELD);
+    final JsonNode rangesNode = affected.get("ranges");
+    final List<String> versions = readSourceVersions(versionsNode);
+    final List<OsvAffectedRange> ranges = readSourceRanges(rangesNode);
+    if (!isMavenEcosystem(ecosystem)) {
+      return null;
+    }
+    final int colon = packageName.indexOf(':');
+    if (colon <= 0
+        || colon == packageName.length() - 1
+        || packageName.indexOf(':', colon + 1) >= 0) {
+      throw new IllegalArgumentException("Maven package name must be groupId:artifactId");
+    }
+    if (versions.isEmpty() && ranges.isEmpty()) {
+      throw new IllegalArgumentException("Maven affected package must declare versions or ranges");
+    }
+    return new OsvAffectedPackage(
+        ecosystem,
+        packageName,
+        ArtifactCoordinate.of(
+            packageName.substring(0, colon), packageName.substring(colon + 1), null),
+        versions,
+        ranges);
+  }
+
+  private static List<String> readSourceVersions(final JsonNode versionsNode) {
+    if (versionsNode == null) {
+      return List.of();
+    }
+    if (!versionsNode.isArray()) {
+      throw new IllegalArgumentException("affected versions must be an array");
+    }
+    final List<String> versions = new ArrayList<>();
+    for (final JsonNode version : versionsNode) {
+      if (!version.isTextual() || version.textValue().isBlank()) {
+        throw new IllegalArgumentException("affected versions must contain non-blank strings");
+      }
+      versions.add(version.textValue());
+    }
+    return List.copyOf(versions);
+  }
+
+  private static List<OsvAffectedRange> readSourceRanges(final JsonNode rangesNode) {
+    if (rangesNode == null) {
+      return List.of();
+    }
+    if (!rangesNode.isArray()) {
+      throw new IllegalArgumentException("affected ranges must be an array");
+    }
+    final List<OsvAffectedRange> ranges = new ArrayList<>();
+    for (final JsonNode range : rangesNode) {
+      if (!range.isObject()) {
+        throw new IllegalArgumentException("OSV ranges must be objects");
+      }
+      final String type = requiredSourceText(range, "type");
+      final JsonNode repoNode = range.get("repo");
+      final String repo;
+      if (repoNode == null || repoNode.isNull()) {
+        repo = null;
+      } else if (repoNode.isTextual()) {
+        repo = repoNode.textValue();
+      } else {
+        throw new IllegalArgumentException("OSV range repo must be a string or null");
+      }
+      final JsonNode eventsNode = range.get("events");
+      if (eventsNode == null || !eventsNode.isArray() || eventsNode.isEmpty()) {
+        throw new IllegalArgumentException("OSV range events must be a non-empty array");
+      }
+      final List<Map<String, String>> events = new ArrayList<>();
+      for (final JsonNode event : eventsNode) {
+        if (!event.isObject() || event.isEmpty()) {
+          throw new IllegalArgumentException("OSV range events must be non-empty objects");
+        }
+        final Map<String, String> values = new LinkedHashMap<>();
+        event
+            .fields()
+            .forEachRemaining(
+                field -> {
+                  if (!field.getValue().isTextual() || field.getValue().textValue().isBlank()) {
+                    throw new IllegalArgumentException(
+                        "OSV range event values must be non-blank strings");
+                  }
+                  values.put(field.getKey(), field.getValue().textValue());
+                });
+        events.add(values);
+      }
+      ranges.add(new OsvAffectedRange(type, repo, events));
+    }
+    return List.copyOf(ranges);
+  }
+
+  private static String requiredSourceText(final JsonNode node, final String field) {
+    final JsonNode value = node.get(field);
+    if (value == null || !value.isTextual() || value.textValue().isBlank()) {
+      throw new IllegalArgumentException(field + " must be a non-blank string");
+    }
+    return value.textValue();
+  }
+
+  private static AdvisoryScope readOsvScope(final JsonNode affected, final String cveId) {
     final JsonNode pkg = affected.path("package");
     final String ecosystem = pkg.path("ecosystem").asText("");
     if (!isMavenEcosystem(ecosystem)) {
-      return Optional.empty();
+      return null;
     }
-    final String name = pkg.path("name").asText("");
+    final String name = pkg.path(NAME_FIELD).asText("");
     final int colon = name.indexOf(':');
     if (colon <= 0 || colon == name.length() - 1) {
-      return Optional.empty();
+      return null;
     }
     final String groupId = name.substring(0, colon);
     final String artifactId = name.substring(colon + 1);
     final String versionRangeSpec = resolveVersionRange(affected);
     if (versionRangeSpec == null) {
-      return Optional.empty();
+      return null;
     }
-    final Set<String> classes =
-        extractVulnerableClasses(root, groupId, artifactId, cveId, cveListGitDir);
-    if (classes.isEmpty()) {
-      return Optional.empty();
+    return new AdvisoryScope(
+        cveId, ArtifactCoordinate.of(groupId, artifactId, null), versionRangeSpec, ecosystem, name);
+  }
+
+  private static void addTextEvidence(
+      final JsonNode root,
+      final AdvisoryScope scope,
+      final String osvId,
+      final String digest,
+      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
+    for (final String field : List.of("summary", "details")) {
+      final String text = root.path(field).asText("");
+      if (!text.isBlank()) {
+        final Set<String> classes = new TreeSet<>();
+        extractClassesFromText(
+            text,
+            scope.affectedCoordinate().groupId(),
+            scope.affectedCoordinate().artifactId(),
+            classes);
+        evidence.add(
+            new HeuristicCandidateEvidence(
+                scope,
+                new AdvisoryProvenance(
+                    EvidenceOrigin.DESCRIPTION, osvId + "#" + field, null, digest),
+                classes,
+                Set.of(scope.packageName())));
+      }
     }
-    final URI sourceUrl = resolveSourceUrl(root, cveId, groupId, artifactId);
-    final ArtifactCoordinate coordinate = ArtifactCoordinate.of(groupId, artifactId, null);
+  }
+
+  private static void addReferenceEvidence(
+      final JsonNode references,
+      final AdvisoryScope scope,
+      final String osvId,
+      final String digest,
+      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
+    if (!references.isArray()) {
+      return;
+    }
+    for (int index = 0; index < references.size(); index++) {
+      final String value = references.get(index).path("url").asText("");
+      try {
+        final URI url = URI.create(value);
+        if (!url.isAbsolute()
+            || !("http".equalsIgnoreCase(url.getScheme())
+                || "https".equalsIgnoreCase(url.getScheme()))) {
+          continue;
+        }
+        final Set<String> classes = new TreeSet<>();
+        extractClassesFromCommitUrl(
+            value,
+            scope.affectedCoordinate().groupId(),
+            scope.affectedCoordinate().artifactId(),
+            classes);
+        evidence.add(
+            new HeuristicCandidateEvidence(
+                scope,
+                new AdvisoryProvenance(
+                    EvidenceOrigin.REFERENCE_URL, osvId + "#reference:" + index, url, digest),
+                classes,
+                Set.of(scope.packageName())));
+      } catch (final IllegalArgumentException ignored) {
+        // Invalid reference URLs are omitted instead of being attached as provenance.
+      }
+    }
+  }
+
+  private static void addCveTextEvidence(
+      final JsonNode root,
+      final List<AdvisoryScope> scopes,
+      final String cveId,
+      final String digest,
+      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
+    final JsonNode cna = root.path(CONTAINERS_FIELD).path("cna");
+    final JsonNode descriptions = cna.path("descriptions");
+    if (descriptions.isArray()) {
+      for (int index = 0; index < descriptions.size(); index++) {
+        final String text = descriptions.get(index).path("value").asText("");
+        addCveCandidateText(text, cveId + "#description:" + index, null, scopes, digest, evidence);
+      }
+    }
+    final JsonNode references = cna.path("references");
+    if (references.isArray()) {
+      for (int index = 0; index < references.size(); index++) {
+        final String value = references.get(index).path("url").asText("");
+        try {
+          final URI url = URI.create(value);
+          if (url.isAbsolute()
+              && ("http".equalsIgnoreCase(url.getScheme())
+                  || "https".equalsIgnoreCase(url.getScheme()))) {
+            addCveCandidateText("", cveId + "#reference:" + index, url, scopes, digest, evidence);
+          }
+        } catch (final IllegalArgumentException ignored) {
+          // Invalid reference URLs are not evidence provenance.
+        }
+      }
+    }
+  }
+
+  private static void addCveCandidateText(
+      final String text,
+      final String sourceId,
+      final URI sourceUrl,
+      final List<AdvisoryScope> scopes,
+      final String digest,
+      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
+    for (final AdvisoryScope scope : scopes) {
+      final Set<String> classes = new TreeSet<>();
+      extractClassesFromText(
+          text,
+          scope.affectedCoordinate().groupId(),
+          scope.affectedCoordinate().artifactId(),
+          classes);
+      if (sourceUrl != null) {
+        extractClassesFromCommitUrl(
+            sourceUrl.toString(),
+            scope.affectedCoordinate().groupId(),
+            scope.affectedCoordinate().artifactId(),
+            classes);
+      }
+      evidence.add(
+          new HeuristicCandidateEvidence(
+              scope,
+              new AdvisoryProvenance(
+                  sourceUrl == null ? EvidenceOrigin.DESCRIPTION : EvidenceOrigin.REFERENCE_URL,
+                  sourceId,
+                  sourceUrl,
+                  digest),
+              classes,
+              Set.of(scope.packageName())));
+    }
+  }
+
+  private static CveAffectedEntryContext readCnaContext(final JsonNode entry, final int index) {
+    final String product = entry.path("product").textValue();
+    final List<CveVersionClaim> versions = new ArrayList<>();
+    final JsonNode versionsNode = entry.path(VERSIONS_FIELD);
+    if (versionsNode.isArray()) {
+      for (final JsonNode version : versionsNode) {
+        final String value = version.path("version").asText("");
+        final String status = version.path("status").asText("");
+        final String versionType = version.path("versionType").asText(null);
+        if (!value.isBlank() && !status.isBlank()) {
+          versions.add(
+              new CveVersionClaim(
+                  value,
+                  status,
+                  versionType,
+                  optionalText(version, "lessThan"),
+                  optionalText(version, "lessThanOrEqual"),
+                  readVersionChanges(version.path("changes"))));
+        }
+      }
+    }
+    return new CveAffectedEntryContext(
+        "containers.cna.affected[" + index + "]",
+        entry.path("vendor").asText(null),
+        product,
+        entry.path("packageURL").asText(null),
+        entry.path("collectionURL").asText(null),
+        optionalText(entry, "defaultStatus"),
+        versions,
+        readTextArray(entry.path("programFiles")),
+        readRoutineNames(entry.path("programRoutines")));
+  }
+
+  private static void validateCveSourceShape(final JsonNode root) {
+    final JsonNode containers = optionalObject(root, CONTAINERS_FIELD, CONTAINERS_FIELD);
+    if (containers == null) {
+      return;
+    }
+    final JsonNode cna = optionalObject(containers, "cna", "containers.cna");
+    if (cna == null) {
+      return;
+    }
+    final JsonNode affected = optionalArray(cna, "affected", "containers.cna.affected");
+    if (affected == null) {
+      return;
+    }
+    for (int index = 0; index < affected.size(); index++) {
+      validateCnaAffectedEntry(affected.get(index), index);
+    }
+  }
+
+  private static void validateCnaAffectedEntry(final JsonNode entry, final int index) {
+    final String context = "containers.cna.affected[" + index + "]";
+    if (!entry.isObject()) {
+      throw new IllegalArgumentException(context + " must be an object");
+    }
+    requiredCnaText(entry, "product", context);
+    for (final String field : List.of("vendor", "packageURL", "collectionURL", "defaultStatus")) {
+      optionalCnaText(entry, field, context);
+    }
+    final JsonNode versions = optionalArray(entry, VERSIONS_FIELD, context + ".versions");
+    if (versions != null) {
+      for (int versionIndex = 0; versionIndex < versions.size(); versionIndex++) {
+        validateCnaVersion(versions.get(versionIndex), context + ".versions[" + versionIndex + "]");
+      }
+    }
+    validateCnaStringArray(entry, "programFiles", context);
+    validateCnaRoutines(entry, context);
+  }
+
+  private static void validateCnaVersion(final JsonNode version, final String context) {
+    if (!version.isObject()) {
+      throw new IllegalArgumentException(context + " must be an object");
+    }
+    requiredCnaText(version, "version", context);
+    requiredCnaText(version, "status", context);
+    for (final String field : List.of("versionType", "lessThan", "lessThanOrEqual")) {
+      optionalCnaText(version, field, context);
+    }
+    final JsonNode changes = optionalArray(version, "changes", context + ".changes");
+    if (changes == null) {
+      return;
+    }
+    for (int changeIndex = 0; changeIndex < changes.size(); changeIndex++) {
+      final JsonNode change = changes.get(changeIndex);
+      if (!change.isObject()) {
+        throw new IllegalArgumentException(context + ".changes entries must be objects");
+      }
+      change
+          .fields()
+          .forEachRemaining(
+              field -> {
+                if (!field.getValue().isTextual()) {
+                  throw new IllegalArgumentException(context + ".changes values must be strings");
+                }
+              });
+    }
+  }
+
+  private static void validateCnaStringArray(
+      final JsonNode entry, final String field, final String context) {
+    final JsonNode values = optionalArray(entry, field, context + "." + field);
+    if (values == null) {
+      return;
+    }
+    for (final JsonNode value : values) {
+      if (!value.isTextual() || value.textValue().isBlank()) {
+        throw new IllegalArgumentException(context + "." + field + " must contain strings");
+      }
+    }
+  }
+
+  private static void validateCnaRoutines(final JsonNode entry, final String context) {
+    final JsonNode routines = optionalArray(entry, "programRoutines", context + ".programRoutines");
+    if (routines == null) {
+      return;
+    }
+    for (final JsonNode routine : routines) {
+      if (routine.isTextual()) {
+        if (routine.textValue().isBlank()) {
+          throw new IllegalArgumentException(context + ".programRoutines must contain names");
+        }
+      } else if (routine.isObject()) {
+        requiredCnaText(routine, NAME_FIELD, context + ".programRoutines entry");
+      } else {
+        throw new IllegalArgumentException(context + ".programRoutines entries must be names");
+      }
+    }
+  }
+
+  private static JsonNode optionalObject(
+      final JsonNode parent, final String field, final String context) {
+    final JsonNode value = parent.get(field);
+    if (value == null) {
+      return null;
+    }
+    if (!value.isObject()) {
+      throw new IllegalArgumentException(context + " must be an object");
+    }
+    return value;
+  }
+
+  private static JsonNode optionalArray(
+      final JsonNode parent, final String field, final String context) {
+    final JsonNode value = parent.get(field);
+    if (value == null) {
+      return null;
+    }
+    if (!value.isArray()) {
+      throw new IllegalArgumentException(context + " must be an array");
+    }
+    return value;
+  }
+
+  private static void requiredCnaText(
+      final JsonNode parent, final String field, final String context) {
+    final JsonNode value = parent.get(field);
+    if (value == null || !value.isTextual() || value.textValue().isBlank()) {
+      throw new IllegalArgumentException(context + "." + field + " must be a non-blank string");
+    }
+  }
+
+  private static void optionalCnaText(
+      final JsonNode parent, final String field, final String context) {
+    final JsonNode value = parent.get(field);
+    if (value != null && !value.isNull() && !value.isTextual()) {
+      throw new IllegalArgumentException(context + "." + field + " must be a string or null");
+    }
+  }
+
+  private static boolean matchesPackageUrl(final String packageUrl, final AdvisoryScope scope) {
+    if (packageUrl == null || packageUrl.isBlank()) {
+      return false;
+    }
+    final String expected =
+        "pkg:maven/"
+            + scope.affectedCoordinate().groupId()
+            + "/"
+            + scope.affectedCoordinate().artifactId();
+    return packageUrl.equals(expected);
+  }
+
+  private static void addStructuredEvidence(
+      final JsonNode entry,
+      final AdvisoryScope scope,
+      final String cveId,
+      final String cveDigest,
+      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
+    final Set<String> files = readTextArray(entry.path("programFiles"));
+    final Set<String> routines = readRoutineNames(entry.path("programRoutines"));
+    if (files.isEmpty() && routines.isEmpty()) {
+      return;
+    }
+    final Map<String, Set<String>> fileClasses = new LinkedHashMap<>();
+    for (final String file : files) {
+      fileClasses.put(file, classesForProgramFile(file, scope));
+    }
+    final Map<String, Set<String>> routineClasses = new LinkedHashMap<>();
+    routines.forEach(routine -> routineClasses.put(routine, Set.of()));
+    final String product = entry.path("product").asText("unknown");
+    evidence.add(
+        new StructuredSourceClassEvidence(
+            scope,
+            new AdvisoryProvenance(EvidenceOrigin.CVE_LIST, cveId, null, cveDigest),
+            entry.path("vendor").asText("") + ":" + product,
+            files,
+            routines,
+            fileClasses,
+            routineClasses));
+  }
+
+  private static Set<String> classesForProgramFile(final String file, final AdvisoryScope scope) {
+    final Set<String> classes = new TreeSet<>();
+    extractClassesFromCommitUrl(
+        file,
+        scope.affectedCoordinate().groupId(),
+        scope.affectedCoordinate().artifactId(),
+        classes);
+    return Set.copyOf(classes);
+  }
+
+  private static Set<String> readTextArray(final JsonNode node) {
+    if (!node.isArray()) {
+      return Set.of();
+    }
+    final Set<String> values = new TreeSet<>();
+    node.forEach(
+        value -> {
+          if (value.isTextual() && !value.textValue().isBlank()) {
+            values.add(value.textValue());
+          }
+        });
+    return Set.copyOf(values);
+  }
+
+  private static Set<String> readRoutineNames(final JsonNode node) {
+    if (!node.isArray()) {
+      return Set.of();
+    }
+    final Set<String> values = new TreeSet<>();
+    for (final JsonNode value : node) {
+      final JsonNode name = value.isObject() ? value.path(NAME_FIELD) : value;
+      if (name.isTextual() && !name.textValue().isBlank()) {
+        values.add(name.textValue());
+      }
+    }
+    return Set.copyOf(values);
+  }
+
+  private static List<Map<String, String>> readVersionChanges(final JsonNode node) {
+    if (!node.isArray()) {
+      return List.of();
+    }
+    final List<Map<String, String>> changes = new ArrayList<>();
+    for (final JsonNode change : node) {
+      if (!change.isObject()) {
+        continue;
+      }
+      final Map<String, String> fields = new LinkedHashMap<>();
+      change
+          .fields()
+          .forEachRemaining(
+              field -> {
+                if (field.getValue().isTextual()) {
+                  fields.put(field.getKey(), field.getValue().textValue());
+                }
+              });
+      if (!fields.isEmpty()) {
+        changes.add(fields);
+      }
+    }
+    return List.copyOf(changes);
+  }
+
+  private static String optionalText(final JsonNode node, final String field) {
+    final JsonNode value = node.get(field);
+    return value != null && value.isTextual() ? value.textValue() : null;
+  }
+
+  private static String locateCveRecord(final Path gitDir, final String cveId) {
+    if (gitDir == null || cveId == null || !Files.isDirectory(gitDir)) {
+      return null;
+    }
+    final String[] parts = cveId.split("-");
+    if (parts.length < 3) {
+      return null;
+    }
+    final String thousandPrefix =
+        parts[2].length() > 3 ? parts[2].substring(0, parts[2].length() - 3) + "xxx" : "0xxx";
+    final Path path =
+        gitDir.resolve("cves").resolve(parts[1]).resolve(thousandPrefix).resolve(cveId + ".json");
+    return Files.isRegularFile(path) ? path.toString() : null;
+  }
+
+  private static String sha256(final byte[] bytes) {
     try {
-      return Optional.of(
-          new VulnerabilitySymbolMapping(
-              cveId, coordinate, versionRangeSpec, classes, sourceUrl, ConfidenceLevel.HIGH));
-    } catch (final IllegalArgumentException ignored) {
-      return Optional.empty();
+      final byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
+      final StringBuilder result = new StringBuilder(digest.length * 2);
+      for (final byte value : digest) {
+        result.append(String.format(Locale.ROOT, "%02x", value));
+      }
+      return result.toString();
+    } catch (final NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("SHA-256 is unavailable", exception);
     }
   }
 
@@ -186,7 +837,7 @@ public final class OsvSnapshotIndexer {
         }
       }
     }
-    final JsonNode versions = affected.path("versions");
+    final JsonNode versions = affected.path(VERSIONS_FIELD);
     if (versions.isArray() && !versions.isEmpty()) {
       if (versions.size() == 1) {
         return "[" + versions.get(0).asText() + "]";
@@ -236,30 +887,6 @@ public final class OsvSnapshotIndexer {
     return null;
   }
 
-  private Set<String> extractVulnerableClasses(
-      final JsonNode root,
-      final String groupId,
-      final String artifactId,
-      final String cveId,
-      final Path cveListGitDir) {
-    final Set<String> classes = new TreeSet<>();
-    final String text = root.path("summary").asText("") + " " + root.path("details").asText("");
-    extractClassesFromText(text, groupId, artifactId, classes);
-
-    final JsonNode references = root.path("references");
-    if (references.isArray()) {
-      for (final JsonNode ref : references) {
-        final String url = ref.path("url").asText("");
-        extractClassesFromCommitUrl(url, groupId, artifactId, classes);
-      }
-    }
-
-    if (cveListGitDir != null && Files.isDirectory(cveListGitDir)) {
-      enrichFromCveListV5(cveListGitDir, cveId, groupId, artifactId, classes);
-    }
-    return classes;
-  }
-
   private static void extractClassesFromText(
       final String text, final String groupId, final String artifactId, final Set<String> classes) {
     final Matcher matcher = FQCN_PATTERN.matcher(text);
@@ -283,50 +910,6 @@ public final class OsvSnapshotIndexer {
     }
   }
 
-  private void enrichFromCveListV5(
-      final Path gitDir,
-      final String cveId,
-      final String groupId,
-      final String artifactId,
-      final Set<String> classes) {
-    final String[] parts = cveId.split("-");
-    if (parts.length < 3) {
-      return;
-    }
-    final String year = parts[1];
-    final String number = parts[2];
-    final String thousandPrefix =
-        number.length() > 3 ? number.substring(0, number.length() - 3) + "xxx" : "0xxx";
-    final Path recordPath =
-        gitDir.resolve("cves").resolve(year).resolve(thousandPrefix).resolve(cveId + ".json");
-    if (!Files.isRegularFile(recordPath)) {
-      return;
-    }
-    try {
-      final JsonNode cveRoot = mapper.readTree(recordPath.toFile());
-      final JsonNode cna = cveRoot.path("containers").path("cna");
-      final JsonNode descriptions = cna.path("descriptions");
-      if (descriptions.isArray()) {
-        for (final JsonNode desc : descriptions) {
-          extractClassesFromText(desc.path("value").asText(""), groupId, artifactId, classes);
-        }
-      }
-      final JsonNode affectedArray = cna.path("affected");
-      if (affectedArray.isArray()) {
-        for (final JsonNode aff : affectedArray) {
-          final JsonNode programFiles = aff.path("programFiles");
-          if (programFiles.isArray()) {
-            for (final JsonNode pf : programFiles) {
-              extractClassesFromCommitUrl(pf.asText(""), groupId, artifactId, classes);
-            }
-          }
-        }
-      }
-    } catch (final IOException ignored) {
-      // Best-effort enrichment; parsing failure does not abort indexing.
-    }
-  }
-
   private static boolean isRelevantClass(
       final String className, final String groupId, final String artifactId) {
     if (className == null
@@ -345,64 +928,5 @@ public final class OsvSnapshotIndexer {
     }
     final String cleanedArtifact = artifactId.replaceAll("[^a-zA-Z0-9]", ".");
     return className.startsWith(cleanedArtifact) || className.startsWith(groupId);
-  }
-
-  private static URI resolveSourceUrl(
-      final JsonNode root, final String cveId, final String groupId, final String artifactId) {
-    final JsonNode references = root.path("references");
-    if (references.isArray()) {
-      // 1. Prioritize commit diff or pull request URLs that explicitly touch relevant source
-      // classes
-      for (final JsonNode ref : references) {
-        final String url = ref.path("url").asText("");
-        if ((url.startsWith("https://") || url.startsWith("http://"))
-            && (url.contains("/commit/") || url.contains("/pull/"))) {
-          final Set<String> probe = new TreeSet<>();
-          extractClassesFromCommitUrl(url, groupId, artifactId, probe);
-          if (!probe.isEmpty()) {
-            try {
-              return URI.create(url);
-            } catch (final IllegalArgumentException ignored) {
-              // Fall back below
-            }
-          }
-        }
-      }
-      // 2. Secondary preference: any commit or pull request URL
-      for (final JsonNode ref : references) {
-        final String url = ref.path("url").asText("");
-        if ((url.startsWith("https://") || url.startsWith("http://"))
-            && (url.contains("/commit/") || url.contains("/pull/"))) {
-          try {
-            return URI.create(url);
-          } catch (final IllegalArgumentException ignored) {
-            // Fall back below
-          }
-        }
-      }
-      // 3. Fallback: standard advisory or reference URLs
-      for (final JsonNode ref : references) {
-        final String url = ref.path("url").asText("");
-        if (url.startsWith("https://")
-            && (url.contains("nvd.nist.gov") || url.contains("security/advisories"))) {
-          try {
-            return URI.create(url);
-          } catch (final IllegalArgumentException ignored) {
-            // Fall back below
-          }
-        }
-      }
-      for (final JsonNode ref : references) {
-        final String url = ref.path("url").asText("");
-        if (url.startsWith("https://") || url.startsWith("http://")) {
-          try {
-            return URI.create(url);
-          } catch (final IllegalArgumentException ignored) {
-            // Fall back below
-          }
-        }
-      }
-    }
-    return URI.create("https://osv.dev/vulnerability/" + root.path("id").asText(cveId));
   }
 }

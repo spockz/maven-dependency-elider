@@ -35,7 +35,7 @@
       "goal": "analyze",
       "expectedExitCode": 0,
       "requiredOutput": [
-        "CVE-2014-3577"
+        "Artifacts that would be elided by this analysis: 2 / 13"
       ]
     },
     {
@@ -80,7 +80,7 @@
       "goal": "report",
       "expectedExitCode": 0,
       "requiredOutput": [
-        "CVE-2014-3577"
+        "Whole artifacts dropped: 2"
       ],
       "maxGraphRows": 3
     },

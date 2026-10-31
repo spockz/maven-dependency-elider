@@ -1,11 +1,14 @@
-/* WHY: Verifies OSV snapshot indexing, version ranges, and class symbol extraction. */
+/* WHY: Verifies OSV ownership and preservation of distinct advisory evidence sources. */
 
 package io.github.spockz.elider.scanner;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping.ConfidenceLevel;
+import io.github.spockz.elider.model.EvidenceOrigin;
+import io.github.spockz.elider.model.HeuristicCandidateEvidence;
+import io.github.spockz.elider.model.OsvAdvisoryRecord;
+import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -22,173 +25,213 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CommentDefaultAccessModifier",
   "PMD.AtLeastOneConstructor",
   "PMD.CommentRequired",
-  "PMD.UnitTestContainsTooManyAsserts",
+  "PMD.LiteralsFirstInComparisons",
+  "PMD.LambdaCanBeMethodReference",
+  "PMD.ShortVariable",
   "PMD.AvoidInstantiatingObjectsInLoops"
 })
 class OsvSnapshotIndexerTest {
   @TempDir Path tempDir;
 
   @Test
-  void indexesMavenAdvisoryWithClassSymbolsFromDetails() throws IOException {
-    final String advisoryJson =
-        """
-        {
-          "schema_version": "1.9.0",
-          "id": "GHSA-test-1234",
-          "aliases": ["CVE-2024-26308"],
-          "summary": "Pack200 parsing denial of service",
-          "details": "Vulnerability in org.apache.commons.compress.compressors.pack200.Pack200CompressorInputStream allows CPU loop",
-          "affected": [
-            {
-              "package": {
-                "name": "org.apache.commons:commons-compress",
-                "ecosystem": "Maven"
-              },
-              "ranges": [
-                {
-                  "type": "ECOSYSTEM",
-                  "events": [
-                    {"introduced": "0"},
-                    {"fixed": "1.28.0"}
-                  ]
-                }
-              ]
-            }
-          ],
-          "references": [
-            {"type": "ADVISORY", "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-26308"},
-            {"type": "FIX", "url": "https://github.com/apache/commons-compress/commit/abcd1234#diff-src/main/java/org/apache/commons/compress/compressors/pack200/Pack200CompressorInputStream.java"}
-          ]
-        }
-        """;
-
-    final byte[] zipBytes = createZip(List.of(new ZipItem("GHSA-test-1234.json", advisoryJson)));
-    final OsvSnapshotIndexer indexer = new OsvSnapshotIndexer();
-    final List<VulnerabilitySymbolMapping> mappings =
-        indexer.indexZip(new ByteArrayInputStream(zipBytes), null);
-
-    assertThat(mappings).hasSize(1);
-    final VulnerabilitySymbolMapping mapping = mappings.get(0);
-    assertThat(mapping.cveId()).isEqualTo("CVE-2024-26308");
-    assertThat(mapping.affectedCoordinate().groupId()).isEqualTo("org.apache.commons");
-    assertThat(mapping.affectedCoordinate().artifactId()).isEqualTo("commons-compress");
-    assertThat(mapping.versionRangeSpec()).isEqualTo("(,1.28.0)");
-    assertThat(mapping.vulnerableClasses())
-        .containsExactly(
-            "org.apache.commons.compress.compressors.pack200.Pack200CompressorInputStream");
-    assertThat(mapping.confidenceLevel()).isEqualTo(ConfidenceLevel.HIGH);
-    assertThat(mapping.sourceAdvisoryUrl())
-        .isEqualTo(
-            java.net.URI.create(
-                "https://github.com/apache/commons-compress/commit/abcd1234#diff-src/main/java/org/apache/commons/compress/compressors/pack200/Pack200CompressorInputStream.java"));
-  }
-
-  @Test
-  void ignoresNonMavenOrWithdrawnAdvisories() throws IOException {
-    final String npmJson =
-        """
-        {
-          "id": "GHSA-npm-1",
-          "aliases": ["CVE-2024-0001"],
-          "details": "Class org.example.Foo",
-          "affected": [{"package": {"name": "lodash", "ecosystem": "npm"}}]
-        }
-        """;
-    final String withdrawnJson =
-        """
-        {
-          "id": "GHSA-withdrawn-1",
-          "aliases": ["CVE-2024-0002"],
-          "withdrawn": "2024-01-01T00:00:00Z",
-          "details": "Class org.apache.commons.Bar",
-          "affected": [{"package": {"name": "org.apache.commons:commons-lang3", "ecosystem": "Maven"}}]
-        }
-        """;
-
-    final byte[] zipBytes =
-        createZip(
-            List.of(
-                new ZipItem("npm.json", npmJson), new ZipItem("withdrawn.json", withdrawnJson)));
-    final OsvSnapshotIndexer indexer = new OsvSnapshotIndexer();
-    final List<VulnerabilitySymbolMapping> mappings =
-        indexer.indexZip(new ByteArrayInputStream(zipBytes), null);
-
-    assertThat(mappings).isEmpty();
-  }
-
-  @Test
-  void enrichesFromCveListV5WhenPresent() throws IOException {
-    final Path cveDir = tempDir.resolve("cves/2020/25xxx");
-    Files.createDirectories(cveDir);
-    final String cveJson =
+  void preservesOsvOwnershipScopesCnaAndIndependentSourceOrigins() throws IOException {
+    final Path cvePath = tempDir.resolve("cves/2025/12xxx/CVE-2025-12345.json");
+    Files.createDirectories(cvePath.getParent());
+    Files.writeString(
+        cvePath,
         """
         {
           "containers": {
             "cna": {
+              "descriptions": [{"lang":"en","value":"org.example.One is affected"}],
               "affected": [
                 {
-                  "programFiles": [
-                    "src/main/java/com/fasterxml/jackson/databind/ext/DOMDeserializer.java"
-                  ]
+                  "vendor":"Example One",
+                  "product":"library-one",
+                  "packageURL":"pkg:maven/org.example/library-one",
+                  "defaultStatus":"affected",
+                  "versions":[{"version":"1.0","status":"affected","versionType":"semver","lessThan":"2.0","lessThanOrEqual":null,"changes":[{"at":"1.5","status":"unaffected"}]}],
+                  "programFiles":["src/main/java/org/example/One.java"],
+                  "programRoutines":["parse"]
+                },
+                {
+                  "vendor":"Example Two",
+                  "product":"library-two",
+                  "packageURL":"pkg:maven/org.example/library-two",
+                  "versions":[{"version":"2.0","status":"affected"}],
+                  "programRoutines":[{"name":"decode"}]
+                },
+                {
+                  "vendor":"Unmatched Example",
+                  "product":"library-one",
+                  "packageURL":"pkg:maven/other/library-three",
+                  "versions":[{"version":"1.0","status":"affected"}],
+                  "programRoutines":["unmatchedRoutine"]
                 }
-              ]
+              ],
+              "references":[{"url":"https://example.test/fix"}]
             }
           }
         }
-        """;
-    Files.writeString(cveDir.resolve("CVE-2020-25649.json"), cveJson);
-
-    final String advisoryJson =
+        """);
+    final String first =
         """
         {
-          "id": "GHSA-jackson-1",
-          "aliases": ["CVE-2020-25649"],
-          "affected": [
-            {
-              "package": {
-                "name": "com.fasterxml.jackson.core:jackson-databind",
-                "ecosystem": "Maven"
-              },
-              "ranges": [
-                {
-                  "type": "ECOSYSTEM",
-                  "events": [
-                    {"introduced": "2.10.0"},
-                    {"fixed": "2.11.0"}
-                  ]
-                }
-              ]
-            }
+          "id":"GHSA-owner-one",
+          "aliases":["CVE-2025-12345","GHSA-alias-one"],
+          "summary":"Vulnerability in org.example.One",
+          "details":"org.example.Two is a separate candidate",
+          "references":[{"type":"FIX","url":"https://github.com/example/repo/commit/abc/src/main/java/org/example/One.java"}],
+          "affected":[
+            {"package":{"ecosystem":"Maven","name":"org.example:library-one"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"2.0"}]},{"type":"GIT","repo":"https://github.com/example/repo","events":[{"introduced":"0"},{"fixed":"2.0"}]}]},
+            {"package":{"ecosystem":"Maven:https://repo.example.test","name":"org.example:library-two"},"versions":["2.0","3.0"]}
           ]
         }
         """;
+    final String second =
+        """
+        {
+          "id":"GHSA-owner-two",
+          "aliases":["CVE-2025-12345"],
+          "affected":[{"package":{"ecosystem":"Maven","name":"org.example:library-one"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"1.0"},{"last_affected":"1.5"}]}]}]
+        }
+        """;
+    final String noCve =
+        """
+        {
+          "id":"GHSA-without-cve",
+          "aliases":["GHSA-alias-only"],
+          "affected":[{"package":{"ecosystem":"Maven:custom","name":"org.example:library-three"},"versions":["3.1"],"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"3.0"},{"fixed":"3.2"}]}]}]
+        }
+        """;
 
-    final byte[] zipBytes = createZip(List.of(new ZipItem("jackson.json", advisoryJson)));
-    final OsvSnapshotIndexer indexer = new OsvSnapshotIndexer();
-    final List<VulnerabilitySymbolMapping> mappings =
-        indexer.indexZip(new ByteArrayInputStream(zipBytes), tempDir);
+    final List<OsvAdvisoryRecord> records =
+        new OsvSnapshotIndexer()
+            .indexZip(
+                new ByteArrayInputStream(
+                    createZip(
+                        List.of(
+                            new ZipItem("first.json", first),
+                            new ZipItem("second.json", second),
+                            new ZipItem("no-cve.json", noCve)))),
+                tempDir);
+    final OsvAdvisoryRecord firstRecord = find(records, "GHSA-owner-one");
+    final OsvAdvisoryRecord secondRecord = find(records, "GHSA-owner-two");
+    final OsvAdvisoryRecord noCveRecord = find(records, "GHSA-without-cve");
+    final List<StructuredSourceClassEvidence> structuredEvidence =
+        firstRecord.evidence().stream()
+            .filter(StructuredSourceClassEvidence.class::isInstance)
+            .map(StructuredSourceClassEvidence.class::cast)
+            .toList();
+    final List<HeuristicCandidateEvidence> referenceCandidates =
+        firstRecord.evidence().stream()
+            .filter(HeuristicCandidateEvidence.class::isInstance)
+            .map(HeuristicCandidateEvidence.class::cast)
+            .filter(value -> value.provenance().origin() == EvidenceOrigin.REFERENCE_URL)
+            .toList();
 
-    assertThat(mappings).hasSize(1);
-    final VulnerabilitySymbolMapping mapping = mappings.get(0);
-    assertThat(mapping.cveId()).isEqualTo("CVE-2020-25649");
-    assertThat(mapping.affectedCoordinate().groupId()).isEqualTo("com.fasterxml.jackson.core");
-    assertThat(mapping.affectedCoordinate().artifactId()).isEqualTo("jackson-databind");
-    assertThat(mapping.versionRangeSpec()).isEqualTo("[2.10.0,2.11.0)");
-    assertThat(mapping.vulnerableClasses())
-        .containsExactly("com.fasterxml.jackson.databind.ext.DOMDeserializer");
+    assertAll(
+        "each OSV record retains its own aliases and package scopes",
+        () -> assertThat(records).hasSize(3),
+        () ->
+            assertThat(firstRecord.aliases())
+                .containsExactlyInAnyOrder("CVE-2025-12345", "GHSA-alias-one"),
+        () -> assertThat(secondRecord.aliases()).containsExactly("CVE-2025-12345"),
+        () -> assertThat(firstRecord.affectedPackages()).hasSize(2),
+        () ->
+            assertThat(firstRecord.affectedPackages().getFirst().ranges().get(1).repo())
+                .isEqualTo("https://github.com/example/repo"),
+        () -> assertThat(firstRecord.affectedPackages().get(1).ecosystem()).startsWith("Maven"),
+        () ->
+            assertThat(firstRecord.affectedPackages().get(1).packageName())
+                .isEqualTo("org.example:library-two"),
+        () ->
+            assertThat(firstRecord.evidence())
+                .extracting(value -> value.provenance().origin())
+                .contains(
+                    EvidenceOrigin.OSV,
+                    EvidenceOrigin.DESCRIPTION,
+                    EvidenceOrigin.REFERENCE_URL,
+                    EvidenceOrigin.CVE_LIST),
+        () -> assertThat(structuredEvidence).hasSize(2),
+        () -> assertThat(referenceCandidates).hasSize(4),
+        () ->
+            assertThat(referenceCandidates)
+                .allSatisfy(
+                    value ->
+                        assertAll(
+                            () -> assertThat(value.candidateClasses()).isEmpty(),
+                            () ->
+                                assertThat(value.provenance().origin())
+                                    .isEqualTo(EvidenceOrigin.REFERENCE_URL))),
+        () ->
+            assertThat(structuredEvidence)
+                .filteredOn(
+                    value -> value.scope().affectedCoordinate().artifactId().equals("library-one"))
+                .singleElement()
+                .satisfies(
+                    value ->
+                        assertThat(value.programFiles())
+                            .contains("src/main/java/org/example/One.java")),
+        () ->
+            assertThat(structuredEvidence)
+                .filteredOn(
+                    value -> value.scope().affectedCoordinate().artifactId().equals("library-two"))
+                .singleElement()
+                .satisfies(value -> assertThat(value.programRoutines()).contains("decode")),
+        () ->
+            assertThat(firstRecord.cnaAffectedEntries())
+                .extracting(value -> value.entryIdentity())
+                .containsExactly(
+                    "containers.cna.affected[0]",
+                    "containers.cna.affected[1]",
+                    "containers.cna.affected[2]"),
+        () ->
+            assertThat(firstRecord.cnaAffectedEntries().get(2).programRoutines())
+                .containsExactly("unmatchedRoutine"),
+        () ->
+            assertThat(structuredEvidence)
+                .noneMatch(value -> value.programRoutines().contains("unmatchedRoutine")),
+        () ->
+            assertThat(
+                    firstRecord.cnaAffectedEntries().getFirst().versions().getFirst().versionType())
+                .isEqualTo("semver"),
+        () ->
+            assertThat(firstRecord.cnaAffectedEntries().getFirst().defaultStatus())
+                .isEqualTo("affected"),
+        () ->
+            assertThat(firstRecord.cnaAffectedEntries().getFirst().versions().getFirst())
+                .satisfies(
+                    claim ->
+                        assertAll(
+                            () -> assertThat(claim.lessThan()).isEqualTo("2.0"),
+                            () -> assertThat(claim.lessThanOrEqual()).isNull(),
+                            () ->
+                                assertThat(claim.changes())
+                                    .containsExactly(
+                                        java.util.Map.of("at", "1.5", "status", "unaffected")))),
+        () -> assertThat(noCveRecord.aliases()).containsExactly("GHSA-alias-only"),
+        () -> assertThat(noCveRecord.evidence()).isEmpty(),
+        () ->
+            assertThat(noCveRecord.affectedPackages())
+                .singleElement()
+                .satisfies(value -> assertThat(value.versions()).containsExactly("3.1")));
+  }
+
+  private static OsvAdvisoryRecord find(final List<OsvAdvisoryRecord> records, final String id) {
+    return records.stream().filter(record -> record.osvId().equals(id)).findFirst().orElseThrow();
   }
 
   private static byte[] createZip(final List<ZipItem> items) throws IOException {
-    final ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+    final ByteArrayOutputStream output = new ByteArrayOutputStream();
+    try (ZipOutputStream zip = new ZipOutputStream(output)) {
       for (final ZipItem item : items) {
-        final ZipEntry entry = new ZipEntry(item.name());
-        zos.putNextEntry(entry);
-        zos.write(item.content().getBytes(StandardCharsets.UTF_8));
-        zos.closeEntry();
+        zip.putNextEntry(new ZipEntry(item.name()));
+        zip.write(item.content().getBytes(StandardCharsets.UTF_8));
+        zip.closeEntry();
       }
     }
-    return baos.toByteArray();
+    return output.toByteArray();
   }
 
   private record ZipItem(String name, String content) {}

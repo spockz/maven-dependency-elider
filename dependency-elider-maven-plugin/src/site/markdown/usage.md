@@ -79,7 +79,6 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:analyze (default-cli) @ example-cve-unused-app ---
-[INFO] POM vulnerability mapping overrides cached mapping for CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
 [INFO] Dependency Elider analysis summary
 [INFO]   Artifacts that would be elided by this analysis: 0 / 25 (0.0%)
 [INFO]   Estimated original JAR bytes for those artifacts: 0 B (sum of original on-disk input JAR sizes; final package delta may differ)

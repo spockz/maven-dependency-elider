@@ -90,7 +90,7 @@ Execute `analyze` to preview removable dependencies and estimated byte savings w
   -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
 ```
 
-On this Basic fixture, `analyze` identifies two whole-artifact candidates out of thirteen (942.11 KiB of original JAR bytes, removing `CVE-2014-3577` from inventory).
+On this Basic fixture, `analyze` identifies two whole-artifact candidates out of thirteen (942.11 KiB of original JAR bytes). The pinned typed cache retains the `CVE-2014-3577` package advisory and its commit-derived `AbstractVerifier` review candidate, but neither cached claim creates a CVE classification or VEX.
 
 ### 5. Build with Elision (`elide`)
 
@@ -336,7 +336,7 @@ The repository includes end-to-end integration fixtures under `examples/`:
 
 | Fixture | Architecture | Target Demonstration |
 | :--- | :--- | :--- |
-| **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec` and `httpclient` (avoiding `CVE-2014-3577`); produces a shrunken shaded JAR. |
+| **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec` and `httpclient`, retains the cached `AbstractVerifier` source candidate for review, and emits no cache-derived CVE classification; produces a shrunken shaded JAR. |
 | **`example-spring-boot-app`** | Spring Boot 3 Web | Retains candidates when no safe drop exists, trims Spring MVC under `BOOT-INF/lib`, and flags conservative SPI retention (`CVE-2026-68494`). |
 | **`example-cve-unused-app`** | Standalone CVE test | Uses a validated explicit POM `HIGH` assertion for `StringLookup` on Commons Text versions below 1.10.0, proves that class physically absent after trimming, and emits OpenVEX. |
 | **`example-multi-module-reactor`** | Three-module Maven reactor with Shade | Exercises module-local reports and dependency elision for `reactor-common` → `reactor-service` → `reactor-app`, under sequential and `-T 4` builds. |
@@ -386,7 +386,7 @@ Run standalone CVE fixture baselines:
 
 The transcripts below come from configured Maven invocations. Run `make update-transcripts` to refresh them. Report dependency graphs keep the first three rows; an elision count and SHA-256 digest detect changes in omitted rows. Rerun the displayed fixture's full `report` command to inspect its graph without elision.
 
-The CVE findings use only the two mappings in the pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md); they do not represent complete vulnerability coverage.
+The pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md) supplies two package-advisory contexts and a commit-derived class candidate for stable examples. Cached evidence remains review-only; only validated effective-POM `HIGH` assertions can enter physical proof.
 
 The excerpts below show the expected report categories for the checked-in fixtures. The safe-class fixture uses the explicit complete-inventory opt-in and exact-class mapping required for its precondition finding.
 
@@ -419,8 +419,7 @@ Process exit status: 0
 [INFO]   - org.apache.httpcomponents:httpclient:jar:4.3.4 (compile): 576.18 KiB original JAR, 420 class entries, 1.11 MiB
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
 [INFO]   - org.apache.commons:commons-compress:jar:1.28.0 (compile): 535 classes, 1.93 MiB
-[INFO] Avoided CVEs (dropped artifacts):
-[INFO]   - CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4
+[INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability mappings
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions: none detected
@@ -637,8 +636,7 @@ Process exit status: 0
 [INFO]   Estimated original JAR bytes for those artifacts: 942.11 KiB (sum of original on-disk input JAR sizes; final package delta may differ)
 [INFO]   Program class entries in JARs that would be dropped: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
 [INFO]   JAR trim cache: 0 validated hit(s), 3 analysis run(s)
-[INFO]   Avoided CVEs (artifacts that would be dropped):
-[INFO]     CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4
+[INFO]   Avoided CVEs (artifacts that would be dropped): none matched the available vulnerability mappings
 [INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming): none matched the available vulnerability mappings
 [INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO]   CVEs that would be excluded due to conservative multi-symbol checks: none detected

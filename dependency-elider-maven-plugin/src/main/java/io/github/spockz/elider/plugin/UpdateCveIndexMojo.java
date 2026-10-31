@@ -2,7 +2,6 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheResult;
@@ -59,8 +58,8 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
       getLog()
           .info(
               "Loaded "
-                  + result.mappings().size()
-                  + " vulnerability mapping(s) from "
+                  + result.records().size()
+                  + " OSV advisory record(s) from "
                   + result.source());
     }
   }
@@ -94,13 +93,13 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
           new VulnerabilityCacheManager()
               .load(
                   cacheConfig(osvSource, cveListGit),
-                  mappings -> validateMappings(mappings, "downloaded vulnerability index"));
+                  records -> validateRecords(records, "downloaded vulnerability index"));
       if (result.refreshFailure().isPresent()) {
         throw new MojoExecutionException(
             "Could not update vulnerability mapping index: "
                 + result.refreshFailure().orElseThrow());
       }
-      validateMappings(result.mappings(), "cached index");
+      validateRecords(result.records(), "cached index");
       return result;
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoExecutionException("Could not load vulnerability mapping index", exception);
@@ -120,8 +119,9 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
         VulnerabilityCacheManager.bundledEmptySeed());
   }
 
-  private void validateMappings(
-      final List<VulnerabilitySymbolMapping> mappings, final String source) throws IOException {
-    MavenVersionRangeMatcher.validateDownloadedMappings(mappings, source);
+  private void validateRecords(
+      final List<io.github.spockz.elider.model.OsvAdvisoryRecord> records, final String source)
+      throws IOException {
+    MavenVersionRangeMatcher.validateAdvisoryRecords(records, source);
   }
 }

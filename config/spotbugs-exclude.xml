@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- WHY: SpotBugs does not recognize immutable JDK collection factories in record constructors. -->
+<!-- WHY: SpotBugs does not recognize constructor-frozen JDK collections returned by immutable records. -->
 <FindBugsFilter>
   <Match>
     <Bug code="EI" pattern="EI_EXPOSE_REP" />
@@ -17,6 +17,10 @@
   <Match>
     <Bug code="EI" pattern="EI_EXPOSE_REP" />
     <Class name="io.github.spockz.elider.model.HeuristicCandidateEvidence" />
+  </Match>
+  <Match>
+    <Bug code="EI" pattern="EI_EXPOSE_REP" />
+    <Class name="io.github.spockz.elider.model.CveAffectedEntryContext" />
   </Match>
   <Match>
     <Bug pattern="UI_INHERITANCE_UNSAFE_GETRESOURCE" />
