@@ -66,7 +66,7 @@ class OmittedCodeProofTest {
             "[1.0,2.0)",
             Set.of("org.example.Vulnerable"),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            ConfidenceLevel.HIGH,
             "effective-project-pom:vulnerabilityMappings[0]");
     final ArtifactTrimRecord record =
         record(jar("bound-original.jar", "org/example/Vulnerable.class"), jar("bound-trimmed.jar"));
@@ -281,7 +281,7 @@ class OmittedCodeProofTest {
             "[1.0,2.0)",
             Set.of("org.example.Vulnerable"),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.LOW);
+            ConfidenceLevel.LOW);
     assertAll(
         () -> assertRejectedLowConfidenceMapping(lowConfidence, record),
         () ->
@@ -292,7 +292,7 @@ class OmittedCodeProofTest {
                     "[1.0,2.0)",
                     Set.of("org.example.Vulnerable"),
                     null,
-                    VulnerabilitySymbolMapping.ConfidenceLevel.MEDIUM),
+                    ConfidenceLevel.MEDIUM),
                 record));
   }
 
@@ -307,7 +307,7 @@ class OmittedCodeProofTest {
             "[2.0,3.0)",
             Set.of("org.example.Vulnerable"),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH);
+            ConfidenceLevel.HIGH);
     assertThatThrownBy(
             () ->
                 OmittedCodeProof.prove(
@@ -329,7 +329,7 @@ class OmittedCodeProofTest {
             "[1.0,2.0)",
             Set.of("org.example.PresentVulnerable", "org.example.AbsentClass"),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH);
+            ConfidenceLevel.HIGH);
 
     final java.util.Optional<OmittedCodeProof.ConservativeOmission> omission =
         OmittedCodeProof.evaluateConservativeOmission(multiSymbol, record);
@@ -352,7 +352,7 @@ class OmittedCodeProofTest {
             "[1.0,2.0)",
             Set.of("org.example.PresentVulnerable", "org.example.AbsentClass"),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH);
+            ConfidenceLevel.HIGH);
 
     final java.util.Optional<OmittedCodeProof.ConservativeOmission> omission =
         OmittedCodeProof.evaluateConservativeOmission(multiSymbol, record);
@@ -442,7 +442,7 @@ class OmittedCodeProofTest {
             "[1.0,2.0)",
             Set.of(className),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH));
+            ConfidenceLevel.HIGH));
   }
 
   private static void assertRejectedLowConfidenceMapping(

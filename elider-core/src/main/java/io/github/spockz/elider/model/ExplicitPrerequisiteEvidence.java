@@ -29,7 +29,7 @@ public final class ExplicitPrerequisiteEvidence implements AdvisoryEvidence {
       throw new IllegalArgumentException(
           "Explicit prerequisite evidence requires requiresDependency and requiresClass");
     }
-    if (mapping.confidenceLevel() != VulnerabilitySymbolMapping.ConfidenceLevel.HIGH) {
+    if (mapping.confidenceLevel() != ConfidenceLevel.HIGH) {
       throw new IllegalArgumentException("Explicit prerequisite evidence requires HIGH confidence");
     }
   }
@@ -42,7 +42,7 @@ public final class ExplicitPrerequisiteEvidence implements AdvisoryEvidence {
       final String requiresDependency,
       final String requiresClass,
       final java.net.URI advisoryUrl,
-      final VulnerabilitySymbolMapping.ConfidenceLevel confidence,
+      final ConfidenceLevel confidence,
       final String origin) {
     return new ExplicitPrerequisiteEvidence(
         new VulnerabilitySymbolMapping(
@@ -124,7 +124,7 @@ public final class ExplicitPrerequisiteEvidence implements AdvisoryEvidence {
   }
 
   @Override
-  public VulnerabilitySymbolMapping.ConfidenceLevel confidenceLabel() {
+  public ConfidenceLevel confidenceLabel() {
     return sourceMapping.confidenceLevel();
   }
 

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ConfidenceLevel;
 import io.github.spockz.elider.model.PreconditionClassInventory;
 import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
 import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
@@ -319,7 +320,7 @@ final class ADR0008MavenPreconditionInventoryTest {
               TEST_RANGE,
               Set.of(),
               null,
-              VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+              ConfidenceLevel.HIGH,
               PREREQUISITE_COORDINATE,
               "org.example.MissingPrerequisite");
 
@@ -346,7 +347,7 @@ final class ADR0008MavenPreconditionInventoryTest {
               TEST_RANGE,
               Set.of(),
               null,
-              VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+              ConfidenceLevel.HIGH,
               PREREQUISITE_COORDINATE,
               "org.example.MissingPrerequisite");
 
@@ -1997,7 +1998,7 @@ final class ADR0008MavenPreconditionInventoryTest {
             TEST_RANGE,
             Set.of(),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            ConfidenceLevel.HIGH,
             PREREQUISITE_COORDINATE,
             "hidden.ShadedPrerequisite");
 
@@ -2075,7 +2076,7 @@ final class ADR0008MavenPreconditionInventoryTest {
             TEST_RANGE,
             Set.of(),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            ConfidenceLevel.HIGH,
             PREREQUISITE_COORDINATE,
             "app.Holder$1");
 

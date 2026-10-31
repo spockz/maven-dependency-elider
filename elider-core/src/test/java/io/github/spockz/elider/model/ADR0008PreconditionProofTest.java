@@ -526,7 +526,7 @@ final class ADR0008PreconditionProofTest {
             "[1.0]",
             Set.of(),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            ConfidenceLevel.HIGH,
             REQUIRED_DEPENDENCY,
             REQUIRED_CLASS);
 
@@ -566,7 +566,7 @@ final class ADR0008PreconditionProofTest {
             "[1.0]",
             Set.of(),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.valueOf(confidence),
+            ConfidenceLevel.valueOf(confidence),
             requiredDependency,
             requiredClass));
   }

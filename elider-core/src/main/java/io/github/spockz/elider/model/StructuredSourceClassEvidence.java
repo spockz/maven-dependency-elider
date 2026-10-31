@@ -2,7 +2,6 @@
 
 package io.github.spockz.elider.model;
 
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping.ConfidenceLevel;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;

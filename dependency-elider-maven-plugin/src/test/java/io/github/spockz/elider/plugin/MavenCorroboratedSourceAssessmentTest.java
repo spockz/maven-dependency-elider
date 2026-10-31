@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.model.ConfidenceLevel;
 import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -40,9 +41,7 @@ class MavenCorroboratedSourceAssessmentTest {
                         assertAll(
                             () ->
                                 assertThat(value.confidenceLabel())
-                                    .isEqualTo(
-                                        io.github.spockz.elider.model.VulnerabilitySymbolMapping
-                                            .ConfidenceLevel.MEDIUM),
+                                    .isEqualTo(ConfidenceLevel.MEDIUM),
                             () ->
                                 assertThat(value.mappingStatus())
                                     .isEqualTo(

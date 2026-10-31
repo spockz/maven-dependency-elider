@@ -3,8 +3,6 @@
 
 package io.github.spockz.elider.model;
 
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping.ConfidenceLevel;
-
 /** Advisory claim; proof APIs continue to require narrow evidence types. */
 public sealed interface AdvisoryEvidence
     permits ExplicitClassMappingEvidence,

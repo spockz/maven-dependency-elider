@@ -24,7 +24,6 @@ import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -37,7 +36,6 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings({
   "PMD.AvoidDuplicateLiterals",
   "PMD.AtLeastOneConstructor",
-  "PMD.ExcessiveImports",
   "PMD.CommentRequired",
   "PMD.TooManyMethods"
 })
@@ -157,7 +155,7 @@ class AdvisoryEvidenceCodecTest {
         () -> assertThat(decoded).isEqualTo(commitCandidate),
         () ->
             assertThat(decoded.confidenceLabel())
-                .isEqualTo(VulnerabilitySymbolMapping.ConfidenceLevel.MEDIUM),
+                .isEqualTo(io.github.spockz.elider.model.ConfidenceLevel.MEDIUM),
         () ->
             assertThat(decoded.candidateClasses())
                 .containsExactly("org.apache.http.conn.ssl.AbstractVerifier"),
@@ -286,7 +284,7 @@ class AdvisoryEvidenceCodecTest {
                   "org.example:prerequisite",
                   "org.example.Prerequisite",
                   null,
-                  VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+                  io.github.spockz.elider.model.ConfidenceLevel.HIGH,
                   "effective-project-pom:vulnerabilityMappings[1]");
           assertThatThrownBy(
                   () ->
@@ -342,7 +340,7 @@ class AdvisoryEvidenceCodecTest {
     assertAll(
         () ->
             assertThat(structured.confidenceLabel())
-                .isEqualTo(VulnerabilitySymbolMapping.ConfidenceLevel.MEDIUM),
+                .isEqualTo(io.github.spockz.elider.model.ConfidenceLevel.MEDIUM),
         () -> assertThat(structured.scope().affectedCoordinate().version()).isNull(),
         () ->
             assertThat(structured.fileClassAttribution())
@@ -499,7 +497,7 @@ class AdvisoryEvidenceCodecTest {
         "[1.0,2.0)",
         Set.of("org.example.Vulnerable"),
         null,
-        VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+        io.github.spockz.elider.model.ConfidenceLevel.HIGH,
         "effective-project-pom:vulnerabilityMappings[0]");
   }
 

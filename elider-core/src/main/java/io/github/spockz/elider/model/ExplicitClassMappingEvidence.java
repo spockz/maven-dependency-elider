@@ -25,7 +25,7 @@ public final class ExplicitClassMappingEvidence implements AdvisoryEvidence {
     if (mapping.vulnerableClasses().isEmpty()) {
       throw new IllegalArgumentException("Explicit class evidence requires vulnerableClasses");
     }
-    if (mapping.confidenceLevel() != VulnerabilitySymbolMapping.ConfidenceLevel.HIGH) {
+    if (mapping.confidenceLevel() != ConfidenceLevel.HIGH) {
       throw new IllegalArgumentException("Explicit class evidence requires HIGH confidence");
     }
   }
@@ -37,7 +37,7 @@ public final class ExplicitClassMappingEvidence implements AdvisoryEvidence {
       final String versionRange,
       final Set<String> classes,
       final java.net.URI advisoryUrl,
-      final VulnerabilitySymbolMapping.ConfidenceLevel confidence,
+      final ConfidenceLevel confidence,
       final String origin) {
     return new ExplicitClassMappingEvidence(
         new VulnerabilitySymbolMapping(
@@ -109,7 +109,7 @@ public final class ExplicitClassMappingEvidence implements AdvisoryEvidence {
   }
 
   @Override
-  public VulnerabilitySymbolMapping.ConfidenceLevel confidenceLabel() {
+  public ConfidenceLevel confidenceLabel() {
     return sourceMapping.confidenceLevel();
   }
 
