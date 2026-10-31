@@ -1035,11 +1035,19 @@ final class MavenElisionService {
             scansByPath.values().stream()
                 .map(DependencyDynamicRoots.RootScan::serviceLoaderPolicy)
                 .toList());
+    final Set<String> routedClassRoots = new HashSet<>();
+    final Set<String> selectedFeatureRoots = new HashSet<>();
     for (final ArtifactFileRef candidate : candidates) {
       final DependencyDynamicRoots.RootScan scan = scansByPath.get(candidate.filePath());
       final DependencyDynamicRoots.EffectiveRoots effective =
           scan.effectiveRoots(
               provenServiceInterfaces, conservativeServiceLoaderRoots, serviceLoaderPolicy);
+      final DependencyDynamicRoots.EffectiveRoots withoutFeature =
+          scan.effectiveRoots(provenServiceInterfaces, conservativeServiceLoaderRoots);
+      selectedFeatureRoots.clear();
+      selectedFeatureRoots.addAll(effective.roots());
+      selectedFeatureRoots.removeAll(withoutFeature.roots());
+      routedClassRoots.addAll(selectedFeatureRoots);
       classNames.addAll(effective.roots());
       if (effective.declaresRoots()) {
         declaringArtifacts.add(candidate.coordinate());
@@ -1054,18 +1062,8 @@ final class MavenElisionService {
         resourcePatterns, scanContext, classNames, resourceProviderPaths);
     final Set<String> resourceClassRoots = new HashSet<>(classNames);
     resourceClassRoots.removeAll(rootsBeforeResourcePatterns);
-    if (!resourceClassRoots.isEmpty()) {
-      final Set<String> ownedRoots = new HashSet<>();
-      for (final ArtifactFileRef candidate : candidates) {
-        ownedRoots.clear();
-        ownedRoots.addAll(resourceClassRoots);
-        ownedRoots.retainAll(scanContext.logicalClasses(Optional.of(candidate.filePath())));
-        if (!ownedRoots.isEmpty()) {
-          scansByPath.computeIfPresent(
-              candidate.filePath(), (ignored, scan) -> scan.withAdditionalClassRoots(ownedRoots));
-        }
-      }
-    }
+    routedClassRoots.addAll(resourceClassRoots);
+    addOwnerClassRoots(routedClassRoots, candidates, scanContext, scansByPath);
     final Set<ArtifactCoordinate> resourceProviderArtifacts = new HashSet<>();
     for (final ArtifactFileRef candidate : candidates) {
       if (resourceProviderPaths.contains(candidate.filePath().toRealPath())) {
@@ -1082,6 +1080,27 @@ final class MavenElisionService {
         unprovenRootsByCoordinate,
         provenServiceInterfaces,
         NativeImageConsumedInput.ordered(consumedInputs));
+  }
+
+  private static void addOwnerClassRoots(
+      final Set<String> roots,
+      final List<ArtifactFileRef> candidates,
+      final NativeImageScanContext scanContext,
+      final Map<Path, DependencyDynamicRoots.RootScan> scansByPath)
+      throws IOException {
+    if (roots.isEmpty()) {
+      return;
+    }
+    final Set<String> ownedRoots = new HashSet<>();
+    for (final ArtifactFileRef candidate : candidates) {
+      ownedRoots.clear();
+      ownedRoots.addAll(roots);
+      ownedRoots.retainAll(scanContext.logicalClasses(Optional.of(candidate.filePath())));
+      if (!ownedRoots.isEmpty()) {
+        scansByPath.computeIfPresent(
+            candidate.filePath(), (ignored, scan) -> scan.withAdditionalClassRoots(ownedRoots));
+      }
+    }
   }
 
   private static Set<String> requiredClassesForTrimming(

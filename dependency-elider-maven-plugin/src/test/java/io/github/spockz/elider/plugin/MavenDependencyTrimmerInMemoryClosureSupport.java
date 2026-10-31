@@ -205,6 +205,11 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     return fixture(false, false, false, false, 21, RUNTIME_SCOPE);
   }
 
+  /** Builds runtime A without bytecode links to resource-only B. */
+  protected Fixture fixtureWithRuntimeFirstAndResourceOnlySecond() throws IOException {
+    return fixture(false, false, true, false, 21, RUNTIME_SCOPE);
+  }
+
   /** Builds a fixture whose entry class has an unresolved optional ASM type. */
   protected Fixture fixtureWithOptionalAsmReference() throws IOException {
     return fixture(false, false, false, true);
