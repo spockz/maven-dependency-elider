@@ -73,14 +73,6 @@ public final class AnalyzeMojo extends AbstractMojo {
   @Parameter(property = "elide.failOnUnsupportedModuleInfo", defaultValue = DEFAULT_FALSE)
   private boolean failOnUnsupportedModuleInfo;
 
-  /** Names of additional non-root native-image arguments to allow. */
-  @Parameter(property = "elide.allowedNativeImageArgs")
-  private List<String> allowedNativeImageArgs;
-
-  /** Fails when native-image metadata contains an unmodeled argument. */
-  @Parameter(property = "elide.failOnUnsupportedNativeImageArgs", defaultValue = "true")
-  private boolean failOnUnsupportedNativeImageArgs = true;
-
   /** Retains unproven ServiceLoader dynamic roots declared in META-INF/services/. */
   @Parameter(property = "elide.conservativeServiceLoaderRoots", defaultValue = "true")
   private boolean conservativeServiceLoaderRoots = true;
@@ -161,8 +153,6 @@ public final class AnalyzeMojo extends AbstractMojo {
                       conservativeServiceLoaderRoots,
                       trimWorkers,
                       mrjarStrategy,
-                      allowedNativeImageArgs,
-                      failOnUnsupportedNativeImageArgs,
                       productionClassesComplete,
                       false));
       MavenClassUsageReportWriter.write(

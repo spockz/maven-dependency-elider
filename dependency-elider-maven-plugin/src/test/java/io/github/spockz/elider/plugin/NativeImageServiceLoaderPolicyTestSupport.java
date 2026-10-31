@@ -67,11 +67,7 @@ import java.util.Set;
       throws IOException {
     final NativeImageScanContext context = NativeImageScanContext.create(candidates, null);
     return MavenElisionService.dynamicRoots(
-        candidates,
-        (path, scanContext) -> DependencyDynamicRoots.scan(path, scanContext, Set.of(), true),
-        context,
-        Set.of(),
-        conservativeFallback);
+        candidates, DependencyDynamicRoots::scan, context, Set.of(), conservativeFallback);
   }
 
   /* package */ static void checkInvalidForms(final Path directory) throws IOException {
@@ -89,7 +85,7 @@ import java.util.Set;
             "-H:ServiceLoaderFeatureExcludeServiceProviders=",
             "-H:ServiceLoaderFeatureExcludeServiceProviders=org.example..Provider")) {
       final Path malformed = archive(directory, "bad-" + argument.hashCode() + ".jar", argument);
-      assertThatThrownBy(() -> DependencyDynamicRoots.scan(malformed, Set.of(), false))
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(malformed))
           .as(argument)
           .isInstanceOf(IOException.class)
           .hasMessageContaining(expectedDiagnostic(argument));

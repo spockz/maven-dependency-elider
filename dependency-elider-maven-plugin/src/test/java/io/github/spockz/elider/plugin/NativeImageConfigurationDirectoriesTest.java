@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** Exercises Native Image configuration directories. */
@@ -137,7 +136,7 @@ import org.junit.jupiter.api.Test;
     final NativeImageScanContext context =
         NativeImageScanContext.create(
             List.of(candidate(declaringArtifact, declaring)), temporaryDirectory);
-    return DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    return DependencyDynamicRoots.scan(declaring, context);
   }
 
   private ArtifactFileRef candidate(final String artifact, final Path path) throws IOException {

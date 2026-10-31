@@ -77,8 +77,6 @@ final class MavenElisionService {
       boolean conservativeServiceLoaderRoots,
       int trimWorkers,
       String mrjarStrategy,
-      List<String> allowedNativeImageArgs,
-      boolean failOnUnsupportedNativeImageArgs,
       boolean productionClassesComplete,
       boolean trustedProcessClassesContext) {
     AnalysisOptions {
@@ -90,7 +88,6 @@ final class MavenElisionService {
         throw new IllegalArgumentException(
             "elide.mrjarStrategy must be vertical-shading or pass-through");
       }
-      allowedNativeImageArgs = canonicalAllowedNativeImageArgs(allowedNativeImageArgs);
     }
 
     AnalysisOptions(
@@ -123,8 +120,6 @@ final class MavenElisionService {
           conservativeServiceLoaderRoots,
           trimWorkers,
           mrjarStrategy,
-          List.of(),
-          true,
           false,
           false);
     }
@@ -157,8 +152,6 @@ final class MavenElisionService {
           conservativeServiceLoaderRoots,
           MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
           MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-          List.of(),
-          true,
           false,
           false);
     }
@@ -192,8 +185,6 @@ final class MavenElisionService {
           conservativeServiceLoaderRoots,
           MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
           mrjarStrategy,
-          List.of(),
-          true,
           false,
           false);
     }
@@ -227,121 +218,6 @@ final class MavenElisionService {
           conservativeServiceLoaderRoots,
           trimWorkers,
           MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-          List.of(),
-          true,
-          false,
-          false);
-    }
-
-    AnalysisOptions(
-        final List<File> traceFiles,
-        final List<String> excludedArtifacts,
-        final File productionOutput,
-        final MavenSession session,
-        final boolean sourceRootsComplete,
-        final boolean trimJars,
-        final List<String> explicitTrimRoots,
-        final boolean failOnUnsupportedMultiRelease,
-        final List<String> explicitPassThroughArtifacts,
-        final boolean failOnUnsupportedModuleInfo,
-        final boolean testResolutionContext,
-        final boolean conservativeServiceLoaderRoots,
-        final int trimWorkers,
-        final String mrjarStrategy,
-        final boolean productionClassesComplete,
-        final boolean trustedProcessClassesContext) {
-      this(
-          traceFiles,
-          excludedArtifacts,
-          productionOutput,
-          session,
-          sourceRootsComplete,
-          trimJars,
-          explicitTrimRoots,
-          failOnUnsupportedMultiRelease,
-          explicitPassThroughArtifacts,
-          failOnUnsupportedModuleInfo,
-          testResolutionContext,
-          conservativeServiceLoaderRoots,
-          trimWorkers,
-          mrjarStrategy,
-          List.of(),
-          true,
-          productionClassesComplete,
-          trustedProcessClassesContext);
-    }
-
-    AnalysisOptions(
-        final List<File> traceFiles,
-        final List<String> excludedArtifacts,
-        final File productionOutput,
-        final MavenSession session,
-        final boolean sourceRootsComplete,
-        final boolean trimJars,
-        final List<String> explicitTrimRoots,
-        final boolean failOnUnsupportedMultiRelease,
-        final List<String> explicitPassThroughArtifacts,
-        final boolean failOnUnsupportedModuleInfo,
-        final boolean testResolutionContext,
-        final boolean conservativeServiceLoaderRoots,
-        final int trimWorkers,
-        final List<String> allowedNativeImageArgs,
-        final boolean failOnUnsupportedNativeImageArgs) {
-      this(
-          traceFiles,
-          excludedArtifacts,
-          productionOutput,
-          session,
-          sourceRootsComplete,
-          trimJars,
-          explicitTrimRoots,
-          failOnUnsupportedMultiRelease,
-          explicitPassThroughArtifacts,
-          failOnUnsupportedModuleInfo,
-          testResolutionContext,
-          conservativeServiceLoaderRoots,
-          trimWorkers,
-          MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-          allowedNativeImageArgs,
-          failOnUnsupportedNativeImageArgs,
-          false,
-          false);
-    }
-
-    AnalysisOptions(
-        final List<File> traceFiles,
-        final List<String> excludedArtifacts,
-        final File productionOutput,
-        final MavenSession session,
-        final boolean sourceRootsComplete,
-        final boolean trimJars,
-        final List<String> explicitTrimRoots,
-        final boolean failOnUnsupportedMultiRelease,
-        final List<String> explicitPassThroughArtifacts,
-        final boolean failOnUnsupportedModuleInfo,
-        final boolean testResolutionContext,
-        final boolean conservativeServiceLoaderRoots,
-        final int trimWorkers,
-        final String mrjarStrategy,
-        final List<String> allowedNativeImageArgs,
-        final boolean failOnUnsupportedNativeImageArgs) {
-      this(
-          traceFiles,
-          excludedArtifacts,
-          productionOutput,
-          session,
-          sourceRootsComplete,
-          trimJars,
-          explicitTrimRoots,
-          failOnUnsupportedMultiRelease,
-          explicitPassThroughArtifacts,
-          failOnUnsupportedModuleInfo,
-          testResolutionContext,
-          conservativeServiceLoaderRoots,
-          trimWorkers,
-          mrjarStrategy,
-          allowedNativeImageArgs,
-          failOnUnsupportedNativeImageArgs,
           false,
           false);
     }
@@ -373,29 +249,9 @@ final class MavenElisionService {
           true,
           MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
           MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-          List.of(),
-          true,
           false,
           false);
     }
-  }
-
-  private static List<String> canonicalAllowedNativeImageArgs(final List<String> configured) {
-    if (configured == null) {
-      return List.of();
-    }
-    final Set<String> names = new java.util.TreeSet<>();
-    for (final String name : configured) {
-      if (name == null
-          || name.isBlank()
-          || name.contains("=")
-          || name.chars().anyMatch(Character::isWhitespace)) {
-        throw new IllegalArgumentException(
-            "allowedNativeImageArgs entries must be nonblank argument names without '='");
-      }
-      names.add(name);
-    }
-    return List.copyOf(names);
   }
 
   /** Creates the stateless Maven adapter. */
@@ -475,15 +331,7 @@ final class MavenElisionService {
 
   PreparedAnalysis prepare(final MavenProject project, final AnalysisOptions options)
       throws IOException, MojoFailureException {
-    return prepare(
-        project,
-        options,
-        (path, context) ->
-            DependencyDynamicRoots.scan(
-                path,
-                context,
-                Set.copyOf(options.allowedNativeImageArgs()),
-                options.failOnUnsupportedNativeImageArgs()));
+    return prepare(project, options, DependencyDynamicRoots::scan);
   }
 
   PreparedAnalysis prepare(
@@ -1134,12 +982,7 @@ final class MavenElisionService {
 
   static DynamicRootInputs dynamicRoots(final List<ArtifactFileRef> candidates) throws IOException {
     final NativeImageScanContext context = NativeImageScanContext.create(candidates, null);
-    return dynamicRoots(
-        candidates,
-        (path, scanContext) -> DependencyDynamicRoots.scan(path, scanContext, Set.of(), true),
-        context,
-        Set.of(),
-        true);
+    return dynamicRoots(candidates, DependencyDynamicRoots::scan, context, Set.of(), true);
   }
 
   static DynamicRootInputs dynamicRoots(
@@ -1148,7 +991,7 @@ final class MavenElisionService {
         candidates, scanner, NativeImageScanContext.create(candidates, null), Set.of(), true);
   }
 
-  // Reuse per-path scans while applying each artifact's fallback policy.
+  // Reuse per-path scans while aggregating descriptor roots and resource providers.
   @SuppressWarnings({"PMD.UseConcurrentHashMap", "PMD.CognitiveComplexity"})
   static DynamicRootInputs dynamicRoots(
       final List<ArtifactFileRef> candidates,
@@ -1183,27 +1026,8 @@ final class MavenElisionService {
       }
       resourceProviderPaths.addAll(scan.resourceProviders());
       resourcePatterns.add(scan.resourcePatterns());
-      if (scan.requiresPassThrough() || scan.requiresArtifactRetention()) {
+      if (scan.requiresArtifactRetention()) {
         declaringArtifacts.add(candidate.coordinate());
-      }
-      if (scan.requiresPassThrough()) {
-        for (final NativeImageDynamicRoots.UnsupportedArgument argument :
-            scan.unsupportedNativeImageArgs()) {
-          System.getLogger(MavenElisionService.class.getName())
-              .log(
-                  System.Logger.Level.WARNING,
-                  "Retaining native-image artifact "
-                      + candidate.coordinate()
-                      + " at "
-                      + candidate.filePath()
-                      + " without trimming: "
-                      + argument.name()
-                      + " in "
-                      + argument.entry()
-                      + " (full argument: '"
-                      + argument.fullArgument()
-                      + "')");
-        }
       }
     }
     final NativeImageServiceLoaderPolicy.Selection serviceLoaderPolicy =
@@ -1225,8 +1049,23 @@ final class MavenElisionService {
             candidate.coordinate(), effective.unprovenConservativeRoots());
       }
     }
+    final Set<String> rootsBeforeResourcePatterns = new HashSet<>(classNames);
     NativeImagePolicyRoots.applyResourcePatterns(
         resourcePatterns, scanContext, classNames, resourceProviderPaths);
+    final Set<String> resourceClassRoots = new HashSet<>(classNames);
+    resourceClassRoots.removeAll(rootsBeforeResourcePatterns);
+    if (!resourceClassRoots.isEmpty()) {
+      final Set<String> ownedRoots = new HashSet<>();
+      for (final ArtifactFileRef candidate : candidates) {
+        ownedRoots.clear();
+        ownedRoots.addAll(resourceClassRoots);
+        ownedRoots.retainAll(scanContext.logicalClasses(Optional.of(candidate.filePath())));
+        if (!ownedRoots.isEmpty()) {
+          scansByPath.computeIfPresent(
+              candidate.filePath(), (ignored, scan) -> scan.withAdditionalClassRoots(ownedRoots));
+        }
+      }
+    }
     final Set<ArtifactCoordinate> resourceProviderArtifacts = new HashSet<>();
     for (final ArtifactFileRef candidate : candidates) {
       if (resourceProviderPaths.contains(candidate.filePath().toRealPath())) {

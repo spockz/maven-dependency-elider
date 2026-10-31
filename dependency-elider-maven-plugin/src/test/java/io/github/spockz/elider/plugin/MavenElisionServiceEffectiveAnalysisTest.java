@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.TraceData;
-import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -178,210 +177,40 @@ final class MavenElisionServiceEffectiveAnalysisTest
   }
 
   @Test
-  void unsupportedNativeImageArchiveIsPinnedWhileSiblingTrimAndElisionProceed() throws Exception {
-    final Fixture fixture = fixtureWithRuntimeA();
-    fixture.addUnsupportedNativeImageArgsToA();
-    final Path fallbackPath = fixture.snapshot("a").filePath();
-    final String fallbackDigest =
-        io.github.spockz.elider.trimmer.ArtifactDigests.read(fallbackPath).sha256();
+  void unknownNativeImageOptionKeepsModeledRootWhileOtherClassesAndArtifactsAreElided()
+      throws Exception {
+    final Fixture fixture = fixture(false);
+    fixture.addUnknownNativeImageArgsToA();
+    final Path trace = temporaryDirectory.resolve("native-image-unknown-mixed.lst");
+    Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\n");
     final MavenElisionService service = new MavenElisionService();
-    final Path closureTrace = temporaryDirectory.resolve("native-image-fallback-closure.lst");
-    Files.writeString(closureTrace, "closure/c/Leaf\n");
-    final MavenElisionService.PreparedAnalysis closureRaw =
-        service.prepare(
-            fixture.mavenProject(),
-            new MavenElisionService.AnalysisOptions(
-                List.of(closureTrace.toFile()),
-                List.of(),
-                null,
-                null,
-                false,
-                true,
-                List.of(),
-                false,
-                List.of(),
-                false,
-                true,
-                true,
-                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                List.of(),
-                false));
-    assertThat(closureRaw.rawDecision().retainedArtifacts())
-        .contains(fixture.coordinate("a"), fixture.coordinate("c"))
-        .doesNotContain(fixture.coordinate("b"));
-    assertThat(closureRaw.dynamicRootInputs().classNames()).isEmpty();
-    assertThat(closureRaw.dynamicRootInputs().scansByPath().get(fallbackPath).requiresPassThrough())
-        .isTrue();
-    final ResolverArtifactGraphCapturePair closurePair =
-        MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
-    final EffectiveGraphPolicy.Evaluation closurePolicy =
-        EffectiveGraphPolicy.evaluatePair(closurePair, closureRaw.rawDecision());
-    final MavenElisionService.EffectiveAnalysis closureEffective =
-        service.finishAnalysis(
-            MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
-                closureRaw,
-                new MavenElisionGraphBinding.Result(
-                    closurePolicy,
-                    closureRaw.graphBinding().inventoryFingerprint(),
-                    closureRaw.graphBinding().operationFingerprint(),
-                    closurePair)));
-    assertThat(closureEffective.effectiveDecision().retainedArtifacts())
-        .contains(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c"));
-
-    final Path closureTargetTrace =
-        temporaryDirectory.resolve("native-image-fallback-untraced-link.lst");
-    Files.writeString(closureTargetTrace, "closure/c/Leaf\nclosure/b/Unused\n");
-    assertThat(Files.readAllLines(closureTargetTrace))
-        .contains("closure/b/Unused")
-        .doesNotContain("closure/b/Middle");
-    final MavenElisionService.PreparedAnalysis closureTargetRaw =
-        service.prepare(
-            fixture.mavenProject(),
-            new MavenElisionService.AnalysisOptions(
-                List.of(closureTargetTrace.toFile()),
-                List.of(),
-                null,
-                null,
-                false,
-                true,
-                List.of(),
-                false,
-                List.of(),
-                false,
-                true,
-                true,
-                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                List.of(),
-                false));
-    assertThat(closureTargetRaw.rawDecision().retainedArtifacts())
-        .contains(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c"));
-    final ResolverArtifactGraphCapturePair closureTargetPair =
-        MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
-    final EffectiveGraphPolicy.Evaluation closureTargetPolicy =
-        EffectiveGraphPolicy.evaluatePair(closureTargetPair, closureTargetRaw.rawDecision());
-    final MavenElisionService.EffectiveAnalysis closureTargetEffective =
-        service.finishAnalysis(
-            MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
-                closureTargetRaw,
-                new MavenElisionGraphBinding.Result(
-                    closureTargetPolicy,
-                    closureTargetRaw.graphBinding().inventoryFingerprint(),
-                    closureTargetRaw.graphBinding().operationFingerprint(),
-                    closureTargetPair)));
-    assertThat(
-            closureTargetEffective
-                .trimAnalysis()
-                .candidateAnalyses()
-                .get(fixture.coordinate("b"))
-                .retainedClasses())
-        .contains("closure/b/Middle", "closure/b/Unused");
-    assertThat(closureTargetEffective.trimAnalysis().candidateRoots().get(fixture.coordinate("b")))
-        .contains(MIDDLE_CLASS, "closure.b.Unused");
-
-    final Path trace = temporaryDirectory.resolve("native-image-fallback-runtime.lst");
-    Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\nclosure/b/Middle\n");
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
-            List.of(trace.toFile()),
-            List.of(),
-            null,
-            null,
-            false,
-            true,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true,
-            true,
-            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-            List.of(),
-            false);
     final MavenElisionService.PreparedAnalysis raw =
-        service.prepare(fixture.mavenProject(), options);
-    assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("a"));
-    assertThat(raw.dynamicRootInputs().scansByPath().get(fallbackPath).requiresPassThrough())
-        .isTrue();
+        service.prepare(
+            fixture.mavenProject(),
+            MavenElisionServiceEffectiveAnalysisFixtures.options(
+                List.of(trace.toFile()), null, true));
+
+    assertThat(raw.dynamicRootInputs().classNames()).contains(ENTRY_CLASS);
+    assertThat(raw.dynamicRootInputs().scansByPath().get(fixture.snapshot("a").filePath()).roots())
+        .contains(ENTRY_CLASS)
+        .doesNotContain("closure.a.Extra");
+
     final ResolverArtifactGraphCapturePair pair =
         MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
     final EffectiveGraphPolicy.Evaluation policy =
         EffectiveGraphPolicy.evaluatePair(pair, raw.rawDecision());
-    final MavenElisionService.PreparedAnalysis prepared =
-        MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
-            raw,
-            new MavenElisionGraphBinding.Result(
-                policy,
-                raw.graphBinding().inventoryFingerprint(),
-                raw.graphBinding().operationFingerprint(),
-                pair));
-    final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
-
-    assertThat(effective.effectiveDecision().retainedArtifacts())
-        .contains(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c"));
-    assertThat(effective.effectiveDecision().elidedArtifacts()).contains(fixture.coordinate("e"));
-    assertThat(effective.trimAnalysis().candidateAnalyses())
-        .doesNotContainKey(fixture.coordinate("a"));
-    final MavenDependencyTrimmer.TrimResult trimmed =
-        MavenDependencyTrimmer.trimEffectiveOutputs(effective);
-    final ArtifactTrimRecord siblingRecord =
-        trimmed.records().stream()
-            .filter(record -> record.coordinate().equals(fixture.coordinate("b")))
-            .findFirst()
-            .orElseThrow();
-
-    assertThat(trimmed.records())
-        .noneMatch(record -> record.coordinate().equals(fixture.coordinate("a")));
-    assertThat(io.github.spockz.elider.trimmer.ArtifactDigests.read(fallbackPath).sha256())
-        .isEqualTo(fallbackDigest);
-    assertThat(siblingRecord.retainedClasses()).isLessThan(siblingRecord.totalClasses());
-    try (java.util.jar.JarFile output =
-        new java.util.jar.JarFile(siblingRecord.trimmedPath().toFile())) {
-      assertThat(output.getEntry("closure/b/Unused.class")).isNull();
-      assertThat(output.getEntry("closure/b/Middle.class")).isNotNull();
-    }
-
-    final MavenElisionService.AnalysisOptions allowlistedOptions =
-        new MavenElisionService.AnalysisOptions(
-            List.of(trace.toFile()),
-            List.of(),
-            null,
-            null,
-            false,
-            true,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true,
-            true,
-            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-            List.of("-H:CustomUnknown"),
-            true);
-    final MavenElisionService.PreparedAnalysis allowlistedRaw =
-        service.prepare(fixture.mavenProject(), allowlistedOptions);
-    assertThat(
-            allowlistedRaw
-                .dynamicRootInputs()
-                .scansByPath()
-                .get(fallbackPath)
-                .requiresPassThrough())
-        .isFalse();
-    final ResolverArtifactGraphCapturePair allowlistedPair =
-        MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
-    final EffectiveGraphPolicy.Evaluation allowlistedPolicy =
-        EffectiveGraphPolicy.evaluatePair(allowlistedPair, allowlistedRaw.rawDecision());
-    final MavenElisionService.EffectiveAnalysis allowlistedEffective =
+    final MavenElisionService.EffectiveAnalysis effective =
         service.finishAnalysis(
             MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
-                allowlistedRaw,
+                raw,
                 new MavenElisionGraphBinding.Result(
-                    allowlistedPolicy,
-                    allowlistedRaw.graphBinding().inventoryFingerprint(),
-                    allowlistedRaw.graphBinding().operationFingerprint(),
-                    allowlistedPair)));
-    final MavenDependencyTrimmer.TrimResult afterPolicySwitch =
-        MavenDependencyTrimmer.trimEffectiveOutputs(allowlistedEffective);
-    assertThat(afterPolicySwitch.cacheHits()).isZero();
+                    policy,
+                    raw.graphBinding().inventoryFingerprint(),
+                    raw.graphBinding().operationFingerprint(),
+                    pair)));
+    assertThat(effective.effectiveDecision().elidedArtifacts()).contains(fixture.coordinate("e"));
+    assertThat(effective.trimAnalysis().candidateRoots().get(fixture.coordinate("a")))
+        .contains(ENTRY_CLASS);
   }
 
   @Test

@@ -157,12 +157,53 @@ final class AnalyzeMojoTest {
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "trimJars", false);
-    set(mojo, "failOnUnsupportedNativeImageArgs", false);
     set(mojo, "reportFile", tempDir.resolve("native-image-analysis.json").toFile());
 
     mojo.execute();
 
     assertThat(project.getArtifacts()).contains(artifact);
+    assertThat(artifact.getFile().toPath()).isEqualTo(archive);
+  }
+
+  @Test
+  void analyzeRejectsHiddenNativeImageIndirectionWithoutMutatingArtifacts()
+      throws IOException, ReflectiveOperationException {
+    final Path archive = tempDir.resolve("native-image-indirection-analysis.jar");
+    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(archive))) {
+      output.putNextEntry(new ZipEntry("used/Sample.class"));
+      output.write(new byte[] {0});
+      output.closeEntry();
+      output.putNextEntry(new ZipEntry("META-INF/native-image/test/native-image.properties"));
+      output.write("Args = -J--patch-module=\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      output.closeEntry();
+    }
+    final Artifact artifact =
+        new DefaultArtifact(
+            "org.example",
+            "native-image-indirection",
+            "1.0",
+            "compile",
+            "jar",
+            null,
+            new DefaultArtifactHandler("jar"));
+    artifact.setFile(archive.toFile());
+    final Set<Artifact> artifacts = new LinkedHashSet<>(Set.of(artifact));
+    final MavenProject project = new MavenProject();
+    project.setArtifacts(artifacts);
+    project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
+    final Path trace = tempDir.resolve("native-image-indirection-trace.lst");
+    Files.writeString(trace, "used/Sample\n");
+    final AnalyzeMojo mojo = new AnalyzeMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "reportFile", tempDir.resolve("native-image-indirection-analysis.json").toFile());
+
+    assertThatThrownBy(mojo::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("native-image indirection")
+        .hasMessageContaining("forwarded launcher indirection");
+    assertThat(project.getArtifacts()).isSameAs(artifacts).containsExactly(artifact);
+    assertThat(project.getDependencyArtifacts()).containsExactly(artifact);
     assertThat(artifact.getFile().toPath()).isEqualTo(archive);
   }
 

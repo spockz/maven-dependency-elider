@@ -94,8 +94,7 @@ import java.util.jar.JarOutputStream;
     }
     final NativeImageScanContext context =
         NativeImageScanContext.create(candidates, invocationBase);
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
     final Set<String> roots = new HashSet<>(scan.roots());
     final Set<Path> resourceProviders = new HashSet<>(scan.resourceProviders());
     NativeImagePolicyRoots.applyResourcePatterns(

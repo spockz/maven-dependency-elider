@@ -103,9 +103,7 @@ import org.junit.jupiter.api.io.TempDir;
                     frenchClassCandidate,
                     localeFamilyCandidate,
                     prefixCollisionCandidate),
-                null),
-            Set.of(),
-            true);
+                null));
 
     assertThat(List.of(scan.roots(), scan.requiresArtifactRetention(), scan.resourceProviders()))
         .containsExactly(
@@ -150,9 +148,7 @@ import org.junit.jupiter.api.io.TempDir;
     final DependencyDynamicRoots.RootScan scan =
         DependencyDynamicRoots.scan(
             declaring,
-            NativeImageScanContext.create(List.of(declaringCandidate, providerCandidate), null),
-            Set.of(),
-            true);
+            NativeImageScanContext.create(List.of(declaringCandidate, providerCandidate), null));
 
     assertThat(List.of(scan.roots(), scan.resourceProviders()))
         .containsExactly(
@@ -211,11 +207,7 @@ import org.junit.jupiter.api.io.TempDir;
       final NativeImageScanContext context = NativeImageScanContext.create(candidates, null);
       final MavenElisionService.DynamicRootInputs roots =
           MavenElisionService.dynamicRoots(
-              candidates,
-              (path, scanContext) -> DependencyDynamicRoots.scan(path, scanContext, Set.of(), true),
-              context,
-              Set.of(),
-              false);
+              candidates, DependencyDynamicRoots::scan, context, Set.of(), false);
 
       final Set<ArtifactCoordinate> expectedProviders =
           descriptor.contains("\"globs\"")

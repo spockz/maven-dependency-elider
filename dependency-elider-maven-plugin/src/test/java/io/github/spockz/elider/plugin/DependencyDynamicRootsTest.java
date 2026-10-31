@@ -191,7 +191,6 @@ final class DependencyDynamicRootsTest {
     final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
     assertThat(scan.roots()).contains("okhttp3.internal.graal.OkHttpFeature");
-    assertThat(scan.requiresPassThrough()).isFalse();
   }
 
   @Test
@@ -225,7 +224,6 @@ final class DependencyDynamicRootsTest {
             "org.example.HObjectTrace",
             "org.example.Provider",
             "org.example.SecurityType");
-    assertThat(scan.requiresPassThrough()).isFalse();
   }
 
   @Test
@@ -286,11 +284,10 @@ final class DependencyDynamicRootsTest {
     final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
     assertThat(scan.roots()).contains("org.example.Feature");
-    assertThat(scan.requiresPassThrough()).isFalse();
   }
 
   @Test
-  void stripsQuotesAndAllowsArgumentsByName() throws IOException {
+  void stripsQuotesAndAcceptsUnknownArgumentsWithoutRoots() throws IOException {
     final Path jar =
         nativeImageJar(
             "Args = \"-H:ReflectionConfigurationResources=${.}/reflect-config.json\" "
@@ -298,31 +295,19 @@ final class DependencyDynamicRootsTest {
             "META-INF/native-image/test/reflect-config.json",
             "[{\"name\":\"org.example.Reflective\"}]");
 
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(
-            jar, Set.of("-H:CustomFlag", "-H:ReflectionConfigurationResources"), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
-    assertThat(scan.requiresPassThrough()).isFalse();
     assertThat(scan.roots()).contains("org.example.Reflective");
   }
 
   @Test
-  void fallbackMarksUnsupportedArchiveForPassThroughAndStrictErrorIsActionable()
-      throws IOException {
-    final Path jar = nativeImageJar("Args = -H:UnknownOption=value\n");
+  void acceptsUnknownAndAuditedNoRootArgumentsWithoutDeclaringRoots() throws IOException {
+    final Path jar = nativeImageJar("Args = -H:UnknownFlag=value -march=native --pgo --gc=G1\n");
 
-    final DependencyDynamicRoots.RootScan fallback =
-        DependencyDynamicRoots.scan(jar, Set.of(), false);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
-    assertThat(fallback.requiresPassThrough()).isTrue();
-    assertThat(fallback.declaresClassRoots()).isFalse();
-    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of(), true))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("-H:UnknownOption")
-        .hasMessageContaining("full argument: '-H:UnknownOption=value'")
-        .hasMessageContaining("META-INF/native-image/test/native-image.properties")
-        .hasMessageContaining("<allowedNativeImageArgs>")
-        .hasMessageContaining("Or via CLI: -Delide.allowedNativeImageArgs=-H:UnknownOption");
+    assertThat(scan.roots()).isEmpty();
+    assertThat(scan.declaresClassRoots()).isFalse();
   }
 
   @Test
@@ -336,23 +321,9 @@ final class DependencyDynamicRootsTest {
   @Test
   void doesNotAllowBareModeledRootNamesToBypassValidation() throws IOException {
     final Path jar = nativeImageJar("Args = --features\n");
-    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of("--features"), false))
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("root option has no value");
-  }
-
-  @Test
-  void bindsAllowlistAndStrictnessToNativeImageScanPolicy() throws IOException {
-    final Path jar = nativeImageJar("Args = -H:CustomFlag=value\n");
-    final DependencyDynamicRoots.RootScan allowed =
-        DependencyDynamicRoots.scan(jar, Set.of("-H:CustomFlag"), true);
-    final DependencyDynamicRoots.RootScan permissive =
-        DependencyDynamicRoots.scan(jar, Set.of(), false);
-
-    assertThat(allowed.nativeImagePolicy()).isNotEqualTo(permissive.nativeImagePolicy());
-    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of(), true))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("-H:CustomFlag");
   }
 
   @Test
@@ -411,7 +382,6 @@ final class DependencyDynamicRootsTest {
             "kotlin.KotlinVersion$Companion",
             "org.example.Widget",
             "org.example.MultiLevel");
-    assertThat(scan.requiresPassThrough()).isFalse();
   }
 
   @Test
@@ -465,7 +435,6 @@ final class DependencyDynamicRootsTest {
             "org.example.LambdaApi",
             "org.example.BundleGate",
             "org.example.Callback");
-    assertThat(scan.requiresPassThrough()).isFalse();
   }
 
   @Test
@@ -869,7 +838,6 @@ final class DependencyDynamicRootsTest {
             "io.netty.handler.codec.http.HttpObjectEncoder",
             "io.netty.handler.codec.http.websocketx.WebSocket00FrameEncoder",
             "io.netty.handler.codec.http.websocketx.extensions.compression.DeflateDecoder");
-    assertThat(scan.requiresPassThrough()).isFalse();
   }
 
   @Test
@@ -882,7 +850,6 @@ final class DependencyDynamicRootsTest {
         DependencyDynamicRoots.scan(compressionJar);
     assertThat(compressionScan.roots())
         .contains("io.netty.handler.codec.compression.BrotliDecoder");
-    assertThat(compressionScan.requiresPassThrough()).isFalse();
 
     final Path dnsJar =
         nativeImageJarWithClasses(
@@ -897,7 +864,6 @@ final class DependencyDynamicRootsTest {
         .contains(
             "io.netty.resolver.dns.DefaultDnsServerAddressStreamProvider",
             "io.netty.resolver.dns.DnsServerAddressStreamProviders$DefaultProviderHolder");
-    assertThat(dnsScan.requiresPassThrough()).isFalse();
   }
 
   @Test
@@ -932,7 +898,6 @@ final class DependencyDynamicRootsTest {
     assertThat(scan.roots())
         .contains("io.netty.channel.epoll.Native", "org.example.Message_fr")
         .doesNotContain("org.example.Messages");
-    assertThat(scan.requiresPassThrough()).isFalse();
   }
 
   @Test
@@ -945,11 +910,22 @@ final class DependencyDynamicRootsTest {
     final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
 
     assertThat(scan.roots()).isEmpty();
-    assertThat(scan.requiresPassThrough()).isFalse();
   }
 
   @Test
-  void rejectsAuditedIndirectionsBeforeUnknownArgumentFallback() throws IOException {
+  void acceptsUnknownAndAuditedNoRootOptionsWithoutAddingRoots() throws IOException {
+    final Path jar =
+        nativeImageJar(
+            "Args = -H:CustomUnknown=value -march=native --pgo --gc=G1 "
+                + "-Dcustom.value=@file\n");
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+
+    assertThat(scan.roots()).isEmpty();
+  }
+
+  @Test
+  void rejectsAuditedIndirectionsBeforeUnknownArgumentAcceptance() throws IOException {
     final List<String> indirections =
         List.of(
             "@args.txt",
@@ -973,13 +949,16 @@ final class DependencyDynamicRootsTest {
             "-H:Module=example.module",
             "-J--class-path=deps/*",
             "-J--module-path=modules",
+            "-J--upgrade-module-path=modules",
+            "-J--patch-module=example.module=module.jar",
+            "-J-Xbootclasspath/a:boot.jar",
             "-J-javaagent:agent.jar",
             "-J-agentlib:jdwp",
             "MainClass");
 
     for (final String argument : indirections) {
       final Path jar = nativeImageJar("Args = " + argument + "\n");
-      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of(), false))
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
           .as(argument)
           .isInstanceOf(IOException.class)
           .hasMessageContaining("native-image indirection");
@@ -1000,6 +979,15 @@ final class DependencyDynamicRootsTest {
             "-jar",
             "-m",
             "-m=",
+            "-J--upgrade-module-path",
+            "-J--upgrade-module-path=",
+            "-J--upgrade-module-path:modules",
+            "-J--patch-module",
+            "-J--patch-module=",
+            "-J--patch-module:example.module=module.jar",
+            "-J-Xbootclasspath/a",
+            "-J-Xbootclasspath/a:",
+            "-J-Xbootclasspath/a=boot.jar",
             "--module=",
             "--configurations-path=",
             "--exclude-config=",
@@ -1013,21 +1001,29 @@ final class DependencyDynamicRootsTest {
             "-H:Module=");
     for (final String argument : malformed) {
       final Path jar = nativeImageJar("Args = " + argument + "\n");
-      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar, Set.of(), false))
+      assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
           .as(argument)
           .isInstanceOf(IOException.class)
           .hasMessageContaining("native-image indirection");
     }
 
-    final Path allowed =
-        nativeImageJar(
-            "Args = --bundle-create -Version -march=native -pgo -mystery --pgo --gc=G1 "
-                + "-J-Dcustom.value=@file -Dcustom.value=@file "
-                + "-H:UnknownFlag=value -H:IncludeResources=asset@name\\.dat\n");
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(allowed, Set.of(), false);
-
-    assertThat(scan.roots()).isEmpty();
+    final List<String> accepted =
+        List.of(
+            "--bundle-create",
+            "-Version",
+            "-march=native",
+            "-pgo",
+            "-mystery",
+            "-J--upgrade-module-pathx=modules",
+            "--pgo",
+            "--gc=G1",
+            "-J-Dcustom.value=@file",
+            "-Dcustom.value=@file",
+            "-H:UnknownFlag=value",
+            "-H:IncludeResources=asset@name\\.dat");
+    for (final String argument : accepted) {
+      NativeImageIndirectionGuard.validate(argument);
+    }
   }
 
   private Path nativeImageJar(final String args) throws IOException {

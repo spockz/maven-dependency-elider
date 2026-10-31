@@ -198,8 +198,7 @@ import org.junit.jupiter.api.io.TempDir;
               archives[index]));
     }
     final NativeImageScanContext context = NativeImageScanContext.create(candidates, null);
-    final DependencyDynamicRoots.RootScan raw =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan raw = DependencyDynamicRoots.scan(declaring, context);
     final Set<String> roots = new HashSet<>(raw.roots());
     final Set<Path> providers = new HashSet<>(raw.resourceProviders());
     final boolean patternRoots =
@@ -212,8 +211,6 @@ import org.junit.jupiter.api.io.TempDir;
         raw.serviceDescriptors(),
         raw.nonServiceRoots(),
         providers,
-        raw.unsupportedNativeImageArgs(),
-        raw.nativeImagePolicy(),
         raw.consumedInputs(),
         raw.resourcePatterns(),
         raw.serviceLoaderPolicy());

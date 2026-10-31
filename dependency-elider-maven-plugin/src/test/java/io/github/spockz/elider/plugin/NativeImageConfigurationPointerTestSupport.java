@@ -98,9 +98,7 @@ import java.util.Set;
           NativeImageDescriptorKind.FOREIGN,
           new DescriptorFixture("{\"downcalls\":[{\"descriptor\":\"(int)int\"}]}", Set.of()),
           NativeImageDescriptorKind.RESOURCES,
-          new DescriptorFixture(
-              "{\"bundles\":[{\"name\":\"org.example.BundleRoot\"}]}",
-              Set.of("org.example.BundleRoot")));
+          new DescriptorFixture("{\"bundles\":[{\"name\":\"org.example.BundleRoot\"}]}", Set.of()));
 
   private NativeImageConfigurationPointerTestSupport() {
     throw new AssertionError("static fixture holder");

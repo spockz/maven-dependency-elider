@@ -203,8 +203,7 @@ import org.junit.jupiter.api.Test;
             NativeImageScanContextTestSupport.candidate("unmatched", unmatched));
     final NativeImageScanContext context =
         NativeImageScanContext.create(candidates, temporaryDirectory);
-    final DependencyDynamicRoots.RootScan rawScan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan rawScan = DependencyDynamicRoots.scan(declaring, context);
     final Set<String> selectedRoots = new HashSet<>(rawScan.roots());
     final Set<Path> selectedProviders = new HashSet<>(rawScan.resourceProviders());
     NativeImagePolicyRoots.applyResourcePatterns(

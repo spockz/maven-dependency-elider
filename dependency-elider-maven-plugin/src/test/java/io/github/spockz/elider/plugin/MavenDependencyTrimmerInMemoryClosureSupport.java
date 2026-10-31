@@ -380,9 +380,9 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
 
     // Recreate each ZIP entry while appending metadata to the archive under test.
     @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
-    void addUnsupportedNativeImageArgsToA() throws IOException {
+    void addUnknownNativeImageArgsToA() throws IOException {
       final Path path = snapshot("a").filePath();
-      final Path staged = temporaryDirectory.resolve("a-with-unsupported-native-image.jar");
+      final Path staged = temporaryDirectory.resolve("a-with-unknown-native-image.jar");
       try (java.util.jar.JarFile archive = new java.util.jar.JarFile(path.toFile());
           JarOutputStream output = new JarOutputStream(Files.newOutputStream(staged))) {
         final java.util.Enumeration<JarEntry> entries = archive.entries();
@@ -396,7 +396,8 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         }
         output.putNextEntry(new JarEntry("META-INF/native-image/test/native-image.properties"));
         output.write(
-            "Args = -H:CustomUnknown=value\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            "Args = -H:Class=closure.a.Entry -H:CustomUnknown=value\n"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
         output.closeEntry();
       }
       Files.move(staged, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);

@@ -49,8 +49,7 @@ import org.junit.jupiter.api.Test;
                 candidate("provider-a", firstProvider),
                 candidate("provider-b", secondProvider)),
             temporaryDirectory);
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
     NativeImageConfigurationDirectoriesTestSupport.assertResourceRootScan(
         scan, firstProvider, secondProvider);
@@ -71,8 +70,7 @@ import org.junit.jupiter.api.Test;
         NativeImageScanContext.create(
             List.of(candidate(declaringArtifact, declaring), candidate("marker", marker)),
             temporaryDirectory);
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
     NativeImageConfigurationDirectoriesTestSupport.assertEmptyResourceRoot(scan);
   }
 
@@ -83,7 +81,7 @@ import org.junit.jupiter.api.Test;
     final NativeImageScanContext context =
         NativeImageScanContext.create(
             List.of(candidate(declaringArtifact, declaring)), temporaryDirectory);
-    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context, Set.of(), true))
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("resource root is missing");
   }
@@ -105,8 +103,7 @@ import org.junit.jupiter.api.Test;
         NativeImageScanContext.create(
             List.of(candidate(declaringArtifact, declaring), candidate("provider", provider)),
             temporaryDirectory);
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
     assertThat(List.of(scan.roots(), scan.resourceProviders()))
         .containsExactly(
@@ -120,8 +117,7 @@ import org.junit.jupiter.api.Test;
     final NativeImageScanContext context =
         NativeImageScanContext.create(List.of(), temporaryDirectory);
 
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
     NativeImageConfigurationDirectoriesTestSupport.assertEmptyResourceRoot(scan);
   }
@@ -133,7 +129,7 @@ import org.junit.jupiter.api.Test;
     final NativeImageScanContext context =
         NativeImageScanContext.create(
             List.of(candidate(declaringArtifact, declaring)), temporaryDirectory);
-    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context, Set.of(), true))
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Unsupported native-image configuration resource root");
   }
@@ -145,7 +141,7 @@ import org.junit.jupiter.api.Test;
     final NativeImageScanContext context =
         NativeImageScanContext.create(
             List.of(candidate(declaringArtifact, declaring)), temporaryDirectory);
-    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context, Set.of(), true))
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Unsupported native-image configuration resource root");
   }
@@ -183,8 +179,7 @@ import org.junit.jupiter.api.Test;
                 candidate("exact-provider", exactProvider),
                 candidate("suffix-provider", suffixProvider)),
             temporaryDirectory);
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
     NativeImageConfigurationDirectoriesTestSupport.assertDescriptorRelativeRootScan(
         scan, exactProvider, suffixProvider);

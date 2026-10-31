@@ -24,6 +24,10 @@ final class NativeImageLauncherIndirection {
           "--exclude-config",
           "--bundle-apply");
 
+  /** Forwarded options that can add hidden module inputs. */
+  private static final List<String> FORWARDED_OPTIONS =
+      List.of("--upgrade-module-path", "--patch-module");
+
   private NativeImageLauncherIndirection() {}
 
   /* package */ static void validate(final String argument) throws IOException {
@@ -78,11 +82,32 @@ final class NativeImageLauncherIndirection {
         || nested.startsWith("-agentpath:")) {
       NativeImageIndirectionGuard.reject(argument, "forwarded JVM agents are unsupported");
     }
+    validateForwardedModuleInputs(argument, nested);
     for (final String option : OPTIONS) {
       if (isOptionForm(nested, option)) {
         NativeImageIndirectionGuard.reject(
             argument, "forwarded launcher indirection '" + option + "' is unsupported");
       }
+    }
+  }
+
+  private static void validateForwardedModuleInputs(final String original, final String nested)
+      throws IOException {
+    for (final String option : FORWARDED_OPTIONS) {
+      if (nested.equals(option) || nested.startsWith(option + "=")) {
+        NativeImageIndirectionGuard.reject(
+            original, "forwarded launcher indirection '" + option + "' is unsupported");
+      }
+      if (nested.startsWith(option + ":")) {
+        NativeImageIndirectionGuard.reject(
+            original, "malformed forwarded launcher indirection '" + option + "'");
+      }
+    }
+    if ("-Xbootclasspath/a".equals(nested) || nested.startsWith("-Xbootclasspath/a:")) {
+      NativeImageIndirectionGuard.reject(original, "forwarded boot class path is unsupported");
+    }
+    if (nested.startsWith("-Xbootclasspath/a=")) {
+      NativeImageIndirectionGuard.reject(original, "malformed forwarded boot class path");
     }
   }
 

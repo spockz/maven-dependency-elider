@@ -13,7 +13,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /** Parses supported native-image metadata without accepting unknown root formats. */
-@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.GodClass"})
+@SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class NativeImageDynamicRoots {
   /** Root of the native-image metadata namespace in dependency archives. */
   static final String PREFIX = "META-INF/native-image/";
@@ -32,24 +32,18 @@ final class NativeImageDynamicRoots {
     return (PREFIX + "sbom.json").equals(name) || name.endsWith("/sbom.json");
   }
 
-  record UnsupportedArgument(String entry, String name, String fullArgument) {}
-
   record PropertiesResult(
       boolean declaresClassRoots,
       boolean requiresArtifactRetention,
-      List<UnsupportedArgument> unsupportedArguments,
       Set<Path> resourceProviders,
       Set<NativeImageConsumedInput> consumedInputs,
       NativeImagePolicyRoots.ResourcePatternSelection resourcePatterns,
       NativeImageServiceLoaderPolicy.Selection serviceLoaderPolicy) {}
 
-  @SuppressWarnings("PMD.CyclomaticComplexity")
   static PropertiesResult readNativeImagePropertiesDetailed(
       final JarFile archive,
       final JarEntry propertiesEntry,
       final Set<String> roots,
-      final Set<String> allowedArguments,
-      final boolean failOnUnsupported,
       final NativeImageScanContext scanContext,
       final Set<Path> resourceProviders,
       final Set<NativeImageConsumedInput> consumedInputs)
@@ -71,41 +65,28 @@ final class NativeImageDynamicRoots {
         new NativeImagePolicyRoots.ResourcePatterns();
     final NativeImageServiceLoaderPolicy.Builder serviceLoaderPolicy =
         new NativeImageServiceLoaderPolicy.Builder();
-    final List<UnsupportedArgument> unsupported = new ArrayList<>();
     for (final String argument : arguments) {
-      try {
-        NativeImageIndirectionGuard.validate(argument);
-        if (NativeImageServiceLoaderPolicy.read(argument, propertiesEntry, serviceLoaderPolicy)) {
-          requiresArtifactRetention = true;
-          continue;
-        }
-        declaresClassRoots |=
-            readNativeImageArgument(
-                argument,
-                archive,
-                propertiesEntry,
-                roots,
-                scanContext,
-                resourceProviders,
-                consumedInputs,
-                resourcePatterns);
-        requiresArtifactRetention |= isConfigurationResourceArgument(argument);
-        requiresArtifactRetention |= NativeImagePolicyRoots.requiresArtifactRetention(argument);
-      } catch (final UnknownNativeImageArgument exception) {
-        if (allowedArguments.contains(argumentName(argument))) {
-          continue;
-        }
-        if (failOnUnsupported) {
-          throw unsupportedArgument(propertiesEntry, argument, exception);
-        }
-        unsupported.add(
-            new UnsupportedArgument(propertiesEntry.getName(), argumentName(argument), argument));
+      NativeImageIndirectionGuard.validate(argument);
+      if (NativeImageServiceLoaderPolicy.read(argument, propertiesEntry, serviceLoaderPolicy)) {
+        requiresArtifactRetention = true;
+        continue;
       }
+      declaresClassRoots |=
+          readNativeImageArgument(
+              argument,
+              archive,
+              propertiesEntry,
+              roots,
+              scanContext,
+              resourceProviders,
+              consumedInputs,
+              resourcePatterns);
+      requiresArtifactRetention |= isConfigurationResourceArgument(argument);
+      requiresArtifactRetention |= NativeImagePolicyRoots.requiresArtifactRetention(argument);
     }
     return new PropertiesResult(
         declaresClassRoots,
         requiresArtifactRetention,
-        List.copyOf(unsupported),
         Set.copyOf(resourceProviders),
         Set.copyOf(consumedInputs),
         resourcePatterns.snapshot(),
@@ -162,37 +143,6 @@ final class NativeImageDynamicRoots {
     }
   }
 
-  private static String argumentName(final String argument) {
-    final int equals = argument.indexOf('=');
-    return equals < 0 ? argument : argument.substring(0, equals);
-  }
-
-  private static IOException unsupportedArgument(
-      final JarEntry entry, final String argument, final IOException cause) {
-    final String name = argumentName(argument);
-    return new IOException(
-        "Unsupported native-image argument '"
-            + name
-            + "' in "
-            + entry.getName()
-            + " (full argument: '"
-            + argument
-            + "'). Inspect the property in the dependency archive. "
-            + "If it does not declare dynamic class roots, add its name to "
-            + "<allowedNativeImageArgs> in pom.xml:\n"
-            + "  <configuration>\n    <allowedNativeImageArgs>\n      <allowedNativeImageArg>"
-            + name
-            + "</allowedNativeImageArg>\n    </allowedNativeImageArgs>\n  </configuration>\n"
-            + "Or via CLI: -Delide.allowedNativeImageArgs="
-            + name,
-        cause);
-  }
-
-  /** Separates unknown options from malformed modeled options. */
-  private static final class UnknownNativeImageArgument extends IOException {
-    private static final long serialVersionUID = 1L;
-  }
-
   private static boolean readNativeImageArgument(
       final String argument,
       final JarFile archive,
@@ -228,15 +178,7 @@ final class NativeImageDynamicRoots {
     if (directRoot.isPresent()) {
       return directRoot.get();
     }
-    if ("--enable-http".equals(argument) || "--enable-https".equals(argument)) {
-      return false;
-    }
-    if ("-H:+AddAllCharsets".equals(argument)
-        || "-H:-AddAllCharsets".equals(argument)
-        || "--report-unsupported-elements-at-runtime".equals(argument)) {
-      return false;
-    }
-    throw new UnknownNativeImageArgument();
+    return false;
   }
 
   static String resolveNativeImageConfigPath(

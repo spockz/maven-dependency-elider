@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -130,7 +129,7 @@ import org.objectweb.asm.Opcodes;
         NativeImageScanContextTestSupport.candidate("declaring", archive);
     final NativeImageScanContext context =
         NativeImageScanContext.create(List.of(candidate), temporaryDirectory);
-    return DependencyDynamicRoots.scan(archive, context, Set.of(), true);
+    return DependencyDynamicRoots.scan(archive, context);
   }
 
   private static String predefinedDocument(final String hash) {

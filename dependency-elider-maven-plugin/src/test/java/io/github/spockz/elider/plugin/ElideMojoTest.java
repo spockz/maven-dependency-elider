@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -662,88 +663,6 @@ final class ElideMojoTest {
   }
 
   @Test
-  void permissiveNativeImageArgsKeepMrjarUnchangedAndCloseUpperTierSiblingLinks()
-      throws IOException, ReflectiveOperationException, MojoFailureException {
-    final MultiReleaseFixture fixture =
-        multiReleaseFixture(
-            "mr-native-fallback",
-            false,
-            Map.of(
-                "META-INF/native-image/test/native-image.properties",
-                "Args=-H:UnknownOption=value\n"));
-    final byte[] originalMultiReleaseBytes = Files.readAllBytes(fixture.multiReleasePath());
-    final ElideMojo mojo = newMojo();
-    mojo.setLog(new SystemStreamLog());
-    set(mojo, "project", fixture.project());
-    set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
-    set(mojo, "reportFile", tempDir.resolve("mr-native-fallback-report.json").toFile());
-    set(mojo, "trimJars", true);
-    set(mojo, "failOnUnsupportedNativeImageArgs", false);
-
-    mojo.execute();
-
-    assertThat(fixture.multiRelease().getFile().toPath()).isEqualTo(fixture.multiReleasePath());
-    assertThat(Files.readAllBytes(fixture.multiReleasePath()))
-        .containsExactly(originalMultiReleaseBytes);
-    assertThat(fixture.candidate().getFile().toPath()).isNotEqualTo(fixture.candidatePath());
-    try (JarFile trimmed = new JarFile(fixture.candidate().getFile())) {
-      assertThat(trimmed.getEntry("candidate/Keep.class")).isNotNull();
-      assertThat(trimmed.getEntry("candidate/TargetSupport.class")).isNotNull();
-      assertThat(trimmed.getEntry("candidate/TargetTail.class")).isNotNull();
-      assertThat(trimmed.getEntry("candidate/UpperSupport.class")).isNotNull();
-      assertThat(trimmed.getEntry("candidate/UpperTail.class")).isNotNull();
-      assertThat(trimmed.getEntry("candidate/Drop.class")).isNull();
-    }
-    try (URLClassLoader loader =
-        new URLClassLoader(
-            new URL[] {
-              fixture.multiRelease().getFile().toURI().toURL(),
-              fixture.candidate().getFile().toURI().toURL()
-            })) {
-      loader.loadClass("mrroot.Root").getMethod("execute").invoke(null);
-    } catch (final java.lang.reflect.InvocationTargetException exception) {
-      throw new AssertionError(
-          "The unchanged Java 17 MR method could not call candidate.UpperSupport", exception);
-    }
-  }
-
-  @Test
-  void nativeImageFallbackArchiveDoesNotDisableSiblingMrjarVerticalShading()
-      throws IOException, ReflectiveOperationException, MojoFailureException {
-    final MultiReleaseFixture fixture = multiReleaseFixture("mr-native-sibling-fallback");
-    final Path fallbackPath =
-        rewriteJar(
-            fixture.candidatePath(),
-            Map.of(
-                "META-INF/native-image/test/native-image.properties",
-                "Args=-H:UnknownOption=value\n"));
-    fixture.candidate().setFile(fallbackPath.toFile());
-    final byte[] originalFallbackBytes = Files.readAllBytes(fallbackPath);
-    final byte[] selectedTargetRoot =
-        jarEntryBytes(fixture.multiReleasePath(), "META-INF/versions/11/mrroot/Root.class");
-    final ElideMojo mojo = newMojo();
-    mojo.setLog(new SystemStreamLog());
-    set(mojo, "project", fixture.project());
-    set(mojo, "traceFiles", List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()));
-    set(mojo, "reportFile", tempDir.resolve("mr-native-sibling-report.json").toFile());
-    set(mojo, "trimJars", true);
-    set(mojo, "failOnUnsupportedNativeImageArgs", false);
-
-    mojo.execute();
-
-    assertThat(fixture.candidate().getFile().toPath()).isEqualTo(fallbackPath);
-    assertThat(Files.readAllBytes(fallbackPath)).containsExactly(originalFallbackBytes);
-    assertThat(fixture.multiRelease().getFile().toPath()).isNotEqualTo(fixture.multiReleasePath());
-    try (JarFile trimmed = new JarFile(fixture.multiRelease().getFile())) {
-      assertThat(jarEntryBytes(trimmed, "mrroot/Root.class")).isEqualTo(selectedTargetRoot);
-      assertThat(trimmed.getEntry("META-INF/versions/11/mrroot/Root.class")).isNull();
-      assertThat(trimmed.getEntry("META-INF/versions/17/mrroot/Root.class")).isNotNull();
-      assertThat(trimmed.getManifest().getMainAttributes().getValue("Multi-Release"))
-          .isEqualTo("true");
-    }
-  }
-
-  @Test
   void configuredPassThroughToleratesItsMissingOptionalReferenceAndKeepsLinkedCandidate()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path candidateWithBridgeStub =
@@ -1383,7 +1302,7 @@ final class ElideMojoTest {
                 "META-INF/native-image/test/tomcat-style/tomcat-jni.json",
                 "[{\"name\":\"chain.NativeImageJniRoot\"}]",
                 "META-INF/native-image/test/tomcat-style/tomcat-resource.json",
-                "{\"resources\":[{\"pattern\":\".*\"}],"
+                "{\"resources\":[{\"pattern\":\"chain/NativeImageBundle\\\\.class\"}],"
                     + "\"bundles\":[{\"name\":\"chain.NativeImageBundle\","
                     + "\"condition\":{\"typeReached\":\"chain.NativeImageBundleCondition\"}}]}",
                 "META-INF/native-image/test/spring-web/native-image.properties",
@@ -1427,6 +1346,28 @@ final class ElideMojoTest {
     final Artifact c = runtimeArtifact("chain-c", metadatfirstJar);
     final Artifact serviceOwner = runtimeArtifact("service-owner", serviceJar);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(a, b, c, serviceOwner));
+    final List<ArtifactFileRef> bundleCandidates =
+        List.of(
+            NativeImageScanContextTestSupport.candidate("chain-a", ajar),
+            NativeImageScanContextTestSupport.candidate("chain-b", bjar),
+            NativeImageScanContextTestSupport.candidate("chain-c", metadatfirstJar),
+            NativeImageScanContextTestSupport.candidate("service-owner", serviceJar));
+    final NativeImageScanContext bundleContext =
+        NativeImageScanContext.create(bundleCandidates, null);
+    assertThat(bundleContext.resourceIndex()).containsKey("chain/NativeImageBundle.class");
+    final DependencyDynamicRoots.RootScan bundleScan =
+        DependencyDynamicRoots.scan(ajar, bundleContext);
+    final Set<String> bundleRoots = new LinkedHashSet<>(bundleScan.roots());
+    final Set<Path> bundleProviders = new LinkedHashSet<>(bundleScan.resourceProviders());
+    NativeImagePolicyRoots.applyResourcePatterns(
+        List.of(bundleScan.resourcePatterns()), bundleContext, bundleRoots, bundleProviders);
+    assertThat(bundleRoots).contains("chain.NativeImageBundle");
+    assertThat(bundleProviders).contains(metadatfirstJar.toRealPath());
+    final MavenElisionService.DynamicRootInputs aggregateRoots =
+        MavenElisionService.dynamicRoots(bundleCandidates);
+    assertThat(aggregateRoots.classNames()).contains("chain.NativeImageBundle");
+    assertThat(aggregateRoots.resourceProviderArtifacts())
+        .contains(bundleCandidates.get(2).coordinate());
     final MavenProject project = newProject();
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
@@ -1785,7 +1726,7 @@ final class ElideMojoTest {
   }
 
   @Test
-  void unsupportedNativeImageArgsFailBeforeArtifactMutation()
+  void hiddenNativeImageIndirectionFailsBeforeArtifactMutation()
       throws IOException, ReflectiveOperationException {
     final Artifact used = artifact("native-image-unsupported", "used/Sample.class");
     final Path original = used.getFile().toPath();
@@ -1794,7 +1735,7 @@ final class ElideMojoTest {
                 original,
                 Map.of(
                     "META-INF/native-image/test/native-image.properties",
-                    "Args=-H:UnknownOption=value\n"))
+                    "Args=-J--class-path=deps\\*\n"))
             .toFile());
     final Path input = used.getFile().toPath();
     final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
@@ -1813,48 +1754,10 @@ final class ElideMojoTest {
 
     assertThatThrownBy(mojo::execute)
         .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Unsupported native-image argument '-H:UnknownOption'")
-        .hasMessageContaining("META-INF/native-image/test/native-image.properties")
-        .hasMessageContaining("<allowedNativeImageArgs>")
-        .hasMessageContaining("org.example:native-image-unsupported")
-        .hasMessageContaining(input.toString());
+        .hasMessageContaining("native-image indirection")
+        .hasMessageContaining("forwarded launcher indirection");
     assertThat(used.getFile().toPath()).isEqualTo(input).isNotEqualTo(original);
     assertThat(project.getArtifacts()).contains(used);
-  }
-
-  @Test
-  void permissiveNativeImageArgsRetainArchiveByteIdenticallyDuringEffectiveTrimming()
-      throws IOException, ReflectiveOperationException, MojoFailureException {
-    final Artifact artifact = artifact("native-image-permissive", "used/Sample.class");
-    final Path original = artifact.getFile().toPath();
-    final Path input =
-        rewriteJar(
-            original,
-            Map.of(
-                "META-INF/native-image/test/native-image.properties",
-                "Args = -H:UnknownOption=value\n"));
-    artifact.setFile(input.toFile());
-    final byte[] originalBytes = Files.readAllBytes(input);
-    final MavenProject project = project(artifact, new LinkedHashSet<>(List.of(artifact)));
-    project.setGroupId("org.example");
-    project.setArtifactId("native-image-permissive-consumer");
-    project.setVersion("1.0");
-    final Build build = new Build();
-    build.setDirectory(tempDir.resolve("native-image-permissive-build").toString());
-    project.setBuild(build);
-    final ElideMojo mojo = newMojo();
-    mojo.setLog(new SystemStreamLog());
-    set(mojo, "project", project);
-    set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
-    set(mojo, "reportFile", tempDir.resolve("native-image-permissive-report.json").toFile());
-    set(mojo, "trimJars", true);
-    set(mojo, "failOnUnsupportedNativeImageArgs", false);
-
-    mojo.execute();
-
-    assertThat(project.getArtifacts()).contains(artifact);
-    assertThat(artifact.getFile().toPath()).isEqualTo(input);
-    assertThat(Files.readAllBytes(input)).containsExactly(originalBytes);
   }
 
   @Test
@@ -2087,20 +1990,26 @@ final class ElideMojoTest {
   }
 
   @Test
-  void explicitTrimRootKeepsItsWholeArtifactOwnerAndTrimsOtherClasses()
+  void unknownNativeImageArgumentDoesNotDisableModeledTrimming()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
         runtimeArtifact(
             "used",
             compileJarSources(
                 "used", Map.of("Sample.java", "package used; public class Sample {}"), null));
-    final Path explicitJar =
+    final Path compiledExplicitJar =
         compileJarSources(
             "explicit",
             Map.of(
                 "Keep.java", "package explicit; public class Keep {}",
                 "Drop.java", "package explicit; public class Drop {}"),
             null);
+    final Path explicitJar =
+        rewriteJar(
+            compiledExplicitJar,
+            Map.of(
+                "META-INF/native-image/test/native-image.properties",
+                "Args=-H:Class=explicit.Keep -H:UnknownFlag=value\n"));
     final Artifact explicit = runtimeArtifact("explicit", explicitJar);
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(used, explicit));
     final MavenProject project = newProject();
@@ -2110,6 +2019,9 @@ final class ElideMojoTest {
     project.setArtifactId("explicit-consumer");
     project.setVersion("1.0");
     project.getProperties().setProperty("maven.compiler.release", "21");
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("unknown-argument-sources"));
+    Files.writeString(sourceRoot.resolve("Consumer.java"), "package consumer; class Consumer {}\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("explicit-build").toString());
     project.setBuild(build);
@@ -2117,10 +2029,10 @@ final class ElideMojoTest {
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
-    set(mojo, "trimRoots", List.of("explicit.Keep"));
     set(mojo, "reportFile", tempDir.resolve("explicit-report.json").toFile());
     set(mojo, "sbomFile", tempDir.resolve("explicit-build/explicit-sbom.json").toFile());
     set(mojo, "trimJars", true);
+    set(mojo, "sourceRootsComplete", true);
 
     mojo.execute();
 
@@ -2129,6 +2041,34 @@ final class ElideMojoTest {
     try (JarFile trimmed = new JarFile(explicit.getFile())) {
       assertThat(trimmed.getEntry("explicit/Drop.class")).isNull();
     }
+    final Path cacheManifest =
+        tempDir.resolve("explicit-build/elided-artifacts/.trim-analysis-cache.json");
+    assertThat(cacheManifest).isRegularFile();
+    final Path cachedInput = explicit.getFile().toPath();
+    final Path malformedArchive =
+        rewriteJar(
+            cachedInput,
+            Map.of(
+                "META-INF/native-image/test/native-image.properties", "Args=-J--patch-module=\n"));
+    Files.copy(malformedArchive, cachedInput, StandardCopyOption.REPLACE_EXISTING);
+    final Path malformedInput = cachedInput;
+    final byte[] malformedBytes = Files.readAllBytes(malformedInput);
+    final ElideMojo retry = newMojo();
+    retry.setLog(new SystemStreamLog());
+    set(retry, "project", project);
+    set(retry, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
+    set(retry, "reportFile", tempDir.resolve("explicit-retry-report.json").toFile());
+    set(retry, "sbomFile", tempDir.resolve("explicit-build/explicit-retry-sbom.json").toFile());
+    set(retry, "trimJars", true);
+    set(retry, "sourceRootsComplete", true);
+
+    assertThatThrownBy(retry::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("native-image indirection")
+        .hasMessageContaining("forwarded launcher indirection");
+    assertThat(explicit.getFile().toPath()).isEqualTo(malformedInput);
+    assertThat(Files.readAllBytes(malformedInput)).containsExactly(malformedBytes);
+    assertThat(project.getArtifacts()).contains(explicit);
   }
 
   @Test
@@ -2665,6 +2605,9 @@ final class ElideMojoTest {
       final Enumeration<JarEntry> entries = inputJar.entries();
       while (entries.hasMoreElements()) {
         final ZipEntry entry = entries.nextElement();
+        if (resources.containsKey(entry.getName())) {
+          continue;
+        }
         output.putNextEntry(new ZipEntry(entry.getName()));
         try (InputStream stream = inputJar.getInputStream(entry)) {
           stream.transferTo(output);

@@ -111,8 +111,7 @@ import org.junit.jupiter.api.io.TempDir;
                 NativeImageScanContextTestSupport.candidate("a", firstProvider),
                 NativeImageScanContextTestSupport.candidate("b", secondProvider)),
             null);
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
     assertThat(List.of(scan.roots(), scan.resourceProviders()))
         .containsExactly(
@@ -151,8 +150,7 @@ import org.junit.jupiter.api.io.TempDir;
                 NativeImageScanContextTestSupport.candidate("a", valid),
                 NativeImageScanContextTestSupport.candidate("bad", malformed)),
             null);
-    assertThatThrownBy(
-            () -> DependencyDynamicRoots.scan(declaring, malformedContext, Set.of(), true))
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, malformedContext))
         .isInstanceOf(IOException.class)
         .hasMessageContaining(SHARED_RESOURCE)
         .hasMessageContaining(malformed.toRealPath().toString());
@@ -184,8 +182,7 @@ import org.junit.jupiter.api.io.TempDir;
                 NativeImageScanContextTestSupport.candidate("other", other)),
             null);
 
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
     assertThat(List.of(scan.roots(), scan.resourceProviders()))
         .containsExactly(Set.of("org.example.Local"), Set.of(declaring.toRealPath()));
@@ -217,12 +214,10 @@ import org.junit.jupiter.api.io.TempDir;
                 NativeImageScanContextTestSupport.candidate("provider", provider)),
             null);
 
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
     assertThat(List.of(scan.roots(), scan.resourceProviders()))
-        .containsExactly(
-            Set.of("org.example.Bundle", "org.example.BundleClass"), Set.of(provider.toRealPath()));
+        .containsExactly(Set.of("org.example.BundleClass"), Set.of(provider.toRealPath()));
   }
 
   /* package */
@@ -291,8 +286,7 @@ import org.junit.jupiter.api.io.TempDir;
                 NativeImageScanContextTestSupport.candidate("versioned", versionedPackageClass)),
             null);
 
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
     assertThat(scan.roots())
         .containsExactlyInAnyOrder(

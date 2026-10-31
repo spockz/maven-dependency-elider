@@ -8,7 +8,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
 
 /** Builds small indexed inventories for LinkAtBuildTime behavior tests. */
 /* package */ final class NativeImageLinkAtBuildTimeTestSupport {
@@ -48,6 +47,6 @@ import java.util.Set;
 
   /* package */ static DependencyDynamicRoots.RootScan scan(
       final Path declaring, final NativeImageScanContext context) throws IOException {
-    return DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    return DependencyDynamicRoots.scan(declaring, context);
   }
 }

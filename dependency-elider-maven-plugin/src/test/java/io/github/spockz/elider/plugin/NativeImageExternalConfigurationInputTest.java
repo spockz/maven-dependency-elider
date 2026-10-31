@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
-import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import org.apache.maven.plugin.MojoFailureException;
@@ -45,8 +44,7 @@ import org.objectweb.asm.Opcodes;
     final NativeImageScanContext context =
         NativeImageExternalConfigurationInputTestSupport.context(jar, inputDirectory);
 
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(jar, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar, context);
 
     NativeImageExternalConfigurationInputTestSupport.assertExternalReflectionScan(scan, descriptor);
   }
@@ -85,8 +83,7 @@ import org.objectweb.asm.Opcodes;
         context =
             NativeImageExternalConfigurationInputTestSupport.context(declaring, inputDirectory);
       }
-      final DependencyDynamicRoots.RootScan scan =
-          DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+      final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
       NativeImageConfigurationPointerTestSupport.assertDispatch(scan, pointer, reference);
       index++;
@@ -123,10 +120,7 @@ import org.objectweb.asm.Opcodes;
 
     final DependencyDynamicRoots.RootScan scan =
         DependencyDynamicRoots.scan(
-            jar,
-            NativeImageExternalConfigurationInputTestSupport.context(jar, inputDirectory),
-            Set.of(),
-            true);
+            jar, NativeImageExternalConfigurationInputTestSupport.context(jar, inputDirectory));
 
     NativeImageExternalConfigurationInputTestSupport.assertPredefinedScan(scan, hash);
   }
@@ -171,8 +165,7 @@ import org.objectweb.asm.Opcodes;
                 NativeImageScanContextTestSupport.candidate("provider", provider)),
             inputDirectory);
 
-    final DependencyDynamicRoots.RootScan scan =
-        DependencyDynamicRoots.scan(declaring, context, Set.of(), true);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
 
     NativeImageConfigurationPointerTestSupport.assertPredefinedResourceScan(scan, provider);
   }
@@ -234,7 +227,7 @@ import org.objectweb.asm.Opcodes;
     final NativeImageScanContext context =
         NativeImageExternalConfigurationInputTestSupport.context(declaring, invocationBase);
 
-    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context, Set.of(), true))
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("escapes invocation base");
   }

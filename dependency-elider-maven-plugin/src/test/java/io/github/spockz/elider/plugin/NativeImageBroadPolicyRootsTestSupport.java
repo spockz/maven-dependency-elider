@@ -9,7 +9,6 @@ import io.github.spockz.elider.model.ArtifactFileRef;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 
 /** Builds and scans broad-policy fixtures used by independent option tests. */
 /* package */ final class NativeImageBroadPolicyRootsTestSupport {
@@ -57,8 +56,7 @@ import java.util.Set;
       throws IOException {
     final List<ArtifactFileRef> candidates =
         List.of(candidate("declaring", declaring), candidate("provider", provider));
-    return DependencyDynamicRoots.scan(
-        declaring, NativeImageScanContext.create(candidates, null), Set.of(), true);
+    return DependencyDynamicRoots.scan(declaring, NativeImageScanContext.create(candidates, null));
   }
 
   private static ArtifactFileRef candidate(final String artifactName, final Path archive)

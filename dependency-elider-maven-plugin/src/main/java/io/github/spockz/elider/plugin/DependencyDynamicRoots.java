@@ -60,8 +60,6 @@ final class DependencyDynamicRoots {
       Set<ServiceDescriptor> serviceDescriptors,
       Set<String> nonServiceRoots,
       Set<java.nio.file.Path> resourceProviders,
-      java.util.List<NativeImageDynamicRoots.UnsupportedArgument> unsupportedNativeImageArgs,
-      String nativeImagePolicy,
       Set<NativeImageConsumedInput> consumedInputs,
       NativeImagePolicyRoots.ResourcePatternSelection resourcePatterns,
       NativeImageServiceLoaderPolicy.Selection serviceLoaderPolicy) {
@@ -70,7 +68,6 @@ final class DependencyDynamicRoots {
       serviceDescriptors = Set.copyOf(serviceDescriptors);
       nonServiceRoots = Set.copyOf(nonServiceRoots);
       resourceProviders = Set.copyOf(resourceProviders);
-      unsupportedNativeImageArgs = java.util.List.copyOf(unsupportedNativeImageArgs);
       consumedInputs = Set.copyOf(consumedInputs);
       resourcePatterns =
           resourcePatterns == null
@@ -90,37 +87,9 @@ final class DependencyDynamicRoots {
           Set.of(),
           roots,
           Set.of(),
-          java.util.List.of(),
-          "default",
           Set.of(),
           NativeImagePolicyRoots.ResourcePatternSelection.empty(),
           NativeImageServiceLoaderPolicy.Selection.empty());
-    }
-
-    RootScan(
-        final Set<String> roots,
-        final boolean declaresClassRoots,
-        final Set<ServiceDescriptor> serviceDescriptors,
-        final Set<String> nonServiceRoots,
-        final java.util.List<NativeImageDynamicRoots.UnsupportedArgument>
-            unsupportedNativeImageArgs,
-        final String nativeImagePolicy) {
-      this(
-          roots,
-          declaresClassRoots,
-          false,
-          serviceDescriptors,
-          nonServiceRoots,
-          Set.of(),
-          unsupportedNativeImageArgs,
-          nativeImagePolicy,
-          Set.of(),
-          NativeImagePolicyRoots.ResourcePatternSelection.empty(),
-          NativeImageServiceLoaderPolicy.Selection.empty());
-    }
-
-    boolean requiresPassThrough() {
-      return !unsupportedNativeImageArgs.isEmpty();
     }
 
     EffectiveRoots effectiveRoots(
@@ -157,6 +126,26 @@ final class DependencyDynamicRoots {
       return new EffectiveRoots(effective, unprovenServices, unprovenRoots);
     }
 
+    /* package */ RootScan withAdditionalClassRoots(final Set<String> additionalRoots) {
+      if (additionalRoots.isEmpty()) {
+        return this;
+      }
+      final Set<String> updatedRoots = new LinkedHashSet<>(roots);
+      updatedRoots.addAll(additionalRoots);
+      final Set<String> updatedNonServiceRoots = new LinkedHashSet<>(nonServiceRoots);
+      updatedNonServiceRoots.addAll(additionalRoots);
+      return new RootScan(
+          updatedRoots,
+          true,
+          requiresArtifactRetention,
+          serviceDescriptors,
+          updatedNonServiceRoots,
+          resourceProviders,
+          consumedInputs,
+          resourcePatterns,
+          serviceLoaderPolicy);
+    }
+
     private static void addFeatureRoots(
         final Set<String> effective,
         final ServiceDescriptor descriptor,
@@ -175,25 +164,12 @@ final class DependencyDynamicRoots {
   private DependencyDynamicRoots() {}
 
   static RootScan scan(final java.nio.file.Path jar) throws IOException {
-    return scan(jar, NativeImageScanContext.singleArchive(jar), Set.of(), true);
+    return scan(jar, NativeImageScanContext.singleArchive(jar));
   }
 
-  static RootScan scan(
-      final java.nio.file.Path jar,
-      final Set<String> allowedArguments,
-      final boolean failOnUnsupported)
+  static RootScan scan(final java.nio.file.Path jar, final NativeImageScanContext scanContext)
       throws IOException {
-    return scan(
-        jar, NativeImageScanContext.singleArchive(jar), allowedArguments, failOnUnsupported);
-  }
-
-  static RootScan scan(
-      final java.nio.file.Path jar,
-      final NativeImageScanContext scanContext,
-      final Set<String> allowedArguments,
-      final boolean failOnUnsupported)
-      throws IOException {
-    final ScanState state = new ScanState(jar, scanContext, allowedArguments, failOnUnsupported);
+    final ScanState state = new ScanState(jar, scanContext);
     try (JarFile archive = new JarFile(jar.toFile())) {
       final Enumeration<JarEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
@@ -229,18 +205,8 @@ final class DependencyDynamicRoots {
     /** External descriptor and predefined sibling bytes consumed by this archive scan. */
     private final Set<NativeImageConsumedInput> consumedInputs = new LinkedHashSet<>();
 
-    /** Unsupported options that require conservative archive retention. */
-    private final java.util.List<NativeImageDynamicRoots.UnsupportedArgument>
-        unsupportedNativeImageArgs = new java.util.ArrayList<>();
-
     /** Complete candidate inventory used by resource and package resolution. */
     private final NativeImageScanContext scanContext;
-
-    /** Legacy argument exception policy applied during this scan. */
-    private final Set<String> allowedArguments;
-
-    /** Whether unsupported options fail immediately. */
-    private final boolean failOnUnsupported;
 
     /** Logical class names in the declaring archive. */
     private final Set<String> jarClasses;
@@ -252,15 +218,9 @@ final class DependencyDynamicRoots {
     private boolean requiresArtifactRetention;
 
     /** Creates mutable state for one archive using the invocation resource index. */
-    private ScanState(
-        final java.nio.file.Path jar,
-        final NativeImageScanContext scanContext,
-        final Set<String> allowedArguments,
-        final boolean failOnUnsupported)
+    private ScanState(final java.nio.file.Path jar, final NativeImageScanContext scanContext)
         throws IOException {
       this.scanContext = scanContext;
-      this.allowedArguments = allowedArguments;
-      this.failOnUnsupported = failOnUnsupported;
       this.jarClasses = scanContext.logicalClasses(java.util.Optional.of(jar));
     }
 
@@ -339,17 +299,9 @@ final class DependencyDynamicRoots {
         throws IOException {
       final NativeImageDynamicRoots.PropertiesResult result =
           NativeImageDynamicRoots.readNativeImagePropertiesDetailed(
-              archive,
-              entry,
-              nonServiceRoots,
-              allowedArguments,
-              failOnUnsupported,
-              scanContext,
-              resourceProviders,
-              consumedInputs);
+              archive, entry, nonServiceRoots, scanContext, resourceProviders, consumedInputs);
       declaresClassRoots |= result.declaresClassRoots();
       requiresArtifactRetention |= result.requiresArtifactRetention();
-      unsupportedNativeImageArgs.addAll(result.unsupportedArguments());
       resourceProviders.addAll(result.resourceProviders());
       resourcePatterns.merge(result.resourcePatterns());
       serviceLoaderPolicy.merge(result.serviceLoaderPolicy());
@@ -365,11 +317,6 @@ final class DependencyDynamicRoots {
           serviceDescriptors,
           nonServiceRoots,
           resourceProviders,
-          java.util.List.copyOf(unsupportedNativeImageArgs),
-          "fail="
-              + failOnUnsupported
-              + ";allowed="
-              + String.join(",", new java.util.TreeSet<>(allowedArguments)),
           consumedInputs,
           resourcePatterns.snapshot(),
           serviceLoaderPolicy.snapshot());
