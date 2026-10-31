@@ -43,9 +43,12 @@ make check
 - `make lint-markdown` — Run `markdownlint-cli2` across all documentation.
 - `make test-core` — Run `elider-core` unit tests.
 - `make test-plugin` — Run Maven plugin tests with reactor dependencies.
+- `make coverage` — Run a clean reactor verification and generate JaCoCo HTML and XML reports for production modules.
 - `make test-examples` — Run end-to-end integration cycles across example applications.
 - `make site` — Build the plugin documentation site locally.
 - `make serve` — Build and serve the documentation site locally with Caddy (default: `http://localhost:8080`, configurable with `SERVE_PORT=<port>`).
+
+Coverage reports are generated during `verify` under each production module's `target/site/jacoco/`. Each production module must meet at least 86% line coverage. Reports measure code exercised in Surefire test JVMs. The plugin's Failsafe tests launch nested Maven processes, so their execution is not included. `make coverage` starts from a clean build so stale execution data cannot affect the reports.
 
 ## Cache benchmarks
 

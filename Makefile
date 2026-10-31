@@ -23,7 +23,7 @@ endif
 
 .DEFAULT_GOAL := check
 
-.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-reactor-example test-example-scheduler test-sbom-comparison scan-sbom verify-docs site serve
+.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all coverage test-examples test-reactor-example test-example-scheduler test-sbom-comparison scan-sbom verify-docs site serve
 
 check: ## Format, run Java checks/tests and Markdown lint concurrently, then verify command transcripts
 	$(MAKE) --no-print-directory fmt
@@ -85,6 +85,9 @@ test-plugin: test-core ## Run core and plugin tests, isolating nested lifecycle 
 
 test-all: ## Run the complete reactor verification suite
 	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) verify
+
+coverage: ## Run a clean test suite and generate JaCoCo HTML and XML reports
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) clean verify
 
 test-examples: ## Run baseline and trace-driven package checks for single-project and reactor examples
 	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS) -T $(MAVEN_THREADS)" ./examples/run-elision-cycle.sh
