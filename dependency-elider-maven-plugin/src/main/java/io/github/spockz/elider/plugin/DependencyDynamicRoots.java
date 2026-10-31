@@ -42,11 +42,13 @@ final class DependencyDynamicRoots {
   record EffectiveRoots(
       Set<String> roots,
       Set<ServiceDescriptor> unprovenConservativeServices,
-      Set<String> unprovenConservativeRoots) {
+      Set<String> unprovenConservativeRoots,
+      Set<String> featureRoots) {
     EffectiveRoots {
       roots = Set.copyOf(roots);
       unprovenConservativeServices = Set.copyOf(unprovenConservativeServices);
       unprovenConservativeRoots = Set.copyOf(unprovenConservativeRoots);
+      featureRoots = Set.copyOf(featureRoots);
     }
 
     boolean declaresRoots() {
@@ -105,11 +107,12 @@ final class DependencyDynamicRoots {
         final Set<String> provenServiceInterfaces,
         final boolean conservativeFallback,
         final NativeImageServiceLoaderPolicy.Selection featureSelection) {
+      final Set<String> featureRoots = featureRoots(featureSelection);
       final Set<String> effective = new LinkedHashSet<>(nonServiceRoots);
+      effective.addAll(featureRoots);
       final Set<ServiceDescriptor> unprovenServices = new LinkedHashSet<>();
       final Set<String> unprovenRoots = new LinkedHashSet<>();
       for (final ServiceDescriptor descriptor : serviceDescriptors) {
-        addFeatureRoots(effective, descriptor, featureSelection);
         final boolean isProven =
             provenServiceInterfaces.contains(descriptor.serviceInterface())
                 || descriptor.providers().stream().anyMatch(provenServiceInterfaces::contains);
@@ -124,7 +127,7 @@ final class DependencyDynamicRoots {
           unprovenRoots.addAll(descriptor.providers());
         }
       }
-      return new EffectiveRoots(effective, unprovenServices, unprovenRoots);
+      return new EffectiveRoots(effective, unprovenServices, unprovenRoots, featureRoots);
     }
 
     /* package */ RootScan withAdditionalClassRoots(final Set<String> additionalRoots) {
@@ -147,18 +150,20 @@ final class DependencyDynamicRoots {
           serviceLoaderPolicy);
     }
 
-    private static void addFeatureRoots(
-        final Set<String> effective,
-        final ServiceDescriptor descriptor,
-        final NativeImageServiceLoaderPolicy.Selection selection) {
-      if (!selection.enabled()
-          || selection.excludedServices().contains(descriptor.serviceInterface())) {
-        return;
+    private Set<String> featureRoots(final NativeImageServiceLoaderPolicy.Selection selection) {
+      final Set<String> roots = new LinkedHashSet<>();
+      if (!selection.enabled()) {
+        return roots;
       }
-      effective.add(descriptor.serviceInterface());
-      descriptor.providers().stream()
-          .filter(provider -> !selection.excludedProviders().contains(provider))
-          .forEach(effective::add);
+      for (final ServiceDescriptor descriptor : serviceDescriptors) {
+        if (!selection.excludedServices().contains(descriptor.serviceInterface())) {
+          roots.add(descriptor.serviceInterface());
+          descriptor.providers().stream()
+              .filter(provider -> !selection.excludedProviders().contains(provider))
+              .forEach(roots::add);
+        }
+      }
+      return roots;
     }
   }
 

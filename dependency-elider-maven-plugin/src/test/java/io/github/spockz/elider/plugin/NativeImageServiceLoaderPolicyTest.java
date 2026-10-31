@@ -51,7 +51,9 @@ import org.junit.jupiter.api.io.TempDir;
 
   /* package */
   @Test
-  void featureExclusionsFilterOnlyFeatureRootsAndNeverSubtractDirectRoots() throws IOException {
+  @org.junit.jupiter.api.DisplayName(
+      "ADR-0009/feature exclusions expose filtered roots without subtracting other roots")
+  void featureExclusionsExposeFilteredRootsWithoutSubtractingOthers() throws IOException {
     final Path enabled =
         NativeImageServiceLoaderPolicyTestSupport.archive(
             temporaryDirectory, "feature-enabled.jar", "-H:+UseServiceLoaderFeature");
@@ -102,12 +104,12 @@ import org.junit.jupiter.api.io.TempDir;
                     enabled, serviceDirect, descriptor, provider),
                 false)
             .classNames();
-    final Set<String> providerFiltered =
+    final ElisionAnalysisModel.DynamicRootInputs providerFilteredInputs =
         NativeImageServiceLoaderPolicyTestSupport.scan(
-                NativeImageServiceLoaderPolicyTestSupport.candidates(
-                    enabled, providerExcluded, descriptor, provider),
-                false)
-            .classNames();
+            NativeImageServiceLoaderPolicyTestSupport.candidates(
+                enabled, providerExcluded, descriptor, provider),
+            false);
+    final Set<String> providerFiltered = providerFilteredInputs.classNames();
     final Set<String> providerDirectRoots =
         NativeImageServiceLoaderPolicyTestSupport.scan(
                 NativeImageServiceLoaderPolicyTestSupport.candidates(
@@ -128,7 +130,8 @@ import org.junit.jupiter.api.io.TempDir;
                 serviceDirectRoots,
                 providerFiltered,
                 providerDirectRoots,
-                conservativeRoots))
+                conservativeRoots,
+                providerFilteredInputs.featureRoots()))
         .containsExactly(
             Set.of(),
             Set.of(),
@@ -139,7 +142,8 @@ import org.junit.jupiter.api.io.TempDir;
                 NativeImageServiceLoaderPolicyTestSupport.PROVIDER),
             Set.of(
                 NativeImageServiceLoaderPolicyTestSupport.SERVICE,
-                NativeImageServiceLoaderPolicyTestSupport.PROVIDER));
+                NativeImageServiceLoaderPolicyTestSupport.PROVIDER),
+            Set.of(NativeImageServiceLoaderPolicyTestSupport.SERVICE));
   }
 
   /* package */

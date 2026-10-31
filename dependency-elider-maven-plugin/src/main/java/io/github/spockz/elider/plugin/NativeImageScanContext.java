@@ -9,11 +9,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -33,15 +33,22 @@ final class NativeImageScanContext {
 
   private NativeImageScanContext(
       final List<NativeImageArchiveInventory> archives, final Path invocationBase) {
-    final Map<Path, NativeImageArchiveInventory> byPath = new ConcurrentHashMap<>();
-    final Map<String, List<NativeImageArchiveInventory>> byResource = new ConcurrentHashMap<>();
-    for (final NativeImageArchiveInventory archive : archives) {
-      byPath.put(archive.path(), archive);
-      for (final String resource : archive.resources().keySet()) {
-        NativeImageArchiveCatalog.addResourceProvider(byResource, resource, archive);
-      }
-    }
-    this.archivesByPath = java.util.Collections.unmodifiableMap(byPath);
+    this.archivesByPath =
+        archives.stream()
+            .collect(
+                java.util.stream.Collectors.toUnmodifiableMap(
+                    NativeImageArchiveInventory::path, archive -> archive));
+    final Map<String, List<NativeImageArchiveInventory>> byResource =
+        archives.stream()
+            .flatMap(
+                archive ->
+                    archive.resources().stream().map(resource -> Map.entry(resource, archive)))
+            .collect(
+                java.util.stream.Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    java.util.LinkedHashMap::new,
+                    java.util.stream.Collectors.mapping(
+                        Map.Entry::getValue, java.util.stream.Collectors.toList())));
     this.resourcesByPath =
         byResource.entrySet().stream()
             .collect(
@@ -63,7 +70,7 @@ final class NativeImageScanContext {
                     .thenComparing(
                         candidate -> candidate.filePath().toAbsolutePath().normalize().toString()))
             .toList();
-    final Set<Path> indexedPaths = ConcurrentHashMap.newKeySet();
+    final Set<Path> indexedPaths = new HashSet<>();
     final List<NativeImageArchiveInventory> inventories = new ArrayList<>();
     for (final ArtifactFileRef candidate : ordered) {
       final Path realPath = candidate.filePath().toRealPath();
@@ -82,7 +89,6 @@ final class NativeImageScanContext {
     return new NativeImageScanContext(List.of(NativeImageArchiveCatalog.inventory(realPath)), null);
   }
 
-  /* package */
   /* package */
   Set<String> logicalClasses(final Optional<Path> archive) throws IOException {
     if (archive.isEmpty()) {

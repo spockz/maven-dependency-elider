@@ -29,11 +29,6 @@ final class NativeImageJsonSupport {
   }
 
   /* package */
-  static JsonNode firstPresent(final JsonNode node, final String first, final String second) {
-    return node.hasNonNull(first) ? node.get(first) : node.get(second);
-  }
-
-  /* package */
   static void validateFields(
       final JsonNode object, final Set<String> supported, final String what, final String name)
       throws IOException {

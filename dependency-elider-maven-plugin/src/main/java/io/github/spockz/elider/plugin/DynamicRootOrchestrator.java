@@ -79,13 +79,27 @@ final class DynamicRootOrchestrator {
             scansByPath.values().stream()
                 .map(DependencyDynamicRoots.RootScan::serviceLoaderPolicy)
                 .toList());
+    final Map<Path, DependencyDynamicRoots.EffectiveRoots> effectiveRootsByPath =
+        scansByPath.entrySet().stream()
+            .collect(
+                java.util.stream.Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey,
+                    entry ->
+                        entry
+                            .getValue()
+                            .effectiveRoots(
+                                provenServiceInterfaces,
+                                conservativeServiceLoaderRoots,
+                                servicePolicy)));
     final Set<String> routedRoots = new HashSet<>();
+    final Set<String> allFeatureRoots = new HashSet<>();
+    effectiveRootsByPath
+        .values()
+        .forEach(effective -> allFeatureRoots.addAll(effective.featureRoots()));
     for (final ArtifactFileRef candidate : candidates) {
-      final DependencyDynamicRoots.RootScan scan = scansByPath.get(candidate.filePath());
       final DependencyDynamicRoots.EffectiveRoots effective =
-          scan.effectiveRoots(
-              provenServiceInterfaces, conservativeServiceLoaderRoots, servicePolicy);
-      routedRoots.addAll(featureRoots(scan, servicePolicy));
+          effectiveRootsByPath.get(candidate.filePath());
+      routedRoots.addAll(effective.featureRoots());
       classNames.addAll(effective.roots());
       if (effective.declaresRoots()) {
         declaringArtifacts.add(candidate.coordinate());
@@ -116,26 +130,8 @@ final class DynamicRootOrchestrator {
         scansByPath,
         unprovenRootsByCoordinate,
         provenServiceInterfaces,
+        allFeatureRoots,
         NativeImageConsumedInput.ordered(consumedInputs));
-  }
-
-  private static Set<String> featureRoots(
-      final DependencyDynamicRoots.RootScan scan,
-      final NativeImageServiceLoaderPolicy.Selection selection) {
-    if (!selection.enabled()) {
-      return Set.of();
-    }
-    final Set<String> roots = new HashSet<>();
-    for (final DependencyDynamicRoots.ServiceDescriptor descriptor : scan.serviceDescriptors()) {
-      if (selection.excludedServices().contains(descriptor.serviceInterface())) {
-        continue;
-      }
-      roots.add(descriptor.serviceInterface());
-      descriptor.providers().stream()
-          .filter(provider -> !selection.excludedProviders().contains(provider))
-          .forEach(roots::add);
-    }
-    return roots;
   }
 
   private static DependencyDynamicRoots.RootScan scanArchive(
@@ -168,9 +164,17 @@ final class DynamicRootOrchestrator {
     }
     final Set<String> owned = new HashSet<>();
     for (final ArtifactFileRef candidate : candidates) {
+      final Set<String> classes =
+          context.logicalClasses(java.util.Optional.of(candidate.filePath()));
+      final boolean rootsAreSmaller = roots.size() <= classes.size();
+      final Set<String> smaller = rootsAreSmaller ? roots : classes;
+      final Set<String> larger = rootsAreSmaller ? classes : roots;
       owned.clear();
-      owned.addAll(roots);
-      owned.retainAll(context.logicalClasses(java.util.Optional.of(candidate.filePath())));
+      for (final String className : smaller) {
+        if (larger.contains(className)) {
+          owned.add(className);
+        }
+      }
       if (!owned.isEmpty()) {
         scansByPath.computeIfPresent(
             candidate.filePath(), (ignored, scan) -> scan.withAdditionalClassRoots(owned));

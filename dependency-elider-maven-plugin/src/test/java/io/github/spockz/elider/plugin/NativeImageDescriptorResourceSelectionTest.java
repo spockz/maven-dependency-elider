@@ -6,17 +6,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.jar.JarOutputStream;
 import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
@@ -262,21 +257,8 @@ import org.junit.jupiter.api.Test;
       final Map<String, String> additions,
       final Map<String, byte[]> classAdditions)
       throws IOException {
-    final Path destination = temporaryDirectory.resolve(destinationName);
-    try (JarFile archive = new JarFile(source.toFile());
-        JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(archive, output, entries.nextElement());
-      }
-      for (final Map.Entry<String, String> addition : additions.entrySet()) {
-        writeEntry(output, addition.getKey(), addition.getValue().getBytes(StandardCharsets.UTF_8));
-      }
-      for (final Map.Entry<String, byte[]> addition : classAdditions.entrySet()) {
-        writeEntry(output, addition.getKey(), addition.getValue());
-      }
-    }
-    return destination;
+    return NativeImageExternalConfigurationInputTestSupport.appendEntries(
+        temporaryDirectory, source, destinationName, additions, classAdditions);
   }
 
   private Path appendEntries(
@@ -285,29 +267,9 @@ import org.junit.jupiter.api.Test;
     return appendEntries(source, destinationName, additions, Map.of());
   }
 
-  private static void copyEntry(
-      final JarFile archive, final JarOutputStream output, final JarEntry entry)
-      throws IOException {
-    output.putNextEntry(new JarEntry(entry.getName()));
-    try (InputStream input = archive.getInputStream(entry)) {
-      input.transferTo(output);
-    }
-    output.closeEntry();
-  }
-
-  private static void writeEntry(
-      final JarOutputStream output, final String name, final byte[] content) throws IOException {
-    output.putNextEntry(new JarEntry(name));
-    output.write(content);
-    output.closeEntry();
-  }
-
   private static void replaceArtifactFile(
       final Fixture fixture, final String artifactId, final Path replacement) {
-    fixture.artifacts().stream()
-        .filter(artifact -> artifactId.equals(artifact.getArtifactId()))
-        .findFirst()
-        .orElseThrow()
-        .setFile(replacement.toFile());
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(
+        fixture, artifactId, replacement);
   }
 }

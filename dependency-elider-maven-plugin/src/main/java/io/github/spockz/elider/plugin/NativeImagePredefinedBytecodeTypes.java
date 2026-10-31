@@ -72,28 +72,7 @@ final class NativeImagePredefinedBytecodeTypes {
     if (signature == null) {
       return;
     }
-    final SignatureVisitor visitor =
-        new SignatureVisitor(Opcodes.ASM9) {
-          /** Tracks nested class signature segments while collecting binary names. */
-          private String currentClass;
-
-          @Override
-          public void visitClassType(final String name) {
-            currentClass = name;
-            addInternalName(currentClass, roots);
-          }
-
-          @Override
-          public void visitInnerClassType(final String name) {
-            currentClass = currentClass + "$" + name;
-            addInternalName(currentClass, roots);
-          }
-
-          @Override
-          public SignatureVisitor visitTypeArgument(final char wildcard) {
-            return signatureVisitor(roots);
-          }
-        };
+    final SignatureVisitor visitor = signatureVisitor(roots);
     try {
       new SignatureReader(signature).accept(visitor);
     } catch (IllegalArgumentException exception) {

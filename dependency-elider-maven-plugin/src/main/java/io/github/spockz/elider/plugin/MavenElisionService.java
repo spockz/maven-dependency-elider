@@ -112,6 +112,9 @@ final class MavenElisionService {
 
   /* package */ Analysis finish(final PreparedAnalysis prepared)
       throws IOException, MojoFailureException {
+    if (!prepared.options().trim().enabled()) {
+      MavenArtifactInventory.verifyPreparedInventory(prepared);
+    }
     if (ElisionReachabilityEngine.requiresTierAwareMrjarTrim(prepared)) {
       final Analysis analysis =
           ElisionReachabilityEngine.finishEffectiveOutputs(

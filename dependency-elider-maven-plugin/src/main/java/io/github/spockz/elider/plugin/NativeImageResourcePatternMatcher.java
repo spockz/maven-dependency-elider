@@ -18,7 +18,12 @@ final class NativeImageResourcePatternMatcher {
 
   /* package */ record Selector(Pattern regex, Pattern glob, String module, String group) {}
 
-  /* package */ record BundleSelector(String name, String module, String group) {}
+  /* package */ record BundleSelector(String module, String group, List<String> resourceBases) {
+    /* package */
+    BundleSelector(final String name, final String module, final String group) {
+      this(module, group, NativeImageBundleResourceSupport.resourceBases(name));
+    }
+  }
 
   /* package */ static Selector regex(
       final String expression, final String module, final String source) throws IOException {
@@ -53,11 +58,16 @@ final class NativeImageResourcePatternMatcher {
       final Set<String> roots,
       final Set<Path> providers)
       throws IOException {
+    if (includes.isEmpty() && bundles.isEmpty()) {
+      return false;
+    }
     boolean addedClassRoot = false;
     for (final Map.Entry<String, List<NativeImageArchiveInventory>> resource :
         resourceIndex.entrySet().stream().sorted(Map.Entry.comparingByKey()).toList()) {
       final String resourceName = resource.getKey();
-      if (!selected(includes, excludes, bundles, resourceName)) {
+      final String logicalResourceName =
+          NativeImageBundleResourceSupport.logicalResourceName(resourceName);
+      if (!selected(includes, excludes, bundles, resourceName, logicalResourceName)) {
         continue;
       }
       for (final NativeImageArchiveInventory archive : resource.getValue()) {
@@ -88,7 +98,8 @@ final class NativeImageResourcePatternMatcher {
       final List<Selector> includes,
       final List<Selector> excludes,
       final List<BundleSelector> bundles,
-      final String resourceName) {
+      final String resourceName,
+      final String logicalResourceName) {
     return includes.stream()
             .anyMatch(
                 include ->
@@ -97,7 +108,7 @@ final class NativeImageResourcePatternMatcher {
         || bundles.stream()
             .anyMatch(
                 bundle ->
-                    matches(bundle, resourceName)
+                    matches(bundle, logicalResourceName)
                         && !excluded(excludes, bundle.group(), resourceName));
   }
 
@@ -115,7 +126,7 @@ final class NativeImageResourcePatternMatcher {
 
   private static boolean matches(final BundleSelector selector, final String resourceName) {
     return (selector.module() == null || "ALL-UNNAMED".equals(selector.module()))
-        && NativeImageBundleResourceSupport.matches(selector.name(), resourceName);
+        && NativeImageBundleResourceSupport.matches(selector.resourceBases(), resourceName);
   }
 
   private static boolean excluded(

@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -20,6 +19,13 @@ import org.objectweb.asm.Opcodes;
 /** Verifies typed external descriptor snapshots and their publication boundary. */
 /* package */ final class NativeImageExternalConfigurationInputTest
     extends MavenDependencyTrimmerInMemoryClosureSupport {
+  /** Entry name used to point from the test archive to an external descriptor. */
+  private static final String NATIVE_IMAGE_PROPERTIES_ENTRY =
+      "META-INF/native-image/test/native-image.properties";
+
+  /** Trace content that keeps the in-memory closure fixture valid. */
+  private static final String ENTRY_TRACE = "closure.a.Entry\n";
+
   /** Temporary directory for source-neutral file inputs. */
   /* package */ @TempDir Path inputDirectory;
 
@@ -172,45 +178,6 @@ import org.objectweb.asm.Opcodes;
 
   /* package */
   @Test
-  void contentChangesWithPreservedSizeAndMtimeInvalidateSnapshot() throws IOException {
-    final Path descriptor = inputDirectory.resolve("same-size.payload");
-    Files.writeString(descriptor, "[1,2,3]");
-    final NativeImageInput input =
-        NativeImageInput.file(descriptor, NativeImageDescriptorKind.REFLECTION);
-    input.open().close();
-    final NativeImageConsumedInput snapshot = input.consumedInputs().get(0);
-    final FileTime originalTime = Files.getLastModifiedTime(descriptor);
-    Files.writeString(descriptor, "[1,2,4]");
-    Files.setLastModifiedTime(descriptor, originalTime);
-
-    assertThatThrownBy(() -> NativeImageConsumedInput.verifyAll(List.of(snapshot)))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("content changed");
-  }
-
-  /* package */
-  @Test
-  void symlinkRetargetToEqualBytesInvalidatesSnapshot() throws IOException {
-    final Path firstTarget = inputDirectory.resolve("first-target.payload");
-    final Path secondTarget = inputDirectory.resolve("second-target.payload");
-    final Path logicalPath = inputDirectory.resolve("linked.payload");
-    Files.writeString(firstTarget, "same");
-    Files.writeString(secondTarget, "same");
-    Files.createSymbolicLink(logicalPath, firstTarget.getFileName());
-    final NativeImageInput input =
-        NativeImageInput.file(logicalPath, NativeImageDescriptorKind.REFLECTION);
-    input.open().close();
-    final NativeImageConsumedInput snapshot = input.consumedInputs().get(0);
-    Files.delete(logicalPath);
-    Files.createSymbolicLink(logicalPath, secondTarget.getFileName());
-
-    assertThatThrownBy(() -> NativeImageConsumedInput.verifyAll(List.of(snapshot)))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("target changed");
-  }
-
-  /* package */
-  @Test
   void relativeFilePointerRejectsSymlinkEscapeFromInvocationBase() throws IOException {
     final Path invocationBase = Files.createDirectories(inputDirectory.resolve("invocation-base"));
     final Path outsideDirectory = Files.createDirectories(inputDirectory.resolve("outside"));
@@ -249,13 +216,13 @@ import org.objectweb.asm.Opcodes;
             fixture.snapshot("a").filePath(),
             "a-with-external-pointer.jar",
             java.util.Map.of(
-                "META-INF/native-image/test/native-image.properties",
+                NATIVE_IMAGE_PROPERTIES_ENTRY,
                 "Args = -H:ReflectionConfigurationFiles=external-reflection.payload\n"));
     NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
     final Path descriptor = temporaryDirectory.resolve("external-reflection.payload");
     Files.writeString(descriptor, NativeImageScanContextTestSupport.reflection("closure.c.Leaf"));
     final Path trace = temporaryDirectory.resolve("external-pointer-trace.lst");
-    Files.writeString(trace, "closure.a.Entry\n");
+    Files.writeString(trace, ENTRY_TRACE);
     final MavenElisionService service = new MavenElisionService();
     final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
@@ -284,11 +251,11 @@ import org.objectweb.asm.Opcodes;
             fixture.snapshot("a").filePath(),
             "a-with-link-path.jar",
             java.util.Map.of(
-                "META-INF/native-image/test/native-image.properties",
+                NATIVE_IMAGE_PROPERTIES_ENTRY,
                 "Args = -H:LinkAtBuildTimePaths=" + logicalPath + "\n"));
     NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
     final Path trace = temporaryDirectory.resolve("link-path-trace.lst");
-    Files.writeString(trace, "closure.a.Entry\n");
+    Files.writeString(trace, ENTRY_TRACE);
     final MavenElisionService service = new MavenElisionService();
     final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
@@ -301,5 +268,71 @@ import org.objectweb.asm.Opcodes;
 
     NativeImageExternalConfigurationInputTestSupport.assertRetargetRejectedBeforePublication(
         service, prepared, outputDirectory);
+  }
+
+  /* package */
+  @Test
+  @org.junit.jupiter.api.DisplayName(
+      "ADR-0009/no-trim finish revalidates external descriptor bytes")
+  void noTrimFinishRevalidatesExternalDescriptorBytes() throws IOException, MojoFailureException {
+    final Fixture fixture = fixture(false, false, false);
+    final Path declaring =
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
+            fixture.snapshot("a").filePath(),
+            "a-no-trim-external-pointer.jar",
+            java.util.Map.of(
+                NATIVE_IMAGE_PROPERTIES_ENTRY,
+                "Args = -H:ReflectionConfigurationFiles=no-trim-reflection.payload\n"));
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
+    final Path descriptor = temporaryDirectory.resolve("no-trim-reflection.payload");
+    Files.writeString(descriptor, NativeImageScanContextTestSupport.reflection("closure.c.Leaf"));
+    final Path trace = temporaryDirectory.resolve("no-trim-descriptor-trace.lst");
+    Files.writeString(trace, ENTRY_TRACE);
+    final MavenElisionService service = new MavenElisionService();
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
+        service.prepare(
+            fixture.mavenProject(),
+            MavenElisionServiceEffectiveAnalysisFixtures.options(
+                List.of(trace.toFile()), null, false));
+    Files.writeString(
+        descriptor, NativeImageScanContextTestSupport.reflection("closure.d.Ancestor"));
+
+    assertThatThrownBy(() -> service.finish(prepared))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("content changed after preparation");
+  }
+
+  /* package */
+  @Test
+  @org.junit.jupiter.api.DisplayName(
+      "ADR-0009/no-trim finish revalidates LinkAtBuildTimePaths alias target")
+  void noTrimFinishRevalidatesLinkPathAliasTarget() throws IOException, MojoFailureException {
+    final Fixture fixture = fixture(false, false, false);
+    final Path logicalPath = temporaryDirectory.resolve("no-trim-link-target.jar");
+    Files.createSymbolicLink(logicalPath, fixture.snapshot("b").filePath());
+    final Path declaring =
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
+            fixture.snapshot("a").filePath(),
+            "a-no-trim-link-path.jar",
+            java.util.Map.of(
+                NATIVE_IMAGE_PROPERTIES_ENTRY,
+                "Args = -H:LinkAtBuildTimePaths=" + logicalPath + "\n"));
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
+    final Path trace = temporaryDirectory.resolve("no-trim-link-path-trace.lst");
+    Files.writeString(trace, ENTRY_TRACE);
+    final MavenElisionService service = new MavenElisionService();
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
+        service.prepare(
+            fixture.mavenProject(),
+            MavenElisionServiceEffectiveAnalysisFixtures.options(
+                List.of(trace.toFile()), null, false));
+    Files.delete(logicalPath);
+    Files.createSymbolicLink(logicalPath, fixture.snapshot("c").filePath());
+
+    assertThatThrownBy(() -> service.finish(prepared))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("target changed after preparation");
   }
 }

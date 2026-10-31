@@ -158,6 +158,99 @@ import org.junit.jupiter.api.io.TempDir;
 
   /* package */
   @Test
+  @org.junit.jupiter.api.DisplayName(
+      "ADR-0009/CLI and descriptor bundles match the same Unicode providers")
+  void cliAndDescriptorBundlesMatchSameUnicodeProviders() throws IOException {
+    final String unicodeBundle = "org.example.Méssages_en_US";
+    final String bundleDescriptor =
+        """
+        {"bundles":[{"name":"org.example.Méssages_en_US"}]}
+        """;
+    Files.writeString(tempDir.resolve("resource-config.json"), bundleDescriptor);
+    final Path descriptorDeclaring =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "unicode-bundle-descriptor.jar",
+            NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+            "Args = -H:ResourceConfigurationFiles=resource-config.json\n",
+            "META-INF/native-image/test/resource-config.json",
+            bundleDescriptor);
+    final Path cliDeclaring =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "unicode-bundle-cli.jar",
+            NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+            "Args = -H:IncludeResourceBundles=" + unicodeBundle.replace("é", "\\u00e9") + "\n");
+    final Path propertiesOnly =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "unicode-bundle-properties.jar",
+            "org/example/Méssages.properties",
+            "key=value");
+    final Path classProvider =
+        NativeImageScanContextTestSupport.jar(
+            tempDir, "unicode-bundle-class.jar", "org/example/Méssages_fr.class", CLASS_BYTES);
+    final List<ArtifactFileRef> sharedProviders =
+        List.of(candidate("properties", propertiesOnly), candidate("class", classProvider));
+    final ElisionAnalysisModel.DynamicRootInputs descriptorResult =
+        scanBundleInputs(descriptorDeclaring, sharedProviders);
+    final ElisionAnalysisModel.DynamicRootInputs cliResult =
+        scanBundleInputs(cliDeclaring, sharedProviders);
+
+    final Path propertiesOnlyDeclaring =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "properties-only-bundle-cli.jar",
+            NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+            "Args = -H:IncludeResourceBundles=org.example.Messages\n");
+    final ElisionAnalysisModel.DynamicRootInputs propertiesOnlyRoots =
+        scanBundleInputs(
+            propertiesOnlyDeclaring,
+            List.of(
+                candidate(
+                    "properties-only",
+                    NativeImageScanContextTestSupport.jar(
+                        tempDir,
+                        "properties-only-bundle-provider.jar",
+                        "org/example/Messages.properties",
+                        "key=value"))));
+    final Set<String> expectedRoots = Set.of("org.example.Méssages_fr");
+    final Set<ArtifactCoordinate> expectedProviders =
+        Set.of(
+            ArtifactCoordinate.of(PACKAGE_NAME, "properties", VERSION),
+            ArtifactCoordinate.of(PACKAGE_NAME, "class", VERSION));
+    assertThat(
+            List.of(
+                cliResult.classNames(),
+                descriptorResult.classNames(),
+                cliResult.resourceProviderArtifacts(),
+                descriptorResult.resourceProviderArtifacts(),
+                propertiesOnlyRoots.classNames(),
+                propertiesOnlyRoots.resourceProviderArtifacts()))
+        .containsExactly(
+            expectedRoots,
+            expectedRoots,
+            expectedProviders,
+            expectedProviders,
+            Set.of(),
+            Set.of(ArtifactCoordinate.of(PACKAGE_NAME, "properties-only", VERSION)));
+  }
+
+  private ElisionAnalysisModel.DynamicRootInputs scanBundleInputs(
+      final Path declaring, final List<ArtifactFileRef> providers) throws IOException {
+    final List<ArtifactFileRef> candidates = new java.util.ArrayList<>();
+    candidates.add(candidate("declaring-" + declaring.getFileName(), declaring));
+    candidates.addAll(providers);
+    return DynamicRootOrchestrator.dynamicRoots(
+        candidates,
+        DependencyDynamicRoots::scan,
+        NativeImageScanContext.create(candidates, tempDir),
+        Set.of(),
+        false);
+  }
+
+  /* package */
+  @Test
   void descriptorBundlesResolveExistingLocaleProvidersAcrossArchives() throws IOException {
     for (final String descriptor :
         List.of(

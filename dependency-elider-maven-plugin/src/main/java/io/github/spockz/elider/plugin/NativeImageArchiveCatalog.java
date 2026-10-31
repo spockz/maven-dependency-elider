@@ -4,12 +4,10 @@ package io.github.spockz.elider.plugin;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.List;
-import java.util.Map;
+import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.TreeSet;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -21,24 +19,26 @@ import java.util.jar.JarFile;
 
   /* package */
   static NativeImageArchiveInventory inventory(final Path path) throws IOException {
-    final Set<String> logicalClasses = MultiReleaseClassInventory.logicalClassNames(path);
-    final Map<String, Integer> resources = new ConcurrentHashMap<>();
+    final Set<String> logicalClasses = new TreeSet<>();
+    final Set<String> resources = new HashSet<>();
     try (JarFile archive = new JarFile(path.toFile())) {
       final Enumeration<JarEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
         final JarEntry entry = entries.nextElement();
-        resources.merge(entry.getName(), 1, Integer::sum);
+        final String entryName = entry.getName();
+        resources.add(entryName);
+        if (!entry.isDirectory() && entryName.endsWith(".class")) {
+          final String logicalName = MultiReleaseClassInventory.logicalClassName(entryName);
+          if (!MultiReleaseClassInventory.isModuleDescriptor(logicalName)) {
+            logicalClasses.add(
+                logicalName
+                    .substring(0, logicalName.length() - ".class".length())
+                    .replace('/', '.'));
+          }
+        }
       }
     }
-    return new NativeImageArchiveInventory(path, logicalClasses, Map.copyOf(resources));
-  }
-
-  /* package */
-  static void addResourceProvider(
-      final Map<String, List<NativeImageArchiveInventory>> byResource,
-      final String resource,
-      final NativeImageArchiveInventory archive) {
-    byResource.computeIfAbsent(resource, ignored -> new ArrayList<>()).add(archive);
+    return new NativeImageArchiveInventory(path, Set.copyOf(logicalClasses), Set.copyOf(resources));
   }
 
   /* package */

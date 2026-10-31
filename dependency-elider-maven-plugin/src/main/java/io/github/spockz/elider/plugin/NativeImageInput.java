@@ -8,9 +8,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -159,11 +156,8 @@ final class NativeImageInput {
     /** WHY: The declared kind distinguishes otherwise arbitrary external filenames. */
     private final NativeImageDescriptorKind kind;
 
-    /** WHY: A shared input can be opened by concurrent readers. */
-    private final Map<String, CapturedFile> capturedFiles = new ConcurrentHashMap<>();
-
-    /** WHY: Serializes capture and snapshot insertion as one byte-identity operation. */
-    private final ReentrantLock captureLock = new ReentrantLock();
+    /** WHY: One descriptor's reads and sibling captures run sequentially during scan. */
+    private final List<CapturedFile> capturedFiles = new java.util.ArrayList<>();
 
     private FileSource(final Path path, final NativeImageDescriptorKind kind) {
       this.path = path;
@@ -206,25 +200,16 @@ final class NativeImageInput {
 
     @Override
     public List<NativeImageConsumedInput> consumedInputs() {
-      return capturedFiles.values().stream().map(CapturedFile::snapshot).toList();
+      return capturedFiles.stream().map(CapturedFile::snapshot).toList();
     }
 
     private CapturedFile capture(final Path logicalPath, final String role) throws IOException {
-      captureLock.lock();
-      try {
-        return captureUnderLock(logicalPath, role);
-      } finally {
-        captureLock.unlock();
-      }
-    }
-
-    private CapturedFile captureUnderLock(final Path logicalPath, final String role)
-        throws IOException {
       final Path normalized = logicalPath.toAbsolutePath().normalize();
       final String key = role + "|" + normalized;
-      final CapturedFile existing = capturedFiles.get(key);
-      if (existing != null) {
-        return existing;
+      for (final CapturedFile existing : capturedFiles) {
+        if (existing.identity().equals(key)) {
+          return existing;
+        }
       }
       final Path canonical = normalized.toRealPath();
       final byte[] bytes = Files.readAllBytes(canonical);
@@ -233,6 +218,7 @@ final class NativeImageInput {
       }
       final CapturedFile captured =
           new CapturedFile(
+              key,
               bytes,
               new NativeImageConsumedInput(
                   normalized,
@@ -240,10 +226,10 @@ final class NativeImageInput {
                   role,
                   bytes.length,
                   NativeImageConsumedInput.digest(bytes)));
-      capturedFiles.put(key, captured);
+      capturedFiles.add(captured);
       return captured;
     }
   }
 
-  private record CapturedFile(byte[] bytes, NativeImageConsumedInput snapshot) {}
+  private record CapturedFile(String identity, byte[] bytes, NativeImageConsumedInput snapshot) {}
 }

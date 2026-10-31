@@ -396,7 +396,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         }
         output.putNextEntry(new JarEntry("META-INF/native-image/test/native-image.properties"));
         output.write(
-            "Args = -H:Class=closure.a.Entry -H:CustomUnknown=value\n"
+            "Args = -H:Class=closure.a.Extra -H:Class=closure.b.Middle -H:CustomUnknown=value\n"
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8));
         output.closeEntry();
       }

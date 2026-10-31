@@ -913,18 +913,6 @@ final class DependencyDynamicRootsTest {
   }
 
   @Test
-  void acceptsUnknownAndAuditedNoRootOptionsWithoutAddingRoots() throws IOException {
-    final Path jar =
-        nativeImageJar(
-            "Args = -H:CustomUnknown=value -march=native --pgo --gc=G1 "
-                + "-Dcustom.value=@file\n");
-
-    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
-
-    assertThat(scan.roots()).isEmpty();
-  }
-
-  @Test
   void rejectsAuditedIndirectionsBeforeUnknownArgumentAcceptance() throws IOException {
     final List<String> indirections =
         List.of(
@@ -954,6 +942,7 @@ final class DependencyDynamicRootsTest {
             "-J-Xbootclasspath/a:boot.jar",
             "-J-javaagent:agent.jar",
             "-J-agentlib:jdwp",
+            "-J-agentpath:agent.so",
             "MainClass");
 
     for (final String argument : indirections) {
@@ -966,7 +955,9 @@ final class DependencyDynamicRootsTest {
   }
 
   @Test
-  void rejectsMalformedIndirectionFormsButAllowsNearMissOptions() throws IOException {
+  @org.junit.jupiter.api.DisplayName(
+      "ADR-0009/forwarded agent malformed forms reject while near misses scan")
+  void forwardedAgentMalformedFormsRejectAndNearMissesScan() throws IOException {
     final List<String> malformed =
         List.of(
             "@",
@@ -988,6 +979,15 @@ final class DependencyDynamicRootsTest {
             "-J-Xbootclasspath/a",
             "-J-Xbootclasspath/a:",
             "-J-Xbootclasspath/a=boot.jar",
+            "-J-javaagent",
+            "-J-javaagent:",
+            "-J-javaagent=",
+            "-J-agentlib",
+            "-J-agentlib:",
+            "-J-agentlib=",
+            "-J-agentpath",
+            "-J-agentpath:",
+            "-J-agentpath=",
             "--module=",
             "--configurations-path=",
             "--exclude-config=",
@@ -1018,11 +1018,15 @@ final class DependencyDynamicRootsTest {
             "--pgo",
             "--gc=G1",
             "-J-Dcustom.value=@file",
+            "-J-javaagentx=agent.jar",
+            "-J-agentlibx=jdwp",
+            "-J-agentpathx=agent.so",
             "-Dcustom.value=@file",
             "-H:UnknownFlag=value",
             "-H:IncludeResources=asset@name\\.dat");
     for (final String argument : accepted) {
-      NativeImageIndirectionGuard.validate(argument);
+      final Path jar = nativeImageJar("Args = " + argument + "\n");
+      assertThat(DependencyDynamicRoots.scan(jar).roots()).as(argument).isEmpty();
     }
   }
 

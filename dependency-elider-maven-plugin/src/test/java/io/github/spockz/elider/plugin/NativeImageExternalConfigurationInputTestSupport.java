@@ -66,6 +66,16 @@ import java.util.jar.JarOutputStream;
       final String destinationName,
       final Map<String, String> additions)
       throws IOException {
+    return appendEntries(outputDirectory, source, destinationName, additions, Map.of());
+  }
+
+  /* package */ static Path appendEntries(
+      final Path outputDirectory,
+      final Path source,
+      final String destinationName,
+      final Map<String, String> additions,
+      final Map<String, byte[]> classAdditions)
+      throws IOException {
     final Path destination = outputDirectory.resolve(destinationName);
     try (JarFile archive = new JarFile(source.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
@@ -74,6 +84,9 @@ import java.util.jar.JarOutputStream;
         copyEntry(archive, output, entries.nextElement());
       }
       for (final Map.Entry<String, String> addition : additions.entrySet()) {
+        writeEntry(output, addition.getKey(), addition.getValue());
+      }
+      for (final Map.Entry<String, byte[]> addition : classAdditions.entrySet()) {
         writeEntry(output, addition.getKey(), addition.getValue());
       }
     }
@@ -103,8 +116,13 @@ import java.util.jar.JarOutputStream;
 
   private static void writeEntry(
       final JarOutputStream output, final String name, final String value) throws IOException {
+    writeEntry(output, name, value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  }
+
+  private static void writeEntry(
+      final JarOutputStream output, final String name, final byte[] value) throws IOException {
     output.putNextEntry(new JarEntry(name));
-    output.write(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    output.write(value);
     output.closeEntry();
   }
 }

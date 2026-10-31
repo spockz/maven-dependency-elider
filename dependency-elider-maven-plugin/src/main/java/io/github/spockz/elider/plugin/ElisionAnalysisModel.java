@@ -87,6 +87,7 @@ final class ElisionAnalysisModel {
       Map<Path, DependencyDynamicRoots.RootScan> scansByPath,
       Map<ArtifactCoordinate, Set<String>> unprovenServiceRootsByCoordinate,
       Set<String> provenServiceInterfaces,
+      Set<String> featureRoots,
       List<NativeImageConsumedInput> consumedInputs) {
     /* default */ DynamicRootInputs {
       classNames = Set.copyOf(classNames);
@@ -95,6 +96,7 @@ final class ElisionAnalysisModel {
       scansByPath = Map.copyOf(scansByPath);
       unprovenServiceRootsByCoordinate = Map.copyOf(unprovenServiceRootsByCoordinate);
       provenServiceInterfaces = Set.copyOf(provenServiceInterfaces);
+      featureRoots = Set.copyOf(featureRoots);
       consumedInputs = NativeImageConsumedInput.ordered(consumedInputs);
     }
 
@@ -102,7 +104,15 @@ final class ElisionAnalysisModel {
         final Set<String> classNames,
         final Set<ArtifactCoordinate> declaringArtifacts,
         final Map<Path, DependencyDynamicRoots.RootScan> scansByPath) {
-      this(classNames, declaringArtifacts, Set.of(), scansByPath, Map.of(), Set.of(), List.of());
+      this(
+          classNames,
+          declaringArtifacts,
+          Set.of(),
+          scansByPath,
+          Map.of(),
+          Set.of(),
+          Set.of(),
+          List.of());
     }
   }
 

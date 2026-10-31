@@ -2001,7 +2001,8 @@ final class ElideMojoTest {
   }
 
   @Test
-  void unknownNativeImageArgumentDoesNotDisableModeledTrimming()
+  @DisplayName("ADR-0009/untraced modeled root is retained while an unrelated class is removed")
+  void untracedModeledRootRetainsWhileSeparateControlIsRemoved()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
         runtimeArtifact(

@@ -45,7 +45,7 @@ final class NativeImageClassRootParsing {
     }
     for (final String value : values.split(",", -1)) {
       final String bundle = value.trim();
-      if (!isResourceBundleName(bundle)) {
+      if (!NativeImageBundleResourceSupport.isBundleName(bundle)) {
         throw malformedClassList(propertiesEntry, bundle);
       }
       NativeImageBundleResourceSupport.include(
@@ -103,9 +103,5 @@ final class NativeImageClassRootParsing {
       final JarEntry propertiesEntry, final String value) {
     return new IOException(
         "Unsupported native-image class name in " + propertiesEntry.getName() + ": " + value);
-  }
-
-  private static boolean isResourceBundleName(final String bundle) {
-    return bundle.matches("[A-Za-z0-9_$-]+(\\.[A-Za-z0-9_$-]+)*");
   }
 }

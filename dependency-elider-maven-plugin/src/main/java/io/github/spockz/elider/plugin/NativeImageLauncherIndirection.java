@@ -28,6 +28,10 @@ final class NativeImageLauncherIndirection {
   private static final List<String> FORWARDED_OPTIONS =
       List.of("--upgrade-module-path", "--patch-module");
 
+  /** Forwarded JVM agent options that create unmodeled class roots. */
+  private static final List<String> FORWARDED_AGENT_OPTIONS =
+      List.of("-javaagent", "-agentlib", "-agentpath");
+
   private NativeImageLauncherIndirection() {}
 
   /* package */ static void validate(final String argument) throws IOException {
@@ -77,9 +81,7 @@ final class NativeImageLauncherIndirection {
     if (nested.startsWith("@")) {
       NativeImageIndirectionGuard.reject(argument, "forwarded JVM argument files are unsupported");
     }
-    if (nested.startsWith("-javaagent:")
-        || nested.startsWith("-agentlib:")
-        || nested.startsWith("-agentpath:")) {
+    if (isForwardedAgentOption(nested)) {
       NativeImageIndirectionGuard.reject(argument, "forwarded JVM agents are unsupported");
     }
     validateForwardedModuleInputs(argument, nested);
@@ -89,6 +91,17 @@ final class NativeImageLauncherIndirection {
             argument, "forwarded launcher indirection '" + option + "' is unsupported");
       }
     }
+  }
+
+  private static boolean isForwardedAgentOption(final String nested) {
+    for (final String option : FORWARDED_AGENT_OPTIONS) {
+      if (nested.equals(option)
+          || nested.startsWith(option + ":")
+          || nested.startsWith(option + "=")) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static void validateForwardedModuleInputs(final String original, final String nested)

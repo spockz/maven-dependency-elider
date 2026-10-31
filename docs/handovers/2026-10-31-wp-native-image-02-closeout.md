@@ -1,27 +1,29 @@
-<!-- WHY: Records WP-NATIVE-02 implementation scope, integration review, and verification evidence. -->
+<!-- WHY: Records WP-NATIVE-02 scope, correction evidence, and the current review boundary. -->
 # Work Package Closeout: WP-NATIVE-02 Native-Image Argument Ingestion
 
 ## Outcome
 
-WP-NATIVE-02 is implemented on a branch synchronized with `main` at `b7ea8bbc33c2b24c2ca3f1ef146602bbbf3da6fd`. The package adds class-root inference for the audited Native Image argument and descriptor inventory, accepts unmodeled non-class compiler options without pass-through fallback, and retains explicit errors for malformed syntax and audited hidden inputs. Its handover is [2026-10-30 WP-NATIVE-02](2026-10-30-wp-native-image-02-exhaustive-flag-inference-and-permissive-acceptance.md).
+WP-NATIVE-02 implements the bounded GraalVM Native Image argument and descriptor inventory described in [the handover](2026-10-30-wp-native-image-02-exhaustive-flag-inference-and-permissive-acceptance.md). This correction branch, `track/native-image-02`, is based at `a63d3e5` and remains unmerged for independent read-only Sol review.
 
-## Implementation
+## Correction coverage
 
-| Slice | Commit | Result |
-| :--- | :--- | :--- |
-| Resource selectors and descriptor semantics | `da4f0ac`, `da0f6fc` | Matched the pinned GraalVM selector grammar, preserved empty module semantics, and resolved selected classes against archive owners. |
-| Audited indirection rejection | `1a8f958` | Rejects argfiles, class/module paths, launch operands, and audited nested JVM inputs before artifact mutation. |
-| Permissive argument acceptance | `80e93a2` | Removed allowlist and fallback controls; unknown non-class options no longer disable trimming. |
-| Effective root routing | `6b468fb` | Routes deferred resource and ServiceLoader feature roots into owner scans so effective and multi-release trimming retain selected classes. |
+- No-trim finish revalidates consumed external descriptor bytes and `LinkAtBuildTimePaths` aliases.
+- Forwarded Java-agent options reject exact bare, empty, and malformed forms while unrelated near misses remain accepted.
+- Empty and truncated predefined classdata fail with hash and configuration-path context.
+- CLI and descriptor bundle names share the Unicode resource-family grammar; parity tests use matching class and properties resources.
+- Mixed-option coverage keeps untraced, otherwise unreachable `closure.a.Extra`, traces `Entry`, roots `Middle`, and proves `Unused` is physically removed.
+- Bundle selection, archive inventory, owner routing, feature roots, and sequential context construction use the reviewed hot-path and allocation refinements.
+- Descriptor archive test helpers are shared where their entry semantics match. MRJAR-specific fixture construction remains separate.
+- `.scratch/orchestration-status.md` was restored to the requested `b7ea8bbc` version in this track only.
 
-The main refactor was preserved during branch synchronization. Consumed external configuration identities remain part of graph and trim cache keys, with revalidation after graph binding and immediately before direct output publication. A mutation regression proves staged output is discarded when a descriptor changes before publication.
+No additional behavior beyond ADR-0009 and RQ-0016 was introduced. ADR-0009, RQ-0016, the Native Image FAQ, and the contributor decision row now describe the shared bundle grammar and malformed classdata behavior.
 
 ## Verification
 
-The full `make check` passed on the synchronized tree using GraalVM 21.0.12+7.1 and the existing `markdownlint-cli2` installation. It passed 246 core tests, 547 plugin tests, 16 lifecycle integration tests, Java static checks, Markdown lint, the fixture scheduler, SBOM comparison tests, and transcript drift checks. Configured command transcripts were up to date. Log: `/tmp/wp-native-image02-final-check.log`.
+The exact command `JAVA_HOME=/workspace/sources/maven-dependency-elider/.scratch/toolchains/graalvm-jdk-21.0.12+7.1 make fmt lint-java test-plugin test-core` passed. Spotless was clean; Checkstyle, PMD, and SpotBugs passed; core tests passed 246/246; plugin tests passed 550/550; lifecycle integration tests passed 16/16. The final focused correction regressions passed 7/7.
 
-The focused direct-publication mutation regression passed (1 test), and `make lint-java` passed independently after the final publication-boundary changes. Independent review approved the synchronized implementation and its owner-root, cache-validation, and publication behavior.
+## Review and compatibility
 
-## Compatibility and integration
+The existing [Sol contract-slice receipt](../../.scratch/reviews/wp-native-image-02-slice-1-contract.md) approves the contract and documentation slice; it does not cover this correction implementation. This branch is awaiting a new independent read-only Sol review. A Gemini bridge review could not run because no Gemini bridge tool is present in this environment's tool catalog.
 
-No persisted schema version or migration policy changed. Unreleased format versions remain at version 1. The validated package branch is ready for a fast-forward to `main` after explicit user sign-off.
+No persisted schema version or migration policy changed. Unreleased format versions remain at version 1. This branch is intentionally left unmerged.

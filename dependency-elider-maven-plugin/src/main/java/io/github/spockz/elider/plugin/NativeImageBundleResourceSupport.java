@@ -27,26 +27,44 @@ final class NativeImageBundleResourceSupport {
       final String requestedBundle,
       final Set<String> roots,
       final Set<Path> providers) {
-    for (final String family : bundleFamilies(requestedBundle)) {
-      final String resourceBase = family.replace('.', '/');
-      for (final Map.Entry<String, List<NativeImageArchiveInventory>> entry :
-          resources.entrySet()) {
-        final String logicalResource = logicalResourceName(entry.getKey());
-        if (isBundleResource(logicalResource, resourceBase)) {
-          for (final NativeImageArchiveInventory archive : entry.getValue()) {
-            providers.add(archive.path());
-            addClassResourceRoot(logicalResource, archive, roots);
-          }
+    final List<String> resourceBases = resourceBases(requestedBundle);
+    for (final Map.Entry<String, List<NativeImageArchiveInventory>> entry : resources.entrySet()) {
+      final String logicalResource = logicalResourceName(entry.getKey());
+      if (matches(resourceBases, logicalResource)) {
+        for (final NativeImageArchiveInventory archive : entry.getValue()) {
+          providers.add(archive.path());
+          addClassResourceRoot(logicalResource, archive, roots);
         }
       }
     }
   }
 
-  /* package */ static boolean matches(final String requestedBundle, final String resource) {
-    final String logicalResource = logicalResourceName(resource);
+  /* package */ static boolean matches(final List<String> resourceBases, final String resource) {
+    return resourceBases.stream().anyMatch(base -> isBundleResource(resource, base));
+  }
+
+  /* package */ static List<String> resourceBases(final String requestedBundle) {
     return bundleFamilies(requestedBundle).stream()
         .map(family -> family.replace('.', '/'))
-        .anyMatch(base -> isBundleResource(logicalResource, base));
+        .toList();
+  }
+
+  /* package */ static String logicalResourceName(final String resource) {
+    final String prefix = "META-INF/versions/";
+    if (!resource.startsWith(prefix)) {
+      return resource;
+    }
+    final int slash = resource.indexOf('/', prefix.length());
+    if (slash < 0) {
+      return resource;
+    }
+    for (int index = prefix.length(); index < slash; index++) {
+      final char digit = resource.charAt(index);
+      if (digit < '0' || digit > '9') {
+        return resource;
+      }
+    }
+    return slash == prefix.length() ? resource : resource.substring(slash + 1);
   }
 
   private static Set<String> bundleFamilies(final String requestedBundle) {
@@ -68,10 +86,6 @@ final class NativeImageBundleResourceSupport {
       return requestedBundle;
     }
     return requestedBundle.substring(0, separator);
-  }
-
-  private static String logicalResourceName(final String resource) {
-    return resource.replaceFirst("^META-INF/versions/[0-9]+/", "");
   }
 
   private static boolean isBundleResource(final String resource, final String base) {

@@ -373,19 +373,15 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
 - Post-rebase `make check` passed: 244 core tests, 431 plugin tests, 16 lifecycle integration tests, static analysis, Markdown lint, and transcript checks. Command transcripts are up to date.
 - The real Maven fixture covers generated source compilation and dependency-tree ordering. As recorded in the review receipt, it does not run a real annotation processor or establish post-elision test/package consumer behavior.
 
-# WP-NATIVE-02 Orchestration Status
+## WP-LIFECYCLE-02: Compile-Time Constant Retention
 
-* **Work package**: WP-NATIVE-02, exhaustive GraalVM Native Image root inference with permissive non-class argument acceptance.
-* **Source handover**: `docs/handovers/2026-10-30-wp-native-image-02-exhaustive-flag-inference-and-permissive-acceptance.md`.
-* **Base**: `codex/wp-native-image-02` at `89b3af15809a46941fa37350d85075cdca850073`; the authoritative `/workspace/sources` main checkout contains user-provided untracked handovers and remains untouched.
-* **Initial baseline**: clean task checkout passed `make check` with GraalVM JDK 21.0.12+7.1: compile/Spotless/Checkstyle/PMD/SpotBugs, 445 core tests, plugin and lifecycle tests, Node SBOM comparison tests under the user's existing authorization, Markdown lint, and transcript drift checks.
-* **Worktree/track**: `.scratch/worktrees/track-native-image-02` / `track/native-image-02`.
-* **Scope**: infer class/package roots from modeled GraalVM JDK 21.0.12+7.1 arguments; ingest the supported descriptor forms and config pointers; accept valid non-class/unknown future arguments permissively; preserve explicit errors for malformed modeled inputs; update ADR-0009, RQ-0016, and user/contributor docs; exercise actual trim and pass-through/cache behavior.
-* **Architect review**: handover's list omits JDK 21 options including `-H:Features`, `-H:ClassInitialization`, security provider/service types, config directories/resource roots, reachability metadata resources, resource config files, and additional schema/policy flags. Universal root completeness cannot be inferred from arbitrary future unknown flags. The implementation will pin its audited inventory and schema range to the selected GraalVM 21 distribution; recognized reference-bearing inputs must parse or fail explicitly, audited non-class options are accepted without roots, and other valid unknown inputs are accepted with a documented forward-compatibility limitation. `@argfile` and classpath/module-path/config indirections must not bypass root modeling.
-* **Required evidence**: package roots expand across all dependency archives on package boundaries; resources and external files remain distinct; configuration directories are traversed deterministically; resource bundle class names/conditions, reflection parameter types, serialization lambda/proxy/custom-constructor classes, predefined optional names, and supported unified metadata type forms are retained; bad paths/JSON/duplicates/trailing documents fail closed; permissive mixed flags still trim unrelated classes; no new suppressions.
-
-## Track Ledger
-
-| Track | State | Worktree / branch | Slices |
-|---|---|---|---|
-| Native Image metadata and argument ingestion | BASELINED; CONTRACT SLICE READY FOR REVIEW | `.scratch/worktrees/track-native-image-02` / `track/native-image-02` | Contract/docs slice is isolated from code. Next: descriptor reader, argument/config input, package-index resolution, and observable trimming regressions in sequence, with review before code work. |
+- **Source follow-up:** Section 5.1 of `docs/handovers/2026-10-30-wp-lifecycle-01-process-classes-and-bytecode-completeness.md`; linked to RQ-0017 and ADR-0010.
+- **Base:** current local `main` at `89b3af15809a46941fa37350d85075cdca850073`.
+- **Task branch:** `codex/wp-lifecycle-constants`.
+- **Scope:** In `productionClassesComplete` mode, union Java source references with production-bytecode references so compile-time inlined constants retain their defining types. If source attribution is unsupported or incomplete, conservatively retain all compile-visible artifacts and indexed classes with an explicit reason.
+- **Invariants:** Keep the source and bytecode completeness flags mutually exclusive; do not change trusted `process-classes` provenance or precondition VEX guards. The source supplement must not run annotation processors.
+- **Acceptance:** Cover constant-only dependency retention and explicit conservative fallback; update RQ-0017, ADR-0010, user/contributor docs, and this handover; pass focused tests and `make check`.
+- **Implementation:** `c74a3b7a02db8ffc1971470a3c393c8f30351715` (`Retain constant owners in post-compile analysis`), fast-forwarded to local `main`.
+- **Verification:** focused regressions and `make check` passed (448 plugin tests, 16 lifecycle integration tests, formatting, lint, static analysis, Markdown, and transcript checks).
+- **Review:** architect approved the design; independent reviewer approved all four review areas in `.scratch/reviews/wp-lifecycle-02-slice-1.md`.
+- **Track state:** complete. Source-derived roots remain separate from bytecode/runtime class-use and VEX evidence; the behavior may retain unused source-only classes and does not cover test-only references.
