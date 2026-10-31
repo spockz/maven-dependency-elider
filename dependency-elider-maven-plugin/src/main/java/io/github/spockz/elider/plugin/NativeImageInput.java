@@ -7,7 +7,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.SequencedMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -157,7 +159,7 @@ final class NativeImageInput {
     private final NativeImageDescriptorKind kind;
 
     /** WHY: One descriptor's reads and sibling captures run sequentially during scan. */
-    private final List<CapturedFile> capturedFiles = new java.util.ArrayList<>();
+    private final SequencedMap<String, CapturedFile> capturedFiles = new LinkedHashMap<>();
 
     private FileSource(final Path path, final NativeImageDescriptorKind kind) {
       this.path = path;
@@ -200,16 +202,15 @@ final class NativeImageInput {
 
     @Override
     public List<NativeImageConsumedInput> consumedInputs() {
-      return capturedFiles.stream().map(CapturedFile::snapshot).toList();
+      return capturedFiles.values().stream().map(CapturedFile::snapshot).toList();
     }
 
     private CapturedFile capture(final Path logicalPath, final String role) throws IOException {
       final Path normalized = logicalPath.toAbsolutePath().normalize();
       final String key = role + "|" + normalized;
-      for (final CapturedFile existing : capturedFiles) {
-        if (existing.identity().equals(key)) {
-          return existing;
-        }
+      final CapturedFile existing = capturedFiles.get(key);
+      if (existing != null) {
+        return existing;
       }
       final Path canonical = normalized.toRealPath();
       final byte[] bytes = Files.readAllBytes(canonical);
@@ -218,7 +219,6 @@ final class NativeImageInput {
       }
       final CapturedFile captured =
           new CapturedFile(
-              key,
               bytes,
               new NativeImageConsumedInput(
                   normalized,
@@ -226,10 +226,10 @@ final class NativeImageInput {
                   role,
                   bytes.length,
                   NativeImageConsumedInput.digest(bytes)));
-      capturedFiles.add(captured);
+      capturedFiles.put(key, captured);
       return captured;
     }
   }
 
-  private record CapturedFile(String identity, byte[] bytes, NativeImageConsumedInput snapshot) {}
+  private record CapturedFile(byte[] bytes, NativeImageConsumedInput snapshot) {}
 }

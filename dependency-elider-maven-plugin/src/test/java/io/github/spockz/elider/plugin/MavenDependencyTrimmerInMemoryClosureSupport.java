@@ -24,6 +24,8 @@ import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.model.Build;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
 
 /** Provides reusable immutable-input fixtures for closure tests. */
 @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
@@ -215,6 +217,14 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     return fixture(false, false, false, true);
   }
 
+  /** Creates minimal class bytes for unrelated archive entries. */
+  protected static byte[] emptyClassBytes(final String internalName) {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
+    writer.visitEnd();
+    return writer.toByteArray();
+  }
+
   private Path writeSource(final Path root, final String relative, final String content)
       throws IOException {
     final Path source = root.resolve(relative);
@@ -396,7 +406,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         }
         output.putNextEntry(new JarEntry("META-INF/native-image/test/native-image.properties"));
         output.write(
-            "Args = -H:Class=closure.a.Extra -H:Class=closure.b.Middle -H:CustomUnknown=value\n"
+            "Args = -H:Class=closure.a.Extra -H:Class=closure.b.Unused -H:CustomUnknown=value\n"
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8));
         output.closeEntry();
       }

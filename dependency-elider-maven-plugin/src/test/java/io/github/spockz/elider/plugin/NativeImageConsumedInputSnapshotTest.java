@@ -4,6 +4,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
@@ -20,6 +21,9 @@ import org.objectweb.asm.Opcodes;
 
 /** Verifies consumed descriptor snapshots and predefined classdata validation. */
 /* package */ final class NativeImageConsumedInputSnapshotTest {
+  /** Stable hash used by the predefined classdata fixtures. */
+  private static final String PREDEFINED_HASH = "fedcba9876543210fedcba9876543210";
+
   /** Temporary directory for descriptor snapshots and classdata. */
   /* package */ @TempDir Path inputDirectory;
 
@@ -71,35 +75,64 @@ import org.objectweb.asm.Opcodes;
         .hasMessageContaining("target changed");
   }
 
-  /** Rejects malformed predefined classdata with hash and descriptor context. */
+  /** Confirms valid predefined classdata reaches ASM and yields its references. */
   /* package */
   @Test
-  @DisplayName("ADR-0009/malformed predefined classdata fails with hash and configuration context")
-  void malformedPredefinedClassdataFailsWithHashAndConfigContext() throws IOException {
-    final String hash = "fedcba9876543210fedcba9876543210";
+  @DisplayName("ADR-0009/valid predefined classdata extracts types")
+  void validPredefinedClassdataExtractsTypes() throws IOException {
+    final NativeImageInput input = predefinedInput(classData());
+
+    assertThat(NativeImagePredefinedBytecode.read(input, PREDEFINED_HASH))
+        .contains("org.example.Truncated", "java.lang.Object");
+  }
+
+  /** Rejects malformed classdata headers with hash and descriptor context. */
+  /* package */
+  @Test
+  @DisplayName("ADR-0009/malformed predefined classdata headers fail with context")
+  void malformedPredefinedClassdataHeadersFailWithContext() throws IOException {
+    for (final byte[] malformed :
+        List.of(
+            new byte[0],
+            new byte[] {(byte) 0xca, (byte) 0xfe, (byte) 0xba, (byte) 0xbe, 0, 0, 0, 61})) {
+      final NativeImageInput input = predefinedInput(malformed);
+      assertThatThrownBy(() -> NativeImagePredefinedBytecode.read(input, PREDEFINED_HASH))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining(PREDEFINED_HASH)
+          .hasMessageContaining("malformed-predefined.payload");
+    }
+  }
+
+  /** Proves truncated bytes beyond the header reach and fail inside the ASM parser. */
+  /* package */
+  @Test
+  @DisplayName("ADR-0009/truncated predefined classdata fails inside the parser")
+  void truncatedPredefinedClassdataFailsInsideParser() throws IOException {
+    final byte[] validClassData = classData();
+    final NativeImageInput input =
+        predefinedInput(Arrays.copyOf(validClassData, validClassData.length - 1));
+
+    assertThatThrownBy(() -> NativeImagePredefinedBytecode.read(input, PREDEFINED_HASH))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(PREDEFINED_HASH)
+        .hasMessageContaining("malformed-predefined.payload")
+        .hasCauseInstanceOf(ArrayIndexOutOfBoundsException.class);
+  }
+
+  private NativeImageInput predefinedInput(final byte[] classdata) throws IOException {
     final Path descriptor = inputDirectory.resolve("malformed-predefined.payload");
     Files.writeString(descriptor, "[]");
     final Path siblingDirectory =
         Files.createDirectories(inputDirectory.resolve("agent-extracted-predefined-classes"));
-    final Path classdata = siblingDirectory.resolve(hash + ".classdata");
-    final NativeImageInput input =
-        NativeImageInput.file(descriptor, NativeImageDescriptorKind.PREDEFINED_CLASSES);
+    Files.write(siblingDirectory.resolve(PREDEFINED_HASH + ".classdata"), classdata);
+    return NativeImageInput.file(descriptor, NativeImageDescriptorKind.PREDEFINED_CLASSES);
+  }
+
+  private static byte[] classData() {
     final ClassWriter writer = new ClassWriter(0);
     writer.visit(
         Opcodes.V21, Opcodes.ACC_PUBLIC, "org/example/Truncated", null, "java/lang/Object", null);
     writer.visitEnd();
-    final byte[] validClassData = writer.toByteArray();
-
-    for (final byte[] malformed :
-        List.of(
-            new byte[0],
-            new byte[] {(byte) 0xca, (byte) 0xfe, (byte) 0xba, (byte) 0xbe, 0, 0, 0, 61},
-            Arrays.copyOf(validClassData, validClassData.length - 1))) {
-      Files.write(classdata, malformed);
-      assertThatThrownBy(() -> NativeImagePredefinedBytecode.read(input, hash))
-          .isInstanceOf(IOException.class)
-          .hasMessageContaining(hash)
-          .hasMessageContaining("malformed-predefined.payload");
-    }
+    return writer.toByteArray();
   }
 }

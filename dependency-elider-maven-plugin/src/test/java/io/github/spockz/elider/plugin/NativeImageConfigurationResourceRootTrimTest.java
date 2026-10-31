@@ -6,16 +6,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
-import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.jar.JarOutputStream;
 import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
@@ -33,14 +28,16 @@ import org.junit.jupiter.api.Test;
       throws IOException, MojoFailureException {
     final Fixture fixture = fixture(false, false, true);
     final Path declaring =
-        appendEntries(
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
             fixture.snapshot("a").filePath(),
             "a-with-configuration-resource-root.jar",
             Map.of(
                 "META-INF/native-image/test/native-image.properties",
                 "Args = -H:ConfigurationResourceRoots=config-root/test\n"));
     final Path provider =
-        appendEntries(
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
             fixture.snapshot("b").filePath(),
             "b-with-configuration-resource-root-descriptor.jar",
             Map.of(
@@ -51,8 +48,8 @@ import org.junit.jupiter.api.Test;
                 Files.readAllBytes(temporaryDirectory.resolve("classes/closure/b/Middle.class")),
                 "closure/b/Unused.class",
                 Files.readAllBytes(temporaryDirectory.resolve("classes/closure/b/Unused.class"))));
-    replaceArtifactFile(fixture, "a", declaring);
-    replaceArtifactFile(fixture, "b", provider);
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "b", provider);
     final Path trace = temporaryDirectory.resolve("configuration-root-trace.lst");
     Files.writeString(trace, "closure.a.Entry\n");
     final Path sourceRoot =
@@ -120,60 +117,5 @@ import org.junit.jupiter.api.Test;
             true,
             true,
             true);
-  }
-
-  private Path appendEntries(
-      final Path source, final String destinationName, final Map<String, String> additions)
-      throws IOException {
-    return appendEntries(source, destinationName, additions, Map.of());
-  }
-
-  private Path appendEntries(
-      final Path source,
-      final String destinationName,
-      final Map<String, String> additions,
-      final Map<String, byte[]> classAdditions)
-      throws IOException {
-    final Path destination = temporaryDirectory.resolve(destinationName);
-    try (JarFile archive = new JarFile(source.toFile());
-        JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(archive, output, entries.nextElement());
-      }
-      for (final Map.Entry<String, String> addition : additions.entrySet()) {
-        writeEntry(output, addition.getKey(), addition.getValue().getBytes(StandardCharsets.UTF_8));
-      }
-      for (final Map.Entry<String, byte[]> addition : classAdditions.entrySet()) {
-        writeEntry(output, addition.getKey(), addition.getValue());
-      }
-    }
-    return destination;
-  }
-
-  private static void copyEntry(
-      final JarFile archive, final JarOutputStream output, final JarEntry entry)
-      throws IOException {
-    output.putNextEntry(new JarEntry(entry.getName()));
-    try (InputStream input = archive.getInputStream(entry)) {
-      input.transferTo(output);
-    }
-    output.closeEntry();
-  }
-
-  private static void writeEntry(
-      final JarOutputStream output, final String name, final byte[] content) throws IOException {
-    output.putNextEntry(new JarEntry(name));
-    output.write(content);
-    output.closeEntry();
-  }
-
-  private static void replaceArtifactFile(
-      final Fixture fixture, final String artifactId, final Path replacement) {
-    fixture.artifacts().stream()
-        .filter(artifact -> artifactId.equals(artifact.getArtifactId()))
-        .findFirst()
-        .orElseThrow()
-        .setFile(replacement.toFile());
   }
 }

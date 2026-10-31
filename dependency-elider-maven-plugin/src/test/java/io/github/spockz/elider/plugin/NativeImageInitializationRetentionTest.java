@@ -7,19 +7,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.jar.JarOutputStream;
 import org.junit.jupiter.api.Test;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Opcodes;
 
 /** Verifies invocation-wide initialization roots through real archive trimming. */
 /* package */ final class NativeImageInitializationRetentionTest
@@ -41,28 +35,29 @@ import org.objectweb.asm.Opcodes;
     final Map<String, byte[]> additions =
         Map.of("unused/DropA.class", emptyClassBytes("unused/DropA"));
     final Path declaring =
-        appendEntries(
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
             fixture.snapshot("a").filePath(),
             "a-with-package-initialization.jar",
             Map.of("META-INF/native-image/test/native-image.properties", initializationArgument),
             additions);
-    replaceArtifactFile(fixture, "a", declaring);
-    replaceArtifactFile(
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(
         fixture,
         "b",
         addUnrelatedClass(
             fixture.snapshot("b").filePath(), "b-with-unrelated-class.jar", "unused/DropB"));
-    replaceArtifactFile(
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(
         fixture,
         "c",
         addUnrelatedClass(
             fixture.snapshot("c").filePath(), "c-with-unrelated-class.jar", "unused/DropC"));
-    replaceArtifactFile(
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(
         fixture,
         "d",
         addUnrelatedClass(
             fixture.snapshot("d").filePath(), "d-with-unrelated-class.jar", "unused/DropD"));
-    replaceArtifactFile(
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(
         fixture,
         "e",
         addUnrelatedClass(
@@ -94,58 +89,12 @@ import org.objectweb.asm.Opcodes;
 
   private Path addUnrelatedClass(final Path source, final String name, final String internalName)
       throws IOException {
-    return appendEntries(
-        source, name, Map.of(), Map.of(internalName + ".class", emptyClassBytes(internalName)));
-  }
-
-  private Path appendEntries(
-      final Path source,
-      final String name,
-      final Map<String, String> textEntries,
-      final Map<String, byte[]> binaryEntries)
-      throws IOException {
-    final Path destination = temporaryDirectory.resolve(name);
-    try (JarFile archive = new JarFile(source.toFile());
-        JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(archive, output, entries.nextElement());
-      }
-      for (final Map.Entry<String, String> entry : textEntries.entrySet()) {
-        writeEntry(
-            output,
-            entry.getKey(),
-            entry.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-      }
-      for (final Map.Entry<String, byte[]> entry : binaryEntries.entrySet()) {
-        writeEntry(output, entry.getKey(), entry.getValue());
-      }
-    }
-    return destination;
-  }
-
-  private static void copyEntry(
-      final JarFile archive, final JarOutputStream output, final JarEntry entry)
-      throws IOException {
-    output.putNextEntry(new JarEntry(entry.getName()));
-    try (InputStream input = archive.getInputStream(entry)) {
-      input.transferTo(output);
-    }
-    output.closeEntry();
-  }
-
-  private static void writeEntry(
-      final JarOutputStream output, final String name, final byte[] content) throws IOException {
-    output.putNextEntry(new JarEntry(name));
-    output.write(content);
-    output.closeEntry();
-  }
-
-  private static byte[] emptyClassBytes(final String internalName) {
-    final ClassWriter writer = new ClassWriter(0);
-    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
-    writer.visitEnd();
-    return writer.toByteArray();
+    return NativeImageExternalConfigurationInputTestSupport.appendEntries(
+        temporaryDirectory,
+        source,
+        name,
+        Map.of(),
+        Map.of(internalName + ".class", emptyClassBytes(internalName)));
   }
 
   private static Set<String> classNames(final Path archivePath) throws IOException {
@@ -156,15 +105,6 @@ import org.objectweb.asm.Opcodes;
               entry -> entry.getName().substring(0, entry.getName().length() - 6).replace('/', '.'))
           .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
-  }
-
-  private static void replaceArtifactFile(
-      final Fixture fixture, final String artifactId, final Path replacement) {
-    fixture.artifacts().stream()
-        .filter(artifact -> artifactId.equals(artifact.getArtifactId()))
-        .findFirst()
-        .orElseThrow()
-        .setFile(replacement.toFile());
   }
 
   private static ArtifactCoordinate coordinate(final Fixture fixture, final String artifactId) {

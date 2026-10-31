@@ -130,8 +130,7 @@ import org.junit.jupiter.api.io.TempDir;
                 serviceDirectRoots,
                 providerFiltered,
                 providerDirectRoots,
-                conservativeRoots,
-                providerFilteredInputs.featureRoots()))
+                conservativeRoots))
         .containsExactly(
             Set.of(),
             Set.of(),
@@ -142,8 +141,7 @@ import org.junit.jupiter.api.io.TempDir;
                 NativeImageServiceLoaderPolicyTestSupport.PROVIDER),
             Set.of(
                 NativeImageServiceLoaderPolicyTestSupport.SERVICE,
-                NativeImageServiceLoaderPolicyTestSupport.PROVIDER),
-            Set.of(NativeImageServiceLoaderPolicyTestSupport.SERVICE));
+                NativeImageServiceLoaderPolicyTestSupport.PROVIDER));
   }
 
   /* package */

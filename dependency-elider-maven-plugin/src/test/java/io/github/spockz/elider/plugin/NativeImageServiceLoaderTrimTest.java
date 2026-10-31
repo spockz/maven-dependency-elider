@@ -6,16 +6,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.jar.JarOutputStream;
 import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
@@ -39,7 +35,8 @@ import org.junit.jupiter.api.Test;
       throws IOException, MojoFailureException {
     final Fixture fixture = fixture(false, false, true);
     final Path declaring =
-        appendEntries(
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
             fixture.snapshot("a").filePath(),
             "a-with-service-feature.jar",
             Map.of(
@@ -47,22 +44,24 @@ import org.junit.jupiter.api.Test;
                 "Args = -H:+UseServiceLoaderFeature\n"),
             Map.of());
     final Path descriptor =
-        appendEntries(
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
             fixture.snapshot("b").filePath(),
             "b-service-descriptor.jar",
             Map.of(serviceDescriptor, "closure.c.Leaf\n"),
             Map.of());
     final Path provider =
-        appendEntries(
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
             fixture.snapshot("c").filePath(),
             "c-service-provider.jar",
             Map.of(),
             Map.of(
                 UNRELATED_PROVIDER_CLASS,
                 Files.readAllBytes(temporaryDirectory.resolve("classes/closure/b/Unused.class"))));
-    replaceArtifactFile(fixture, "a", declaring);
-    replaceArtifactFile(fixture, "b", descriptor);
-    replaceArtifactFile(fixture, "c", provider);
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "b", descriptor);
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "c", provider);
     final Path trace = temporaryDirectory.resolve("service-feature-trace.lst");
     Files.writeString(trace, "closure.a.Entry\n");
 
@@ -117,46 +116,12 @@ import org.junit.jupiter.api.Test;
             true);
   }
 
-  private static void replaceArtifactFile(
-      final Fixture fixture, final String artifactId, final Path replacement) {
-    fixture.artifacts().stream()
-        .filter(artifact -> artifact.getArtifactId().equals(artifactId))
-        .findFirst()
-        .orElseThrow()
-        .setFile(replacement.toFile());
-  }
-
-  private Path appendEntries(
-      final Path source,
-      final String destinationName,
-      final Map<String, String> textEntries,
-      final Map<String, byte[]> byteEntries)
-      throws IOException {
-    final Path destination = temporaryDirectory.resolve(destinationName);
-    try (JarFile archive = new JarFile(source.toFile());
-        JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(archive, output, entries.nextElement());
-      }
-      for (final Map.Entry<String, String> entry : textEntries.entrySet()) {
-        write(
-            output,
-            entry.getKey(),
-            entry.getValue().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-      }
-      for (final Map.Entry<String, byte[]> entry : byteEntries.entrySet()) {
-        write(output, entry.getKey(), entry.getValue());
-      }
-    }
-    return destination;
-  }
-
   @Test
   void effectiveFeatureRootsReachOwnerScansWithoutConservativeFallback() throws Exception {
     final Fixture fixture = fixtureWithRuntimeFirstAndResourceOnlySecond();
     final Path declaring =
-        appendEntries(
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
             fixture.snapshot("a").filePath(),
             "effective-service-feature.jar",
             Map.of(
@@ -164,22 +129,24 @@ import org.junit.jupiter.api.Test;
                 "Args = -H:+UseServiceLoaderFeature\n"),
             Map.of("closure/a/Unused.class", unreferencedFirstArtifactClass()));
     final Path descriptor =
-        appendEntries(
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
             fixture.snapshot("b").filePath(),
             "effective-service-descriptor.jar",
             Map.of("META-INF/services/closure.a.Extra", "closure.c.Leaf\n"),
             Map.of());
     final Path provider =
-        appendEntries(
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
             fixture.snapshot("c").filePath(),
             "effective-service-provider.jar",
             Map.of(),
             Map.of(
                 "closure/b/Unused.class",
                 Files.readAllBytes(temporaryDirectory.resolve("classes/closure/b/Unused.class"))));
-    replaceArtifactFile(fixture, "a", declaring);
-    replaceArtifactFile(fixture, "b", descriptor);
-    replaceArtifactFile(fixture, "c", provider);
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "b", descriptor);
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "c", provider);
     final Path trace = temporaryDirectory.resolve("effective-service-trace.lst");
     Files.writeString(trace, "closure.a.Entry\n");
 
@@ -261,16 +228,6 @@ import org.junit.jupiter.api.Test;
             true);
   }
 
-  private static void copyEntry(
-      final JarFile archive, final JarOutputStream output, final JarEntry entry)
-      throws IOException {
-    output.putNextEntry(new JarEntry(entry.getName()));
-    try (InputStream input = archive.getInputStream(entry)) {
-      input.transferTo(output);
-    }
-    output.closeEntry();
-  }
-
   private byte[] unreferencedFirstArtifactClass() throws IOException {
     final Path source = temporaryDirectory.resolve("unreferenced/Unused.java");
     final Path classes = temporaryDirectory.resolve("unreferenced-classes");
@@ -278,12 +235,5 @@ import org.junit.jupiter.api.Test;
     Files.writeString(source, "package closure.a; class Unused {}\n");
     io.github.spockz.elider.test.CompilationFixtureSupport.compile(classes, List.of(source));
     return Files.readAllBytes(classes.resolve("closure/a/Unused.class"));
-  }
-
-  private static void write(final JarOutputStream output, final String name, final byte[] bytes)
-      throws IOException {
-    output.putNextEntry(new JarEntry(name));
-    output.write(bytes);
-    output.closeEntry();
   }
 }

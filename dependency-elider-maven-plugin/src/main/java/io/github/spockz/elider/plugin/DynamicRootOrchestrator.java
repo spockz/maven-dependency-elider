@@ -92,10 +92,6 @@ final class DynamicRootOrchestrator {
                                 conservativeServiceLoaderRoots,
                                 servicePolicy)));
     final Set<String> routedRoots = new HashSet<>();
-    final Set<String> allFeatureRoots = new HashSet<>();
-    effectiveRootsByPath
-        .values()
-        .forEach(effective -> allFeatureRoots.addAll(effective.featureRoots()));
     for (final ArtifactFileRef candidate : candidates) {
       final DependencyDynamicRoots.EffectiveRoots effective =
           effectiveRootsByPath.get(candidate.filePath());
@@ -130,7 +126,6 @@ final class DynamicRootOrchestrator {
         scansByPath,
         unprovenRootsByCoordinate,
         provenServiceInterfaces,
-        allFeatureRoots,
         NativeImageConsumedInput.ordered(consumedInputs));
   }
 

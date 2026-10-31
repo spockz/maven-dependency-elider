@@ -195,6 +195,15 @@ final class MavenElisionServiceEffectiveAnalysisTest
   void unknownNativeImageOptionKeepsModeledRootAndTrimsUnrelatedClass() throws Exception {
     final Fixture fixture = fixtureWithRuntimeA();
     fixture.addUnknownNativeImageArgsToA();
+    final Path secondArtifactWithTrimControl =
+        NativeImageExternalConfigurationInputTestSupport.appendEntries(
+            temporaryDirectory,
+            fixture.snapshot("b").filePath(),
+            "b-with-unrelated-trim-control.jar",
+            java.util.Map.of(),
+            java.util.Map.of("closure/b/Discarded.class", emptyClassBytes("closure/b/Discarded")));
+    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(
+        fixture, "b", secondArtifactWithTrimControl);
     final Path trace = temporaryDirectory.resolve("native-image-unknown-mixed.lst");
     Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\n");
     final MavenElisionService service = new MavenElisionService();
@@ -204,7 +213,8 @@ final class MavenElisionServiceEffectiveAnalysisTest
             MavenElisionServiceEffectiveAnalysisFixtures.options(
                 List.of(trace.toFile()), null, true));
 
-    assertThat(raw.dynamicRootInputs().classNames()).contains(MODELED_EXTRA_CLASS, MIDDLE_CLASS);
+    assertThat(raw.dynamicRootInputs().classNames())
+        .contains(MODELED_EXTRA_CLASS, "closure.b.Unused");
     assertThat(raw.dynamicRootInputs().scansByPath().get(fixture.snapshot("a").filePath()).roots())
         .contains(MODELED_EXTRA_CLASS);
     final ResolverArtifactGraphCapturePair pair =
@@ -222,23 +232,21 @@ final class MavenElisionServiceEffectiveAnalysisTest
                     pair)));
     assertThat(effective.effectiveDecision().elidedArtifacts()).contains(fixture.coordinate("e"));
     final TrimResult trimmed = MavenDependencyTrimmer.trimEffectiveOutputs(effective);
-    final ArtifactTrimRecord middleArtifact =
+    final ArtifactTrimRecord artifactB =
         trimmed.records().stream()
             .filter(record -> "b".equals(record.coordinate().artifactId()))
             .findFirst()
             .orElseThrow();
-    assertThat(middleArtifact.retainedClasses()).isEqualTo(1);
-    try (java.util.jar.JarFile archiveA =
-            new java.util.jar.JarFile(fixture.snapshot("a").filePath().toFile());
-        java.util.jar.JarFile archiveB =
-            new java.util.jar.JarFile(middleArtifact.trimmedPath().toFile())) {
+    assertThat(artifactB.totalClasses()).isEqualTo(3);
+    assertThat(artifactB.retainedClasses()).isEqualTo(2);
+    try (java.util.jar.JarFile archiveB =
+        new java.util.jar.JarFile(artifactB.trimmedPath().toFile())) {
       assertThat(
               List.of(
-                  archiveA.getEntry("closure/a/Entry.class") != null,
-                  archiveA.getEntry("closure/a/Extra.class") != null,
                   archiveB.getEntry("closure/b/Middle.class") != null,
-                  archiveB.getEntry("closure/b/Unused.class") != null))
-          .containsExactly(true, true, true, false);
+                  archiveB.getEntry("closure/b/Unused.class") != null,
+                  archiveB.getEntry("closure/b/Discarded.class") != null))
+          .containsExactly(true, true, false);
     }
   }
 
