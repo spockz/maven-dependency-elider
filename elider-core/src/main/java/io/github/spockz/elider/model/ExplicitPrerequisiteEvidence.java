@@ -6,8 +6,8 @@ import java.util.Objects;
 import java.util.Set;
 
 /** Owner-declared prerequisite dependency and class for an affected component. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
-public final class ExplicitPrerequisiteEvidence {
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
+public final class ExplicitPrerequisiteEvidence implements AdvisoryEvidence {
   /** Source row retaining the explicit owner assertion. */
   private final VulnerabilitySymbolMapping sourceMapping;
 
@@ -107,6 +107,25 @@ public final class ExplicitPrerequisiteEvidence {
   /** Returns the fixed provenance carried by this evidence variant. */
   public EvidenceOrigin origin() {
     return EvidenceOrigin.POM;
+  }
+
+  @Override
+  public AdvisoryScope scope() {
+    return new AdvisoryScope(
+        sourceMapping.cveId(),
+        sourceMapping.affectedCoordinate(),
+        sourceMapping.versionRangeSpec());
+  }
+
+  @Override
+  public AdvisoryProvenance provenance() {
+    return new AdvisoryProvenance(
+        EvidenceOrigin.POM, originIdentifier, sourceMapping.sourceAdvisoryUrl(), null);
+  }
+
+  @Override
+  public VulnerabilitySymbolMapping.ConfidenceLevel confidenceLabel() {
+    return sourceMapping.confidenceLevel();
   }
 
   /** Identifies the effective configured POM row. */

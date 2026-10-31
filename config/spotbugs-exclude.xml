@@ -11,6 +11,14 @@
     <Class name="io.github.spockz.elider.model.TraceData" />
   </Match>
   <Match>
+    <Bug code="EI" pattern="EI_EXPOSE_REP" />
+    <Class name="io.github.spockz.elider.model.StructuredSourceClassEvidence" />
+  </Match>
+  <Match>
+    <Bug code="EI" pattern="EI_EXPOSE_REP" />
+    <Class name="io.github.spockz.elider.model.HeuristicCandidateEvidence" />
+  </Match>
+  <Match>
     <Bug pattern="UI_INHERITANCE_UNSAFE_GETRESOURCE" />
     <Class name="io.github.spockz.dependency_elider_maven_plugin.HelpMojo" />
   </Match>

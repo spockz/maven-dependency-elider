@@ -6,8 +6,8 @@ import java.util.Objects;
 import java.util.Set;
 
 /** Owner-declared classes relevant to an advisory. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
-public final class ExplicitClassMappingEvidence {
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
+public final class ExplicitClassMappingEvidence implements AdvisoryEvidence {
   /** Source row retaining the explicit owner assertion. */
   private final VulnerabilitySymbolMapping sourceMapping;
 
@@ -92,6 +92,25 @@ public final class ExplicitClassMappingEvidence {
   /** Returns the fixed provenance carried by this evidence variant. */
   public EvidenceOrigin origin() {
     return EvidenceOrigin.POM;
+  }
+
+  @Override
+  public AdvisoryScope scope() {
+    return new AdvisoryScope(
+        sourceMapping.cveId(),
+        sourceMapping.affectedCoordinate(),
+        sourceMapping.versionRangeSpec());
+  }
+
+  @Override
+  public AdvisoryProvenance provenance() {
+    return new AdvisoryProvenance(
+        EvidenceOrigin.POM, originIdentifier, sourceMapping.sourceAdvisoryUrl(), null);
+  }
+
+  @Override
+  public VulnerabilitySymbolMapping.ConfidenceLevel confidenceLabel() {
+    return sourceMapping.confidenceLevel();
   }
 
   /** Identifies the effective configured POM row. */
