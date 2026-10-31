@@ -47,6 +47,7 @@ class AdvisoryEvidenceImmutabilityTest {
         new StructuredSourceClassEvidence(
             scope(),
             new AdvisoryProvenance(EvidenceOrigin.CVE_LIST, cveId, null, "a".repeat(64)),
+            "containers.cna.affected[0]",
             "Example:library",
             mutableFiles,
             mutableRoutines,
@@ -63,7 +64,17 @@ class AdvisoryEvidenceImmutabilityTest {
                     ArtifactCoordinate.of("org.example", "library", null),
                     List.of("1.0"),
                     List.of())),
-            List.of(),
+            List.of(
+                new io.github.spockz.elider.model.CveAffectedEntryContext(
+                    "containers.cna.affected[0]",
+                    "Example",
+                    "library",
+                    "pkg:maven/org.example/library",
+                    null,
+                    null,
+                    List.of(),
+                    Set.of(file),
+                    Set.of(routine))),
             List.of(structured));
     mutableAliases.clear();
     mutableFiles.clear();

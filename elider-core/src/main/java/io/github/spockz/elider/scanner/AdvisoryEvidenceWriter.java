@@ -136,6 +136,7 @@ public final class AdvisoryEvidenceWriter {
     if (evidence instanceof StructuredSourceClassEvidence structured) {
       node.put("kind", "structured-source-class");
       writeCommon(node, structured.scope(), structured.provenance());
+      node.put("cnaAffectedEntryIdentity", structured.cnaAffectedEntryIdentity());
       node.put("affectedProductIdentity", structured.affectedProductIdentity());
       writeStrings(node.putArray("programFiles"), structured.programFiles());
       writeStrings(node.putArray("programRoutines"), structured.programRoutines());
@@ -145,14 +146,15 @@ public final class AdvisoryEvidenceWriter {
     } else if (evidence instanceof CorroboratedSourceClassCandidate corroborated) {
       node.put("kind", "corroborated-source-class-candidate");
       writeCommon(node, corroborated.scope(), corroborated.provenance());
+      node.put("cnaAffectedEntryIdentity", corroborated.cnaAffectedEntryIdentity());
+      writeCoordinate(node.putObject("artifactCoordinate"), corroborated.artifactCoordinate());
+      node.put("originalArchiveSha256", corroborated.originalArchiveSha256());
+      node.put("physicalJarEntry", corroborated.physicalJarEntry());
+      node.put("multiReleaseTier", corroborated.multiReleaseTier());
       node.put("affectedProductIdentity", corroborated.affectedProductIdentity());
       node.put("programFile", corroborated.programFile());
       node.put("classEntry", corroborated.classEntry());
-      if (corroborated.sourceFileAttribute() == null) {
-        node.putNull("sourceFileAttribute");
-      } else {
-        node.put("sourceFileAttribute", corroborated.sourceFileAttribute());
-      }
+      node.put("sourceFileAttribute", corroborated.sourceFileAttribute());
       node.put("packagePathComparison", corroborated.packagePathComparison());
       node.put("conventionalLayoutAssumed", corroborated.conventionalLayoutAssumed());
       node.put("mappingStatus", corroborated.mappingStatus().name());
@@ -179,18 +181,7 @@ public final class AdvisoryEvidenceWriter {
     } else {
       scopeNode.put("cveId", scope.cveId());
     }
-    final ArtifactCoordinate coordinateValue = scope.affectedCoordinate();
-    final ObjectNode coordinate = scopeNode.putObject("affectedCoordinate");
-    coordinate.put("groupId", coordinateValue.groupId());
-    coordinate.put("artifactId", coordinateValue.artifactId());
-    if (coordinateValue.version() == null) {
-      coordinate.putNull("version");
-    } else {
-      coordinate.put("version", coordinateValue.version());
-    }
-    coordinate.put("type", coordinateValue.type());
-    coordinate.put("classifier", coordinateValue.classifier());
-    coordinate.put("scope", coordinateValue.scope());
+    writeCoordinate(scopeNode.putObject("affectedCoordinate"), scope.affectedCoordinate());
     scopeNode.put("versionRangeSpec", scope.versionRangeSpec());
     scopeNode.put("ecosystem", scope.ecosystem());
     scopeNode.put("packageName", scope.packageName());
@@ -208,6 +199,20 @@ public final class AdvisoryEvidenceWriter {
     } else {
       provenanceNode.put("sourceRecordSha256", provenance.sourceRecordSha256());
     }
+  }
+
+  private static void writeCoordinate(
+      final ObjectNode coordinate, final ArtifactCoordinate coordinateValue) {
+    coordinate.put("groupId", coordinateValue.groupId());
+    coordinate.put("artifactId", coordinateValue.artifactId());
+    if (coordinateValue.version() == null) {
+      coordinate.putNull("version");
+    } else {
+      coordinate.put("version", coordinateValue.version());
+    }
+    coordinate.put("type", coordinateValue.type());
+    coordinate.put("classifier", coordinateValue.classifier());
+    coordinate.put("scope", coordinateValue.scope());
   }
 
   private static void writeStrings(final ArrayNode target, final Set<String> values) {

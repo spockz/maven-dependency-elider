@@ -71,7 +71,7 @@ public final class AdvisoryEvidenceReader {
     this.mapper = Objects.requireNonNull(mapper, "mapper");
   }
 
-  /** Reads schema version one and only the four cacheable advisory-source variants. */
+  /** Reads schema version one and only cacheable advisory-source variants. */
   public List<OsvAdvisoryRecord> read(final InputStream input) throws IOException {
     Objects.requireNonNull(input, "input");
     final JsonNode root;
@@ -334,6 +334,7 @@ public final class AdvisoryEvidenceReader {
             "kind",
             "scope",
             "provenance",
+            "cnaAffectedEntryIdentity",
             "affectedProductIdentity",
             "programFiles",
             "programRoutines",
@@ -343,6 +344,7 @@ public final class AdvisoryEvidenceReader {
     return new StructuredSourceClassEvidence(
         readScope(node.get("scope")),
         readProvenance(node.get("provenance")),
+        requiredText(node, "cnaAffectedEntryIdentity"),
         requiredText(node, "affectedProductIdentity"),
         readStringSet(node.get("programFiles"), "programFiles"),
         readStringSet(node.get("programRoutines"), "programRoutines"),
@@ -358,6 +360,11 @@ public final class AdvisoryEvidenceReader {
             "kind",
             "scope",
             "provenance",
+            "cnaAffectedEntryIdentity",
+            "artifactCoordinate",
+            "originalArchiveSha256",
+            "physicalJarEntry",
+            "multiReleaseTier",
             "affectedProductIdentity",
             "programFile",
             "classEntry",
@@ -369,14 +376,32 @@ public final class AdvisoryEvidenceReader {
     return new CorroboratedSourceClassCandidate(
         readScope(node.get("scope")),
         readProvenance(node.get("provenance")),
+        requiredText(node, "cnaAffectedEntryIdentity"),
+        readCoordinate(node.get("artifactCoordinate"), "artifactCoordinate"),
+        requiredText(node, "originalArchiveSha256"),
+        requiredText(node, "physicalJarEntry"),
+        requiredInteger(node, "multiReleaseTier"),
         requiredText(node, "affectedProductIdentity"),
         requiredText(node, "programFile"),
         requiredText(node, "classEntry"),
-        optionalText(node, "sourceFileAttribute"),
+        requiredText(node, "sourceFileAttribute"),
         requiredText(node, "packagePathComparison"),
         requiredBoolean(node, "conventionalLayoutAssumed"),
         CorroboratedSourceClassCandidate.MappingStatus.valueOf(
             requiredText(node, "mappingStatus")));
+  }
+
+  private static ArtifactCoordinate readCoordinate(final JsonNode node, final String context)
+      throws IOException {
+    requireObject(node, context);
+    requireFields(node, COORDINATE_FIELDS, context);
+    return new ArtifactCoordinate(
+        requiredText(node, "groupId"),
+        requiredText(node, "artifactId"),
+        optionalText(node, "version"),
+        requiredText(node, "type"),
+        requiredTextAllowBlank(node, "classifier"),
+        requiredText(node, "scope"));
   }
 
   private HeuristicCandidateEvidence readHeuristic(final JsonNode node) throws IOException {
@@ -494,6 +519,14 @@ public final class AdvisoryEvidenceReader {
       throw new IOException(field + " must be a boolean");
     }
     return value.booleanValue();
+  }
+
+  private static int requiredInteger(final JsonNode node, final String field) throws IOException {
+    final JsonNode value = node.get(field);
+    if (value == null || !value.isIntegralNumber() || !value.canConvertToInt()) {
+      throw new IOException(field + " must be an integer");
+    }
+    return value.intValue();
   }
 
   private static void requireObject(final JsonNode node, final String name) throws IOException {

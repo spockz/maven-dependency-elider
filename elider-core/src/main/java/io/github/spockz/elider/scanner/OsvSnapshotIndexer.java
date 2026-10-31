@@ -182,7 +182,8 @@ public final class OsvSnapshotIndexer {
             cnaEntries.add(context);
             for (final AdvisoryScope scope : scopes) {
               if (matchesPackageUrl(context.packageUrl(), scope)) {
-                addStructuredEvidence(entry, scope, cveId, sha256(cveBytes), evidence);
+                addStructuredEvidence(
+                    entry, context.entryIdentity(), scope, cveId, sha256(cveBytes), evidence);
               }
             }
           }
@@ -680,6 +681,7 @@ public final class OsvSnapshotIndexer {
 
   private static void addStructuredEvidence(
       final JsonNode entry,
+      final String entryIdentity,
       final AdvisoryScope scope,
       final String cveId,
       final String cveDigest,
@@ -700,6 +702,7 @@ public final class OsvSnapshotIndexer {
         new StructuredSourceClassEvidence(
             scope,
             new AdvisoryProvenance(EvidenceOrigin.CVE_LIST, cveId, null, cveDigest),
+            entryIdentity,
             entry.path("vendor").asText("") + ":" + product,
             files,
             routines,

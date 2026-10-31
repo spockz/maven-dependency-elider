@@ -14,6 +14,9 @@ public record OsvAdvisoryRecord(
     List<OsvAffectedPackage> affectedPackages,
     List<CveAffectedEntryContext> cnaAffectedEntries,
     List<AdvisoryEvidence> evidence) {
+  /** Exactly one source entry must own structured attribution. */
+  private static final int ONE_MATCHING_CNA_ENTRY = 1;
+
   /** Validates record identity and freezes aliases and evidence. */
   public OsvAdvisoryRecord {
     if (osvId == null || osvId.isBlank()) {
@@ -71,6 +74,66 @@ public record OsvAdvisoryRecord(
       if (!ownedSource) {
         throw new IllegalArgumentException("Evidence provenance must belong to this OSV record");
       }
+      if (item instanceof StructuredSourceClassEvidence structured) {
+        validateStructuredEntryLink(structured, cnaAffectedEntries);
+      } else if (item instanceof CorroboratedSourceClassCandidate corroborated) {
+        validateCorroboratedEntryLink(corroborated, cnaAffectedEntries);
+      }
+    }
+  }
+
+  private static void validateStructuredEntryLink(
+      final StructuredSourceClassEvidence evidence, final List<CveAffectedEntryContext> entries) {
+    final List<CveAffectedEntryContext> matches =
+        entries.stream()
+            .filter(entry -> entry.entryIdentity().equals(evidence.cnaAffectedEntryIdentity()))
+            .toList();
+    if (matches.size() != ONE_MATCHING_CNA_ENTRY) {
+      throw new IllegalArgumentException(
+          "Structured evidence must identify one CNA affected entry");
+    }
+    final CveAffectedEntryContext entry = matches.getFirst();
+    final String packageUrl =
+        "pkg:maven/"
+            + evidence.scope().affectedCoordinate().groupId()
+            + "/"
+            + evidence.scope().affectedCoordinate().artifactId();
+    final String productIdentity =
+        (entry.vendor() == null ? "" : entry.vendor()) + ":" + entry.product();
+    if (!packageUrl.equals(entry.packageUrl())
+        || !productIdentity.equals(evidence.affectedProductIdentity())
+        || !entry.programFiles().equals(evidence.programFiles())
+        || !entry.programRoutines().equals(evidence.programRoutines())) {
+      throw new IllegalArgumentException(
+          "Structured evidence must retain its exact CNA entry claims");
+    }
+  }
+
+  private static void validateCorroboratedEntryLink(
+      final CorroboratedSourceClassCandidate candidate,
+      final List<CveAffectedEntryContext> entries) {
+    final List<CveAffectedEntryContext> matches =
+        entries.stream()
+            .filter(entry -> entry.entryIdentity().equals(candidate.cnaAffectedEntryIdentity()))
+            .toList();
+    if (matches.size() != ONE_MATCHING_CNA_ENTRY) {
+      throw new IllegalArgumentException(
+          "Corroborated candidate must identify one CNA affected entry");
+    }
+    final CveAffectedEntryContext entry = matches.getFirst();
+    final String packageUrl =
+        "pkg:maven/"
+            + candidate.artifactCoordinate().groupId()
+            + "/"
+            + candidate.artifactCoordinate().artifactId();
+    final String productIdentity =
+        (entry.vendor() == null ? "" : entry.vendor()) + ":" + entry.product();
+    if (!packageUrl.equals(entry.packageUrl())
+        || !productIdentity.equals(candidate.affectedProductIdentity())
+        || !entry.programFiles().contains(candidate.programFile())
+        || !entry.hasUnambiguousExactAffectedVersion(candidate.artifactCoordinate().version())) {
+      throw new IllegalArgumentException(
+          "Corroborated candidate must retain one exact CNA product/version claim");
     }
   }
 }

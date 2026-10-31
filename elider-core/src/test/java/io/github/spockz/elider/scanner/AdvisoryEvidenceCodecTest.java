@@ -13,7 +13,6 @@ import io.github.spockz.elider.model.AdvisoryEvidence;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
 import io.github.spockz.elider.model.CveAffectedEntryContext;
 import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
@@ -64,6 +63,18 @@ class AdvisoryEvidenceCodecTest {
         () -> assertThat(decoded.getFirst().osvId()).isEqualTo("GHSA-owner"),
         () -> assertThat(decoded.getFirst().aliases()).containsExactly("CVE-2025-12345"),
         () ->
+            assertThat(decoded.getFirst().cnaAffectedEntries().getFirst().entryIdentity())
+                .isEqualTo("containers.cna.affected[0]"),
+        () ->
+            assertThat(decoded.getFirst().evidence())
+                .filteredOn(StructuredSourceClassEvidence.class::isInstance)
+                .singleElement()
+                .satisfies(
+                    value ->
+                        assertThat(
+                                ((StructuredSourceClassEvidence) value).cnaAffectedEntryIdentity())
+                            .isEqualTo("containers.cna.affected[0]")),
+        () ->
             assertThat(decoded.getFirst().evidence())
                 .extracting(value -> value.provenance().origin())
                 .contains(
@@ -96,8 +107,8 @@ class AdvisoryEvidenceCodecTest {
                                     .isEqualTo("https://example.test/repository"),
                             () ->
                                 assertThat(entry.programFiles())
-                                    .containsExactly("src/Example.java"),
-                            () -> assertThat(entry.programRoutines()).containsExactly("run"))));
+                                    .containsExactly("src/main/java/org/example/Unknown.java"),
+                            () -> assertThat(entry.programRoutines()).containsExactly("decode"))));
   }
 
   @Test
@@ -390,6 +401,7 @@ class AdvisoryEvidenceCodecTest {
                             scope(),
                             new AdvisoryProvenance(
                                 EvidenceOrigin.CVE_LIST, "CVE-2025-12345", null, "a".repeat(64)),
+                            "containers.cna.affected[0]",
                             "Example:library",
                             Set.of("src/main/java/org/example/Maybe.java"),
                             Set.of(),
@@ -410,6 +422,7 @@ class AdvisoryEvidenceCodecTest {
             new StructuredSourceClassEvidence(
                 scope,
                 new AdvisoryProvenance(EvidenceOrigin.CVE_LIST, "CVE-2025-12345", null, digest),
+                "containers.cna.affected[0]",
                 "Example:library",
                 Set.of("src/main/java/org/example/Unknown.java"),
                 Set.of("decode"),
@@ -429,17 +442,7 @@ class AdvisoryEvidenceCodecTest {
                     URI.create("https://example.test/fix"),
                     digest),
                 Set.of(),
-                Set.of("org.example:library")),
-            new CorroboratedSourceClassCandidate(
-                scope,
-                new AdvisoryProvenance(EvidenceOrigin.CVE_LIST, "CVE-2025-12345", null, digest),
-                "Example:library",
-                "src/main/java/org/example/Maybe.java",
-                "org.example.Maybe",
-                null,
-                "candidate path",
-                false,
-                CorroboratedSourceClassCandidate.MappingStatus.INCOMPLETE_REVIEW_ONLY));
+                Set.of("org.example:library")));
     return new OsvAdvisoryRecord(
         "GHSA-owner",
         Set.of("CVE-2025-12345"),
@@ -460,8 +463,8 @@ class AdvisoryEvidenceCodecTest {
                         "2.0",
                         "2.1",
                         List.of(Map.of("at", "1.5", "status", "unaffected")))),
-                Set.of("src/Example.java"),
-                Set.of("run"))),
+                Set.of("src/main/java/org/example/Unknown.java"),
+                Set.of("decode"))),
         evidence);
   }
 
@@ -507,6 +510,28 @@ class AdvisoryEvidenceCodecTest {
   }
 
   private ObjectNode documentWith(final AdvisoryEvidence evidence) throws IOException {
+    final List<CveAffectedEntryContext> cnaEntries;
+    if (evidence instanceof StructuredSourceClassEvidence structured) {
+      final String productIdentity = structured.affectedProductIdentity();
+      final int delimiter = productIdentity.indexOf(':');
+      cnaEntries =
+          List.of(
+              new CveAffectedEntryContext(
+                  structured.cnaAffectedEntryIdentity(),
+                  productIdentity.substring(0, delimiter),
+                  productIdentity.substring(delimiter + 1),
+                  "pkg:maven/"
+                      + structured.scope().affectedCoordinate().groupId()
+                      + "/"
+                      + structured.scope().affectedCoordinate().artifactId(),
+                  null,
+                  null,
+                  List.of(),
+                  structured.programFiles(),
+                  structured.programRoutines()));
+    } else {
+      cnaEntries = List.of();
+    }
     return (ObjectNode)
         mapper.readTree(
             writer.encode(
@@ -515,7 +540,7 @@ class AdvisoryEvidenceCodecTest {
                         "GHSA-owner",
                         Set.of("CVE-2025-12345"),
                         List.of(affectedPackage("Maven", "org.example:library", List.of())),
-                        List.of(),
+                        cnaEntries,
                         List.of(evidence)))));
   }
 

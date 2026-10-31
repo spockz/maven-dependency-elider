@@ -178,7 +178,13 @@ class OsvSnapshotIndexerTest {
                 .filteredOn(
                     value -> value.scope().affectedCoordinate().artifactId().equals("library-two"))
                 .singleElement()
-                .satisfies(value -> assertThat(value.programRoutines()).contains("decode")),
+                .satisfies(
+                    value ->
+                        assertAll(
+                            () -> assertThat(value.programRoutines()).contains("decode"),
+                            () ->
+                                assertThat(value.cnaAffectedEntryIdentity())
+                                    .isEqualTo("containers.cna.affected[1]"))),
         () ->
             assertThat(firstRecord.cnaAffectedEntries())
                 .extracting(value -> value.entryIdentity())

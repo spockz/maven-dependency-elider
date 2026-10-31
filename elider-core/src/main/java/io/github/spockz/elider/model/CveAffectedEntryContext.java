@@ -33,6 +33,24 @@ public record CveAffectedEntryContext(
     programRoutines = immutableClaims(programRoutines, "programRoutines");
   }
 
+  /** Admits one exact affected claim and rejects range or change claims. */
+  public boolean hasUnambiguousExactAffectedVersion(final String version) {
+    if (version == null
+        || version.isBlank()
+        || versions.stream().anyMatch(CveAffectedEntryContext::hasRangeOrChangeClaim)) {
+      return false;
+    }
+    final List<CveVersionClaim> matchingClaims =
+        versions.stream().filter(claim -> version.equals(claim.version())).toList();
+    return matchingClaims.size() == 1 && "affected".equals(matchingClaims.getFirst().status());
+  }
+
+  private static boolean hasRangeOrChangeClaim(final CveVersionClaim claim) {
+    return claim.lessThan() != null
+        || claim.lessThanOrEqual() != null
+        || !claim.changes().isEmpty();
+  }
+
   private static Set<String> immutableClaims(final Set<String> values, final String field) {
     Objects.requireNonNull(values, field);
     final Set<String> copy = new TreeSet<>();

@@ -6,6 +6,8 @@ import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CacheProducerIdentity;
+import io.github.spockz.elider.model.CveAffectedEntryContext;
+import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
@@ -50,6 +52,7 @@ final class MavenAssessmentFixtures {
         new StructuredSourceClassEvidence(
             scope,
             new AdvisoryProvenance(EvidenceOrigin.CVE_LIST, cveId, null, "a".repeat(64)),
+            "containers.cna.affected[0]",
             "Example:" + coordinate.artifactId(),
             Set.of("src/main/java/org/example/Vulnerable.java"),
             Set.of(),
@@ -66,7 +69,17 @@ final class MavenAssessmentFixtures {
                     scope.affectedCoordinate(),
                     List.of(),
                     List.of())),
-            List.of(),
+            List.of(
+                new CveAffectedEntryContext(
+                    "containers.cna.affected[0]",
+                    "Example",
+                    coordinate.artifactId(),
+                    "pkg:maven/" + coordinate.groupId() + "/" + coordinate.artifactId(),
+                    null,
+                    null,
+                    List.of(new CveVersionClaim("1.0", "affected", null, null, null, List.of())),
+                    Set.of("src/main/java/org/example/Vulnerable.java"),
+                    Set.of())),
             List.of(
                 reviewEvidence,
                 new HeuristicCandidateEvidence(

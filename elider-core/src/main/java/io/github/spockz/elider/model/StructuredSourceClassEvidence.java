@@ -13,6 +13,7 @@ import java.util.TreeSet;
 public record StructuredSourceClassEvidence(
     AdvisoryScope scope,
     AdvisoryProvenance provenance,
+    String cnaAffectedEntryIdentity,
     String affectedProductIdentity,
     Set<String> programFiles,
     Set<String> programRoutines,
@@ -31,6 +32,9 @@ public record StructuredSourceClassEvidence(
     }
     if (affectedProductIdentity == null || affectedProductIdentity.isBlank()) {
       throw new IllegalArgumentException("affectedProductIdentity must not be blank");
+    }
+    if (cnaAffectedEntryIdentity == null || cnaAffectedEntryIdentity.isBlank()) {
+      throw new IllegalArgumentException("cnaAffectedEntryIdentity must not be blank");
     }
     programFiles = immutableNonBlankSet(programFiles, "programFiles");
     programRoutines = immutableNonBlankSet(programRoutines, "programRoutines");
