@@ -4,6 +4,7 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -110,11 +111,16 @@ final class ADR0008MavenPreconditionAssessmentTest {
             Provider.dependencyArchive(affectedTwo, affectedTwoJar));
     assertThat(MavenVersionRangeMatcher.includes(mapping.versionRangeSpec(), affectedOne.version()))
         .isTrue();
-    assertThat(PreconditionProof.prove(mapping, inventory.classProviders())).isNotNull();
+    assertThat(
+            PreconditionProof.prove(
+                ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                inventory.classProviders()))
+        .isNotNull();
 
     final MavenVulnerabilityAssessment.Result result =
         new MavenVulnerabilityAssessment(new RecordingMavenLog())
-            .assess(emptyCache("positive-cache"), List.of(mapping), analysis, inventory);
+            .assess(
+                emptyCache("positive-cache"), configured(List.of(mapping)), analysis, inventory);
 
     assertThat(result.attestations()).hasSize(1);
     assertThat(result.attestations().getFirst().coordinate()).isEqualTo(affectedOne);
@@ -193,32 +199,59 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final PreconditionClassInventory incompleteClassProviders =
         PreconditionClassInventory.incomplete(
             List.of(affectedProvider), "application provider inventory is incomplete");
+    final MavenPreconditionInventory.Snapshot complete = completeInventory(affectedProvider);
     final MavenPreconditionInventory.Snapshot incomplete =
         inventory(incompleteClassProviders, affectedProvider);
     final MavenPreconditionInventory.Snapshot disabled =
-        inventory(incompleteClassProviders, false, affectedProvider);
+        inventory(complete.classProviders(), false, affectedProvider);
     final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected));
     final List<VulnerabilitySymbolMapping> mappings =
         List.of(mapping(affected, EXACT_VERSION_RANGE, Set.of(), ConfidenceLevel.HIGH));
+    final ConfiguredVulnerabilityMappings configured = configured(mappings);
     final RecordingMavenLog log = new RecordingMavenLog();
     final MavenVulnerabilityAssessment assessment = new MavenVulnerabilityAssessment(log);
     final CacheConfig cache = emptyCache("incomplete-cache");
 
-    final MavenVulnerabilityAssessment.Result optOut = assessment.assess(cache, mappings, analysis);
-    final MavenVulnerabilityAssessment.Result incompleteInventory =
-        assessment.assess(cache, mappings, analysis, incomplete);
-    final MavenVulnerabilityAssessment.Result disabledInventory =
-        assessment.assess(cache, mappings, analysis, disabled);
-
-    assertThat(incompleteInventory).isEqualTo(optOut);
-    assertThat(disabledInventory).isEqualTo(optOut);
-    assertThat(incompleteInventory.attestations()).isEmpty();
-    assertThat(incompleteInventory.inactiveDueToMissingPrerequisites()).isEmpty();
-    assertThat(
-            log.messages().stream()
-                .filter(message -> message.contains("Precondition proof suppressed"))
-                .count())
-        .isEqualTo(1L);
+    assertAll(
+        "independent precondition inventory proof gates",
+        () -> {
+          final MavenVulnerabilityAssessment.Result result =
+              assessment.assess(cache, configured, analysis, complete);
+          assertAll(
+              "complete inventory admits the configured HIGH assertion",
+              () -> assertThat(result.attestations()).hasSize(1),
+              () -> assertThat(result.inactiveDueToMissingPrerequisites()).hasSize(1));
+        },
+        () -> {
+          final MavenVulnerabilityAssessment.Result result =
+              assessment.assess(cache, configured, analysis, null);
+          assertAll(
+              "missing inventory",
+              () -> assertThat(result.attestations()).isEmpty(),
+              () -> assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty());
+        },
+        () -> {
+          final MavenVulnerabilityAssessment.Result result =
+              assessment.assess(cache, configured, analysis, incomplete);
+          assertAll(
+              "incomplete opted-in inventory",
+              () -> assertThat(result.attestations()).isEmpty(),
+              () -> assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty());
+        },
+        () -> {
+          final MavenVulnerabilityAssessment.Result result =
+              assessment.assess(cache, configured, analysis, disabled);
+          assertAll(
+              "explicit opt-out",
+              () -> assertThat(result.attestations()).isEmpty(),
+              () -> assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty());
+        },
+        () ->
+            assertThat(
+                    log.messages().stream()
+                        .filter(message -> message.contains("Precondition proof suppressed"))
+                        .count())
+                .isEqualTo(1L));
   }
 
   @Test
@@ -243,7 +276,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
   }
 
   @Test
-  void explicitPomOverrideWithLowerConfidenceReplacesCachedHighConfidenceMapping()
+  void lowerConfidencePomOverrideAndCachedHighMappingCannotProducePreconditionVex()
       throws IOException {
     final ArtifactCoordinate affected =
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
@@ -259,14 +292,25 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final MavenVulnerabilityAssessment assessment =
         new MavenVulnerabilityAssessment(new RecordingMavenLog());
 
-    final MavenVulnerabilityAssessment.Result cachedResult =
-        assessment.assess(cache, List.of(), analysis, inventory);
-    final MavenVulnerabilityAssessment.Result overriddenResult =
-        assessment.assess(cache, List.of(pomOverride), analysis, inventory);
-
-    assertThat(cachedResult.inactiveDueToMissingPrerequisites()).hasSize(1);
-    assertThat(overriddenResult.attestations()).isEmpty();
-    assertThat(overriddenResult.inactiveDueToMissingPrerequisites()).isEmpty();
+    assertAll(
+        "cache and lower-confidence POM evidence remain ineligible",
+        () -> {
+          final MavenVulnerabilityAssessment.Result result =
+              assessment.assess(
+                  cache, ConfiguredVulnerabilityMappings.empty(), analysis, inventory);
+          assertAll(
+              "cached HIGH has no owner assertion",
+              () -> assertThat(result.attestations()).isEmpty(),
+              () -> assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty());
+        },
+        () -> {
+          final MavenVulnerabilityAssessment.Result result =
+              assessment.assess(cache, configured(List.of(pomOverride)), analysis, inventory);
+          assertAll(
+              "POM MEDIUM remains review-only",
+              () -> assertThat(result.attestations()).isEmpty(),
+              () -> assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty());
+        });
   }
 
   @Test
@@ -539,7 +583,36 @@ final class ADR0008MavenPreconditionAssessmentTest {
       final List<VulnerabilitySymbolMapping> mappings)
       throws IOException {
     return new MavenVulnerabilityAssessment(new RecordingMavenLog())
-        .assess(emptyCache("assessment-cache"), mappings, analysis, inventory);
+        .assess(emptyCache("assessment-cache"), configured(mappings), analysis, inventory);
+  }
+
+  private static ConfiguredVulnerabilityMappings configured(
+      final List<VulnerabilitySymbolMapping> mappings) {
+    final List<VulnerabilityMappingConfig> configs =
+        mappings.stream()
+            .map(
+                mapping -> {
+                  final VulnerabilityMappingConfig config = new VulnerabilityMappingConfig();
+                  config.setCveId(mapping.cveId());
+                  config.setGroupId(mapping.affectedCoordinate().groupId());
+                  config.setArtifactId(mapping.affectedCoordinate().artifactId());
+                  config.setVersion(mapping.affectedCoordinate().version());
+                  config.setType(mapping.affectedCoordinate().type());
+                  config.setClassifier(mapping.affectedCoordinate().classifier());
+                  config.setScope(mapping.affectedCoordinate().scope());
+                  config.setVersionRangeSpec(mapping.versionRangeSpec());
+                  config.setVulnerableClasses(List.copyOf(mapping.vulnerableClasses()));
+                  config.setSourceAdvisoryUrl(
+                      mapping.sourceAdvisoryUrl() == null
+                          ? null
+                          : mapping.sourceAdvisoryUrl().toString());
+                  config.setConfidenceLevel(mapping.confidenceLevel().name());
+                  config.setRequiresDependency(mapping.requiresDependency());
+                  config.setRequiresClass(mapping.requiresClass());
+                  return config;
+                })
+            .toList();
+    return ConfiguredVulnerabilityMappings.fromPom(configs);
   }
 
   private CacheConfig emptyCache(final String directory) {

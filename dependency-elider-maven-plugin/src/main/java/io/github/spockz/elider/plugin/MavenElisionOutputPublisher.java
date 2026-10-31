@@ -4,7 +4,6 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactFileRef;
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
 import java.io.IOException;
@@ -406,11 +405,11 @@ final class MavenElisionOutputPublisher {
       Log log,
       ElideMojo.PlanPublication planPublication,
       CacheConfig cacheConfig,
-      List<VulnerabilitySymbolMapping> vulnerabilityMappings,
+      ConfiguredVulnerabilityMappings vulnerabilityMappings,
       boolean preconditionProofEnabled,
       AfterStaging afterStaging) {
     Request {
-      vulnerabilityMappings = List.copyOf(vulnerabilityMappings);
+      java.util.Objects.requireNonNull(vulnerabilityMappings, "vulnerabilityMappings");
     }
   }
 }

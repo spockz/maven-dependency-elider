@@ -3,7 +3,6 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
@@ -200,11 +199,9 @@ public final class AnalyzeMojo extends AbstractMojo {
             cveForceSync,
             session != null && session.isOffline(),
             VulnerabilityCacheManager.bundledEmptySeed());
-    final List<VulnerabilitySymbolMapping> manualMappings =
-        vulnerabilityMappings == null
-            ? List.of()
-            : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
-    return new MavenVulnerabilityAssessment(getLog()).assess(config, manualMappings, analysis);
+    return new MavenVulnerabilityAssessment(getLog())
+        .assess(
+            config, ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings), analysis, null);
   }
 
   private boolean shouldSkipAnalysis() {

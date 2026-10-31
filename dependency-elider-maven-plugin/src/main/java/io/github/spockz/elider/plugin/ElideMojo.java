@@ -2,7 +2,6 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
@@ -304,10 +303,8 @@ public final class ElideMojo extends AbstractMojo {
         VulnerabilityCacheManager.bundledEmptySeed());
   }
 
-  private List<VulnerabilitySymbolMapping> configuredVulnerabilityMappings() {
-    return vulnerabilityMappings == null
-        ? List.of()
-        : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
+  private ConfiguredVulnerabilityMappings configuredVulnerabilityMappings() {
+    return ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings);
   }
 
   private ElisionAnalysisModel.AnalysisOptions analysisOptions() {

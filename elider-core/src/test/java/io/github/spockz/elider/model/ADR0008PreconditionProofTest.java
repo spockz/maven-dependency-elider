@@ -4,6 +4,7 @@ package io.github.spockz.elider.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
 import java.io.IOException;
@@ -80,6 +81,12 @@ final class ADR0008PreconditionProofTest {
   }
 
   @Test
+  void explicitPrerequisiteEvidenceRetainsPomOrigin() {
+    assertThat(mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH").origin())
+        .isEqualTo(EvidenceOrigin.POM);
+  }
+
+  @Test
   @DisplayName("ADR-0008/empty inventory cannot bind the affected artifact")
   void emptyCompleteInventoryIsDistinctButCannotBindAffectedArtifact() throws Exception {
     final PreconditionClassInventory inventory = PreconditionClassInventory.complete(List.of());
@@ -101,7 +108,7 @@ final class ADR0008PreconditionProofTest {
     assertThatThrownBy(
             () -> PreconditionProof.prove(mapping(null, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("exact fully qualified prerequisite class");
+        .hasMessageContaining("requiresDependency and requiresClass");
   }
 
   @Test
@@ -122,12 +129,9 @@ final class ADR0008PreconditionProofTest {
   void rejectsLowConfidenceMapping() throws Exception {
     final PreconditionClassInventory inventory = inventoryWithAffected();
 
-    assertThatThrownBy(
-            () ->
-                PreconditionProof.prove(
-                    mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "LOW"), inventory))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("HIGH confidence");
+    assertAll(
+        () -> assertRejectedLowConfidencePrerequisite("LOW", inventory),
+        () -> assertRejectedLowConfidencePrerequisite("MEDIUM", inventory));
   }
 
   @Test
@@ -526,7 +530,10 @@ final class ADR0008PreconditionProofTest {
             REQUIRED_DEPENDENCY,
             REQUIRED_CLASS);
 
-    assertThatThrownBy(() -> PreconditionProof.prove(mismatched, inventory))
+    assertThatThrownBy(
+            () ->
+                PreconditionProof.prove(
+                    ExplicitEvidenceTestSupport.prerequisiteEvidence(mismatched), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("exactly one retained affected artifact");
   }
@@ -535,22 +542,33 @@ final class ADR0008PreconditionProofTest {
     return PreconditionClassInventory.complete(List.of(affectedProvider()));
   }
 
+  private static void assertRejectedLowConfidencePrerequisite(
+      final String confidence, final PreconditionClassInventory inventory) {
+    assertThatThrownBy(
+            () ->
+                PreconditionProof.prove(
+                    mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, confidence), inventory))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("HIGH confidence");
+  }
+
   private Provider affectedProvider() throws IOException {
     return Provider.dependencyArchive(
         AFFECTED_COORDINATE, archive("affected-" + System.nanoTime() + ".jar", Map.of()));
   }
 
-  private static VulnerabilitySymbolMapping mapping(
+  private static ExplicitPrerequisiteEvidence mapping(
       final String requiredClass, final String requiredDependency, final String confidence) {
-    return new VulnerabilitySymbolMapping(
-        "CVE-2025-12345",
-        AFFECTED_COORDINATE,
-        "[1.0]",
-        Set.of(),
-        null,
-        VulnerabilitySymbolMapping.ConfidenceLevel.valueOf(confidence),
-        requiredDependency,
-        requiredClass);
+    return ExplicitEvidenceTestSupport.prerequisiteEvidence(
+        new VulnerabilitySymbolMapping(
+            "CVE-2025-12345",
+            AFFECTED_COORDINATE,
+            "[1.0]",
+            Set.of(),
+            null,
+            VulnerabilitySymbolMapping.ConfidenceLevel.valueOf(confidence),
+            requiredDependency,
+            requiredClass));
   }
 
   private Path archive(final String fileName, final Map<String, byte[]> entries)

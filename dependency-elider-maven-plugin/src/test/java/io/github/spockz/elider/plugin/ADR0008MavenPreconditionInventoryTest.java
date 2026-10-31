@@ -323,7 +323,10 @@ final class ADR0008MavenPreconditionInventoryTest {
               PREREQUISITE_COORDINATE,
               "org.example.MissingPrerequisite");
 
-      assertThatThrownBy(() -> PreconditionProof.prove(mapping, inventory))
+      assertThatThrownBy(
+              () ->
+                  PreconditionProof.prove(
+                      ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping), inventory))
           .isInstanceOf(IOException.class)
           .hasMessageContaining("Javac plugin service provider");
     }
@@ -348,7 +351,11 @@ final class ADR0008MavenPreconditionInventoryTest {
               "org.example.MissingPrerequisite");
 
       assertThat(snapshot.complete()).isTrue();
-      assertThatThrownBy(() -> PreconditionProof.prove(mapping, snapshot.classProviders()))
+      assertThatThrownBy(
+              () ->
+                  PreconditionProof.prove(
+                      ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                      snapshot.classProviders()))
           .isInstanceOf(IOException.class)
           .hasMessageContaining("Javac plugin service provider");
     }
@@ -1997,7 +2004,11 @@ final class ADR0008MavenPreconditionInventoryTest {
     assertThat(snapshot.complete()).isTrue();
     assertThat(snapshot.classProviders().providers())
         .anySatisfy(provider -> assertThat(provider.path()).isEqualTo(outputTarget));
-    assertThatThrownBy(() -> PreconditionProof.prove(mapping, snapshot.classProviders()))
+    assertThatThrownBy(
+            () ->
+                PreconditionProof.prove(
+                    ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                    snapshot.classProviders()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
   }
@@ -2072,7 +2083,11 @@ final class ADR0008MavenPreconditionInventoryTest {
 
     assertThat(snapshot.complete()).isFalse();
     assertThat(snapshot.classProviders().detail()).contains("compiler-generated class providers");
-    assertThatThrownBy(() -> PreconditionProof.prove(mapping, snapshot.classProviders()))
+    assertThatThrownBy(
+            () ->
+                PreconditionProof.prove(
+                    ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                    snapshot.classProviders()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 

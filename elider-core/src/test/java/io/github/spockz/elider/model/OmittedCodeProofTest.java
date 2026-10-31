@@ -6,6 +6,7 @@ package io.github.spockz.elider.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -41,6 +42,55 @@ class OmittedCodeProofTest {
             java.lang.reflect.Modifier.isPublic(
                 VexAttestation.class.getDeclaredConstructors()[0].getModifiers()))
         .isFalse();
+  }
+
+  @Test
+  void explicitClassEvidenceRetainsPomOrigin() {
+    assertAll(
+        "explicit owner evidence provenance",
+        () -> {
+          final ExplicitClassMappingEvidence evidence = mapping("org.example.Vulnerable");
+          assertAll(
+              () -> assertThat(evidence.origin()).isEqualTo(EvidenceOrigin.POM),
+              () -> assertThat(evidence.configurationOrigin()).isEqualTo("test-project-pom"));
+        });
+  }
+
+  @Test
+  void proofRequiresOwnerEvidenceBoundToMatchingVersionScope() throws Exception {
+    final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "demo", "1.0");
+    final ExplicitClassMappingEvidence declared =
+        ExplicitClassMappingEvidence.declare(
+            "CVE-2025-12345",
+            coordinate,
+            "[1.0,2.0)",
+            Set.of("org.example.Vulnerable"),
+            null,
+            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            "effective-project-pom:vulnerabilityMappings[0]");
+    final ArtifactTrimRecord record =
+        record(jar("bound-original.jar", "org/example/Vulnerable.class"), jar("bound-trimmed.jar"));
+
+    assertAll(
+        "proof admission requires bound owner evidence",
+        () -> {
+          assertThatThrownBy(() -> OmittedCodeProof.prove(declared, record))
+              .isInstanceOf(IllegalArgumentException.class)
+              .hasMessageContaining("must be bound");
+        },
+        () -> {
+          assertThatThrownBy(() -> declared.bindTo(coordinate, (range, version) -> false))
+              .isInstanceOf(IllegalArgumentException.class)
+              .hasMessageContaining("version scope");
+        },
+        () -> {
+          final VexAttestation proof =
+              OmittedCodeProof.prove(declared.bindTo(coordinate, (range, version) -> true), record);
+          assertAll(
+              "matching owner assertion passes physical proof",
+              () -> assertThat(proof).isNotNull(),
+              () -> assertThat(proof.evidenceSymbols()).contains("org.example.Vulnerable"));
+        });
   }
 
   @Test
@@ -221,7 +271,7 @@ class OmittedCodeProofTest {
   }
 
   @Test
-  void rejectsMappingsBelowHighConfidence() throws Exception {
+  void doesNotAdmitLowConfidenceMappingAsProofEvidence() throws Exception {
     final ArtifactTrimRecord record =
         record(jar("original.jar", "org/example/Vulnerable.class"), jar("trimmed.jar"));
     final VulnerabilitySymbolMapping lowConfidence =
@@ -232,9 +282,18 @@ class OmittedCodeProofTest {
             Set.of("org.example.Vulnerable"),
             null,
             VulnerabilitySymbolMapping.ConfidenceLevel.LOW);
-    assertThatThrownBy(() -> OmittedCodeProof.prove(lowConfidence, record))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("HIGH confidence");
+    assertAll(
+        () -> assertRejectedLowConfidenceMapping(lowConfidence, record),
+        () ->
+            assertRejectedLowConfidenceMapping(
+                new VulnerabilitySymbolMapping(
+                    "CVE-2025-12345",
+                    ArtifactCoordinate.of("org.example", "demo", "1.0"),
+                    "[1.0,2.0)",
+                    Set.of("org.example.Vulnerable"),
+                    null,
+                    VulnerabilitySymbolMapping.ConfidenceLevel.MEDIUM),
+                record));
   }
 
   @Test
@@ -249,7 +308,10 @@ class OmittedCodeProofTest {
             Set.of("org.example.Vulnerable"),
             null,
             VulnerabilitySymbolMapping.ConfidenceLevel.HIGH);
-    assertThatThrownBy(() -> OmittedCodeProof.prove(mismatched, record))
+    assertThatThrownBy(
+            () ->
+                OmittedCodeProof.prove(
+                    ExplicitEvidenceTestSupport.classEvidence(mismatched), record))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("does not match");
   }
@@ -372,13 +434,23 @@ class OmittedCodeProofTest {
         .hasMessageContaining("Malformed");
   }
 
-  private static VulnerabilitySymbolMapping mapping(final String className) {
-    return new VulnerabilitySymbolMapping(
-        "CVE-2025-12345",
-        ArtifactCoordinate.of("org.example", "demo", "1.0"),
-        "[1.0,2.0)",
-        Set.of(className),
-        null,
-        VulnerabilitySymbolMapping.ConfidenceLevel.HIGH);
+  private static ExplicitClassMappingEvidence mapping(final String className) {
+    return ExplicitEvidenceTestSupport.classEvidence(
+        new VulnerabilitySymbolMapping(
+            "CVE-2025-12345",
+            ArtifactCoordinate.of("org.example", "demo", "1.0"),
+            "[1.0,2.0)",
+            Set.of(className),
+            null,
+            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH));
+  }
+
+  private static void assertRejectedLowConfidenceMapping(
+      final VulnerabilitySymbolMapping mapping, final ArtifactTrimRecord record) {
+    assertThatThrownBy(
+            () ->
+                OmittedCodeProof.prove(ExplicitEvidenceTestSupport.classEvidence(mapping), record))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("requires HIGH confidence");
   }
 }
