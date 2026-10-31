@@ -35,7 +35,6 @@ main() {
   evidence_dir=$(mktemp -d "$repo_root/.scratch/maven-dependency-elider-examples.transcript.XXXXXX")
   cache_dir="$evidence_dir/vulnerability-cache"
   mkdir -p -- "$cache_dir"
-  cp -- "$repo_root/scripts/fixtures/transcript-vulnerability-cache/index.json" "$cache_dir/index.json"
   active_process_pid=""
   cleanup() {
     local status=$?
@@ -50,6 +49,13 @@ main() {
 
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
     -pl dependency-elider-maven-plugin -am install -Dmaven.test.skip=true
+
+  "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
+    -pl dependency-elider-maven-plugin \
+    -Dtest=TranscriptCachePreparationTest \
+    "-Delide.transcriptCacheFixtureInput=$repo_root/scripts/fixtures/transcript-vulnerability-cache/index.json" \
+    "-Delide.transcriptCacheFixtureOutput=$cache_dir/index.json" \
+    test
 
   run_fixture_maven() {
     local fixture_dir=$1

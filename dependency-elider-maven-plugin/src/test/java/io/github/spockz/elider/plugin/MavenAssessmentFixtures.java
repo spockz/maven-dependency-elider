@@ -5,13 +5,14 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.CacheProducerIdentity;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
-import io.github.spockz.elider.scanner.AdvisoryEvidenceWriter;
+import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
@@ -20,6 +21,11 @@ import java.util.Set;
 
 /** Shared constructors for immutable advisory assessment test fixtures. */
 final class MavenAssessmentFixtures {
+  /** Producer stamped on local typed-cache fixtures. */
+  /* package */
+  static final CacheProducerIdentity CACHE_PRODUCER =
+      new CacheProducerIdentity("io.github.spockz", "dependency-elider", "1.0.0", null);
+
   /** Ecosystem value used by Maven package fixtures. */
   private static final String MAVEN_ECOSYSTEM = "Maven";
 
@@ -72,7 +78,7 @@ final class MavenAssessmentFixtures {
                         "b".repeat(64)),
                     Set.of("org.example.Vulnerable"),
                     Set.of(coordinate.groupId() + ":" + coordinate.artifactId()))));
-    return new AdvisoryEvidenceWriter().encode(List.of(record));
+    return new VulnerabilityCacheEnvelopeWriter().encode(CACHE_PRODUCER, List.of(record));
   }
 
   /* package */
@@ -118,6 +124,6 @@ final class MavenAssessmentFixtures {
                     new AdvisoryProvenance(
                         EvidenceOrigin.OSV, "GHSA-transcript-httpclient", null, "a".repeat(64))),
                 commitCandidate));
-    return new AdvisoryEvidenceWriter().encode(List.of(record));
+    return new VulnerabilityCacheEnvelopeWriter().encode(CACHE_PRODUCER, List.of(record));
   }
 }

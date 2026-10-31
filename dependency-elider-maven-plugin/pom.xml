@@ -74,6 +74,10 @@
                         <exclude>**/*IT.java</exclude>
                     </excludes>
                     <systemPropertyVariables>
+                        <elide.transcriptCacheLocalRepository>${settings.localRepository}</elide.transcriptCacheLocalRepository>
+                        <elide.transcriptPluginGroupId>${project.groupId}</elide.transcriptPluginGroupId>
+                        <elide.transcriptPluginArtifactId>${project.artifactId}</elide.transcriptPluginArtifactId>
+                        <elide.transcriptPluginVersion>${project.version}</elide.transcriptPluginVersion>
                         <junit.jupiter.execution.parallel.enabled>true</junit.jupiter.execution.parallel.enabled>
                         <junit.jupiter.execution.parallel.mode.default>same_thread</junit.jupiter.execution.parallel.mode.default>
                         <junit.jupiter.execution.parallel.mode.classes.default>concurrent</junit.jupiter.execution.parallel.mode.classes.default>

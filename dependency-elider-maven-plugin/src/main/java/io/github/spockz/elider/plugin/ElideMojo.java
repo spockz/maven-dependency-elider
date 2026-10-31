@@ -11,7 +11,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
@@ -27,7 +26,7 @@ import org.apache.maven.project.MavenProject;
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
 @SuppressWarnings({"PMD.TooManyFields", "PMD.ImmutableField"})
-public final class ElideMojo extends AbstractMojo {
+public final class ElideMojo extends PluginCacheMojoSupport {
   /** Maven's annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
 
@@ -293,14 +292,13 @@ public final class ElideMojo extends AbstractMojo {
         osvSnapshotUri == null || osvSnapshotUri.isBlank() ? null : URI.create(osvSnapshotUri);
     final URI cveListGit =
         cveListGitUri == null || cveListGitUri.isBlank() ? null : URI.create(cveListGitUri);
-    return new CacheConfig(
+    return vulnerabilityCacheConfig(
         cacheDirectory,
         osvSource,
         cveListGit,
         Duration.ofHours(cveCacheTtlHours),
         cveForceSync,
-        session != null && session.isOffline(),
-        VulnerabilityCacheManager.bundledEmptySeed());
+        session != null && session.isOffline());
   }
 
   private ConfiguredVulnerabilityMappings configuredVulnerabilityMappings() {

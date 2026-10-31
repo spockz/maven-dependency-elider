@@ -11,14 +11,13 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
 /** Refreshes the configured cached vulnerability mapping index. */
 @Mojo(name = "update-cve-index", requiresProject = false, threadSafe = true)
-public final class UpdateCveIndexMojo extends AbstractMojo {
+public final class UpdateCveIndexMojo extends PluginCacheMojoSupport {
   /** Optional directory containing the local vulnerability mapping cache. */
   @Parameter(property = "elide.cveCacheDirectory")
   private File cacheDirectory;
@@ -107,7 +106,7 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
   }
 
   private CacheConfig cacheConfig(final URI osvSource, final URI cveListGit) {
-    return new CacheConfig(
+    return vulnerabilityCacheConfig(
         cacheDirectory == null
             ? VulnerabilityCacheManager.defaultCacheDirectory()
             : cacheDirectory.toPath(),
@@ -115,8 +114,7 @@ public final class UpdateCveIndexMojo extends AbstractMojo {
         cveListGit,
         Duration.ofHours(ttlHours),
         true,
-        false,
-        VulnerabilityCacheManager.bundledEmptySeed());
+        false);
   }
 
   private void validateRecords(

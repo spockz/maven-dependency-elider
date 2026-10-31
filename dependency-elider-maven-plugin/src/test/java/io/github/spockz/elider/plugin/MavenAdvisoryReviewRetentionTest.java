@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
-import io.github.spockz.elider.scanner.AdvisoryEvidenceWriter;
 import io.github.spockz.elider.scanner.OsvSnapshotIndexer;
+import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -66,7 +66,10 @@ class MavenAdvisoryReviewRetentionTest {
     final List<OsvAdvisoryRecord> indexed =
         new OsvSnapshotIndexer().indexZip(new ByteArrayInputStream(snapshot), tempDir);
     final Path cache = Files.createDirectories(tempDir.resolve("routine-cache"));
-    Files.write(cache.resolve("index.json"), new AdvisoryEvidenceWriter().encode(indexed));
+    Files.write(
+        cache.resolve("index.json"),
+        new VulnerabilityCacheEnvelopeWriter()
+            .encode(MavenAssessmentFixtures.CACHE_PRODUCER, indexed));
 
     final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "demo", "1.0");
     final Path original = tempDir.resolve("routine-original.jar");
@@ -95,7 +98,8 @@ class MavenAdvisoryReviewRetentionTest {
             Duration.ofHours(24),
             false,
             true,
-            VulnerabilityCacheManager.bundledEmptySeed());
+            VulnerabilityCacheManager.bundledEmptySeed(),
+            MavenAssessmentFixtures.CACHE_PRODUCER);
     final MavenVulnerabilityAssessment.Result result =
         new MavenVulnerabilityAssessment(new RecordingMavenLog())
             .assess(

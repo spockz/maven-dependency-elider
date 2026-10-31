@@ -116,6 +116,7 @@ final class UpdateCveIndexMojoTest {
     try {
       set(mojo, "cacheDirectory", cache.toFile());
       set(mojo, "osvSnapshotUri", uri);
+      set(mojo, "pluginDescriptor", MavenPluginDescriptorFixtures.releasedPluginDescriptor());
     } catch (final ReflectiveOperationException exception) {
       throw new IllegalStateException("Could not initialize update-goal fixture", exception);
     }
@@ -181,7 +182,18 @@ final class UpdateCveIndexMojoTest {
 
   private static void set(final Object target, final String name, final Object value)
       throws ReflectiveOperationException {
-    final Field field = target.getClass().getDeclaredField(name);
+    Class<?> current = target.getClass();
+    Field field = null;
+    while (current != null && field == null) {
+      try {
+        field = current.getDeclaredField(name);
+      } catch (final NoSuchFieldException ignored) {
+        current = current.getSuperclass();
+      }
+    }
+    if (field == null) {
+      throw new NoSuchFieldException(name);
+    }
     field.setAccessible(true);
     field.set(target, value);
   }
