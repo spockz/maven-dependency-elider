@@ -43,6 +43,11 @@ public final class AdvisoryEvidenceWriter {
 
   /** Encodes OSV-owned cacheable advisory records in stable order. */
   public byte[] encode(final List<OsvAdvisoryRecord> records) throws IOException {
+    return mapper.writeValueAsBytes(encodeTree(records));
+  }
+
+  /** Builds the validated deterministic advisory document as a native JSON tree. */
+  public ObjectNode encodeTree(final List<OsvAdvisoryRecord> records) {
     Objects.requireNonNull(records, "records");
     final List<ObjectNode> nodes = new ArrayList<>();
     final Set<String> ids = new TreeSet<>();
@@ -58,7 +63,7 @@ public final class AdvisoryEvidenceWriter {
     root.put("schemaVersion", 1);
     final ArrayNode array = root.putArray("records");
     nodes.forEach(array::add);
-    return mapper.writeValueAsBytes(root);
+    return root;
   }
 
   private ObjectNode writeRecord(final OsvAdvisoryRecord record) {

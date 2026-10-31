@@ -82,6 +82,11 @@ public final class AdvisoryEvidenceReader {
         throw new IOException("Advisory evidence document contains trailing JSON content");
       }
     }
+    return readTree(root);
+  }
+
+  /** Validates and decodes an already parsed advisory document tree. */
+  public List<OsvAdvisoryRecord> readTree(final JsonNode root) throws IOException {
     requireObject(root, "advisory evidence document");
     requireFields(root, ROOT_FIELDS, "advisory evidence document");
     if (!root.path("schemaVersion").isIntegralNumber()
