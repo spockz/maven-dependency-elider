@@ -29,14 +29,23 @@ final class CorroboratedSourceCandidateMatcher {
                 record.evidence().stream()
                     .filter(StructuredSourceClassEvidence.class::isInstance)
                     .map(StructuredSourceClassEvidence.class::cast)
+                    .filter(evidence -> !evidence.programFiles().isEmpty())
                     .anyMatch(evidence -> applicableEntry(record, evidence, candidate) != null));
+  }
+
+  static boolean isApplicable(
+      final OsvAdvisoryRecord record,
+      final StructuredSourceClassEvidence evidence,
+      final ArtifactCoordinate candidate) {
+    return applicableEntry(record, evidence, candidate) != null;
   }
 
   static List<CorroboratedSourceClassCandidate> candidates(
       final OsvAdvisoryRecord record,
       final StructuredSourceClassEvidence evidence,
       final ArtifactCoordinate matchedCoordinate,
-      final JarSourceFileIndex sourceIndex) {
+      final JarSourceFileIndex sourceIndex,
+      final boolean conventionalLayoutAssumed) {
     Objects.requireNonNull(record, "record");
     Objects.requireNonNull(evidence, "evidence");
     Objects.requireNonNull(matchedCoordinate, "matchedCoordinate");
@@ -49,7 +58,13 @@ final class CorroboratedSourceCandidateMatcher {
     final List<CorroboratedSourceClassCandidate> result = new ArrayList<>();
     for (final String sourceClaim : evidence.programFiles()) {
       result.addAll(
-          candidatesForSourceClaim(sourceClaim, entry, evidence, matchedCoordinate, sourceIndex));
+          candidatesForSourceClaim(
+              sourceClaim,
+              entry,
+              evidence,
+              matchedCoordinate,
+              sourceIndex,
+              conventionalLayoutAssumed));
     }
     return List.copyOf(result);
   }
@@ -59,7 +74,8 @@ final class CorroboratedSourceCandidateMatcher {
       final CveAffectedEntryContext entry,
       final StructuredSourceClassEvidence evidence,
       final ArtifactCoordinate matchedCoordinate,
-      final JarSourceFileIndex sourceIndex) {
+      final JarSourceFileIndex sourceIndex,
+      final boolean conventionalLayoutAssumed) {
     if (!SourceClaimPathMatcher.isSupportedJavaSourceClaim(sourceClaim)) {
       return List.of();
     }
@@ -68,7 +84,14 @@ final class CorroboratedSourceCandidateMatcher {
     for (final ClassSourceFile classFile : sourceIndex.classFiles()) {
       if (matchesSourceClaim(classFile, sourceClaim, sourceBasename)) {
         result.add(
-            candidate(sourceClaim, entry, evidence, matchedCoordinate, sourceIndex, classFile));
+            candidate(
+                sourceClaim,
+                entry,
+                evidence,
+                matchedCoordinate,
+                sourceIndex,
+                classFile,
+                conventionalLayoutAssumed));
       }
     }
     return result;
@@ -92,7 +115,8 @@ final class CorroboratedSourceCandidateMatcher {
       final StructuredSourceClassEvidence evidence,
       final ArtifactCoordinate matchedCoordinate,
       final JarSourceFileIndex sourceIndex,
-      final ClassSourceFile classFile) {
+      final ClassSourceFile classFile,
+      final boolean conventionalLayoutAssumed) {
     return new CorroboratedSourceClassCandidate(
         evidence.scope(),
         evidence.provenance(),
@@ -106,7 +130,7 @@ final class CorroboratedSourceCandidateMatcher {
         classFile.classEntry(),
         classFile.sourceFile(),
         SourceClaimPathMatcher.packageComparison(sourceClaim, classFile.classEntry()),
-        false,
+        conventionalLayoutAssumed,
         CorroboratedSourceClassCandidate.MappingStatus.INCOMPLETE_REVIEW_ONLY);
   }
 

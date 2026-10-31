@@ -2,11 +2,14 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
 import java.util.zip.ZipEntry;
@@ -17,6 +20,12 @@ import org.objectweb.asm.Opcodes;
 /** Creates local CVE, OSV and MRJAR inputs without relying on external services. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class MavenCorroboratedSourceArchiveFixtures {
+  /** Native JSON writer for variable CNA claim fixtures. */
+  private static final ObjectMapper JSON = new ObjectMapper();
+
+  /** Manifest version required for generated test JARs. */
+  private static final String MANIFEST_VERSION = "1.0";
+
   /** CVE selected for the typed structured-source fixture. */
   static final String CVE_ID = "CVE-2025-12345";
 
@@ -25,6 +34,12 @@ final class MavenCorroboratedSourceArchiveFixtures {
 
   /** Maven artifact used by the affected package. */
   static final String ARTIFACT_ID = "demo";
+
+  /** Shared affected field key and exact CNA version status. */
+  private static final String AFFECTED = "affected";
+
+  /** Maven package URL used by the matched source claim. */
+  private static final String MAVEN_PACKAGE_URL = "pkg:maven/" + GROUP_ID + "/" + ARTIFACT_ID;
 
   /** Exact version asserted by the CNA affected product. */
   static final String VERSION = "1.0";
@@ -40,40 +55,76 @@ final class MavenCorroboratedSourceArchiveFixtures {
   static Path writeCveRecord(final Path directory) throws IOException {
     final Path record = directory.resolve("cves/2025/12xxx/CVE-2025-12345.json");
     Files.createDirectories(record.getParent());
-    Files.writeString(
-        record,
-        """
-        {
-          "containers":{"cna":{"affected":[
-            {
-              "vendor":"Example",
-              "product":"demo",
-              "packageURL":"pkg:maven/org.example/other",
-              "versions":[{"version":"1.0","status":"affected"}],
-              "programFiles":["src/main/java/org/example/Outer.java"]
-            },
-            {
-              "vendor":"Example",
-              "product":"demo",
-              "packageURL":"pkg:maven/org.example/demo",
-              "versions":[{"version":"1.0","status":"affected"}],
-              "programFiles":["src/main/java/org/example/Outer.java","src/main/kotlin/org/example/Thing.kt"]
-            }
-          ]}}
-        }
-        """);
+    final ObjectNode root = JSON.createObjectNode();
+    final ArrayNode affected = root.putObject("containers").putObject("cna").putArray(AFFECTED);
+    affected.add(cnaAffected("other", List.of("src/main/java/org/example/Outer.java")));
+    affected.add(
+        cnaAffected(
+            ARTIFACT_ID,
+            List.of(
+                "src/main/java/org/example/Outer.java", "src/main/kotlin/org/example/Thing.kt")));
+    JSON.writeValue(record.toFile(), root);
+    return record;
+  }
+
+  private static ObjectNode cnaAffected(final String packageName, final List<String> programFiles) {
+    final ObjectNode entry = JSON.createObjectNode();
+    entry.put("vendor", "Example");
+    entry.put("product", ARTIFACT_ID);
+    entry.put("packageURL", "pkg:maven/" + GROUP_ID + "/" + packageName);
+    entry.putArray("versions").addObject().put("version", VERSION).put("status", AFFECTED);
+    final ArrayNode files = entry.putArray("programFiles");
+    programFiles.forEach(files::add);
+    return entry;
+  }
+
+  static Path writeUnmatchedFileOnlyRecord(final Path directory) throws IOException {
+    return writeSourceRecord(directory, false);
+  }
+
+  static Path writeRoutineOnlyRecord(final Path directory) throws IOException {
+    return writeSourceRecord(directory, true);
+  }
+
+  private static Path writeSourceRecord(final Path directory, final boolean routineOnly)
+      throws IOException {
+    final Path record = directory.resolve("cves/2025/12xxx/CVE-2025-12345.json");
+    Files.createDirectories(record.getParent());
+    final ObjectNode root = JSON.createObjectNode();
+    final ObjectNode entry =
+        root.putObject("containers")
+            .putObject("cna")
+            .putArray(AFFECTED)
+            .addObject()
+            .put("vendor", "Example")
+            .put("product", ARTIFACT_ID)
+            .put("packageURL", MAVEN_PACKAGE_URL);
+    entry.putArray("versions").addObject().put("version", VERSION).put("status", AFFECTED);
+    if (routineOnly) {
+      entry.putArray("programRoutines").addObject().put("name", "parse");
+    } else {
+      entry.putArray("programFiles").add("src/main/java/org/elsewhere/Outer.java");
+    }
+    JSON.writeValue(record.toFile(), root);
     return record;
   }
 
   static byte[] osvSnapshot() throws IOException {
-    final String record =
-        """
-        {"id":"GHSA-source","aliases":["CVE-2025-12345"],"affected":[{"package":{"ecosystem":"Maven","name":"org.example:demo"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"1.0"},{"fixed":"2.0"}]}]}]}
-        """;
+    final ObjectNode root = JSON.createObjectNode();
+    root.put("id", "GHSA-source");
+    root.putArray("aliases").add(CVE_ID);
+    final ObjectNode affected = root.putArray(AFFECTED).addObject();
+    affected
+        .putObject("package")
+        .put("ecosystem", "Maven")
+        .put("name", GROUP_ID + ":" + ARTIFACT_ID);
+    final ObjectNode range = affected.putArray("ranges").addObject().put("type", "ECOSYSTEM");
+    range.putArray("events").addObject().put("introduced", VERSION);
+    range.withArray("events").addObject().put("fixed", "2.0");
     final ByteArrayOutputStream output = new ByteArrayOutputStream();
     try (ZipOutputStream zip = new ZipOutputStream(output)) {
       zip.putNextEntry(new ZipEntry("GHSA-source.json"));
-      zip.write(record.getBytes(StandardCharsets.UTF_8));
+      zip.write(JSON.writeValueAsBytes(root));
       zip.closeEntry();
     }
     return output.toByteArray();
@@ -82,7 +133,7 @@ final class MavenCorroboratedSourceArchiveFixtures {
   static Path writeOriginalJar(final Path archive, final boolean mutationMarker)
       throws IOException {
     final Manifest manifest = new Manifest();
-    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, MANIFEST_VERSION);
     manifest.getMainAttributes().putValue("Multi-Release", "true");
     try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
       zip.putNextEntry(new ZipEntry("META-INF/MANIFEST.MF"));
@@ -120,7 +171,7 @@ final class MavenCorroboratedSourceArchiveFixtures {
 
   static void writeNonCanonicalVersionArchive(final Path archive) throws IOException {
     final Manifest manifest = new Manifest();
-    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, MANIFEST_VERSION);
     manifest.getMainAttributes().putValue("Multi-Release", "true");
     try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
       zip.putNextEntry(new ZipEntry("META-INF/MANIFEST.MF"));

@@ -75,6 +75,10 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.conservativeServiceLoaderRoots", defaultValue = "true")
   private boolean conservativeServiceLoaderRoots = true;
 
+  /** Records the conventional-layout assumption on review-only source findings. */
+  @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_FALSE)
+  private boolean assumeConventionalJavaSourceLayout;
+
   /** Explicit trace files that supply runtime observations. */
   @Parameter(property = "elide.traceFiles", required = true)
   private List<File> traceFiles;
@@ -196,7 +200,7 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
             Duration.ofHours(cveCacheTtlHours),
             cveForceSync,
             session != null && session.isOffline());
-    return new MavenVulnerabilityAssessment(getLog())
+    return new MavenVulnerabilityAssessment(getLog(), assumeConventionalJavaSourceLayout)
         .assess(
             config, ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings), analysis, null);
   }

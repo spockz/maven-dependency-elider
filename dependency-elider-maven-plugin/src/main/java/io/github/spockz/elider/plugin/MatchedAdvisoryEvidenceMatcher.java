@@ -32,6 +32,9 @@ final class MatchedAdvisoryEvidenceMatcher {
   /** Logger for best-effort source review diagnostics. */
   private final Log log;
 
+  /** Saved assumption for this assessment; it does not affect candidate selection. */
+  private final boolean conventionalLayoutAssumed;
+
   /** Reuses each immutable archive index during one assessment. */
   @SuppressWarnings("PMD.UseConcurrentHashMap") // This state is confined to one assessment call.
   private final Map<Path, JarSourceFileIndex> sourceIndexes = new HashMap<>();
@@ -39,10 +42,12 @@ final class MatchedAdvisoryEvidenceMatcher {
   MatchedAdvisoryEvidenceMatcher(
       final List<OsvAdvisoryRecord> records,
       final List<ElisionAnalysisModel.ArtifactSnapshot> artifacts,
-      final Log log) {
+      final Log log,
+      final boolean conventionalLayoutAssumed) {
     this.records = List.copyOf(records);
     this.artifacts = List.copyOf(artifacts);
     this.log = log;
+    this.conventionalLayoutAssumed = conventionalLayoutAssumed;
   }
 
   List<MavenVulnerabilityAssessment.MatchedAdvisoryEvidence> matching(
@@ -111,7 +116,8 @@ final class MatchedAdvisoryEvidenceMatcher {
     for (final OsvAdvisoryRecord record : records) {
       for (final AdvisoryEvidence evidence : record.evidence()) {
         if (evidence instanceof StructuredSourceClassEvidence structured) {
-          CorroboratedSourceCandidateMatcher.candidates(record, structured, candidate, sourceIndex)
+          CorroboratedSourceCandidateMatcher.candidates(
+                  record, structured, candidate, sourceIndex, conventionalLayoutAssumed)
               .forEach(
                   corroborated ->
                       matched.add(

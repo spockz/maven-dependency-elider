@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -27,6 +28,7 @@ final class MavenElisionReportWriter {
   /** JSON serializer shared by report snapshot reads and writes. */
   private static final ObjectMapper JSON =
       new ObjectMapper()
+          .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
           .enable(SerializationFeature.INDENT_OUTPUT)
           .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
@@ -51,6 +53,8 @@ final class MavenElisionReportWriter {
 
   static void write(final Path output, final MavenElisionReportSnapshot snapshot)
       throws IOException {
+    MavenElisionReportSourceReviewValidator.validate(
+        snapshot.sourceReviewFindings(), snapshot.assumeConventionalJavaSourceLayout());
     final Path absolute = output.toAbsolutePath().normalize();
     final Path parent = absolute.getParent();
     if (parent == null) {
@@ -83,12 +87,24 @@ final class MavenElisionReportWriter {
               + absolute
               + "; run a Maven lifecycle build with dependency elision enabled first");
     }
-    final JsonNode payload = JSON.readTree(absolute.toFile());
+    final JsonNode payload;
+    try (JsonParser parser = JSON.getFactory().createParser(absolute.toFile())) {
+      payload = JSON.readTree(parser);
+      if (parser.nextToken() != null) {
+        throw new IOException("Trailing data in elision report: " + absolute);
+      }
+    }
     MavenElisionReportPayloadValidator.validate(payload);
     final MavenElisionReportSnapshot snapshot =
         JSON.treeToValue(payload, MavenElisionReportSnapshot.class);
     if (snapshot == null) {
       throw new IOException("Elision report snapshot is empty: " + absolute);
+    }
+    try {
+      MavenElisionReportSourceReviewValidator.validate(
+          snapshot.sourceReviewFindings(), snapshot.assumeConventionalJavaSourceLayout());
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException("Invalid elision report source-review data: " + absolute, exception);
     }
     return snapshot;
   }
@@ -99,6 +115,9 @@ final class MavenElisionReportWriter {
     lines.add("Project: " + snapshot.projectGav());
     lines.add("Snapshot: last successful elide run at " + snapshot.generatedAt());
     lines.add("The snapshot does not revalidate changed inputs when this goal runs.");
+    lines.add(
+        "Conventional Java source layout assumption saved for this run: "
+            + snapshot.assumeConventionalJavaSourceLayout());
     lines.add(
         "Whole artifacts dropped: "
             + snapshot.wholeArtifactsDropped()
@@ -186,9 +205,56 @@ final class MavenElisionReportWriter {
         }
       }
     }
+    renderSourceReviewFindings(snapshot.sourceReviewFindings(), lines);
     lines.addAll(
         MediatedGraphReportRenderer.render(snapshot.mediatedGraph(), snapshot.projectGav()));
     return List.copyOf(lines);
+  }
+
+  private static void renderSourceReviewFindings(
+      final List<MavenElisionReportSnapshot.SourceReviewFinding> findings,
+      final List<String> lines) {
+    if (findings.isEmpty()) {
+      return;
+    }
+    lines.add("Structured source claims (review only; verify before configuring a POM mapping):");
+    for (final MavenElisionReportSnapshot.SourceReviewFinding finding : findings) {
+      lines.add(
+          BULLET
+              + finding.cveId()
+              + " "
+              + finding.coordinate()
+              + " ["
+              + finding.cnaAffectedEntryIdentity()
+              + "]");
+      lines.add("    Product: " + finding.affectedProductIdentity());
+      lines.add(
+          "    Source files: "
+              + (finding.programFiles().isEmpty() ? "none" : finding.programFiles()));
+      lines.add(
+          "    Source routines: "
+              + (finding.programRoutines().isEmpty() ? "none" : finding.programRoutines()));
+      lines.add("    Conventional layout assumption saved: " + finding.conventionalLayoutAssumed());
+      if (finding.matches().isEmpty()) {
+        lines.add("    SourceFile matches: none");
+      } else {
+        lines.add("    SourceFile match leads:");
+        for (final MavenElisionReportSnapshot.SourceReviewMatch match : finding.matches()) {
+          lines.add(
+              "      "
+                  + match.classEntry()
+                  + " from "
+                  + match.physicalJarEntry()
+                  + " (tier "
+                  + match.multiReleaseTier()
+                  + ")");
+        }
+      }
+      lines.add("    Review: " + finding.unresolvedRationale());
+      lines.add(
+          "    Verify the complete source-to-class mapping, then add an exact POM"
+              + " vulnerableClasses assertion if confirmed; a filename match alone is incomplete.");
+    }
   }
 
   static String formatBytes(final long bytes) {

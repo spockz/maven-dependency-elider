@@ -82,6 +82,10 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.conservativeServiceLoaderRoots", defaultValue = "true")
   private boolean conservativeServiceLoaderRoots = true;
 
+  /** Records the conventional-layout assumption on review-only source findings. */
+  @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_FALSE)
+  private boolean assumeConventionalJavaSourceLayout;
+
   /** Explicit runtime evidence used when the goal is active. */
   @Parameter(property = "elide.traceFiles")
   private List<File> traceFiles;
@@ -279,6 +283,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
               vulnerabilityCacheConfig(),
               configuredVulnerabilityMappings(),
               trimJars && preconditionClassPathComplete,
+              assumeConventionalJavaSourceLayout,
               afterStaging));
     }
   }

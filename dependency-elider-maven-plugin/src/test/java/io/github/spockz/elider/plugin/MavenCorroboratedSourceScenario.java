@@ -2,10 +2,8 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.engine.ClassUsageReport;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
-import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.scanner.OsvSnapshotIndexer;
 import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
@@ -18,9 +16,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 
 /** Shares setup between the proof-positive and review-only assertions. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -39,7 +34,21 @@ final class MavenCorroboratedSourceScenario {
   private MavenCorroboratedSourceScenario() {}
 
   static Prepared prepare(final Path directory) throws IOException {
-    final Path cveRecord = MavenCorroboratedSourceArchiveFixtures.writeCveRecord(directory);
+    return prepareFromCveRecord(
+        directory, MavenCorroboratedSourceArchiveFixtures.writeCveRecord(directory), true);
+  }
+
+  static Prepared prepareUnresolvedClaim(final Path directory, final boolean routineOnly)
+      throws IOException {
+    final Path cveRecord =
+        routineOnly
+            ? MavenCorroboratedSourceArchiveFixtures.writeRoutineOnlyRecord(directory)
+            : MavenCorroboratedSourceArchiveFixtures.writeUnmatchedFileOnlyRecord(directory);
+    return prepareFromCveRecord(directory, cveRecord, false);
+  }
+
+  private static Prepared prepareFromCveRecord(
+      final Path directory, final Path cveRecord, final boolean ownerAssertion) throws IOException {
     final String cveDigest = ArtifactDigests.read(cveRecord).sha256();
     final List<OsvAdvisoryRecord> indexedRecords =
         new OsvSnapshotIndexer()
@@ -47,9 +56,11 @@ final class MavenCorroboratedSourceScenario {
                 new ByteArrayInputStream(MavenCorroboratedSourceArchiveFixtures.osvSnapshot()),
                 directory);
     final List<OsvAdvisoryRecord> records =
-        List.of(
-            MavenCorroboratedSourceCacheFixtures.withStaleCorroboratedCandidate(
-                indexedRecords.getFirst()));
+        ownerAssertion
+            ? List.of(
+                MavenCorroboratedSourceCacheFixtures.withStaleCorroboratedCandidate(
+                    indexedRecords.getFirst()))
+            : indexedRecords;
     final Path cacheDirectory = Files.createDirectories(directory.resolve("cache"));
     Files.write(
         cacheDirectory.resolve("index.json"),
@@ -94,11 +105,32 @@ final class MavenCorroboratedSourceScenario {
         new MavenVulnerabilityAssessment(log)
             .assess(
                 cacheConfig,
-                ConfiguredVulnerabilityMappings.fromPom(List.of(pomAssertion())),
-                analysis(coordinate, originalJar, List.of(trimRecord), false, false),
+                ownerAssertion
+                    ? ConfiguredVulnerabilityMappings.fromPom(List.of(pomAssertion()))
+                    : ConfiguredVulnerabilityMappings.empty(),
+                MavenCorroboratedSourceAnalysisFixtures.analysis(
+                    coordinate, originalJar, List.of(trimRecord), false, false),
                 null);
     return new Prepared(
         cacheConfig, coordinate, originalJar, cveDigest, originalDigest, trimRecord, result);
+  }
+
+  static MavenVulnerabilityAssessment.Result assessWithLayoutFlag(
+      final Prepared prepared, final boolean assumed, final boolean ownerAssertion)
+      throws IOException {
+    return new MavenVulnerabilityAssessment(new RecordingMavenLog(), assumed)
+        .assess(
+            prepared.cacheConfig(),
+            ownerAssertion
+                ? ConfiguredVulnerabilityMappings.fromPom(List.of(pomAssertion()))
+                : ConfiguredVulnerabilityMappings.empty(),
+            MavenCorroboratedSourceAnalysisFixtures.analysis(
+                prepared.coordinate(),
+                prepared.originalJar(),
+                List.of(prepared.successfulTrimRecord()),
+                false,
+                false),
+            null);
   }
 
   static MavenVulnerabilityAssessment.Result reassess(
@@ -108,7 +140,7 @@ final class MavenCorroboratedSourceScenario {
         .assess(
             prepared.cacheConfig(),
             ConfiguredVulnerabilityMappings.empty(),
-            analysis(
+            MavenCorroboratedSourceAnalysisFixtures.analysis(
                 prepared.coordinate(),
                 prepared.originalJar(),
                 List.of(),
@@ -123,7 +155,7 @@ final class MavenCorroboratedSourceScenario {
         .assess(
             prepared.cacheConfig(),
             ConfiguredVulnerabilityMappings.empty(),
-            analysis(
+            MavenCorroboratedSourceAnalysisFixtures.analysis(
                 prepared.coordinate(),
                 prepared.originalJar(),
                 List.of(prepared.successfulTrimRecord()),
@@ -140,7 +172,8 @@ final class MavenCorroboratedSourceScenario {
             .assess(
                 prepared.cacheConfig(),
                 ConfiguredVulnerabilityMappings.empty(),
-                analysis(prepared.coordinate(), originalJar, List.of(), false, false),
+                MavenCorroboratedSourceAnalysisFixtures.analysis(
+                    prepared.coordinate(), originalJar, List.of(), false, false),
                 null);
     return new AssessmentWithLog(result, log);
   }
@@ -152,40 +185,6 @@ final class MavenCorroboratedSourceScenario {
         .filter(CorroboratedSourceClassCandidate.class::isInstance)
         .map(CorroboratedSourceClassCandidate.class::cast)
         .toList();
-  }
-
-  private static ElisionAnalysisModel.Analysis analysis(
-      final ArtifactCoordinate coordinate,
-      final Path originalJar,
-      final List<ArtifactTrimRecord> trimRecords,
-      final boolean removed,
-      final boolean duplicateExactSnapshots) {
-    final ElisionDecision decision =
-        new ElisionDecision(
-            removed ? Set.of() : Set.of(coordinate),
-            removed ? Set.of(coordinate) : Set.of(),
-            Map.of(),
-            Map.of(),
-            0L);
-    return new ElisionAnalysisModel.Analysis(
-        new ElisionAnalysisModel.ArtifactViews(
-            snapshots(coordinate, originalJar, duplicateExactSnapshots), true, List.of()),
-        decision,
-        decision,
-        new ElisionAnalysisModel.AnalysisEvidence(
-            new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null),
-        new TrimResult(trimRecords, List.of(), List.of(), List.of(), 0, 0L, 0, null),
-        null,
-        null);
-  }
-
-  private static List<ElisionAnalysisModel.ArtifactSnapshot> snapshots(
-      final ArtifactCoordinate coordinate,
-      final Path originalJar,
-      final boolean duplicateExactSnapshots) {
-    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
-        new ElisionAnalysisModel.ArtifactSnapshot(null, coordinate, originalJar);
-    return duplicateExactSnapshots ? List.of(snapshot, snapshot) : List.of(snapshot);
   }
 
   private static VulnerabilityMappingConfig pomAssertion() {

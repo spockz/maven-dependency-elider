@@ -4,6 +4,8 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.spockz.elider.model.ConfidenceLevel;
 import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
@@ -130,6 +132,49 @@ class MavenCorroboratedSourceAssessmentTest {
         () -> assertArchiveAbstains(scenario, malformedTierArchive));
   }
 
+  @Test
+  void layoutAssumptionChangesOnlySavedReviewProvenance() throws IOException {
+    final MavenCorroboratedSourceScenario.Prepared scenario =
+        MavenCorroboratedSourceScenario.prepare(tempDir);
+    final MavenVulnerabilityAssessment.Result assumed =
+        MavenCorroboratedSourceScenario.assessWithLayoutFlag(scenario, true, true);
+    final MavenVulnerabilityAssessment.Result unassumed = scenario.result();
+    final List<CorroboratedSourceClassCandidate> assumedCandidates =
+        MavenCorroboratedSourceScenario.candidates(assumed);
+    final List<CorroboratedSourceClassCandidate> unassumedCandidates =
+        MavenCorroboratedSourceScenario.candidates(unassumed);
+    final boolean assumedFlag = assumed.conventionalLayoutAssumed();
+    final boolean unassumedFlag = unassumed.conventionalLayoutAssumed();
+
+    assertAll(
+        "the flag is historical review context and cannot change matches or proof results",
+        () -> assertTrue(assumedFlag, "the assumption is saved with review evidence"),
+        () -> assertFalse(unassumedFlag, "the default report records no layout assumption"),
+        () -> assertThat(assumedCandidates).hasSize(unassumedCandidates.size()),
+        () ->
+            assertThat(assumedCandidates)
+                .extracting(CorroboratedSourceClassCandidate::classEntry)
+                .containsExactlyElementsOf(
+                    unassumedCandidates.stream()
+                        .map(CorroboratedSourceClassCandidate::classEntry)
+                        .toList()),
+        () ->
+            assertThat(assumedCandidates)
+                .extracting(CorroboratedSourceClassCandidate::conventionalLayoutAssumed)
+                .containsOnly(true),
+        () -> assertThat(attestationSnapshots(assumed)).isEqualTo(attestationSnapshots(unassumed)),
+        () -> assertThat(assumed.removedComponents()).isEqualTo(unassumed.removedComponents()),
+        () ->
+            assertThat(assumed.provenVulnerableCodeAbsent())
+                .isEqualTo(unassumed.provenVulnerableCodeAbsent()),
+        () ->
+            assertThat(assumed.inactiveDueToMissingPrerequisites())
+                .isEqualTo(unassumed.inactiveDueToMissingPrerequisites()),
+        () ->
+            assertThat(assumed.potentiallyConservativeCves())
+                .isEqualTo(unassumed.potentiallyConservativeCves()));
+  }
+
   private static void assertNoPersistedCandidatesInMatchedRecords(
       final MavenVulnerabilityAssessment.Result result) {
     assertAll(
@@ -153,6 +198,29 @@ class MavenCorroboratedSourceAssessmentTest {
             assertThat(assessed.log().warnings())
                 .contains("Could not corroborate source-file claims in " + archive));
   }
+
+  private static List<AttestationSnapshot> attestationSnapshots(
+      final MavenVulnerabilityAssessment.Result result) {
+    return result.attestations().stream()
+        .map(
+            value ->
+                new AttestationSnapshot(
+                    value.cveId(),
+                    value.coordinate(),
+                    value.justification(),
+                    value.evidenceSymbols(),
+                    value.originalSha256(),
+                    value.trimmedSha256()))
+        .toList();
+  }
+
+  private record AttestationSnapshot(
+      String cveId,
+      io.github.spockz.elider.model.ArtifactCoordinate coordinate,
+      String justification,
+      java.util.Set<String> evidenceSymbols,
+      String originalSha256,
+      String trimmedSha256) {}
 
   private static void assertArchiveMutationRecomputesCandidates(
       final MavenCorroboratedSourceScenario.Prepared scenario,

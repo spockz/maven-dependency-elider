@@ -146,7 +146,7 @@ class CorroboratedSourceCandidateMatcherTest {
       final OsvAdvisoryRecord record, final JarSourceFileIndex index) {
     final StructuredSourceClassEvidence evidence =
         (StructuredSourceClassEvidence) record.evidence().getFirst();
-    return CorroboratedSourceCandidateMatcher.candidates(record, evidence, COMPONENT, index);
+    return CorroboratedSourceCandidateMatcher.candidates(record, evidence, COMPONENT, index, false);
   }
 
   private OsvAdvisoryRecord record(

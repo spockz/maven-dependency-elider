@@ -40,7 +40,9 @@ final class MavenElisionReportPayloadValidator {
           "provenAbsentCves",
           "inactivePreconditionCves",
           "potentiallyConservativeCves",
-          "mediatedGraph");
+          "mediatedGraph",
+          "assumeConventionalJavaSourceLayout",
+          "sourceReviewFindings");
 
   /** Exact fields for CVE finding rows. */
   private static final Set<String> CVE_FIELDS = Set.of("cveId", "coordinate");
@@ -106,7 +108,17 @@ final class MavenElisionReportPayloadValidator {
     validateCveRows(payload.get("provenAbsentCves"));
     validateCveRows(payload.get("inactivePreconditionCves"));
     validateConservativeCveRows(payload.get("potentiallyConservativeCves"));
+    validateLayoutFlag(payload.get("assumeConventionalJavaSourceLayout"));
+    MavenElisionReportSourcePayloadValidator.validate(
+        payload.get("sourceReviewFindings"),
+        payload.get("assumeConventionalJavaSourceLayout").booleanValue());
     MavenElisionReportGraphPayloadValidator.validate(payload.get("mediatedGraph"));
+  }
+
+  private static void validateLayoutFlag(final JsonNode value) throws IOException {
+    if (value == null || !value.isBoolean()) {
+      throw new IOException("Elision report layout assumption must be a JSON boolean");
+    }
   }
 
   private static void validateCveRows(final JsonNode rows) throws IOException {
