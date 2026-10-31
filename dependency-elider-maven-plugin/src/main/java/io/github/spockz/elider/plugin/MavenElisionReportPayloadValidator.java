@@ -42,7 +42,8 @@ final class MavenElisionReportPayloadValidator {
           "potentiallyConservativeCves",
           "mediatedGraph",
           "assumeConventionalJavaSourceLayout",
-          "sourceReviewFindings");
+          "sourceReviewFindings",
+          "advisoryReview");
 
   /** Exact fields for CVE finding rows. */
   private static final Set<String> CVE_FIELDS = Set.of("cveId", "coordinate");
@@ -112,6 +113,7 @@ final class MavenElisionReportPayloadValidator {
     MavenElisionReportSourcePayloadValidator.validate(
         payload.get("sourceReviewFindings"),
         payload.get("assumeConventionalJavaSourceLayout").booleanValue());
+    MavenElisionReportAdvisoryPayloadValidator.validate(payload.get("advisoryReview"));
     MavenElisionReportGraphPayloadValidator.validate(payload.get("mediatedGraph"));
   }
 

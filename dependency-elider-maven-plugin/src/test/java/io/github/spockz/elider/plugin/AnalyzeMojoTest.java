@@ -244,7 +244,7 @@ final class AnalyzeMojoTest {
             "  Estimated original JAR bytes for those artifacts: "
                 + MavenElisionReportWriter.formatBytes(Files.size(unused.getFile().toPath()))
                 + " (sum of original on-disk input JAR sizes; final package delta may differ)",
-            "  Avoided CVEs (artifacts that would be dropped): ",
+            "  Advisories associated with components that would be removed: ",
             "    CVE-2026-19001 org.example:unused-runtime:jar:1.0",
             "  Mitigated CVEs (vulnerable code that would be pruned by trimming): "
                 + "none matched the available vulnerability mappings");

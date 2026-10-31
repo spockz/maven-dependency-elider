@@ -115,6 +115,25 @@ class MavenAdvisoryReviewRetentionTest {
         () -> assertThat(result.provenVulnerableCodeAbsent()).isEmpty(),
         () -> assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty(),
         () -> assertThat(result.matchedAdvisoryEvidence()).hasSize(2),
+        () -> assertThat(result.packageAdvisoryFindings()).hasSize(2),
+        () ->
+            assertThat(result.packageAdvisoryFindings())
+                .filteredOn(value -> "GHSA-no-cve".equals(value.osvId()))
+                .singleElement()
+                .satisfies(
+                    value ->
+                        assertAll(
+                            () -> assertThat(value.coordinate()).isEqualTo(coordinate),
+                            () -> assertThat(value.aliases()).containsExactly("GHSA-alias"),
+                            () ->
+                                assertThat(value.applicability())
+                                    .isEqualTo(OsvPackageApplicability.Status.APPLICABLE),
+                            () ->
+                                assertThat(value.inventoryDisposition())
+                                    .isEqualTo(
+                                        MavenVulnerabilityAssessment.InventoryDisposition
+                                            .RETAINED_AND_TRIMMED))),
+        () -> assertThat(result.heuristicAdvisoryFindings()).isEmpty(),
         () ->
             assertThat(result.matchedAdvisoryRecords())
                 .extracting(value -> value.advisoryRecord().osvId())

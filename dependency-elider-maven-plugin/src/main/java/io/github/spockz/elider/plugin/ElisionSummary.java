@@ -212,8 +212,8 @@ final class ElisionSummary {
     }
     final String removedHeading =
         predicted
-            ? "  Avoided CVEs (artifacts that would be dropped): "
-            : "  Avoided CVEs (dropped artifacts): ";
+            ? "  Advisories associated with components that would be removed: "
+            : "  Advisories associated with removed components: ";
     final String provenHeading =
         predicted
             ? "  Mitigated CVEs (vulnerable code that would be pruned by trimming): "

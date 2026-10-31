@@ -28,13 +28,7 @@ public record HeuristicCandidateEvidence(
     if (candidateClasses.isEmpty() && candidateDependencies.isEmpty()) {
       throw new IllegalArgumentException("Heuristic evidence requires at least one candidate");
     }
-    if (candidateClasses.stream().anyMatch(value -> !isTopLevelClassName(value))) {
-      throw new IllegalArgumentException("candidateClasses must contain top-level class names");
-    }
-    if (candidateDependencies.stream().anyMatch(value -> !isExactDependency(value))) {
-      throw new IllegalArgumentException(
-          "candidateDependencies must be exact group:artifact values");
-    }
+    validateCandidateNames(candidateClasses, candidateDependencies);
   }
 
   @Override
@@ -61,5 +55,23 @@ public record HeuristicCandidateEvidence(
 
   private static boolean isExactDependency(final String value) {
     return value.matches("[A-Za-z0-9_][A-Za-z0-9_.-]*:[A-Za-z0-9_][A-Za-z0-9_.-]*");
+  }
+
+  /** Validates the source-level candidate syntax reused by persisted review rows. */
+  public static void validateCandidateNames(
+      final Iterable<String> candidateClasses, final Iterable<String> candidateDependencies) {
+    Objects.requireNonNull(candidateClasses, "candidateClasses");
+    Objects.requireNonNull(candidateDependencies, "candidateDependencies");
+    for (final String candidateClass : candidateClasses) {
+      if (candidateClass == null || !isTopLevelClassName(candidateClass)) {
+        throw new IllegalArgumentException("candidateClasses must contain top-level class names");
+      }
+    }
+    for (final String candidateDependency : candidateDependencies) {
+      if (candidateDependency == null || !isExactDependency(candidateDependency)) {
+        throw new IllegalArgumentException(
+            "candidateDependencies must be exact group:artifact values");
+      }
+    }
   }
 }

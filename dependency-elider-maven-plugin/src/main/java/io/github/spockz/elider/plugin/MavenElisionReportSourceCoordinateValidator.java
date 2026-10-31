@@ -26,6 +26,11 @@ final class MavenElisionReportSourceCoordinateValidator {
 
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static void validate(final String text) {
+    parseCanonical(text);
+  }
+
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  static ArtifactCoordinate parseCanonical(final String text) {
     final ArtifactCoordinate coordinate;
     try {
       coordinate = parseCoordinate(text);
@@ -36,6 +41,7 @@ final class MavenElisionReportSourceCoordinateValidator {
       throw new IllegalArgumentException(
           "Elision report source review coordinate is not canonical GAVCE text");
     }
+    return coordinate;
   }
 
   private static ArtifactCoordinate parseCoordinate(final String text) throws IOException {

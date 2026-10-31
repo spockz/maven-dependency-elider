@@ -12,6 +12,7 @@ import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
+import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
@@ -137,6 +138,97 @@ final class MavenAssessmentFixtures {
                     new AdvisoryProvenance(
                         EvidenceOrigin.OSV, "GHSA-transcript-httpclient", null, "a".repeat(64))),
                 commitCandidate));
+    return new VulnerabilityCacheEnvelopeWriter().encode(CACHE_PRODUCER, List.of(record));
+  }
+
+  /* package */
+  static byte[] exactVersionDisjointRangeCache(final ArtifactCoordinate coordinate)
+      throws IOException {
+    final String osvId = "GHSA-exact-version";
+    final String cveId = "CVE-2026-12345";
+    final String packageName = coordinate.groupId() + ":" + coordinate.artifactId();
+    final ArtifactCoordinate scopeCoordinate =
+        ArtifactCoordinate.of(coordinate.groupId(), coordinate.artifactId(), null);
+    final AdvisoryScope scope =
+        new AdvisoryScope(cveId, scopeCoordinate, "[2.0,3.0)", MAVEN_ECOSYSTEM, packageName);
+    final OsvAffectedPackage affectedPackage =
+        new OsvAffectedPackage(
+            MAVEN_ECOSYSTEM,
+            packageName,
+            scopeCoordinate,
+            List.of(coordinate.version()),
+            List.of(
+                new OsvAffectedRange(
+                    "ECOSYSTEM",
+                    null,
+                    List.of(Map.of("introduced", "2.0"), Map.of("fixed", "3.0")))));
+    final OsvAdvisoryRecord record =
+        new OsvAdvisoryRecord(
+            osvId,
+            Set.of(cveId),
+            List.of(affectedPackage),
+            List.of(),
+            List.of(
+                new PackageAdvisoryEvidence(
+                    scope, new AdvisoryProvenance(EvidenceOrigin.OSV, osvId, null, "c".repeat(64))),
+                new HeuristicCandidateEvidence(
+                    scope,
+                    new AdvisoryProvenance(
+                        EvidenceOrigin.REFERENCE_URL,
+                        osvId + "#reference:0",
+                        URI.create("https://example.test/candidates"),
+                        "d".repeat(64)),
+                    Set.of("org.example.Candidate"),
+                    Set.of(packageName))));
+    return new VulnerabilityCacheEnvelopeWriter().encode(CACHE_PRODUCER, List.of(record));
+  }
+
+  /* package */
+  static byte[] ambiguousSameStatusPackageOwnerCache(final ArtifactCoordinate coordinate)
+      throws IOException {
+    final String osvId = "GHSA-ambiguous-owner";
+    final String cveId = "CVE-2026-12345";
+    final String packageName = coordinate.groupId() + ":" + coordinate.artifactId();
+    final ArtifactCoordinate scopeCoordinate =
+        ArtifactCoordinate.of(coordinate.groupId(), coordinate.artifactId(), null);
+    final AdvisoryScope scope =
+        new AdvisoryScope(cveId, scopeCoordinate, "[2.0,3.0)", MAVEN_ECOSYSTEM, packageName);
+    final OsvAffectedPackage exactVersion =
+        new OsvAffectedPackage(
+            MAVEN_ECOSYSTEM,
+            packageName,
+            scopeCoordinate,
+            List.of(coordinate.version()),
+            List.of());
+    final OsvAffectedPackage exactVersionWithRange =
+        new OsvAffectedPackage(
+            MAVEN_ECOSYSTEM,
+            packageName,
+            scopeCoordinate,
+            List.of(coordinate.version()),
+            List.of(
+                new OsvAffectedRange(
+                    "ECOSYSTEM",
+                    null,
+                    List.of(Map.of("introduced", "2.0"), Map.of("fixed", "3.0")))));
+    final OsvAdvisoryRecord record =
+        new OsvAdvisoryRecord(
+            osvId,
+            Set.of(cveId),
+            List.of(exactVersion, exactVersionWithRange),
+            List.of(),
+            List.of(
+                new PackageAdvisoryEvidence(
+                    scope, new AdvisoryProvenance(EvidenceOrigin.OSV, osvId, null, "c".repeat(64))),
+                new HeuristicCandidateEvidence(
+                    scope,
+                    new AdvisoryProvenance(
+                        EvidenceOrigin.REFERENCE_URL,
+                        osvId + "#reference:0",
+                        URI.create("https://example.test/candidates"),
+                        "d".repeat(64)),
+                    Set.of("org.example.Candidate"),
+                    Set.of(packageName))));
     return new VulnerabilityCacheEnvelopeWriter().encode(CACHE_PRODUCER, List.of(record));
   }
 }

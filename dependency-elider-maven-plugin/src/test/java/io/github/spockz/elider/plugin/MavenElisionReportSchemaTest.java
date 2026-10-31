@@ -256,6 +256,159 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
+  void validatesPackageAndHeuristicAdvisoryRowsStrictly() {
+    assertAll(
+        "report-only advisory rows retain source identity and exact component scope",
+        () -> {
+          final ObjectNode payload = advisoryReportPayload();
+          final Path valid = temporaryDirectory.resolve("valid-advisory-report.json");
+          JSON.writeValue(valid.toFile(), payload);
+          assertThat(MavenElisionReportWriter.read(valid).advisoryReview().packageAdvisories())
+              .hasSize(1);
+        },
+        () ->
+            assertInvalidAdvisoryReport(
+                "unsupported-package-applicability.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("packageAdvisories").get(0))
+                        .put("applicability", "HIGH"),
+                "package applicability is unsupported"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "mismatched-package-coordinate.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("packageAdvisories").get(0))
+                        .put("packageName", "other:artifact"),
+                "package advisory identity conflicts with coordinate"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "package-applicability-conflicts-with-claims.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("packageAdvisories").get(0))
+                        .put("applicability", "NOT_APPLICABLE"),
+                "package applicability conflicts with raw OSV claims"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-cve-not-owned.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .put("cveId", "CVE-2026-99999"),
+                "Heuristic CVE must identify its OSV record or alias"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-source-owner-not-owned.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .put("sourceRecordId", "GHSA-other#details"),
+                "Heuristic source record must identify its OSV owner"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-package-identity-mismatch-unresolved.json",
+                payload -> {
+                  final ObjectNode row =
+                      (ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0);
+                  row.put("packageName", "other:artifact");
+                  row.put("applicability", "UNRESOLVED");
+                },
+                "package advisory identity conflicts with coordinate"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-applicability-disagrees-with-package-owner.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .put("applicability", "UNRESOLVED"),
+                "Heuristic applicability conflicts with its unique OSV package owner"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-nested-class.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .withArray("candidateClasses")
+                        .set(0, JSON.getNodeFactory().textNode("example.old.Candidate$Nested")),
+                "candidateClasses must contain top-level class names"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-versioned-dependency.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .withArray("candidateDependencies")
+                        .add("example:library:1.0"),
+                "candidateDependencies must be exact group:artifact values"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "proof-confidence-in-heuristic.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .put("confidence", "HIGH"),
+                "heuristic confidence is unsupported"));
+  }
+
+  private void assertInvalidAdvisoryReport(
+      final String fileName,
+      final java.util.function.Consumer<ObjectNode> mutation,
+      final String diagnostic)
+      throws IOException {
+    final ObjectNode payload = advisoryReportPayload();
+    mutation.accept(payload);
+    final Path invalid = temporaryDirectory.resolve(fileName);
+    JSON.writeValue(invalid.toFile(), payload);
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(invalid))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(diagnostic);
+  }
+
+  private static ObjectNode advisoryReportPayload() {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("wholeArtifactsDropped", 0);
+    payload.put("originalJarBytesDropped", 0);
+    payload.put("droppedProgramClassEntries", 0);
+    payload.put("droppedProgramClassBytes", 0);
+    payload.withArray(DROPPED_ROWS).removeAll();
+    payload.withArray("rawDroppedCoordinates").removeAll();
+    final ObjectNode review = (ObjectNode) payload.get("advisoryReview");
+    review
+        .putArray("packageAdvisories")
+        .addObject()
+        .put("osvId", "GHSA-heuristic")
+        .putArray("aliases")
+        .add("CVE-2026-12345");
+    final ObjectNode packageRow = (ObjectNode) review.withArray("packageAdvisories").get(0);
+    packageRow.put("coordinate", "example:old:jar:1.0 (compile)");
+    packageRow.put("ecosystem", "Maven");
+    packageRow.put("packageName", "example:old");
+    packageRow.putArray("affectedVersions").add("1.0");
+    packageRow.putArray("ranges");
+    packageRow.put("applicability", "APPLICABLE");
+    packageRow.put("applicabilityRationale", "Exact version listed");
+    packageRow.put("inventoryDisposition", "REMOVED");
+    packageRow.putNull("sourceRecordSha256");
+
+    review
+        .putArray("heuristicAdvisories")
+        .addObject()
+        .put("osvId", "GHSA-heuristic")
+        .putArray("aliases")
+        .add("CVE-2026-12345");
+    final ObjectNode heuristic = (ObjectNode) review.withArray("heuristicAdvisories").get(0);
+    heuristic.put("cveId", "CVE-2026-12345");
+    heuristic.put("coordinate", "example:old:jar:1.0 (compile)");
+    heuristic.put("ecosystem", "Maven");
+    heuristic.put("packageName", "example:old");
+    heuristic.put("versionRangeSpec", "[1.0,2.0)");
+    heuristic.put("applicability", "APPLICABLE");
+    heuristic.put("applicabilityRationale", "Exact version listed");
+    heuristic.put("inventoryDisposition", "REMOVED");
+    heuristic.put("origin", "DESCRIPTION");
+    heuristic.put("sourceRecordId", "GHSA-heuristic#details");
+    heuristic.putNull("sourceUrl");
+    heuristic.putNull("sourceRecordSha256");
+    heuristic.put("confidence", "MEDIUM");
+    heuristic.putArray("candidateClasses").add("example.old.Candidate");
+    heuristic.putArray("candidateDependencies");
+    return payload;
+  }
+
+  @Test
   void rejectsDuplicateKeysAndTrailingReportDocuments() throws IOException {
     final Path duplicate = temporaryDirectory.resolve("duplicate-report-key.json");
     final Path duplicateSource = temporaryDirectory.resolve("duplicate-source-review-key.json");
@@ -428,6 +581,8 @@ final class MavenElisionReportSchemaTest {
     payload.putArray("potentiallyConservativeCves");
     payload.put("assumeConventionalJavaSourceLayout", false);
     payload.putArray("sourceReviewFindings");
+    payload.putObject("advisoryReview").putArray("packageAdvisories");
+    ((ObjectNode) payload.get("advisoryReview")).putArray("heuristicAdvisories");
     final ObjectNode graph = payload.putObject("mediatedGraph");
     graph.put("available", false);
     graph.put("unavailableReason", "No graph was provided");

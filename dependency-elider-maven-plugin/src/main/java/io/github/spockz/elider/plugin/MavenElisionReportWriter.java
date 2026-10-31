@@ -160,10 +160,10 @@ final class MavenElisionReportWriter {
     }
     if (snapshot.removedCveComponents().isEmpty()) {
       lines.add(
-          "Avoided CVEs (dropped artifacts): "
+          "Advisories associated with removed components: "
               + "none matched the available vulnerability mappings");
     } else {
-      lines.add("Avoided CVEs (dropped artifacts):");
+      lines.add("Advisories associated with removed components:");
       for (final MavenElisionReportSnapshot.CveFinding finding : snapshot.removedCveComponents()) {
         lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
       }
@@ -206,6 +206,7 @@ final class MavenElisionReportWriter {
       }
     }
     renderSourceReviewFindings(snapshot.sourceReviewFindings(), lines);
+    lines.addAll(MavenElisionReportAdvisoryRenderer.render(snapshot.advisoryReview()));
     lines.addAll(
         MediatedGraphReportRenderer.render(snapshot.mediatedGraph(), snapshot.projectGav()));
     return List.copyOf(lines);

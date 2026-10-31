@@ -61,7 +61,7 @@ final class MatchedAdvisoryEvidenceMatcher {
         if (applies(evidence, candidate)) {
           matched.add(
               new MavenVulnerabilityAssessment.MatchedAdvisoryEvidence(
-                  record.osvId(), record.aliases(), evidence));
+                  record.osvId(), record.aliases(), candidate, evidence));
         }
       }
     }
@@ -122,7 +122,7 @@ final class MatchedAdvisoryEvidenceMatcher {
                   corroborated ->
                       matched.add(
                           new MavenVulnerabilityAssessment.MatchedAdvisoryEvidence(
-                              record.osvId(), record.aliases(), corroborated)));
+                              record.osvId(), record.aliases(), candidate, corroborated)));
         }
       }
     }
@@ -131,11 +131,18 @@ final class MatchedAdvisoryEvidenceMatcher {
   private static boolean applies(
       final AdvisoryEvidence evidence, final ArtifactCoordinate candidate) {
     final ArtifactCoordinate affected = evidence.scope().affectedCoordinate();
-    return affected.groupId().equals(candidate.groupId())
-        && affected.artifactId().equals(candidate.artifactId())
-        && affected.type().equals(candidate.type())
-        && affected.classifier().equals(candidate.classifier())
-        && MavenVersionRangeMatcher.includes(
+    final boolean sameComponent =
+        affected.groupId().equals(candidate.groupId())
+            && affected.artifactId().equals(candidate.artifactId())
+            && affected.type().equals(candidate.type())
+            && affected.classifier().equals(candidate.classifier());
+    if (!sameComponent) {
+      return false;
+    }
+    // The heuristic scope is a lossy projection of OSV claims.
+    // Its raw versions are evaluated later.
+    return evidence instanceof io.github.spockz.elider.model.HeuristicCandidateEvidence
+        || MavenVersionRangeMatcher.includes(
             evidence.scope().versionRangeSpec(), candidate.version());
   }
 
