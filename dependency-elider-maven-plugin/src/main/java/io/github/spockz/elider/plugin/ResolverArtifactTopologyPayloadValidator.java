@@ -1,4 +1,5 @@
-/* WHY: Checks graph roots, reachability, edges, and winner references after node decoding. */
+/* WHY: Checks graph roots, reachability, edges, and winner references after
+ * node decoding. */
 
 package io.github.spockz.elider.plugin;
 

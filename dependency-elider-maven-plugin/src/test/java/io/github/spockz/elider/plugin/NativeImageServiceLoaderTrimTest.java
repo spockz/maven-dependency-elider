@@ -67,25 +67,27 @@ import org.junit.jupiter.api.Test;
     Files.writeString(trace, "closure.a.Entry\n");
 
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             fixture.mavenProject(),
-            new MavenElisionService.AnalysisOptions(
+            new ElisionAnalysisModel.AnalysisOptions(
                 List.of(trace.toFile()),
                 List.of(),
                 null,
                 null,
-                false,
-                true,
-                List.of(),
-                false,
-                List.of(),
-                false,
-                true,
-                false));
-    final MavenElisionService.Analysis analysis = service.finish(prepared);
+                new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+                new ElisionAnalysisModel.TrimOptions(
+                    true,
+                    List.of(),
+                    false,
+                    List.of(),
+                    false,
+                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                new ElisionAnalysisModel.DynamicRootOptions(false)));
+    final ElisionAnalysisModel.Analysis analysis = service.finish(prepared);
     final ArtifactTrimRecord providerTrim =
-        analysis.trimRecords().stream()
+        analysis.trimResult().records().stream()
             .filter(record -> record.coordinate().equals(fixture.coordinate("c")))
             .findFirst()
             .orElseThrow();
@@ -182,22 +184,24 @@ import org.junit.jupiter.api.Test;
     Files.writeString(trace, "closure.a.Entry\n");
 
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis raw =
+    final ElisionAnalysisModel.PreparedAnalysis raw =
         service.prepare(
             fixture.mavenProject(),
-            new MavenElisionService.AnalysisOptions(
+            new ElisionAnalysisModel.AnalysisOptions(
                 List.of(trace.toFile()),
                 List.of(),
                 null,
                 null,
-                false,
-                true,
-                List.of(),
-                false,
-                List.of(),
-                false,
-                true,
-                false));
+                new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+                new ElisionAnalysisModel.TrimOptions(
+                    true,
+                    List.of(),
+                    false,
+                    List.of(),
+                    false,
+                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                new ElisionAnalysisModel.DynamicRootOptions(false)));
     final ResolverArtifactGraphCapturePair pair =
         MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
     final EffectiveGraphPolicy.Evaluation evaluation =
@@ -208,11 +212,10 @@ import org.junit.jupiter.api.Test;
             raw.graphBinding().inventoryFingerprint(),
             raw.graphBinding().operationFingerprint(),
             pair);
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         MavenElisionServiceEffectiveAnalysisFixtures.withBinding(raw, binding);
-    final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
-    final MavenDependencyTrimmer.TrimResult trimmed =
-        MavenDependencyTrimmer.trimEffectiveOutputs(effective);
+    final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
+    final TrimResult trimmed = MavenDependencyTrimmer.trimEffectiveOutputs(effective);
     final ArtifactTrimRecord providerTrim =
         trimmed.records().stream()
             .filter(item -> item.coordinate().equals(fixture.coordinate("c")))

@@ -1,5 +1,5 @@
-/* WHY: Validates trim records against Maven's distinct artifact objects before
- * changing file pointers. */
+/* WHY: Validates trim records against Maven's distinct artifact objects
+ * before changing file pointers. */
 
 package io.github.spockz.elider.plugin;
 
@@ -23,7 +23,7 @@ final class MavenArtifactViewUpdater {
   private MavenArtifactViewUpdater() {}
 
   static void apply(
-      final MavenElisionService.ApplyPlan plan, final List<ArtifactTrimRecord> records)
+      final ElisionAnalysisModel.ApplyPlan plan, final List<ArtifactTrimRecord> records)
       throws IOException {
     final Map<ArtifactIdentity, ArtifactTrimRecord> recordsByIdentity = new ConcurrentHashMap<>();
     for (final ArtifactTrimRecord record : records) {

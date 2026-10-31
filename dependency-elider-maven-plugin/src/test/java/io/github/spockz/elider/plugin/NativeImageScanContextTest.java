@@ -60,8 +60,8 @@ import org.junit.jupiter.api.io.TempDir;
                 NativeImageScanContextTestSupport.DECLARING_ARTIFACT, declaring),
             NativeImageScanContextTestSupport.candidate("provider", provider));
 
-    final MavenElisionService.DynamicRootInputs inputs =
-        MavenElisionService.dynamicRoots(candidates);
+    final ElisionAnalysisModel.DynamicRootInputs inputs =
+        DynamicRootOrchestrator.dynamicRoots(candidates);
 
     assertThat(
             List.of(
@@ -232,11 +232,11 @@ import org.junit.jupiter.api.io.TempDir;
 
     assertThat(
             List.of(
-                Optional.ofNullable(MavenElisionService.invocationBase(request, projectBase)),
+                Optional.ofNullable(MavenAnalysisEvidence.invocationBase(request, projectBase)),
                 Optional.ofNullable(
-                    MavenElisionService.invocationBase(
+                    MavenAnalysisEvidence.invocationBase(
                         new DefaultMavenExecutionRequest(), projectBase)),
-                Optional.ofNullable(MavenElisionService.invocationBase(null, null))))
+                Optional.ofNullable(MavenAnalysisEvidence.invocationBase(null, null))))
         .containsExactly(
             Optional.of(requestBase.toPath()), Optional.of(projectBase.toPath()), Optional.empty());
   }

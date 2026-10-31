@@ -1,4 +1,5 @@
-/* WHY: Rejects forged node outcomes before they can justify persisted output paths. */
+/* WHY: Rejects forged node outcomes before they can justify persisted output
+ * paths. */
 
 package io.github.spockz.elider.plugin;
 

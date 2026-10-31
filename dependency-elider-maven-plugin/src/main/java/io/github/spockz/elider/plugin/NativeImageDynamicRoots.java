@@ -1,4 +1,5 @@
-/* WHY: Validates and extracts only supported Graal native-image class/resource roots. */
+/* WHY: Validates and extracts only supported Graal native-image
+ * class/resource roots. */
 
 package io.github.spockz.elider.plugin;
 

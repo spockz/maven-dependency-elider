@@ -125,7 +125,7 @@ import java.util.Set;
 
   /* package */ static void assertMutationRejectedBeforePublication(
       final MavenElisionService service,
-      final MavenElisionService.PreparedAnalysis prepared,
+      final ElisionAnalysisModel.PreparedAnalysis prepared,
       final Path publishedOutputDirectory) {
     assertThatThrownBy(() -> service.finish(prepared))
         .isInstanceOf(IOException.class)

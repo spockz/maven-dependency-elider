@@ -205,8 +205,8 @@ import org.junit.jupiter.api.io.TempDir;
               NativeImageScanContextTestSupport.candidate("bundle-locale", localeProvider),
               NativeImageScanContextTestSupport.candidate("bundle-asset", assetProvider));
       final NativeImageScanContext context = NativeImageScanContext.create(candidates, null);
-      final MavenElisionService.DynamicRootInputs roots =
-          MavenElisionService.dynamicRoots(
+      final ElisionAnalysisModel.DynamicRootInputs roots =
+          DynamicRootOrchestrator.dynamicRoots(
               candidates, DependencyDynamicRoots::scan, context, Set.of(), false);
 
       final Set<ArtifactCoordinate> expectedProviders =

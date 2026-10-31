@@ -1,5 +1,5 @@
-/* WHY: Presents multi-release dependencies as effective classpath inputs
- * for ProGuard closure analysis. */
+/* WHY: Presents multi-release dependencies as effective classpath inputs for
+ * ProGuard closure analysis. */
 
 package io.github.spockz.elider.plugin;
 

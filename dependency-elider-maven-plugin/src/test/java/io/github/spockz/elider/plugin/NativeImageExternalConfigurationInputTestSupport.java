@@ -52,7 +52,7 @@ import java.util.jar.JarOutputStream;
 
   /* package */ static void assertRetargetRejectedBeforePublication(
       final MavenElisionService service,
-      final MavenElisionService.PreparedAnalysis prepared,
+      final ElisionAnalysisModel.PreparedAnalysis prepared,
       final Path outputDirectory) {
     assertThatThrownBy(() -> service.finish(prepared))
         .isInstanceOf(IOException.class)

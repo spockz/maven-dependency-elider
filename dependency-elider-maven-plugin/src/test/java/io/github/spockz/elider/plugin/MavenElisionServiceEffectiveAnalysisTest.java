@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,20 +44,23 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final Path trace = temporaryDirectory.resolve("metadata-without-trim.lst");
     Files.writeString(trace, "closure/c/Leaf\n");
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
                 List.of(trace.toFile()), null, false));
     assertThat(prepared.dynamicRootInputs().classNames()).contains(ENTRY_CLASS, MIDDLE_CLASS);
     assertThat(prepared.pruningRequiredClasses()).contains(MIDDLE_CLASS);
-    final MavenElisionService.Analysis analysis = service.finish(prepared);
+    final ElisionAnalysisModel.Analysis analysis = service.finish(prepared);
     final ArtifactCoordinate artifactA =
-        MavenElisionServiceEffectiveAnalysisFixtures.coordinate(analysis.resolvedSnapshots(), "a");
+        MavenElisionServiceEffectiveAnalysisFixtures.coordinate(
+            analysis.artifacts().resolvedSnapshots(), "a");
     final ArtifactCoordinate artifactB =
-        MavenElisionServiceEffectiveAnalysisFixtures.coordinate(analysis.resolvedSnapshots(), "b");
+        MavenElisionServiceEffectiveAnalysisFixtures.coordinate(
+            analysis.artifacts().resolvedSnapshots(), "b");
     final ArtifactCoordinate artifactC =
-        MavenElisionServiceEffectiveAnalysisFixtures.coordinate(analysis.resolvedSnapshots(), "c");
+        MavenElisionServiceEffectiveAnalysisFixtures.coordinate(
+            analysis.artifacts().resolvedSnapshots(), "c");
 
     assertThat(analysis.decision().retainedArtifacts()).contains(artifactA, artifactB, artifactC);
     assertThat(analysis.decision().elidedArtifacts()).doesNotContain(artifactA, artifactB);
@@ -68,20 +72,23 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final Path trace = temporaryDirectory.resolve("runtime.lst");
     Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\n");
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(trace.toFile()),
             List.of(),
             null,
             null,
-            false,
-            true,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true);
-    final MavenElisionService.PreparedAnalysis raw =
+            new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                true,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true));
+    final ElisionAnalysisModel.PreparedAnalysis raw =
         service.prepare(fixture.mavenProject(), options);
     assertThat(raw.rawDecision().elidedArtifacts())
         .contains(
@@ -99,11 +106,11 @@ final class MavenElisionServiceEffectiveAnalysisTest
             raw.graphBinding().inventoryFingerprint(),
             raw.graphBinding().operationFingerprint(),
             pair);
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         MavenElisionServiceEffectiveAnalysisFixtures.withBinding(raw, binding);
     final Set<Artifact> beforeArtifacts =
         new LinkedHashSet<>(fixture.mavenProject().getArtifacts());
-    final MavenElisionService.EffectiveAnalysis result = service.finishAnalysis(prepared);
+    final ElisionAnalysisModel.EffectiveAnalysis result = service.finishAnalysis(prepared);
 
     assertThat(result.rawDecision().elidedArtifacts())
         .contains(
@@ -115,7 +122,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
     assertThat(result.effectiveDecision().retainedArtifacts())
         .containsExactlyInAnyOrderElementsOf(
             fixture.allSnapshots().stream()
-                .map(MavenElisionService.ArtifactSnapshot::coordinate)
+                .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
                 .toList());
     assertThat(result.graphEvaluation().ancestorPromotedArtifacts())
         .contains(fixture.coordinate("d"));
@@ -135,20 +142,23 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final Path trace = temporaryDirectory.resolve("service-runtime.lst");
     Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\n");
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(trace.toFile()),
             List.of(),
             null,
             null,
-            false,
-            false,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true);
-    final MavenElisionService.PreparedAnalysis raw =
+            new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                false,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true));
+    final ElisionAnalysisModel.PreparedAnalysis raw =
         service.prepare(fixture.mavenProject(), options);
     assertThat(raw.dynamicRootInputs().classNames()).contains(ENTRY_CLASS, MIDDLE_CLASS);
     assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("a"));
@@ -166,7 +176,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
             raw.graphBinding().operationFingerprint(),
             pair);
 
-    final MavenElisionService.EffectiveAnalysis result =
+    final ElisionAnalysisModel.EffectiveAnalysis result =
         service.finishAnalysis(
             MavenElisionServiceEffectiveAnalysisFixtures.withBinding(raw, binding));
 
@@ -177,14 +187,13 @@ final class MavenElisionServiceEffectiveAnalysisTest
   }
 
   @Test
-  void unknownNativeImageOptionKeepsModeledRootWhileOtherClassesAndArtifactsAreElided()
-      throws Exception {
-    final Fixture fixture = fixture(false);
+  void unknownNativeImageOptionKeepsModeledRootAndTrimsUnrelatedClass() throws Exception {
+    final Fixture fixture = fixtureWithRuntimeA();
     fixture.addUnknownNativeImageArgsToA();
     final Path trace = temporaryDirectory.resolve("native-image-unknown-mixed.lst");
     Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\n");
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis raw =
+    final ElisionAnalysisModel.PreparedAnalysis raw =
         service.prepare(
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
@@ -192,14 +201,12 @@ final class MavenElisionServiceEffectiveAnalysisTest
 
     assertThat(raw.dynamicRootInputs().classNames()).contains(ENTRY_CLASS);
     assertThat(raw.dynamicRootInputs().scansByPath().get(fixture.snapshot("a").filePath()).roots())
-        .contains(ENTRY_CLASS)
-        .doesNotContain("closure.a.Extra");
-
+        .contains(ENTRY_CLASS);
     final ResolverArtifactGraphCapturePair pair =
         MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
     final EffectiveGraphPolicy.Evaluation policy =
         EffectiveGraphPolicy.evaluatePair(pair, raw.rawDecision());
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         service.finishAnalysis(
             MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
                 raw,
@@ -209,8 +216,18 @@ final class MavenElisionServiceEffectiveAnalysisTest
                     raw.graphBinding().operationFingerprint(),
                     pair)));
     assertThat(effective.effectiveDecision().elidedArtifacts()).contains(fixture.coordinate("e"));
-    assertThat(effective.trimAnalysis().candidateRoots().get(fixture.coordinate("a")))
-        .contains(ENTRY_CLASS);
+    final TrimResult trimmed = MavenDependencyTrimmer.trimEffectiveOutputs(effective);
+    final ArtifactTrimRecord declaring =
+        trimmed.records().stream()
+            .filter(record -> record.coordinate().equals(fixture.coordinate("a")))
+            .findFirst()
+            .orElseThrow();
+    assertThat(declaring.retainedClasses()).isLessThan(declaring.totalClasses());
+    try (java.util.jar.JarFile output =
+        new java.util.jar.JarFile(declaring.trimmedPath().toFile())) {
+      assertThat(output.getEntry("closure/a/Entry.class")).isNotNull();
+      assertThat(output.getEntry("closure/a/Extra.class")).isNull();
+    }
   }
 
   @Test
@@ -218,23 +235,21 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final Fixture fixture = fixture(false);
     final Set<ArtifactCoordinate> retained =
         fixture.allSnapshots().stream()
-            .map(MavenElisionService.ArtifactSnapshot::coordinate)
+            .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
             .collect(java.util.stream.Collectors.toSet());
-    final MavenDependencyTrimmer.TrimRequest request =
-        new MavenDependencyTrimmer.TrimRequest(
+    final TrimRequest request =
+        new TrimRequest(
             fixture.mavenProject(),
             null,
             fixture.allSnapshots(),
             fixture.scanInputs,
             retained,
-            TraceData.of(Set.of("sample.App")),
-            Set.of("missing.RequiredApi"),
-            Set.of(),
-            Set.of(),
-            List.of(),
-            false,
-            List.of(),
-            false);
+            new TrimEvidence(
+                TraceData.of(Set.of("sample.App")),
+                Set.of("missing.RequiredApi"),
+                Set.of(),
+                Set.of()),
+            new TrimPolicy(List.of(), false, List.of(), false));
 
     assertThatThrownBy(
             () -> MavenDependencyTrimmer.analyzeInMemory(request, java.util.Map.of(), Set.of()))
@@ -256,23 +271,26 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final Path trace = temporaryDirectory.resolve("source-provenance.lst");
     Files.writeString(trace, "sample.App\n" + ENTRY_CLASS.replace('.', '/') + "\n");
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(trace.toFile()),
             List.of(),
             null,
             null,
-            true,
-            false,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true);
+            new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                false,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true));
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(fixture.mavenProject(), options);
-    final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
+    final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
 
     assertThat(prepared.projectOutputClasses()).contains("sample.App", "sample.Helper");
     assertThat(effective.effectiveDecision().elidedArtifacts()).isEmpty();
@@ -285,7 +303,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
     Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\n");
     final Path declaringJar = fixture.snapshot("a").filePath();
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
@@ -295,12 +313,12 @@ final class MavenElisionServiceEffectiveAnalysisTest
                     path.equals(declaringJar) ? Set.of("optional.unresolved.Api") : Set.of(),
                     true));
 
-    final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
+    final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
 
     assertThat(prepared.rawDecision().retainedArtifacts())
         .containsExactlyInAnyOrderElementsOf(
             fixture.allSnapshots().stream()
-                .map(MavenElisionService.ArtifactSnapshot::coordinate)
+                .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
                 .toList());
     assertThat(effective.effectiveDecision().elidedArtifacts()).isEmpty();
   }
@@ -323,36 +341,30 @@ final class MavenElisionServiceEffectiveAnalysisTest
     providedArtifact.setScope(scope);
     final ArtifactCoordinate unchangedCoordinate =
         new ArtifactCoordinate("fixture", "b", "1.0", "jar", "", scope);
-    final List<MavenElisionService.ArtifactSnapshot> inventory =
+    final List<ElisionAnalysisModel.ArtifactSnapshot> inventory =
         fixture.allSnapshots().stream()
             .map(
                 snapshot ->
                     "b".equals(snapshot.coordinate().artifactId())
-                        ? new MavenElisionService.ArtifactSnapshot(
+                        ? new ElisionAnalysisModel.ArtifactSnapshot(
                             providedArtifact, unchangedCoordinate, snapshot.filePath())
                         : snapshot)
             .toList();
     final Set<ArtifactCoordinate> retained =
         inventory.stream()
-            .map(MavenElisionService.ArtifactSnapshot::coordinate)
+            .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
             .collect(java.util.stream.Collectors.toSet());
-    final MavenDependencyTrimmer.TrimRequest request =
-        new MavenDependencyTrimmer.TrimRequest(
+    final TrimRequest request =
+        new TrimRequest(
             fixture.mavenProject(),
             null,
             inventory,
             fixture.scanInputs,
             retained,
-            TraceData.of(Set.of(ENTRY_CLASS)),
-            Set.of(),
-            Set.of(),
-            Set.of(),
-            List.of(),
-            false,
-            List.of(),
-            false);
+            new TrimEvidence(TraceData.of(Set.of(ENTRY_CLASS)), Set.of(), Set.of(), Set.of()),
+            new TrimPolicy(List.of(), false, List.of(), false));
 
-    final MavenDependencyTrimmer.InMemoryAnalysis analysis =
+    final TrimAnalysisResult analysis =
         MavenDependencyTrimmer.analyzeInMemory(request, java.util.Map.of(), Set.of());
 
     assertThat(analysis.candidateAnalyses()).doesNotContainKey(unchangedCoordinate);

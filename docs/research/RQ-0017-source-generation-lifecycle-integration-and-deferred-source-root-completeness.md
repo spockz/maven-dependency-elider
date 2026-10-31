@@ -3,7 +3,7 @@
 
 ## Status
 
-Partially Resolved (Baseline implementation accepted in [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md); inlined constant follow-up open)
+Resolved (implementation and inlined-constant follow-up accepted in [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md))
 
 ## Date
 
@@ -145,7 +145,7 @@ During research, an alternative was evaluated: having the plugin trigger a secon
 1. **The "Wiped Resources" Hazard**: `process-resources` runs before `compile`. Wiping `target/classes` to force recompilation destroys copied and filtered application resources (`application.properties`, XML schemas, META-INF descriptors).
 2. **Annotation Processor Loops & `FilerException`**: Running `javac` twice causes annotation processors to execute twice, risking `javax.annotation.processing.FilerException: Attempt to recreate a file for type ...` on existing generated sources unless `-proc:none` is injected by mutating compiler plugin state.
 3. **Reactor Concurrency Races (`mvn -T`)**: Under parallel reactor builds, sibling modules read `target/classes` or packaged artifacts across threads. Deleting and recreating `.class` files mid-build introduces race conditions.
-4. **Redundant Work**: `ProductionBytecodeReferenceScanner` + `MavenElisionService.finishAnalysis` already computes the exact transitive bytecode link closure over `target/classes` and all dependency JARs. Re-running `javac` adds 3–5 seconds of build latency without adding soundness.
+4. **Redundant Work**: `ProductionBytecodeReferenceScanner` + `MavenElisionService.finishAnalysis` computes the bytecode link closure over `target/classes` and dependency JARs. A second compilation that generates output or runs processors would duplicate work and introduce lifecycle hazards. The accepted follow-up uses only javac semantic attribution with output generation and processors disabled; its build-time overhead has not been measured.
 
 ---
 
@@ -160,12 +160,12 @@ During research, an alternative was evaluated: having the plugin trigger a secon
 3. **Inlined Constants and Non-Emitted Symbols in Post-Compile Slicing**:
    * *Question*: How can `process-classes` elision prevent pruning dependencies that contributed inlined `static final` constants or compile-only types without re-running a slow second `javac` attribution pass?
    * *Investigated Solutions*:
-     * **Option A: Hybrid Post-Compile Source + Bytecode Union (Recommended)**:
-       At `process-classes`, all code generators and annotation processors have completed, so both `src/main/java` and `target/generated-sources` are complete and stable. Rather than making `sourceRootsComplete` and `productionClassesComplete` strictly mutually exclusive, `process-classes` can compute:
-       $$\text{Required Roots} = \text{BytecodeReferences}(\text{target/classes}) \ \cup \ \text{SourceReferences}(\text{CompileSourceRoots})$$
-       This retains types used exclusively for constant folding while keeping the post-compile guarantee that dynamically generated classes are fully recognized.
-     * **Option B: Lightweight Syntactic Import & Identifier Token Scanner**:
-       Full semantic attribution via `JavacTask.analyze()` can add 2–4 seconds of build overhead. A lightweight scanner parsing only `import` statements and qualified identifiers in `.java` files can identify candidate dependency classes that may have been inlined, retaining them without re-typechecking the whole project.
+     * **Option A: Hybrid Post-Compile Source + Bytecode Union (Accepted)**:
+       `sourceRootsComplete` and `productionClassesComplete` remain mutually exclusive assertions. In the latter mode, once `compile` and generation have completed, the analyzer computes:
+       $$\text{Required Roots} = \text{BytecodeReferences}(\text{target/classes}) \ \cup \ \text{AttributedSourceReferences}(\text{CompileSourceRoots})$$
+       The source attribution uses the compiled output and compile dependencies on its classpath, forces `-proc:none`, and does not pass arbitrary compiler arguments or invoke processors. It preserves owners referenced only through inlined constants while keeping generated members and classes resolvable when the compiler emitted them.
+     * **Option B: Lightweight Syntactic Import & Identifier Token Scanner (Not Selected)**:
+       The accepted implementation uses `JavacTask.analyze()` only for semantic attribution, with processors disabled and no generated output. Its overhead is unmeasured. A syntax-only scanner could be considered later, but it would over-retain names without symbol resolution.
      * **Option C: Preserving Inlined Constants via Annotation/Configuration Overrides**:
        Allow developers to retain constant-defining libraries explicitly using `elide.trimRoots` or `<excludedArtifacts>`, while surfacing diagnostic warnings during `dependency-elider:report` when a dropped library matches an imported class name from source files.
 
@@ -181,6 +181,7 @@ During research, an alternative was evaluated: having the plugin trigger a secon
   * Verify `mvn dependency:tree` with `elide` bound to `process-classes` (or `-Delide.productionClassesComplete=true`) schedules `process-classes` before `dependency:tree` via `EliderTreePreparation`.
 * **Static Analysis & Regression Gate**:
   * Pass `make check` cleanly with zero regressions across existing `initialize`-bound tests.
+  * Prove a dependency referenced only through a compile-time-inlined constant remains in artifact-only and JAR-trimming analysis; prove source attribution failure selects conservative retention rather than bytecode-only pruning.
 
 ## 6. Implementation Evidence and Limits
 
@@ -188,6 +189,8 @@ The implementation now separates the output-completeness assertion from the trus
 
 `MavenCompilerSettings.platformReleaseOptions` resolves only supported release/source/target settings for trimming and rejects compiler arguments that override platform or output selection. A mixed source root retains all regular members: Java files contribute parsed declarations and other files become digest-bound resource providers. Source-like files in languages the scanner cannot parse (`.scala`, `.kt`, `.kts`, `.groovy`) are captured before the inventory is rejected as incomplete.
 
-The real Maven lifecycle test `extensionRebindsElideAfterGeneratedBytecodeExists` generates a Java class with the AntRun `generate-sources` execution, checks that the produced class references the retained dependency, enables the extension property, and runs a post-elision `dependency:tree` request. Unit tests cover compiled-bytecode attribution, missing class output, source-root resource members, and process-classes writer ordering. The Maven Compiler Plugin `testCompile` safeguard remains active even when `skipTests` is true because that flag does not skip test compilation.
+The real Maven lifecycle test `extensionRebindsElideAfterGeneratedBytecodeExists` generates a Java class with the AntRun `generate-sources` execution, checks that the produced class references the retained dependency, enables the extension property, and runs a post-elision `dependency:tree` request. Unit tests cover compiled-bytecode attribution, missing class output, source-root resource members, process-classes writer ordering, constant-only source references, trimming roots, and conservative fallback after failed attribution. The Maven Compiler Plugin `testCompile` safeguard remains active even when `skipTests` is true because that flag does not skip test compilation.
 
-Remaining boundary: trusted VEX inventory requires the packaged Maven extension and a real lifecycle-sourced `process-classes` execution. Direct Mojo invocation, a missing lifecycle phase, and other phases remain conservative. The process-classes mode takes effect only after production compilation; it cannot remove dependencies from that compile invocation. Additionally, pure bytecode scanning at `process-classes` cannot observe compile-time inlined constants (`static final` fields), requiring hybrid source-root unioning or explicit retention to prevent dropping constant-only dependencies.
+The source union feeds compile artifact pruning and class-trimming roots, but remains separate from `BytecodeReferenceScan`, class-use categories, and runtime telemetry. Class-use reports continue to label only bytecode and runtime evidence; CVE/VEX claims are still bounded by their existing trim and precondition evidence. The source supplement can retain source-only unused types, and it does not guarantee dependencies referenced only by test sources. Missing/empty source roots, unsupported source forms or compiler/platform modes, and javac attribution errors produce a visible conservative fallback that retains every compile-visible coordinate and all indexed classes it provides.
+
+Remaining boundary: trusted VEX inventory requires the packaged Maven extension and a real lifecycle-sourced `process-classes` execution. Direct Mojo invocation, a missing lifecycle phase, and other phases remain conservative. The process-classes mode takes effect only after production compilation; it cannot remove dependencies from that compile invocation.

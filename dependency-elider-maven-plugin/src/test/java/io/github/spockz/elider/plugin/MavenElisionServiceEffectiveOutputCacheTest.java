@@ -51,7 +51,7 @@ final class MavenElisionServiceEffectiveOutputCacheTest
 
     Files.writeString(first.trimmedPath(), "corrupt output");
     final String corruptDigest = ArtifactDigests.read(first.trimmedPath()).sha256();
-    final MavenDependencyTrimmer.TrimResult repaired = trimEffective(operation);
+    final TrimResult repaired = trimEffective(operation);
     final ArtifactTrimRecord repairedRecord = outputRecord(repaired, fixture);
     assertThat(repaired.cacheHits()).isZero();
     assertThat(ArtifactDigests.read(repairedRecord.trimmedPath()).sha256())
@@ -59,7 +59,7 @@ final class MavenElisionServiceEffectiveOutputCacheTest
         .isNotEqualTo(corruptDigest);
 
     Files.delete(repairedRecord.trimmedPath());
-    final MavenDependencyTrimmer.TrimResult rebuilt = trimEffective(operation);
+    final TrimResult rebuilt = trimEffective(operation);
     final ArtifactTrimRecord rebuiltRecord = outputRecord(rebuilt, fixture);
     assertThat(rebuilt.cacheHits()).isZero();
     assertThat(rebuiltRecord.trimmedPath()).isRegularFile();
@@ -77,12 +77,12 @@ final class MavenElisionServiceEffectiveOutputCacheTest
 
     EffectiveOutputCacheTestFiles.mutateCacheEntry(
         manifest, entry -> entry.putArray("roots").add("closure.a.Extra"));
-    final MavenDependencyTrimmer.TrimResult rootRepair = trimEffective(operation);
+    final TrimResult rootRepair = trimEffective(operation);
     assertThat(rootRepair.cacheHits()).isZero();
 
     EffectiveOutputCacheTestFiles.mutateCacheEntry(
         manifest, entry -> entry.put("trimmedSha1", "0".repeat(40)));
-    final MavenDependencyTrimmer.TrimResult digestRepair = trimEffective(operation);
+    final TrimResult digestRepair = trimEffective(operation);
     assertThat(digestRepair.cacheHits()).isZero();
     final ArtifactTrimRecord repaired = outputRecord(digestRepair, fixture);
     assertThat(repaired.trimmedSha256()).isEqualTo(original.trimmedSha256());
@@ -95,7 +95,7 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     final Fixture fixture = fixture(false);
     final ServiceOperation operation =
         operation(fixture, trace(temporaryDirectory, ENTRY_TRACE), null);
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
     outputRecord(MavenDependencyTrimmer.trimEffectiveOutputs(effective), fixture);
     final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
@@ -148,12 +148,11 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     final Path trace = trace(temporaryDirectory, ENTRY_TRACE);
     final ServiceOperation targetEleven =
         operation(fixture, trace, null, true, List.of(), "vertical-shading");
-    final MavenElisionService.EffectiveAnalysis firstEffective =
+    final ElisionAnalysisModel.EffectiveAnalysis firstEffective =
         targetEleven.service().finishAnalysis(targetEleven.prepared());
     assertThat(firstEffective.trimAnalysis().analyzedTiers()).containsExactly(11, 17, 21);
     final List<String> firstPlatformIdentities = firstEffective.trimAnalysis().platformIdentities();
-    final MavenDependencyTrimmer.TrimResult first =
-        MavenDependencyTrimmer.trimEffectiveOutputs(firstEffective);
+    final TrimResult first = MavenDependencyTrimmer.trimEffectiveOutputs(firstEffective);
     final ArtifactTrimRecord firstRecord = outputRecord(first, fixture);
     assertThat(firstRecord.mrjarStatus()).isEqualTo("elevated_and_trimmed");
     assertThat(firstRecord.totalClasses()).isEqualTo(3);
@@ -192,7 +191,7 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     fixture.mavenProject().getProperties().setProperty("maven.compiler.release", "17");
     final ServiceOperation targetSeventeen =
         operation(fixture, trace, null, true, List.of(), "vertical-shading");
-    final MavenElisionService.EffectiveAnalysis targetSeventeenEffective =
+    final ElisionAnalysisModel.EffectiveAnalysis targetSeventeenEffective =
         targetSeventeen.service().finishAnalysis(targetSeventeen.prepared());
     assertThat(targetSeventeenEffective.trimAnalysis().analyzedTiers()).containsExactly(17, 21);
     assertThat(targetSeventeenEffective.trimAnalysis().platformIdentities())
@@ -277,12 +276,11 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     output.closeEntry();
   }
 
-  private static ArtifactTrimRecord outputRecord(
-      final MavenDependencyTrimmer.TrimResult result, final Fixture fixture) {
+  private static ArtifactTrimRecord outputRecord(final TrimResult result, final Fixture fixture) {
     return EffectiveOutputCacheTestFiles.record(result.records(), fixture.coordinate("a"));
   }
 
-  private void assertCacheMiss(final MavenElisionService.EffectiveAnalysis effective)
+  private void assertCacheMiss(final ElisionAnalysisModel.EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
     assertThat(MavenDependencyTrimmer.trimEffectiveOutputs(effective).cacheHits()).isZero();
   }

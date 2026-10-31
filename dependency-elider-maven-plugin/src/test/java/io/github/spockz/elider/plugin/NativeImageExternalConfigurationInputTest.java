@@ -257,7 +257,7 @@ import org.objectweb.asm.Opcodes;
     final Path trace = temporaryDirectory.resolve("external-pointer-trace.lst");
     Files.writeString(trace, "closure.a.Entry\n");
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
@@ -290,7 +290,7 @@ import org.objectweb.asm.Opcodes;
     final Path trace = temporaryDirectory.resolve("link-path-trace.lst");
     Files.writeString(trace, "closure.a.Entry\n");
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(

@@ -1,4 +1,5 @@
-/* WHY: Prevents reports from publishing outputs without an occurrence-specific graph path. */
+/* WHY: Prevents reports from publishing outputs without an
+ * occurrence-specific graph path. */
 
 package io.github.spockz.elider.plugin;
 

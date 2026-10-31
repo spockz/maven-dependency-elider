@@ -24,12 +24,12 @@ final class MavenElisionServiceEffectiveReportTest
     final Fixture fixture = fixture(false);
     final ServiceOperation operation =
         operation(fixture, trace(temporaryDirectory, "closure/a/Entry"), null);
-    final MavenElisionService.EffectiveAnalysis effective =
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         operation.service().finishEffectiveOutputs(effective);
 
-    try (TrimOutputGenerationCommitHandle ignored = analysis.generationCommit()) {
+    try (TrimOutputGenerationCommitHandle ignored = analysis.trimResult().generationCommit()) {
       assertThat(
               List.of(
                   analysis.mediatedGraph() != null,
@@ -39,7 +39,9 @@ final class MavenElisionServiceEffectiveReportTest
                       .filter(path -> CLASS_TRIMMED.equals(path.kind()))
                       .map(MediatedGraphReport.ArtifactPath::coordinate)
                       .toList(),
-                  analysis.trimRecords().stream().map(ArtifactTrimRecord::coordinate).toList()))
+                  analysis.trimResult().records().stream()
+                      .map(ArtifactTrimRecord::coordinate)
+                      .toList()))
           .containsExactly(
               true,
               true,
@@ -57,26 +59,27 @@ final class MavenElisionServiceEffectiveReportTest
     final Fixture fixture = fixture(false);
     final Path traceFile = trace(temporaryDirectory, "closure/a/Entry");
     final ServiceOperation firstOperation = operation(fixture, traceFile, null);
-    final MavenElisionService.Analysis first =
+    final ElisionAnalysisModel.Analysis first =
         firstOperation
             .service()
             .finishEffectiveOutputs(
                 firstOperation.service().finishAnalysis(firstOperation.prepared()));
-    try (TrimOutputGenerationCommitHandle generationCommit = first.generationCommit()) {
+    try (TrimOutputGenerationCommitHandle generationCommit =
+        first.trimResult().generationCommit()) {
       generationCommit.commit();
       generationCommit.cleanupCommitted();
     }
     final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
     final byte[] priorManifest = Files.readAllBytes(manifest);
     final List<Path> priorOutputs =
-        first.trimRecords().stream().map(ArtifactTrimRecord::trimmedPath).toList();
+        first.trimResult().records().stream().map(ArtifactTrimRecord::trimmedPath).toList();
 
     Files.writeString(traceFile, "closure/a/Extra\n");
     final ServiceOperation secondOperation = operation(fixture, traceFile, null);
-    final MavenElisionService.EffectiveAnalysis valid =
+    final ElisionAnalysisModel.EffectiveAnalysis valid =
         secondOperation.service().finishAnalysis(secondOperation.prepared());
-    final MavenElisionService.EffectiveAnalysis invalidReport =
-        new MavenElisionService.EffectiveAnalysis(
+    final ElisionAnalysisModel.EffectiveAnalysis invalidReport =
+        new ElisionAnalysisModel.EffectiveAnalysis(
             valid.prepared(),
             EffectiveGraphPolicy.failClosed(
                 valid.graphEvaluation().projectKey(),

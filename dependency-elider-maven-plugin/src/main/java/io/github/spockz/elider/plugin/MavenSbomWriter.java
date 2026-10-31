@@ -1,4 +1,5 @@
-/* WHY: Keeps Maven inventory construction aligned with the plugin's post-trim artifact decision. */
+/* WHY: Keeps Maven inventory construction aligned with the plugin's
+ * post-trim artifact decision. */
 
 package io.github.spockz.elider.plugin;
 
@@ -31,8 +32,8 @@ final class MavenSbomWriter {
   static void write(
       final MavenProject project,
       final Path output,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis)
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis)
       throws IOException {
     write(project, output, plan, analysis, List.of());
   }
@@ -40,8 +41,8 @@ final class MavenSbomWriter {
   static void write(
       final MavenProject project,
       final Path output,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final Collection<VexAttestation> attestations)
       throws IOException {
     write(project, output, plan, analysis, attestations, postInventory(plan, analysis));
@@ -50,8 +51,8 @@ final class MavenSbomWriter {
   static void write(
       final MavenProject project,
       final Path output,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final Collection<VexAttestation> attestations,
       final List<ArtifactFileRef> inventory)
       throws IOException {
@@ -62,7 +63,7 @@ final class MavenSbomWriter {
             inventory,
             analysis.effectiveDecision(),
             metadata(),
-            analysis.trimRecords(),
+            analysis.trimResult().records(),
             attestations);
   }
 
@@ -70,10 +71,10 @@ final class MavenSbomWriter {
       final MavenProject project,
       final Path output,
       final List<ArtifactFileRef> originalInventory,
-      final MavenElisionService.Analysis analysis)
+      final ElisionAnalysisModel.Analysis analysis)
       throws IOException {
     final Map<ArtifactCoordinate, Path> originals = new ConcurrentHashMap<>();
-    for (final ArtifactTrimRecord record : analysis.trimRecords()) {
+    for (final ArtifactTrimRecord record : analysis.trimResult().records()) {
       originals.put(record.coordinate(), record.originalPath());
     }
     final List<ArtifactFileRef> inventory = new ArrayList<>();
@@ -100,8 +101,8 @@ final class MavenSbomWriter {
   static void writeOpenVex(
       final MavenProject project,
       final Path output,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final Collection<VexAttestation> attestations)
       throws IOException {
     writeOpenVex(project, output, plan, analysis, attestations, postInventory(plan, analysis));
@@ -110,8 +111,8 @@ final class MavenSbomWriter {
   static void writeOpenVex(
       final MavenProject project,
       final Path output,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final Collection<VexAttestation> attestations,
       final List<ArtifactFileRef> inventory)
       throws IOException {
@@ -156,11 +157,11 @@ final class MavenSbomWriter {
   }
 
   static List<ArtifactFileRef> postInventory(
-      final MavenElisionService.ApplyPlan plan, final MavenElisionService.Analysis analysis)
+      final ElisionAnalysisModel.ApplyPlan plan, final ElisionAnalysisModel.Analysis analysis)
       throws IOException {
     final List<ArtifactFileRef> inventory = new ArrayList<>();
     final Map<ArtifactCoordinate, Path> trimmedPaths = new ConcurrentHashMap<>();
-    for (final ArtifactTrimRecord record : analysis.trimRecords()) {
+    for (final ArtifactTrimRecord record : analysis.trimResult().records()) {
       trimmedPaths.put(record.coordinate(), record.trimmedPath());
     }
     for (final Artifact artifact : plan.resolvedArtifacts()) {

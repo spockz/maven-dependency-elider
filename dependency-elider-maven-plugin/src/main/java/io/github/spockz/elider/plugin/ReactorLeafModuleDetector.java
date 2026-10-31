@@ -1,5 +1,6 @@
 /* WHY: Evaluates whether a project in a Maven reactor is a leaf module or an
- * intermediate resource so elision can be skipped on internal libraries (ADR-0011). */
+ * intermediate resource so elision can be skipped on internal libraries
+ * (ADR-0011). */
 
 package io.github.spockz.elider.plugin;
 

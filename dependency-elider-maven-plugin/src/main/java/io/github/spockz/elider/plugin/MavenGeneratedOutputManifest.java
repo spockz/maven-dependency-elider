@@ -1,4 +1,5 @@
-/* WHY: Persists output ownership separately from the resolver's output path policy. */
+/* WHY: Persists output ownership separately from the resolver's output path
+ * policy. */
 
 package io.github.spockz.elider.plugin;
 

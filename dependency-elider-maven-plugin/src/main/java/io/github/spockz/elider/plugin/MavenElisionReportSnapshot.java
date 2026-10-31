@@ -217,14 +217,14 @@ record MavenElisionReportSnapshot(
 
   static MavenElisionReportSnapshot from(
       final org.apache.maven.project.MavenProject project,
-      final MavenElisionService.Analysis analysis)
+      final ElisionAnalysisModel.Analysis analysis)
       throws IOException {
     return from(project, analysis, null);
   }
 
   static MavenElisionReportSnapshot from(
       final org.apache.maven.project.MavenProject project,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.Analysis analysis,
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment)
       throws IOException {
     final DroppedArtifactSummary droppedSummary =
@@ -232,7 +232,7 @@ record MavenElisionReportSnapshot(
     final List<DroppedArtifact> dropped = droppedSummary.artifacts();
 
     final List<TrimmedArtifact> trimmed =
-        analysis.trimRecords().stream()
+        analysis.trimResult().records().stream()
             .map(MavenElisionReportSnapshot::trimmedArtifact)
             .sorted(Comparator.comparing(TrimmedArtifact::coordinate))
             .toList();
@@ -317,18 +317,18 @@ record MavenElisionReportSnapshot(
         record.coordinate().toString(), prunedClasses, record.prunedClassBytes());
   }
 
-  static DroppedArtifactSummary droppedArtifactSummary(final MavenElisionService.Analysis analysis)
+  static DroppedArtifactSummary droppedArtifactSummary(final ElisionAnalysisModel.Analysis analysis)
       throws IOException {
     return droppedArtifactSummary(analysis, analysis.effectiveDecision());
   }
 
   private static DroppedArtifactSummary droppedArtifactSummary(
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.Analysis analysis,
       final io.github.spockz.elider.model.ElisionDecision decision)
       throws IOException {
     final List<DroppedArtifact> dropped = new ArrayList<>();
     for (final ArtifactCoordinate coordinate : decision.elidedArtifacts()) {
-      final MavenElisionService.ArtifactSnapshot artifact =
+      final ElisionAnalysisModel.ArtifactSnapshot artifact =
           snapshotForCoordinate(analysis, coordinate);
       final Path path = artifact.filePath();
       if (path == null || !Files.isRegularFile(path)) {
@@ -365,10 +365,10 @@ record MavenElisionReportSnapshot(
     }
   }
 
-  private static MavenElisionService.ArtifactSnapshot snapshotForCoordinate(
-      final MavenElisionService.Analysis analysis, final ArtifactCoordinate coordinate)
+  private static ElisionAnalysisModel.ArtifactSnapshot snapshotForCoordinate(
+      final ElisionAnalysisModel.Analysis analysis, final ArtifactCoordinate coordinate)
       throws IOException {
-    return analysis.resolvedSnapshots().stream()
+    return analysis.artifacts().resolvedSnapshots().stream()
         .filter(snapshot -> snapshot.coordinate().equals(coordinate))
         .findFirst()
         .orElseThrow(

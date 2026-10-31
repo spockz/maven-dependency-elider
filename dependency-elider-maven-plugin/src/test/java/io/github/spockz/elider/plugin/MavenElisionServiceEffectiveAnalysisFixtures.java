@@ -19,26 +19,29 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
 
   private MavenElisionServiceEffectiveAnalysisFixtures() {}
 
-  static MavenElisionService.AnalysisOptions options(
+  static ElisionAnalysisModel.AnalysisOptions options(
       final List<File> traceFiles, final File productionOutput, final boolean trimJars) {
-    return new MavenElisionService.AnalysisOptions(
+    return new ElisionAnalysisModel.AnalysisOptions(
         traceFiles,
         List.of(),
         productionOutput,
         null,
-        false,
-        trimJars,
-        List.of(),
-        false,
-        List.of(),
-        false,
-        true);
+        new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+        new ElisionAnalysisModel.TrimOptions(
+            trimJars,
+            List.of(),
+            false,
+            List.of(),
+            false,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+        new ElisionAnalysisModel.DynamicRootOptions(true));
   }
 
-  static MavenElisionService.PreparedAnalysis withBinding(
-      final MavenElisionService.PreparedAnalysis prepared,
+  static ElisionAnalysisModel.PreparedAnalysis withBinding(
+      final ElisionAnalysisModel.PreparedAnalysis prepared,
       final MavenElisionGraphBinding.Result binding) {
-    return new MavenElisionService.PreparedAnalysis(
+    return new ElisionAnalysisModel.PreparedAnalysis(
         prepared.project(),
         prepared.options(),
         prepared.resolvedSnapshots(),
@@ -57,13 +60,14 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
         prepared.productionOutputFingerprint(),
         prepared.inputFingerprint(),
         prepared.directInputFingerprint(),
-        binding);
+        binding,
+        prepared.sourceAttributionFallback());
   }
 
   static ArtifactCoordinate coordinate(
-      final List<MavenElisionService.ArtifactSnapshot> snapshots, final String artifactId) {
+      final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots, final String artifactId) {
     return snapshots.stream()
-        .map(MavenElisionService.ArtifactSnapshot::coordinate)
+        .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
         .filter(coordinate -> coordinate.artifactId().equals(artifactId))
         .findFirst()
         .orElseThrow();

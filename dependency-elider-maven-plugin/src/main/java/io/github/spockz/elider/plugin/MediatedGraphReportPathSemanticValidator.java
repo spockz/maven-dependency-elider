@@ -1,4 +1,5 @@
-/* WHY: Verifies path labels and output meanings against their captured graph occurrences. */
+/* WHY: Verifies path labels and output meanings against their captured graph
+ * occurrences. */
 
 package io.github.spockz.elider.plugin;
 

@@ -95,22 +95,17 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       throws IOException, MojoFailureException {
     completeSourceRoots(fixture);
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(traceFile.toFile()),
             excludedArtifacts,
             productionOutput,
             null,
-            true,
-            trimJars,
-            List.of(),
-            false,
-            passThroughArtifacts,
-            false,
-            true,
-            true,
-            mrjarStrategy);
-    final MavenElisionService.PreparedAnalysis prepared =
+            new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                trimJars, List.of(), false, passThroughArtifacts, false, 1, mrjarStrategy),
+            new ElisionAnalysisModel.DynamicRootOptions(true));
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(fixture.mavenProject(), options);
     final ResolverArtifactGraphCapturePair pair =
         MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
@@ -139,7 +134,7 @@ abstract class MavenElisionServiceEffectiveOutputSupport
   }
 
   /** Runs the isolated effective output engine without changing Maven project views. */
-  protected MavenDependencyTrimmer.TrimResult trimEffective(final ServiceOperation operation)
+  protected TrimResult trimEffective(final ServiceOperation operation)
       throws IOException, MojoFailureException {
     return MavenDependencyTrimmer.trimEffectiveOutputs(
         operation.service().finishAnalysis(operation.prepared()));
@@ -154,5 +149,5 @@ abstract class MavenElisionServiceEffectiveOutputSupport
   }
 
   protected record ServiceOperation(
-      MavenElisionService service, MavenElisionService.PreparedAnalysis prepared) {}
+      MavenElisionService service, ElisionAnalysisModel.PreparedAnalysis prepared) {}
 }

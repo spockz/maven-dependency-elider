@@ -54,11 +54,14 @@ final class MavenElisionServiceTest {
     final Artifact first = artifact("first", "compile");
     final Artifact second = artifact("second", "compile");
     final Set<Artifact> ordered = new LinkedHashSet<>(List.of(first, second));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            MavenElisionService.snapshots(ordered), false, List.of(), decision(Set.of(), Set.of()));
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(ordered), false, List.of()),
+            decision(Set.of(), Set.of()));
 
-    assertThat(new ArrayList<>(analysis.resolvedArtifacts())).containsExactly(first, second);
+    assertThat(new ArrayList<>(analysis.artifacts().resolvedArtifacts()))
+        .containsExactly(first, second);
   }
 
   @Test
@@ -72,8 +75,8 @@ final class MavenElisionServiceTest {
     final DependencyDynamicRoots.RootScan expectedScan =
         new DependencyDynamicRoots.RootScan(Set.of("library.Provider"), true);
 
-    final MavenElisionService.DynamicRootInputs inputs =
-        MavenElisionService.dynamicRoots(
+    final ElisionAnalysisModel.DynamicRootInputs inputs =
+        DynamicRootOrchestrator.dynamicRoots(
             candidates,
             (path, context) -> {
               scannedPaths.add(path);
@@ -90,18 +93,20 @@ final class MavenElisionServiceTest {
   void analysisSnapshotsAreOrderedImmutableAndDetachedFromSourceCollections() {
     final Artifact first = artifact("first", "compile");
     final Artifact second = artifact("second", "compile");
-    final List<MavenElisionService.ArtifactSnapshot> source =
-        new ArrayList<>(MavenElisionService.snapshots(List.of(first, second)));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(source, false, List.of(), decision(Set.of(), Set.of()));
+    final List<ElisionAnalysisModel.ArtifactSnapshot> source =
+        new ArrayList<>(MavenArtifactInventory.snapshots(List.of(first, second)));
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(source, false, List.of()),
+            decision(Set.of(), Set.of()));
     source.clear();
 
-    assertThat(analysis.resolvedSnapshots())
-        .extracting(MavenElisionService.ArtifactSnapshot::artifact)
+    assertThat(analysis.artifacts().resolvedSnapshots())
+        .extracting(ElisionAnalysisModel.ArtifactSnapshot::artifact)
         .containsExactly(first, second);
-    assertThatThrownBy(() -> analysis.resolvedSnapshots().clear())
+    assertThatThrownBy(() -> analysis.artifacts().resolvedSnapshots().clear())
         .isInstanceOf(UnsupportedOperationException.class);
-    assertThatThrownBy(() -> analysis.resolvedArtifacts().clear())
+    assertThatThrownBy(() -> analysis.artifacts().resolvedArtifacts().clear())
         .isInstanceOf(UnsupportedOperationException.class);
   }
 
@@ -113,8 +118,8 @@ final class MavenElisionServiceTest {
     final Path dependencyPath = dependencyFile.toPath();
     final Path expectedPath = dependencyPath.toAbsolutePath().normalize();
 
-    final MavenElisionService.ArtifactSnapshot snapshot =
-        MavenElisionService.snapshots(List.of(dependency)).getFirst();
+    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
+        MavenArtifactInventory.snapshots(List.of(dependency)).getFirst();
 
     assertThat(snapshot.artifact()).isSameAs(dependency);
     assertThat(snapshot.coordinate()).isEqualTo(coordinate("runtime"));
@@ -127,8 +132,8 @@ final class MavenElisionServiceTest {
     final Artifact second = artifact("second", "compile");
     final Set<Artifact> source = new LinkedHashSet<>(List.of(first, second));
     final Set<Artifact> directSource = new LinkedHashSet<>(List.of(second));
-    final MavenElisionService.ApplyPlan plan =
-        new MavenElisionService.ApplyPlan(source, true, directSource);
+    final ElisionAnalysisModel.ApplyPlan plan =
+        new ElisionAnalysisModel.ApplyPlan(source, true, directSource);
     source.clear();
     directSource.clear();
 
@@ -144,10 +149,11 @@ final class MavenElisionServiceTest {
     final ArtifactCoordinate retained = coordinate("compile");
     final ArtifactCoordinate elided = coordinate("runtime");
     final ElisionDecision contradictory = decision(Set.of(retained), Set.of(elided));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(List.of(), false, List.of(), contradictory);
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(List.of(), false, List.of()), contradictory);
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(new MavenProject(), analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(new MavenProject(), analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Contradictory retained and elided artifact identities");
   }
@@ -172,14 +178,15 @@ final class MavenElisionServiceTest {
     final MavenProject project = new MavenProject();
     project.setArtifacts(new LinkedHashSet<>(List.of(resolved)));
     project.setDependencyArtifacts(new LinkedHashSet<>(List.of(direct, unrepresented)));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            MavenElisionService.snapshots(List.of(resolved)),
-            true,
-            MavenElisionService.snapshots(List.of(direct, unrepresented)),
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(List.of(resolved)),
+                true,
+                MavenArtifactInventory.snapshots(List.of(direct, unrepresented))),
             decision(Set.of(), Set.of(coordinate("compile"))));
 
-    final MavenElisionService.ApplyPlan plan = new MavenElisionService().plan(project, analysis);
+    final ElisionAnalysisModel.ApplyPlan plan = MavenArtifactInventory.plan(project, analysis);
 
     assertThat(plan.resolvedArtifacts()).isEmpty();
     assertThat(plan.directArtifactsPresent()).isTrue();
@@ -196,14 +203,15 @@ final class MavenElisionServiceTest {
     final MavenProject project = new MavenProject();
     project.setArtifacts(new LinkedHashSet<>(List.of(resolved)));
     project.setDependencyArtifacts(Set.of(direct));
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            MavenElisionService.snapshots(List.of(resolved)),
-            true,
-            MavenElisionService.snapshots(List.of(direct)),
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(List.of(resolved)),
+                true,
+                MavenArtifactInventory.snapshots(List.of(direct))),
             decision(Set.of(coordinate("compile")), Set.of()));
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Conflicting direct artifact file");
     assertThat(project.getArtifacts()).containsExactly(resolved);
@@ -214,10 +222,10 @@ final class MavenElisionServiceTest {
   void planRejectsArtifactCoordinateChangesAfterAnalysis() throws Exception {
     final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
     final MavenProject project = projectWith(dependency, null);
-    final MavenElisionService.Analysis analysis = analyze(project, "coordinate.lst");
+    final ElisionAnalysisModel.Analysis analysis = analyze(project, "coordinate.lst");
     dependency.setVersion("2.0");
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("artifact coordinate changed after analysis");
     assertThat(project.getArtifacts()).containsExactly(dependency);
@@ -228,10 +236,10 @@ final class MavenElisionServiceTest {
   void planRejectsArtifactScopeChangesAfterAnalysis() throws Exception {
     final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
     final MavenProject project = projectWith(dependency, null);
-    final MavenElisionService.Analysis analysis = analyze(project, "scope.lst");
+    final ElisionAnalysisModel.Analysis analysis = analyze(project, "scope.lst");
     dependency.setScope("runtime");
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("artifact coordinate changed after analysis");
     assertThat(project.getArtifacts()).containsExactly(dependency);
@@ -241,12 +249,12 @@ final class MavenElisionServiceTest {
   void planRejectsArtifactReferenceReplacementAfterAnalysis() throws Exception {
     final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
     final MavenProject project = projectWith(dependency, null);
-    final MavenElisionService.Analysis analysis = analyze(project, "reference.lst");
+    final ElisionAnalysisModel.Analysis analysis = analyze(project, "reference.lst");
     final Artifact replacement = artifact("library", "compile");
     replacement.setFile(dependency.getFile());
     project.setArtifacts(new LinkedHashSet<>(List.of(replacement)));
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("artifact order or reference changed after analysis");
     assertThat(project.getArtifacts()).containsExactly(replacement);
@@ -256,10 +264,10 @@ final class MavenElisionServiceTest {
   void planRejectsArtifactPathChangesAfterAnalysis() throws Exception {
     final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
     final MavenProject project = projectWith(dependency, null);
-    final MavenElisionService.Analysis analysis = analyze(project, "path.lst");
+    final ElisionAnalysisModel.Analysis analysis = analyze(project, "path.lst");
     dependency.setFile(writeJar("changed.jar").toFile());
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("artifact file path changed after analysis");
     assertThat(project.getArtifacts()).containsExactly(dependency);
@@ -269,20 +277,20 @@ final class MavenElisionServiceTest {
   void servicePreservesAbsentAndEmptyDirectViewDistinction() throws Exception {
     final Artifact absentViewArtifact = resolvedArtifact("absent", "compile", "absent.jar");
     final MavenProject absentProject = projectWith(absentViewArtifact, null);
-    final MavenElisionService.Analysis absentAnalysis = analyze(absentProject, "absent.lst");
-    final MavenElisionService.ApplyPlan absentPlan =
-        new MavenElisionService().plan(absentProject, absentAnalysis);
+    final ElisionAnalysisModel.Analysis absentAnalysis = analyze(absentProject, "absent.lst");
+    final ElisionAnalysisModel.ApplyPlan absentPlan =
+        MavenArtifactInventory.plan(absentProject, absentAnalysis);
 
     final Artifact emptyViewArtifact = resolvedArtifact("empty", "compile", "empty.jar");
     final MavenProject emptyProject = projectWith(emptyViewArtifact, new LinkedHashSet<>());
-    final MavenElisionService.Analysis emptyAnalysis = analyze(emptyProject, "empty.lst");
-    final MavenElisionService.ApplyPlan emptyPlan =
-        new MavenElisionService().plan(emptyProject, emptyAnalysis);
+    final ElisionAnalysisModel.Analysis emptyAnalysis = analyze(emptyProject, "empty.lst");
+    final ElisionAnalysisModel.ApplyPlan emptyPlan =
+        MavenArtifactInventory.plan(emptyProject, emptyAnalysis);
 
-    assertThat(absentAnalysis.directArtifactsPresent()).isFalse();
+    assertThat(absentAnalysis.artifacts().directArtifactsPresent()).isFalse();
     assertThat(absentPlan.directArtifactsPresent()).isFalse();
     assertThat(absentPlan.directArtifacts()).isEmpty();
-    assertThat(emptyAnalysis.directArtifactsPresent()).isTrue();
+    assertThat(emptyAnalysis.artifacts().directArtifactsPresent()).isTrue();
     assertThat(emptyPlan.directArtifactsPresent()).isTrue();
     assertThat(emptyPlan.directArtifacts()).isEmpty();
   }
@@ -322,7 +330,7 @@ final class MavenElisionServiceTest {
     final Path trace = tempDir.resolve("generated-source-runtime.lst");
     Files.writeString(trace, "observed/RuntimeEntry\n");
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
 
     assertThat(Files.exists(generatedSources)).isFalse();
@@ -348,7 +356,7 @@ final class MavenElisionServiceTest {
     final Path trace = tempDir.resolve("empty-source-roots-runtime.lst");
     Files.writeString(trace, "observed/RuntimeEntry\n");
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
 
     assertThat(project.getCompileSourceRoots()).isEmpty();
@@ -393,7 +401,7 @@ final class MavenElisionServiceTest {
     final Path trace = tempDir.resolve("complete-source-runtime.lst");
     Files.writeString(trace, "observed/Entry\n");
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService()
             .analyze(project, List.of(trace.toFile()), List.of(), null, null, true);
 
@@ -458,6 +466,7 @@ final class MavenElisionServiceTest {
         source, "package app; public final class GeneratedType { library.Used value; }\n");
     CompilationFixtureSupport.compile(
         output, List.of(source), 21, "-classpath", used.getFile().getPath());
+    project.addCompileSourceRoot(tempDir.resolve("compiled-production-src").toString());
     project.getBuild().setOutputDirectory(output.toString());
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Plugin generator = new Plugin();
@@ -480,27 +489,25 @@ final class MavenElisionServiceTest {
     final Path trace = tempDir.resolve("production-bytecode.lst");
     Files.writeString(trace, "observed/Entry\n");
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService()
             .analyze(
                 project,
-                new MavenElisionService.AnalysisOptions(
+                new ElisionAnalysisModel.AnalysisOptions(
                     List.of(trace.toFile()),
                     List.of(),
                     output.toFile(),
                     null,
-                    false,
-                    false,
-                    List.of(),
-                    false,
-                    List.of(),
-                    false,
-                    true,
-                    true,
-                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-                    true,
-                    false));
+                    new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+                    new ElisionAnalysisModel.TrimOptions(
+                        false,
+                        List.of(),
+                        false,
+                        List.of(),
+                        false,
+                        MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                        MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                    new ElisionAnalysisModel.DynamicRootOptions(true)));
 
     assertThat(analysis.decision().retainedArtifacts())
         .containsExactlyInAnyOrder(
@@ -511,26 +518,256 @@ final class MavenElisionServiceTest {
   }
 
   @Test
+  @DisplayName("ADR-0010/post-compile source-bytecode union retains inlined constant owners")
+  void inlinedConstantOwnerIsRetainedForArtifactAndJarTrimming() throws Exception {
+    final ConstantFixture fixture = constantFixture("inlined-constant");
+    final ElisionAnalysisModel.Analysis artifactAnalysis =
+        new MavenElisionService().analyze(fixture.project(), postCompileOptions(fixture, false));
+
+    assertThat(artifactAnalysis.evidence().bytecodeScan().orElseThrow().referencedClasses())
+        .doesNotContain("library.Constants");
+    assertThat(artifactAnalysis.evidence().classUsageReport().classes())
+        .anySatisfy(
+            usage -> {
+              assertThat(usage.className()).isEqualTo("library.Constants");
+              assertThat(usage.category().name()).isEqualTo("NEITHER_REFERENCED_NOR_OBSERVED");
+              assertThat(usage.applicationBytecodeReferenced()).isFalse();
+              assertThat(usage.runtimeObserved()).isFalse();
+            });
+    assertThat(artifactAnalysis.decision().retainedArtifacts())
+        .contains(coordinateFor("inlined-constant", "compile"));
+    assertThat(
+            artifactAnalysis
+                .decision()
+                .getRetainedClasses(coordinateFor("inlined-constant", "compile")))
+        .contains("library.Constants")
+        .doesNotContain("library.Dead");
+
+    final ElisionAnalysisModel.Analysis trimAnalysis =
+        new MavenElisionService().analyze(fixture.project(), postCompileOptions(fixture, true));
+
+    assertThat(trimAnalysis.trimResult().records())
+        .anySatisfy(
+            record -> {
+              assertThat(record.coordinate())
+                  .isEqualTo(coordinateFor("inlined-constant", "compile"));
+              assertThat(record.totalClasses()).isEqualTo(2);
+              assertThat(record.retainedClasses()).isEqualTo(1);
+            });
+    assertThat(trimAnalysis.evidence().sourceAttributionFallback()).isNull();
+
+    final MavenElisionService service = new MavenElisionService();
+    final ElisionAnalysisModel.PreparedAnalysis sourcePrepared =
+        service.prepare(fixture.project(), postCompileOptions(fixture, false));
+    Files.writeString(
+        fixture.source(),
+        "package app; public final class Consumer { "
+            + "String value = \"constant\"; generated.Model model; }\n");
+    final ElisionAnalysisModel.PreparedAnalysis bytecodeOnlyPrepared =
+        service.prepare(fixture.project(), postCompileOptions(fixture, false));
+    assertThat(bytecodeOnlyPrepared.graphBinding().operationFingerprint())
+        .isNotEqualTo(sourcePrepared.graphBinding().operationFingerprint());
+  }
+
+  @Test
+  @DisplayName("ADR-0010/post-compile attribution failure retains all compile evidence")
+  void incompletePostCompileAttributionFallsBackConservatively() throws Exception {
+    final Artifact first = resolvedArtifact("fallback-first", "compile", "fallback-first.jar");
+    first.setFile(
+        CompilationFixtureSupport.compileToJar(
+                tempDir.resolve("fallback-first.jar"),
+                tempDir.resolve("fallback-first-src"),
+                Map.of(
+                    "library/Api.java",
+                    "package library; public final class Api {}\n",
+                    "library/ApiHelper.java",
+                    "package library; public final class ApiHelper {}\n"),
+                null)
+            .toFile());
+    final Artifact second = resolvedArtifact("fallback-second", "compile", "fallback-second.jar");
+    second.setFile(compileJar("fallback-second.jar", "other.Unused").toFile());
+    final Artifact runtime =
+        resolvedArtifact("fallback-runtime", "runtime", "fallback-runtime.jar");
+    runtime.setFile(compileJar("fallback-runtime.jar", "observed.Entry").toFile());
+    final MavenProject project =
+        projectWith(new LinkedHashSet<>(List.of(first, second, runtime)), null);
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Path output = Files.createDirectories(tempDir.resolve("fallback-output"));
+    project.getBuild().setOutputDirectory(output.toString());
+    final Path compiledClass = output.resolve("app/UsesGeneratedMember.class");
+    Files.createDirectories(compiledClass.getParent());
+    Files.write(compiledClass, emptyClass("app/UsesGeneratedMember"));
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("fallback-source-root"));
+    final Path source = sourceRoot.resolve("app/UsesGeneratedMember.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(
+        source,
+        "package app; public final class UsesGeneratedMember { "
+            + "library.Api generated = library.Api.builder(); }\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
+    final Path trace = tempDir.resolve("fallback-runtime.lst");
+    Files.writeString(trace, "observed/Entry\n");
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
+            List.of(trace.toFile()),
+            List.of(),
+            output.toFile(),
+            null,
+            new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                true,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true));
+
+    final ElisionAnalysisModel.Analysis analysis =
+        new MavenElisionService().analyze(project, options);
+
+    assertThat(analysis.evidence().sourceAttributionFallback())
+        .contains("Cannot resolve production source references");
+    assertThat(analysis.decision().retainedArtifacts())
+        .contains(
+            coordinateFor("fallback-first", "compile"),
+            coordinateFor("fallback-second", "compile"),
+            coordinateFor("fallback-runtime", "runtime"));
+    assertThat(analysis.decision().getRetainedClasses(coordinateFor("fallback-first", "compile")))
+        .containsExactlyInAnyOrder("library.Api", "library.ApiHelper");
+    assertThat(analysis.decision().getRetainedClasses(coordinateFor("fallback-second", "compile")))
+        .containsExactly("other.Unused");
+    final RecordingMavenLog log = new RecordingMavenLog();
+    ElisionSummary.reportAnalysis(log, analysis, null, true);
+    assertThat(log.warnings()).anyMatch(message -> message.contains("used conservative fallback"));
+  }
+
+  @Test
+  @DisplayName("ADR-0010/post-compile source options accept default javac and disable processors")
+  void postCompileSourceOptionsUseDefaultJavacWithoutProcessors() throws IOException {
+    assertThat(MavenCompilerSettings.postCompileSourceOptions(new MavenProject(), null))
+        .containsExactly("-proc:none");
+  }
+
+  private ConstantFixture constantFixture(final String name) throws IOException {
+    final Path fixtureRoot = Files.createTempDirectory(tempDir, name + "-");
+    final Path jar =
+        CompilationFixtureSupport.compileToJar(
+            fixtureRoot.resolve(name + ".jar"),
+            fixtureRoot.resolve(name + "-library-src"),
+            Map.of(
+                "library/Constants.java",
+                "package library; public final class Constants { "
+                    + "public static final String VALUE = \"constant\"; }\n",
+                "library/Dead.java",
+                "package library; public final class Dead {}\n"),
+            null);
+    final Artifact constantLibrary = resolvedArtifact(name, "compile", name + ".jar");
+    constantLibrary.setFile(jar.toFile());
+    try (java.util.jar.JarFile archive = new java.util.jar.JarFile(jar.toFile())) {
+      assertThat(archive.getEntry("library/Constants.class"))
+          .as("archive entries: %s", archive.stream().map(java.util.jar.JarEntry::getName).toList())
+          .isNotNull();
+    }
+    final Artifact runtime = resolvedArtifact(name + "-runtime", "runtime", name + "-runtime.jar");
+    runtime.setFile(
+        CompilationFixtureSupport.compileToJar(
+                fixtureRoot.resolve(name + "-runtime.jar"),
+                fixtureRoot.resolve(name + "-runtime-src"),
+                Map.of("observed/Entry.java", "package observed; public class Entry {}\n"),
+                null)
+            .toFile());
+    final MavenProject project =
+        projectWith(new LinkedHashSet<>(List.of(constantLibrary, runtime)), null);
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Path output = Files.createDirectories(fixtureRoot.resolve(name + "-output"));
+    project.getBuild().setOutputDirectory(output.toString());
+    final Path modelSource = fixtureRoot.resolve(name + "-generated-src/generated/Model.java");
+    Files.createDirectories(modelSource.getParent());
+    Files.writeString(modelSource, "package generated; public final class Model {}\n");
+    CompilationFixtureSupport.compile(output, List.of(modelSource));
+    final Path sourceRoot = Files.createDirectories(fixtureRoot.resolve(name + "-source-root"));
+    final Path source = sourceRoot.resolve("app/Consumer.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(
+        source,
+        "package app; public final class Consumer { "
+            + "String value = library.Constants.VALUE; generated.Model model; }\n");
+    CompilationFixtureSupport.compile(
+        output, List.of(source), 21, "-classpath", jar + File.pathSeparator + output);
+    project.addCompileSourceRoot(sourceRoot.toString());
+    final Plugin compiler = new Plugin();
+    compiler.setGroupId("org.apache.maven.plugins");
+    compiler.setArtifactId("maven-compiler-plugin");
+    compiler.setVersion("3.13.0");
+    final Xpp3Dom compilerConfiguration = new Xpp3Dom("configuration");
+    final Xpp3Dom processorPaths = new Xpp3Dom("annotationProcessorPaths");
+    processorPaths.addChild(new Xpp3Dom("path"));
+    compilerConfiguration.addChild(processorPaths);
+    final Xpp3Dom processors = new Xpp3Dom("annotationProcessors");
+    processors.addChild(new Xpp3Dom("annotationProcessor", "missing.MustNotRun"));
+    compilerConfiguration.addChild(processors);
+    compiler.setConfiguration(compilerConfiguration);
+    project.getBuild().addPlugin(compiler);
+    final Path trace = fixtureRoot.resolve(name + "-runtime.lst");
+    Files.writeString(trace, "observed/Entry\n");
+    return new ConstantFixture(project, output, trace, source);
+  }
+
+  private static ElisionAnalysisModel.AnalysisOptions postCompileOptions(
+      final ConstantFixture fixture, final boolean trimJars) {
+    return new ElisionAnalysisModel.AnalysisOptions(
+        List.of(fixture.trace().toFile()),
+        List.of(),
+        fixture.output().toFile(),
+        null,
+        new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+        new ElisionAnalysisModel.TrimOptions(
+            trimJars,
+            List.of(),
+            false,
+            List.of(),
+            false,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+        new ElisionAnalysisModel.DynamicRootOptions(true));
+  }
+
+  private static byte[] emptyClass(final String internalName) {
+    final org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+    writer.visit(
+        org.objectweb.asm.Opcodes.V21,
+        org.objectweb.asm.Opcodes.ACC_PUBLIC,
+        internalName,
+        null,
+        "java/lang/Object",
+        null);
+    writer.visitEnd();
+    return writer.toByteArray();
+  }
+
+  private record ConstantFixture(MavenProject project, Path output, Path trace, Path source) {}
+
+  @Test
   @DisplayName("ADR-0010/source and bytecode completeness assertions are mutually exclusive")
   void completenessAssertionsAreMutuallyExclusive() {
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(),
             List.of(),
             null,
             null,
-            true,
-            false,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true,
-            true,
-            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-            true,
-            false);
+            new ElisionAnalysisModel.CompletenessOptions(true, true, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                false,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true));
 
     assertThatThrownBy(() -> new MavenElisionService().prepare(new MavenProject(), options))
         .isInstanceOf(IOException.class)
@@ -562,24 +799,22 @@ final class MavenElisionServiceTest {
     project.getBuild().addPlugin(compiler);
     final Path trace = tempDir.resolve("source-processor.lst");
     Files.writeString(trace, "library/Observed\n");
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(trace.toFile()),
             List.of(),
             null,
             null,
-            true,
-            false,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            true,
-            true,
-            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-            false,
-            false);
+            new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                false,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true));
 
     assertThatThrownBy(() -> new MavenElisionService().analyze(project, options))
         .isInstanceOf(IOException.class)
@@ -599,23 +834,21 @@ final class MavenElisionServiceTest {
                 new MavenElisionService()
                     .analyze(
                         project,
-                        new MavenElisionService.AnalysisOptions(
+                        new ElisionAnalysisModel.AnalysisOptions(
                             List.of(trace.toFile()),
                             List.of(),
                             output.toFile(),
                             null,
-                            false,
-                            false,
-                            List.of(),
-                            false,
-                            List.of(),
-                            false,
-                            true,
-                            true,
-                            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
-                            true,
-                            false)))
+                            new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+                            new ElisionAnalysisModel.TrimOptions(
+                                false,
+                                List.of(),
+                                false,
+                                List.of(),
+                                false,
+                                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                            new ElisionAnalysisModel.DynamicRootOptions(true))))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("requires compiled production class files");
   }
@@ -627,14 +860,15 @@ final class MavenElisionServiceTest {
     final Artifact secondDirect = resolvedArtifact("library", "test", "direct-b.jar");
     final Set<Artifact> direct = identitySet(firstDirect, secondDirect);
     final MavenProject project = projectWith(resolved, direct);
-    final MavenElisionService.Analysis analysis =
-        new MavenElisionService.Analysis(
-            MavenElisionService.snapshots(List.of(resolved)),
-            true,
-            MavenElisionService.snapshots(direct),
+    final ElisionAnalysisModel.Analysis analysis =
+        ElisionAnalysisTestFixtures.analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(List.of(resolved)),
+                true,
+                MavenArtifactInventory.snapshots(direct)),
             decision(Set.of(coordinate("compile")), Set.of()));
 
-    assertThatThrownBy(() -> new MavenElisionService().plan(project, analysis))
+    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Conflicting files for artifact identity");
     assertThat(project.getArtifacts()).containsExactly(resolved);
@@ -722,7 +956,7 @@ final class MavenElisionServiceTest {
     return project;
   }
 
-  private MavenElisionService.Analysis analyze(final MavenProject project, final String traceName)
+  private ElisionAnalysisModel.Analysis analyze(final MavenProject project, final String traceName)
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     final Path trace = tempDir.resolve(traceName);
     Files.writeString(trace, "library/Unused\n");

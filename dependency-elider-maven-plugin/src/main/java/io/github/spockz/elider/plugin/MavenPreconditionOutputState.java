@@ -1,4 +1,5 @@
-/* WHY: Binds generated-output targets and staging files to inventory freshness checks. */
+/* WHY: Binds generated-output targets and staging files to inventory
+ * freshness checks. */
 
 package io.github.spockz.elider.plugin;
 

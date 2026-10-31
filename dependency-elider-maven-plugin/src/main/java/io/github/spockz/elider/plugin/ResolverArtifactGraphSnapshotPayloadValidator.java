@@ -1,4 +1,5 @@
-/* WHY: Coordinates schema, node, topology, and fingerprint validation for stored snapshots. */
+/* WHY: Coordinates schema, node, topology, and fingerprint validation for
+ * stored snapshots. */
 
 package io.github.spockz.elider.plugin;
 

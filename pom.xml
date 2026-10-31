@@ -41,6 +41,7 @@
         <jackson.version>2.18.2</jackson.version>
         <jacoco.version>0.8.15</jacoco.version>
         <junit.version>5.11.4</junit.version>
+        <test.parallelism>2</test.parallelism>
         <assertj.version>3.27.3</assertj.version>
         <json-schema-validator.version>1.5.6</json-schema-validator.version>
         <jmh.version>1.37</jmh.version>
@@ -178,6 +179,24 @@
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>3.5.2</version>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>integration-test</goal>
+                                <goal>verify</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <elider.examples.dir>${maven.multiModuleProjectDirectory}/examples</elider.examples.dir>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-checkstyle-plugin</artifactId>
                     <version>${maven-checkstyle-plugin.version}</version>
                     <dependencies>
@@ -188,7 +207,7 @@
                         </dependency>
                     </dependencies>
                     <configuration>
-                        <configLocation>google_checks.xml</configLocation>
+                        <configLocation>${maven.multiModuleProjectDirectory}/config/checkstyle.xml</configLocation>
                         <consoleOutput>true</consoleOutput>
                         <failOnViolation>true</failOnViolation>
                         <violationSeverity>warning</violationSeverity>

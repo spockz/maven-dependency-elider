@@ -1,4 +1,5 @@
-/* WHY: Selects deterministic shortest root paths while preserving captured edge order. */
+/* WHY: Selects deterministic shortest root paths while preserving captured
+ * edge order. */
 
 package io.github.spockz.elider.plugin;
 

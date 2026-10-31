@@ -257,10 +257,10 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 
 | Feature or Environment | Status | Evidence and Boundary |
 | :--- | :--- | :--- |
-| Single-project Maven elision lifecycle | Fixture verified | Packaged Maven CLI 3.9.11 [integration fixture](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIntegrationTest.java#L446) runs `elide`, trims an unused class, and verifies a distinct direct TEST resolver call. |
+| Single-project Maven elision lifecycle | Fixture verified | Packaged Maven CLI 3.9.11 [integration fixture](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIT.java#L446) runs `elide`, trims an unused class, and verifies a distinct direct TEST resolver call. |
 | Shade and Spring Boot packaging | Fixture verified | Basic Shade 3.6.0 and Spring Boot 3.3.5 [example checks](examples/run-elision-cycle.sh#L947) verify trimmed packaging and runtime behavior under JDK 21. |
 | Resolver extension and mediated artifact graph | Required; fixture verified | Graph-aware decisions require `.mvn/extensions.xml`. Without it, original repository artifacts remain visible. |
-| Bare production `dependency:tree` | Example and fixture verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1 | With `.mvn/extensions.xml` and an active initialize-bound execution, `dependency:tree` automatically runs elision first. See [production lifecycle tests](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIntegrationTest.java#L583) and [tree assertions](examples/run-elision-cycle.sh#L808). |
+| Bare production `dependency:tree` | Example and fixture verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1 | With `.mvn/extensions.xml` and an active initialize-bound execution, `dependency:tree` automatically runs elision first. See [production lifecycle tests](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIT.java#L583) and [tree assertions](examples/run-elision-cycle.sh#L808). |
 | Class reachability and safe dependency removal | Unit tested; fixture verified | Covers explicit roots, source references, framework metadata, and graph leaves with retention across ancestors, cycles, and diamonds. |
 | Multi-release dependency JARs | Supported; vertical shading by default | With `elide.trimJars=true`, the configured compiler target is elevated and trimmed; upper tiers are preserved, with sibling closure analyzed through the Maven runtime release. `elide.mrjarStrategy=pass-through` preserves MRJAR bytes. |
 | Kotlin/JVM libraries and source roots | Partial; JVM bytecode only | Kotlin-compiled dependency bytecode is analyzed through ordinary JVM references. Kotlin metadata is parsed for sibling class isolation but metadata-only references are not closure roots; Kotlin sources are not scanned. See the [Kotlin support matrix](docs/faq.md#what-kotlin-features-are-supported). |
@@ -277,7 +277,7 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 
 * **Source Roots (`elide.sourceRootsComplete`)**: Defaults to `false` (conservatively retains all compile-classpath JARs and classes). Set to `true` only when all production and generated sources exist before `INITIALIZE` with no downstream generation.
 * **Reactor Leaf Modules (`elide.leafOnly`)**: Defaults to `true`. In multi-module Maven reactors, the plugin by default only elides leaf modules (modules with no downstream dependents in the reactor DAG, such as packaging applications, fat JARs, and Native Images). Intermediate library modules skip elision, ensuring internal libraries build and test against standard dependencies while the leaf module performs definitive elision across the unified dependency graph. Set `-Delide.leafOnly=false` (or `<elide.leafOnly>false</elide.leafOnly>`) to run elision across every submodule.
-* **Production Bytecode (`elide.productionClassesComplete`)**: For generated production code, enable the Maven extension and set this property to `true` to rebind the default `elide` execution from `initialize` to `process-classes`. The output directory must contain compiled production classes. A direct `dependency-elider:elide` invocation does not establish trusted lifecycle capture; bind the goal to `process-classes` or run the normal lifecycle. Unknown writers at `process-classes` or later remain unsupported, and `skipTests` does not skip `testCompile` safeguards.
+* **Production Bytecode (`elide.productionClassesComplete`)**: For generated production code, enable the Maven extension and set this property to `true` to rebind the default `elide` execution from `initialize` to `process-classes`. The output directory must contain compiled production classes. At that point, attributed compile-source references supplement bytecode roots to retain inlined-constant owners; if attribution is incomplete, the summary warns and retains all compile-visible artifacts and indexed classes. Source roots do not count as runtime evidence, and test-only references are not guaranteed. A direct `dependency-elider:elide` invocation does not establish trusted lifecycle capture; bind the goal to `process-classes` or run the normal lifecycle. Unknown writers at `process-classes` or later remain unsupported, and `skipTests` does not skip `testCompile` safeguards.
 * **Conservative ServiceLoader Roots (`elide.conservativeServiceLoaderRoots`)**: Defaults to `true`. Scans application bytecode for constant `ServiceLoader.load` calls. When enabled, unproven SPI providers are retained for runtime safety; any CVE whose vulnerable code is preserved solely by unproven SPI roots is excluded from mitigation and reported under `Potentially conservative CVE exclusions`. Set to `false` (or `-Delide.conservativeServiceLoaderRoots=false`) to prune unproven SPI providers and eliminate dormant vulnerable code.
 * **Framework Metadata Protection**: Service providers (`META-INF/services`), Spring factories, and GraalVM reflection configs automatically protect declaring and provider JARs from whole-artifact removal.
 * **Bytecode Sanitization**: Trimmed JARs are written to `target/elided-artifacts/` with original files untouched. JAR digital signatures are removed to avoid signature validation failures.
@@ -348,6 +348,15 @@ Run the full end-to-end verification suite across all fixtures:
 ```sh
 make test-examples
 ```
+
+The five standalone fixture lifecycles run with at most two workers by default.
+Set `EXAMPLE_JOBS=1` for a serial comparison or another positive integer to change
+the worker limit; scheduling starts after shared plugin and support setup completes.
+Each fixture still runs its baseline, trace, elision, report, archive, and runtime
+checks in order. Worker logs are captured under the run's `.scratch` evidence
+directory during the run and replayed in fixture-list order; failed runs retain the
+evidence directory for diagnosis. The multi-module reactor checks run after all
+standalone workers finish.
 
 Run only the multi-module reactor checks:
 

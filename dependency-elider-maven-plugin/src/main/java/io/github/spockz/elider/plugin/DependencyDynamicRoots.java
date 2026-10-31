@@ -1,5 +1,6 @@
-/* WHY: Finds class names declared by dependency-local dynamic loading metadata before a JAR is
- * trimmed, since ordinary bytecode references cannot describe SPI or native-image lookups. */
+/* WHY: Finds class names declared by dependency-local dynamic loading
+ * metadata before a JAR is trimmed, since ordinary bytecode references
+ * cannot describe SPI or native-image lookups. */
 
 package io.github.spockz.elider.plugin;
 

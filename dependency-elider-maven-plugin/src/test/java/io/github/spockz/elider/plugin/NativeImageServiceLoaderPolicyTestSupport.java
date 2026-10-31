@@ -62,11 +62,11 @@ import java.util.Set;
     return List.copyOf(reversed);
   }
 
-  /* package */ static MavenElisionService.DynamicRootInputs scan(
+  /* package */ static ElisionAnalysisModel.DynamicRootInputs scan(
       final List<ArtifactFileRef> candidates, final boolean conservativeFallback)
       throws IOException {
     final NativeImageScanContext context = NativeImageScanContext.create(candidates, null);
-    return MavenElisionService.dynamicRoots(
+    return DynamicRootOrchestrator.dynamicRoots(
         candidates, DependencyDynamicRoots::scan, context, Set.of(), conservativeFallback);
   }
 

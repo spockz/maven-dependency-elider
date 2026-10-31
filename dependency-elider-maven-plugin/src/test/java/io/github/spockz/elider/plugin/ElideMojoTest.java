@@ -165,6 +165,12 @@ final class ElideMojoTest {
     Files.write(applicationClass, writer.toByteArray());
     final Path trace = tempDir.resolve("process-classes-processor.lst");
     Files.writeString(trace, "sample.Keep\n");
+    final Path sourceRoot = tempDir.resolve("process-classes-processor-source");
+    final Path applicationSource = sourceRoot.resolve("app/Main.java");
+    Files.createDirectories(applicationSource.getParent());
+    Files.writeString(
+        applicationSource, "package app; public final class Main { sample.Keep value; }\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
 
     final ElideMojo mojo = newMojo();
     set(mojo, "project", project);
@@ -812,27 +818,28 @@ final class ElideMojoTest {
   void analyzeServiceDirectFinishStagesVerticalShadingOutput()
       throws IOException, MojoFailureException {
     final MultiReleaseFixture fixture = multiReleaseFixture("mr-direct-finish");
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService()
             .analyze(
                 fixture.project(),
-                new MavenElisionService.AnalysisOptions(
+                new ElisionAnalysisModel.AnalysisOptions(
                     List.of(writeTrace("mrroot.Root\ncandidate.Keep\n").toFile()),
                     List.of(),
                     null,
                     null,
-                    false,
-                    true,
-                    List.of(),
-                    false,
-                    List.of(),
-                    false,
-                    true,
-                    true,
-                    "vertical-shading"));
+                    new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+                    new ElisionAnalysisModel.TrimOptions(
+                        true,
+                        List.of(),
+                        false,
+                        List.of(),
+                        false,
+                        MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                        "vertical-shading"),
+                    new ElisionAnalysisModel.DynamicRootOptions(true)));
 
     final ArtifactTrimRecord record =
-        analysis.trimRecords().stream()
+        analysis.trimResult().records().stream()
             .filter(item -> "mr-direct-finish-root".equals(item.coordinate().artifactId()))
             .findFirst()
             .orElseThrow();
@@ -905,25 +912,26 @@ final class ElideMojoTest {
     project.getProperties().setProperty("maven.compiler.release", "11");
     final MavenElisionService service = new MavenElisionService();
     final Path trace = writeTrace("mrservice.Root\n");
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             project,
-            new MavenElisionService.AnalysisOptions(
+            new ElisionAnalysisModel.AnalysisOptions(
                 List.of(trace.toFile()),
                 List.of(),
                 null,
                 null,
-                false,
-                true,
-                List.of("droppedprovider.Keep"),
-                false,
-                List.of(),
-                false,
-                true,
-                false,
-                "vertical-shading"));
+                new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+                new ElisionAnalysisModel.TrimOptions(
+                    true,
+                    List.of("droppedprovider.Keep"),
+                    false,
+                    List.of(),
+                    false,
+                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                    "vertical-shading"),
+                new ElisionAnalysisModel.DynamicRootOptions(false)));
     assertThat(prepared.rawDecision().retainedArtifacts()).contains(droppedProviderCoordinate);
-    final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
+    final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
     assertThat(effective.effectiveDecision().retainedArtifacts())
         .contains(droppedProviderCoordinate);
     assertThat(effective.trimAnalysis().candidateAnalyses()).containsKey(droppedProviderCoordinate);
@@ -935,8 +943,7 @@ final class ElideMojoTest {
                 .retainedClasses())
         .contains("droppedprovider/Keep")
         .doesNotContain("droppedprovider/Provider");
-    final MavenDependencyTrimmer.TrimResult result =
-        MavenDependencyTrimmer.trimEffectiveOutputs(effective);
+    final TrimResult result = MavenDependencyTrimmer.trimEffectiveOutputs(effective);
     final ArtifactTrimRecord rootRecord =
         result.records().stream()
             .filter(record -> "mr-service-root".equals(record.coordinate().artifactId()))
@@ -974,44 +981,44 @@ final class ElideMojoTest {
     final MultiReleaseFixture fixture = multiReleaseFixture("mr-promotion");
     final Path trace = writeTrace("mrroot.Root\nmrroot.VersionOnly\n");
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             fixture.project(),
-            new MavenElisionService.AnalysisOptions(
+            new ElisionAnalysisModel.AnalysisOptions(
                 List.of(trace.toFile()),
                 List.of(),
                 null,
                 null,
-                false,
-                true,
-                List.of(),
-                false,
-                List.of(),
-                false,
-                true,
-                true,
-                "vertical-shading"));
+                new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+                new ElisionAnalysisModel.TrimOptions(
+                    true,
+                    List.of(),
+                    false,
+                    List.of(),
+                    false,
+                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                    "vertical-shading"),
+                new ElisionAnalysisModel.DynamicRootOptions(true)));
     final ArtifactCoordinate mrCoordinate =
         new ArtifactCoordinate("org.example", "mr-promotion-root", "1.0", "jar", "", "runtime");
     final ArtifactCoordinate candidateCoordinate =
         new ArtifactCoordinate(
             "org.example", "mr-promotion-candidate", "1.0", "jar", "", "runtime");
     assertThat(prepared.rawDecision().elidedArtifacts()).contains(candidateCoordinate);
-    final MavenDependencyTrimmer.TrimRequest initialRequest =
+    final TrimRequest initialRequest =
         tieredRequest(prepared, prepared.rawDecision().retainedArtifacts());
-    final MavenDependencyTrimmer.InMemoryAnalysis first =
+    final TrimAnalysisResult first =
         MavenDependencyTrimmer.analyzeInMemory(initialRequest, Map.of(), Set.of());
     assertThat(first.reachableArtifacts()).contains(candidateCoordinate);
     assertThat(first.candidateRoots().get(mrCoordinate)).contains("mrroot.VersionOnly");
     final Path mrPath = fixture.multiReleasePath().toAbsolutePath().normalize();
-    final MavenDependencyTrimmer.ArtifactRootKey rootKey =
-        new MavenDependencyTrimmer.ArtifactRootKey(
-            mrCoordinate, mrPath, ArtifactDigests.read(mrPath).sha256());
+    final TrimArtifactRootKey rootKey =
+        new TrimArtifactRootKey(mrCoordinate, mrPath, ArtifactDigests.read(mrPath).sha256());
     final Set<ArtifactCoordinate> promotedCoordinates =
         union(prepared.rawDecision().retainedArtifacts(), candidateCoordinate);
-    final Map<MavenDependencyTrimmer.ArtifactRootKey, Set<String>> discoveredRoots =
+    final Map<TrimArtifactRootKey, Set<String>> discoveredRoots =
         Map.of(rootKey, first.candidateRoots().get(mrCoordinate));
-    final MavenDependencyTrimmer.InMemoryAnalysis second =
+    final TrimAnalysisResult second =
         MavenDependencyTrimmer.analyzeInMemory(
             tieredRequest(prepared, promotedCoordinates),
             discoveredRoots,
@@ -1020,7 +1027,7 @@ final class ElideMojoTest {
     assertThat(second.candidateRoots().get(mrCoordinate)).contains("mrroot.VersionOnly");
     assertThat(second.candidateRoots().get(mrCoordinate))
         .noneMatch(name -> name.startsWith("META-INF.versions."));
-    final MavenDependencyTrimmer.InMemoryAnalysis skippedMultiRelease =
+    final TrimAnalysisResult skippedMultiRelease =
         MavenDependencyTrimmer.analyzeInMemory(
             tieredRequest(prepared, promotedCoordinates), discoveredRoots, Set.of(mrCoordinate));
     assertThat(skippedMultiRelease.candidateAnalyses()).containsKey(candidateCoordinate);
@@ -1146,7 +1153,7 @@ final class ElideMojoTest {
     assertThat(fixture.candidate().getFile().toPath()).isEqualTo(fixture.candidatePath());
   }
 
-  private MavenElisionService.Analysis analyzeTrim(
+  private ElisionAnalysisModel.Analysis analyzeTrim(
       final MavenProject project, final String traceClasses)
       throws IOException, MojoFailureException {
     return new MavenElisionService()
@@ -1363,8 +1370,8 @@ final class ElideMojoTest {
         List.of(bundleScan.resourcePatterns()), bundleContext, bundleRoots, bundleProviders);
     assertThat(bundleRoots).contains("chain.NativeImageBundle");
     assertThat(bundleProviders).contains(metadatfirstJar.toRealPath());
-    final MavenElisionService.DynamicRootInputs aggregateRoots =
-        MavenElisionService.dynamicRoots(bundleCandidates);
+    final ElisionAnalysisModel.DynamicRootInputs aggregateRoots =
+        DynamicRootOrchestrator.dynamicRoots(bundleCandidates);
     assertThat(aggregateRoots.classNames()).contains("chain.NativeImageBundle");
     assertThat(aggregateRoots.resourceProviderArtifacts())
         .contains(bundleCandidates.get(2).coordinate());
@@ -1812,7 +1819,7 @@ final class ElideMojoTest {
     Files.setLastModifiedTime(ctSym, timestamp);
     final List<String> candidateIdentities = List.of("org.example:first:1.0:jar");
     final String baseline =
-        MavenDependencyTrimmer.fingerprintForInputs(
+        TrimFingerprint.fingerprintForInputs(
             candidateIdentities,
             List.of(firstLibrary, secondLibrary),
             Set.of("sample.Root"),
@@ -1822,7 +1829,7 @@ final class ElideMojoTest {
             "proguard-core-9.4.0");
 
     assertThat(
-            MavenDependencyTrimmer.fingerprintForInputs(
+            TrimFingerprint.fingerprintForInputs(
                 candidateIdentities,
                 List.of(secondLibrary, firstLibrary),
                 Set.of("sample.Root"),
@@ -1832,7 +1839,7 @@ final class ElideMojoTest {
                 "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
-            MavenDependencyTrimmer.fingerprintForInputs(
+            TrimFingerprint.fingerprintForInputs(
                 candidateIdentities,
                 List.of(firstLibrary, secondLibrary),
                 Set.of("sample.Root"),
@@ -1842,7 +1849,7 @@ final class ElideMojoTest {
                 "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
-            MavenDependencyTrimmer.fingerprintForInputs(
+            TrimFingerprint.fingerprintForInputs(
                 candidateIdentities,
                 List.of(firstLibrary, secondLibrary),
                 Set.of("sample.Root"),
@@ -1852,7 +1859,7 @@ final class ElideMojoTest {
                 "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
-            MavenDependencyTrimmer.fingerprintForInputs(
+            TrimFingerprint.fingerprintForInputs(
                 candidateIdentities,
                 List.of(firstLibrary, secondLibrary),
                 Set.of("sample.OtherRoot"),
@@ -1862,7 +1869,7 @@ final class ElideMojoTest {
                 "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
-            MavenDependencyTrimmer.fingerprintForInputs(
+            TrimFingerprint.fingerprintForInputs(
                 candidateIdentities,
                 List.of(firstLibrary, secondLibrary),
                 Set.of("sample.Root"),
@@ -1872,7 +1879,7 @@ final class ElideMojoTest {
                 "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
-            MavenDependencyTrimmer.fingerprintForInputs(
+            TrimFingerprint.fingerprintForInputs(
                 candidateIdentities,
                 List.of(firstLibrary, secondLibrary),
                 Set.of("sample.Root"),
@@ -1882,7 +1889,7 @@ final class ElideMojoTest {
                 "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
-            MavenDependencyTrimmer.fingerprintForInputs(
+            TrimFingerprint.fingerprintForInputs(
                 candidateIdentities,
                 List.of(firstLibrary, secondLibrary),
                 Set.of("sample.Root"),
@@ -1892,7 +1899,7 @@ final class ElideMojoTest {
                 "proguard-core-9.4.0"))
         .isNotEqualTo(baseline);
     assertThat(
-            MavenDependencyTrimmer.fingerprintForInputs(
+            TrimFingerprint.fingerprintForInputs(
                 candidateIdentities,
                 List.of(firstLibrary, secondLibrary),
                 Set.of("sample.Root"),
@@ -1905,7 +1912,7 @@ final class ElideMojoTest {
     Files.writeString(firstLibrary, "other-bytes");
     Files.setLastModifiedTime(firstLibrary, timestamp);
     final String dependencyChangedFingerprint =
-        MavenDependencyTrimmer.fingerprintForInputs(
+        TrimFingerprint.fingerprintForInputs(
             candidateIdentities,
             List.of(firstLibrary, secondLibrary),
             Set.of("sample.Root"),
@@ -1920,7 +1927,7 @@ final class ElideMojoTest {
     assertThat(Files.size(ctSym)).isEqualTo(ctSymSize);
     assertThat(Files.getLastModifiedTime(ctSym)).isEqualTo(timestamp);
     assertThat(
-            MavenDependencyTrimmer.fingerprintForInputs(
+            TrimFingerprint.fingerprintForInputs(
                 candidateIdentities,
                 List.of(firstLibrary, secondLibrary),
                 Set.of("sample.Root"),
@@ -1965,8 +1972,10 @@ final class ElideMojoTest {
     build.setDirectory(tempDir.resolve("digest-cache-build").toString());
     project.setBuild(build);
 
-    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimAnalysisRuns()).isPositive();
-    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimAnalysisRuns()).isZero();
+    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimResult().analysisRuns())
+        .isPositive();
+    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimResult().analysisRuns())
+        .isZero();
 
     final long candidateSize = Files.size(candidateJar);
     rewriteStoredJar(
@@ -1976,7 +1985,8 @@ final class ElideMojoTest {
         sourceTimestamp);
     assertThat(Files.size(candidateJar)).isEqualTo(candidateSize);
     assertThat(Files.getLastModifiedTime(candidateJar)).isEqualTo(sourceTimestamp);
-    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimAnalysisRuns()).isPositive();
+    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimResult().analysisRuns())
+        .isPositive();
 
     final long siblingSize = Files.size(siblingJar);
     rewriteStoredJar(
@@ -1986,7 +1996,8 @@ final class ElideMojoTest {
         sourceTimestamp);
     assertThat(Files.size(siblingJar)).isEqualTo(siblingSize);
     assertThat(Files.getLastModifiedTime(siblingJar)).isEqualTo(sourceTimestamp);
-    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimAnalysisRuns()).isPositive();
+    assertThat(analyzeTrim(project, "sample.Keep\nhelper.Use\n").trimResult().analysisRuns())
+        .isPositive();
   }
 
   @Test
@@ -2245,30 +2256,31 @@ final class ElideMojoTest {
     Files.setLastModifiedTime(jar, timestamp);
   }
 
-  private static MavenDependencyTrimmer.TrimRequest tieredRequest(
-      final MavenElisionService.PreparedAnalysis prepared,
+  private static TrimRequest tieredRequest(
+      final ElisionAnalysisModel.PreparedAnalysis prepared,
       final Set<ArtifactCoordinate> retainedCoordinates) {
-    final MavenElisionService.AnalysisOptions options = prepared.options();
-    return new MavenDependencyTrimmer.TrimRequest(
+    final ElisionAnalysisModel.AnalysisOptions options = prepared.options();
+    return new TrimRequest(
         prepared.project(),
         options.session(),
         prepared.resolvedSnapshots(),
-        new MavenDependencyTrimmer.ScanInputs(
-            prepared.index(), prepared.dynamicRootInputs().scansByPath()),
+        new TrimScanInputs(prepared.index(), prepared.dynamicRootInputs().scansByPath()),
         retainedCoordinates,
-        prepared.trace(),
-        prepared.pruningRequiredClasses(),
-        prepared.bytecodeScan().map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
-        prepared.projectOutputClasses(),
-        options.explicitTrimRoots(),
-        options.failOnUnsupportedMultiRelease(),
-        options.explicitPassThroughArtifacts(),
-        options.failOnUnsupportedModuleInfo(),
-        options.mrjarStrategy(),
-        options.trimJars(),
-        prepared.dynamicRootInputs().provenServiceInterfaces(),
-        options.conservativeServiceLoaderRoots(),
-        options.trimWorkers());
+        new TrimEvidence(
+            prepared.trace(),
+            prepared.pruningRequiredClasses(),
+            prepared.bytecodeScan().map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
+            prepared.projectOutputClasses(),
+            prepared.dynamicRootInputs().provenServiceInterfaces()),
+        new TrimPolicy(
+            options.trim().explicitRoots(),
+            options.trim().failOnUnsupportedMultiRelease(),
+            options.trim().passThroughArtifacts(),
+            options.trim().failOnUnsupportedModuleInfo(),
+            options.trim().mrjarStrategy(),
+            options.trim().enabled(),
+            options.dynamicRoots().conservativeServiceLoaderRoots(),
+            options.trim().workers()));
   }
 
   private static Set<ArtifactCoordinate> union(
@@ -2860,12 +2872,7 @@ final class ElideMojoTest {
     final ClassWriter writer = new ClassWriter(0);
     writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
     writer.visitEnd();
-    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(jar))) {
-      output.putNextEntry(new ZipEntry(classEntry));
-      output.write(writer.toByteArray());
-      output.closeEntry();
-    }
-    return jar;
+    return ImmutableTestJar.write(jar, Map.of(classEntry, writer.toByteArray()));
   }
 
   private static void set(final Object target, final String name, final Object value)

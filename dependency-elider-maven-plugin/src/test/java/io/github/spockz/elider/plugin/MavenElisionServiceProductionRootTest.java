@@ -29,7 +29,7 @@ final class MavenElisionServiceProductionRootTest
     final MavenElisionService service = new MavenElisionService();
     final ResolverArtifactGraphCapturePair pair =
         MavenElisionServiceEffectiveAnalysisFixtures.graphPairWithAncestorEdges(fixture, false);
-    final MavenElisionService.PreparedAnalysis withoutProductionOutput =
+    final ElisionAnalysisModel.PreparedAnalysis withoutProductionOutput =
         service.prepare(
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
@@ -51,7 +51,7 @@ final class MavenElisionServiceProductionRootTest
             withoutProductionOutput.graphBinding().inventoryFingerprint(),
             withoutProductionOutput.graphBinding().operationFingerprint(),
             pair);
-    final MavenElisionService.EffectiveAnalysis withoutProductionResult =
+    final ElisionAnalysisModel.EffectiveAnalysis withoutProductionResult =
         service.finishAnalysis(
             MavenElisionServiceEffectiveAnalysisFixtures.withBinding(
                 withoutProductionOutput, withoutProductionBinding));
@@ -66,7 +66,7 @@ final class MavenElisionServiceProductionRootTest
         Files.copy(input, productionPackage.resolve("Ancestor.class"));
       }
     }
-    final MavenElisionService.PreparedAnalysis raw =
+    final ElisionAnalysisModel.PreparedAnalysis raw =
         service.prepare(
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
@@ -83,7 +83,7 @@ final class MavenElisionServiceProductionRootTest
             raw.graphBinding().operationFingerprint(),
             pair);
 
-    final MavenElisionService.EffectiveAnalysis result =
+    final ElisionAnalysisModel.EffectiveAnalysis result =
         service.finishAnalysis(
             MavenElisionServiceEffectiveAnalysisFixtures.withBinding(raw, binding));
 

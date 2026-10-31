@@ -1,4 +1,5 @@
-/* WHY: Keeps reports and project views recoverable until the resolver plan is activated. */
+/* WHY: Keeps reports and project views recoverable until the resolver plan
+ * is activated. */
 
 package io.github.spockz.elider.plugin;
 

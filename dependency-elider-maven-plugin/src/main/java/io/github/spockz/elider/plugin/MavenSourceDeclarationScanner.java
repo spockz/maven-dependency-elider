@@ -1,4 +1,5 @@
-/* WHY: Inventories source-declared classes without depending on pruning's reference scanner. */
+/* WHY: Inventories source-declared classes without depending on pruning's
+ * reference scanner. */
 
 package io.github.spockz.elider.plugin;
 

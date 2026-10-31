@@ -62,8 +62,8 @@ class MavenElisionGraphBindingTestSupport {
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Artifact artifact = artifact("library.jar", VERSION);
     Files.writeString(artifactPath(artifact), content);
-    final MavenElisionService.ArtifactSnapshot snapshot =
-        new MavenElisionService.ArtifactSnapshot(
+    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
+        new ElisionAnalysisModel.ArtifactSnapshot(
             artifact, coordinate(VERSION), artifactPath(artifact));
     final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
     final MavenSession session =
@@ -74,19 +74,22 @@ class MavenElisionGraphBindingTestSupport {
             null);
     final String projectKey = projectKey(project);
     appendPair(repositorySession, projectKey, FIRST_CAPTURE);
-    final MavenElisionService.AnalysisOptions options =
-        new MavenElisionService.AnalysisOptions(
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
             List.of(),
             List.of(),
             null,
             session,
-            false,
-            false,
-            List.of(),
-            false,
-            List.of(),
-            false,
-            testContext);
+            new ElisionAnalysisModel.CompletenessOptions(false, false, false, testContext),
+            new ElisionAnalysisModel.TrimOptions(
+                false,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true));
     return new Fixture(project, options, repositorySession, snapshot);
   }
 
@@ -187,12 +190,12 @@ class MavenElisionGraphBindingTestSupport {
 
   record Fixture(
       MavenProject project,
-      MavenElisionService.AnalysisOptions options,
+      ElisionAnalysisModel.AnalysisOptions options,
       DefaultRepositorySystemSession repositorySession,
-      MavenElisionService.ArtifactSnapshot snapshot) {
+      ElisionAnalysisModel.ArtifactSnapshot snapshot) {
     /** Binds this fixture pair to the supplied resolved inventory. */
-    MavenElisionGraphBinding.Result bind(final List<MavenElisionService.ArtifactSnapshot> inventory)
-        throws IOException {
+    MavenElisionGraphBinding.Result bind(
+        final List<ElisionAnalysisModel.ArtifactSnapshot> inventory) throws IOException {
       return bind(
           inventory,
           new ElisionDecision(Set.of(coordinate(VERSION)), Set.of(), Map.of(), Map.of(), 0L));
@@ -200,14 +203,14 @@ class MavenElisionGraphBindingTestSupport {
 
     /** Binds this fixture pair to a supplied raw decision and resolved inventory. */
     MavenElisionGraphBinding.Result bind(
-        final List<MavenElisionService.ArtifactSnapshot> inventory, final ElisionDecision decision)
+        final List<ElisionAnalysisModel.ArtifactSnapshot> inventory, final ElisionDecision decision)
         throws IOException {
       return bind(options, inventory, decision);
     }
 
     MavenElisionGraphBinding.Result bind(
-        final MavenElisionService.AnalysisOptions selectedOptions,
-        final List<MavenElisionService.ArtifactSnapshot> inventory,
+        final ElisionAnalysisModel.AnalysisOptions selectedOptions,
+        final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
         final ElisionDecision decision)
         throws IOException {
       return MavenElisionGraphBinding.bind(

@@ -56,8 +56,8 @@ final class MavenElisionResolvedInventoryBindingTest extends MavenElisionGraphBi
   void rejectsGraphInventoryThatDoesNotMatchResolvedArtifacts() throws Exception {
     final Fixture fixture = fixture(true, JAR_BYTES);
     final Artifact other = artifact("other.jar", "2.0");
-    final MavenElisionService.ArtifactSnapshot mismatch =
-        new MavenElisionService.ArtifactSnapshot(other, coordinate("2.0"), artifactPath(other));
+    final ElisionAnalysisModel.ArtifactSnapshot mismatch =
+        new ElisionAnalysisModel.ArtifactSnapshot(other, coordinate("2.0"), artifactPath(other));
     final MavenElisionGraphBinding.Result result = fixture.bind(List.of(mismatch));
 
     assertThat(result.evaluation().failClosed()).isTrue();
@@ -98,7 +98,7 @@ final class MavenElisionResolvedInventoryBindingTest extends MavenElisionGraphBi
         fixture.bind(
             List.of(
                 fixture.snapshot(),
-                new MavenElisionService.ArtifactSnapshot(
+                new ElisionAnalysisModel.ArtifactSnapshot(
                     other, coordinate(VERSION), artifactPath(other))));
 
     assertThat(result.evaluation().failClosed()).isTrue();
@@ -121,8 +121,8 @@ final class MavenElisionResolvedInventoryBindingTest extends MavenElisionGraphBi
     final ArtifactCoordinate testJarCoordinate =
         new ArtifactCoordinate(
             FIXTURE_GROUP, LIBRARY_ID, VERSION, TEST_JAR_TYPE, TESTS_CLASSIFIER, COMPILE_SCOPE);
-    final MavenElisionService.ArtifactSnapshot testJarSnapshot =
-        new MavenElisionService.ArtifactSnapshot(
+    final ElisionAnalysisModel.ArtifactSnapshot testJarSnapshot =
+        new ElisionAnalysisModel.ArtifactSnapshot(
             testJar, testJarCoordinate, fixture.snapshot().filePath());
     final Artifact dropJar =
         new DefaultArtifact(
@@ -139,8 +139,8 @@ final class MavenElisionResolvedInventoryBindingTest extends MavenElisionGraphBi
     final ArtifactCoordinate dropCoordinate =
         new ArtifactCoordinate(
             FIXTURE_GROUP, "drop-library", VERSION, JAR_EXTENSION, "", COMPILE_SCOPE);
-    final MavenElisionService.ArtifactSnapshot dropSnapshot =
-        new MavenElisionService.ArtifactSnapshot(dropJar, dropCoordinate, dropPath);
+    final ElisionAnalysisModel.ArtifactSnapshot dropSnapshot =
+        new ElisionAnalysisModel.ArtifactSnapshot(dropJar, dropCoordinate, dropPath);
     appendPairWithTestJarAncestor(fixture.repositorySession(), projectKey(fixture.project()));
     final ElisionDecision rawDecision =
         new ElisionDecision(

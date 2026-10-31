@@ -71,7 +71,10 @@ final class JavaSourceReferenceScanner {
         compiler.getStandardFileManager(diagnostics, null, null)) {
       final Iterable<? extends JavaFileObject> units =
           fileManager.getJavaFileObjectsFromPaths(sources);
-      final List<String> options = new ArrayList<>(List.of("-proc:none"));
+      final List<String> options = new ArrayList<>();
+      if (!compilerOptions.contains("-proc:none")) {
+        options.add("-proc:none");
+      }
       if (!classpath.isEmpty()) {
         options.add("-classpath");
         options.add(String.join(java.io.File.pathSeparator, classpath));
@@ -104,7 +107,7 @@ final class JavaSourceReferenceScanner {
 
   static List<Path> sourceFiles(final Collection<String> sourceRoots) throws IOException {
     final List<Path> sources = new ArrayList<>();
-    final List<Path> unsupportedKotlinSources = new ArrayList<>();
+    final List<Path> unsupportedLanguageSources = new ArrayList<>();
     for (final String root : sourceRoots) {
       final Path rootPath = Path.of(root);
       if (Files.isDirectory(rootPath)) {
@@ -113,19 +116,23 @@ final class JavaSourceReferenceScanner {
             final String name = path.toString();
             if (name.endsWith(".java")) {
               sources.add(path);
-            } else if (name.endsWith(".kt") || name.endsWith(".kts")) {
-              unsupportedKotlinSources.add(path);
+            } else if (isUnsupportedLanguageSource(name)) {
+              unsupportedLanguageSources.add(path);
             }
           }
         }
       }
     }
-    if (!unsupportedKotlinSources.isEmpty()) {
+    if (!unsupportedLanguageSources.isEmpty()) {
       throw new IOException(
-          "Source attribution does not support Kotlin source files: "
-              + unsupportedKotlinSources.getFirst());
+          "Source attribution does not support non-Java source files: "
+              + unsupportedLanguageSources.getFirst());
     }
     return sources;
+  }
+
+  private static boolean isUnsupportedLanguageSource(final String name) {
+    return List.of(".kt", ".kts", ".scala", ".groovy").stream().anyMatch(name::endsWith);
   }
 
   private static String formatDiagnostic(final Diagnostic<? extends JavaFileObject> diagnostic) {

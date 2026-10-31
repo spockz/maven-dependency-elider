@@ -59,14 +59,14 @@ import org.junit.jupiter.api.Test;
     Files.writeString(trace, "closure.a.Entry\n");
 
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
                 List.of(trace.toFile()), null, true));
-    final MavenElisionService.Analysis analysis = service.finish(prepared);
+    final ElisionAnalysisModel.Analysis analysis = service.finish(prepared);
     final ArtifactTrimRecord providerTrim =
-        analysis.trimRecords().stream()
+        analysis.trimResult().records().stream()
             .filter(record -> record.coordinate().equals(fixture.coordinate("b")))
             .findFirst()
             .orElseThrow();
@@ -127,7 +127,7 @@ import org.junit.jupiter.api.Test;
     final Path trace = temporaryDirectory.resolve("resource-only-trace.lst");
     Files.writeString(trace, "closure.a.Entry\n");
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         new MavenElisionService()
             .prepare(
                 fixture.mavenProject(),

@@ -1,4 +1,5 @@
-/* WHY: Validates Resolver artifact, dependency, and exclusion values independently. */
+/* WHY: Validates Resolver artifact, dependency, and exclusion values
+ * independently. */
 
 package io.github.spockz.elider.plugin;
 

@@ -44,20 +44,23 @@ import java.util.Map;
   }
 
   /* package */ static void assertLegacyBehavior(
-      final MavenElisionService.Analysis first,
-      final MavenElisionService.Analysis warm,
-      final MavenElisionService.Analysis changed,
-      final MavenElisionService.PreparedAnalysis firstPrepared,
-      final MavenElisionService.PreparedAnalysis changedPrepared) {
+      final ElisionAnalysisModel.Analysis first,
+      final ElisionAnalysisModel.Analysis warm,
+      final ElisionAnalysisModel.Analysis changed,
+      final ElisionAnalysisModel.PreparedAnalysis firstPrepared,
+      final ElisionAnalysisModel.PreparedAnalysis changedPrepared) {
     assertThat(changedPrepared.dynamicRootInputs().classNames())
         .isEqualTo(firstPrepared.dynamicRootInputs().classNames());
-    assertCacheBehavior(first.trimCacheHits(), warm.trimCacheHits(), changed.trimCacheHits());
+    assertCacheBehavior(
+        first.trimResult().cacheHits(),
+        warm.trimResult().cacheHits(),
+        changed.trimResult().cacheHits());
   }
 
   /* package */ static void assertEffectiveBehavior(
-      final MavenDependencyTrimmer.TrimResult first,
-      final MavenDependencyTrimmer.TrimResult warm,
-      final MavenDependencyTrimmer.TrimResult changed,
+      final TrimResult first,
+      final TrimResult warm,
+      final TrimResult changed,
       final MavenElisionServiceEffectiveOutputSupport.ServiceOperation firstOperation,
       final MavenElisionServiceEffectiveOutputSupport.ServiceOperation changedOperation) {
     assertThat(changedOperation.prepared().dynamicRootInputs().classNames())
@@ -77,5 +80,5 @@ import java.util.Map;
       Path descriptor,
       Path trace,
       MavenElisionService service,
-      MavenElisionService.PreparedAnalysis first) {}
+      ElisionAnalysisModel.PreparedAnalysis first) {}
 }

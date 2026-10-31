@@ -18,13 +18,15 @@ final class MavenElisionOutputLogger {
       throws IOException {
     final MavenElisionReportSnapshot reportSnapshot =
         MavenElisionReportSnapshot.from(request.project(), request.analysis(), assessment);
-    final MavenElisionService.Analysis analysis = request.analysis();
+    final ElisionAnalysisModel.Analysis analysis = request.analysis();
     final Log log = request.log();
-    if (log.isInfoEnabled() && request.files().trimJars() && analysis.trimCacheHits() > 0) {
-      final double milliseconds = analysis.maximumTrimCacheHitNanos() / 1_000_000.0;
+    if (log.isInfoEnabled()
+        && request.files().trimJars()
+        && analysis.trimResult().cacheHits() > 0) {
+      final double milliseconds = analysis.trimResult().maximumCacheHitNanos() / 1_000_000.0;
       log.info(
           "  JAR trim cache: "
-              + analysis.trimCacheHits()
+              + analysis.trimResult().cacheHits()
               + " hit(s), maximum validated hit "
               + milliseconds
               + " ms (target < 1.5 ms)");
@@ -35,7 +37,7 @@ final class MavenElisionOutputLogger {
       ElisionSummary.report(
           log,
           analysis.effectiveDecision(),
-          analysis.resolvedSnapshots().size(),
+          analysis.artifacts().resolvedSnapshots().size(),
           reportSnapshot,
           assessment);
     }
@@ -47,8 +49,9 @@ final class MavenElisionOutputLogger {
   }
 
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static void passThroughWarnings(final Log log, final MavenElisionService.Analysis analysis) {
+  static void passThroughWarnings(final Log log, final ElisionAnalysisModel.Analysis analysis) {
     analysis
+        .trimResult()
         .multiReleasePassthroughArtifacts()
         .forEach(
             coordinate ->
@@ -58,6 +61,7 @@ final class MavenElisionOutputLogger {
                         + " effective classes for closure; unchanged external links are tolerated: "
                         + coordinate));
     analysis
+        .trimResult()
         .moduleInfoPassthroughArtifacts()
         .forEach(
             coordinate ->
@@ -67,6 +71,7 @@ final class MavenElisionOutputLogger {
                         + "classpath closure, not module-path closure: "
                         + coordinate));
     analysis
+        .trimResult()
         .configuredPassThroughArtifacts()
         .forEach(
             coordinate ->

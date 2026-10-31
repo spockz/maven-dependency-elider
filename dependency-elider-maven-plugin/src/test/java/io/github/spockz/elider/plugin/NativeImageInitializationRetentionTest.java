@@ -70,7 +70,7 @@ import org.objectweb.asm.Opcodes;
     final Path trace = temporaryDirectory.resolve("package-initialization.lst");
     Files.writeString(trace, "closure.a.Entry\n");
 
-    final MavenElisionService.Analysis analysis =
+    final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService()
             .analyze(
                 fixture.mavenProject(),
@@ -78,7 +78,7 @@ import org.objectweb.asm.Opcodes;
                     List.of(trace.toFile()), null, true));
     final Map<ArtifactCoordinate, Set<String>> retainedClasses =
         new java.util.concurrent.ConcurrentHashMap<>();
-    for (final ArtifactTrimRecord record : analysis.trimRecords()) {
+    for (final ArtifactTrimRecord record : analysis.trimResult().records()) {
       retainedClasses.put(record.coordinate(), classNames(record.trimmedPath()));
     }
 

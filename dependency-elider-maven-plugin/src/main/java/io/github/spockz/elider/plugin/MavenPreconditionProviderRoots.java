@@ -1,4 +1,5 @@
-/* WHY: Re-enumerates Maven application roots and binds providers to their file bytes. */
+/* WHY: Re-enumerates Maven application roots and binds providers to their
+ * file bytes. */
 
 package io.github.spockz.elider.plugin;
 
@@ -62,16 +63,16 @@ final class MavenPreconditionProviderRoots {
   static Capture capture(
       final MavenProject project,
       final MavenSession session,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.Analysis analysis,
       final Collection<Path> stages)
       throws IOException {
     if (project == null || project.getBuild() == null) {
       throw new IOException(MAVEN_PREFIX + "project build roots are unavailable");
     }
     MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
-        project, session, analysis.trustedProcessClassesContext());
-    if (!analysis.trustedProcessClassesContext()
-        && MavenElisionService.hasUnknownSourceGeneration(project, session)) {
+        project, session, analysis.evidence().trustedProcessClassesContext());
+    if (!analysis.evidence().trustedProcessClassesContext()
+        && SourceRootCompleteness.hasUnknownSourceGeneration(project, session)) {
       throw new IOException(MAVEN_PREFIX + "build has an unsupported or unknown source generator");
     }
     final List<Path> normalizedStages =
@@ -97,7 +98,7 @@ final class MavenPreconditionProviderRoots {
 
   private static List<RootFiles> declaredRoots(
       final MavenProject project,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.Analysis analysis,
       final List<Path> stages)
       throws IOException {
     final List<RootFiles> roots = new ArrayList<>();
@@ -120,8 +121,8 @@ final class MavenPreconditionProviderRoots {
         roots, "test-output", project, project.getBuild().getTestOutputDirectory(), stages);
     addResources(roots, "production-resource", project, project.getBuild().getResources(), stages);
     addResources(roots, "test-resource", project, project.getBuild().getTestResources(), stages);
-    if (analysis.bytecodeScan().isPresent()) {
-      final Path scannedOutput = analysis.bytecodeScan().orElseThrow().scope();
+    if (analysis.evidence().bytecodeScan().isPresent()) {
+      final Path scannedOutput = analysis.evidence().bytecodeScan().orElseThrow().scope();
       if (!containsRoot(roots, scannedOutput)) {
         addDirectoryRoot(
             roots, "configured-production-output", project, scannedOutput.toString(), stages);

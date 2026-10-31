@@ -23,6 +23,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import proguard.classfile.ClassPool;
 import proguard.classfile.LibraryClass;
+import proguard.classfile.LibraryMethod;
 import proguard.classfile.kotlin.KotlinClassKindMetadata;
 import proguard.classfile.kotlin.KotlinMetadata;
 
@@ -106,6 +107,27 @@ class ArchiveSnapshotTemplateTest {
         .isSameAs(second.getClass("fixture/Target"));
     assertThat(firstOwner.methods[0].referencedClasses)
         .isNotSameAs(secondOwner.methods[0].referencedClasses);
+  }
+
+  @Test
+  @DisplayName("ADR-0003: cached JDK declarations materialize isolated mutable models")
+  void cachedJdkDeclarationsMaterializeFreshModels() throws IOException {
+    final ClassPool firstPool = SignaturePolymorphicTestSupport.java21ApiPool();
+    final ClassPool secondPool = SignaturePolymorphicTestSupport.java21ApiPool();
+    final LibraryClass first = (LibraryClass) firstPool.getClass("java/lang/invoke/MethodHandle");
+    final LibraryClass second = (LibraryClass) secondPool.getClass("java/lang/invoke/MethodHandle");
+    final LibraryMethod firstMethod =
+        (LibraryMethod) first.findMethod("invokeExact", "([Ljava/lang/Object;)Ljava/lang/Object;");
+    final LibraryMethod secondMethod =
+        (LibraryMethod) second.findMethod("invokeExact", "([Ljava/lang/Object;)Ljava/lang/Object;");
+    final int secondMethodAccess = secondMethod.u2accessFlags;
+
+    assertThat(first).isNotSameAs(second);
+    assertThat(firstMethod).isNotSameAs(secondMethod);
+
+    firstMethod.u2accessFlags = 0;
+
+    assertThat(secondMethod.u2accessFlags).isEqualTo(secondMethodAccess);
   }
 
   @Test

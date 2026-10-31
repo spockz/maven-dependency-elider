@@ -1,4 +1,5 @@
-/* WHY: Enforces the explicit no-graph state without reading unassigned record fields. */
+/* WHY: Enforces the explicit no-graph state without reading unassigned
+ * record fields. */
 
 package io.github.spockz.elider.plugin;
 

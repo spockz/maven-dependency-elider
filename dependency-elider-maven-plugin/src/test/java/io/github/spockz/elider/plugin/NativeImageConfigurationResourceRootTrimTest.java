@@ -62,25 +62,27 @@ import org.junit.jupiter.api.Test;
     fixture.mavenProject().getBuild().setSourceDirectory(sourceRoot.getParent().toString());
     fixture.mavenProject().addCompileSourceRoot(sourceRoot.getParent().toString());
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             fixture.mavenProject(),
-            new MavenElisionService.AnalysisOptions(
+            new ElisionAnalysisModel.AnalysisOptions(
                 List.of(trace.toFile()),
                 List.of(),
                 null,
                 null,
-                true,
-                true,
-                List.of(),
-                false,
-                List.of(),
-                false,
-                true,
-                true));
-    final MavenElisionService.Analysis analysis = service.finish(prepared);
+                new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
+                new ElisionAnalysisModel.TrimOptions(
+                    true,
+                    List.of(),
+                    false,
+                    List.of(),
+                    false,
+                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                new ElisionAnalysisModel.DynamicRootOptions(true)));
+    final ElisionAnalysisModel.Analysis analysis = service.finish(prepared);
     final ArtifactTrimRecord providerTrim =
-        analysis.trimRecords().stream()
+        analysis.trimResult().records().stream()
             .filter(record -> record.coordinate().equals(fixture.coordinate("b")))
             .findFirst()
             .orElseThrow();
@@ -99,9 +101,9 @@ import org.junit.jupiter.api.Test;
                 prepared.dynamicRootInputs().classNames(),
                 prepared.rawDecision().retainedArtifacts(),
                 List.of(
-                    analysis.configuredPassThroughArtifacts(),
-                    analysis.multiReleasePassthroughArtifacts(),
-                    analysis.moduleInfoPassthroughArtifacts()),
+                    analysis.trimResult().configuredPassThroughArtifacts(),
+                    analysis.trimResult().multiReleasePassthroughArtifacts(),
+                    analysis.trimResult().moduleInfoPassthroughArtifacts()),
                 providerTrim.totalClasses(),
                 providerTrim.retainedClasses(),
                 descriptorPreserved,

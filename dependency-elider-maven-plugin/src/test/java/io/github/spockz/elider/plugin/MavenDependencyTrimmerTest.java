@@ -27,8 +27,10 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /** Verifies retained-JAR trimming uses the supplied invocation evidence. */
+@Isolated("One malformed-JDK fixture temporarily overrides java.home")
 @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
 final class MavenDependencyTrimmerTest {
   /** Artifact identity shared by the test archive and Maven project. */
@@ -42,6 +44,9 @@ final class MavenDependencyTrimmerTest {
 
   /** JAR type shared by fixture coordinates. */
   private static final String JAR_TYPE = "jar";
+
+  /** WHY: Fake JDK path key used by this test. */
+  private static final String JAVA_HOME_PROPERTY = "java.home";
 
   /** Temporary workspace for compiled JAR fixtures. */
   @TempDir private Path tempDir;
@@ -58,18 +63,18 @@ final class MavenDependencyTrimmerTest {
         new ArtifactCoordinate(GROUP_ID, ARTIFACT_ID, VERSION, JAR_TYPE, "", ARTIFACT_ID);
     final Artifact artifact = runtimeArtifact(jar);
     final MavenProject project = project(artifact);
-    final MavenElisionService.ArtifactSnapshot snapshot =
-        new MavenElisionService.ArtifactSnapshot(artifact, coordinate, normalizedJar);
+    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
+        new ElisionAnalysisModel.ArtifactSnapshot(artifact, coordinate, normalizedJar);
     final ArtifactFileRef artifactRef = ArtifactFileRef.fromPath(coordinate, normalizedJar);
     final ArtifactClassIndex classIndex = new JarIndexScanner().scan(List.of(artifactRef));
-    final MavenDependencyTrimmer.ScanInputs scanInputs =
-        new MavenDependencyTrimmer.ScanInputs(
+    final TrimScanInputs scanInputs =
+        new TrimScanInputs(
             classIndex,
             Map.of(
                 normalizedJar,
                 new DependencyDynamicRoots.RootScan(Set.of("sample.Dynamic"), true)));
 
-    final MavenDependencyTrimmer.TrimResult result = trim(project, snapshot, scanInputs);
+    final TrimResult result = trim(project, snapshot, scanInputs);
 
     assertThat(result.records()).hasSize(1);
     try (JarFile trimmed = new JarFile(result.records().getFirst().trimmedPath().toFile())) {
@@ -77,10 +82,7 @@ final class MavenDependencyTrimmerTest {
       assertThat(trimmed.getEntry("sample/Dynamic.class")).isNotNull();
       assertThat(trimmed.getEntry("sample/Drop.class")).isNull();
     }
-    assertThatThrownBy(
-            () ->
-                trim(
-                    project, snapshot, new MavenDependencyTrimmer.ScanInputs(classIndex, Map.of())))
+    assertThatThrownBy(() -> trim(project, snapshot, new TrimScanInputs(classIndex, Map.of())))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Missing dynamic-root scan for retained artifact");
   }
@@ -100,25 +102,29 @@ final class MavenDependencyTrimmerTest {
     final Artifact artifact = runtimeArtifact(jar);
     final MavenProject project = project(artifact);
     final Path normalizedJar = jar.toAbsolutePath().normalize();
-    final MavenElisionService.ArtifactSnapshot snapshot =
-        new MavenElisionService.ArtifactSnapshot(artifact, coordinate, normalizedJar);
+    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
+        new ElisionAnalysisModel.ArtifactSnapshot(artifact, coordinate, normalizedJar);
     final ArtifactFileRef artifactRef = ArtifactFileRef.fromPath(coordinate, normalizedJar);
     final ArtifactClassIndex classIndex = new JarIndexScanner().scan(List.of(artifactRef));
-    final MavenDependencyTrimmer.ScanInputs scanInputs =
-        new MavenDependencyTrimmer.ScanInputs(
+    final TrimScanInputs scanInputs =
+        new TrimScanInputs(
             classIndex, Map.of(normalizedJar, new DependencyDynamicRoots.RootScan(Set.of(), true)));
-    final String previousJavaHome = System.getProperty("java.home");
+    final String previousJavaHome = System.getProperty(JAVA_HOME_PROPERTY);
     final Path manifest = tempDir.resolve("build/elided-artifacts/.trim-analysis-cache.json");
     final Path output =
         tempDir.resolve("build/elided-artifacts/org.example-runtime-1.0-trimmed.jar");
 
-    System.setProperty("java.home", javaHome.toString());
+    System.setProperty(JAVA_HOME_PROPERTY, javaHome.toString());
     try {
       assertThatThrownBy(() -> trim(project, snapshot, scanInputs))
           .isInstanceOf(IOException.class)
           .hasMessageContaining("Could not read JDK API signature");
     } finally {
-      System.setProperty("java.home", previousJavaHome);
+      if (previousJavaHome == null) {
+        System.clearProperty(JAVA_HOME_PROPERTY);
+      } else {
+        System.setProperty(JAVA_HOME_PROPERTY, previousJavaHome);
+      }
     }
 
     assertThat(manifest).doesNotExist();
@@ -126,26 +132,20 @@ final class MavenDependencyTrimmerTest {
     assertThat(jar).isRegularFile();
   }
 
-  private MavenDependencyTrimmer.TrimResult trim(
+  private TrimResult trim(
       final MavenProject project,
-      final MavenElisionService.ArtifactSnapshot snapshot,
-      final MavenDependencyTrimmer.ScanInputs scanInputs)
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot,
+      final TrimScanInputs scanInputs)
       throws IOException, MojoFailureException {
     return MavenDependencyTrimmer.trim(
-        new MavenDependencyTrimmer.TrimRequest(
+        new TrimRequest(
             project,
             null,
             List.of(snapshot),
             scanInputs,
             Set.of(snapshot.coordinate()),
-            TraceData.of(Set.of("sample.Keep")),
-            Set.of(),
-            Set.of(),
-            Set.of(),
-            List.of(),
-            false,
-            List.of(),
-            false));
+            new TrimEvidence(TraceData.of(Set.of("sample.Keep")), Set.of(), Set.of(), Set.of()),
+            new TrimPolicy(List.of(), false, List.of(), false)));
   }
 
   private Path compileJar() throws IOException {

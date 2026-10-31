@@ -1,4 +1,5 @@
-/* WHY: Compares resolver graph identities with Maven's effective artifact inventory. */
+/* WHY: Compares resolver graph identities with Maven's effective artifact
+ * inventory. */
 
 package io.github.spockz.elider.plugin;
 
@@ -17,7 +18,7 @@ final class MavenElisionGraphInventory {
   }
 
   static boolean matchesDecision(
-      final List<MavenElisionService.ArtifactSnapshot> inventory, final ElisionDecision decision) {
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory, final ElisionDecision decision) {
     final Set<ArtifactCoordinate> expected = new HashSet<>(decision.retainedArtifacts());
     expected.addAll(decision.elidedArtifacts());
     final Set<ArtifactCoordinate> actual = new HashSet<>();
@@ -27,9 +28,9 @@ final class MavenElisionGraphInventory {
 
   static boolean matchesGraph(
       final ResolverArtifactGraphSnapshot graph,
-      final List<MavenElisionService.ArtifactSnapshot> inventory) {
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory) {
     final Set<String> expected = new HashSet<>();
-    for (final MavenElisionService.ArtifactSnapshot snapshot : inventory) {
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : inventory) {
       final String extension = ResolvedArtifactInventoryFingerprint.resolverExtension(snapshot);
       if (!snapshot.coordinate().type().equals(extension)) {
         return false;

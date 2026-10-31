@@ -1,4 +1,5 @@
-/* WHY: Serializes Aether nodes while keeping traversal and metadata rules separate. */
+/* WHY: Serializes Aether nodes while keeping traversal and metadata rules
+ * separate. */
 
 package io.github.spockz.elider.plugin;
 

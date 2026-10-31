@@ -1,4 +1,5 @@
-/* WHY: Converts Resolver artifact-shaped values into stable detached JDK payloads. */
+/* WHY: Converts Resolver artifact-shaped values into stable detached JDK
+ * payloads. */
 
 package io.github.spockz.elider.plugin;
 

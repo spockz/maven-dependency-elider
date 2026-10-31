@@ -23,6 +23,9 @@ vertically_shaded_mrjar_names=(jackson-core-2.18.2.jar snakeyaml-2.2.jar)
 main() {
   repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
   cd -- "$repo_root"
+  source "$repo_root/examples/fixture-scheduler.sh"
+  example_jobs=${EXAMPLE_JOBS-2}
+  validate_example_jobs "$example_jobs"
   maven=${MAVEN:-"$repo_root/.scratch/toolchains/maven-mvnd-1.0.6/bin/mvnd"}
   maven_args=${MAVEN_ARGS:---batch-mode --no-transfer-progress}
   app_timeout=${APP_TIMEOUT:-30s}
@@ -170,7 +173,8 @@ MANIFEST
     )
   fi
 
-  for fixture in "${fixture_names[@]}"; do
+  run_fixture_worker() (
+    local fixture=$1
     fixture_dir="$repo_root/examples/$fixture"
     pom="$fixture_dir/pom.xml"
     jar_file="$fixture_dir/target/$fixture-0.1.0-SNAPSHOT.jar"
@@ -263,18 +267,18 @@ MANIFEST
         -Dmaven.compiler.proc=none
         "-Delide.productionOutput=$production_output"
       )
-      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+      timeout --foreground --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" "-Xlog:class+load=info:file=$trace" \
         --class-path "$fixture_dir/target/classes:$mrjar_fixture_jar" \
         io.github.spockz.example.mrjar.MultiReleaseApplication >"$baseline_output"
       test "$(<"$baseline_output")" = "upper-tier"
-      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+      timeout --foreground --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" -Djdk.util.jar.version=11 \
         --class-path "$fixture_dir/target/classes:$mrjar_fixture_jar" \
         io.github.spockz.example.mrjar.MultiReleaseApplication >"$test_dir/$fixture-baseline-target.out"
       test "$(<"$test_dir/$fixture-baseline-target.out")" = "target-tier"
     else
-      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+      timeout --foreground --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" "-Xlog:class+load=info:file=$trace" -jar "$jar_file" >"$baseline_output"
       if [[ $fixture == example-basic-app ]]; then
         verify_basic_unused_trace "$trace"
@@ -346,16 +350,16 @@ MANIFEST
     if [[ $fixture == example-spring-boot-app ]]; then
       run_spring_boot_endpoint "$jar_file" "$test_dir/$fixture-final.log" "$final_output"
     elif [[ $fixture == example-mrjar-app ]]; then
-      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+      timeout --foreground --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" --class-path "$fixture_dir/target/classes:$archive_file" \
         io.github.spockz.example.mrjar.MultiReleaseApplication >"$final_output"
-      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+      timeout --foreground --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" -Djdk.util.jar.version=11 \
         --class-path "$fixture_dir/target/classes:$archive_file" \
         io.github.spockz.example.mrjar.MultiReleaseApplication >"$test_dir/$fixture-final-target.out"
       test "$(<"$test_dir/$fixture-final-target.out")" = "target-tier"
     else
-      timeout --signal=TERM --kill-after=5s "$app_timeout" \
+      timeout --foreground --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" -jar "$jar_file" >"$final_output"
     fi
     verify_runtime "$fixture" "$final_output"
@@ -374,7 +378,9 @@ MANIFEST
         "$baseline_package_bytes" "$final_package_bytes" \
         "$((baseline_package_bytes - final_package_bytes))"
     fi
-  done
+  )
+
+  run_fixture_workers "$example_jobs" "$test_dir" "${fixture_names[@]}"
 
   run_reactor_fixture "$repo_root/examples/example-multi-module-reactor" "$test_dir"
   if [[ ${REACTOR_ONLY:-false} == true ]]; then

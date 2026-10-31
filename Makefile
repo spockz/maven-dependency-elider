@@ -12,8 +12,10 @@ OSV_SCANNER ?= osv-scanner
 DEPENDENCY_CHECK_VERSION ?= 13.0.0
 SERVE_PORT ?= 8080
 MAKE_JOBS ?= 12
-# Bound test JVMs separately because reactor -T can run multiple modules at once.
-TEST_FORKS ?= 4
+# Keep aggregate test concurrency bounded across reactor modules, forks, and JUnit classes.
+TEST_MAVEN_THREADS ?= 2
+TEST_FORKS ?= 2
+TEST_JUNIT_PARALLELISM ?= 2
 
 ifeq ($(MAKELEVEL),0)
 .NOTPARALLEL:
@@ -21,7 +23,7 @@ endif
 
 .DEFAULT_GOAL := check
 
-.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-reactor-example test-sbom-comparison scan-sbom verify-docs site serve
+.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all test-examples test-reactor-example test-example-scheduler test-sbom-comparison scan-sbom verify-docs site serve
 
 check: ## Format, run Java checks/tests and Markdown lint concurrently, then verify command transcripts
 	$(MAKE) --no-print-directory fmt
@@ -32,9 +34,10 @@ update-transcripts: ## Re-run configured example goals and update their document
 	$(GO) run scripts/update-transcripts.go --update
 
 check-transcripts: ## Verify configured command transcripts without rewriting documentation
+	$(GO) test scripts/update-transcripts.go scripts/update-transcripts_test.go
 	$(GO) run scripts/update-transcripts.go --check
 
-check-parallel: java-check lint-markdown test-sbom-comparison
+check-parallel: java-check lint-markdown test-example-scheduler test-sbom-comparison
 
 java-check:
 	$(MAKE) --no-print-directory lint-java
@@ -74,22 +77,23 @@ vuln: ## Check dependencies against the OWASP vulnerability database
 	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) org.owasp:dependency-check-maven:$(DEPENDENCY_CHECK_VERSION):check
 
 test-core: ## Run core library unit tests
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl elider-core -DforkCount=$(TEST_FORKS) -DreuseForks=true test
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl elider-core -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) test
 
-# Nested Maven installs write reactor targets, so the lifecycle test follows the forked unit suite.
 test-plugin: test-core ## Run core and plugin tests, isolating nested lifecycle builds
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -am install -DskipTests
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -Dtest='!DependencyContextLifecycleIntegrationTest' -DforkCount=$(TEST_FORKS) -DreuseForks=true test
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) -pl dependency-elider-maven-plugin -Dtest=DependencyContextLifecycleIntegrationTest -DforkCount=1 -DreuseForks=true test
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl dependency-elider-maven-plugin -am install -DskipTests
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl dependency-elider-maven-plugin -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) verify
 
 test-all: ## Run the complete reactor verification suite
-	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) verify
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) verify
 
 test-examples: ## Run baseline and trace-driven package checks for single-project and reactor examples
 	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS) -T $(MAVEN_THREADS)" ./examples/run-elision-cycle.sh
 
 test-reactor-example: ## Verify sequential and threaded multi-module reactor builds and reports
 	REACTOR_ONLY=true JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS) -T $(MAVEN_THREADS)" ./examples/run-elision-cycle.sh
+
+test-example-scheduler: ## Verify bounded standalone example fixture worker behavior
+	bash ./examples/test-fixture-scheduler.sh
 
 test-sbom-comparison: ## Test package-level OSV SBOM comparison behavior with a fake scanner
 	$(NODE) --test scripts/compare-sbom-inventories.test.js

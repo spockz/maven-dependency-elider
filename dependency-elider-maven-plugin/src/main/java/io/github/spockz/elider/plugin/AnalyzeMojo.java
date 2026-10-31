@@ -134,29 +134,30 @@ public final class AnalyzeMojo extends AbstractMojo {
       return;
     }
     try {
-      final MavenElisionService.Analysis analysis =
+      final ElisionAnalysisModel.Analysis analysis =
           new MavenElisionService()
               .analyze(
                   project,
-                  new MavenElisionService.AnalysisOptions(
+                  new ElisionAnalysisModel.AnalysisOptions(
                       traceFiles,
                       excludedArtifacts,
                       effectiveProductionOutput(),
                       session,
-                      sourceRootsComplete,
-                      trimJars,
-                      trimRoots == null ? List.of() : trimRoots,
-                      false,
-                      trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
-                      failOnUnsupportedModuleInfo,
-                      true,
-                      conservativeServiceLoaderRoots,
-                      trimWorkers,
-                      mrjarStrategy,
-                      productionClassesComplete,
-                      false));
+                      new ElisionAnalysisModel.CompletenessOptions(
+                          sourceRootsComplete, productionClassesComplete, false, true),
+                      new ElisionAnalysisModel.TrimOptions(
+                          trimJars,
+                          trimRoots == null ? List.of() : trimRoots,
+                          false,
+                          trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
+                          failOnUnsupportedModuleInfo,
+                          trimWorkers,
+                          mrjarStrategy),
+                      new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots)));
       MavenClassUsageReportWriter.write(
-          reportFile.toPath(), analysis.classUsageReport(), analysis.bytecodeScan());
+          reportFile.toPath(),
+          analysis.evidence().classUsageReport(),
+          analysis.evidence().bytecodeScan());
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
           assessVulnerabilities(analysis);
       ElisionSummary.reportAnalysis(getLog(), analysis, vulnerabilityAssessment, trimJars);
@@ -181,7 +182,7 @@ public final class AnalyzeMojo extends AbstractMojo {
   }
 
   private MavenVulnerabilityAssessment.Result assessVulnerabilities(
-      final MavenElisionService.Analysis analysis) throws IOException {
+      final ElisionAnalysisModel.Analysis analysis) throws IOException {
     final Path cacheDirectory =
         cveCacheDirectory == null
             ? VulnerabilityCacheManager.defaultCacheDirectory()

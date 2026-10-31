@@ -1,4 +1,5 @@
-/* WHY: Validates exact staging files before excluding them from declared resource roots. */
+/* WHY: Validates exact staging files before excluding them from declared
+ * resource roots. */
 
 package io.github.spockz.elider.plugin;
 

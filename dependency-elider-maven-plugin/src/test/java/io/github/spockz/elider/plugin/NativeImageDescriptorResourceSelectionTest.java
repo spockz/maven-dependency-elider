@@ -70,7 +70,7 @@ import org.junit.jupiter.api.Test;
     final Path trace = temporaryDirectory.resolve("embedded-resource-selection.lst");
     Files.writeString(trace, ENTRY_TRACE);
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         new MavenElisionService()
             .prepare(
                 fixture.mavenProject(),
@@ -127,14 +127,14 @@ import org.junit.jupiter.api.Test;
     final Path trace = temporaryDirectory.resolve("descriptor-pattern.lst");
     Files.writeString(trace, ENTRY_TRACE);
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
                 List.of(trace.toFile()), null, true));
-    final MavenElisionService.Analysis analysis = service.finish(prepared);
+    final ElisionAnalysisModel.Analysis analysis = service.finish(prepared);
     final ArtifactTrimRecord providerTrim =
-        analysis.trimRecords().stream()
+        analysis.trimResult().records().stream()
             .filter(record -> record.coordinate().equals(fixture.coordinate("b")))
             .findFirst()
             .orElseThrow();
@@ -188,7 +188,7 @@ import org.junit.jupiter.api.Test;
     final Path trace = temporaryDirectory.resolve("named-module-resource-selection.lst");
     Files.writeString(trace, ENTRY_TRACE);
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         new MavenElisionService()
             .prepare(
                 fixture.mavenProject(),
@@ -242,7 +242,7 @@ import org.junit.jupiter.api.Test;
     final Path trace = temporaryDirectory.resolve("descriptor-exclusion-scope.lst");
     Files.writeString(trace, ENTRY_TRACE);
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         new MavenElisionService()
             .prepare(
                 fixture.mavenProject(),

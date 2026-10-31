@@ -1,4 +1,5 @@
-/* WHY: Validates one manifest entry before it can authorize deletion of an output. */
+/* WHY: Validates one manifest entry before it can authorize deletion of an
+ * output. */
 
 package io.github.spockz.elider.plugin;
 

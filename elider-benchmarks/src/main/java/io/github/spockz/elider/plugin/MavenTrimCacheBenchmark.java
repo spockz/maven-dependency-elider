@@ -6,6 +6,7 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import io.github.spockz.elider.scanner.JarIndexScanner;
 import java.io.IOException;
@@ -56,7 +57,7 @@ public class MavenTrimCacheBenchmark {
   private Path fixtureDirectory;
   private MavenProject project;
   private MavenSession warmedSession;
-  private List<MavenElisionService.ArtifactSnapshot> candidates;
+  private List<ArtifactSnapshot> candidates;
   private List<ArtifactFileRef> artifactFiles;
   private ArtifactClassIndex classIndex;
   private ArtifactCoordinate coordinate;
@@ -90,18 +91,17 @@ public class MavenTrimCacheBenchmark {
     final Build build = new Build();
     build.setDirectory(fixtureDirectory.resolve("build").toString());
     project.setBuild(build);
-    candidates =
-        List.of(new MavenElisionService.ArtifactSnapshot(artifact, coordinate, originalJar));
+    candidates = List.of(new ArtifactSnapshot(artifact, coordinate, originalJar));
     final ArtifactFileRef fileRef = ArtifactFileRef.fromPath(coordinate, originalJar);
     artifactFiles = List.of(fileRef);
     classIndex = new JarIndexScanner().scan(List.of(fileRef));
     trace = TraceData.of(Set.of(ROOT_CLASS));
     warmedSession = newSession();
-    final MavenDependencyTrimmer.TrimResult cold = trim(warmedSession);
+    final TrimResult cold = trim(warmedSession);
     if (cold.analysisRuns() == 0 || cold.cacheHits() != 0) {
       throw new IllegalStateException("Trim cache fixture did not populate via ProGuard analysis");
     }
-    final MavenDependencyTrimmer.TrimResult warm = trim(warmedSession);
+    final TrimResult warm = trim(warmedSession);
     if (warm.analysisRuns() != 0 || warm.cacheHits() != 1) {
       throw new IllegalStateException("Trim cache fixture did not pass the production warm path");
     }
@@ -109,14 +109,14 @@ public class MavenTrimCacheBenchmark {
 
   /** Runs exact input/output digest validation and returns the cached trim records. */
   @Benchmark
-  public MavenDependencyTrimmer.TrimResult validatedMavenTrimCacheHit()
+  public TrimResult validatedMavenTrimCacheHit()
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     return trim(warmedSession);
   }
 
   /** Runs the same cache hit with a fresh single-project Maven execution request. */
   @Benchmark
-  public MavenDependencyTrimmer.TrimResult validatedFreshMavenTrimCacheHit()
+  public TrimResult validatedFreshMavenTrimCacheHit()
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     return trim(newSession());
   }
@@ -133,25 +133,27 @@ public class MavenTrimCacheBenchmark {
     }
   }
 
-  private MavenDependencyTrimmer.TrimResult trim(final MavenSession session)
+  private TrimResult trim(final MavenSession session)
       throws IOException, org.apache.maven.plugin.MojoFailureException {
-    final MavenElisionService.DynamicRootInputs dynamicRoots =
-        MavenElisionService.dynamicRoots(artifactFiles);
+    final ElisionAnalysisModel.DynamicRootInputs dynamicRoots =
+        DynamicRootOrchestrator.dynamicRoots(artifactFiles);
     return MavenDependencyTrimmer.trim(
-        new MavenDependencyTrimmer.TrimRequest(
+        new TrimRequest(
             project,
             session,
             candidates,
-            new MavenDependencyTrimmer.ScanInputs(classIndex, dynamicRoots.scansByPath()),
+            new TrimScanInputs(classIndex, dynamicRoots.scansByPath()),
             Set.of(coordinate),
-            trace,
-            Set.of(ROOT_CLASS),
-            Set.of(),
-            Set.of(),
-            List.of(),
-            false,
-            List.of(),
-            false));
+            new TrimEvidence(trace, Set.of(ROOT_CLASS), Set.of(), Set.of(), Set.of()),
+            new TrimPolicy(
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+                true,
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS)));
   }
 
   private MavenSession newSession() {

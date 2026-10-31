@@ -1,4 +1,5 @@
-/* WHY: Keeps SBOM and VEX serialization outside the lifecycle Mojo's orchestration method. */
+/* WHY: Keeps SBOM and VEX serialization outside the lifecycle Mojo's
+ * orchestration method. */
 
 package io.github.spockz.elider.plugin;
 
@@ -20,8 +21,8 @@ final class MavenTrimOutputWriter {
       final File configuredSbom,
       final File configuredBaseline,
       final File configuredVex,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final List<ArtifactFileRef> baselineInventory,
       final List<VexAttestation> attestations)
       throws IOException {
@@ -45,8 +46,8 @@ final class MavenTrimOutputWriter {
   private static void writeVexIfProven(
       final MavenProject project,
       final Path output,
-      final MavenElisionService.ApplyPlan plan,
-      final MavenElisionService.Analysis analysis,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ElisionAnalysisModel.Analysis analysis,
       final List<VexAttestation> attestations)
       throws IOException {
     if (!attestations.isEmpty()) {

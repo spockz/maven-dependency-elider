@@ -37,9 +37,9 @@ import org.junit.jupiter.api.io.TempDir;
     final List<ArtifactFileRef> candidates =
         NativeImageServiceLoaderPolicyTestSupport.candidates(declaring, descriptor, provider);
 
-    final MavenElisionService.DynamicRootInputs forward =
+    final ElisionAnalysisModel.DynamicRootInputs forward =
         NativeImageServiceLoaderPolicyTestSupport.scan(candidates, false);
-    final MavenElisionService.DynamicRootInputs reverse =
+    final ElisionAnalysisModel.DynamicRootInputs reverse =
         NativeImageServiceLoaderPolicyTestSupport.scan(
             NativeImageServiceLoaderPolicyTestSupport.reversed(candidates), false);
 

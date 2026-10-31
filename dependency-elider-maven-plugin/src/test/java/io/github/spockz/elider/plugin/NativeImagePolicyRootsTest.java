@@ -152,8 +152,8 @@ import org.junit.jupiter.api.io.TempDir;
             NativeImageScanContextTestSupport.candidate("excluder", excluder),
             NativeImageScanContextTestSupport.candidate("provider", provider));
 
-    final MavenElisionService.DynamicRootInputs roots =
-        MavenElisionService.dynamicRoots(candidates);
+    final ElisionAnalysisModel.DynamicRootInputs roots =
+        DynamicRootOrchestrator.dynamicRoots(candidates);
 
     assertThat(
             List.of(

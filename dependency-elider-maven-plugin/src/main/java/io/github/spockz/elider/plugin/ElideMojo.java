@@ -254,11 +254,11 @@ public final class ElideMojo extends AbstractMojo {
 
   private void executeAnalysis() throws IOException, MojoFailureException {
     final MavenElisionService service = new MavenElisionService();
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(project, analysisOptions());
-    final MavenElisionService.EffectiveAnalysis effective = service.finishAnalysis(prepared);
-    final MavenElisionService.Analysis analysis = service.finishEffectiveOutputs(effective);
-    try (TrimOutputGenerationCommitHandle generation = analysis.generationCommit()) {
+    final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
+    final ElisionAnalysisModel.Analysis analysis = service.finishEffectiveOutputs(effective);
+    try (TrimOutputGenerationCommitHandle generation = analysis.trimResult().generationCommit()) {
       MavenElisionOutputPublisher.publish(
           new MavenElisionOutputPublisher.Request(
               project,
@@ -310,27 +310,26 @@ public final class ElideMojo extends AbstractMojo {
         : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
   }
 
-  private MavenElisionService.AnalysisOptions analysisOptions() {
+  private ElisionAnalysisModel.AnalysisOptions analysisOptions() {
     final boolean trustedProcessClassesContext = trustedProcessClassesContext();
     final boolean useProductionClasses =
         productionClassesComplete || (trustedProcessClassesContext && !sourceRootsComplete);
-    return new MavenElisionService.AnalysisOptions(
+    return new ElisionAnalysisModel.AnalysisOptions(
         traceFiles,
         excludedArtifacts,
         effectiveProductionOutput(useProductionClasses),
         session,
-        sourceRootsComplete,
-        trimJars,
-        trimRoots == null ? List.of() : trimRoots,
-        false,
-        trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
-        failOnUnsupportedModuleInfo,
-        true,
-        conservativeServiceLoaderRoots,
-        trimWorkers,
-        mrjarStrategy,
-        useProductionClasses,
-        trustedProcessClassesContext);
+        new ElisionAnalysisModel.CompletenessOptions(
+            sourceRootsComplete, useProductionClasses, trustedProcessClassesContext, true),
+        new ElisionAnalysisModel.TrimOptions(
+            trimJars,
+            trimRoots == null ? List.of() : trimRoots,
+            false,
+            trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
+            failOnUnsupportedModuleInfo,
+            trimWorkers,
+            mrjarStrategy),
+        new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots));
   }
 
   private File effectiveProductionOutput(final boolean useProductionClasses) {

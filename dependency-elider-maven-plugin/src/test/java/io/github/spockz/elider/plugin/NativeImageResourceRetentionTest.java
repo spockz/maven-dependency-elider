@@ -53,7 +53,7 @@ import org.junit.jupiter.api.Test;
     final Path trace = temporaryDirectory.resolve("cross-archive-resource.lst");
     Files.writeString(trace, ENTRY_TRACE);
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         new MavenElisionService()
             .prepare(
                 fixture.mavenProject(),
@@ -104,7 +104,7 @@ import org.junit.jupiter.api.Test;
     final Path trace = temporaryDirectory.resolve("resource-only-pointer.lst");
     Files.writeString(trace, ENTRY_TRACE);
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         new MavenElisionService()
             .prepare(
                 fixture.mavenProject(),
@@ -146,7 +146,7 @@ import org.junit.jupiter.api.Test;
     final Path trace = temporaryDirectory.resolve("auto-resource-only.lst");
     Files.writeString(trace, ENTRY_TRACE);
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         new MavenElisionService()
             .prepare(
                 fixture.mavenProject(),
@@ -185,7 +185,7 @@ import org.junit.jupiter.api.Test;
     final Path trace = temporaryDirectory.resolve("unified-resource-only.lst");
     Files.writeString(trace, ENTRY_TRACE);
 
-    final MavenElisionService.PreparedAnalysis prepared =
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
         new MavenElisionService()
             .prepare(
                 fixture.mavenProject(),

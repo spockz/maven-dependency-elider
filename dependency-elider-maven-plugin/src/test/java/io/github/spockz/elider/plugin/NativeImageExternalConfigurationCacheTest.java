@@ -23,14 +23,14 @@ import org.junit.jupiter.api.Test;
   void changedExternalDescriptorMissesLegacyTrimCacheWhenRootsStayEqual()
       throws IOException, MojoFailureException {
     final NativeImageExternalConfigurationCacheTestSupport.CacheRun run = cacheRun();
-    final MavenElisionService.Analysis first = run.service().finish(run.first());
-    final MavenElisionService.PreparedAnalysis warmPrepared =
+    final ElisionAnalysisModel.Analysis first = run.service().finish(run.first());
+    final ElisionAnalysisModel.PreparedAnalysis warmPrepared =
         prepareLegacy(run.fixture(), run.trace());
-    final MavenElisionService.Analysis warm = run.service().finish(warmPrepared);
+    final ElisionAnalysisModel.Analysis warm = run.service().finish(warmPrepared);
     NativeImageExternalConfigurationCacheTestSupport.changeWhitespaceOnly(run.descriptor());
-    final MavenElisionService.PreparedAnalysis secondPrepared =
+    final ElisionAnalysisModel.PreparedAnalysis secondPrepared =
         prepareLegacy(run.fixture(), run.trace());
-    final MavenElisionService.Analysis second = run.service().finish(secondPrepared);
+    final ElisionAnalysisModel.Analysis second = run.service().finish(secondPrepared);
 
     NativeImageExternalConfigurationCacheTestSupport.assertLegacyBehavior(
         first, warm, second, run.first(), secondPrepared);
@@ -51,12 +51,12 @@ import org.junit.jupiter.api.Test;
     final Path trace =
         NativeImageExternalConfigurationCacheTestSupport.writeTrace(temporaryDirectory);
     final ServiceOperation first = operation(fixture, trace, null, true);
-    final MavenDependencyTrimmer.TrimResult firstTrim = trimEffective(first);
+    final TrimResult firstTrim = trimEffective(first);
     final ServiceOperation warm = operation(fixture, trace, null, true);
-    final MavenDependencyTrimmer.TrimResult warmTrim = trimEffective(warm);
+    final TrimResult warmTrim = trimEffective(warm);
     NativeImageExternalConfigurationCacheTestSupport.changeWhitespaceOnly(descriptor);
     final ServiceOperation second = operation(fixture, trace, null, true);
-    final MavenDependencyTrimmer.TrimResult secondTrim = trimEffective(second);
+    final TrimResult secondTrim = trimEffective(second);
 
     NativeImageExternalConfigurationCacheTestSupport.assertEffectiveBehavior(
         firstTrim, warmTrim, secondTrim, first, second);
@@ -85,23 +85,25 @@ import org.junit.jupiter.api.Test;
         fixture, descriptor, trace, service, prepareLegacy(fixture, trace));
   }
 
-  private MavenElisionService.PreparedAnalysis prepareLegacy(
+  private ElisionAnalysisModel.PreparedAnalysis prepareLegacy(
       final Fixture fixture, final Path trace) throws IOException, MojoFailureException {
     return new MavenElisionService()
         .prepare(
             fixture.mavenProject(),
-            new MavenElisionService.AnalysisOptions(
+            new ElisionAnalysisModel.AnalysisOptions(
                 List.of(trace.toFile()),
                 List.of(),
                 null,
                 null,
-                true,
-                true,
-                List.of(),
-                false,
-                List.of(),
-                false,
-                true,
-                false));
+                new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
+                new ElisionAnalysisModel.TrimOptions(
+                    true,
+                    List.of(),
+                    false,
+                    List.of(),
+                    false,
+                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                new ElisionAnalysisModel.DynamicRootOptions(false)));
   }
 }
