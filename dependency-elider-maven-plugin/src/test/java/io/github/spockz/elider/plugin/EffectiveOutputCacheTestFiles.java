@@ -61,16 +61,6 @@ final class EffectiveOutputCacheTestFiles {
     JSON.writeValue(manifest.toFile(), root);
   }
 
-  /** Creates a structurally valid manifest root for malformed-shape cases. */
-  static ObjectNode manifestNode(final String fingerprint) {
-    final ObjectNode root = JSON.createObjectNode();
-    root.put("schemaVersion", MavenDependencyTrimmer.CACHE_SCHEMA_VERSION);
-    root.put("formatId", MavenDependencyTrimmer.CACHE_FORMAT_ID);
-    root.put("fingerprint", fingerprint);
-    root.putArray("entries");
-    return root;
-  }
-
   /** Writes a test-owned malformed or modified manifest root. */
   static void writeManifest(final Path manifest, final ObjectNode root) throws IOException {
     JSON.writeValue(manifest.toFile(), root);

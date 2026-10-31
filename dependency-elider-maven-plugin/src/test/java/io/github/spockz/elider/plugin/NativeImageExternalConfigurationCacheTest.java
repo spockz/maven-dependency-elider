@@ -103,7 +103,8 @@ import org.junit.jupiter.api.Test;
                     List.of(),
                     false,
                     MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+                    MavenPluginDescriptorFixtures.releasedProducerResolution()),
                 new ElisionAnalysisModel.DynamicRootOptions(false)));
   }
 }

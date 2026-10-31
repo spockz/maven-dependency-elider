@@ -23,14 +23,21 @@ public record CacheProducerIdentity(
     }
   }
 
+  /** Returns the normalized producer value used by compatibility and fingerprints. */
+  public CompatibilityIdentity canonicalCompatibilityIdentity() {
+    return new CompatibilityIdentity(
+        groupId, artifactId, version, version.endsWith("-SNAPSHOT") ? buildIdentity : null);
+  }
+
   /** Returns whether this persisted producer is compatible with the running producer. */
   public boolean isCompatibleWith(final CacheProducerIdentity running) {
     Objects.requireNonNull(running, "running");
-    return groupId.equals(running.groupId)
-        && artifactId.equals(running.artifactId)
-        && version.equals(running.version)
-        && (!version.endsWith("-SNAPSHOT") || Objects.equals(buildIdentity, running.buildIdentity));
+    return canonicalCompatibilityIdentity().equals(running.canonicalCompatibilityIdentity());
   }
+
+  /** Structured cache identity with release-only metadata normalized away. */
+  public record CompatibilityIdentity(
+      String groupId, String artifactId, String version, String buildIdentity) {}
 
   private static void requireText(final String value, final String field) {
     if (value == null || value.isBlank()) {

@@ -57,7 +57,9 @@ final class TrimOutputGenerationCommitHandle implements AutoCloseable {
       failure = exception;
     }
     try {
-      TrimOutputGenerationFileOps.deleteTree(manifestBackup);
+      if (manifestBackup != null) {
+        TrimOutputGenerationFileOps.deleteTree(manifestBackup);
+      }
     } catch (final IOException exception) {
       failure = TrimOutputGenerationFileOps.append(failure, exception);
     }
@@ -103,6 +105,9 @@ final class TrimOutputGenerationCommitHandle implements AutoCloseable {
   }
 
   private IOException restoreManifest(final IOException failure) {
+    if (manifest == null) {
+      return failure;
+    }
     try {
       if (hadManifest && Files.exists(manifestBackup)) {
         TrimOutputGenerationFileOps.atomicMove(manifestBackup, manifest, true);

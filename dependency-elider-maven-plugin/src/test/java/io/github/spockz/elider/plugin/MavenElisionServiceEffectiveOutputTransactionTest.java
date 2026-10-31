@@ -4,6 +4,8 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -84,6 +86,70 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
     assertThat(retriedRecord.trimmedPath()).isNotEqualTo(originalRecord.trimmedPath());
     assertThat(ArtifactDigests.read(retriedRecord.trimmedPath()).sha256())
         .isEqualTo(retriedRecord.trimmedSha256());
+  }
+
+  @Test
+  void producerSwitchPublicationFailurePreservesPriorManifestAndGeneration() throws Exception {
+    final Fixture fixture = fixture(false);
+    final Path trace = trace(temporaryDirectory, ENTRY_TRACE);
+    final ServiceOperation original =
+        operationWithProducer(
+            fixture,
+            trace,
+            MavenPluginDescriptorFixtures.snapshotProducerResolution("a".repeat(64)));
+    final ArtifactTrimRecord originalRecord = outputRecord(trimEffective(original), fixture);
+    final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
+    final byte[] priorManifest = Files.readAllBytes(manifest);
+    final String priorOutputDigest = ArtifactDigests.read(originalRecord.trimmedPath()).sha256();
+    final ServiceOperation changed =
+        operationWithProducer(
+            fixture,
+            trace,
+            MavenPluginDescriptorFixtures.snapshotProducerResolution("b".repeat(64)));
+    final ElisionAnalysisModel.EffectiveAnalysis effective =
+        changed.service().finishAnalysis(changed.prepared());
+
+    assertThatThrownBy(
+            () ->
+                MavenDependencyTrimmer.trimEffectiveOutputs(
+                    effective,
+                    (source, target, replace) -> {
+                      if (manifest
+                          .toAbsolutePath()
+                          .normalize()
+                          .equals(target.toAbsolutePath().normalize())) {
+                        throw new IOException("injected producer-switch manifest failure");
+                      }
+                      TrimOutputGenerationFileOps.atomicMove(source, target, replace);
+                    }))
+        .isInstanceOf(IOException.class)
+        .hasMessage("injected producer-switch manifest failure");
+
+    assertAll(
+        "failed producer switch leaves the prior cache transaction intact",
+        () -> assertThat(Files.readAllBytes(manifest)).isEqualTo(priorManifest),
+        () ->
+            assertThat(ArtifactDigests.read(originalRecord.trimmedPath()).sha256())
+                .isEqualTo(priorOutputDigest),
+        () ->
+            assertThat(EffectiveOutputCacheTestFiles.generationCount(fixture.mavenProject()))
+                .isEqualTo(1));
+
+    final TrimResult retry = trimEffective(changed);
+    final ArtifactTrimRecord retryRecord = outputRecord(retry, fixture);
+    final int retryCacheHits = retry.cacheHits();
+    final com.fasterxml.jackson.databind.JsonNode committed =
+        new com.fasterxml.jackson.databind.ObjectMapper().readTree(manifest.toFile());
+    assertAll(
+        "retry publishes the changed producer generation",
+        () -> assertEquals(0, retryCacheHits, "retry after producer change must not hit cache"),
+        () -> assertThat(retryRecord.trimmedPath()).isNotEqualTo(originalRecord.trimmedPath()),
+        () ->
+            assertThat(committed.path("producer").path("buildIdentity").asText())
+                .isEqualTo("b".repeat(64)),
+        () ->
+            assertThat(EffectiveOutputCacheTestFiles.generationCount(fixture.mavenProject()))
+                .isEqualTo(2));
   }
 
   @Test

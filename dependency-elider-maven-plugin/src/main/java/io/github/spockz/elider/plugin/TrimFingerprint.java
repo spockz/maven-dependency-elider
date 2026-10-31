@@ -3,6 +3,9 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.spockz.elider.model.CacheProducerIdentity.CompatibilityIdentity;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
@@ -11,11 +14,16 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
 /** Builds canonical fingerprints from archive and platform identities. */
 final class TrimFingerprint {
+  /** Serializes the normalized producer as structured fingerprint input. */
+  private static final ObjectMapper JSON = new ObjectMapper();
+
   /* package */
   /** Invalidates keys when the underlying trimming engine changes. */
   static final String ENGINE_VERSION = "proguard-core-9.4.0";
@@ -34,7 +42,12 @@ final class TrimFingerprint {
       String engineVersion,
       JdkPlatformContext platformContext,
       List<Integer> analyzedTiers,
-      String outputContext) {}
+      String outputContext,
+      Optional<CompatibilityIdentity> producerIdentity) {
+    FingerprintOptions {
+      Objects.requireNonNull(producerIdentity, "producerIdentity");
+    }
+  }
 
   /* package */ static FingerprintSnapshot fingerprint(
       final List<TrimCandidate> candidates,
@@ -80,6 +93,7 @@ final class TrimFingerprint {
             options.release(),
             options.schemaVersion(),
             options.engineVersion(),
+            options.producerIdentity(),
             inputDigests);
     return new FingerprintSnapshot(value, inputDigests, List.copyOf(platformSnapshots));
   }
@@ -101,6 +115,7 @@ final class TrimFingerprint {
         release,
         schemaVersion,
         engineVersion,
+        Optional.empty(),
         TrimInputDigests.inputDigests(orderedLibraries));
   }
 
@@ -112,6 +127,7 @@ final class TrimFingerprint {
       final int release,
       final int schemaVersion,
       final String engineVersion,
+      final Optional<CompatibilityIdentity> producerIdentity,
       final Map<Path, ArtifactDigests> inputDigests)
       throws IOException {
     final List<String> platformIdentities = new ArrayList<>(platformInputs.size());
@@ -129,6 +145,7 @@ final class TrimFingerprint {
         release,
         schemaVersion,
         engineVersion,
+        producerIdentity,
         inputDigests);
   }
 
@@ -140,6 +157,7 @@ final class TrimFingerprint {
       final int release,
       final int schemaVersion,
       final String engineVersion,
+      final Optional<CompatibilityIdentity> producerIdentity,
       final Map<Path, ArtifactDigests> inputDigests)
       throws IOException {
     final List<String> platformIdentities =
@@ -152,6 +170,7 @@ final class TrimFingerprint {
         release,
         schemaVersion,
         engineVersion,
+        producerIdentity,
         inputDigests);
   }
 
@@ -163,6 +182,7 @@ final class TrimFingerprint {
       final int release,
       final int schemaVersion,
       final String engineVersion,
+      final Optional<CompatibilityIdentity> producerIdentity,
       final Map<Path, ArtifactDigests> inputDigests)
       throws IOException {
     final StringBuilder input =
@@ -173,6 +193,8 @@ final class TrimFingerprint {
             .append(schemaVersion)
             .append("\nengine=")
             .append(engineVersion)
+            .append("\nproducer=")
+            .append(encodeProducerIdentity(producerIdentity))
             .append('\n');
     for (final String candidateIdentity : candidateIdentities) {
       input.append("candidate=").append(candidateIdentity).append('\n');
@@ -201,5 +223,14 @@ final class TrimFingerprint {
     }
     return TrimInputDigests.hash(
         input.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  }
+
+  private static String encodeProducerIdentity(
+      final Optional<CompatibilityIdentity> producerIdentity) throws IOException {
+    try {
+      return JSON.writeValueAsString(producerIdentity.orElse(null));
+    } catch (final JsonProcessingException exception) {
+      throw new IOException("Could not serialize trim cache producer identity", exception);
+    }
   }
 }

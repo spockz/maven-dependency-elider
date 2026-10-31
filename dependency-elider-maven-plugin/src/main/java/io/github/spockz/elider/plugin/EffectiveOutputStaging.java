@@ -35,7 +35,9 @@ final class EffectiveOutputStaging implements AutoCloseable {
 
   /* package */ EffectiveOutputStaging(final Path stagedGeneration, final Path stagedManifest) {
     this.stagedGeneration = stagedGeneration;
-    preparedOutputCleanup.addCleanupAction(() -> Files.deleteIfExists(stagedManifest));
+    if (stagedManifest != null) {
+      preparedOutputCleanup.addCleanupAction(() -> Files.deleteIfExists(stagedManifest));
+    }
     preparedOutputCleanup.addCleanupAction(
         () -> TrimGenerationPublisher.deleteTree(stagedGeneration));
   }

@@ -16,6 +16,9 @@ final class DirectTrimCache {
 
   /* package */ static TrimResult load(final PreparedDirectTrim plan) throws IOException {
     NativeImageConsumedInput.verifyAll(plan.request().scanInputs().consumedInputs());
+    if (plan.request().cacheProducerIdentity().isEmpty()) {
+      return null;
+    }
     final TrimResult result =
         JarTrimCache.loadCache(
             plan.manifest(),
@@ -25,6 +28,7 @@ final class DirectTrimCache {
             plan.passThrough().multiReleaseCoordinates(),
             plan.passThrough().moduleInfoCoordinates(),
             plan.passThrough().configuredCoordinates(),
+            plan.request().cacheProducerIdentity().orElseThrow(),
             plan.cacheStarted());
     NativeImageConsumedInput.verifyAll(plan.request().scanInputs().consumedInputs());
     return result;
@@ -34,6 +38,9 @@ final class DirectTrimCache {
       final PreparedDirectTrim plan, final Map<TrimCandidate, CacheEntry> entries)
       throws IOException {
     NativeImageConsumedInput.verifyAll(plan.request().scanInputs().consumedInputs());
+    if (plan.request().cacheProducerIdentity().isEmpty()) {
+      return;
+    }
     final List<CacheEntry> ordered =
         JarTrimCache.orderedEntries(
             plan.candidatePlan().work(), entries, "Missing trim-cache entry for ");
@@ -42,6 +49,7 @@ final class DirectTrimCache {
         new CacheManifest(
             MavenDependencyTrimmer.CACHE_SCHEMA_VERSION,
             MavenDependencyTrimmer.CACHE_FORMAT_ID,
+            plan.request().cacheProducerIdentity().orElseThrow(),
             plan.fingerprint().value(),
             ordered));
   }

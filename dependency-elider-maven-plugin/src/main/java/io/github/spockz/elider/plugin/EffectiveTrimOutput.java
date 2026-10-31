@@ -3,6 +3,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.CacheProducerIdentity;
 import io.github.spockz.elider.plugin.TrimCandidatePlanner.CandidatePlan;
 import io.github.spockz.elider.plugin.TrimFingerprint.FingerprintOptions;
 import io.github.spockz.elider.plugin.TrimFingerprint.FingerprintSnapshot;
@@ -54,7 +55,10 @@ final class EffectiveTrimOutput {
                 TrimFingerprint.ENGINE_VERSION,
                 platformContext,
                 effectiveOutput.analysis().analyzedTiers(),
-                EffectiveTrimCacheContext.effectiveCacheContext(request, effectiveOutput)));
+                EffectiveTrimCacheContext.effectiveCacheContext(request, effectiveOutput),
+                request
+                    .cacheProducerIdentity()
+                    .map(CacheProducerIdentity::canonicalCompatibilityIdentity)));
     TrimGenerationPublisher.verifyEffectiveInputs(effectiveOutput, fingerprint);
     final List<String> platformIdentities =
         fingerprint.platformSnapshots().stream()
@@ -64,19 +68,28 @@ final class EffectiveTrimOutput {
       throw new IOException("JDK platform identity changed after effective analysis");
     }
     final String completeFingerprint = fingerprint.value();
-    final Path generation = TrimPaths.generationPath(project, completeFingerprint);
+    final Path generation =
+        request.cacheProducerIdentity().isPresent()
+            ? TrimPaths.generationPath(project, completeFingerprint)
+            : TrimPaths.ephemeralGenerationPath();
     work.forEach(candidate -> candidate.relocateOutput(generation));
+    if (request.cacheProducerIdentity().isEmpty()) {
+      work.forEach(candidate -> candidate.output().toFile().deleteOnExit());
+    }
     TrimCandidatePlanner.assignEffectiveAnalyses(plan, effectiveOutput.analysis());
     final TrimResult cached =
-        JarTrimCache.loadCache(
-            manifest,
-            completeFingerprint,
-            fingerprint.inputDigests(),
-            work,
-            passThrough.multiReleaseCoordinates(),
-            passThrough.moduleInfoCoordinates(),
-            passThrough.configuredCoordinates(),
-            cacheStart);
+        request.cacheProducerIdentity().isPresent()
+            ? JarTrimCache.loadCache(
+                manifest,
+                completeFingerprint,
+                fingerprint.inputDigests(),
+                work,
+                passThrough.multiReleaseCoordinates(),
+                passThrough.moduleInfoCoordinates(),
+                passThrough.configuredCoordinates(),
+                request.cacheProducerIdentity().orElseThrow(),
+                cacheStart)
+            : null;
     if (cached != null) {
       TrimGenerationPublisher.verifyEffectiveInputs(effectiveOutput, fingerprint);
       return cached;
@@ -88,6 +101,8 @@ final class EffectiveTrimOutput {
             fingerprint,
             manifest,
             completeFingerprint,
+            generation,
+            request.cacheProducerIdentity(),
             passThrough.multiReleaseCoordinates(),
             passThrough.moduleInfoCoordinates(),
             passThrough.configuredCoordinates(),

@@ -143,10 +143,9 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
                       session,
                       new ElisionAnalysisModel.CompletenessOptions(
                           sourceRootsComplete, productionClassesComplete, false, true),
-                      new ElisionAnalysisModel.TrimOptions(
+                      trimOptions(
                           trimJars,
                           trimRoots == null ? List.of() : trimRoots,
-                          false,
                           trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
                           failOnUnsupportedModuleInfo,
                           trimWorkers,

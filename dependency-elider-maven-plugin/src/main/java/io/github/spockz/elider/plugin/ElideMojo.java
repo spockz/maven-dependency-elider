@@ -316,10 +316,9 @@ public final class ElideMojo extends PluginCacheMojoSupport {
         session,
         new ElisionAnalysisModel.CompletenessOptions(
             sourceRootsComplete, useProductionClasses, trustedProcessClassesContext, true),
-        new ElisionAnalysisModel.TrimOptions(
+        trimOptions(
             trimJars,
             trimRoots == null ? List.of() : trimRoots,
-            false,
             trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
             failOnUnsupportedModuleInfo,
             trimWorkers,

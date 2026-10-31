@@ -1176,16 +1176,44 @@ final class ElideMojoTest {
   private ElisionAnalysisModel.Analysis analyzeTrim(
       final MavenProject project, final String traceClasses)
       throws IOException, MojoFailureException {
+    return analyzeTrim(
+        project, traceClasses, MavenPluginDescriptorFixtures.releasedProducerResolution());
+  }
+
+  private ElisionAnalysisModel.Analysis analyzeTrim(
+      final MavenProject project,
+      final String traceClasses,
+      final PluginCacheProducerIdentityResolver.Resolution producerResolution)
+      throws IOException, MojoFailureException {
+    return analyzeTrim(project, traceClasses, producerResolution, false);
+  }
+
+  private ElisionAnalysisModel.Analysis analyzeTrim(
+      final MavenProject project,
+      final String traceClasses,
+      final PluginCacheProducerIdentityResolver.Resolution producerResolution,
+      final boolean sourceRootsComplete)
+      throws IOException, MojoFailureException {
     return new MavenElisionService()
         .analyze(
             project,
-            List.of(writeTrace(traceClasses).toFile()),
-            List.of(),
-            null,
-            null,
-            false,
-            true,
-            List.of());
+            new ElisionAnalysisModel.AnalysisOptions(
+                List.of(writeTrace(traceClasses).toFile()),
+                List.of(),
+                null,
+                null,
+                new ElisionAnalysisModel.CompletenessOptions(
+                    sourceRootsComplete, false, false, false),
+                new ElisionAnalysisModel.TrimOptions(
+                    true,
+                    List.of(),
+                    false,
+                    List.of(),
+                    false,
+                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+                    producerResolution),
+                new ElisionAnalysisModel.DynamicRootOptions(true)));
   }
 
   @Test
@@ -2021,6 +2049,180 @@ final class ElideMojoTest {
   }
 
   @Test
+  void directTrimCacheMissesWhenSnapshotProducerBuildChanges() throws Exception {
+    final Path candidateJar =
+        compileJarSources(
+            "snapshot-producer-candidate",
+            Map.of(
+                "Keep.java", "package sample; public class Keep {}",
+                "Drop.java", "package sample; public class Drop {}"),
+            null);
+    final Artifact candidate = runtimeArtifact("snapshot-producer", candidateJar);
+    candidate.setScope("compile");
+    final MavenProject project = project(candidate, new LinkedHashSet<>(List.of(candidate)));
+    project.setGroupId("org.example");
+    project.setArtifactId("snapshot-producer-consumer");
+    project.setVersion("1.0");
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("snapshot-producer-build").toString());
+    project.setBuild(build);
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("snapshot-producer-sources"));
+    Files.writeString(sourceRoot.resolve("Consumer.java"), "class Consumer {}\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
+    final String originalDigest = ArtifactDigests.read(candidateJar).sha256();
+
+    final ElisionAnalysisModel.Analysis first =
+        analyzeTrim(
+            project,
+            "sample.Keep\n",
+            MavenPluginDescriptorFixtures.snapshotProducerResolution("a".repeat(64)),
+            true);
+    final ElisionAnalysisModel.Analysis warm =
+        analyzeTrim(
+            project,
+            "sample.Keep\n",
+            MavenPluginDescriptorFixtures.snapshotProducerResolution("a".repeat(64)),
+            true);
+    final Path cacheManifest =
+        Path.of(build.getDirectory(), "elided-artifacts", ".trim-analysis-cache.json");
+    final String firstFingerprint =
+        new ObjectMapper().readTree(cacheManifest.toFile()).path("fingerprint").asText();
+    final ElisionAnalysisModel.Analysis second =
+        analyzeTrim(
+            project,
+            "sample.Keep\n",
+            MavenPluginDescriptorFixtures.snapshotProducerResolution("b".repeat(64)),
+            true);
+    final JsonNode secondManifest = new ObjectMapper().readTree(cacheManifest.toFile());
+
+    assertAll(
+        "snapshot producer changes invalidate the direct cache without changing input bytes",
+        () -> assertThat(first.trimResult().analysisRuns()).isPositive(),
+        () -> assertThat(warm.trimResult().cacheHits()).isPositive(),
+        () -> assertThat(warm.trimResult().analysisRuns()).isZero(),
+        () -> assertThat(second.trimResult().analysisRuns()).isPositive(),
+        () -> assertThat(second.trimResult().cacheHits()).isZero(),
+        () -> assertThat(ArtifactDigests.read(candidateJar).sha256()).isEqualTo(originalDigest),
+        () ->
+            assertThat(secondManifest.path("fingerprint").asText()).isNotEqualTo(firstFingerprint),
+        () ->
+            assertThat(secondManifest.path("producer").path("buildIdentity").asText())
+                .isEqualTo("b".repeat(64)),
+        () -> assertThat(first.trimResult().records()).isNotEmpty(),
+        () -> assertThat(second.trimResult().records()).isNotEmpty());
+  }
+
+  @Test
+  void directTrimWithoutProducerSkipsPersistentCache() throws Exception {
+    final Path candidateJar =
+        compileJarSources(
+            "unidentified-producer-candidate",
+            Map.of(
+                "Keep.java", "package sample; public class Keep {}",
+                "Drop.java", "package sample; public class Drop {}"),
+            null);
+    final Artifact candidate = runtimeArtifact("unidentified-producer", candidateJar);
+    candidate.setScope("compile");
+    final MavenProject project = project(candidate, new LinkedHashSet<>(List.of(candidate)));
+    project.setGroupId("org.example");
+    project.setArtifactId("unidentified-producer-consumer");
+    project.setVersion("1.0");
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("unidentified-producer-build").toString());
+    project.setBuild(build);
+
+    final ElisionAnalysisModel.Analysis first =
+        analyzeTrim(
+            project,
+            "sample.Keep\n",
+            MavenPluginDescriptorFixtures.unavailableProducerResolution());
+    final ElisionAnalysisModel.Analysis second =
+        analyzeTrim(
+            project,
+            "sample.Keep\n",
+            MavenPluginDescriptorFixtures.unavailableProducerResolution());
+    final Path cacheManifest =
+        Path.of(build.getDirectory(), "elided-artifacts", ".trim-analysis-cache.json");
+    final Path generations = Path.of(build.getDirectory(), "elided-artifacts", ".generations");
+
+    assertAll(
+        "producer identity absence disables direct persistence but preserves trim output",
+        () -> assertThat(first.trimResult().cacheHits()).isZero(),
+        () -> assertThat(second.trimResult().cacheHits()).isZero(),
+        () -> assertThat(first.trimResult().analysisRuns()).isPositive(),
+        () -> assertThat(second.trimResult().analysisRuns()).isPositive(),
+        () -> assertThat(cacheManifest).doesNotExist(),
+        () -> assertThat(generations).doesNotExist());
+  }
+
+  @Test
+  void mojoConsumesDirectEphemeralTrimOutputWithoutProducerIdentity() throws Exception {
+    final Artifact used =
+        runtimeArtifact(
+            "ephemeral-used",
+            compileJarSources(
+                "ephemeral-used",
+                Map.of("Sample.java", "package used; public class Sample {}"),
+                null));
+    final Path compiled =
+        compileJarSources(
+            "ephemeral-candidate",
+            Map.of(
+                "Keep.java", "package explicit; public class Keep {}",
+                "Drop.java", "package explicit; public class Drop {}"),
+            null);
+    final Path candidateJar =
+        rewriteJar(
+            compiled,
+            Map.of(
+                "META-INF/native-image/test/native-image.properties",
+                "Args=-H:Class=explicit.Keep -H:UnknownFlag=value\n"));
+    final Artifact candidate = runtimeArtifact("ephemeral-candidate", candidateJar);
+    final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(used, candidate));
+    final MavenProject project = newProject();
+    project.setArtifacts(artifacts);
+    project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("ephemeral-sources"));
+    Files.writeString(sourceRoot.resolve("Consumer.java"), "package consumer; class Consumer {}\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("ephemeral-build").toString());
+    project.setBuild(build);
+    final ElideMojo mojo = newMojo();
+    mojo.setLog(new SystemStreamLog());
+    final Field descriptor = PluginCacheMojoSupport.class.getDeclaredField("pluginDescriptor");
+    descriptor.setAccessible(true);
+    descriptor.set(mojo, null);
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
+    set(mojo, "reportFile", tempDir.resolve("ephemeral-report.json").toFile());
+    set(mojo, "sbomFile", tempDir.resolve("ephemeral-build/ephemeral-sbom.json").toFile());
+    set(mojo, "trimJars", true);
+    set(mojo, "sourceRootsComplete", true);
+
+    mojo.execute();
+
+    final Path output = candidate.getFile().toPath();
+    final Path projectCacheDirectory = Path.of(build.getDirectory(), "elided-artifacts");
+    final Path cacheManifest =
+        Path.of(build.getDirectory(), "elided-artifacts", ".trim-analysis-cache.json");
+    final Path generations = Path.of(build.getDirectory(), "elided-artifacts", ".generations");
+    assertAll(
+        "unavailable producer still allows current-run direct output consumption",
+        () -> assertThat(output).isRegularFile(),
+        () -> assertThat(output).isNotEqualTo(candidateJar),
+        () -> assertThat(output.toString()).doesNotContain(projectCacheDirectory.toString()),
+        () -> assertThat(cacheManifest).doesNotExist(),
+        () -> assertThat(generations).doesNotExist());
+    try (JarFile trimmed = new JarFile(output.toFile())) {
+      assertThat(trimmed.getEntry("explicit/Keep.class")).isNotNull();
+      assertThat(trimmed.getEntry("explicit/Drop.class")).isNull();
+    }
+  }
+
+  @Test
   @DisplayName("ADR-0009/untraced modeled root is retained while an unrelated class is removed")
   void untracedModeledRootRetainsWhileSeparateControlIsRemoved()
       throws IOException, ReflectiveOperationException, MojoFailureException {
@@ -2843,8 +3045,12 @@ final class ElideMojoTest {
             null);
     try {
       set(mojo, "session", session);
+      final Field pluginDescriptor =
+          PluginCacheMojoSupport.class.getDeclaredField("pluginDescriptor");
+      pluginDescriptor.setAccessible(true);
+      pluginDescriptor.set(mojo, MavenPluginDescriptorFixtures.releasedPluginDescriptor());
     } catch (final ReflectiveOperationException exception) {
-      throw new IllegalStateException("Cannot initialize Maven session fixture", exception);
+      throw new IllegalStateException("Cannot initialize Maven Mojo fixture", exception);
     }
     return mojo;
   }

@@ -62,7 +62,25 @@ abstract class MavenElisionServiceEffectiveOutputSupport
         List.of(),
         trimJars,
         passThroughArtifacts,
-        mrjarStrategy);
+        mrjarStrategy,
+        MavenPluginDescriptorFixtures.releasedProducerResolution());
+  }
+
+  /** Prepares an operation using an explicitly selected plugin producer identity. */
+  protected ServiceOperation operationWithProducer(
+      final Fixture fixture,
+      final Path traceFile,
+      final PluginCacheProducerIdentityResolver.Resolution producerResolution)
+      throws IOException, MojoFailureException {
+    return buildOperation(
+        fixture,
+        traceFile,
+        null,
+        List.of(),
+        true,
+        List.of(),
+        "vertical-shading",
+        producerResolution);
   }
 
   /** Retains coordinates through raw exclusion configuration. */
@@ -80,7 +98,8 @@ abstract class MavenElisionServiceEffectiveOutputSupport
         excludedArtifacts,
         trimJars,
         List.of(),
-        "vertical-shading");
+        "vertical-shading",
+        MavenPluginDescriptorFixtures.releasedProducerResolution());
   }
 
   /** Prepares the operation from raw exclusions and output pass-through coordinates. */
@@ -91,7 +110,8 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       final List<String> excludedArtifacts,
       final boolean trimJars,
       final List<String> passThroughArtifacts,
-      final String mrjarStrategy)
+      final String mrjarStrategy,
+      final PluginCacheProducerIdentityResolver.Resolution producerResolution)
       throws IOException, MojoFailureException {
     completeSourceRoots(fixture);
     final MavenElisionService service = new MavenElisionService();
@@ -103,7 +123,14 @@ abstract class MavenElisionServiceEffectiveOutputSupport
             null,
             new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
             new ElisionAnalysisModel.TrimOptions(
-                trimJars, List.of(), false, passThroughArtifacts, false, 1, mrjarStrategy),
+                trimJars,
+                List.of(),
+                false,
+                passThroughArtifacts,
+                false,
+                1,
+                mrjarStrategy,
+                producerResolution),
             new ElisionAnalysisModel.DynamicRootOptions(true));
     final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(fixture.mavenProject(), options);

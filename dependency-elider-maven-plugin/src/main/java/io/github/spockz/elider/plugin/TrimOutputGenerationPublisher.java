@@ -34,6 +34,8 @@ final class TrimOutputGenerationPublisher {
       final Path manifest,
       final MoveOperation move)
       throws IOException {
+    java.util.Objects.requireNonNull(stagedManifest, "stagedManifest");
+    java.util.Objects.requireNonNull(manifest, "manifest");
     final String manifestDigest = ArtifactDigests.read(stagedManifest).sha256();
     final Path backup = TrimOutputGenerationFileOps.backupPath(finalGeneration);
     final Path manifestBackup = TrimOutputGenerationFileOps.backupFilePath(manifest);
@@ -63,6 +65,34 @@ final class TrimOutputGenerationPublisher {
     }
     return new TrimOutputGenerationCommitHandle(
         finalGeneration, backup, manifest, manifestBackup, backedUpGeneration, backedUpManifest);
+  }
+
+  /** Publishes temporary output without a cache manifest. */
+  @SuppressWarnings(DEFAULT_ACCESS_SUPPRESSION)
+  static TrimOutputGenerationCommitHandle publishEphemeral(
+      final Path stagedGeneration, final Path finalGeneration, final MoveOperation move)
+      throws IOException {
+    return publishWithoutManifest(stagedGeneration, finalGeneration, move);
+  }
+
+  private static TrimOutputGenerationCommitHandle publishWithoutManifest(
+      final Path stagedGeneration, final Path finalGeneration, final MoveOperation move)
+      throws IOException {
+    final Path backup = TrimOutputGenerationFileOps.backupPath(finalGeneration);
+    boolean backedUpGeneration = false;
+    boolean installedGeneration = false;
+    try {
+      backedUpGeneration = backupExistingPath(finalGeneration, backup, move);
+      move.move(stagedGeneration, finalGeneration, false);
+      installedGeneration = true;
+    } catch (final IOException failure) {
+      final boolean observedInstalled =
+          installedGeneration || (!Files.exists(stagedGeneration) && Files.exists(finalGeneration));
+      rollback(finalGeneration, backup, observedInstalled, backedUpGeneration, failure);
+      throw failure;
+    }
+    return new TrimOutputGenerationCommitHandle(
+        finalGeneration, backup, null, null, backedUpGeneration, false);
   }
 
   private static boolean backupExistingPath(

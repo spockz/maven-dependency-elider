@@ -51,6 +51,8 @@ class CacheProducerIdentityTest {
     final boolean differingReleaseDigestIsCompatible =
         releaseWithDigest.isCompatibleWith(
             new CacheProducerIdentity(GROUP_ID, ARTIFACT_ID, RELEASED_VERSION, "b".repeat(64)));
+    final CacheProducerIdentity.CompatibilityIdentity normalizedRelease =
+        releaseWithDigest.canonicalCompatibilityIdentity();
     assertAll(
         () -> assertTrue(exactMatch, "released identity should match exact coordinates"),
         () -> assertFalse(groupMismatch, "group mismatch must reject the cache"),
@@ -65,6 +67,8 @@ class CacheProducerIdentityTest {
                 differingReleaseDigestIsCompatible,
                 "different optional release digests remain compatible for the exact GAV"),
         () ->
+            org.assertj.core.api.Assertions.assertThat(normalizedRelease.buildIdentity()).isNull(),
+        () ->
             assertThatThrownBy(
                     () ->
                         new CacheProducerIdentity(
@@ -78,9 +82,14 @@ class CacheProducerIdentityTest {
     final CacheProducerIdentity identity = snapshot(DIGEST);
     final boolean exactBuild = identity.isCompatibleWith(snapshot(DIGEST));
     final boolean differentBuild = identity.isCompatibleWith(snapshot("b".repeat(64)));
+    final CacheProducerIdentity.CompatibilityIdentity normalizedSnapshot =
+        identity.canonicalCompatibilityIdentity();
     assertAll(
         () -> assertTrue(exactBuild, "snapshot identity should match its exact build digest"),
         () -> assertFalse(differentBuild, "a different snapshot build must reject the cache"),
+        () ->
+            org.assertj.core.api.Assertions.assertThat(normalizedSnapshot.buildIdentity())
+                .isEqualTo(DIGEST),
         () ->
             assertThatThrownBy(() -> snapshot(null))
                 .isInstanceOf(IllegalArgumentException.class)

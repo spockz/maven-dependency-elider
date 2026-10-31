@@ -7,6 +7,7 @@ import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -17,6 +18,9 @@ abstract class PluginCacheMojoSupport extends AbstractMojo {
   @Parameter(defaultValue = "${plugin}", readonly = true)
   private PluginDescriptor pluginDescriptor;
 
+  /** Reused because SNAPSHOT identity hashing reads both installed JARs. */
+  private PluginCacheProducerIdentityResolver.Resolution producerResolution;
+
   /** Creates the cache config using installed plugin identity. */
   protected final CacheConfig vulnerabilityCacheConfig(
       final Path cacheDirectory,
@@ -25,8 +29,7 @@ abstract class PluginCacheMojoSupport extends AbstractMojo {
       final Duration ttl,
       final boolean forceRefresh,
       final boolean offline) {
-    final PluginCacheProducerIdentityResolver.Resolution producer =
-        PluginCacheProducerIdentityResolver.resolve(pluginDescriptor);
+    final PluginCacheProducerIdentityResolver.Resolution producer = cacheProducerResolution();
     return new CacheConfig(
         cacheDirectory,
         osvSnapshotUri,
@@ -37,6 +40,40 @@ abstract class PluginCacheMojoSupport extends AbstractMojo {
         VulnerabilityCacheManager.bundledEmptySeed(),
         producer.identity(),
         producer.diagnostic());
+  }
+
+  /** Returns the installed producer identity shared by this goal's caches. */
+  protected final PluginCacheProducerIdentityResolver.Resolution cacheProducerResolution() {
+    if (producerResolution == null) {
+      producerResolution = PluginCacheProducerIdentityResolver.resolve(pluginDescriptor);
+    }
+    return producerResolution;
+  }
+
+  /** Builds trim settings with the shared installed-producer identity policy. */
+  protected final ElisionAnalysisModel.TrimOptions trimOptions(
+      final boolean enabled,
+      final List<String> explicitRoots,
+      final List<String> passThroughArtifacts,
+      final boolean failOnUnsupportedModuleInfo,
+      final int workers,
+      final String mrjarStrategy) {
+    final PluginCacheProducerIdentityResolver.Resolution producer = cacheProducerResolution();
+    if (enabled && producer.identity().isEmpty() && getLog().isWarnEnabled()) {
+      getLog()
+          .warn(
+              "Persistent trim cache is disabled: "
+                  + producer.diagnostic().orElse("producer identity is unavailable"));
+    }
+    return new ElisionAnalysisModel.TrimOptions(
+        enabled,
+        explicitRoots,
+        false,
+        passThroughArtifacts,
+        failOnUnsupportedModuleInfo,
+        workers,
+        mrjarStrategy,
+        producer);
   }
 
   /** Creates shared support for plugin cache configuration. */

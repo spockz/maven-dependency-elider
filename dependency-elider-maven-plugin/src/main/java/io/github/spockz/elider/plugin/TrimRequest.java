@@ -4,7 +4,9 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.CacheProducerIdentity;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
@@ -17,4 +19,28 @@ record TrimRequest(
     TrimScanInputs scanInputs,
     Set<ArtifactCoordinate> retainedCoordinates,
     TrimEvidence evidence,
-    TrimPolicy policy) {}
+    TrimPolicy policy,
+    Optional<CacheProducerIdentity> cacheProducerIdentity) {
+  TrimRequest {
+    java.util.Objects.requireNonNull(cacheProducerIdentity, "cacheProducerIdentity");
+  }
+
+  /* package */ TrimRequest(
+      final MavenProject project,
+      final MavenSession session,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> candidates,
+      final TrimScanInputs scanInputs,
+      final Set<ArtifactCoordinate> retainedCoordinates,
+      final TrimEvidence evidence,
+      final TrimPolicy policy) {
+    this(
+        project,
+        session,
+        candidates,
+        scanInputs,
+        retainedCoordinates,
+        evidence,
+        policy,
+        Optional.empty());
+  }
+}
