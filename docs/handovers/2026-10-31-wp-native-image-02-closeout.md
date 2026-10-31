@@ -3,7 +3,7 @@
 
 ## Outcome
 
-WP-NATIVE-02 implements the bounded GraalVM Native Image argument and descriptor inventory described in [the handover](2026-10-30-wp-native-image-02-exhaustive-flag-inference-and-permissive-acceptance.md). Sol approved final correction commit `e28c7376bc412bb0c00cda5a003151cf9f3a0afa`. The correction branch, `track/native-image-02`, remains unmerged as instructed.
+WP-NATIVE-02 implements the bounded GraalVM Native Image argument and descriptor inventory described in [the handover](2026-10-30-wp-native-image-02-exhaustive-flag-inference-and-permissive-acceptance.md). Sol approved final correction commit `e28c7376bc412bb0c00cda5a003151cf9f3a0afa`. After user sign-off, `track/native-image-02` was fast-forwarded into local `main` at `f2f383503ec5c9cd00b8aafc47345bd429232339` on 2026-10-31; no remote push was made.
 
 ## Correction coverage
 
@@ -27,4 +27,4 @@ The exact command `JAVA_HOME=/workspace/sources/maven-dependency-elider/.scratch
 
 The [final Sol correction review receipt](../../.scratch/reviews/wp-native-image-02-review-fixup.md) approves `e28c7376bc412bb0c00cda5a003151cf9f3a0afa`: all five findings are resolved and no actionable findings remain. The earlier [Sol contract-slice receipt](../../.scratch/reviews/wp-native-image-02-slice-1-contract.md) covers only the contract and documentation slice. A Gemini bridge review could not run because no Gemini bridge tool is present in this environment's tool catalog.
 
-No persisted schema version or migration policy changed. Unreleased format versions remain at version 1. This branch is intentionally left unmerged.
+No persisted schema version or migration policy changed. Unreleased format versions remain at version 1. The package is integrated into local `main` by fast-forward; the remote was not updated.
