@@ -75,10 +75,7 @@ final class MavenStructuredProofCacheFixtures {
                               URI.create("https://example.invalid/reference"),
                               "d".repeat(64)),
                           Set.of("org.example.HeuristicOnly"),
-                          Set.of(
-                              MavenCorroboratedSourceArchiveFixtures.GROUP_ID
-                                  + ":"
-                                  + MavenCorroboratedSourceArchiveFixtures.ARTIFACT_ID)));
+                          Set.of(prepared.coordinate().toShortKey())));
                   return copyRecord(record, record.affectedPackages(), evidence);
                 })
             .toList();
