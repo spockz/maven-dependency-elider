@@ -39,7 +39,7 @@ final class MavenAnalysisEvidence {
     final CompletenessOptions completeness = options.completeness();
     final ProductionAnalysisInputs.ProductionBytecodeInputs production =
         ProductionAnalysisInputs.productionBytecodeInputs(
-            options.productionOutput(), completeness.productionClassesComplete());
+            productionOutput(project, options), completeness.productionClassesComplete());
     final ProductionAnalysisInputs.CompilerInputs compiler =
         ProductionAnalysisInputs.compilerInputs(
             project,
@@ -81,6 +81,22 @@ final class MavenAnalysisEvidence {
           : options.environment().invocationBase();
     }
     return invocationBase(options.request(), project.getBasedir());
+  }
+
+  private static File productionOutput(final MavenProject project, final AnalysisOptions options) {
+    if (options.productionOutput() != null || !options.completeness().productionClassesComplete()) {
+      return options.productionOutput();
+    }
+    if (project.getBuild() == null || project.getBuild().getOutputDirectory() == null) {
+      return null;
+    }
+    final Path output = Path.of(project.getBuild().getOutputDirectory());
+    if (output.isAbsolute()) {
+      return output.normalize().toFile();
+    }
+    return project.getBasedir() == null
+        ? null
+        : project.getBasedir().toPath().resolve(output).toAbsolutePath().normalize().toFile();
   }
 
   /* package */ static Path invocationBase(

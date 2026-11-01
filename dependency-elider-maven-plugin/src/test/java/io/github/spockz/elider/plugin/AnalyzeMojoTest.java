@@ -269,8 +269,8 @@ final class AnalyzeMojoTest {
   }
 
   @Test
-  @DisplayName("ADR-0010/analyze defaults bytecode output and reports compile savings")
-  void productionClassesCompleteDefaultsOutputAndReportsCompileCveSavings()
+  @DisplayName("ADR-0010/analyze uses configured bytecode output and reports compile savings")
+  void productionClassesCompleteUsesConfiguredOutputAndReportsCompileCveSavings()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
         artifact(

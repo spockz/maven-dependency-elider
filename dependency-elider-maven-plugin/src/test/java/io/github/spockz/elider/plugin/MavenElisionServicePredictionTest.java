@@ -27,6 +27,8 @@ import org.codehaus.plexus.PlexusContainer;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
 
 final class MavenElisionServicePredictionTest {
   @TempDir private Path temporaryDirectory;
@@ -109,6 +111,49 @@ final class MavenElisionServicePredictionTest {
                 .isInstanceOf(java.io.IOException.class)
                 .hasMessageContaining("missing for Analyze"),
         () -> assertThat(reportSentinel).hasContent("report sentinel"));
+  }
+
+  @Test
+  void derivesProductionOutputFromBuildForCompleteBytecodePrediction() throws Exception {
+    final Fixture fixture = fixture(true);
+    final Path output = Path.of(fixture.project().getBuild().getOutputDirectory());
+    final Path applicationClass = output.resolve("consumer/App.class");
+    Files.createDirectories(applicationClass.getParent());
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "consumer/App", null, "java/lang/Object", null);
+    writer.visitField(Opcodes.ACC_PRIVATE, "api", "Lprojection/Api;", null, null).visitEnd();
+    writer.visitEnd();
+    Files.write(applicationClass, writer.toByteArray());
+    final AnalysisOptions options =
+        withCompleteness(fixture.options(), new CompletenessOptions(false, true, false, true));
+
+    final AnalyzePrediction prediction =
+        new MavenElisionService().predict(fixture.project(), options, null);
+
+    assertAll(
+        "complete bytecode prediction derives and scans Maven's configured build output",
+        () ->
+            assertThat(prediction.evidence().bytecodeScan())
+                .get()
+                .extracting(scan -> scan.scope().toAbsolutePath().normalize())
+                .isEqualTo(output.toAbsolutePath().normalize()),
+        () ->
+            assertThat(prediction.evidence().bytecodeScan().orElseThrow().classFilesScanned())
+                .isEqualTo(1),
+        () -> assertThat(applicationClass).exists());
+  }
+
+  private static AnalysisOptions withCompleteness(
+      final AnalysisOptions options, final CompletenessOptions completeness) {
+    return new AnalysisOptions(
+        options.traceFiles(),
+        options.retainedArtifacts(),
+        options.banishedDependencies(),
+        options.productionOutput(),
+        options.session(),
+        completeness,
+        options.trim(),
+        options.dynamicRoots());
   }
 
   private Fixture fixture(final boolean capturePair) throws Exception {
@@ -216,21 +261,9 @@ final class MavenElisionServicePredictionTest {
             fixtureDirectory,
             "captured-v21-only",
             21,
-            "package projection; public class TwentyOneOnly {}");
-    final Path baseTwentyOneOnly =
-        MultiReleaseProjectionFixtures.compile(
-            fixtureDirectory,
-            "captured-base-v21-only",
-            8,
-            "package projection; public class TwentyOneOnly {}");
+            "package projection; class TwentyOneOnly {}");
     return MultiReleaseProjectionFixtures.createMultiReleaseJar(
-        fixtureDirectory,
-        base,
-        versionNine,
-        versionNineOnly,
-        versioned,
-        versionTwentyOneOnly,
-        baseTwentyOneOnly);
+        fixtureDirectory, base, versionNine, versionNineOnly, versioned, versionTwentyOneOnly);
   }
 
   private record Fixture(

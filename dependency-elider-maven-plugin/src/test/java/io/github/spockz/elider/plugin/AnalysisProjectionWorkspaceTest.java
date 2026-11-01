@@ -144,20 +144,8 @@ final class AnalysisProjectionWorkspaceTest {
             temporaryDirectory,
             "projection-v21-only",
             21,
-            "package projection; public class TwentyOneOnly {}");
-    final Path baseTwentyOneOnly =
-        MultiReleaseProjectionFixtures.compile(
-            temporaryDirectory,
-            "projection-base-v21-only",
-            8,
-            "package projection; public class TwentyOneOnly {}");
+            "package projection; class TwentyOneOnly {}");
     return MultiReleaseProjectionFixtures.createMultiReleaseJar(
-        temporaryDirectory,
-        base,
-        versionNine,
-        versionNineOnly,
-        versioned,
-        versionTwentyOneOnly,
-        baseTwentyOneOnly);
+        temporaryDirectory, base, versionNine, versionNineOnly, versioned, versionTwentyOneOnly);
   }
 }

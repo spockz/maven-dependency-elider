@@ -65,13 +65,7 @@ final class MultiReleaseLibraryProjectionTest {
             temporaryDirectory,
             "version-twenty-one-only",
             21,
-            "package projection; public class TwentyOneOnly {}");
-    final Path baseTwentyOneOnly =
-        MultiReleaseProjectionFixtures.compile(
-            temporaryDirectory,
-            "base-version-twenty-one-only",
-            8,
-            "package projection; public class TwentyOneOnly {}");
+            "package projection; class TwentyOneOnly {}");
     final Path multiRelease =
         MultiReleaseProjectionFixtures.createMultiReleaseJar(
             temporaryDirectory,
@@ -79,8 +73,7 @@ final class MultiReleaseLibraryProjectionTest {
             versionNine,
             versionNineOnly,
             versionTwentyOne,
-            versionTwentyOneOnly,
-            baseTwentyOneOnly);
+            versionTwentyOneOnly);
     final ArtifactCoordinate coordinate =
         new ArtifactCoordinate("org.example", "projection", "1.0", "jar", "", "runtime");
 

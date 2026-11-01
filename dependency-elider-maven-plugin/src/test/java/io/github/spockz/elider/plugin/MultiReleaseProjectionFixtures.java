@@ -63,8 +63,7 @@ final class MultiReleaseProjectionFixtures {
       final Path versionNineApi,
       final Path versionNineOnly,
       final Path versionTwentyOneApi,
-      final Path versionTwentyOneOnly,
-      final Path baseTwentyOneOnly)
+      final Path versionTwentyOneOnly)
       throws IOException {
     final Path jar = root.resolve("projection.jar");
     final Manifest manifest = new Manifest();
@@ -72,7 +71,6 @@ final class MultiReleaseProjectionFixtures {
     manifest.getMainAttributes().putValue("Multi-Release", "true");
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar), manifest)) {
       addClass(output, baseApi, API_ENTRY);
-      addClass(output, baseTwentyOneOnly, "projection/TwentyOneOnly.class");
       addClass(output, versionNineApi, "META-INF/versions/9/" + API_ENTRY);
       addClass(output, versionNineOnly, "META-INF/versions/9/projection/NineOnly.class");
       addClass(output, versionTwentyOneApi, "META-INF/versions/21/" + API_ENTRY);
