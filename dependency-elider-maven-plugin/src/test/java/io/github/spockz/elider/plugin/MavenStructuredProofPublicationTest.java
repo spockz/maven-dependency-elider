@@ -32,7 +32,7 @@ final class MavenStructuredProofPublicationTest {
         () -> MavenStructuredProofPublicationAssertions.assertSourceResolverWasUsed(result),
         () -> MavenStructuredProofPublicationAssertions.assertSyntheticCve(result),
         () -> MavenStructuredProofPublicationAssertions.assertSavedReport(result),
-        () -> MavenStructuredProofPublicationAssertions.assertVexDocuments(result),
-        () -> MavenStructuredProofPublicationAssertions.assertOutputManifest(result));
+        () -> MavenStructuredProofPublicationOutputAssertions.assertVexDocuments(result.paths()),
+        () -> MavenStructuredProofPublicationOutputAssertions.assertOutputManifest(result.paths()));
   }
 }

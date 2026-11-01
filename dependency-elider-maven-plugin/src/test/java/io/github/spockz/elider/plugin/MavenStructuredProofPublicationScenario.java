@@ -86,15 +86,7 @@ final class MavenStructuredProofPublicationScenario {
     mojo.execute();
 
     return new PublishedResult(
-        paths,
-        sourceResolutions.get(),
-        syntheticCve,
-        cveSchemaErrors,
-        MavenElisionReportWriter.read(paths.summary()),
-        JSON.readTree(paths.sbom().toFile()),
-        JSON.readTree(paths.vex().toFile()),
-        JSON.readTree(paths.manifest().toFile()),
-        log.debugMessages());
+        paths, sourceResolutions.get(), syntheticCve, cveSchemaErrors, log.debugMessages());
   }
 
   private static void rebindCacheProducer(final Path cacheDirectory) throws IOException {
@@ -243,9 +235,5 @@ final class MavenStructuredProofPublicationScenario {
       int sourceResolutions,
       JsonNode syntheticCve,
       Set<?> cveSchemaErrors,
-      MavenElisionReportSnapshot report,
-      JsonNode cycloneDx,
-      JsonNode openVex,
-      JsonNode manifestDocument,
       List<String> diagnostics) {}
 }

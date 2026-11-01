@@ -111,6 +111,10 @@ final class JavacPluginServiceIsolationTest {
       Thread.currentThread().interrupt();
       throw new IOException(
           "Interrupted while checking isolated Javac plugin execution", exception);
+    } finally {
+      if (process.isAlive()) {
+        process.destroyForcibly();
+      }
     }
     final String output = Files.readString(probeOutput, StandardCharsets.UTF_8);
     assertThat(process.exitValue()).as(output).isZero();
