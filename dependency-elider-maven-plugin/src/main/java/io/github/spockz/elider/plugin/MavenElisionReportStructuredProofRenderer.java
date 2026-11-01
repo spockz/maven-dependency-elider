@@ -2,14 +2,28 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.correspondence.SourceReproductionResult.ClassEntry;
 import io.github.spockz.elider.model.StructuredProofProvenance;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /** Renders saved verified-proof provenance. */
 final class MavenElisionReportStructuredProofRenderer {
   /** Indented bullet prefix used by report sections. */
   private static final String BULLET = "  - ";
+
+  /** Total stable order across claim identity and every emitted class entry. */
+  private static final Comparator<StructuredProofProvenance.ClaimAttribution> CLAIM_ORDER =
+      Comparator.comparing(StructuredProofProvenance.ClaimAttribution::type)
+          .thenComparing(StructuredProofProvenance.ClaimAttribution::claim)
+          .thenComparing(StructuredProofProvenance.ClaimAttribution::sourceEntry)
+          .thenComparing(
+              StructuredProofProvenance.ClaimAttribution::routineOwnerBinaryName,
+              Comparator.nullsFirst(Comparator.naturalOrder()))
+          .thenComparing(
+              StructuredProofProvenance.ClaimAttribution::emittedClasses,
+              MavenElisionReportStructuredProofRenderer::compareEmittedClasses);
 
   private MavenElisionReportStructuredProofRenderer() {}
 
@@ -61,7 +75,7 @@ final class MavenElisionReportStructuredProofRenderer {
               + "; conventional layout assumed="
               + provenance.conventionalLayoutAssumed());
       provenance.claimAttributions().stream()
-          .sorted()
+          .sorted(CLAIM_ORDER)
           .forEach(
               claim ->
                   lines.add(
@@ -78,5 +92,23 @@ final class MavenElisionReportStructuredProofRenderer {
                           + claim.emittedClasses()));
     }
     return List.copyOf(lines);
+  }
+
+  private static int compareEmittedClasses(
+      final List<ClassEntry> left, final List<ClassEntry> right) {
+    final int sharedLength = Math.min(left.size(), right.size());
+    for (int index = 0; index < sharedLength; index++) {
+      final ClassEntry leftEntry = left.get(index);
+      final ClassEntry rightEntry = right.get(index);
+      final int pathOrder = leftEntry.path().compareTo(rightEntry.path());
+      if (pathOrder != 0) {
+        return pathOrder;
+      }
+      final int digestOrder = leftEntry.sha256().compareTo(rightEntry.sha256());
+      if (digestOrder != 0) {
+        return digestOrder;
+      }
+    }
+    return Integer.compare(left.size(), right.size());
   }
 }

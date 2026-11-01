@@ -52,7 +52,7 @@ final class MavenStructuredProofReportAndVexTest {
     final Path run = temporaryDirectory.resolve("proof-run");
     final MavenCorroboratedSourceScenario.Prepared prepared =
         MavenCorroboratedSourceScenario.prepareReproducibleClaim(
-            run, List.of(MavenSourceCorrespondenceTestArtifacts.SOURCE_ENTRY), List.of());
+            run, List.of(MavenSourceCorrespondenceTestArtifacts.SOURCE_ENTRY), List.of("parse"));
     final MavenSourceCorrespondenceTestArtifacts.Archives archives =
         MavenSourceCorrespondenceTestArtifacts.write(run, false, false);
     final Path trimmed =
@@ -88,6 +88,8 @@ final class MavenStructuredProofReportAndVexTest {
     final MavenProject project = reportProject(run);
     final MavenElisionReportSnapshot snapshot =
         MavenElisionReportSnapshot.from(project, analysis, assessment);
+    assertThat(snapshot.verifiedStructuredProofs()).hasSize(1);
+    MavenStructuredProofReportAssertions.assertTypedSnapshotInvariants(snapshot, assessment);
     final Path report = run.resolve("elision-report.json");
     MavenElisionReportWriter.write(report, snapshot);
     final ArtifactFileRef inventory = ArtifactFileRef.fromPath(prepared.coordinate(), trimmed);
@@ -144,6 +146,9 @@ final class MavenStructuredProofReportAndVexTest {
     assertAll(
         "saved report and standard VEX detail preserve one live proof's provenance",
         () -> assertThat(saved.verifiedStructuredProofs()).hasSize(1),
+        () ->
+            assertThat(saved.verifiedStructuredProofs().getFirst().provenance().claimAttributions())
+                .hasSize(2),
         () -> assertThat(saved.sourceReviewFindings()).isEmpty(),
         () ->
             assertThat(saved.provenAbsentCves())
@@ -184,6 +189,21 @@ final class MavenStructuredProofReportAndVexTest {
                     "cnaAffectedEntryIdentity",
                     "rawScopeEvidence",
                     "claimAttributions"),
+        () -> assertThat(lines).anyMatch(line -> line.startsWith("    Claim FILE ")),
+        () -> assertThat(lines).anyMatch(line -> line.startsWith("    Claim ROUTINE parse ")),
+        () ->
+            assertThat(
+                    lines.indexOf(
+                        lines.stream()
+                            .filter(line -> line.startsWith("    Claim FILE "))
+                            .findFirst()
+                            .orElseThrow()))
+                .isLessThan(
+                    lines.indexOf(
+                        lines.stream()
+                            .filter(line -> line.startsWith("    Claim ROUTINE parse "))
+                            .findFirst()
+                            .orElseThrow())),
         () ->
             assertSchemaValid(
                 Path.of("../elider-core/src/test/resources/schema/bom-1.6.schema.json"),
@@ -195,15 +215,7 @@ final class MavenStructuredProofReportAndVexTest {
                 SpecVersion.VersionFlag.V202012,
                 openVex));
 
-    final JsonNode duplicatePayload = JSON.readTree(report.toFile());
-    ((com.fasterxml.jackson.databind.node.ArrayNode)
-            duplicatePayload.get("verifiedStructuredProofs"))
-        .add(duplicatePayload.get("verifiedStructuredProofs").get(0).deepCopy());
-    final Path duplicateReport = run.resolve("duplicate-proof-report.json");
-    JSON.writeValue(duplicateReport.toFile(), duplicatePayload);
-    assertThatThrownBy(() -> MavenElisionReportWriter.read(duplicateReport))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("duplicate verified structured proof");
+    MavenStructuredProofReportAssertions.assertSavedPayloadInvariants(report, run, assessment);
 
     final JsonNode withoutFinding = JSON.readTree(report.toFile());
     ((com.fasterxml.jackson.databind.node.ArrayNode) withoutFinding.get("provenAbsentCves"))

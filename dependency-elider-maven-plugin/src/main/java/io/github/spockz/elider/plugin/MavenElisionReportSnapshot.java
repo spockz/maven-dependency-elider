@@ -94,9 +94,12 @@ record MavenElisionReportSnapshot(
         sourceReviewFindings, assumeConventionalJavaSourceLayout);
     Objects.requireNonNull(advisoryReview, "advisoryReview");
     verifiedStructuredProofs = List.copyOf(verifiedStructuredProofs);
-    require(
-        verifiedStructuredProofs.size() == verifiedStructuredProofs.stream().distinct().count(),
-        "Duplicate verified structured proof rows are not allowed");
+    final Set<VerifiedStructuredProofIdentity> proofIdentities = new HashSet<>();
+    for (final VerifiedStructuredProofFinding proof : verifiedStructuredProofs) {
+      require(
+          proofIdentities.add(VerifiedStructuredProofIdentity.of(proof)),
+          "Duplicate verified structured proof identities are not allowed");
+    }
     verifiedStructuredProofs =
         verifiedStructuredProofs.stream()
             .sorted(
@@ -104,7 +107,12 @@ record MavenElisionReportSnapshot(
                     .thenComparing(VerifiedStructuredProofFinding::cveId)
                     .thenComparing(finding -> finding.provenance().cnaAffectedEntryIdentity()))
             .toList();
-    validateVerifiedStructuredProofs(verifiedStructuredProofs, provenAbsentCves, trimmedArtifacts);
+    validateVerifiedStructuredProofs(
+        verifiedStructuredProofs,
+        provenAbsentCves,
+        trimmedArtifacts,
+        assumeConventionalJavaSourceLayout);
+    validateSourceReviewProofSeparation(sourceReviewFindings, verifiedStructuredProofs);
     Objects.requireNonNull(mediatedGraph, "mediatedGraph");
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
@@ -476,8 +484,12 @@ record MavenElisionReportSnapshot(
   private static void validateVerifiedStructuredProofs(
       final List<VerifiedStructuredProofFinding> proofs,
       final List<CveFinding> provenAbsent,
-      final List<TrimmedArtifact> trimmed) {
+      final List<TrimmedArtifact> trimmed,
+      final boolean snapshotLayoutAssumption) {
     for (final VerifiedStructuredProofFinding proof : proofs) {
+      require(
+          proof.provenance().conventionalLayoutAssumed() == snapshotLayoutAssumption,
+          "Verified structured proof layout assumption must match the snapshot");
       require(
           provenAbsent.contains(
               new CveFinding(
@@ -616,6 +628,51 @@ record MavenElisionReportSnapshot(
                             claim, StructuredProofProvenance.ClaimType.ROUTINE, routine)));
   }
 
+  private static boolean isFullyVerified(
+      final SourceReviewFinding finding, final Set<VerifiedClaimIdentity> verified) {
+    return finding.programFiles().stream()
+            .allMatch(
+                file ->
+                    verified.contains(
+                        VerifiedClaimIdentity.of(
+                            finding, StructuredProofProvenance.ClaimType.FILE, file)))
+        && finding.programRoutines().stream()
+            .allMatch(
+                routine ->
+                    verified.contains(
+                        VerifiedClaimIdentity.of(
+                            finding, StructuredProofProvenance.ClaimType.ROUTINE, routine)));
+  }
+
+  private static void validateSourceReviewProofSeparation(
+      final List<SourceReviewFinding> reviewFindings,
+      final List<VerifiedStructuredProofFinding> verifiedProofs) {
+    final Set<VerifiedClaimIdentity> verifiedClaims =
+        verifiedProofs.stream()
+            .flatMap(
+                proof ->
+                    proof.provenance().claimAttributions().stream()
+                        .map(
+                            claim ->
+                                new VerifiedClaimIdentity(
+                                    proof.provenance().osvId(),
+                                    proof.cveId(),
+                                    proof.coordinate(),
+                                    proof.provenance().cveSourceSha256(),
+                                    proof.provenance().cnaAffectedEntryIdentity(),
+                                    proof.provenance().affectedProductIdentity(),
+                                    proof.provenance().conventionalLayoutAssumed(),
+                                    claim.type(),
+                                    claim.claim())))
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    for (final SourceReviewFinding finding : reviewFindings) {
+      if (isFullyVerified(finding, verifiedClaims)) {
+        throw new IllegalArgumentException(
+            "Elision report source review claim is already fully represented as verified");
+      }
+    }
+  }
+
   private static SourceReviewFinding sourceReviewFinding(
       final MavenVulnerabilityAssessment.MatchedSourceClaim claim) {
     return new SourceReviewFinding(
@@ -652,6 +709,22 @@ record MavenElisionReportSnapshot(
           sourceClaim.osvId(),
           sourceClaim.cveId(),
           sourceClaim.coordinate().toString(),
+          sourceClaim.sourceRecordSha256(),
+          sourceClaim.cnaAffectedEntryIdentity(),
+          sourceClaim.affectedProductIdentity(),
+          sourceClaim.conventionalLayoutAssumed(),
+          type,
+          claim);
+    }
+
+    private static VerifiedClaimIdentity of(
+        final SourceReviewFinding sourceClaim,
+        final StructuredProofProvenance.ClaimType type,
+        final String claim) {
+      return new VerifiedClaimIdentity(
+          sourceClaim.osvId(),
+          sourceClaim.cveId(),
+          sourceClaim.coordinate(),
           sourceClaim.sourceRecordSha256(),
           sourceClaim.cnaAffectedEntryIdentity(),
           sourceClaim.affectedProductIdentity(),
@@ -1006,6 +1079,10 @@ record MavenElisionReportSnapshot(
       final ArtifactCoordinate candidate =
           MavenElisionReportSourceCoordinateValidator.parseCanonical(coordinate);
       final ArtifactCoordinate sources = provenance.sourcesCoordinate();
+      MavenElisionReportAdvisoryInvariants.validateProofRawPackageIdentity(
+          coordinate,
+          provenance.rawScopeEvidence().osvEcosystem(),
+          provenance.rawScopeEvidence().osvPackageName());
       require(
           candidate.groupId().equals(sources.groupId())
               && candidate.artifactId().equals(sources.artifactId())
@@ -1023,6 +1100,15 @@ record MavenElisionReportSnapshot(
           attestation.originalSha256(),
           attestation.trimmedSha256(),
           provenance);
+    }
+  }
+
+  private record VerifiedStructuredProofIdentity(String cveId, String coordinate) {
+    private static VerifiedStructuredProofIdentity of(final VerifiedStructuredProofFinding proof) {
+      return new VerifiedStructuredProofIdentity(
+          proof.cveId(),
+          MavenElisionReportSourceCoordinateValidator.parseCanonical(proof.coordinate())
+              .toString());
     }
   }
 

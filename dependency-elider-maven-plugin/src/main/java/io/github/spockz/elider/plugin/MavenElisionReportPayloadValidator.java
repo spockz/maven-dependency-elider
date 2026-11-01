@@ -116,7 +116,8 @@ final class MavenElisionReportPayloadValidator {
         payload.get("assumeConventionalJavaSourceLayout").booleanValue());
     MavenElisionReportAdvisoryPayloadValidator.validate(payload.get("advisoryReview"));
     MavenElisionReportStructuredProofPayloadValidator.validate(
-        payload.get("verifiedStructuredProofs"));
+        payload.get("verifiedStructuredProofs"),
+        payload.get("assumeConventionalJavaSourceLayout").booleanValue());
     MavenElisionReportGraphPayloadValidator.validate(payload.get("mediatedGraph"));
   }
 

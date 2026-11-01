@@ -27,6 +27,16 @@ final class MavenElisionReportAdvisoryInvariants {
     }
   }
 
+  static void validateProofRawPackageIdentity(
+      final String coordinateText, final String ecosystem, final String packageName) {
+    final ArtifactCoordinate coordinate =
+        MavenElisionReportSourceCoordinateValidator.parseCanonical(coordinateText);
+    if (!packageName.equals(coordinate.toShortKey()) || !isMavenEcosystem(ecosystem)) {
+      throw new IllegalArgumentException(
+          "Elision report structured proof raw OSV package identity conflicts with coordinate");
+    }
+  }
+
   static void validatePackageApplicability(
       final String coordinateText,
       final List<String> affectedVersions,

@@ -12,6 +12,12 @@ final class MavenElisionReportStructuredProofPayloadValidator {
   /** Shared JSON field name for entry type. */
   private static final String TYPE = "type";
 
+  /** Shared JSON field name for the CVE owner. */
+  private static final String CVE_ID = "cveId";
+
+  /** Shared JSON field name for the saved layout assumption. */
+  private static final String LAYOUT_ASSUMED = "conventionalLayoutAssumed";
+
   /** Shared JSON field name for the proof candidate coordinate. */
   private static final String COORDINATE = "coordinate";
 
@@ -20,7 +26,7 @@ final class MavenElisionReportStructuredProofPayloadValidator {
 
   /** Exact fields accepted for a saved proof row. */
   private static final Set<String> FINDING_FIELDS =
-      Set.of("cveId", COORDINATE, "originalSha256", "trimmedSha256", "provenance");
+      Set.of(CVE_ID, COORDINATE, "originalSha256", "trimmedSha256", "provenance");
 
   /** Exact fields accepted for structured proof provenance. */
   private static final Set<String> PROVENANCE_FIELDS =
@@ -35,7 +41,7 @@ final class MavenElisionReportStructuredProofPayloadValidator {
           "sourceRepositoryProvenance",
           "compilerIdentity",
           "compilerOptions",
-          "conventionalLayoutAssumed",
+          LAYOUT_ASSUMED,
           "rawScopeEvidence",
           "claimAttributions");
 
@@ -55,16 +61,29 @@ final class MavenElisionReportStructuredProofPayloadValidator {
   private MavenElisionReportStructuredProofPayloadValidator() {}
 
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static void validate(final JsonNode rows) throws IOException {
+  static void validate(final JsonNode rows, final boolean snapshotLayoutAssumption)
+      throws IOException {
     if (rows == null || !rows.isArray()) {
       throw new IOException("Elision report verifiedStructuredProofs must be an array");
     }
-    final Set<JsonNode> seen = new HashSet<>();
+    final Set<ProofIdentity> seen = new HashSet<>();
     for (final JsonNode row : rows) {
       validateFinding(row);
-      if (!seen.add(row)) {
-        throw new IOException("Elision report contains a duplicate verified structured proof");
+      validateLayoutAssumption(row, snapshotLayoutAssumption);
+      if (!seen.add(ProofIdentity.of(row))) {
+        throw new IOException(
+            "Elision report contains a duplicate verified structured proof identity");
       }
+    }
+  }
+
+  private record ProofIdentity(String cveId, String coordinate) {
+    private static ProofIdentity of(final JsonNode row) {
+      return new ProofIdentity(
+          row.get(CVE_ID).textValue(),
+          MavenElisionReportSourceCoordinateValidator.parseCanonical(
+                  row.get("coordinate").textValue())
+              .toString());
     }
   }
 
@@ -72,13 +91,33 @@ final class MavenElisionReportStructuredProofPayloadValidator {
     MavenElisionReportJsonPayloadShape.requireObject(
         row, FINDING_FIELDS, "verified structured proof");
     MavenElisionReportJsonPayloadShape.requireText(
-        row.get("cveId"), "cveId", "CVE-[0-9]{4}-[0-9]{4,}");
+        row.get(CVE_ID), CVE_ID, "CVE-[0-9]{4}-[0-9]{4,}");
     MavenElisionReportSourceCoordinateValidator.validate(row.get(COORDINATE));
     MavenElisionReportJsonPayloadShape.requireText(
         row.get("originalSha256"), "originalSha256", SHA256_PATTERN);
     MavenElisionReportJsonPayloadShape.requireText(
         row.get("trimmedSha256"), "trimmedSha256", SHA256_PATTERN);
-    validateProvenance(row.get("provenance"));
+    final JsonNode provenance = row.get("provenance");
+    validateProvenance(provenance);
+    final JsonNode rawScope = provenance.get("rawScopeEvidence");
+    try {
+      MavenElisionReportAdvisoryInvariants.validateProofRawPackageIdentity(
+          row.get(COORDINATE).textValue(),
+          rawScope.get("osvEcosystem").textValue(),
+          rawScope.get("osvPackageName").textValue());
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException(exception.getMessage(), exception);
+    }
+  }
+
+  private static void validateLayoutAssumption(
+      final JsonNode row, final boolean snapshotLayoutAssumption) throws IOException {
+    final boolean proofLayoutAssumption =
+        row.path("provenance").path(LAYOUT_ASSUMED).booleanValue();
+    if (proofLayoutAssumption != snapshotLayoutAssumption) {
+      throw new IOException(
+          "Elision report structured proof layout assumption must match the snapshot");
+    }
   }
 
   private static void validateProvenance(final JsonNode node) throws IOException {
@@ -96,8 +135,7 @@ final class MavenElisionReportStructuredProofPayloadValidator {
         "osvSourceAuthority",
         "CONFIGURED_PRODUCER_COMPATIBLE_INDEX");
     MavenElisionReportJsonPayloadShape.stringArray(node.get("compilerOptions"), "compilerOptions");
-    MavenElisionReportJsonPayloadShape.requireBoolean(
-        node.get("conventionalLayoutAssumed"), "conventionalLayoutAssumed");
+    MavenElisionReportJsonPayloadShape.requireBoolean(node.get(LAYOUT_ASSUMED), LAYOUT_ASSUMED);
     validateCoordinate(node.get("sourcesCoordinate"));
     MavenElisionReportRawScopePayloadValidator.validate(node.get("rawScopeEvidence"));
     final JsonNode claims = node.get("claimAttributions");
