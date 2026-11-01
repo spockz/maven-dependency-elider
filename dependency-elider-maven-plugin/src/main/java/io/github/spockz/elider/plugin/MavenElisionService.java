@@ -106,34 +106,21 @@ final class MavenElisionService {
     final MavenProject currentModel = MavenAnalysisResolutionContext.currentModel(project);
     MavenAnalysisPreparation.rejectRequestedBans(
         currentModel, options, new ElisionAnalysisModel.ArtifactViews(List.of(), false, List.of()));
-    final AnalysisOptions projectOptions =
-        options.productionOutput() == null && options.completeness().productionClassesComplete()
-            ? options.withProductionOutput(defaultProductionOutput(currentModel))
-            : options;
-    final AnalysisEnvironment environment =
-        AnalysisEnvironment.capture(project, projectOptions.session());
+    final AnalysisEnvironment environment = AnalysisEnvironment.capture(project, options.session());
     try (AnalysisProjectionWorkspace workspace = AnalysisProjectionWorkspace.create()) {
       final AnalysisEnvironment operationEnvironment =
           environment.withProjectionDirectory(workspace.directory());
       final MavenAnalysisResolutionContext context =
           MavenAnalysisResolutionContext.forAnalyze(
-              currentModel, project, projectOptions.session(), resolver, operationEnvironment);
+              currentModel, project, options.session(), resolver, operationEnvironment);
       final PreparedAnalysis prepared =
           MavenAnalysisPreparation.prepare(
               context.project(),
-              projectOptions.withEnvironment(operationEnvironment),
+              options.withEnvironment(operationEnvironment),
               DependencyDynamicRoots::scan,
               context);
       return AnalyzePrediction.from(ElisionReachabilityEngine.finishAnalysis(prepared));
     }
-  }
-
-  private static File defaultProductionOutput(final MavenProject project) {
-    if (project.getBuild() == null) {
-      return null;
-    }
-    final String outputDirectory = project.getBuild().getOutputDirectory();
-    return outputDirectory == null || outputDirectory.isBlank() ? null : new File(outputDirectory);
   }
 
   /* package */ PreparedAnalysis prepare(final MavenProject project, final AnalysisOptions options)

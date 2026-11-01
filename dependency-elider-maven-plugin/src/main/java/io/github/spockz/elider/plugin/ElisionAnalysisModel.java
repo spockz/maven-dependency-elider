@@ -110,19 +110,6 @@ final class ElisionAnalysisModel {
           dynamicRoots,
           value);
     }
-
-    /* default */ AnalysisOptions withProductionOutput(final File value) {
-      return new AnalysisOptions(
-          traceFiles,
-          retainedArtifacts,
-          banishedDependencies,
-          value,
-          session,
-          completeness,
-          trim,
-          dynamicRoots,
-          environment);
-    }
   }
 
   /* default */ record CompletenessOptions(

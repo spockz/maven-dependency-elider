@@ -83,20 +83,35 @@ final class MavenAnalysisEvidence {
     return invocationBase(options.request(), project.getBasedir());
   }
 
-  private static File productionOutput(final MavenProject project, final AnalysisOptions options) {
-    if (options.productionOutput() != null || !options.completeness().productionClassesComplete()) {
-      return options.productionOutput();
+  private static File productionOutput(final MavenProject project, final AnalysisOptions options)
+      throws IOException {
+    final boolean productionClassesComplete = options.completeness().productionClassesComplete();
+    final File configuredOutput = options.productionOutput();
+    final String selectedOutput;
+    if (configuredOutput != null) {
+      selectedOutput = configuredOutput.getPath();
+    } else if (productionClassesComplete && project.getBuild() != null) {
+      selectedOutput = project.getBuild().getOutputDirectory();
+    } else {
+      selectedOutput = null;
     }
-    if (project.getBuild() == null || project.getBuild().getOutputDirectory() == null) {
+    if (selectedOutput == null || selectedOutput.isBlank()) {
+      if (productionClassesComplete) {
+        throw new IOException(
+            "elide.productionClassesComplete=true requires a nonblank production class output "
+                + "directory");
+      }
       return null;
     }
-    final Path output = Path.of(project.getBuild().getOutputDirectory());
+    final Path output = Path.of(selectedOutput);
     if (output.isAbsolute()) {
       return output.normalize().toFile();
     }
-    return project.getBasedir() == null
-        ? null
-        : project.getBasedir().toPath().resolve(output).toAbsolutePath().normalize().toFile();
+    if (project.getBasedir() == null) {
+      throw new IOException(
+          "Cannot resolve relative production output without a Maven project base");
+    }
+    return project.getBasedir().toPath().resolve(output).toAbsolutePath().normalize().toFile();
   }
 
   /* package */ static Path invocationBase(
