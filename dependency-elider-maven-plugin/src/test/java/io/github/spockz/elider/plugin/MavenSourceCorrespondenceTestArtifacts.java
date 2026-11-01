@@ -53,18 +53,19 @@ final class MavenSourceCorrespondenceTestArtifacts {
       final boolean repeatOwner,
       final boolean manifestClassPath)
       throws IOException {
-    final Path sourceRoot = Files.createDirectories(directory.resolve("source-tree/org/example"));
+    return write(directory, overload, repeatOwner, manifestClassPath, false);
+  }
+
+  /* default */ static Archives write(
+      final Path directory,
+      final boolean overload,
+      final boolean repeatOwner,
+      final boolean manifestClassPath,
+      final boolean includeHeuristicOnlyClass)
+      throws IOException {
     final Path helperJar = manifestClassPath ? writeManifestHelper(directory) : null;
-    final String outerSource = outerSource(overload, manifestClassPath);
-    final Path outer = sourceRoot.resolve("Outer.java");
-    Files.writeString(outer, outerSource);
-    final List<Path> sourceFiles = new ArrayList<>(List.of(outer));
-    if (repeatOwner) {
-      final Path other = sourceRoot.resolve("Other.java");
-      Files.writeString(
-          other, "package org.example; public class Other { public void parse() {} }");
-      sourceFiles.add(other);
-    }
+    final List<Path> sourceFiles =
+        sourceFiles(directory, overload, manifestClassPath, repeatOwner, includeHeuristicOnlyClass);
     final Path classes = Files.createDirectories(directory.resolve("compiled"));
     final List<String> compilerArguments =
         Stream.concat(
@@ -104,6 +105,31 @@ final class MavenSourceCorrespondenceTestArtifacts {
       }
     }
     return new Archives(originalJar, sourcesJar);
+  }
+
+  private static List<Path> sourceFiles(
+      final Path directory,
+      final boolean overload,
+      final boolean manifestClassPath,
+      final boolean repeatOwner,
+      final boolean includeHeuristicOnlyClass)
+      throws IOException {
+    final Path sourceRoot = Files.createDirectories(directory.resolve("source-tree/org/example"));
+    final Path outer = sourceRoot.resolve("Outer.java");
+    Files.writeString(outer, outerSource(overload, manifestClassPath));
+    final List<Path> sourceFiles = new ArrayList<>(List.of(outer));
+    if (repeatOwner) {
+      final Path other = sourceRoot.resolve("Other.java");
+      Files.writeString(
+          other, "package org.example; public class Other { public void parse() {} }");
+      sourceFiles.add(other);
+    }
+    if (includeHeuristicOnlyClass) {
+      final Path heuristicOnly = sourceRoot.resolve("HeuristicOnly.java");
+      Files.writeString(heuristicOnly, "package org.example; public class HeuristicOnly {}\n");
+      sourceFiles.add(heuristicOnly);
+    }
+    return List.copyOf(sourceFiles);
   }
 
   /* default */ static Path writeEmptyTrimmedJar(final Path path) throws IOException {

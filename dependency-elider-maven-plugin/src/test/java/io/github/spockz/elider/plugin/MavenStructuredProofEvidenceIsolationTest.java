@@ -7,7 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.jar.JarFile;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,6 +22,9 @@ final class MavenStructuredProofEvidenceIsolationTest {
 
   /** Unrelated class named only by heuristic review evidence. */
   private static final String HEURISTIC_ONLY = "org.example.HeuristicOnly";
+
+  /** Archive path for the heuristic-only class. */
+  private static final String HEURISTIC_ONLY_ENTRY = "org/example/HeuristicOnly.class";
 
   /** Top-level sibling emitted by the source unit. */
   private static final String SIBLING = "org.example.Sibling";
@@ -74,7 +80,7 @@ final class MavenStructuredProofEvidenceIsolationTest {
     final Path directory = temporaryDirectory.resolve("heuristic-isolation");
     final MavenCorroboratedSourceScenario.Prepared prepared = preparedWithHeuristic(directory);
     final MavenSourceCorrespondenceTestArtifacts.Archives archives =
-        MavenSourceCorrespondenceTestArtifacts.write(directory, false, false);
+        MavenSourceCorrespondenceTestArtifacts.write(directory, false, false, false, true);
     final Path trimmed =
         MavenSourceCorrespondenceTestArtifacts.writeEmptyTrimmedJar(
             directory.resolve("trimmed.jar"));
@@ -100,19 +106,53 @@ final class MavenStructuredProofEvidenceIsolationTest {
     final Path directory = temporaryDirectory.resolve("heuristic-and-surviving-structured");
     final MavenCorroboratedSourceScenario.Prepared prepared = preparedWithHeuristic(directory);
     final MavenSourceCorrespondenceTestArtifacts.Archives archives =
-        MavenSourceCorrespondenceTestArtifacts.write(directory, false, false);
+        MavenSourceCorrespondenceTestArtifacts.write(directory, false, false, false, true);
     final Path trimmed =
-        MavenAdversarialSourceArchiveFixtures.copyJarKeepingEntry(
-            archives.originalJar(), directory.resolve("trimmed.jar"), "org/example/Outer.class");
+        MavenSourceCorrespondenceTestArtifacts.copyJarWithoutEntry(
+            archives.originalJar(), directory.resolve("trimmed.jar"), HEURISTIC_ONLY_ENTRY);
 
     final MavenVulnerabilityAssessment.Result result =
         MavenStructuredProofScenario.assess(prepared, archives, trimmed, true);
 
     assertAll(
         "a heuristic class does not replace the structured omitted-class requirement",
+        () ->
+            assertThat(archiveContains(archives.originalJar(), HEURISTIC_ONLY_ENTRY))
+                .as("the heuristic candidate must exist in the original archive")
+                .isTrue(),
+        () ->
+            assertThat(archiveContains(trimmed, HEURISTIC_ONLY_ENTRY))
+                .as("the negative case removes only the heuristic class")
+                .isFalse(),
+        () -> assertCompleteClassInventoryRetained(archives.originalJar(), trimmed),
         () -> assertThat(result.attestations()).isEmpty(),
         () -> assertThat(result.provenVulnerableCodeAbsent()).isEmpty(),
         () -> assertHeuristicRowContains(result, HEURISTIC_ONLY));
+  }
+
+  private static boolean archiveContains(final Path archive, final String entry)
+      throws IOException {
+    try (JarFile jar = new JarFile(archive.toFile())) {
+      return jar.getEntry(entry) != null;
+    }
+  }
+
+  private static void assertCompleteClassInventoryRetained(final Path original, final Path trimmed)
+      throws IOException {
+    final Set<String> expected = new HashSet<>(classEntries(original));
+    expected.remove(HEURISTIC_ONLY_ENTRY);
+    assertThat(classEntries(trimmed))
+        .as("the trimmed archive keeps every original class except the heuristic candidate")
+        .containsExactlyInAnyOrderElementsOf(expected);
+  }
+
+  private static Set<String> classEntries(final Path archive) throws IOException {
+    try (JarFile jar = new JarFile(archive.toFile())) {
+      return jar.stream()
+          .map(java.util.jar.JarEntry::getName)
+          .filter(name -> name.endsWith(".class"))
+          .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
   }
 
   private MavenCorroboratedSourceScenario.Prepared preparedWithHeuristic(final Path directory)
