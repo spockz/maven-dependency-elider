@@ -2,13 +2,20 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.AdvisoryEvidence;
+import io.github.spockz.elider.model.AdvisoryProvenance;
+import io.github.spockz.elider.model.EvidenceOrigin;
+import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -40,6 +47,73 @@ final class MavenStructuredProofCacheFixtures {
         records.stream()
             .map(record -> replacePersistedClassAttribution(record, fileClaim, claimedClass))
             .toList());
+  }
+
+  /* default */ static void addHeuristicEvidence(
+      final MavenCorroboratedSourceScenario.Prepared prepared) throws IOException {
+    final List<OsvAdvisoryRecord> records = readRecords(prepared);
+    final List<OsvAdvisoryRecord> updated =
+        records.stream()
+            .map(
+                record -> {
+                  if (!record.aliases().contains(MavenCorroboratedSourceArchiveFixtures.CVE_ID)) {
+                    return record;
+                  }
+                  final List<AdvisoryEvidence> evidence =
+                      new java.util.ArrayList<>(record.evidence());
+                  evidence.add(
+                      new HeuristicCandidateEvidence(
+                          record.evidence().stream()
+                              .filter(StructuredSourceClassEvidence.class::isInstance)
+                              .map(StructuredSourceClassEvidence.class::cast)
+                              .findFirst()
+                              .orElseThrow()
+                              .scope(),
+                          new AdvisoryProvenance(
+                              EvidenceOrigin.REFERENCE_URL,
+                              record.osvId() + "#reference:race",
+                              URI.create("https://example.invalid/reference"),
+                              "d".repeat(64)),
+                          Set.of("org.example.HeuristicOnly"),
+                          Set.of(
+                              MavenCorroboratedSourceArchiveFixtures.GROUP_ID
+                                  + ":"
+                                  + MavenCorroboratedSourceArchiveFixtures.ARTIFACT_ID)));
+                  return copyRecord(record, record.affectedPackages(), evidence);
+                })
+            .toList();
+    MavenAssessmentFixtures.writeCacheRecords(prepared.cacheConfig().cacheDirectory(), updated);
+  }
+
+  /* default */ static void mutateCurrentCveRecord(
+      final MavenCorroboratedSourceScenario.Prepared prepared) throws IOException {
+    final Path currentRecord =
+        prepared
+            .cacheConfig()
+            .cacheDirectory()
+            .resolve("cvelistV5/cves/2025/12xxx/CVE-2025-12345.json");
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode currentJson = (ObjectNode) mapper.readTree(currentRecord.toFile());
+    boolean changed = false;
+    for (final JsonNode entry : currentJson.path("containers").path("cna").path("affected")) {
+      for (final JsonNode version : entry.path("versions")) {
+        if (version instanceof ObjectNode versionObject
+            && "affected".equals(versionObject.path("status").asText())) {
+          versionObject.put("status", "unaffected");
+          changed = true;
+        }
+      }
+    }
+    if (!changed) {
+      final boolean alreadyMutated =
+          currentJson.path("containers").path("cna").path("affected").findValues("status").stream()
+              .anyMatch(status -> "unaffected".equals(status.asText()));
+      if (!alreadyMutated) {
+        throw new IOException("CVE fixture did not contain an affected status to mutate");
+      }
+      return;
+    }
+    mapper.writeValue(currentRecord.toFile(), currentJson);
   }
 
   private static List<OsvAdvisoryRecord> readRecords(

@@ -10,9 +10,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
+import org.eclipse.aether.RepositorySystem;
+import org.eclipse.aether.RepositorySystemSession;
+import org.eclipse.aether.repository.ArtifactRepository;
+import org.eclipse.aether.repository.RemoteRepository;
 
 /** Builds one live structured proof assessment. */
 final class MavenStructuredProofScenario {
@@ -24,21 +29,89 @@ final class MavenStructuredProofScenario {
       final Path trimmedJar,
       final boolean conventionalLayoutAssumed)
       throws IOException {
+    return assess(prepared, archives, trimmedJar, conventionalLayoutAssumed, ignored -> {});
+  }
+
+  /* default */ static MavenVulnerabilityAssessment.Result assess(
+      final MavenCorroboratedSourceScenario.Prepared prepared,
+      final MavenSourceCorrespondenceTestArtifacts.Archives archives,
+      final Path trimmedJar,
+      final boolean conventionalLayoutAssumed,
+      final Consumer<RepositorySystemSession> resolutionObserver)
+      throws IOException {
+    return assess(
+        prepared,
+        archives,
+        trimmedJar,
+        conventionalLayoutAssumed,
+        ConfiguredVulnerabilityMappings.empty(),
+        resolutionObserver);
+  }
+
+  /* default */ static MavenVulnerabilityAssessment.Result assess(
+      final MavenCorroboratedSourceScenario.Prepared prepared,
+      final MavenSourceCorrespondenceTestArtifacts.Archives archives,
+      final Path trimmedJar,
+      final boolean conventionalLayoutAssumed,
+      final ConfiguredVulnerabilityMappings configured,
+      final Consumer<RepositorySystemSession> resolutionObserver)
+      throws IOException {
+    return assessWithLog(
+            prepared,
+            archives,
+            trimmedJar,
+            conventionalLayoutAssumed,
+            configured,
+            resolutionObserver,
+            false)
+        .result();
+  }
+
+  /* default */ static MavenCorroboratedSourceScenario.AssessmentWithLog assessWithDebugLog(
+      final MavenCorroboratedSourceScenario.Prepared prepared,
+      final MavenSourceCorrespondenceTestArtifacts.Archives archives,
+      final Path trimmedJar,
+      final boolean conventionalLayoutAssumed,
+      final Consumer<RepositorySystemSession> resolutionObserver)
+      throws IOException {
+    return assessWithLog(
+        prepared,
+        archives,
+        trimmedJar,
+        conventionalLayoutAssumed,
+        ConfiguredVulnerabilityMappings.empty(),
+        resolutionObserver,
+        true);
+  }
+
+  private static MavenCorroboratedSourceScenario.AssessmentWithLog assessWithLog(
+      final MavenCorroboratedSourceScenario.Prepared prepared,
+      final MavenSourceCorrespondenceTestArtifacts.Archives archives,
+      final Path trimmedJar,
+      final boolean conventionalLayoutAssumed,
+      final ConfiguredVulnerabilityMappings configured,
+      final Consumer<RepositorySystemSession> resolutionObserver,
+      final boolean debugEnabled)
+      throws IOException {
     copyCurrentCveRecord(prepared);
     final ArtifactTrimRecord trimRecord = trimRecord(prepared, archives.originalJar(), trimmedJar);
     final MavenSourceCorrespondenceAssessment sourceAssessment =
-        sourceAssessment(archives, conventionalLayoutAssumed);
-    return new MavenVulnerabilityAssessment(
-            new RecordingMavenLog(),
-            new VulnerabilityCacheManager(),
-            conventionalLayoutAssumed,
-            sourceAssessment)
-        .assess(
-            prepared.cacheConfig(),
-            ConfiguredVulnerabilityMappings.empty(),
-            MavenCorroboratedSourceAnalysisFixtures.analysis(
-                prepared.coordinate(), archives.originalJar(), List.of(trimRecord), false, false),
-            null);
+        sourceAssessment(archives, conventionalLayoutAssumed, resolutionObserver);
+    final RecordingMavenLog log = new RecordingMavenLog(debugEnabled);
+    final MavenVulnerabilityAssessment.Result result =
+        new MavenVulnerabilityAssessment(
+                log, new VulnerabilityCacheManager(), conventionalLayoutAssumed, sourceAssessment)
+            .assess(
+                prepared.cacheConfig(),
+                configured,
+                MavenCorroboratedSourceAnalysisFixtures.analysis(
+                    prepared.coordinate(),
+                    archives.originalJar(),
+                    List.of(trimRecord),
+                    false,
+                    false),
+                null);
+    return new MavenCorroboratedSourceScenario.AssessmentWithLog(result, log);
   }
 
   private static void copyCurrentCveRecord(final MavenCorroboratedSourceScenario.Prepared prepared)
@@ -75,7 +148,8 @@ final class MavenStructuredProofScenario {
 
   private static MavenSourceCorrespondenceAssessment sourceAssessment(
       final MavenSourceCorrespondenceTestArtifacts.Archives archives,
-      final boolean conventionalLayoutAssumed) {
+      final boolean conventionalLayoutAssumed,
+      final Consumer<RepositorySystemSession> resolutionObserver) {
     final MavenProject project = new MavenProject();
     project.setRemoteArtifactRepositories(List.of());
     final MavenSession session =
@@ -84,9 +158,15 @@ final class MavenStructuredProofScenario {
             new org.eclipse.aether.DefaultRepositorySystemSession(),
             new DefaultMavenExecutionRequest(),
             null);
+    final ArtifactRepository remote =
+        new RemoteRepository.Builder(
+                "fixture-remote", "default", "https://repo.example.invalid/maven2")
+            .build();
+    final RepositorySystem resolverSystem =
+        MavenSourceCorrespondenceTestArtifacts.resolver(
+            archives.sourcesJar(), remote, resolutionObserver);
     final MavenSourceClassifierResolver resolver =
-        new MavenSourceClassifierResolver(
-            MavenSourceCorrespondenceTestArtifacts.resolver(archives.sourcesJar()));
+        new MavenSourceClassifierResolver(resolverSystem);
     return MavenSourceCorrespondenceAssessment.configured(
         project, session, Optional.of(resolver), conventionalLayoutAssumed);
   }

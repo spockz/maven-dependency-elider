@@ -9,40 +9,68 @@ import org.apache.maven.plugin.logging.Log;
 /** Stores informational Mojo log lines and ignores other levels. */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.UncommentedEmptyMethodBody"})
 final class RecordingMavenLog implements Log {
+  /** Rule key for package-private fixture API. */
+  private static final String ACCESS_MODIFIER_SUPPRESSION = "PMD.CommentDefaultAccessModifier";
+
   /** Informational lines captured from the Mojo. */
   private final List<String> recordedMessages = new ArrayList<>();
 
   /** Warning lines captured from the Mojo. */
   private final List<String> recordedWarnings = new ArrayList<>();
 
-  /** Creates an empty logger for an isolated test. */
-  @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.UncommentedEmptyConstructor"})
-  RecordingMavenLog() {}
+  /** Debug lines captured by scenarios that assert proof abstention reasons. */
+  private final List<String> recordedDebugMessages = new ArrayList<>();
+
+  /** Whether this fixture exposes debug diagnostics to the behavior under test. */
+  private final boolean debugEnabled;
+
+  /** Creates a logger that records informational and warning messages only. */
+  @SuppressWarnings(ACCESS_MODIFIER_SUPPRESSION)
+  RecordingMavenLog() {
+    this(false);
+  }
+
+  /** Creates a logger with optional debug capture for refusal diagnostics. */
+  @SuppressWarnings(ACCESS_MODIFIER_SUPPRESSION)
+  RecordingMavenLog(final boolean debugEnabled) {
+    this.debugEnabled = debugEnabled;
+  }
 
   /** Returns a stable copy of the captured messages. */
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  @SuppressWarnings(ACCESS_MODIFIER_SUPPRESSION)
   List<String> messages() {
     return List.copyOf(recordedMessages);
   }
 
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  @SuppressWarnings(ACCESS_MODIFIER_SUPPRESSION)
   List<String> warnings() {
     return List.copyOf(recordedWarnings);
   }
 
-  @Override
-  public boolean isDebugEnabled() {
-    return false;
+  @SuppressWarnings(ACCESS_MODIFIER_SUPPRESSION)
+  List<String> debugMessages() {
+    return List.copyOf(recordedDebugMessages);
   }
 
   @Override
-  public void debug(final CharSequence content) {}
+  public boolean isDebugEnabled() {
+    return debugEnabled;
+  }
 
   @Override
-  public void debug(final CharSequence content, final Throwable error) {}
+  public void debug(final CharSequence content) {
+    recordedDebugMessages.add(content.toString());
+  }
 
   @Override
-  public void debug(final Throwable error) {}
+  public void debug(final CharSequence content, final Throwable error) {
+    recordedDebugMessages.add(content.toString());
+  }
+
+  @Override
+  public void debug(final Throwable error) {
+    recordedDebugMessages.add(error.toString());
+  }
 
   @Override
   public boolean isInfoEnabled() {

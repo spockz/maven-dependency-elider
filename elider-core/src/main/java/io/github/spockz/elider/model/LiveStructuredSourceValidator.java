@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.List;
-import java.util.Locale;
 
 /** Validates untrusted structured-proof inputs before source reproduction begins. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -21,7 +20,8 @@ final class LiveStructuredSourceValidator {
 
   /** Rebinds the request to the current typed owner and raw CNA source record. */
   static ObservedInputs observe(final StructuredSourceProofRequest request) throws IOException {
-    final OsvAdvisoryRecord owner = currentOwner(request);
+    final VulnerabilityCacheEnvelope envelope = currentIndex(request);
+    final OsvAdvisoryRecord owner = currentOwner(envelope, request);
     final StructuredSourceClassEvidence evidence = request.sourceEvidence();
     final ArtifactCoordinate candidate = request.candidate();
     requireExactEvidenceOwner(owner, evidence, candidate);
@@ -33,15 +33,21 @@ final class LiveStructuredSourceValidator {
     final CveAffectedEntryContext cachedEntry = uniqueCachedEntry(owner, evidence);
     requireEntryUnchanged(cachedEntry, currentEntry, evidence, candidate);
     final OsvAffectedPackage affectedPackage = uniqueOsvPackage(owner, evidence, candidate);
+    CurrentStructuredClaimSetValidator.requireUnique(
+        envelope, owner, evidence, candidate, affectedPackage);
     return new ObservedInputs(owner, evidence, candidate, current, currentEntry, affectedPackage);
   }
 
-  private static OsvAdvisoryRecord currentOwner(final StructuredSourceProofRequest request)
+  private static VulnerabilityCacheEnvelope currentIndex(final StructuredSourceProofRequest request)
       throws IOException {
-    final VulnerabilityCacheEnvelope envelope;
     try (InputStream input = Files.newInputStream(request.advisoryIndex())) {
-      envelope = new VulnerabilityCacheEnvelopeReader().read(input, request.expectedProducer());
+      return new VulnerabilityCacheEnvelopeReader().read(input, request.expectedProducer());
     }
+  }
+
+  private static OsvAdvisoryRecord currentOwner(
+      final VulnerabilityCacheEnvelope envelope, final StructuredSourceProofRequest request)
+      throws IOException {
     final List<OsvAdvisoryRecord> records =
         envelope.records().stream()
             .filter(record -> record.osvId().equals(request.osvId()))
@@ -140,7 +146,7 @@ final class LiveStructuredSourceValidator {
         owner.affectedPackages().stream()
             .filter(
                 item ->
-                    isMaven(item.ecosystem())
+                    CurrentStructuredClaimSetValidator.isMaven(item.ecosystem())
                         && item.packageName()
                             .equals(candidate.groupId() + ":" + candidate.artifactId())
                         && item.ecosystem().equals(evidence.scope().ecosystem())
@@ -152,11 +158,6 @@ final class LiveStructuredSourceValidator {
       throw new IOException("Current OSV owner has no unique exact Maven package claim");
     }
     return matches.getFirst();
-  }
-
-  private static boolean isMaven(final String ecosystem) {
-    return "Maven".equalsIgnoreCase(ecosystem)
-        || ecosystem.toLowerCase(Locale.ROOT).startsWith("maven:");
   }
 
   private static boolean sameScopeComponent(

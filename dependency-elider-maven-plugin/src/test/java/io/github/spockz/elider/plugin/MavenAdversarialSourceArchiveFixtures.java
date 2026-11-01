@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Enumeration;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
@@ -78,6 +80,32 @@ final class MavenAdversarialSourceArchiveFixtures {
       output.closeEntry();
     }
     return trimmed;
+  }
+
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  /* default */ static void addResourceWhilePreservingJarEntries(final Path archive)
+      throws IOException {
+    try (JarFile existing = new JarFile(archive.toFile())) {
+      if (existing.getEntry("META-INF/revalidation-marker.txt") != null) {
+        return;
+      }
+    }
+    final Path rewritten = archive.resolveSibling(archive.getFileName() + ".rewritten");
+    try (JarFile input = new JarFile(archive.toFile());
+        JarOutputStream output = new JarOutputStream(Files.newOutputStream(rewritten))) {
+      final Enumeration<JarEntry> entries = input.entries();
+      while (entries.hasMoreElements()) {
+        final JarEntry entry = entries.nextElement();
+        // A fresh JarEntry is required because JarOutputStream consumes each instance.
+        output.putNextEntry(new JarEntry(entry.getName()));
+        try (InputStream content = input.getInputStream(entry)) {
+          content.transferTo(output);
+        }
+        output.closeEntry();
+      }
+      addEntry(output, "META-INF/revalidation-marker.txt", new byte[] {1, 2, 3});
+    }
+    Files.move(rewritten, archive, StandardCopyOption.REPLACE_EXISTING);
   }
 
   private static void addEntry(final JarOutputStream output, final String name, final byte[] bytes)
