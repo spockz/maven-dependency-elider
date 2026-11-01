@@ -413,6 +413,7 @@ Process exit status: 0
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Policy: retained=[commons-io:commons-io::jar:, org.apache.commons:commons-lang3::jar:], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: false
 [INFO] Whole artifacts dropped: 2 (original JAR file bytes: 942.11 KiB)
@@ -475,6 +476,7 @@ Process exit status: 0
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: false
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
@@ -542,6 +544,7 @@ Process exit status: 0
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: false
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
@@ -600,6 +603,7 @@ Process exit status: 0
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: false
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)

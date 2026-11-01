@@ -95,7 +95,8 @@ final class MavenHeuristicApplicabilityTest {
                 0,
                 0,
                 List.of(),
-                MediatedGraphReport.unavailable("test"))
+                MediatedGraphReport.unavailable("test"),
+                MavenElisionPolicyIdentityTestSupport.emptyPolicy())
             .withAdvisoryReview(MavenElisionReportSnapshot.advisoryReview(result));
     final Path reportPath = temporaryDirectory.resolve("ambiguous-package-owner-report.json");
 

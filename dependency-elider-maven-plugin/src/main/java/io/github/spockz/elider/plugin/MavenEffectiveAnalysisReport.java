@@ -32,7 +32,11 @@ final class MavenEffectiveAnalysisReport {
               ElisionAnalysisModel.evidence(prepared),
               trimResult,
               effective.graphProjection(),
-              mediatedGraph);
+              mediatedGraph,
+              effective
+                  .prepared()
+                  .policyOptions()
+                  .withOperationFingerprint(effective.operationFingerprint()));
       cleanup.transferOwnership();
       return analysis;
     }

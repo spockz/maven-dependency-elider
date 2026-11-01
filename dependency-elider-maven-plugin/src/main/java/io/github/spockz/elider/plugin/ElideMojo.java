@@ -94,7 +94,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.retainedArtifacts")
   private List<String> retainedArtifacts;
 
-  /** Exact groupId:artifactId identities whose removal is explicitly requested. */
+  /** Trimmed groupId:artifactId only; bans currently fail closed pre-analysis. */
   @Parameter(property = "elide.banishedDependencies")
   private List<String> banishedDependencies;
 

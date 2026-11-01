@@ -89,6 +89,8 @@ Not necessarily. Many vulnerability tools report by artifact coordinates and ver
 
 The report also retains package-only and heuristic advisory candidates as review rows. Each row names the exact assessed component and reports applicability from preserved OSV claims; unsupported ranges stay unresolved. Inventory disposition describes whether that component was removed, trimmed, or unchanged and does not claim mitigation. Verify the source and exact artifact before adding any POM mapping.
 
+The saved report's `policy` section records canonical `retainedArtifacts`, `banishedDependencies`, and the SHA-256 identity of the operation that produced the snapshot. This is policy provenance; a configured ban is not evidence that removal succeeded.
+
 ### What happens if an advisory maps multiple vulnerable classes that do not exist in an older version?
 
 The verification engine currently fails closed: `OmittedCodeProof` requires all mapped vulnerable classes to be present in the original dependency JAR before certifying that trimming removed them. In cases like Jackson Core (`CVE-2026-68494`), a vulnerability fix across a broad version range touches classes that were only introduced in later minor versions (such as `StreamConstraintsException` added in Jackson 2.15), meaning older affected versions (like Jackson 2.14) do not contain all mapped symbols. In such cases, the elider conservatively omits the CVE from being considered "avoided" or emitting a VEX statement.

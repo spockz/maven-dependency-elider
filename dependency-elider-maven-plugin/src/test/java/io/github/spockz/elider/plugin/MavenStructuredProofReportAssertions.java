@@ -177,7 +177,8 @@ final class MavenStructuredProofReportAssertions {
         snapshot.assumeConventionalJavaSourceLayout(),
         snapshot.sourceReviewFindings(),
         snapshot.advisoryReview(),
-        proofs);
+        proofs,
+        snapshot.policy());
   }
 
   private static MavenElisionReportSnapshot snapshotWithSourceReviewFindings(
@@ -207,6 +208,7 @@ final class MavenStructuredProofReportAssertions {
         snapshot.assumeConventionalJavaSourceLayout(),
         findings,
         snapshot.advisoryReview(),
-        snapshot.verifiedStructuredProofs());
+        snapshot.verifiedStructuredProofs(),
+        snapshot.policy());
   }
 }

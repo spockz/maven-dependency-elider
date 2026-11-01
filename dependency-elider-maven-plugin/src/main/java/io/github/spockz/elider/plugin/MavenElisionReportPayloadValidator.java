@@ -5,11 +5,17 @@ package io.github.spockz.elider.plugin;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /** Validates schema-one JSON types and row shapes before snapshot deserialization. */
-@SuppressWarnings({"PMD.GodClass", "PMD.AvoidDuplicateLiterals", "PMD.TooManyMethods"})
+@SuppressWarnings({
+  "PMD.GodClass",
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.TooManyMethods",
+  "PMD.CyclomaticComplexity"
+})
 final class MavenElisionReportPayloadValidator {
   /** Count of classes pruned from retained artifacts. */
   private static final String PROGRAM_CLASSES_PRUNED = "programClassesPruned";
@@ -44,7 +50,12 @@ final class MavenElisionReportPayloadValidator {
           "assumeConventionalJavaSourceLayout",
           "sourceReviewFindings",
           "advisoryReview",
-          "verifiedStructuredProofs");
+          "verifiedStructuredProofs",
+          "policy");
+
+  /** Exact fields for the producing policy and operation identity. */
+  private static final Set<String> POLICY_FIELDS =
+      Set.of("retainedArtifacts", "banishedDependencies", "operationFingerprint");
 
   /** Exact fields for CVE finding rows. */
   private static final Set<String> CVE_FIELDS = Set.of("cveId", "coordinate");
@@ -111,6 +122,7 @@ final class MavenElisionReportPayloadValidator {
     validateCveRows(payload.get("inactivePreconditionCves"));
     validateConservativeCveRows(payload.get("potentiallyConservativeCves"));
     validateLayoutFlag(payload.get("assumeConventionalJavaSourceLayout"));
+    validatePolicy(payload.get("policy"));
     MavenElisionReportSourcePayloadValidator.validate(
         payload.get("sourceReviewFindings"),
         payload.get("assumeConventionalJavaSourceLayout").booleanValue());
@@ -119,6 +131,59 @@ final class MavenElisionReportPayloadValidator {
         payload.get("verifiedStructuredProofs"),
         payload.get("assumeConventionalJavaSourceLayout").booleanValue());
     MavenElisionReportGraphPayloadValidator.validate(payload.get("mediatedGraph"));
+  }
+
+  @SuppressWarnings("PMD.CyclomaticComplexity")
+  private static void validatePolicy(final JsonNode policy) throws IOException {
+    if (policy == null || !policy.isObject() || !fieldNames(policy).equals(POLICY_FIELDS)) {
+      throw new IOException("Elision report policy fields do not match schema version 1");
+    }
+    final JsonNode retained = policy.get("retainedArtifacts");
+    final JsonNode banished = policy.get("banishedDependencies");
+    final JsonNode fingerprint = policy.get("operationFingerprint");
+    if (!canonicalTextArray(retained)
+        || !canonicalTextArray(banished)
+        || fingerprint == null
+        || !fingerprint.isTextual()
+        || !fingerprint.textValue().matches("[0-9a-f]{64}")) {
+      throw new IOException("Elision report policy values are malformed");
+    }
+    try {
+      final List<String> retainedValues = textValues(retained);
+      final List<String> banishedValues = textValues(banished);
+      final List<String> canonicalRetained =
+          ElisionArtifactPolicy.parseRetentionCoordinates(retainedValues).stream()
+              .map(MavenElisionPolicyIdentity::retentionCoordinate)
+              .sorted()
+              .toList();
+      final List<String> canonicalBanished =
+          BanishedDependencyPolicy.normalize(banishedValues).stream()
+              .map(Object::toString)
+              .toList();
+      if (!canonicalRetained.equals(retainedValues) || !canonicalBanished.equals(banishedValues)) {
+        throw new IOException("Elision report policy coordinates are not canonical");
+      }
+    } catch (final org.apache.maven.plugin.MojoFailureException exception) {
+      throw new IOException("Elision report policy coordinates are invalid", exception);
+    }
+  }
+
+  private static boolean canonicalTextArray(final JsonNode value) {
+    if (value == null || !value.isArray()) {
+      return false;
+    }
+    for (final JsonNode item : value) {
+      if (!item.isTextual() || item.textValue().isBlank()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static List<String> textValues(final JsonNode value) {
+    final List<String> result = new java.util.ArrayList<>();
+    value.forEach(item -> result.add(item.textValue()));
+    return List.copyOf(result);
   }
 
   private static void validateLayoutFlag(final JsonNode value) throws IOException {

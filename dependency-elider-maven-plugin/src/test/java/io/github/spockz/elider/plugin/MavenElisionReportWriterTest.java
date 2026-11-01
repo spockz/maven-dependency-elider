@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.engine.ClassUsageReport;
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -94,7 +95,8 @@ final class MavenElisionReportWriterTest {
             new TrimResult(List.of(trimRecord), List.of(), List.of(), List.of(), 0, 0L, 0, null),
             null,
             MediatedGraphReportTestSupport.reportForOutputs(
-                removedCoordinate, trimmedCoordinate, GROUP_ID + ":consumer:" + PROJECT_VERSION));
+                removedCoordinate, trimmedCoordinate, GROUP_ID + ":consumer:" + PROJECT_VERSION),
+            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
 
     final MavenElisionReportSnapshot snapshot = MavenElisionReportSnapshot.from(project, analysis);
     final MavenElisionReportSnapshot.DroppedArtifactSummary droppedArtifacts =
@@ -136,34 +138,64 @@ final class MavenElisionReportWriterTest {
     MavenElisionReportWriter.write(output, snapshot);
     final MavenElisionReportSnapshot reread = MavenElisionReportWriter.read(output);
 
-    assertThat(reread).isEqualTo(snapshot);
-    assertThat(MavenElisionReportWriter.render(reread))
-        .contains(
-            "Project: org.example:consumer:1.0",
-            "Snapshot: last successful elide run at " + GENERATED_AT,
-            "The snapshot does not revalidate changed inputs when this goal runs.",
-            "Whole artifacts dropped: 1 (original JAR file bytes: 2.00 KiB)",
-            "Program classes removed with dropped JARs: 2 (uncompressed .class entry"
-                + " payload bytes: 18 B; excludes module descriptors and "
-                + "archive sanitation metadata)",
-            "  - org.example:removed:jar:1.0 (compile): "
-                + "2.00 KiB original JAR, 2 class entries, 18 B",
-            "Program classes pruned from retained JARs: 4 (uncompressed omitted"
-                + " .class payload bytes: "
-                + "3.02 KiB; excludes module descriptors and archive metadata)",
-            "Advisories associated with removed components: "
-                + "none matched the available vulnerability mappings",
-            "Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
-                + " vulnerability mappings",
-            "Mediated TEST dependency graph (captured and saved by the elide goal):");
-    assertThat(MavenElisionReportWriter.render(reread))
-        .anySatisfy(message -> assertThat(message).contains("[EFFECTIVE_DROP]"));
-    assertThat(MavenElisionReportWriter.render(reread))
-        .anySatisfy(message -> assertThat(message).contains("[RETAINED, CLASS_TRIMMED]"));
-    assertThat(MavenElisionReportWriter.formatBytes(0)).isEqualTo("0 B");
-    assertThat(MavenElisionReportWriter.formatBytes(1023)).isEqualTo("1023 B");
-    assertThat(MavenElisionReportWriter.formatBytes(1024)).isEqualTo("1.00 KiB");
-    assertThat(MavenElisionReportWriter.formatBytes(1_048_576)).isEqualTo("1.00 MiB");
+    assertAll(
+        "policy identity survives report round-trip and renders stable canonical values",
+        () -> assertThat(reread).isEqualTo(snapshot),
+        () -> {
+          final List<String> rendered = MavenElisionReportWriter.render(reread);
+          assertAll(
+              "rendered report contains saved graph and policy values without its opaque digest",
+              () ->
+                  assertThat(rendered)
+                      .contains(
+                          "Project: org.example:consumer:1.0",
+                          "Snapshot: last successful elide run at " + GENERATED_AT,
+                          "The snapshot does not revalidate changed inputs when this goal runs.",
+                          "Whole artifacts dropped: 1 (original JAR file bytes: 2.00 KiB)",
+                          "Program classes removed with dropped JARs: 2 (uncompressed .class entry"
+                              + " payload bytes: 18 B; excludes module descriptors and "
+                              + "archive sanitation metadata)",
+                          "  - org.example:removed:jar:1.0 (compile): "
+                              + "2.00 KiB original JAR, 2 class entries, 18 B",
+                          "Program classes pruned from retained JARs: 4 (uncompressed omitted"
+                              + " .class payload bytes: "
+                              + "3.02 KiB; excludes module descriptors and archive metadata)",
+                          "Advisories associated with removed components: "
+                              + "none matched the available vulnerability mappings",
+                          "Mitigated CVEs (vulnerable code pruned by trimming): none matched the"
+                              + " available vulnerability mappings",
+                          "Mediated TEST dependency graph (captured and saved by the elide goal):"),
+              () ->
+                  assertThat(rendered)
+                      .anySatisfy(message -> assertThat(message).contains("[EFFECTIVE_DROP]")),
+              () ->
+                  assertThat(rendered)
+                      .anySatisfy(
+                          message -> assertThat(message).contains("[RETAINED, CLASS_TRIMMED]")),
+              () ->
+                  assertThat(rendered)
+                      .anySatisfy(
+                          message ->
+                              assertThat(message)
+                                  .contains(
+                                      "Policy: retained=[org.example:kept::jar:], "
+                                          + "banished=[org.example:banned]")
+                                  .doesNotContain(reread.policy().operationFingerprint())));
+        },
+        () ->
+            assertThat(reread.policy())
+                .isEqualTo(
+                    new MavenElisionPolicyIdentity(
+                        List.of("org.example:kept::jar:"),
+                        List.of("org.example:banned"),
+                        MavenElisionGraphBinding.sha256(List.of("report-policy-test")))),
+        () ->
+            assertThat(reread.policy().operationFingerprint())
+                .isEqualTo(MavenElisionGraphBinding.sha256(List.of("report-policy-test"))),
+        () -> assertThat(MavenElisionReportWriter.formatBytes(0)).isEqualTo("0 B"),
+        () -> assertThat(MavenElisionReportWriter.formatBytes(1023)).isEqualTo("1023 B"),
+        () -> assertThat(MavenElisionReportWriter.formatBytes(1024)).isEqualTo("1.00 KiB"),
+        () -> assertThat(MavenElisionReportWriter.formatBytes(1_048_576)).isEqualTo("1.00 MiB"));
   }
 
   @Test
@@ -184,7 +216,8 @@ final class MavenElisionReportWriterTest {
             0,
             0,
             List.of(),
-            MediatedGraphReportTestSupport.emptyGraph(populated.projectGav()));
+            MediatedGraphReportTestSupport.emptyGraph(populated.projectGav()),
+            populated.policy());
 
     assertThat(MavenElisionReportWriter.render(empty))
         .contains(
@@ -246,7 +279,8 @@ final class MavenElisionReportWriterTest {
                 new MavenElisionReportSnapshot.CveFinding(
                     "CVE-2025-11227", "ch.qos.logback:logback-core:jar:1.5.15")),
             List.of(conservative),
-            base.mediatedGraph());
+            base.mediatedGraph(),
+            base.policy());
     final Path output = temporaryDirectory.resolve("target/cve-report.json");
 
     MavenElisionReportWriter.write(output, populated);
@@ -326,7 +360,11 @@ final class MavenElisionReportWriterTest {
         MediatedGraphReportTestSupport.reportForOutputs(
             ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION),
             ArtifactCoordinate.of(GROUP_ID, "trimmed", "2.0"),
-            GROUP_ID + ":consumer:1.0"));
+            GROUP_ID + ":consumer:1.0"),
+        new MavenElisionPolicyIdentity(
+            List.of("org.example:kept::jar:"),
+            List.of("org.example:banned"),
+            MavenElisionGraphBinding.sha256(List.of("report-policy-test"))));
   }
 
   private static long writeDroppedJar(final Path path) throws IOException {

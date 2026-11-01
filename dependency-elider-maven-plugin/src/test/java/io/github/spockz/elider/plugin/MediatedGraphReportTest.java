@@ -184,7 +184,8 @@ final class MediatedGraphReportTest {
             0,
             0,
             List.of(),
-            graph);
+            graph,
+            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
     final Path reportFile = temporaryDirectory.resolve("report.json");
 
     MavenElisionReportWriter.write(reportFile, snapshot);

@@ -194,6 +194,7 @@ final class MavenElisionSourceReviewReportTest {
         List.of(),
         MediatedGraphReportTestSupport.emptyGraph("org.example:consumer:1.0"),
         assumed,
-        List.of(finding));
+        List.of(finding),
+        MavenElisionPolicyIdentityTestSupport.emptyPolicy());
   }
 }

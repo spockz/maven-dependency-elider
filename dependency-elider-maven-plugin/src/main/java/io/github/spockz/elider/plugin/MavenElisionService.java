@@ -144,7 +144,10 @@ final class MavenElisionService {
         ElisionAnalysisModel.evidence(prepared),
         trimResult,
         null,
-        null);
+        null,
+        prepared
+            .policyOptions()
+            .withOperationFingerprint(prepared.graphBinding().operationFingerprint()));
   }
 
   /* package */ EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)

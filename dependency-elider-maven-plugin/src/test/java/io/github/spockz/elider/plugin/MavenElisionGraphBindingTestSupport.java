@@ -16,6 +16,7 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.graph.DefaultDependencyNode;
@@ -195,7 +196,8 @@ class MavenElisionGraphBindingTestSupport {
       ElisionAnalysisModel.ArtifactSnapshot snapshot) {
     /** Binds this fixture pair to the supplied resolved inventory. */
     MavenElisionGraphBinding.Result bind(
-        final List<ElisionAnalysisModel.ArtifactSnapshot> inventory) throws IOException {
+        final List<ElisionAnalysisModel.ArtifactSnapshot> inventory)
+        throws IOException, MojoFailureException {
       return bind(
           inventory,
           new ElisionDecision(Set.of(coordinate(VERSION)), Set.of(), Map.of(), Map.of(), 0L));
@@ -204,7 +206,7 @@ class MavenElisionGraphBindingTestSupport {
     /** Binds this fixture pair to a supplied raw decision and resolved inventory. */
     MavenElisionGraphBinding.Result bind(
         final List<ElisionAnalysisModel.ArtifactSnapshot> inventory, final ElisionDecision decision)
-        throws IOException {
+        throws IOException, MojoFailureException {
       return bind(options, inventory, decision);
     }
 
@@ -212,7 +214,7 @@ class MavenElisionGraphBindingTestSupport {
         final ElisionAnalysisModel.AnalysisOptions selectedOptions,
         final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
         final ElisionDecision decision)
-        throws IOException {
+        throws IOException, MojoFailureException {
       return MavenElisionGraphBinding.bind(
           project,
           selectedOptions,

@@ -78,7 +78,8 @@ final class MediatedGraphReportTamperPayloadFactory {
             trim.programClassesPruned(),
             trim.uncompressedProgramClassBytesPruned(),
             List.of(trim),
-            graph);
+            graph,
+            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
     return payloadFromSnapshot(directory, snapshot);
   }
 
@@ -98,7 +99,8 @@ final class MediatedGraphReportTamperPayloadFactory {
             0,
             0,
             List.of(),
-            MediatedGraphReport.unavailable("No compatible graph was captured"));
+            MediatedGraphReport.unavailable("No compatible graph was captured"),
+            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
     return payloadFromSnapshot(directory, snapshot);
   }
 
@@ -118,7 +120,8 @@ final class MediatedGraphReportTamperPayloadFactory {
             0,
             0,
             List.of(),
-            MediatedGraphReportTestSupport.emptyGraph(PROJECT_GAV));
+            MediatedGraphReportTestSupport.emptyGraph(PROJECT_GAV),
+            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
     return payloadFromSnapshot(directory, snapshot);
   }
 

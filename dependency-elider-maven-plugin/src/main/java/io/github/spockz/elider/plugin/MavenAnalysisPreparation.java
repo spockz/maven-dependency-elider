@@ -25,6 +25,7 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
 /** Prepares a checked raw plan before any trimming or artifact publication. */
+@SuppressWarnings("PMD.CouplingBetweenObjects")
 final class MavenAnalysisPreparation {
   private MavenAnalysisPreparation() {}
 
@@ -37,6 +38,7 @@ final class MavenAnalysisPreparation {
         BanishedDependencyPolicy.resolve(
             options.retainedArtifacts(),
             options.banishedDependencies(),
+            project.getDependencies(),
             options.trim().passThroughArtifacts(),
             inventory.views().resolvedSnapshots(),
             inventory.views().directSnapshots());
@@ -56,6 +58,8 @@ final class MavenAnalysisPreparation {
     }
     final MavenAnalysisEvidence.RootEvidence evidence =
         MavenAnalysisEvidence.scan(project, options, inventory.candidates(), scanner);
+    final MavenElisionPolicyIdentity.Options policyOptions =
+        MavenElisionPolicyIdentity.normalize(options);
     final Set<String> requiredClasses =
         DynamicRootOrchestrator.requiredClassesForTrimming(
             evidence.sourceRequiredClasses(),
@@ -81,7 +85,8 @@ final class MavenAnalysisPreparation {
             decision,
             evidence.trace(),
             requiredClasses,
-            evidence.dynamicRoots().consumedInputs());
+            evidence.dynamicRoots().consumedInputs(),
+            policyOptions);
     verifyGraphBinding(project, inventory, graphBinding);
     NativeImageConsumedInput.verifyAll(evidence.dynamicRoots().consumedInputs());
     return new PreparedAnalysis(
@@ -104,6 +109,7 @@ final class MavenAnalysisPreparation {
         inventory.resolvedFingerprint(),
         inventory.directFingerprint(),
         graphBinding,
+        policyOptions,
         evidence.sourceAttributionFallback());
   }
 

@@ -99,7 +99,8 @@ final class ReportMojoGraphRenderingTest {
             0,
             0,
             List.of(),
-            MediatedGraphReport.unavailable("No compatible TEST graph was captured"));
+            MediatedGraphReport.unavailable("No compatible TEST graph was captured"),
+            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
     MavenElisionReportWriter.write(snapshotFile, graphless);
     final ReportMojo mojo = mojo(snapshotFile, project(), new ArrayList<>());
 
@@ -190,7 +191,8 @@ final class ReportMojoGraphRenderingTest {
         3,
         1536,
         List.of(new MavenElisionReportSnapshot.TrimmedArtifact(trimmed.toString(), 3, 1536)),
-        graph);
+        graph,
+        MavenElisionPolicyIdentityTestSupport.emptyPolicy());
   }
 
   private static ArtifactCoordinate coordinate(final String artifactId) {

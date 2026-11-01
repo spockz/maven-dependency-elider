@@ -61,7 +61,8 @@ final class ElisionSummaryMetricTest {
             0,
             0,
             List.of(),
-            MediatedGraphReportTestSupport.reportForDroppedOutput(coordinate, PROJECT_GAV));
+            MediatedGraphReportTestSupport.reportForDroppedOutput(coordinate, PROJECT_GAV),
+            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
     final RecordingMavenLog log = new RecordingMavenLog();
     final ElisionDecision decision =
         new ElisionDecision(Set.of(), Set.of(coordinate), Map.of(), Map.of(), 0L);
@@ -106,7 +107,8 @@ final class ElisionSummaryMetricTest {
                     16,
                     List.of(
                         new MavenElisionReportSnapshot.TrimmedArtifact(DROPPED_COORDINATE, 1, 16)),
-                    MediatedGraphReportTestSupport.reportForDroppedOutput(coordinate, PROJECT_GAV)))
+                    MediatedGraphReportTestSupport.reportForDroppedOutput(coordinate, PROJECT_GAV),
+                    MavenElisionPolicyIdentityTestSupport.emptyPolicy()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("An artifact cannot be both dropped and class-trimmed");
   }

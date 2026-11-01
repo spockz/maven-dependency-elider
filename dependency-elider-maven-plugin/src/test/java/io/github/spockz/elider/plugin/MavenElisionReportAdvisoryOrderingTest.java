@@ -222,7 +222,8 @@ final class MavenElisionReportAdvisoryOrderingTest {
         List.of(),
         List.of(),
         MediatedGraphReportTestSupport.reportForOutputs(
-            removed, trimmed, GROUP_ID + ":consumer:" + VERSION));
+            removed, trimmed, GROUP_ID + ":consumer:" + VERSION),
+        MavenElisionPolicyIdentityTestSupport.emptyPolicy());
   }
 
   private static ArtifactCoordinate coordinate(final String artifact, final String version) {

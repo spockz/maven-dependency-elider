@@ -90,6 +90,52 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
+  void rejectsMissingOrMalformedPolicyIdentity() throws IOException {
+    final ObjectNode missingPolicy = currentReportShapeWithDroppedRow();
+    missingPolicy.remove("policy");
+    final Path missing = temporaryDirectory.resolve("missing-policy.json");
+    JSON.writeValue(missing.toFile(), missingPolicy);
+
+    final ObjectNode malformedPolicy = currentReportShapeWithDroppedRow();
+    malformedPolicy.with("policy").put("operationFingerprint", "not-a-digest");
+    final Path malformed = temporaryDirectory.resolve("malformed-policy.json");
+    JSON.writeValue(malformed.toFile(), malformedPolicy);
+
+    final ObjectNode noncanonicalPolicy = currentReportShapeWithDroppedRow();
+    noncanonicalPolicy
+        .with("policy")
+        .putArray("retainedArtifacts")
+        .add("org.example:kept::jar:")
+        .add("org.example:kept::jar:");
+    final Path noncanonical = temporaryDirectory.resolve("noncanonical-policy.json");
+    JSON.writeValue(noncanonical.toFile(), noncanonicalPolicy);
+
+    final ObjectNode invalidCoordinatePolicy = currentReportShapeWithDroppedRow();
+    invalidCoordinatePolicy.with("policy").putArray("banishedDependencies").add("org.example:*");
+    final Path invalidCoordinate = temporaryDirectory.resolve("invalid-policy-coordinate.json");
+    JSON.writeValue(invalidCoordinate.toFile(), invalidCoordinatePolicy);
+
+    assertAll(
+        "schema-one policy identity is required and structurally valid",
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(missing))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Elision report fields do not match schema version 1"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(malformed))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Elision report policy values are malformed"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(noncanonical))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Elision report policy coordinates are not canonical"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(invalidCoordinate))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Elision report policy coordinates are invalid"));
+  }
+
+  @Test
   void rejectsDroppedArtifactMissingClassMetrics() throws IOException {
     final ObjectNode payload = currentReportShapeWithDroppedRow();
     final ObjectNode row = (ObjectNode) payload.withArray(DROPPED_ROWS).get(0);
@@ -610,6 +656,10 @@ final class MavenElisionReportSchemaTest {
     payload.put("assumeConventionalJavaSourceLayout", false);
     payload.putArray("sourceReviewFindings");
     payload.putArray("verifiedStructuredProofs");
+    final ObjectNode policy = payload.putObject("policy");
+    policy.putArray("retainedArtifacts");
+    policy.putArray("banishedDependencies");
+    policy.put("operationFingerprint", MavenElisionGraphBinding.sha256(java.util.List.of()));
     payload.putObject("advisoryReview").putArray("packageAdvisories");
     ((ObjectNode) payload.get("advisoryReview")).putArray("heuristicAdvisories");
     final ObjectNode graph = payload.putObject("mediatedGraph");

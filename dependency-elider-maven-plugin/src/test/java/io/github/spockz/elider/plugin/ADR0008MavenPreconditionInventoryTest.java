@@ -905,7 +905,8 @@ final class ADR0008MavenPreconditionInventoryTest {
               analysis.trimResult().analysisRuns(),
               analysis.trimResult().generationCommit()),
           analysis.graphProjection(),
-          analysis.mediatedGraph());
+          analysis.mediatedGraph(),
+          analysis.policyIdentity());
     }
 
     @Test

@@ -119,6 +119,11 @@ final class MavenElisionReportWriter {
     lines.add("Dependency Elider report");
     lines.add("Project: " + snapshot.projectGav());
     lines.add("Snapshot: last successful elide run at " + snapshot.generatedAt());
+    lines.add(
+        "Policy: retained="
+            + snapshot.policy().retainedArtifacts()
+            + ", banished="
+            + snapshot.policy().banishedDependencies());
     lines.add("The snapshot does not revalidate changed inputs when this goal runs.");
     lines.add(
         "Conventional Java source layout assumption saved for this run: "

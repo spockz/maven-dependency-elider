@@ -107,6 +107,38 @@ final class ElideMojoTest {
   }
 
   @Test
+  void banRequestFailsClosedBeforePublishingReportsOrChangingArtifactViews()
+      throws IOException, ReflectiveOperationException {
+    final Artifact guarded = artifact("guarded", "used/Entry.class");
+    final MavenProject project = project(guarded, Set.of());
+    final Set<Artifact> resolvedBefore = project.getArtifacts();
+    final Set<Artifact> directBefore = project.getDependencyArtifacts();
+    final Path report = tempDir.resolve("ban-guard-report.json");
+    final Path summary = tempDir.resolve("ban-guard-summary.json");
+    final String previousReport = "previous class report";
+    final String previousSummary = "previous elision report";
+    Files.writeString(report, previousReport);
+    Files.writeString(summary, previousSummary);
+    final ElideMojo mojo = newMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("used.Entry\n").toFile()));
+    set(mojo, "reportFile", report.toFile());
+    set(mojo, "summaryFile", summary.toFile());
+    set(mojo, "banishedDependencies", List.of("org.example:guarded"));
+
+    assertAll(
+        "elide rejects ban requests before publishing reports or changing Maven views",
+        () ->
+            assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("strict ban enforcement is not available"),
+        () -> assertThat(Files.readString(report)).isEqualTo(previousReport),
+        () -> assertThat(Files.readString(summary)).isEqualTo(previousSummary),
+        () -> assertThat(project.getArtifacts()).isSameAs(resolvedBefore),
+        () -> assertThat(project.getDependencyArtifacts()).isSameAs(directBefore));
+  }
+
+  @Test
   @DisplayName(
       "ADR-0010/process-classes defaults bytecode evidence and trims with compile processors")
   void processClassesAutomaticallyUsesBytecodeWithCompileProcessorPathsAndTrimming()
@@ -3010,7 +3042,8 @@ final class ElideMojoTest {
         List.of(),
         0,
         0,
-        List.of());
+        List.of(),
+        MavenElisionPolicyIdentityTestSupport.emptyPolicy());
   }
 
   private static void assertLastSuccessfulSnapshotRemains(

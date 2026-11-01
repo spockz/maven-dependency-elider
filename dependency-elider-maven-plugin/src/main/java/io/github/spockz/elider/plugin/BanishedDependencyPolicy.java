@@ -10,6 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoFailureException;
 
 /** Normalizes and evaluates explicit dependency bans against one inventory. */
@@ -41,6 +42,7 @@ final class BanishedDependencyPolicy {
   /* package */ static Resolution resolve(
       final List<String> retainedArtifacts,
       final List<String> banishedDependencies,
+      final List<Dependency> firstLevelDependencies,
       final List<String> trimSkipArtifacts,
       final List<ArtifactSnapshot> resolvedSnapshots,
       final List<ArtifactSnapshot> directSnapshots)
@@ -54,7 +56,7 @@ final class BanishedDependencyPolicy {
 
     final List<Match> matches = new ArrayList<>();
     for (final BanishedDependency request : requests) {
-      rejectDirectMatch(request, directSnapshots);
+      BanishedDependencyDirectMatchPolicy.reject(request, firstLevelDependencies, directSnapshots);
       final List<ArtifactSnapshot> resolvedMatches = matching(request, resolvedSnapshots);
       for (final ArtifactSnapshot snapshot : resolvedMatches) {
         validateSupportedMatch(request, snapshot);
@@ -137,15 +139,6 @@ final class BanishedDependencyPolicy {
       return null;
     }
     return parts[0].trim() + ":" + parts[1].trim();
-  }
-
-  private static void rejectDirectMatch(
-      final BanishedDependency request, final List<ArtifactSnapshot> directSnapshots)
-      throws MojoFailureException {
-    if (!matching(request, directSnapshots).isEmpty()) {
-      throw new MojoFailureException(
-          "elide.banishedDependencies cannot match a direct artifact-view member: " + request);
-    }
   }
 
   private static MojoFailureException invalidConfiguration(

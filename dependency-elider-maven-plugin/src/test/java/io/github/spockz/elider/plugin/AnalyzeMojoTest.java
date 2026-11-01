@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.File;
 import java.io.IOException;
@@ -433,6 +434,26 @@ final class AnalyzeMojoTest {
     assertThatThrownBy(fixture.mojo::execute)
         .isInstanceOf(MojoFailureException.class)
         .hasMessageContaining("Invalid elide.retainedArtifacts coordinate");
+  }
+
+  @Test
+  void banRequestFailsClosedWithoutPublishingReport()
+      throws IOException, ReflectiveOperationException {
+    final Fixture fixture = fixture("used/Sample\n");
+    final Path report = tempDir.resolve("ban-guard-report.json");
+    final String previousReport = "previous report";
+    Files.writeString(report, previousReport);
+    set(fixture.mojo, "banishedDependencies", List.of("org.example:used"));
+    set(fixture.mojo, "reportFile", report.toFile());
+
+    assertAll(
+        "analyze rejects ban requests before publishing a report",
+        () ->
+            assertThatThrownBy(fixture.mojo::execute)
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining(
+                    "cannot be applied because strict ban enforcement is not available"),
+        () -> assertThat(Files.readString(report)).isEqualTo(previousReport));
   }
 
   @Test

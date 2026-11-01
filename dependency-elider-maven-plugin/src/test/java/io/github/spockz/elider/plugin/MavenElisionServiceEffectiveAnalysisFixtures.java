@@ -61,6 +61,7 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
         prepared.inputFingerprint(),
         prepared.directInputFingerprint(),
         binding,
+        prepared.policyOptions(),
         prepared.sourceAttributionFallback());
   }
 

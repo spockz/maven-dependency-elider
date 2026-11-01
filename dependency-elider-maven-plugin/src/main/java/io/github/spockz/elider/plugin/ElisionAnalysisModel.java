@@ -58,6 +58,7 @@ final class ElisionAnalysisModel {
     }
 
     /* default */ AnalysisOptions {
+      retainedArtifacts = retainedArtifacts == null ? List.of() : List.copyOf(retainedArtifacts);
       banishedDependencies =
           banishedDependencies == null ? List.of() : List.copyOf(banishedDependencies);
       if (trim.workers() < MIN_TRIM_WORKERS) {
@@ -177,10 +178,12 @@ final class ElisionAnalysisModel {
       String inputFingerprint,
       String directInputFingerprint,
       MavenElisionGraphBinding.Result graphBinding,
+      MavenElisionPolicyIdentity.Options policyOptions,
       String sourceAttributionFallback) {
     /* default */ PreparedAnalysis {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);
+      java.util.Objects.requireNonNull(policyOptions, "policyOptions");
       scanCandidates = List.copyOf(scanCandidates);
       projectOutputClasses = Set.copyOf(projectOutputClasses);
       sourceRequiredClasses = Set.copyOf(sourceRequiredClasses);
@@ -248,7 +251,8 @@ final class ElisionAnalysisModel {
       AnalysisEvidence evidence,
       TrimResult trimResult,
       ResolverArtifactGraphProjection graphProjection,
-      MediatedGraphReport mediatedGraph) {}
+      MediatedGraphReport mediatedGraph,
+      MavenElisionPolicyIdentity policyIdentity) {}
 
   /* default */ static ArtifactViews artifactViews(final PreparedAnalysis prepared) {
     return new ArtifactViews(

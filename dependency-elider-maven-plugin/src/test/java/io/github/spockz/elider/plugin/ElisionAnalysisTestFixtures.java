@@ -34,6 +34,14 @@ final class ElisionAnalysisTestFixtures {
       final ArtifactViews artifacts,
       final ElisionDecision decision,
       final AnalysisEvidence evidence) {
-    return new Analysis(artifacts, decision, decision, evidence, EMPTY_TRIM, null, null);
+    return new Analysis(
+        artifacts,
+        decision,
+        decision,
+        evidence,
+        EMPTY_TRIM,
+        null,
+        null,
+        MavenElisionPolicyIdentityTestSupport.emptyPolicy());
   }
 }

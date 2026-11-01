@@ -53,7 +53,8 @@ record MavenElisionReportSnapshot(
     boolean assumeConventionalJavaSourceLayout,
     List<SourceReviewFinding> sourceReviewFindings,
     AdvisoryReview advisoryReview,
-    List<VerifiedStructuredProofFinding> verifiedStructuredProofs) {
+    List<VerifiedStructuredProofFinding> verifiedStructuredProofs,
+    MavenElisionPolicyIdentity policy) {
   /** Current persisted JSON format version. */
   static final int SCHEMA_VERSION = 1;
 
@@ -114,6 +115,7 @@ record MavenElisionReportSnapshot(
         assumeConventionalJavaSourceLayout);
     validateSourceReviewProofSeparation(sourceReviewFindings, verifiedStructuredProofs);
     Objects.requireNonNull(mediatedGraph, "mediatedGraph");
+    Objects.requireNonNull(policy, "policy");
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
     require(droppedProgramClassEntries >= 0, "droppedProgramClassEntries must not be negative");
@@ -171,7 +173,8 @@ record MavenElisionReportSnapshot(
       final List<ConservativeCveFinding> potentiallyConservativeCves,
       final MediatedGraphReport mediatedGraph,
       final boolean assumeConventionalJavaSourceLayout,
-      final List<SourceReviewFinding> sourceReviewFindings) {
+      final List<SourceReviewFinding> sourceReviewFindings,
+      final MavenElisionPolicyIdentity policy) {
     this(
         schemaVersion,
         projectGroupId,
@@ -196,7 +199,8 @@ record MavenElisionReportSnapshot(
         assumeConventionalJavaSourceLayout,
         sourceReviewFindings,
         AdvisoryReview.empty(),
-        List.of());
+        List.of(),
+        policy);
   }
 
   MavenElisionReportSnapshot(
@@ -222,7 +226,8 @@ record MavenElisionReportSnapshot(
       final MediatedGraphReport mediatedGraph,
       final boolean assumeConventionalJavaSourceLayout,
       final List<SourceReviewFinding> sourceReviewFindings,
-      final AdvisoryReview advisoryReview) {
+      final AdvisoryReview advisoryReview,
+      final MavenElisionPolicyIdentity policy) {
     this(
         schemaVersion,
         projectGroupId,
@@ -247,7 +252,8 @@ record MavenElisionReportSnapshot(
         assumeConventionalJavaSourceLayout,
         sourceReviewFindings,
         advisoryReview,
-        List.of());
+        List.of(),
+        policy);
   }
 
   MavenElisionReportSnapshot(
@@ -270,7 +276,8 @@ record MavenElisionReportSnapshot(
       final List<CveFinding> provenAbsentCves,
       final List<CveFinding> inactivePreconditionCves,
       final List<ConservativeCveFinding> potentiallyConservativeCves,
-      final MediatedGraphReport mediatedGraph) {
+      final MediatedGraphReport mediatedGraph,
+      final MavenElisionPolicyIdentity policy) {
     this(
         schemaVersion,
         projectGroupId,
@@ -293,38 +300,8 @@ record MavenElisionReportSnapshot(
         potentiallyConservativeCves,
         mediatedGraph,
         false,
-        List.of());
-  }
-
-  MavenElisionReportSnapshot(
-      final int schemaVersion,
-      final String projectGroupId,
-      final String projectArtifactId,
-      final String projectVersion,
-      final String projectBaseDirectory,
-      final String generatedAt,
-      final int wholeArtifactsDropped,
-      final long originalJarBytesDropped,
-      final List<DroppedArtifact> droppedArtifacts,
-      final List<String> rawDroppedCoordinates,
-      final int programClassesPruned,
-      final long uncompressedProgramClassBytesPruned,
-      final List<TrimmedArtifact> trimmedArtifacts) {
-    this(
-        schemaVersion,
-        projectGroupId,
-        projectArtifactId,
-        projectVersion,
-        projectBaseDirectory,
-        generatedAt,
-        wholeArtifactsDropped,
-        originalJarBytesDropped,
-        droppedArtifacts,
-        rawDroppedCoordinates,
-        programClassesPruned,
-        uncompressedProgramClassBytesPruned,
-        trimmedArtifacts,
-        MediatedGraphReport.unavailable("No mediated graph data was provided to this report"));
+        List.of(),
+        policy);
   }
 
   MavenElisionReportSnapshot(
@@ -341,7 +318,41 @@ record MavenElisionReportSnapshot(
       final int programClassesPruned,
       final long uncompressedProgramClassBytesPruned,
       final List<TrimmedArtifact> trimmedArtifacts,
-      final MediatedGraphReport mediatedGraph) {
+      final MavenElisionPolicyIdentity policy) {
+    this(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        MediatedGraphReport.unavailable("No mediated graph data was provided to this report"),
+        policy);
+  }
+
+  MavenElisionReportSnapshot(
+      final int schemaVersion,
+      final String projectGroupId,
+      final String projectArtifactId,
+      final String projectVersion,
+      final String projectBaseDirectory,
+      final String generatedAt,
+      final int wholeArtifactsDropped,
+      final long originalJarBytesDropped,
+      final List<DroppedArtifact> droppedArtifacts,
+      final List<String> rawDroppedCoordinates,
+      final int programClassesPruned,
+      final long uncompressedProgramClassBytesPruned,
+      final List<TrimmedArtifact> trimmedArtifacts,
+      final MediatedGraphReport mediatedGraph,
+      final MavenElisionPolicyIdentity policy) {
     this(
         schemaVersion,
         projectGroupId,
@@ -362,7 +373,8 @@ record MavenElisionReportSnapshot(
         List.of(),
         List.of(),
         List.of(),
-        mediatedGraph);
+        mediatedGraph,
+        policy);
   }
 
   MavenElisionReportSnapshot(
@@ -382,7 +394,8 @@ record MavenElisionReportSnapshot(
       final List<CveFinding> removedCveComponents,
       final List<CveFinding> provenAbsentCves,
       final List<CveFinding> inactivePreconditionCves,
-      final MediatedGraphReport mediatedGraph) {
+      final MediatedGraphReport mediatedGraph,
+      final MavenElisionPolicyIdentity policy) {
     this(
         schemaVersion,
         projectGroupId,
@@ -403,7 +416,8 @@ record MavenElisionReportSnapshot(
         provenAbsentCves,
         inactivePreconditionCves,
         List.of(),
-        mediatedGraph);
+        mediatedGraph,
+        policy);
   }
 
   static MavenElisionReportSnapshot from(
@@ -463,7 +477,8 @@ record MavenElisionReportSnapshot(
         vulnerabilityAssessment != null && vulnerabilityAssessment.conventionalLayoutAssumed(),
         sourceReviewFindings(vulnerabilityAssessment, verifiedProofs),
         advisoryReview(vulnerabilityAssessment),
-        verifiedProofs);
+        verifiedProofs,
+        analysis.policyIdentity());
   }
 
   private static List<VerifiedStructuredProofFinding> verifiedStructuredProofs(
@@ -538,7 +553,8 @@ record MavenElisionReportSnapshot(
         assumeConventionalJavaSourceLayout,
         sourceReviewFindings,
         review,
-        verifiedStructuredProofs);
+        verifiedStructuredProofs,
+        policy);
   }
 
   static AdvisoryReview advisoryReview(final MavenVulnerabilityAssessment.Result assessment) {

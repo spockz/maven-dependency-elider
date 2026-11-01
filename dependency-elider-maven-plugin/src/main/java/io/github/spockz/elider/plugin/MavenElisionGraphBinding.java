@@ -14,11 +14,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.RepositorySystemSession;
 
 /** Binds a unique graph pair to local inventory and operation evidence. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 final class MavenElisionGraphBinding {
   private MavenElisionGraphBinding() {
     throw new AssertionError("No instances");
@@ -31,7 +32,7 @@ final class MavenElisionGraphBinding {
       final ElisionDecision rawDecision,
       final TraceData trace,
       final Set<String> requiredRoots)
-      throws IOException {
+      throws IOException, MojoFailureException {
     return bind(project, options, inventory, rawDecision, trace, requiredRoots, List.of());
   }
 
@@ -43,7 +44,28 @@ final class MavenElisionGraphBinding {
       final TraceData trace,
       final Set<String> requiredRoots,
       final List<NativeImageConsumedInput> consumedInputs)
-      throws IOException {
+      throws IOException, MojoFailureException {
+    return bind(
+        project,
+        options,
+        inventory,
+        rawDecision,
+        trace,
+        requiredRoots,
+        consumedInputs,
+        MavenElisionPolicyIdentity.normalize(options));
+  }
+
+  static Result bind(
+      final MavenProject project,
+      final ElisionAnalysisModel.AnalysisOptions options,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
+      final ElisionDecision rawDecision,
+      final TraceData trace,
+      final Set<String> requiredRoots,
+      final List<NativeImageConsumedInput> consumedInputs,
+      final MavenElisionPolicyIdentity.Options policyOptions)
+      throws IOException, MojoFailureException {
     final String projectKey = projectKey(project);
     final String inventoryFingerprint;
     try {
@@ -64,7 +86,8 @@ final class MavenElisionGraphBinding {
             trace,
             requiredRoots,
             rawDecision,
-            consumedInputs);
+            consumedInputs,
+            policyOptions);
     if (!MavenElisionGraphInventory.matchesDecision(inventory, rawDecision)) {
       return failClosed(
           projectKey,
@@ -180,8 +203,9 @@ final class MavenElisionGraphBinding {
       final TraceData trace,
       final Set<String> requiredRoots,
       final ElisionDecision decision,
-      final List<NativeImageConsumedInput> consumedInputs)
-      throws IOException {
+      final List<NativeImageConsumedInput> consumedInputs,
+      final MavenElisionPolicyIdentity.Options policyOptions)
+      throws IOException, MojoFailureException {
     final List<String> fields = new ArrayList<>();
     fields.add(inventoryFingerprint);
     MavenCompilerSettings.releaseIdentity(project, options.session())
@@ -194,12 +218,13 @@ final class MavenElisionGraphBinding {
     fields.add(Boolean.toString(options.trim().enabled()));
     fields.add(options.trim().mrjarStrategy());
     fields.add(Boolean.toString(options.trim().failOnUnsupportedModuleInfo()));
-    fields.addAll(sorted(options.retainedArtifacts()));
     fields.addAll(
-        options.banishedDependencies().stream()
-            .map(BanishedDependency::parse)
-            .map(dependency -> "banished=" + dependency)
-            .sorted()
+        policyOptions.retainedArtifacts().stream()
+            .map(coordinate -> "policy-retained=" + coordinate)
+            .toList());
+    fields.addAll(
+        policyOptions.banishedDependencies().stream()
+            .map(dependency -> "policy-banished=" + dependency)
             .toList());
     fields.addAll(sorted(options.trim().explicitRoots()));
     fields.addAll(sorted(options.trim().passThroughArtifacts()));
@@ -207,8 +232,14 @@ final class MavenElisionGraphBinding {
         consumedInputs.stream().map(NativeImageConsumedInput::identity).sorted().toList());
     fields.addAll(sorted(trace.loadedClassesDotFormat()));
     fields.addAll(sorted(requiredRoots));
-    fields.addAll(sorted(decision.retainedArtifacts().stream().map(Object::toString).toList()));
-    fields.addAll(sorted(decision.elidedArtifacts().stream().map(Object::toString).toList()));
+    fields.addAll(
+        sorted(decision.retainedArtifacts().stream().map(Object::toString).toList()).stream()
+            .map(coordinate -> "retained-action=" + coordinate)
+            .toList());
+    fields.addAll(
+        sorted(decision.elidedArtifacts().stream().map(Object::toString).toList()).stream()
+            .map(coordinate -> "elided-action=" + coordinate)
+            .toList());
     return sha256(fields);
   }
 
@@ -220,7 +251,7 @@ final class MavenElisionGraphBinding {
     return values.stream().sorted().toList();
   }
 
-  private static String sha256(final List<String> values) {
+  static String sha256(final List<String> values) {
     try {
       final MessageDigest digest = MessageDigest.getInstance("SHA-256");
       for (final String value : values) {

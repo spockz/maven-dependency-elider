@@ -104,7 +104,8 @@ final class ReportMojoTest {
         List.of(),
         graph,
         layoutAssumed,
-        List.of());
+        List.of(),
+        MavenElisionPolicyIdentityTestSupport.emptyPolicy());
   }
 
   private static ArtifactCoordinate coordinate(final String artifactId) {
