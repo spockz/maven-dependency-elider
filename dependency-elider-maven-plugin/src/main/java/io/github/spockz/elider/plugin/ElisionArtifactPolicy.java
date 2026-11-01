@@ -1,4 +1,4 @@
-// WHY: Resolves configured exclusions and pass-through coordinates for raw
+// WHY: Resolves configured retention and pass-through coordinates for raw
 // artifact pruning.
 
 package io.github.spockz.elider.plugin;
@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 import org.apache.maven.plugin.MojoFailureException;
 
-/** Resolves exclusions and pass-through coordinates for artifact pruning. */
+/** Resolves retained and pass-through coordinates for artifact pruning. */
 final class ElisionArtifactPolicy {
   /** Scopes eligible for whole-artifact elision. */
   private static final Set<String> ELIGIBLE_SCOPES = Set.of("compile", "runtime");
@@ -24,15 +24,15 @@ final class ElisionArtifactPolicy {
   private ElisionArtifactPolicy() {}
 
   /* package */ static PruneConfig config(
-      final List<String> excludedArtifacts, final Set<ArtifactCoordinate> keepArtifacts)
+      final List<String> retainedArtifacts, final Set<ArtifactCoordinate> keepArtifacts)
       throws MojoFailureException {
-    final Set<ArtifactCoordinate> exclusions = new LinkedHashSet<>();
-    if (excludedArtifacts != null) {
-      for (final String text : excludedArtifacts) {
-        exclusions.add(parseExclusion(text));
+    final Set<ArtifactCoordinate> retained = new LinkedHashSet<>();
+    if (retainedArtifacts != null) {
+      for (final String text : retainedArtifacts) {
+        retained.add(parseRetention(text));
       }
     }
-    return new PruneConfig(Set.of(), keepArtifacts, ELIGIBLE_SCOPES, exclusions);
+    return new PruneConfig(Set.of(), keepArtifacts, ELIGIBLE_SCOPES, retained);
   }
 
   /* package */ static Set<ArtifactCoordinate> parsePassThroughCoordinates(
@@ -117,11 +117,11 @@ final class ElisionArtifactPolicy {
     }
   }
 
-  private static ArtifactCoordinate parseExclusion(final String text) throws MojoFailureException {
+  private static ArtifactCoordinate parseRetention(final String text) throws MojoFailureException {
     final String[] pieces = text.split(":", -1);
     if (pieces.length < 2 || pieces.length > 5 || pieces[0].isBlank() || pieces[1].isBlank()) {
       throw new MojoFailureException(
-          "Invalid elide.excludedArtifacts coordinate '"
+          "Invalid elide.retainedArtifacts coordinate '"
               + text
               + "'; expected groupId:artifactId[:version[:type[:classifier]]]");
     }

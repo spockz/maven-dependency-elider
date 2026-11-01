@@ -195,7 +195,7 @@ MANIFEST
         -Delide.trimJars=true
         -Delide.sourceRootsComplete=true
         -Dmaven.compiler.proc=none
-        -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
+        -Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
       )
     elif [[ $fixture == example-spring-boot-app ]]; then
       elision_options+=(

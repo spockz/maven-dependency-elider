@@ -86,7 +86,7 @@ final class AnalyzeMojoTest {
     final AnalyzeMojo mojo = new AnalyzeMojo();
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "excludedArtifacts", List.of("org.example:excluded"));
+    set(mojo, "retainedArtifacts", List.of("org.example:excluded"));
     final Path report = tempDir.resolve("analysis.json");
     set(mojo, "reportFile", report.toFile());
     final RecordingMavenLog log = new RecordingMavenLog();
@@ -426,13 +426,13 @@ final class AnalyzeMojoTest {
   }
 
   @Test
-  void rejectsInvalidExclusionCoordinates() throws IOException, ReflectiveOperationException {
+  void rejectsInvalidRetentionCoordinates() throws IOException, ReflectiveOperationException {
     final Fixture fixture = fixture("used/Sample\n");
-    set(fixture.mojo, "excludedArtifacts", List.of("org.example"));
+    set(fixture.mojo, "retainedArtifacts", List.of("org.example"));
 
     assertThatThrownBy(fixture.mojo::execute)
         .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Invalid elide.excludedArtifacts coordinate");
+        .hasMessageContaining("Invalid elide.retainedArtifacts coordinate");
   }
 
   @Test

@@ -28,26 +28,26 @@ final class MavenElisionService {
   /* package */ Analysis analyze(
       final MavenProject project,
       final List<File> traceFiles,
-      final List<String> excludedArtifacts,
+      final List<String> retainedArtifacts,
       final File productionOutput)
       throws IOException, MojoFailureException {
-    return analyze(project, traceFiles, excludedArtifacts, productionOutput, null, false);
+    return analyze(project, traceFiles, retainedArtifacts, productionOutput, null, false);
   }
 
   /* package */ Analysis analyze(
       final MavenProject project,
       final List<File> traceFiles,
-      final List<String> excludedArtifacts,
+      final List<String> retainedArtifacts,
       final File productionOutput,
       final MavenSession session)
       throws IOException, MojoFailureException {
-    return analyze(project, traceFiles, excludedArtifacts, productionOutput, session, false);
+    return analyze(project, traceFiles, retainedArtifacts, productionOutput, session, false);
   }
 
   /* package */ Analysis analyze(
       final MavenProject project,
       final List<File> traceFiles,
-      final List<String> excludedArtifacts,
+      final List<String> retainedArtifacts,
       final File productionOutput,
       final MavenSession session,
       final boolean sourceRootsComplete)
@@ -55,7 +55,7 @@ final class MavenElisionService {
     return analyze(
         project,
         traceFiles,
-        excludedArtifacts,
+        retainedArtifacts,
         productionOutput,
         session,
         sourceRootsComplete,
@@ -66,7 +66,7 @@ final class MavenElisionService {
   /* package */ Analysis analyze(
       final MavenProject project,
       final List<File> traceFiles,
-      final List<String> excludedArtifacts,
+      final List<String> retainedArtifacts,
       final File productionOutput,
       final MavenSession session,
       final boolean sourceRootsComplete,
@@ -77,7 +77,7 @@ final class MavenElisionService {
         project,
         new AnalysisOptions(
             traceFiles,
-            excludedArtifacts,
+            retainedArtifacts,
             productionOutput,
             session,
             new CompletenessOptions(sourceRootsComplete, false, false, false),

@@ -50,7 +50,7 @@ final class MavenElisionGraphBindingTest extends MavenElisionGraphBindingTestSup
     final ElisionAnalysisModel.AnalysisOptions passThrough =
         new ElisionAnalysisModel.AnalysisOptions(
             options.traceFiles(),
-            options.excludedArtifacts(),
+            options.retainedArtifacts(),
             options.productionOutput(),
             options.session(),
             new ElisionAnalysisModel.CompletenessOptions(

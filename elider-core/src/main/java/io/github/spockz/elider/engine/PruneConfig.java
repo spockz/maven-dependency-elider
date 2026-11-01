@@ -12,13 +12,13 @@ import java.util.Set;
  *
  * <p>Other scopes may serve build/test paths; explicit overrides always win.
  *
- * @param excludedArtifacts user global exclusions; scope is ignored
+ * @param retainedArtifacts user global retention overrides; scope is ignored
  */
 public record PruneConfig(
     Set<String> keepScopes,
     Set<ArtifactCoordinate> keepArtifacts,
     Set<String> eligibleScopes,
-    Set<ArtifactCoordinate> excludedArtifacts) {
+    Set<ArtifactCoordinate> retainedArtifacts) {
   /** Default scopes whose artifacts are part of the runtime application. */
   private static final Set<String> DEFAULT_ELIGIBLE_SCOPES = Set.of("compile", "runtime");
 
@@ -29,11 +29,11 @@ public record PruneConfig(
         Set.copyOf(Objects.requireNonNull(keepArtifacts, "keepArtifacts must not be null"));
     eligibleScopes =
         Set.copyOf(Objects.requireNonNull(eligibleScopes, "eligibleScopes must not be null"));
-    excludedArtifacts =
-        Set.copyOf(Objects.requireNonNull(excludedArtifacts, "excludedArtifacts must not be null"));
+    retainedArtifacts =
+        Set.copyOf(Objects.requireNonNull(retainedArtifacts, "retainedArtifacts must not be null"));
   }
 
-  /** Keeps existing overrides while using an empty global exclusion list. */
+  /** Keeps existing overrides while using an empty global retention list. */
   public PruneConfig(
       final Set<String> keepScopes,
       final Set<ArtifactCoordinate> keepArtifacts,
@@ -51,11 +51,11 @@ public record PruneConfig(
     this(keepScopes, keepArtifacts, DEFAULT_ELIGIBLE_SCOPES, Set.of());
   }
 
-  /** Tests explicit retention overrides; global exclusions ignore scope. */
+  /** Tests explicit retention overrides; global retention ignores scope. */
   public boolean keeps(final ArtifactCoordinate coordinate) {
     return keepArtifacts.contains(coordinate)
-        || excludedArtifacts.stream()
-            .anyMatch(excluded -> sameArtifactIdentity(excluded, coordinate))
+        || retainedArtifacts.stream()
+            .anyMatch(retained -> sameArtifactIdentity(retained, coordinate))
         || keepScopes.contains(coordinate.scope());
   }
 

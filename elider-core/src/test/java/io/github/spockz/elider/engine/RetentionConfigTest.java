@@ -1,4 +1,4 @@
-// WHY: Verifies global exclusion matching across Maven scopes and optional version selectors.
+// WHY: Verifies global retention matching across Maven scopes and optional version selectors.
 
 package io.github.spockz.elider.engine;
 
@@ -8,19 +8,19 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-/** Verifies global artifact exclusion matching. */
+/** Verifies global artifact retention matching. */
 @SuppressWarnings("PMD.AvoidDuplicateLiterals")
-final class PruneConfigTest {
+final class RetentionConfigTest {
   /** Creates the focused test fixture. */
   @SuppressWarnings({"PMD.UncommentedEmptyConstructor", "PMD.CommentDefaultAccessModifier"})
-  PruneConfigTest() {}
+  RetentionConfigTest() {}
 
   @Test
-  void versionlessGlobalExclusionMatchesAnyScopeAndVersion() {
-    final ArtifactCoordinate excluded =
+  void versionlessGlobalRetentionMatchesAnyScopeAndVersion() {
+    final ArtifactCoordinate retained =
         new ArtifactCoordinate("org.example", "unused", null, "jar", "", "compile");
     final PruneConfig config =
-        new PruneConfig(Set.of(), Set.of(), Set.of("compile", "runtime"), Set.of(excluded));
+        new PruneConfig(Set.of(), Set.of(), Set.of("compile", "runtime"), Set.of(retained));
 
     assertThat(
             config.keeps(
@@ -29,11 +29,11 @@ final class PruneConfigTest {
   }
 
   @Test
-  void globalExclusionDoesNotMatchOtherArtifacts() {
-    final ArtifactCoordinate excluded =
+  void globalRetentionDoesNotMatchOtherArtifacts() {
+    final ArtifactCoordinate retained =
         new ArtifactCoordinate("org.example", "unused", null, "jar", "", "compile");
     final PruneConfig config =
-        new PruneConfig(Set.of(), Set.of(), Set.of("compile", "runtime"), Set.of(excluded));
+        new PruneConfig(Set.of(), Set.of(), Set.of("compile", "runtime"), Set.of(retained));
 
     assertThat(
             config.keeps(
@@ -42,7 +42,7 @@ final class PruneConfigTest {
   }
 
   @Test
-  void versionedExclusionRequiresTheSameVersion() {
+  void versionedRetentionRequiresTheSameVersion() {
     final PruneConfig config =
         configFor(
             new ArtifactCoordinate("org.example", "unused", "1.0", "jar", "tests", "compile"));
@@ -54,7 +54,7 @@ final class PruneConfigTest {
   }
 
   @Test
-  void exclusionRequiresTheSameType() {
+  void retentionRequiresTheSameType() {
     final PruneConfig config =
         configFor(
             new ArtifactCoordinate("org.example", "unused", "1.0", "jar", "tests", "compile"));
@@ -66,7 +66,7 @@ final class PruneConfigTest {
   }
 
   @Test
-  void exclusionRequiresTheSameClassifier() {
+  void retentionRequiresTheSameClassifier() {
     final PruneConfig config =
         configFor(
             new ArtifactCoordinate("org.example", "unused", "1.0", "jar", "tests", "compile"));
@@ -77,7 +77,8 @@ final class PruneConfigTest {
         .isFalse();
   }
 
-  private static PruneConfig configFor(final ArtifactCoordinate exclusion) {
-    return new PruneConfig(Set.of(), Set.of(), Set.of("compile", "runtime"), Set.of(exclusion));
+  private static PruneConfig configFor(final ArtifactCoordinate retainedCoordinate) {
+    return new PruneConfig(
+        Set.of(), Set.of(), Set.of("compile", "runtime"), Set.of(retainedCoordinate));
   }
 }

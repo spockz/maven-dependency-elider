@@ -91,8 +91,8 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   private List<File> traceFiles;
 
   /** Global artifact identities that must remain in the build. */
-  @Parameter(property = "elide.excludedArtifacts")
-  private List<String> excludedArtifacts;
+  @Parameter(property = "elide.retainedArtifacts")
+  private List<String> retainedArtifacts;
 
   /** Optional production class output for static references. */
   @Parameter(property = "elide.productionOutput")
@@ -206,6 +206,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
   @Override
   public void execute() throws MojoFailureException {
+    LegacyRetentionSetting.rejectIfConfigured(project, session, mojoExecution);
     final String executionId = mojoExecution == null ? null : mojoExecution.getExecutionId();
     final String projectId = project == null ? null : project.getId();
     final MojoExecution.Source executionSource = EliderPreparationState.source(mojoExecution);
@@ -317,7 +318,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
         productionClassesComplete || (trustedProcessClassesContext && !sourceRootsComplete);
     return new ElisionAnalysisModel.AnalysisOptions(
         traceFiles,
-        excludedArtifacts,
+        retainedArtifacts,
         effectiveProductionOutput(useProductionClasses),
         session,
         new ElisionAnalysisModel.CompletenessOptions(

@@ -240,8 +240,8 @@ Later slices may add:
        @Parameter(property = "elide.failOnUnused", defaultValue = "false")
        private boolean failOnUnused;
 
-       @Parameter(property = "elide.excludedArtifacts")
-       private List<String> excludedArtifacts;
+       @Parameter(property = "elide.retainedArtifacts")
+       private List<String> retainedArtifacts;
        ...
    }
    ```
@@ -253,7 +253,7 @@ Later slices may add:
      2. Scan Central Directory of all `project.getArtifacts()`.
      3. Execute `DependencyPruner.prune(...)`.
      4. Save decision to cache.
-   * Pass plugin-user-configured `excludedArtifacts` into the pruning policy. Matching exclusions retain those dependencies globally, regardless of where they enter the dependency set; keep this distinct from exclusions scoped to an individual Maven dependency declaration. The default is empty, and coordinate matching must be documented and tested.
+   * Pass plugin-user-configured `retainedArtifacts` into the pruning policy. Matching coordinates retain those dependencies globally, regardless of where they enter the dependency set; keep this distinct from exclusions scoped to an individual Maven dependency declaration. The default is empty, and coordinate matching must be documented and tested.
    * **In-Memory Mutation (ADR-0002)**:
 
      ```java
@@ -424,5 +424,6 @@ Before declaring implementation complete:
 | Reproducibility and cache | Bind decisions to content/configuration/evidence identities; validate outputs, atomic writes, parallel access, and failed transformations. Measure cold and cached total build work. | Tracks 3 and 7; RQ-0003 |
 | Publication and scope | Specialization is application-specific. Publishing a reusable library requires roots for downstream APIs and a separate identity/resolution policy. Verify consumer resolution rather than publish references to unavailable transformed artifacts. | Tracks 4 and 5; RQ-0001 |
 | Validation and security reporting | Test actual transformed dependencies, positive/negative fixtures, packaged contents, and reasons for retention/removal. Separate package-size results, scanner results, and vulnerability assessments. | Tracks 4 and 8 |
+| Global retention terminology | Implemented as `retainedArtifacts`, with exact `groupId:artifactId` matching and explicit rejection of the unreleased `excludedArtifacts` property/XML element. Retention membership does not guarantee unchanged JAR bytes; `trimSkipArtifacts` remains the byte-preservation setting. | [`PruneConfig`](../../elider-core/src/main/java/io/github/spockz/elider/engine/PruneConfig.java), [`LegacyRetentionSetting`](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/LegacyRetentionSetting.java), [`RetentionConfigTest`](../../elider-core/src/test/java/io/github/spockz/elider/engine/RetentionConfigTest.java), and packaged goal rejection coverage in [`DependencyContextLifecycleIT`](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIT.java). |
 
 The first source-aware trimming experiment, if approved as a scope revision, should compare oracle plus source/framework roots against a distribution-only shrinker baseline, preserve individual JAR boundaries and compilation metadata, retain members conservatively, and report package size, total build cost, and setup effort. This is a research candidate, not an implemented feature or a replacement for the current whole-artifact scope.

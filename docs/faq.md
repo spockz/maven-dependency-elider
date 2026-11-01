@@ -37,6 +37,10 @@ It reports artifacts that would be elided by that analysis and the exact sum of 
 
 Set `elide.trimSkipArtifacts` to the exact resolved coordinate, such as `groupId:artifactId:version:jar:`. The JAR remains byte-identical and is protected from whole-artifact elision. Its classes can still cause linked classes in other trim candidates to be retained. See [Maven plugin usage](plugin-usage.md) for the Spring example.
 
+### How can I retain an artifact from whole-artifact elision?
+
+Set `elide.retainedArtifacts` to its `groupId:artifactId`, for example `-Delide.retainedArtifacts=org.example:library`. This retains a matching artifact in the current graph; it does not promise that the original JAR bytes remain unchanged. Use `elide.trimSkipArtifacts` when byte-identical preservation is required. The former `elide.excludedArtifacts` property and `<excludedArtifacts>` element are rejected because this setting controls retention rather than Maven dependency exclusions.
+
 ### What if a dependency JAR changes during or between Maven builds?
 
 The elider uses exact content digests to identify dependency and JDK platform inputs. The stable-input assumption covers dependency JARs, the selected JDK's `ct.sym` or JMODs, its `release` metadata, and the selected archive inventory. Concurrent edits to those files during a Maven invocation are unsupported and can make that invocation nondeterministic. A later invocation recalculates selection and content identity, so changed inputs are recognized. Maven's resolution-time checksum verification does not lock files for the rest of the build. See [ADR 0004](adr/0004-assume-resolved-inputs-stable-during-build.md).

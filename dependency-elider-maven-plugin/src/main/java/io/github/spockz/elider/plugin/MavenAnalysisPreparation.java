@@ -153,7 +153,7 @@ final class MavenAnalysisPreparation {
                 inventory.candidates(),
                 evidence.index(),
                 evidence.trace(),
-                ElisionArtifactPolicy.config(options.excludedArtifacts(), keep),
+                ElisionArtifactPolicy.config(options.retainedArtifacts(), keep),
                 requiredClasses);
     return ElisionArtifactPolicy.retainNonJarArtifacts(jars, inventory.views().resolvedSnapshots());
   }

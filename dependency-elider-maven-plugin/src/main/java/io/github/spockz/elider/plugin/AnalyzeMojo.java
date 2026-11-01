@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -34,6 +35,10 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   /** Maven session used to detect an externally selected compiler toolchain. */
   @Parameter(defaultValue = "${session}", readonly = true)
   private MavenSession session;
+
+  /** Raw execution configuration used to reject the obsolete retention parameter. */
+  @Parameter(defaultValue = "${mojoExecution}", readonly = true)
+  private MojoExecution mojoExecution;
 
   /** User assertion that all production/generated sources exist before INITIALIZE. */
   @Parameter(property = "elide.sourceRootsComplete", defaultValue = DEFAULT_FALSE)
@@ -84,8 +89,8 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   private List<File> traceFiles;
 
   /** Global artifact identities that analysis should retain. */
-  @Parameter(property = "elide.excludedArtifacts")
-  private List<String> excludedArtifacts;
+  @Parameter(property = "elide.retainedArtifacts")
+  private List<String> retainedArtifacts;
 
   /** Optional production class output for static references. */
   @Parameter(property = "elide.productionOutput")
@@ -132,6 +137,7 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   /** Runs analysis and reports a conservative summary without mutating Maven state. */
   @Override
   public void execute() throws MojoFailureException {
+    LegacyRetentionSetting.rejectIfConfigured(project, session, mojoExecution);
     if (shouldSkipAnalysis()) {
       return;
     }
@@ -142,7 +148,7 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
                   project,
                   new ElisionAnalysisModel.AnalysisOptions(
                       traceFiles,
-                      excludedArtifacts,
+                      retainedArtifacts,
                       effectiveProductionOutput(),
                       session,
                       new ElisionAnalysisModel.CompletenessOptions(

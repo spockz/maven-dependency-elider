@@ -301,11 +301,11 @@ class DependencyPrunerTest {
   }
 
   @Test
-  void globalExclusionsIgnoreScopeButPreserveArtifactIdentity() {
-    final ArtifactCoordinate excludedCompile =
+  void globalRetentionIgnoresScopeButPreservesArtifactIdentity() {
+    final ArtifactCoordinate retainedCompile =
         new ArtifactCoordinate("sample", "excluded", "1.0", "jar", "tests", "compile");
     final ArtifactFileRef compile =
-        new ArtifactFileRef(excludedCompile, Path.of("excluded.jar"), 1, 2);
+        new ArtifactFileRef(retainedCompile, Path.of("excluded.jar"), 1, 2);
     final ArtifactFileRef runtime =
         new ArtifactFileRef(
             new ArtifactCoordinate("sample", "excluded", "1.0", "jar", "tests", "runtime"),
@@ -322,7 +322,7 @@ class DependencyPrunerTest {
             2);
     final ArtifactFileRef observed = artifact("observed", "jar", "", "compile");
     final PruneConfig config =
-        new PruneConfig(Set.of(), Set.of(), Set.of("compile", "runtime"), Set.of(excludedCompile));
+        new PruneConfig(Set.of(), Set.of(), Set.of("compile", "runtime"), Set.of(retainedCompile));
     assertThat(config.keeps(compile.coordinate())).isTrue();
     assertThat(config.keeps(runtime.coordinate())).isTrue();
     assertThat(config.keeps(differentType.coordinate())).isFalse();

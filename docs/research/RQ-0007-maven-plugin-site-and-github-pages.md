@@ -12,7 +12,7 @@ Abbreviations: Continuous Integration (CI), Abstract Syntax Tree (AST), Applicat
 
 ## 1. Context & Research Questions
 
-The `maven-dependency-elider` repository delivers both a core analysis/elision engine (`elider-core`) and a Maven plugin (`dependency-elider-maven-plugin`). For Maven plugin consumers, documentation accessibility and accuracy are paramount. Users need precise descriptions of plugin goals (`analyze`, `elide`), configuration properties (`elide.traceFiles`, `elide.reportFile`, `elide.excludedArtifacts`, etc.), supported runtime telemetry formats, lifecycle phase bindings, and troubleshooting diagnostics.
+The `maven-dependency-elider` repository delivers both a core analysis/elision engine (`elider-core`) and a Maven plugin (`dependency-elider-maven-plugin`). For Maven plugin consumers, documentation accessibility and accuracy are paramount. Users need precise descriptions of plugin goals (`analyze`, `elide`), configuration properties (`elide.traceFiles`, `elide.reportFile`, `elide.retainedArtifacts`, etc.), supported runtime telemetry formats, lifecycle phase bindings, and troubleshooting diagnostics.
 
 User guidance starts from `README.md`; the detailed plugin guide now lives at `dependency-elider-maven-plugin/src/site/markdown/usage.md`. User FAQ and contributor records remain under `docs/`. The generated Maven site combines the usage guide with Mojo parameter references.
 

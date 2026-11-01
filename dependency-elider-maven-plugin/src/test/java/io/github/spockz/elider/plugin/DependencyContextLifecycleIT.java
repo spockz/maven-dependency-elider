@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -368,6 +369,225 @@ final class DependencyContextLifecycleIT {
     assertThat(sha256(dropJar)).isEqualTo(dropHash);
     assertThat(sha256(keepJar)).isEqualTo(keepHash);
   }
+
+  @Test
+  void legacyRetentionPomElementFailsBothGoalsBeforeReportPublication() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path evidenceDirectory = temporaryDirectory.resolve("legacy-retention-pom");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path fixtureDirectory =
+        Files.createDirectories(evidenceDirectory.resolve("legacy-consumer"));
+    final Path target = Files.createDirectories(fixtureDirectory.resolve("target"));
+    final Path report = target.resolve("class-usage.json");
+    final Path summary = target.resolve("dependency-elider-report.json");
+    final String reportContents = "previous class report";
+    final String summaryContents = "previous elision report";
+    Files.writeString(report, reportContents);
+    Files.writeString(summary, summaryContents);
+    Files.writeString(
+        fixtureDirectory.resolve(TRACE_FILE), "io.github.spockz.elider.fixture.keep.KeepEntry\n");
+    final Path pom = fixtureDirectory.resolve(POM_XML);
+    Files.writeString(
+        pom,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Exercises a legacy parameter that Maven's plugin descriptor strips before Mojo injection. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId><artifactId>legacy-retention-consumer</artifactId><version>1.0.0</version><packaging>pom</packaging>
+          <build><plugins><plugin>
+            <groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version>
+            <configuration>
+              <excludedArtifacts>org.example:legacy</excludedArtifacts>
+              <traceFiles>${project.basedir}/trace.txt</traceFiles>
+              <reportFile>${project.build.directory}/class-usage.json</reportFile>
+              <summaryFile>${project.build.directory}/dependency-elider-report.json</summaryFile>
+              <leafOnly>false</leafOnly>
+            </configuration>
+          </plugin></plugins></build>
+        </project>
+        """);
+    final Path executionPom = fixtureDirectory.resolve("execution-config-pom.xml");
+    Files.writeString(
+        executionPom,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Exercises execution-level legacy configuration before Maven merges mojo parameters. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId><artifactId>legacy-execution-consumer</artifactId><version>1.0.0</version><packaging>pom</packaging>
+          <build><plugins><plugin>
+            <groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version>
+            <executions>
+              <execution><id>legacy-elide</id><goals><goal>elide</goal></goals><configuration><excludedArtifacts>org.example:legacy</excludedArtifacts><reportFile>${project.build.directory}/class-usage.json</reportFile><summaryFile>${project.build.directory}/dependency-elider-report.json</summaryFile></configuration></execution>
+              <execution><id>legacy-analyze</id><goals><goal>analyze</goal></goals><configuration><excludedArtifacts>org.example:legacy</excludedArtifacts><reportFile>${project.build.directory}/class-usage.json</reportFile></configuration></execution>
+            </executions>
+          </plugin></plugins></build>
+        </project>
+        """);
+    final Path currentSettingPom = fixtureDirectory.resolve("current-retention-pom.xml");
+    Files.createDirectories(fixtureDirectory.resolve("target/classes"));
+    Files.writeString(fixtureDirectory.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    Files.writeString(
+        currentSettingPom,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Confirms Maven accepts the current global retention parameter through its descriptor. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId><artifactId>current-retention-consumer</artifactId><version>1.0.0</version><packaging>pom</packaging>
+          <dependencies><dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>keep-library</artifactId><version>1.0.0</version></dependency></dependencies>
+          <build><plugins><plugin>
+            <groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version>
+            <configuration>
+              <retainedArtifacts>org.example:current</retainedArtifacts>
+              <traceFiles>${project.basedir}/trace.txt</traceFiles>
+              <reportFile>${project.build.directory}/class-usage.json</reportFile>
+              <leafOnly>false</leafOnly>
+            </configuration>
+          </plugin></plugins></build>
+        </project>
+        """);
+    final String goalPrefix = "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:";
+
+    assertAll(
+        "legacy POM configuration is rejected before either goal can publish",
+        () ->
+            assertLegacyPomGoalRejected(
+                new LegacyPomGoal(
+                    fixtureDirectory,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("elide.log"),
+                    pom,
+                    goalPrefix + "elide",
+                    report,
+                    reportContents,
+                    summary,
+                    summaryContents)),
+        () ->
+            assertLegacyPomGoalRejected(
+                new LegacyPomGoal(
+                    fixtureDirectory,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("analyze.log"),
+                    pom,
+                    goalPrefix + "analyze",
+                    report,
+                    reportContents,
+                    summary,
+                    summaryContents)),
+        () ->
+            assertLegacyPomGoalRejected(
+                new LegacyPomGoal(
+                    fixtureDirectory,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("elide-execution.log"),
+                    executionPom,
+                    goalPrefix + "elide@legacy-elide",
+                    report,
+                    reportContents,
+                    summary,
+                    summaryContents)),
+        () ->
+            assertLegacyPomGoalRejected(
+                new LegacyPomGoal(
+                    fixtureDirectory,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("analyze-execution.log"),
+                    executionPom,
+                    goalPrefix + "analyze@legacy-analyze",
+                    report,
+                    reportContents,
+                    summary,
+                    summaryContents)),
+        () ->
+            assertCurrentRetentionPomAccepted(
+                fixtureDirectory,
+                wrapper,
+                settings,
+                localRepository,
+                evidenceDirectory.resolve("current-retention.log"),
+                currentSettingPom,
+                goalPrefix + "analyze",
+                report));
+  }
+
+  private static void assertCurrentRetentionPomAccepted(
+      final Path workingDirectory,
+      final Path wrapper,
+      final Path settings,
+      final Path localRepository,
+      final Path logFile,
+      final Path pom,
+      final String goal,
+      final Path report)
+      throws IOException, InterruptedException {
+    Files.deleteIfExists(report);
+    final SubprocessExecution execution =
+        executeSubprocess(
+            workingDirectory,
+            wrapper,
+            settings,
+            localRepository,
+            logFile,
+            PROCESS_TIMEOUT,
+            "-f",
+            pom.toString(),
+            goal);
+    final int exitCode = execution.exitCode();
+    assertAll(
+        "Maven accepts the current retainedArtifacts setting",
+        () -> org.junit.jupiter.api.Assertions.assertEquals(0, exitCode, execution.output()),
+        () -> assertThat(execution.output()).doesNotContain("elide.excludedArtifacts is obsolete"),
+        () -> assertThat(report).exists());
+  }
+
+  private static void assertLegacyPomGoalRejected(final LegacyPomGoal scenario)
+      throws IOException, InterruptedException {
+    final SubprocessExecution execution =
+        executeSubprocess(
+            scenario.workingDirectory(),
+            scenario.wrapper(),
+            scenario.settings(),
+            scenario.localRepository(),
+            scenario.logFile(),
+            PROCESS_TIMEOUT,
+            "-f",
+            scenario.pom().toString(),
+            scenario.goal());
+    final int exitCode = execution.exitCode();
+    assertAll(
+        scenario.goal(),
+        () -> org.junit.jupiter.api.Assertions.assertNotEquals(0, exitCode),
+        () -> assertThat(execution.output()).contains("elide.excludedArtifacts is obsolete"),
+        () -> assertThat(Files.readString(scenario.report())).isEqualTo(scenario.reportContents()),
+        () ->
+            assertThat(Files.readString(scenario.summary())).isEqualTo(scenario.summaryContents()));
+  }
+
+  private record LegacyPomGoal(
+      Path workingDirectory,
+      Path wrapper,
+      Path settings,
+      Path localRepository,
+      Path logFile,
+      Path pom,
+      String goal,
+      Path report,
+      String reportContents,
+      Path summary,
+      String summaryContents) {}
 
   @Test
   void packagedProductionExtensionSubstitutesOnlyThePositiveConsumerRetainedJar() throws Exception {

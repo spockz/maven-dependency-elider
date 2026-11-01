@@ -31,7 +31,7 @@ final class ElisionAnalysisModel {
 
   /* default */ record AnalysisOptions(
       List<File> traceFiles,
-      List<String> excludedArtifacts,
+      List<String> retainedArtifacts,
       File productionOutput,
       MavenSession session,
       CompletenessOptions completeness,

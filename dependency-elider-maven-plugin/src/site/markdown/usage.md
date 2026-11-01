@@ -106,7 +106,7 @@ Process exit status: 0
 | `-Delide.traceFiles` | *(none)* | Comma-separated paths to runtime telemetry traces (required). |
 | `-Delide.trimJars` | `false` | When `true`, simulates intra-JAR trimming and evaluates CVE absence proofs without modifying files. |
 | `-Delide.trimWorkers` | `4` | Maximum worker threads for JAR preparation, closure analysis, and archive sanitization. Actual concurrency is also capped by available processors and pending work; `1` runs sequentially. |
-| `-Delide.excludedArtifacts` | *(empty)* | Comma-separated coordinates (`groupId:artifactId[:version[:type[:classifier]]]`) to retain regardless of trace evidence. |
+| `-Delide.retainedArtifacts` | *(empty)* | Comma-separated coordinates (`groupId:artifactId[:version[:type[:classifier]]]`) to retain regardless of trace evidence. |
 | `-Delide.productionOutput` | *(empty)* | Path to compiled classes (e.g. `target/classes`) to enable static code reference scanning. |
 | `-Delide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader SPI roots; when `false`, prunes unproven SPI roots. |
 | `-Delide.reportFile` | `target/dependency-elider-class-usage.json` | Path for the class-usage analysis report. |

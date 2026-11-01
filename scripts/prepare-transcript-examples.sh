@@ -173,7 +173,7 @@ main() {
     case "$fixture" in
       example-basic-app)
         elision_options+=(
-          -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
+          -Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
         )
         ;;
       example-spring-boot-app)

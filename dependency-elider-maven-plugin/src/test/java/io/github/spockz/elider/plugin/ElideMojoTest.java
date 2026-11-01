@@ -775,7 +775,7 @@ final class ElideMojoTest {
     set(passThroughMojo, "trimJars", true);
     set(
         passThroughMojo,
-        "excludedArtifacts",
+        "retainedArtifacts",
         List.of("org.example:configured-pass-through-helper"));
     set(
         passThroughMojo,
@@ -1438,7 +1438,7 @@ final class ElideMojoTest {
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("chain.Root\n").toFile()));
-    set(mojo, "excludedArtifacts", List.of("org.example:chain-b", "org.example:chain-c"));
+    set(mojo, "retainedArtifacts", List.of("org.example:chain-b", "org.example:chain-c"));
     set(mojo, "reportFile", tempDir.resolve("chain-report.json").toFile());
     set(mojo, "sbomFile", tempDir.resolve("chain-build/chain-sbom.json").toFile());
     set(mojo, "trimJars", true);
@@ -1510,7 +1510,7 @@ final class ElideMojoTest {
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("cycle.Root\n").toFile()));
-    set(mojo, "excludedArtifacts", List.of("org.example:cycle-b", "org.example:cycle-c"));
+    set(mojo, "retainedArtifacts", List.of("org.example:cycle-b", "org.example:cycle-c"));
     set(mojo, "reportFile", tempDir.resolve("cycle-report.json").toFile());
     set(mojo, "sbomFile", tempDir.resolve("cycle-build/cycle-sbom.json").toFile());
     set(mojo, "trimJars", true);
@@ -1727,7 +1727,7 @@ final class ElideMojoTest {
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("callback.Independent\n").toFile()));
-    set(mojo, "excludedArtifacts", List.of("org.example:helper"));
+    set(mojo, "retainedArtifacts", List.of("org.example:helper"));
     set(mojo, "reportFile", tempDir.resolve("rootless-report.json").toFile());
     set(mojo, "sbomFile", tempDir.resolve("rootless-build/rootless-sbom.json").toFile());
     set(mojo, "trimJars", true);

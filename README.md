@@ -87,7 +87,7 @@ Execute `analyze` to preview removable dependencies and estimated byte savings w
   -Delide.traceFiles=target/classes.log \
   -Delide.sourceRootsComplete=true \
   -Dmaven.compiler.proc=none \
-  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
+  -Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
 ```
 
 On this Basic fixture, `analyze` identifies two whole-artifact candidates out of thirteen (942.11 KiB of original JAR bytes). The pinned typed cache retains the `CVE-2014-3577` package advisory and its commit-derived `AbstractVerifier` review candidate, but neither cached claim creates a CVE classification or VEX.
@@ -103,7 +103,7 @@ Run `elide` alongside your packaging goals to trim dependencies and generate san
   -Delide.trimJars=true \
   -Delide.sourceRootsComplete=true \
   -Dmaven.compiler.proc=none \
-  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
+  -Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
 ```
 
 This run drops `httpclient` (420 classes) and `commons-codec` (115 classes), and trims 535 unreferenced classes from retained `commons-compress` (saving 535 classes / 1.52 MiB from dropped JARs and 535 classes / 1.93 MiB from retained JARs).
@@ -118,7 +118,7 @@ Run `dependency:tree` to confirm that Maven sees the trimmed dependency graph:
   -Delide.trimJars=true \
   -Delide.sourceRootsComplete=true \
   -Dmaven.compiler.proc=none \
-  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3 \
+  -Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3 \
   dependency:tree
 ```
 
@@ -646,7 +646,7 @@ $ ./mvnw \
   -Delide.trimJars=true \
   -Delide.sourceRootsComplete=true \
   -Dmaven.compiler.proc=none \
-  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3 \
+  -Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3 \
   -Delide.cveCacheDirectory=$TRANSCRIPT_EVIDENCE/vulnerability-cache \
   -Delide.reportFile=$PROJECT_ROOT/.scratch/transcript-analysis/analyze-basic-app-class-usage.json
 Process exit status: 0

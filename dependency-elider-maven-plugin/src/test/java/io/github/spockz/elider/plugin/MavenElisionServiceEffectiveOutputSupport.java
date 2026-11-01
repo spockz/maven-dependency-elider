@@ -88,14 +88,14 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       final Fixture fixture,
       final Path traceFile,
       final File productionOutput,
-      final List<String> excludedArtifacts,
+      final List<String> retainedArtifacts,
       final boolean trimJars)
       throws IOException, MojoFailureException {
     return buildOperation(
         fixture,
         traceFile,
         productionOutput,
-        excludedArtifacts,
+        retainedArtifacts,
         trimJars,
         List.of(),
         "vertical-shading",
@@ -107,7 +107,7 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       final Fixture fixture,
       final Path traceFile,
       final File productionOutput,
-      final List<String> excludedArtifacts,
+      final List<String> retainedArtifacts,
       final boolean trimJars,
       final List<String> passThroughArtifacts,
       final String mrjarStrategy,
@@ -118,7 +118,7 @@ abstract class MavenElisionServiceEffectiveOutputSupport
     final ElisionAnalysisModel.AnalysisOptions options =
         new ElisionAnalysisModel.AnalysisOptions(
             List.of(traceFile.toFile()),
-            excludedArtifacts,
+            retainedArtifacts,
             productionOutput,
             null,
             new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),

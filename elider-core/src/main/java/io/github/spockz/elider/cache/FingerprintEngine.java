@@ -103,7 +103,7 @@ public final class FingerprintEngine {
     FingerprintValues.writeStrings(out, config.keepScopes());
     FingerprintValues.writeCoordinates(out, config.keepArtifacts());
     FingerprintValues.writeStrings(out, config.eligibleScopes());
-    FingerprintValues.writeCoordinates(out, config.excludedArtifacts());
+    FingerprintValues.writeCoordinates(out, config.retainedArtifacts());
   }
 
   private static void writeMetadata(final DataOutputStream out, final Path path)

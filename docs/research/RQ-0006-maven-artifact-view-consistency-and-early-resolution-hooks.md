@@ -56,7 +56,7 @@ The same-session command is still useful to ensure elision executes before the r
   -Delide.trimJars=true \
   -Delide.sourceRootsComplete=true \
   -Dmaven.compiler.proc=none \
-  -Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3 \
+  -Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3 \
   dependency:tree
 ```
 

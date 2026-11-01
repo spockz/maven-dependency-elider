@@ -28,7 +28,7 @@
         "-Delide.trimJars=true",
         "-Delide.sourceRootsComplete=true",
         "-Dmaven.compiler.proc=none",
-        "-Delide.excludedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3",
+        "-Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3",
         "-Delide.cveCacheDirectory={evidence}/vulnerability-cache",
         "-Delide.reportFile={root}/.scratch/transcript-analysis/analyze-basic-app-class-usage.json"
       ],

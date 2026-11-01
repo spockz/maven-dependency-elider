@@ -108,7 +108,7 @@ To make this workflow mathematically sound and compatible with Maven's execution
 When `elide` runs at `process-classes` and prunes `compile`-scoped dependencies based on `target/classes` + runtime traces, a test class in `src/test/java` might reference a `compile`-scoped dependency (or a class inside a retained JAR) that production code in `target/classes` never used:
 
 * When traces are collected by running the test suite (`mvn test`), test-used classes are present in `traceFiles` and retained automatically.
-* When traces are collected from production/staging (or only subset tests), `test-compile` will fail if `src/test/java` directly imports a dropped `compile`-scoped dependency—surfacing that the dependency is unused by production and should be declared in `<scope>test</scope>` (or retained via `elide.excludedArtifacts` / `elide.trimRoots`).
+* When traces are collected from production/staging (or only subset tests), `test-compile` will fail if `src/test/java` directly imports a dropped `compile`-scoped dependency—surfacing that the dependency is unused by production and should be declared in `<scope>test</scope>` (or retained via `elide.retainedArtifacts` / `elide.trimRoots`).
 
 ### 2.4 Inlined Compile-Time Constants and Non-Emitted Symbols
 
@@ -167,7 +167,7 @@ During research, an alternative was evaluated: having the plugin trigger a secon
      * **Option B: Lightweight Syntactic Import & Identifier Token Scanner (Not Selected)**:
        The accepted implementation uses `JavacTask.analyze()` only for semantic attribution, with processors disabled and no generated output. Its overhead is unmeasured. A syntax-only scanner could be considered later, but it would over-retain names without symbol resolution.
      * **Option C: Preserving Inlined Constants via Annotation/Configuration Overrides**:
-       Allow developers to retain constant-defining libraries explicitly using `elide.trimRoots` or `<excludedArtifacts>`, while surfacing diagnostic warnings during `dependency-elider:report` when a dropped library matches an imported class name from source files.
+       Allow developers to retain constant-defining libraries explicitly using `elide.trimRoots` or `<retainedArtifacts>`, while surfacing diagnostic warnings during `dependency-elider:report` when a dropped library matches an imported class name from source files.
 
 ---
 
