@@ -284,6 +284,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
               configuredVulnerabilityMappings(),
               trimJars && preconditionClassPathComplete,
               assumeConventionalJavaSourceLayout,
+              sourceClassifierResolver(),
               afterStaging));
     }
   }

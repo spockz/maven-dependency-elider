@@ -112,7 +112,11 @@ final class MavenElisionOutputPublisher {
       final Request request, final MavenPreconditionInventory.Snapshot inventory)
       throws IOException {
     return new MavenVulnerabilityAssessment(
-            request.log(), request.assumeConventionalJavaSourceLayout())
+            request.log(),
+            request.assumeConventionalJavaSourceLayout(),
+            request.sourceClassifierResolver(),
+            request.project(),
+            request.session())
         .assess(
             request.cacheConfig(), request.vulnerabilityMappings(), request.analysis(), inventory);
   }
@@ -409,6 +413,7 @@ final class MavenElisionOutputPublisher {
       ConfiguredVulnerabilityMappings vulnerabilityMappings,
       boolean preconditionProofEnabled,
       boolean assumeConventionalJavaSourceLayout,
+      Optional<MavenSourceClassifierResolver> sourceClassifierResolver,
       AfterStaging afterStaging) {
     Request {
       java.util.Objects.requireNonNull(vulnerabilityMappings, "vulnerabilityMappings");

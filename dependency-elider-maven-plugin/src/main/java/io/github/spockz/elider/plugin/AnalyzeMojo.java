@@ -200,7 +200,12 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
             Duration.ofHours(cveCacheTtlHours),
             cveForceSync,
             session != null && session.isOffline());
-    return new MavenVulnerabilityAssessment(getLog(), assumeConventionalJavaSourceLayout)
+    return new MavenVulnerabilityAssessment(
+            getLog(),
+            assumeConventionalJavaSourceLayout,
+            sourceClassifierResolver(),
+            project,
+            session)
         .assess(
             config, ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings), analysis, null);
   }

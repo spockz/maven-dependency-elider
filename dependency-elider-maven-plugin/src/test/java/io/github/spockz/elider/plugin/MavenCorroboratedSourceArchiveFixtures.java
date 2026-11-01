@@ -18,7 +18,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
 /** Creates local CVE, OSV and MRJAR inputs without relying on external services. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 final class MavenCorroboratedSourceArchiveFixtures {
   /** Native JSON writer for variable CNA claim fixtures. */
   private static final ObjectMapper JSON = new ObjectMapper();
@@ -89,6 +89,29 @@ final class MavenCorroboratedSourceArchiveFixtures {
   static Path writeRoutineOnlyRecord(final Path directory, final String defaultStatus)
       throws IOException {
     return writeSourceRecord(directory, true, defaultStatus);
+  }
+
+  static Path writeCorrespondenceRecord(
+      final Path directory, final List<String> programFiles, final List<String> routineNames)
+      throws IOException {
+    final Path record = directory.resolve("cves/2025/12xxx/CVE-2025-12345.json");
+    Files.createDirectories(record.getParent());
+    final ObjectNode root = JSON.createObjectNode();
+    root.putObject("cveMetadata").put("cveId", CVE_ID).put("state", "PUBLISHED");
+    final ObjectNode entry =
+        root.putObject("containers")
+            .putObject("cna")
+            .putArray(AFFECTED)
+            .addObject()
+            .put("vendor", "Example")
+            .put("product", ARTIFACT_ID)
+            .put("packageURL", MAVEN_PACKAGE_URL);
+    entry.putArray("versions").addObject().put("version", VERSION).put("status", AFFECTED);
+    programFiles.forEach(value -> entry.withArray("programFiles").add(value));
+    routineNames.forEach(
+        value -> entry.withArray("programRoutines").addObject().put("name", value));
+    JSON.writeValue(record.toFile(), root);
+    return record;
   }
 
   private static Path writeSourceRecord(

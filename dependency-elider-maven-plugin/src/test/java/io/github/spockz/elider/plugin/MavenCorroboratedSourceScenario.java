@@ -17,7 +17,7 @@ import java.time.Duration;
 import java.util.List;
 
 /** Shares setup between the proof-positive and review-only assertions. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 final class MavenCorroboratedSourceScenario {
   record Prepared(
       VulnerabilityCacheManager.CacheConfig cacheConfig,
@@ -61,6 +61,46 @@ final class MavenCorroboratedSourceScenario {
         MavenAmbiguousCnaProductFixture.write(directory, reverse),
         false,
         MavenCorroboratedSourceArchiveFixtures.VERSION);
+  }
+
+  static Prepared prepareReproducibleClaim(
+      final Path directory, final List<String> programFiles, final List<String> routineNames)
+      throws IOException {
+    return prepareFromCveRecord(
+        directory,
+        MavenCorroboratedSourceArchiveFixtures.writeCorrespondenceRecord(
+            directory, programFiles, routineNames),
+        false,
+        MavenCorroboratedSourceArchiveFixtures.VERSION);
+  }
+
+  static MavenVulnerabilityAssessment.Result assessWithSourceClassifier(
+      final Prepared prepared,
+      final Path originalJar,
+      final MavenSourceClassifierResolver resolver,
+      final boolean conventionalLayoutAssumed)
+      throws IOException {
+    final org.apache.maven.project.MavenProject project =
+        new org.apache.maven.project.MavenProject();
+    project.setRemoteArtifactRepositories(List.of());
+    final org.apache.maven.execution.MavenSession session =
+        new org.apache.maven.execution.MavenSession(
+            null,
+            new org.eclipse.aether.DefaultRepositorySystemSession(),
+            new org.apache.maven.execution.DefaultMavenExecutionRequest(),
+            null);
+    return new MavenVulnerabilityAssessment(
+            new RecordingMavenLog(),
+            conventionalLayoutAssumed,
+            java.util.Optional.of(resolver),
+            project,
+            session)
+        .assess(
+            prepared.cacheConfig(),
+            ConfiguredVulnerabilityMappings.empty(),
+            MavenCorroboratedSourceAnalysisFixtures.analysis(
+                prepared.coordinate(), originalJar, List.of(), false, false),
+            null);
   }
 
   private static Prepared prepareFromCveRecord(
