@@ -119,9 +119,14 @@ final class SourceReproductionTestArchives {
     output.closeEntry();
   }
 
-  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
   /* default */ static void addResourceInPlace(final Path archive, final String resourceName)
       throws IOException {
+    addEntryInPlace(archive, resourceName, "cache-invalidation".getBytes(StandardCharsets.UTF_8));
+  }
+
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  /* default */ static void addEntryInPlace(
+      final Path archive, final String entryName, final byte[] entryBytes) throws IOException {
     final Path replacement = archive.resolveSibling(archive.getFileName() + ".replacement");
     try (ZipFile input = new ZipFile(archive.toFile());
         ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(replacement))) {
@@ -134,8 +139,8 @@ final class SourceReproductionTestArchives {
         }
         output.closeEntry();
       }
-      output.putNextEntry(new ZipEntry(resourceName));
-      output.write("cache-invalidation".getBytes(StandardCharsets.UTF_8));
+      output.putNextEntry(new ZipEntry(entryName));
+      output.write(entryBytes);
       output.closeEntry();
     }
     Files.move(replacement, archive, java.nio.file.StandardCopyOption.REPLACE_EXISTING);

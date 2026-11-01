@@ -82,7 +82,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.conservativeServiceLoaderRoots", defaultValue = "true")
   private boolean conservativeServiceLoaderRoots = true;
 
-  /** Records the conventional-layout assumption on review-only source findings. */
+  /** Allows source-root translation only; it does not waive attribution. */
   @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_FALSE)
   private boolean assumeConventionalJavaSourceLayout;
 

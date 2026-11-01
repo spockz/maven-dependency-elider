@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
+import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.scanner.OsvSnapshotIndexer;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
@@ -20,6 +21,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.zip.ZipEntry;
@@ -170,6 +172,72 @@ class MavenAdvisoryReviewRetentionTest {
                                                 .containsExactly(
                                                     Map.of(
                                                         "at", "1.5", "status", "unaffected"))))));
+  }
+
+  @Test
+  void unsupportedMavenPrefixIsNotPublishedAsMatchedPackageContext() throws IOException {
+    final Path cache = Files.createDirectories(tempDir.resolve("mavenish-cache"));
+    final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "demo", "1.0");
+    final OsvAdvisoryRecord record =
+        new OsvAdvisoryRecord(
+            "GHSA-mavenish",
+            "2026-10-31T00:00:00Z",
+            Set.of(),
+            List.of(
+                new OsvAffectedPackage(
+                    "Mavenish",
+                    "org.example:demo",
+                    ArtifactCoordinate.of("org.example", "demo", null),
+                    List.of("1.0"),
+                    List.of())),
+            List.of(),
+            List.of());
+    MavenAssessmentFixtures.writeCacheRecords(cache, List.of(record));
+    final Path original = tempDir.resolve("mavenish-original.jar");
+    final Path trimmed = tempDir.resolve("mavenish-trimmed.jar");
+    writeJar(original, "org/example/Present.class");
+    writeJar(trimmed);
+    final ArtifactDigests originalDigest = ArtifactDigests.read(original);
+    final ArtifactDigests trimmedDigest = ArtifactDigests.read(trimmed);
+    final ArtifactTrimRecord trimRecord =
+        new ArtifactTrimRecord(
+            coordinate,
+            original,
+            originalDigest.sha256(),
+            originalDigest.sha1(),
+            trimmed,
+            trimmedDigest.sha256(),
+            trimmedDigest.sha1(),
+            1,
+            0,
+            32);
+    final VulnerabilityCacheManager.CacheConfig cacheConfig =
+        new VulnerabilityCacheManager.CacheConfig(
+            cache,
+            null,
+            null,
+            Duration.ofHours(24),
+            false,
+            true,
+            VulnerabilityCacheManager.bundledEmptySeed(),
+            MavenAssessmentFixtures.CACHE_PRODUCER);
+
+    final MavenVulnerabilityAssessment.Result result =
+        new MavenVulnerabilityAssessment(new RecordingMavenLog())
+            .assess(
+                cacheConfig,
+                ConfiguredVulnerabilityMappings.empty(),
+                List.of(trimRecord),
+                List.of(),
+                List.of(coordinate));
+
+    assertAll(
+        "a prefix collision cannot become a matched Maven advisory report row",
+        () -> assertThat(result.matchedAdvisoryRecords()).isEmpty(),
+        () -> assertThat(result.packageAdvisoryFindings()).isEmpty(),
+        () -> assertThat(result.matchedAdvisoryEvidence()).isEmpty(),
+        () -> assertThat(result.attestations()).isEmpty(),
+        () -> assertThat(result.provenVulnerableCodeAbsent()).isEmpty());
   }
 
   private byte[] routineOnlySnapshot() throws IOException {

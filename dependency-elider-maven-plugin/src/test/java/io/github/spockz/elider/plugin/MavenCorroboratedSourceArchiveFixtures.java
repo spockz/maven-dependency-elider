@@ -38,11 +38,20 @@ final class MavenCorroboratedSourceArchiveFixtures {
   /** Shared affected field key and exact CNA version status. */
   private static final String AFFECTED = "affected";
 
+  /** CVE record container field names. */
+  private static final String CONTAINERS_FIELD = "containers";
+
+  /** CVE record-format container key for the CNA data. */
+  private static final String CNA_FIELD = "cna";
+
   /** Maven package URL used by the matched source claim. */
   private static final String MAVEN_PACKAGE_URL = "pkg:maven/" + GROUP_ID + "/" + ARTIFACT_ID;
 
   /** Exact version asserted by the CNA affected product. */
   static final String VERSION = "1.0";
+
+  /** Explicit marker preventing test-only CVE bytes from resembling a real advisory. */
+  static final String SYNTHETIC_RECORD_MARKER = "SYNTHETIC TEST RECORD ONLY";
 
   /** Source timestamp carried by the deterministic OSV test record. */
   private static final String SOURCE_MODIFIED = "2026-10-31T00:00:00Z";
@@ -60,7 +69,8 @@ final class MavenCorroboratedSourceArchiveFixtures {
     Files.createDirectories(record.getParent());
     final ObjectNode root = JSON.createObjectNode();
     root.putObject("cveMetadata").put("cveId", CVE_ID).put("state", "PUBLISHED");
-    final ArrayNode affected = root.putObject("containers").putObject("cna").putArray(AFFECTED);
+    final ArrayNode affected =
+        root.putObject(CONTAINERS_FIELD).putObject(CNA_FIELD).putArray(AFFECTED);
     affected.add(cnaAffected("other", List.of("src/main/java/org/example/Outer.java")));
     affected.add(
         cnaAffected(
@@ -96,12 +106,10 @@ final class MavenCorroboratedSourceArchiveFixtures {
       throws IOException {
     final Path record = directory.resolve("cves/2025/12xxx/CVE-2025-12345.json");
     Files.createDirectories(record.getParent());
-    final ObjectNode root = JSON.createObjectNode();
-    root.putObject("cveMetadata").put("cveId", CVE_ID).put("state", "PUBLISHED");
+    final ObjectNode root = syntheticCveRoot();
+    final ObjectNode cna = (ObjectNode) root.path(CONTAINERS_FIELD).path(CNA_FIELD);
     final ObjectNode entry =
-        root.putObject("containers")
-            .putObject("cna")
-            .putArray(AFFECTED)
+        cna.putArray(AFFECTED)
             .addObject()
             .put("vendor", "Example")
             .put("product", ARTIFACT_ID)
@@ -114,6 +122,28 @@ final class MavenCorroboratedSourceArchiveFixtures {
     return record;
   }
 
+  private static ObjectNode syntheticCveRoot() {
+    final ObjectNode root = JSON.createObjectNode();
+    root.put("dataType", "CVE_RECORD");
+    root.put("dataVersion", "5.2.0");
+    root.putObject("cveMetadata")
+        .put("cveId", CVE_ID)
+        .put("assignerOrgId", "00000000-0000-4000-8000-000000000001")
+        .put("datePublished", "2025-01-01T00:00:00Z")
+        .put("state", "PUBLISHED");
+    final ObjectNode cna = root.putObject(CONTAINERS_FIELD).putObject(CNA_FIELD);
+    cna.putObject("providerMetadata").put("orgId", "00000000-0000-4000-8000-000000000001");
+    cna.put("title", SYNTHETIC_RECORD_MARKER + " - structured source fixture");
+    cna.putArray("descriptions")
+        .addObject()
+        .put("lang", "en")
+        .put("value", SYNTHETIC_RECORD_MARKER + "; no real vulnerability is described.");
+    cna.putArray("references")
+        .addObject()
+        .put("url", "https://example.invalid/synthetic-cve-record");
+    return root;
+  }
+
   private static Path writeSourceRecord(
       final Path directory, final boolean routineOnly, final String defaultStatus)
       throws IOException {
@@ -122,8 +152,8 @@ final class MavenCorroboratedSourceArchiveFixtures {
     final ObjectNode root = JSON.createObjectNode();
     root.putObject("cveMetadata").put("cveId", CVE_ID).put("state", "PUBLISHED");
     final ObjectNode entry =
-        root.putObject("containers")
-            .putObject("cna")
+        root.putObject(CONTAINERS_FIELD)
+            .putObject(CNA_FIELD)
             .putArray(AFFECTED)
             .addObject()
             .put("vendor", "Example")

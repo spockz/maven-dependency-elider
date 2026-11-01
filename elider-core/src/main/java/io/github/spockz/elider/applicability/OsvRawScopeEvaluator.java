@@ -24,6 +24,9 @@ final class OsvRawScopeEvaluator {
       final List<String> versions,
       final List<OsvAffectedRange> ranges,
       final String version) {
+    if (!MavenRawScopeApplicability.isMavenEcosystem(ecosystem)) {
+      return MavenRawScopeApplicability.unknown("OSV package ecosystem is not Maven");
+    }
     if (!MavenRawScopeApplicability.validVersion(version)) {
       return MavenRawScopeApplicability.unknown("Candidate Maven version is invalid");
     }
@@ -35,9 +38,6 @@ final class OsvRawScopeEvaluator {
       return versions.isEmpty()
           ? MavenRawScopeApplicability.unknown("OSV package has no exact versions or ranges")
           : MavenRawScopeApplicability.unaffected("Exact version is not listed by OSV");
-    }
-    if (!isMavenEcosystem(ecosystem)) {
-      return MavenRawScopeApplicability.unknown("OSV package ecosystem is not Maven");
     }
     boolean anyAffected = false;
     for (final OsvAffectedRange range : ranges) {
@@ -51,11 +51,5 @@ final class OsvRawScopeEvaluator {
         ? MavenRawScopeApplicability.affected("Candidate is inside a supported raw OSV range")
         : MavenRawScopeApplicability.unaffected(
             "Candidate is outside every supported raw OSV range");
-  }
-
-  private static boolean isMavenEcosystem(final String ecosystem) {
-    return ecosystem != null
-        && ("maven".equalsIgnoreCase(ecosystem)
-            || ecosystem.toLowerCase(java.util.Locale.ROOT).startsWith("maven:"));
   }
 }

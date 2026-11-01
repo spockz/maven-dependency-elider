@@ -17,7 +17,6 @@ import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
-import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 
 /** Reproduces all Java sources as independent JDK21 compilation tasks. */
@@ -41,6 +40,7 @@ final class SourceUnitCompiler {
       final Path extractedSources = workspace.directory("sources");
       writeSources(sources, extractedSources);
       final Path emptySourcePath = workspace.directory("empty-source-path");
+      final Path emptyProcessorPath = workspace.directory("empty-processor-path");
       final Path outputs = workspace.directory("outputs");
       final List<SourceReproductionResult.SourceUnit> sourceUnits =
           compileUnits(
@@ -49,6 +49,7 @@ final class SourceUnitCompiler {
               compiler,
               extractedSources,
               emptySourcePath,
+              emptyProcessorPath,
               outputs,
               compilerTaskStarted);
       if (compilerIdentity == null) {
@@ -92,6 +93,7 @@ final class SourceUnitCompiler {
       final JavaCompiler compiler,
       final Path extractedRoot,
       final Path emptySourcePath,
+      final Path emptyProcessorPath,
       final Path outputs,
       final Runnable compilerTaskStarted)
       throws IOException {
@@ -108,6 +110,7 @@ final class SourceUnitCompiler {
               extractedRoot.resolve(sourceEntry),
               originalJar,
               emptySourcePath,
+              emptyProcessorPath,
               unitOutput,
               compiler,
               compilerTaskStarted);
@@ -140,14 +143,17 @@ final class SourceUnitCompiler {
       final Path source,
       final Path originalJar,
       final Path emptySourcePath,
+      final Path emptyProcessorPath,
       final Path output,
       final JavaCompiler compiler,
       final Runnable compilerTaskStarted)
       throws IOException {
     final DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-    try (StandardJavaFileManager fileManager =
-        compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8)) {
-      final List<JavaFileObject> sourceUnits = sourceUnits(fileManager, source);
+    try (IsolatedProcessorPathFileManager fileManager =
+        new IsolatedProcessorPathFileManager(
+            compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8))) {
+      fileManager.setEmptyProcessorPath(emptyProcessorPath);
+      final List<JavaFileObject> sourceUnits = fileManager.sourceUnits(source);
       final List<String> options = compilerOptions(originalJar, emptySourcePath, output);
       final JavacTask task =
           (JavacTask) compiler.getTask(null, fileManager, diagnostics, options, null, sourceUnits);
@@ -158,7 +164,11 @@ final class SourceUnitCompiler {
         parsed.add(parsedUnit);
       }
       if (parsed.size() != ONE_SOURCE_UNIT) {
-        throw new IOException("Compiler did not parse exactly one source unit: " + source);
+        throw new IOException(
+            "Compiler did not parse exactly one source unit (found "
+                + parsed.size()
+                + "): "
+                + source);
       }
       task.analyze();
       requireNoErrors(diagnostics, source);
@@ -171,19 +181,6 @@ final class SourceUnitCompiler {
     } catch (final ClassCastException exception) {
       throw new IOException("The configured compiler is not supported javac", exception);
     }
-  }
-
-  private static List<JavaFileObject> sourceUnits(
-      final StandardJavaFileManager fileManager, final Path source) throws IOException {
-    final List<JavaFileObject> units =
-        java.util.stream.StreamSupport.stream(
-                fileManager.getJavaFileObjects(source.toFile()).spliterator(), false)
-            .map(JavaFileObject.class::cast)
-            .toList();
-    if (units.size() != ONE_SOURCE_UNIT) {
-      throw new IOException("Expected one explicit source unit: " + source);
-    }
-    return units;
   }
 
   private static List<String> compilerOptions(
@@ -223,6 +220,7 @@ final class SourceUnitCompiler {
         "-proc:none",
         "-implicit:none",
         "-sourcepath=<empty>",
+        "-processorpath=<empty>",
         "-classpath=<exact-original-jar>");
   }
 

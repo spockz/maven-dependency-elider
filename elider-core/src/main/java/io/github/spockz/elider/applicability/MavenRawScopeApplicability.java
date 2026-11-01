@@ -72,6 +72,13 @@ public final class MavenRawScopeApplicability {
     }
   }
 
+  /** Recognizes the exact OSV Maven ecosystem spellings supported by the indexer. */
+  public static boolean isMavenEcosystem(final String ecosystem) {
+    return ecosystem != null
+        && ("maven".equalsIgnoreCase(ecosystem)
+            || ecosystem.toLowerCase(java.util.Locale.ROOT).startsWith("maven:"));
+  }
+
   /** Builds an affected result. */
   /* package */ static Result affected(final String rationale) {
     return new Result(Status.AFFECTED, rationale);

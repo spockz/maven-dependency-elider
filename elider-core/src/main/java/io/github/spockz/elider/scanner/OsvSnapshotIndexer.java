@@ -5,6 +5,7 @@ package io.github.spockz.elider.scanner;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.spockz.elider.applicability.MavenRawScopeApplicability;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -912,8 +913,7 @@ public final class OsvSnapshotIndexer {
   }
 
   private static boolean isMavenEcosystem(final String ecosystem) {
-    return "Maven".equalsIgnoreCase(ecosystem)
-        || ecosystem.toLowerCase(Locale.ROOT).startsWith("maven:");
+    return MavenRawScopeApplicability.isMavenEcosystem(ecosystem);
   }
 
   private static String resolveCveId(final JsonNode root) {
