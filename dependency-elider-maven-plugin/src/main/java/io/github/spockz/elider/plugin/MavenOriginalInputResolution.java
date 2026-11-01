@@ -17,6 +17,9 @@ final class MavenOriginalInputResolution {
       final DependencyResolutionResult result,
       final ResolverArtifactGraphCapturePair graphPair)
       throws IOException {
+    if (result == null) {
+      throw new IOException("Original-input resolver returned no result");
+    }
     validateCollections(result);
     validateResolutionErrors(result, result.getResolvedDependencies());
     final DependencyNode graph = validateGraph(projectKey, result, graphPair);

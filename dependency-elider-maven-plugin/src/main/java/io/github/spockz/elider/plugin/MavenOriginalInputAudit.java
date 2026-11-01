@@ -6,26 +6,17 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.DefaultDependencyResolutionRequest;
 import org.apache.maven.project.DependencyResolutionException;
 import org.apache.maven.project.DependencyResolutionResult;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
-import org.eclipse.aether.DefaultRepositorySystemSession;
-import org.eclipse.aether.DefaultSessionData;
-import org.eclipse.aether.RepositoryException;
 import org.eclipse.aether.RepositorySystemSession;
-import org.eclipse.aether.collection.DependencyGraphTransformationContext;
-import org.eclipse.aether.collection.DependencyGraphTransformer;
-import org.eclipse.aether.graph.DependencyNode;
 
 /** Resolves a detached inventory from frozen pre-injection project declarations. */
-@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.CommentRequired", "PMD.LawOfDemeter"})
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.CommentRequired"})
 // One audit binds the frozen Maven model to an isolated Resolver request.
 final class MavenOriginalInputAudit {
   static final String HOOK_PRESENT_KEY = MavenOriginalInputAudit.class.getName() + ".hookPresent";
@@ -96,7 +87,7 @@ final class MavenOriginalInputAudit {
     }
   }
 
-  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  @SuppressWarnings("PMD.AvoidCatchingGenericException")
   private static Resolution resolve(
       final BanishedDependencyOriginalModel captured,
       final MavenProject auditProject,
@@ -107,59 +98,25 @@ final class MavenOriginalInputAudit {
     if (baseSession == null) {
       throw new IOException("Original-input audit requires a Maven Resolver session");
     }
-    final DefaultRepositorySystemSession auditSession =
-        new DefaultRepositorySystemSession(baseSession);
-    auditSession.setData(new DefaultSessionData());
-    final Map<String, Object> configProperties =
-        new java.util.HashMap<>(baseSession.getConfigProperties());
-    configProperties.put(AUDIT_MODE_CONFIG_KEY, Boolean.TRUE);
-    auditSession.setConfigProperties(configProperties);
     final String projectKey = BanishedDependencyCaptureStore.projectKey(captured.project());
-    final String captureToken = UUID.randomUUID().toString();
-    final AtomicReference<ResolverArtifactGraphCapturePair> graphAudit = new AtomicReference<>();
-    final DependencyGraphTransformer originalTransformer =
-        baseSession.getDependencyGraphTransformer();
-    auditSession.setDependencyGraphTransformer(
-        (root, context) ->
-            transformAuditGraph(
-                root, context, originalTransformer, projectKey, captureToken, graphAudit));
+    final RequestLocalResolverGraphCapture.Request requestContext =
+        RequestLocalResolverGraphCapture.create(baseSession, projectKey);
     final DependencyResolutionResult result;
     try {
-      result = resolver.resolve(new DefaultDependencyResolutionRequest(auditProject, auditSession));
+      result =
+          resolver.resolve(
+              new DefaultDependencyResolutionRequest(auditProject, requestContext.session()));
     } catch (final DependencyResolutionException exception) {
       throw new IOException("Cannot resolve the original dependency model", exception);
+    } catch (final RuntimeException exception) {
+      throw new IOException(
+          "Resolver failed while capturing the original dependency model", exception);
     }
-    final ResolverArtifactGraphCapturePair capturedGraphs = graphAudit.get();
+    final ResolverArtifactGraphCapturePair capturedGraphs = requestContext.graphCapture().pair();
     if (result == null) {
       throw new IOException("Original-input resolver returned no result");
     }
     return new Resolution(projectKey, result, capturedGraphs);
-  }
-
-  private static DependencyNode transformAuditGraph(
-      final DependencyNode root,
-      final DependencyGraphTransformationContext context,
-      final DependencyGraphTransformer originalTransformer,
-      final String projectKey,
-      final String captureToken,
-      final AtomicReference<ResolverArtifactGraphCapturePair> graphAudit)
-      throws RepositoryException {
-    final ResolverArtifactGraphSnapshot before =
-        ResolverArtifactGraphSnapshot.capture(root, projectKey, false, null, 0L, 1L);
-    final DependencyNode transformed =
-        originalTransformer == null ? root : originalTransformer.transformGraph(root, context);
-    if (transformed == null) {
-      throw new RepositoryException("Original-input graph transformer returned no graph");
-    }
-    final ResolverArtifactGraphSnapshot after =
-        ResolverArtifactGraphSnapshot.capture(transformed, projectKey, false, null, 0L, 1L);
-    final ResolverArtifactGraphCapturePair pair =
-        new ResolverArtifactGraphCapturePair(
-            projectKey, captureToken, 1L, false, null, 0L, before, after);
-    if (!graphAudit.compareAndSet(null, pair)) {
-      throw new RepositoryException("Original-input resolver transformed more than one graph");
-    }
-    return transformed;
   }
 
   record Inventory(

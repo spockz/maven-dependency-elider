@@ -72,6 +72,16 @@ public final class EliderRepositorySessionDecorator implements RepositorySession
     return new DefaultRepositorySystemSession(session).setWorkspaceReader(reader);
   }
 
+  /** Removes only wrappers that substitute plan-owned replacement files. */
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  static WorkspaceReader withoutPlannedReplacements(final WorkspaceReader reader) {
+    WorkspaceReader current = reader;
+    while (current instanceof PlannedWorkspaceReader planned) {
+      current = planned.delegate;
+    }
+    return current;
+  }
+
   /** Overrides exact planned artifacts and delegates every other lookup. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static final class PlannedWorkspaceReader implements MavenWorkspaceReader {

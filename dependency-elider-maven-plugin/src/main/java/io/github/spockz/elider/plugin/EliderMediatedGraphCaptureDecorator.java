@@ -55,6 +55,9 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
     final DefaultRepositorySystemSession decorated = new DefaultRepositorySystemSession(session);
     decorated.setDependencyGraphTransformer(
         (root, context) -> {
+          if (MavenOriginalInputAudit.isAuditMode(context.getSession())) {
+            return delegate == null ? root : delegate.transformGraph(root, context);
+          }
           final String captureToken = java.util.UUID.randomUUID().toString();
           final ResolverArtifactGraphSnapshot before =
               ResolverArtifactGraphSnapshot.capture(

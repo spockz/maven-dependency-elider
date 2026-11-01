@@ -30,6 +30,7 @@ import org.apache.maven.project.DependencyResolutionRequest;
 import org.apache.maven.project.DependencyResolutionResult;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
+import org.eclipse.aether.DefaultRepositoryCache;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositoryException;
 import org.eclipse.aether.RepositorySystemSession;
@@ -38,6 +39,8 @@ import org.eclipse.aether.collection.DependencyGraphTransformationContext;
 import org.eclipse.aether.collection.DependencyGraphTransformer;
 import org.eclipse.aether.graph.DefaultDependencyNode;
 import org.eclipse.aether.graph.DependencyNode;
+import org.eclipse.aether.repository.WorkspaceReader;
+import org.eclipse.aether.repository.WorkspaceRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -102,6 +105,13 @@ final class MavenOriginalInputAuditTest {
     liveProject.setDependencyArtifacts(new LinkedHashSet<>(List.of(liveDirect)));
     liveProject.setArtifacts(new LinkedHashSet<>(List.of(liveDirect, liveResolved)));
     final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
+    final DefaultRepositoryCache sharedCache = new DefaultRepositoryCache();
+    final Object sharedCacheKey = new Object();
+    final Object sharedCacheValue = new Object();
+    sharedCache.put(repositorySession, sharedCacheKey, sharedCacheValue);
+    repositorySession.setCache(sharedCache);
+    final WorkspaceReader originalReader = emptyWorkspaceReader();
+    repositorySession.setWorkspaceReader(originalReader);
     repositorySession
         .getData()
         .set(
@@ -116,12 +126,36 @@ final class MavenOriginalInputAuditTest {
     repositorySession
         .getData()
         .set(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY, originalGraphStore.toPayload());
+    final AtomicInteger originalTransformCalls = new AtomicInteger();
+    repositorySession.setDependencyGraphTransformer(
+        (root, context) -> {
+          originalTransformCalls.incrementAndGet();
+          return graph();
+        });
+    final Path plannedFile = temporaryDirectory.resolve("planned-library.jar");
+    Files.writeString(plannedFile, "planned library bytes");
+    final ResolverArtifactPlan.ProjectIdentity planProject =
+        new ResolverArtifactPlan.ProjectIdentity(
+            liveProject.getBasedir().toPath(), GROUP, "consumer", VERSION);
+    final ResolverArtifactPlan.ArtifactIdentity planArtifact =
+        new ResolverArtifactPlan.ArtifactIdentity(GROUP, LIBRARY, VERSION, JAR, "");
+    final ResolverArtifactPlan plan =
+        new ResolverArtifactPlan(
+            planProject,
+            Map.of(
+                planArtifact,
+                new ResolverArtifactPlan.Replacement(
+                    plannedFile, ArtifactFileDigest.sha256(plannedFile))));
     repositorySession
         .getData()
         .set(
             ResolverArtifactPlanPublisher.SESSION_DATA_KEY,
-            ResolverArtifactPlanStore.empty().toPayload());
-    final MavenSession session = session(liveProject, repositorySession);
+            ResolverArtifactPlanStore.empty().withPlan(plan).toPayload());
+    final RepositorySystemSession withPlannedReader =
+        new EliderRepositorySessionDecorator().decorate(liveProject, repositorySession);
+    final RepositorySystemSession decoratedSession =
+        new EliderMediatedGraphCaptureDecorator().decorate(liveProject, withPlannedReader);
+    final MavenSession session = session(liveProject, decoratedSession);
     MavenOriginalInputAudit.markHookPresent(session);
     final DependencyResolutionResult result =
         result(
@@ -131,16 +165,10 @@ final class MavenOriginalInputAuditTest {
             List.of(),
             Map.of());
     final RecordingResolver resolver = new RecordingResolver(result);
-    final AtomicInteger originalTransformCalls = new AtomicInteger();
-    repositorySession.setDependencyGraphTransformer(
-        (root, context) -> {
-          originalTransformCalls.incrementAndGet();
-          return graph();
-        });
     final Object graphCaptureBefore =
-        repositorySession.getData().get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
+        decoratedSession.getData().get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
     final Object planBefore =
-        repositorySession.getData().get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
+        decoratedSession.getData().get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
     final List<String> liveExclusionsBefore =
         liveProject.getDependencies().getFirst().getExclusions().stream()
             .map(exclusion -> exclusion.getGroupId() + ":" + exclusion.getArtifactId())
@@ -154,6 +182,8 @@ final class MavenOriginalInputAuditTest {
 
     final MavenProject auditProject = resolver.request.getMavenProject();
     final RepositorySystemSession auditSession = resolver.request.getRepositorySession();
+    final org.eclipse.aether.artifact.Artifact plannedArtifact =
+        new DefaultArtifact(GROUP, LIBRARY, "", JAR, VERSION);
     assertAll(
         "audit resolves from the frozen model without changing Maven's live resolution state",
         () -> assertThat(auditProject).isNotSameAs(liveProject),
@@ -177,6 +207,18 @@ final class MavenOriginalInputAuditTest {
         () -> assertThat(auditProject.getDependencyArtifacts()).isNull(),
         () -> assertThat(auditSession).isNotSameAs(repositorySession),
         () -> assertThat(auditSession.getData()).isNotSameAs(repositorySession.getData()),
+        () -> assertThat(auditSession.getCache()).isNotSameAs(sharedCache),
+        () -> assertThat(auditSession.getCache().get(auditSession, sharedCacheKey)).isNull(),
+        () ->
+            assertThat(sharedCache.get(repositorySession, sharedCacheKey))
+                .isSameAs(sharedCacheValue),
+        () -> assertThat(auditSession.getWorkspaceReader()).isSameAs(originalReader),
+        () -> assertThat(auditSession.getWorkspaceReader().findArtifact(plannedArtifact)).isNull(),
+        () -> assertThat(decoratedSession.getWorkspaceReader()).isNotSameAs(originalReader),
+        () ->
+            assertThat(decoratedSession.getWorkspaceReader().findArtifact(plannedArtifact))
+                .isEqualTo(plannedFile.toFile()),
+        () -> assertThat(session.getRepositorySession()).isSameAs(decoratedSession),
         () -> assertThat(MavenOriginalInputAudit.isAuditMode(auditSession)).isTrue(),
         () -> assertThat(MavenOriginalInputAudit.isAuditMode(repositorySession)).isFalse(),
         () ->
@@ -204,13 +246,13 @@ final class MavenOriginalInputAuditTest {
         () -> assertThat(inventory.fingerprint()).hasSize(64),
         () ->
             assertThat(
-                    repositorySession
+                    decoratedSession
                         .getData()
                         .get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY))
                 .isEqualTo(graphCaptureBefore),
         () ->
             assertThat(
-                    repositorySession.getData().get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
+                    decoratedSession.getData().get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
                 .isEqualTo(planBefore));
   }
 
@@ -360,8 +402,78 @@ final class MavenOriginalInputAuditTest {
                                       true,
                                       true)))
                       .isInstanceOf(IOException.class)
-                      .hasMessageContaining("does not match the captured audit graph"));
+                      .hasMessageContaining("does not match the captured audit graph"),
+              () ->
+                  assertThatThrownBy(
+                          () -> MavenOriginalInputAudit.audit(project, session, request -> null))
+                      .isInstanceOf(IOException.class)
+                      .hasMessageContaining("returned no result"));
         });
+  }
+
+  @Test
+  void rejectsRepeatedGraphTransformBeforeCallingTheDelegateTwice() throws IOException {
+    final MavenProject project = project(temporaryDirectory);
+    project.setDependencies(new ArrayList<>(List.of(dependency(LIBRARY))));
+    final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
+    final MavenSession session = sessionWithCapture(project, repositorySession);
+    final AtomicInteger delegateCalls = new AtomicInteger();
+    repositorySession.setDependencyGraphTransformer(
+        (root, context) -> {
+          delegateCalls.incrementAndGet();
+          return root;
+        });
+    final RecordingResolver resolver =
+        new RecordingResolver(
+            result(
+                graph(),
+                List.of(resolvedLibrary(temporaryDirectory)),
+                List.of(),
+                List.of(),
+                Map.of()),
+            true,
+            false,
+            true);
+
+    final Throwable failure =
+        org.assertj.core.api.Assertions.catchThrowable(
+            () -> MavenOriginalInputAudit.audit(project, session, resolver));
+
+    assertAll(
+        "repeated resolver callbacks invalidate audit evidence before a second delegate call",
+        () -> assertThat(failure).isInstanceOf(IOException.class),
+        () -> assertThat(delegateCalls).hasValue(1));
+  }
+
+  @Test
+  void invalidatesAuditEvidenceWhenTheOriginalTransformerFails() throws IOException {
+    final MavenProject project = project(temporaryDirectory);
+    project.setDependencies(new ArrayList<>(List.of(dependency(LIBRARY))));
+    final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
+    final MavenSession session = sessionWithCapture(project, repositorySession);
+    final AtomicInteger delegateCalls = new AtomicInteger();
+    repositorySession.setDependencyGraphTransformer(
+        (root, context) -> {
+          delegateCalls.incrementAndGet();
+          throw new RepositoryException("fixture delegate failure");
+        });
+    final RecordingResolver resolver =
+        new RecordingResolver(
+            result(
+                graph(),
+                List.of(resolvedLibrary(temporaryDirectory)),
+                List.of(),
+                List.of(),
+                Map.of()));
+
+    final Throwable failure =
+        org.assertj.core.api.Assertions.catchThrowable(
+            () -> MavenOriginalInputAudit.audit(project, session, resolver));
+
+    assertAll(
+        "a failed original transform cannot return audit evidence",
+        () -> assertThat(failure).isInstanceOf(IOException.class),
+        () -> assertThat(delegateCalls).hasValue(1));
   }
 
   private static MavenProject project(final Path directory) {
@@ -375,7 +487,7 @@ final class MavenOriginalInputAuditTest {
   }
 
   private static MavenSession session(
-      final MavenProject project, final DefaultRepositorySystemSession repositorySession) {
+      final MavenProject project, final RepositorySystemSession repositorySession) {
     final MavenSession session =
         new MavenSession(
             null,
@@ -384,6 +496,38 @@ final class MavenOriginalInputAuditTest {
             null);
     session.setCurrentProject(project);
     return session;
+  }
+
+  private static MavenSession sessionWithCapture(
+      final MavenProject project, final DefaultRepositorySystemSession repositorySession) {
+    final BanishedDependencyOriginalModel captured =
+        BanishedDependencyOriginalModel.capture(project, List.of(), List.of());
+    repositorySession
+        .getData()
+        .set(
+            BanishedDependencyLifecycleActivation.CAPTURE_STORE_KEY,
+            BanishedDependencyCaptureStore.empty().withModel(captured).toPayload());
+    final MavenSession session = session(project, repositorySession);
+    MavenOriginalInputAudit.markHookPresent(session);
+    return session;
+  }
+
+  private static WorkspaceReader emptyWorkspaceReader() {
+    final WorkspaceRepository repository = new WorkspaceRepository("original-audit-reader");
+    final InvocationHandler handler =
+        (proxy, method, arguments) ->
+            switch (method.getName()) {
+              case "getRepository" -> repository;
+              case "findArtifact" -> null;
+              case "findVersions" -> List.of();
+              case "toString" -> "original audit workspace reader";
+              default -> throw new UnsupportedOperationException(method.getName());
+            };
+    return (WorkspaceReader)
+        Proxy.newProxyInstance(
+            Thread.currentThread().getContextClassLoader(),
+            new Class<?>[] {WorkspaceReader.class},
+            handler);
   }
 
   private static Dependency dependency(final String artifactId) {
@@ -469,20 +613,32 @@ final class MavenOriginalInputAuditTest {
     /** Enables a mismatching graph result. */
     private final boolean mismatchResultGraph;
 
+    /** Controls whether the audit transform is invoked a second time. */
+    private final boolean repeatTransform;
+
     /** Records the detached project and Resolver session submitted by production code. */
     private DependencyResolutionRequest request;
 
     private RecordingResolver(final DependencyResolutionResult result) {
-      this(result, true, false);
+      this(result, true, false, false);
     }
 
     private RecordingResolver(
         final DependencyResolutionResult result,
         final boolean transformGraph,
         final boolean mismatchResultGraph) {
+      this(result, transformGraph, mismatchResultGraph, false);
+    }
+
+    private RecordingResolver(
+        final DependencyResolutionResult result,
+        final boolean transformGraph,
+        final boolean mismatchResultGraph,
+        final boolean repeatTransform) {
       this.result = result;
       this.transformGraph = transformGraph;
       this.mismatchResultGraph = mismatchResultGraph;
+      this.repeatTransform = repeatTransform;
     }
 
     @Override
@@ -513,6 +669,26 @@ final class MavenOriginalInputAuditTest {
                       return null;
                     }
                   });
+          if (repeatTransform) {
+            transformer.transformGraph(
+                transformed,
+                new DependencyGraphTransformationContext() {
+                  @Override
+                  public RepositorySystemSession getSession() {
+                    return request.getRepositorySession();
+                  }
+
+                  @Override
+                  public Object get(final Object key) {
+                    return null;
+                  }
+
+                  @Override
+                  public Object put(final Object key, final Object value) {
+                    return null;
+                  }
+                });
+          }
         } catch (final RepositoryException exception) {
           throw new IllegalStateException(
               "Fixture resolver graph transformation failed", exception);
