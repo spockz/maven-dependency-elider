@@ -498,7 +498,17 @@ record MavenElisionReportSnapshot(
                       .toId())),
           "Verified structured proof must be present in provenAbsentCves");
       require(
-          trimmed.stream().anyMatch(value -> value.coordinate().equals(proof.coordinate())),
+          trimmed.stream()
+              .map(
+                  value ->
+                      MavenElisionReportSourceCoordinateValidator.parseCanonical(value.coordinate())
+                          .toId())
+              .anyMatch(
+                  coordinate ->
+                      coordinate.equals(
+                          MavenElisionReportSourceCoordinateValidator.parseCanonical(
+                                  proof.coordinate())
+                              .toId())),
           "Verified structured proof must identify a trimmed artifact");
     }
   }
@@ -594,7 +604,7 @@ record MavenElisionReportSnapshot(
                                 new VerifiedClaimIdentity(
                                     proof.provenance().osvId(),
                                     proof.cveId(),
-                                    proof.coordinate(),
+                                    proofCoordinateId(proof.coordinate()),
                                     proof.provenance().cveSourceSha256(),
                                     proof.provenance().cnaAffectedEntryIdentity(),
                                     proof.provenance().affectedProductIdentity(),
@@ -657,7 +667,7 @@ record MavenElisionReportSnapshot(
                                 new VerifiedClaimIdentity(
                                     proof.provenance().osvId(),
                                     proof.cveId(),
-                                    proof.coordinate(),
+                                    proofCoordinateId(proof.coordinate()),
                                     proof.provenance().cveSourceSha256(),
                                     proof.provenance().cnaAffectedEntryIdentity(),
                                     proof.provenance().affectedProductIdentity(),
@@ -708,7 +718,7 @@ record MavenElisionReportSnapshot(
       return new VerifiedClaimIdentity(
           sourceClaim.osvId(),
           sourceClaim.cveId(),
-          sourceClaim.coordinate().toString(),
+          sourceClaim.coordinate().toId(),
           sourceClaim.sourceRecordSha256(),
           sourceClaim.cnaAffectedEntryIdentity(),
           sourceClaim.affectedProductIdentity(),
@@ -724,7 +734,7 @@ record MavenElisionReportSnapshot(
       return new VerifiedClaimIdentity(
           sourceClaim.osvId(),
           sourceClaim.cveId(),
-          sourceClaim.coordinate(),
+          proofCoordinateId(sourceClaim.coordinate()),
           sourceClaim.sourceRecordSha256(),
           sourceClaim.cnaAffectedEntryIdentity(),
           sourceClaim.affectedProductIdentity(),
@@ -732,6 +742,10 @@ record MavenElisionReportSnapshot(
           type,
           claim);
     }
+  }
+
+  private static String proofCoordinateId(final String coordinate) {
+    return MavenElisionReportSourceCoordinateValidator.parseCanonical(coordinate).toId();
   }
 
   static TrimmedArtifact trimmedArtifact(final ArtifactTrimRecord record) {
@@ -1107,8 +1121,7 @@ record MavenElisionReportSnapshot(
     private static VerifiedStructuredProofIdentity of(final VerifiedStructuredProofFinding proof) {
       return new VerifiedStructuredProofIdentity(
           proof.cveId(),
-          MavenElisionReportSourceCoordinateValidator.parseCanonical(proof.coordinate())
-              .toString());
+          MavenElisionReportSourceCoordinateValidator.parseCanonical(proof.coordinate()).toId());
     }
   }
 

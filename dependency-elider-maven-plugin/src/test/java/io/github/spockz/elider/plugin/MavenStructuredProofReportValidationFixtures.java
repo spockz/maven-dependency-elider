@@ -2,7 +2,10 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.StructuredProofProvenance;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Small report mutation helpers shared by structured proof persistence tests. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -30,6 +33,27 @@ final class MavenStructuredProofReportValidationFixtures {
         proof.cveId(),
         proof.coordinate(),
         originalDigest,
+        proof.trimmedSha256(),
+        proof.provenance());
+  }
+
+  /** Creates the same GAVCE proof with a different Maven scope suffix. */
+  static MavenElisionReportSnapshot.VerifiedStructuredProofFinding withProofRuntimeScope(
+      final MavenElisionReportSnapshot.VerifiedStructuredProofFinding proof) {
+    final ArtifactCoordinate coordinate =
+        MavenElisionReportSourceCoordinateValidator.parseCanonical(proof.coordinate());
+    final ArtifactCoordinate runtimeCoordinate =
+        new ArtifactCoordinate(
+            coordinate.groupId(),
+            coordinate.artifactId(),
+            coordinate.version(),
+            coordinate.type(),
+            coordinate.classifier(),
+            "runtime");
+    return new MavenElisionReportSnapshot.VerifiedStructuredProofFinding(
+        proof.cveId(),
+        runtimeCoordinate.toString(),
+        proof.originalSha256(),
         proof.trimmedSha256(),
         proof.provenance());
   }
@@ -79,6 +103,56 @@ final class MavenStructuredProofReportValidationFixtures {
         claim.applicability(),
         claim.applicabilityRationale(),
         claim.unresolvedRationale());
+  }
+
+  /** Creates a source-review finding with another scope but identical GAVCE claims. */
+  static MavenElisionReportSnapshot.SourceReviewFinding withReviewRuntimeScope(
+      final MavenElisionReportSnapshot.SourceReviewFinding finding) {
+    final ArtifactCoordinate coordinate =
+        MavenElisionReportSourceCoordinateValidator.parseCanonical(finding.coordinate());
+    final ArtifactCoordinate runtimeCoordinate =
+        new ArtifactCoordinate(
+            coordinate.groupId(),
+            coordinate.artifactId(),
+            coordinate.version(),
+            coordinate.type(),
+            coordinate.classifier(),
+            "runtime");
+    return new MavenElisionReportSnapshot.SourceReviewFinding(
+        finding.osvId(),
+        finding.cveId(),
+        runtimeCoordinate.toString(),
+        finding.sourceRecordSha256(),
+        finding.cnaAffectedEntryIdentity(),
+        finding.affectedProductIdentity(),
+        finding.programFiles(),
+        finding.programRoutines(),
+        finding.conventionalLayoutAssumed(),
+        finding.matches(),
+        finding.applicability(),
+        finding.applicabilityRationale(),
+        finding.unresolvedRationale());
+  }
+
+  /** Adds one unverified routine claim while preserving a row's verified claims. */
+  static MavenElisionReportSnapshot.SourceReviewFinding withUnresolvedRoutine(
+      final MavenElisionReportSnapshot.SourceReviewFinding finding) {
+    final List<String> routines = new ArrayList<>(finding.programRoutines());
+    routines.add("parseUnverified");
+    return new MavenElisionReportSnapshot.SourceReviewFinding(
+        finding.osvId(),
+        finding.cveId(),
+        finding.coordinate(),
+        finding.sourceRecordSha256(),
+        finding.cnaAffectedEntryIdentity(),
+        finding.affectedProductIdentity(),
+        finding.programFiles(),
+        routines,
+        finding.conventionalLayoutAssumed(),
+        finding.matches(),
+        finding.applicability(),
+        finding.applicabilityRationale(),
+        finding.unresolvedRationale());
   }
 
   private static StructuredProofProvenance copyProvenance(

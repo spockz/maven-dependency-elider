@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.model.ArtifactCoordinate;
 
 /** Mutates isolated report payload copies for strict reader tests. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -22,9 +23,22 @@ final class MavenStructuredProofReportPayloadMutator {
   private MavenStructuredProofReportPayloadMutator() {}
 
   /** Adds a duplicate proof row with different source-record provenance. */
-  static void appendDuplicateWithDifferentSourceDigest(final JsonNode payload) {
+  static void appendDuplicateWithDifferentSourceDigestAndScope(final JsonNode payload) {
     final ArrayNode proofs = (ArrayNode) payload.get(VERIFIED_PROOFS_FIELD);
     final ObjectNode duplicate = (ObjectNode) proofs.get(0).deepCopy();
+    final ArtifactCoordinate coordinate =
+        MavenElisionReportSourceCoordinateValidator.parseCanonical(
+            duplicate.get("coordinate").textValue());
+    duplicate.put(
+        "coordinate",
+        new ArtifactCoordinate(
+                coordinate.groupId(),
+                coordinate.artifactId(),
+                coordinate.version(),
+                coordinate.type(),
+                coordinate.classifier(),
+                "runtime")
+            .toString());
     ((ObjectNode) duplicate.get(PROVENANCE_FIELD)).put("cveSourceSha256", "f".repeat(64));
     proofs.add(duplicate);
   }

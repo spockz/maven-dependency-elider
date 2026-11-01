@@ -83,7 +83,7 @@ final class MavenElisionReportStructuredProofPayloadValidator {
           row.get(CVE_ID).textValue(),
           MavenElisionReportSourceCoordinateValidator.parseCanonical(
                   row.get("coordinate").textValue())
-              .toString());
+              .toId());
     }
   }
 
