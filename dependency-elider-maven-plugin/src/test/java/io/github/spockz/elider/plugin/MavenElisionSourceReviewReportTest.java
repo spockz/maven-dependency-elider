@@ -47,7 +47,7 @@ final class MavenElisionSourceReviewReportTest {
                     "Conventional Java source layout assumption saved for this run: true",
                     "Structured source claims (review only; "
                         + "verify before configuring a POM mapping):",
-                    "  - CVE-2025-11226 org.example:demo:jar:1.0 (compile) "
+                    "  - OSV GHSA-example CVE-2025-11226 org.example:demo:jar:1.0 (compile) "
                         + "[containers.cna.affected[1]]",
                     "    SourceFile match leads:",
                     "    Verify the complete source-to-class mapping, then add an exact POM"
@@ -149,6 +149,7 @@ final class MavenElisionSourceReviewReportTest {
       throws IOException {
     final MavenElisionReportSnapshot.SourceReviewFinding finding =
         new MavenElisionReportSnapshot.SourceReviewFinding(
+            "GHSA-example",
             "CVE-2025-11226",
             "org.example:demo:jar:1.0 (compile)",
             "a".repeat(64),

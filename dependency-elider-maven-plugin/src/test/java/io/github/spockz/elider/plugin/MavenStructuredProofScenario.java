@@ -67,6 +67,23 @@ final class MavenStructuredProofScenario {
         .result();
   }
 
+  /* default */ static MavenVulnerabilityAssessment.Result assess(
+      final MavenCorroboratedSourceScenario.Prepared prepared,
+      final MavenSourceCorrespondenceTestArtifacts.Archives archives,
+      final ElisionAnalysisModel.Analysis analysis,
+      final boolean conventionalLayoutAssumed)
+      throws IOException {
+    copyCurrentCveRecord(prepared);
+    final MavenSourceCorrespondenceAssessment sourceAssessment =
+        sourceAssessment(archives, conventionalLayoutAssumed, ignored -> {});
+    return new MavenVulnerabilityAssessment(
+            new RecordingMavenLog(),
+            new VulnerabilityCacheManager(),
+            conventionalLayoutAssumed,
+            sourceAssessment)
+        .assess(prepared.cacheConfig(), ConfiguredVulnerabilityMappings.empty(), analysis, null);
+  }
+
   /* default */ static MavenCorroboratedSourceScenario.AssessmentWithLog assessWithDebugLog(
       final MavenCorroboratedSourceScenario.Prepared prepared,
       final MavenSourceCorrespondenceTestArtifacts.Archives archives,
@@ -126,7 +143,7 @@ final class MavenStructuredProofScenario {
         prepared.cveRecord(), currentCveRecord, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
   }
 
-  private static ArtifactTrimRecord trimRecord(
+  /* default */ static ArtifactTrimRecord trimRecord(
       final MavenCorroboratedSourceScenario.Prepared prepared,
       final Path originalJar,
       final Path trimmedJar)

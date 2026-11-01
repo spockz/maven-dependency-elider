@@ -54,6 +54,31 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
+  void rejectsSchemaOneSnapshotMissingVerifiedStructuredProofCollection() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.remove("verifiedStructuredProofs");
+    final Path previous =
+        temporaryDirectory.resolve("missing-verified-structured-proof-array.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Elision report fields do not match schema version 1");
+  }
+
+  @Test
+  void rejectsSchemaOneSnapshotWithNullVerifiedStructuredProofCollection() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.putNull("verifiedStructuredProofs");
+    final Path previous = temporaryDirectory.resolve("null-verified-structured-proof-array.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Elision report verifiedStructuredProofs must be an array");
+  }
+
+  @Test
   void rejectsSchemaOneDraftWithIncompatibleTopLevelFields() throws IOException {
     final Path previous = temporaryDirectory.resolve("incompatible-report-draft.json");
     java.nio.file.Files.writeString(previous, "{\"schemaVersion\":1,\"projectGroupId\":\"draft\"}");
@@ -500,6 +525,7 @@ final class MavenElisionReportSchemaTest {
         payload
             .withArray("sourceReviewFindings")
             .addObject()
+            .put("osvId", "GHSA-example")
             .put("cveId", "CVE-2026-10001")
             .put("coordinate", "example:dep:jar:1.0 (compile)")
             .put("sourceRecordSha256", "a".repeat(64))
@@ -583,6 +609,7 @@ final class MavenElisionReportSchemaTest {
     payload.putArray("potentiallyConservativeCves");
     payload.put("assumeConventionalJavaSourceLayout", false);
     payload.putArray("sourceReviewFindings");
+    payload.putArray("verifiedStructuredProofs");
     payload.putObject("advisoryReview").putArray("packageAdvisories");
     ((ObjectNode) payload.get("advisoryReview")).putArray("heuristicAdvisories");
     final ObjectNode graph = payload.putObject("mediatedGraph");

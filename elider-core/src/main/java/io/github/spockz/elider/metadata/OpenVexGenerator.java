@@ -114,14 +114,11 @@ public final class OpenVexGenerator {
         uniqueAttestations(attestations, componentsByPurl, componentDigests);
     ObjectNode document = document(metadata);
     ArrayNode statements = document.putArray("statements");
-    unique
-        .values()
-        .forEach(
-            attestation -> {
-              String purl = CycloneDxSbomGenerator.componentPurl(attestation.coordinate());
-              String key = attestation.cveId() + "\u0000" + purl;
-              addStatement(statements, root, attestation, componentDigests.get(key));
-            });
+    for (final VexAttestation attestation : unique.values()) {
+      String purl = CycloneDxSbomGenerator.componentPurl(attestation.coordinate());
+      String key = attestation.cveId() + "\u0000" + purl;
+      addStatement(statements, root, attestation, componentDigests.get(key));
+    }
     return JSON.writeValueAsBytes(document);
   }
 
@@ -174,7 +171,8 @@ public final class OpenVexGenerator {
       ArrayNode statements,
       CycloneDxSbomGenerator.RootIdentity root,
       VexAttestation attestation,
-      String componentSha256) {
+      String componentSha256)
+      throws IOException {
     final String purl = CycloneDxSbomGenerator.componentPurl(attestation.coordinate());
     ObjectNode statement = statements.addObject();
     statement.putObject("vulnerability").put("name", attestation.cveId());
@@ -190,7 +188,7 @@ public final class OpenVexGenerator {
     if (!VexSerializerSupport.isPrecondition(attestation)) {
       statement.put("justification", VULNERABLE_CODE_NOT_PRESENT);
     }
-    statement.put("impact_statement", attestation.impactDetail());
+    statement.put("impact_statement", StructuredProofDetailFormatter.format(attestation));
   }
 
   private static String validateAttestation(

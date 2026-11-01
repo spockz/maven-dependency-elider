@@ -30,6 +30,7 @@ final class MavenElisionReportWriter {
       new ObjectMapper()
           .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
           .enable(SerializationFeature.INDENT_OUTPUT)
+          .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
           .enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
   /** Binary units used for the report's byte totals. */
@@ -95,8 +96,12 @@ final class MavenElisionReportWriter {
       }
     }
     MavenElisionReportPayloadValidator.validate(payload);
-    final MavenElisionReportSnapshot snapshot =
-        JSON.treeToValue(payload, MavenElisionReportSnapshot.class);
+    final MavenElisionReportSnapshot snapshot;
+    try {
+      snapshot = JSON.treeToValue(payload, MavenElisionReportSnapshot.class);
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException("Invalid elision report snapshot: " + absolute, exception);
+    }
     if (snapshot == null) {
       throw new IOException("Elision report snapshot is empty: " + absolute);
     }
@@ -207,6 +212,7 @@ final class MavenElisionReportWriter {
     }
     renderSourceReviewFindings(snapshot.sourceReviewFindings(), lines);
     lines.addAll(MavenElisionReportAdvisoryRenderer.render(snapshot.advisoryReview()));
+    lines.addAll(MavenElisionReportStructuredProofRenderer.render(snapshot));
     lines.addAll(
         MediatedGraphReportRenderer.render(snapshot.mediatedGraph(), snapshot.projectGav()));
     return List.copyOf(lines);
@@ -222,6 +228,9 @@ final class MavenElisionReportWriter {
     for (final MavenElisionReportSnapshot.SourceReviewFinding finding : findings) {
       lines.add(
           BULLET
+              + "OSV "
+              + finding.osvId()
+              + " "
               + finding.cveId()
               + " "
               + finding.coordinate()

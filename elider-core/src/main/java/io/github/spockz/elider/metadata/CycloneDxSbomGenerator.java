@@ -359,7 +359,7 @@ public final class CycloneDxSbomGenerator {
           VexSerializerSupport.isPrecondition(attestation)
               ? "requires_dependency"
               : "code_not_present");
-      analysis.put("detail", attestation.impactDetail());
+      analysis.put("detail", StructuredProofDetailFormatter.format(attestation));
       vulnerability
           .putArray("affects")
           .addObject()

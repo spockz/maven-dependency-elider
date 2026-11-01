@@ -18,6 +18,7 @@ final class MavenElisionReportSourcePayloadValidator {
   /** Exact fields for historical structured-source review rows. */
   private static final Set<String> SOURCE_REVIEW_FIELDS =
       Set.of(
+          "osvId",
           "cveId",
           "coordinate",
           "sourceRecordSha256",
@@ -49,6 +50,7 @@ final class MavenElisionReportSourcePayloadValidator {
       throw new IOException(
           "Elision report source review row fields do not match schema version 1");
     }
+    validateNonBlank(row.get("osvId"), "osvId");
     validateCveId(row.get("cveId"));
     MavenElisionReportSourceCoordinateValidator.validate(row.get("coordinate"));
     validateSha256(row.get("sourceRecordSha256"));

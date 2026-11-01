@@ -6,6 +6,8 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ConfidenceLevel;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.OsvAffectedRange;
+import io.github.spockz.elider.model.StructuredProofProvenance;
+import io.github.spockz.elider.model.VexAttestation;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.File;
 import java.io.IOException;
@@ -50,7 +52,8 @@ record MavenElisionReportSnapshot(
     MediatedGraphReport mediatedGraph,
     boolean assumeConventionalJavaSourceLayout,
     List<SourceReviewFinding> sourceReviewFindings,
-    AdvisoryReview advisoryReview) {
+    AdvisoryReview advisoryReview,
+    List<VerifiedStructuredProofFinding> verifiedStructuredProofs) {
   /** Current persisted JSON format version. */
   static final int SCHEMA_VERSION = 1;
 
@@ -90,6 +93,18 @@ record MavenElisionReportSnapshot(
     MavenElisionReportSourceReviewValidator.validate(
         sourceReviewFindings, assumeConventionalJavaSourceLayout);
     Objects.requireNonNull(advisoryReview, "advisoryReview");
+    verifiedStructuredProofs = List.copyOf(verifiedStructuredProofs);
+    require(
+        verifiedStructuredProofs.size() == verifiedStructuredProofs.stream().distinct().count(),
+        "Duplicate verified structured proof rows are not allowed");
+    verifiedStructuredProofs =
+        verifiedStructuredProofs.stream()
+            .sorted(
+                Comparator.comparing(VerifiedStructuredProofFinding::coordinate)
+                    .thenComparing(VerifiedStructuredProofFinding::cveId)
+                    .thenComparing(finding -> finding.provenance().cnaAffectedEntryIdentity()))
+            .toList();
+    validateVerifiedStructuredProofs(verifiedStructuredProofs, provenAbsentCves, trimmedArtifacts);
     Objects.requireNonNull(mediatedGraph, "mediatedGraph");
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
@@ -172,7 +187,59 @@ record MavenElisionReportSnapshot(
         mediatedGraph,
         assumeConventionalJavaSourceLayout,
         sourceReviewFindings,
-        AdvisoryReview.empty());
+        AdvisoryReview.empty(),
+        List.of());
+  }
+
+  MavenElisionReportSnapshot(
+      final int schemaVersion,
+      final String projectGroupId,
+      final String projectArtifactId,
+      final String projectVersion,
+      final String projectBaseDirectory,
+      final String generatedAt,
+      final int wholeArtifactsDropped,
+      final long originalJarBytesDropped,
+      final int droppedProgramClassEntries,
+      final long droppedProgramClassBytes,
+      final List<DroppedArtifact> droppedArtifacts,
+      final List<String> rawDroppedCoordinates,
+      final int programClassesPruned,
+      final long uncompressedProgramClassBytesPruned,
+      final List<TrimmedArtifact> trimmedArtifacts,
+      final List<CveFinding> removedCveComponents,
+      final List<CveFinding> provenAbsentCves,
+      final List<CveFinding> inactivePreconditionCves,
+      final List<ConservativeCveFinding> potentiallyConservativeCves,
+      final MediatedGraphReport mediatedGraph,
+      final boolean assumeConventionalJavaSourceLayout,
+      final List<SourceReviewFinding> sourceReviewFindings,
+      final AdvisoryReview advisoryReview) {
+    this(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        removedCveComponents,
+        provenAbsentCves,
+        inactivePreconditionCves,
+        potentiallyConservativeCves,
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        sourceReviewFindings,
+        advisoryReview,
+        List.of());
   }
 
   MavenElisionReportSnapshot(
@@ -356,6 +423,8 @@ record MavenElisionReportSnapshot(
     final long prunedBytes = sumPrunedClassBytes(trimmed);
     final Path projectBaseDirectory = canonicalProjectDirectory(project);
     final CveFindingGroups findingGroups = CveFindingGroups.from(vulnerabilityAssessment);
+    final List<VerifiedStructuredProofFinding> verifiedProofs =
+        verifiedStructuredProofs(vulnerabilityAssessment);
     return new MavenElisionReportSnapshot(
         SCHEMA_VERSION,
         project.getGroupId(),
@@ -384,8 +453,42 @@ record MavenElisionReportSnapshot(
                 "Mediated graph data is unavailable for this analysis")
             : analysis.mediatedGraph(),
         vulnerabilityAssessment != null && vulnerabilityAssessment.conventionalLayoutAssumed(),
-        sourceReviewFindings(vulnerabilityAssessment),
-        advisoryReview(vulnerabilityAssessment));
+        sourceReviewFindings(vulnerabilityAssessment, verifiedProofs),
+        advisoryReview(vulnerabilityAssessment),
+        verifiedProofs);
+  }
+
+  private static List<VerifiedStructuredProofFinding> verifiedStructuredProofs(
+      final MavenVulnerabilityAssessment.Result assessment) {
+    if (assessment == null) {
+      return List.of();
+    }
+    return assessment.attestations().stream()
+        .flatMap(
+            attestation ->
+                attestation
+                    .structuredProofProvenance()
+                    .map(provenance -> VerifiedStructuredProofFinding.from(attestation, provenance))
+                    .stream())
+        .toList();
+  }
+
+  private static void validateVerifiedStructuredProofs(
+      final List<VerifiedStructuredProofFinding> proofs,
+      final List<CveFinding> provenAbsent,
+      final List<TrimmedArtifact> trimmed) {
+    for (final VerifiedStructuredProofFinding proof : proofs) {
+      require(
+          provenAbsent.contains(
+              new CveFinding(
+                  proof.cveId(),
+                  MavenElisionReportSourceCoordinateValidator.parseCanonical(proof.coordinate())
+                      .toId())),
+          "Verified structured proof must be present in provenAbsentCves");
+      require(
+          trimmed.stream().anyMatch(value -> value.coordinate().equals(proof.coordinate())),
+          "Verified structured proof must identify a trimmed artifact");
+    }
   }
 
   MavenElisionReportSnapshot withAdvisoryReview(final AdvisoryReview review) {
@@ -412,7 +515,8 @@ record MavenElisionReportSnapshot(
         mediatedGraph,
         assumeConventionalJavaSourceLayout,
         sourceReviewFindings,
-        review);
+        review,
+        verifiedStructuredProofs);
   }
 
   static AdvisoryReview advisoryReview(final MavenVulnerabilityAssessment.Result assessment) {
@@ -463,34 +567,98 @@ record MavenElisionReportSnapshot(
   }
 
   private static List<SourceReviewFinding> sourceReviewFindings(
-      final List<MavenVulnerabilityAssessment.MatchedSourceClaim> claims) {
-    return claims.stream()
-        .map(
-            claim ->
-                new SourceReviewFinding(
-                    claim.cveId(),
-                    claim.coordinate().toString(),
-                    claim.sourceRecordSha256(),
-                    claim.cnaAffectedEntryIdentity(),
-                    claim.affectedProductIdentity(),
-                    claim.programFiles(),
-                    claim.programRoutines(),
-                    claim.conventionalLayoutAssumed(),
-                    claim.matches().stream().map(SourceReviewMatch::from).toList(),
-                    claim.applicability(),
-                    claim.applicabilityRationale(),
-                    claim.unresolvedRationale()))
-        .distinct()
-        .sorted(
-            Comparator.comparing(SourceReviewFinding::coordinate)
-                .thenComparing(SourceReviewFinding::cveId)
-                .thenComparing(SourceReviewFinding::cnaAffectedEntryIdentity))
+      final MavenVulnerabilityAssessment.Result assessment,
+      final List<VerifiedStructuredProofFinding> verifiedProofs) {
+    if (assessment == null) {
+      return List.of();
+    }
+    final Set<VerifiedClaimIdentity> verifiedClaims =
+        verifiedProofs.stream()
+            .flatMap(
+                proof ->
+                    proof.provenance().claimAttributions().stream()
+                        .map(
+                            claim ->
+                                new VerifiedClaimIdentity(
+                                    proof.provenance().osvId(),
+                                    proof.cveId(),
+                                    proof.coordinate(),
+                                    proof.provenance().cveSourceSha256(),
+                                    proof.provenance().cnaAffectedEntryIdentity(),
+                                    proof.provenance().affectedProductIdentity(),
+                                    proof.provenance().conventionalLayoutAssumed(),
+                                    claim.type(),
+                                    claim.claim())))
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    return assessment.matchedSourceClaims().stream()
+        .filter(claim -> !isFullyVerified(claim, verifiedClaims))
+        .map(MavenElisionReportSnapshot::sourceReviewFinding)
         .toList();
   }
 
-  private static List<SourceReviewFinding> sourceReviewFindings(
-      final MavenVulnerabilityAssessment.Result assessment) {
-    return assessment == null ? List.of() : sourceReviewFindings(assessment.matchedSourceClaims());
+  private static boolean isFullyVerified(
+      final MavenVulnerabilityAssessment.MatchedSourceClaim claim,
+      final Set<VerifiedClaimIdentity> verified) {
+    if (claim.programFiles().isEmpty() && claim.programRoutines().isEmpty()) {
+      return false;
+    }
+    return claim.programFiles().stream()
+            .allMatch(
+                file ->
+                    verified.contains(
+                        VerifiedClaimIdentity.of(
+                            claim, StructuredProofProvenance.ClaimType.FILE, file)))
+        && claim.programRoutines().stream()
+            .allMatch(
+                routine ->
+                    verified.contains(
+                        VerifiedClaimIdentity.of(
+                            claim, StructuredProofProvenance.ClaimType.ROUTINE, routine)));
+  }
+
+  private static SourceReviewFinding sourceReviewFinding(
+      final MavenVulnerabilityAssessment.MatchedSourceClaim claim) {
+    return new SourceReviewFinding(
+        claim.osvId(),
+        claim.cveId(),
+        claim.coordinate().toString(),
+        claim.sourceRecordSha256(),
+        claim.cnaAffectedEntryIdentity(),
+        claim.affectedProductIdentity(),
+        claim.programFiles(),
+        claim.programRoutines(),
+        claim.conventionalLayoutAssumed(),
+        claim.matches().stream().map(SourceReviewMatch::from).toList(),
+        claim.applicability(),
+        claim.applicabilityRationale(),
+        claim.unresolvedRationale());
+  }
+
+  private record VerifiedClaimIdentity(
+      String osvId,
+      String cveId,
+      String coordinate,
+      String sourceDigest,
+      String entryIdentity,
+      String productIdentity,
+      boolean conventionalLayoutAssumed,
+      StructuredProofProvenance.ClaimType type,
+      String claim) {
+    private static VerifiedClaimIdentity of(
+        final MavenVulnerabilityAssessment.MatchedSourceClaim sourceClaim,
+        final StructuredProofProvenance.ClaimType type,
+        final String claim) {
+      return new VerifiedClaimIdentity(
+          sourceClaim.osvId(),
+          sourceClaim.cveId(),
+          sourceClaim.coordinate().toString(),
+          sourceClaim.sourceRecordSha256(),
+          sourceClaim.cnaAffectedEntryIdentity(),
+          sourceClaim.affectedProductIdentity(),
+          sourceClaim.conventionalLayoutAssumed(),
+          type,
+          claim);
+    }
   }
 
   static TrimmedArtifact trimmedArtifact(final ArtifactTrimRecord record) {
@@ -641,6 +809,12 @@ record MavenElisionReportSnapshot(
     require(value != null && !value.isBlank(), field + " must not be blank");
   }
 
+  private static void requireSha256(final String value, final String field) {
+    if (value == null || !value.matches("[0-9a-f]{64}")) {
+      throw new IllegalArgumentException(field + " must be a lowercase SHA-256");
+    }
+  }
+
   private static void require(final boolean condition, final String message) {
     if (!condition) {
       throw new IllegalArgumentException(message);
@@ -718,6 +892,7 @@ record MavenElisionReportSnapshot(
 
   /** Structured source claim saved for historical review, never as a finding. */
   record SourceReviewFinding(
+      String osvId,
       String cveId,
       String coordinate,
       String sourceRecordSha256,
@@ -731,6 +906,7 @@ record MavenElisionReportSnapshot(
       String applicabilityRationale,
       String unresolvedRationale) {
     SourceReviewFinding {
+      requireNonBlank(osvId, "osvId");
       requireNonBlank(cveId, "cveId");
       require(cveId.matches("CVE-[0-9]{4}-[0-9]{4,}"), "Invalid CVE format: " + cveId);
       requireNonBlank(coordinate, "coordinate");
@@ -807,6 +983,46 @@ record MavenElisionReportSnapshot(
           candidate.sourceFileAttribute(),
           candidate.packagePathComparison(),
           candidate.originalArchiveSha256());
+    }
+  }
+
+  /** Historical rendering of a proof already verified during the saved elision run. */
+  record VerifiedStructuredProofFinding(
+      String cveId,
+      String coordinate,
+      String originalSha256,
+      String trimmedSha256,
+      StructuredProofProvenance provenance) {
+    VerifiedStructuredProofFinding {
+      requireNonBlank(cveId, "verified structured proof cveId");
+      require(
+          cveId.matches("CVE-[0-9]{4}-[0-9]{4,}"),
+          "verified structured proof cveId must be a CVE identifier");
+      requireNonBlank(coordinate, "verified structured proof coordinate");
+      MavenElisionReportSourceCoordinateValidator.validate(coordinate);
+      requireSha256(originalSha256, "verified structured proof originalSha256");
+      requireSha256(trimmedSha256, "verified structured proof trimmedSha256");
+      Objects.requireNonNull(provenance, "provenance");
+      final ArtifactCoordinate candidate =
+          MavenElisionReportSourceCoordinateValidator.parseCanonical(coordinate);
+      final ArtifactCoordinate sources = provenance.sourcesCoordinate();
+      require(
+          candidate.groupId().equals(sources.groupId())
+              && candidate.artifactId().equals(sources.artifactId())
+              && candidate.version().equals(sources.version())
+              && candidate.type().equals(sources.type())
+              && "sources".equals(sources.classifier()),
+          "Verified structured proof sources coordinate must match the exact sources classifier");
+    }
+
+    private static VerifiedStructuredProofFinding from(
+        final VexAttestation attestation, final StructuredProofProvenance provenance) {
+      return new VerifiedStructuredProofFinding(
+          attestation.cveId(),
+          attestation.coordinate().toString(),
+          attestation.originalSha256(),
+          attestation.trimmedSha256(),
+          provenance);
     }
   }
 
