@@ -419,7 +419,7 @@ func runInvocation(root, evidencePath string, item invocation) (commandResult, e
 	if err != nil {
 		return commandResult{}, err
 	}
-	args := expandArgs(item.Args, root, evidencePath)
+	args := invocationArgs(item.Args, root, evidencePath)
 	result, err := runCommand(root, dir, item.Command, args, nil)
 	if err != nil {
 		return commandResult{}, fmt.Errorf("run transcript %s: %w", item.ID, err)
@@ -437,6 +437,12 @@ func runInvocation(root, evidencePath string, item invocation) (commandResult, e
 		}
 	}
 	return commandResult{Output: selected, ExitCode: result.ExitCode}, nil
+}
+
+func invocationArgs(args []string, root, evidencePath string) []string {
+	expanded := expandArgs(args, root, evidencePath)
+	localRepository := filepath.Join(evidencePath, "maven-repository")
+	return append([]string{"-Dmaven.repo.local=" + localRepository}, expanded...)
 }
 
 func runCommand(root, dir, command string, args []string, extraEnvironment map[string]string) (commandResult, error) {

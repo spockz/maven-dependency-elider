@@ -12,6 +12,23 @@ import (
 	"time"
 )
 
+func TestInvocationUsesPreparedMavenRepositoryWithoutRenderingItsPath(t *testing.T) {
+	root := t.TempDir()
+	evidencePath := filepath.Join(root, ".scratch", "maven-dependency-elider-examples.test")
+	item := invocation{
+		Command: "./mvnw",
+		Args:    []string{"--offline", "-f", "examples/basic/pom.xml"},
+	}
+	args := invocationArgs(item.Args, root, evidencePath)
+	wantRepository := "-Dmaven.repo.local=" + filepath.Join(evidencePath, "maven-repository")
+	if !reflect.DeepEqual(args, []string{wantRepository, "--offline", "-f", "examples/basic/pom.xml"}) {
+		t.Fatalf("runtime Maven args = %#v, want private repository followed by manifest args", args)
+	}
+	if rendered := renderCommand(item); strings.Contains(rendered, evidencePath) || strings.Contains(rendered, "maven.repo.local") {
+		t.Fatalf("rendered transcript exposed its temporary repository: %s", rendered)
+	}
+}
+
 func TestInvocationFixturePathUsesMavenFileArgument(t *testing.T) {
 	root := t.TempDir()
 	first := invocation{

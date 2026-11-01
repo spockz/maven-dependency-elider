@@ -212,7 +212,7 @@ final class MavenRawScopeApplicabilityTest {
                     null,
                     List.of(
                         Map.of("at", VERSION_2, STATUS, UNAFFECTED),
-                        Map.of("at", "2.0", STATUS, AFFECTED)))));
+                        Map.of("at", "2", STATUS, AFFECTED)))));
     final CveAffectedEntryContext invalidChangeStatus =
         entry(
             null,

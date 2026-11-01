@@ -37,6 +37,15 @@ main() {
   evidence_dir=$(mktemp -d "$repo_root/.scratch/maven-dependency-elider-examples.transcript.XXXXXX")
   cache_dir="$evidence_dir/vulnerability-cache"
   mkdir -p -- "$cache_dir"
+  local_repository_source=${TRANSCRIPT_MAVEN_REPOSITORY_SOURCE:-"${HOME:?HOME must identify the Maven repository source}/.m2/repository"}
+  local_repository="$evidence_dir/maven-repository"
+  if [[ ! -d $local_repository_source ]]; then
+    echo "Maven repository source is unavailable: $local_repository_source" >&2
+    exit 2
+  fi
+  mkdir -p -- "$local_repository"
+  cp -a --reflink=auto -- "$local_repository_source/." "$local_repository/"
+  maven_options+=("-Dmaven.repo.local=$local_repository")
   active_process_pid=""
   cleanup() {
     local status=$?

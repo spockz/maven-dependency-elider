@@ -559,6 +559,12 @@ Process exit status: 0
 [INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
 [INFO] Potentially conservative CVE exclusions: none detected
+[INFO] Advisory associations (review only; inventory disposition is not impact proof):
+[INFO]   - GHSA-transcript-commons-text org.apache.commons:commons-text:jar:1.9 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Origin: OSV Maven / org.apache.commons:commons-text
+[INFO]     Aliases: [CVE-2022-42889]
+[INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
+[INFO]     OSV ranges: [AffectedRange[type=ECOSYSTEM, repo=null, events=[{introduced=1.5}, {fixed=1.10.0}]]]
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n3} [RETAINED]
@@ -651,7 +657,6 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:analyze (default-cli) @ example-basic-app ---
-[WARNING] Cached vulnerability index is invalid: Vulnerability cache producer identity does not match this plugin
 [INFO] Dependency Elider analysis summary
 [INFO]   Artifacts that would be elided by this analysis: 2 / 13 (15.4%)
 [INFO]   Estimated original JAR bytes for those artifacts: 942.11 KiB (sum of original on-disk input JAR sizes; final package delta may differ)
