@@ -608,9 +608,11 @@ public final class ExampleSupport {
       conservativeIds.add(cveId);
     }
 
-    if (!output.contains("[INFO] Avoided CVEs (dropped artifacts):")) {
+    if (!output.contains("[INFO] Advisories associated with removed components:")) {
       throw new IOException(
-          "[" + fixture + "] Report output missing 'Avoided CVEs (dropped artifacts):' heading");
+          "["
+              + fixture
+              + "] Report output missing 'Advisories associated with removed components:' heading");
     }
     if (!output.contains("[INFO] Mitigated CVEs (vulnerable code pruned by trimming):")) {
       throw new IOException(
@@ -631,8 +633,8 @@ public final class ExampleSupport {
 
     if (removedCves.isEmpty()) {
       if (!output.contains(
-          "[INFO] Avoided CVEs (dropped artifacts): none matched the available vulnerability"
-              + " mappings")) {
+          "[INFO] Advisories associated with removed components: none matched the available"
+              + " vulnerability mappings")) {
         throw new IOException(
             "[" + fixture
                 + "] Expected 'none matched the available vulnerability mappings' for removed"
@@ -714,14 +716,20 @@ public final class ExampleSupport {
     // Concrete fixture-specific expected CVE assertions
     switch (fixture) {
       case "example-basic-app" -> {
-        if (!removedIds.contains("CVE-2014-3577")) {
+        if (!removedIds.isEmpty()) {
           throw new IOException(
-              "example-basic-app expected removed CVE-2014-3577, found: " + removedIds);
+              "example-basic-app has no validated owner evidence and must not classify removed "
+                  + "components as CVEs: "
+                  + removedIds);
         }
         if (!provenIds.isEmpty() || !inactiveIds.isEmpty() || !conservativeIds.isEmpty()) {
           throw new IOException(
               "example-basic-app expected 0 other CVEs, found: proven=" + provenIds
                   + ", inactive=" + inactiveIds + ", conservative=" + conservativeIds);
+        }
+        final Path vexPath = reportJsonPath.getParent().resolve("dependency-elider.openvex.json");
+        if (Files.exists(vexPath)) {
+          throw new IOException("example-basic-app must not emit VEX from removed-component data");
         }
       }
       case "example-cve-unused-app" -> {
