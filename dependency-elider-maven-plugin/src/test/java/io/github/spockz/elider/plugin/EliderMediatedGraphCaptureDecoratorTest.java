@@ -41,6 +41,21 @@ final class EliderMediatedGraphCaptureDecoratorTest {
   }
 
   @Test
+  void auditModeBypassesGraphCaptureWithoutObservingSharedPlanOrCaptureState() throws IOException {
+    final MavenProject project =
+        EliderMediatedGraphCaptureDecoratorTestSupport.project(temporaryDirectory, "consumer");
+    final DefaultRepositorySystemSession session = new DefaultRepositorySystemSession();
+    session.setConfigProperties(Map.of(MavenOriginalInputAudit.AUDIT_MODE_CONFIG_KEY, true));
+    session.getData().set(ResolverArtifactPlanPublisher.SESSION_DATA_KEY, "invalid shared plan");
+    session
+        .getData()
+        .set(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY, "invalid graph state");
+
+    assertThat(new EliderMediatedGraphCaptureDecorator().decorate(project, session))
+        .isSameAs(session);
+  }
+
+  @Test
   @SuppressWarnings(TOO_MANY_ASSERTS)
   void delegatesOnceReturnsReplacementRootAndCapturesDecorationTimeProvenance()
       throws IOException, org.eclipse.aether.RepositoryException {

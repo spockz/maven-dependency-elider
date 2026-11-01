@@ -37,6 +37,20 @@ final class MavenElisionGraphInventory {
       }
       expected.add(inventoryKey(snapshot.coordinate(), extension));
     }
+    return matchesGraphKeys(graph, expected);
+  }
+
+  static boolean matchesGraphCoordinates(
+      final ResolverArtifactGraphSnapshot graph, final List<ArtifactCoordinate> inventory) {
+    final Set<String> expected = new HashSet<>();
+    for (final ArtifactCoordinate coordinate : inventory) {
+      expected.add(inventoryKey(coordinate, coordinate.type()));
+    }
+    return expected.size() == inventory.size() && matchesGraphKeys(graph, expected);
+  }
+
+  private static boolean matchesGraphKeys(
+      final ResolverArtifactGraphSnapshot graph, final Set<String> expected) {
     final Set<String> actual = new HashSet<>();
     for (final Map<String, Object> node : graph.nodes()) {
       if (!Boolean.TRUE.equals(node.get(ResolverArtifactGraphSnapshotSchema.REACHABLE))) {

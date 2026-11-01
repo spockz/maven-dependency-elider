@@ -39,6 +39,9 @@ public final class EliderMediatedGraphCaptureDecorator implements RepositorySess
   @Override
   public RepositorySystemSession decorate(
       final MavenProject project, final RepositorySystemSession session) {
+    if (MavenOriginalInputAudit.isAuditMode(session)) {
+      return session;
+    }
     if (project == null || project.getBasedir() == null || session == null) {
       return session;
     }

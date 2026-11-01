@@ -63,6 +63,16 @@ final class EliderRepositorySessionDecoratorTest {
   }
 
   @Test
+  void auditModeBypassesPlannedWorkspaceReaderWithoutReadingSharedPlan() throws IOException {
+    final MavenProject project = project(temporaryDirectory);
+    final DefaultRepositorySystemSession session = new DefaultRepositorySystemSession();
+    session.setConfigProperties(Map.of(MavenOriginalInputAudit.AUDIT_MODE_CONFIG_KEY, true));
+    session.getData().set(ResolverArtifactPlanPublisher.SESSION_DATA_KEY, "invalid shared plan");
+
+    assertThat(new EliderRepositorySessionDecorator().decorate(project, session)).isSameAs(session);
+  }
+
+  @Test
   void copiesSessionAndReplacesOnlyExactArtifactIdentity() throws IOException {
     final MavenProject project = project(temporaryDirectory);
     final Path replacement = temporaryDirectory.resolve("trimmed.jar");

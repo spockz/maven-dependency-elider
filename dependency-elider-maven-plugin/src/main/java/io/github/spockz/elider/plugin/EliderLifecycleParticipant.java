@@ -41,6 +41,7 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
 
   @Override
   public void afterProjectsRead(final MavenSession session) throws MavenExecutionException {
+    MavenOriginalInputAudit.markHookPresent(session);
     rebindProductionBytecodeExecutions(session);
     EliderTreePreparation.schedule(session);
     new BanishedDependencyLifecycleActivation(

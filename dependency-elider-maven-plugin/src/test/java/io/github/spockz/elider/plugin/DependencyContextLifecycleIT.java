@@ -439,6 +439,71 @@ final class DependencyContextLifecycleIT {
                     row -> row.startsWith("artifact\tRESOLVED\t") && row.contains("drop-library")));
   }
 
+  @Test
+  void packagedAuditModeResolverRequestLeavesLiveResolverStateUnchanged() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path evidenceDirectory = temporaryDirectory.resolve("original-input-audit");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    addDropAsKeepLibraryDependency(localRepository);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = Files.createDirectories(evidenceDirectory.resolve("audit-consumer"));
+    final Path consumerPom = consumer.resolve(POM_XML);
+    final Path trace = consumer.resolve(TRACE_FILE);
+    final Path auditReport = consumer.resolve("target/original-input-audit.tsv");
+    Files.writeString(trace, KEEP_ENTRY_ROOT);
+    Files.writeString(
+        consumerPom,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Runs the real Analyze capture before a test helper audits Maven's original graph. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId><artifactId>audit-consumer</artifactId><version>1.0.0</version><packaging>pom</packaging>
+          <dependencies><dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>keep-library</artifactId><version>1.0.0</version></dependency></dependencies>
+          <build><plugins>
+            <plugin>
+              <groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version>
+              <configuration><traceFiles>${project.basedir}/trace.txt</traceFiles><reportFile>${project.build.directory}/class-usage.json</reportFile><leafOnly>false</leafOnly></configuration>
+              <executions><execution><id>capture-original-input</id><phase>initialize</phase><goals><goal>analyze</goal></goals></execution></executions>
+            </plugin>
+            <plugin>
+              <groupId>io.github.spockz.elider.test</groupId><artifactId>lifecycle-probe-maven-plugin</artifactId><version>1.0.0</version>
+              <executions><execution><id>audit-original-input</id><phase>process-classes</phase><goals><goal>audit-inventory</goal></goals></execution></executions>
+            </plugin>
+          </plugins></build>
+        </project>
+        """);
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+    final Path log = evidenceDirectory.resolve("audit.log");
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            log,
+            PROCESS_TIMEOUT,
+            "-Daudit.inventory.reportFile=" + auditReport,
+            "-f",
+            consumerPom.toString(),
+            "process-classes");
+    final List<String> lines = Files.readAllLines(auditReport);
+    final List<String> resolvedRows = rowsWithPrefix(lines, "audit-resolved\t");
+    final List<String> directRows = rowsWithPrefix(lines, "audit-direct\t");
+
+    assertAll(
+        "the packaged resolver audit mode bypasses shared elider state",
+        () -> assertThat(output).contains(BUILD_SUCCESS),
+        () -> assertThat(rowsWithPrefix(lines, "state\t")).containsExactly("state\tunchanged"),
+        () -> assertThat(directRows).singleElement().asString().contains("keep-library"),
+        () -> assertThat(resolvedRows).anyMatch(row -> row.contains("keep-library")),
+        () -> assertThat(resolvedRows).anyMatch(row -> row.contains("drop-library")));
+  }
+
   private static String runBanGoal(
       final Path workingDirectory,
       final Path wrapper,
