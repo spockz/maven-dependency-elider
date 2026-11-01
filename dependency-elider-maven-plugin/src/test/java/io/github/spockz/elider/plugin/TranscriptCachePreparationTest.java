@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.CacheProducerIdentity;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.scanner.AdvisoryEvidenceReader;
@@ -19,6 +21,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.jar.JarFile;
@@ -53,6 +56,9 @@ class TranscriptCachePreparationTest {
 
   /** Core artifact loaded alongside the installed plugin. */
   private static final String CORE_ARTIFACT_ID = "elider-core";
+
+  /** Stable source timestamp for the generated transcript cache metadata. */
+  private static final Instant FIXTURE_TIMESTAMP = Instant.parse("2026-10-31T00:00:00Z");
 
   @Test
   @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UnitTestContainsTooManyAsserts"})
@@ -91,6 +97,16 @@ class TranscriptCachePreparationTest {
     final Path output = Path.of(outputSetting);
     Files.createDirectories(output.toAbsolutePath().getParent());
     Files.write(output, encoded);
+    Files.writeString(output.resolveSibling("index.meta"), cacheMetadata());
+  }
+
+  private static String cacheMetadata() {
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode metadata = mapper.createObjectNode();
+    metadata.put("schemaVersion", 1);
+    metadata.put("zipTimestamp", FIXTURE_TIMESTAMP.toString());
+    metadata.put("lastSyncTimestamp", FIXTURE_TIMESTAMP.toString());
+    return metadata.toString();
   }
 
   private static Path installedArtifact(

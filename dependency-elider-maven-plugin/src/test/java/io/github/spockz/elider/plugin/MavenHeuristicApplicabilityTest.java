@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -29,10 +28,8 @@ final class MavenHeuristicApplicabilityTest {
   void exactAffectedVersionRetainsHeuristicWhenFlattenedRangeDisagrees() throws IOException {
     final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "library", "1.0");
     final Path cacheDirectory = temporaryDirectory.resolve("exact-version-disjoint-range-cache");
-    Files.createDirectories(cacheDirectory);
-    Files.write(
-        cacheDirectory.resolve("index.json"),
-        MavenAssessmentFixtures.exactVersionDisjointRangeCache(coordinate));
+    MavenAssessmentFixtures.writeCacheDocument(
+        cacheDirectory, MavenAssessmentFixtures.exactVersionDisjointRangeCache(coordinate));
     final VulnerabilityCacheManager.CacheConfig cacheConfig =
         new VulnerabilityCacheManager.CacheConfig(
             cacheDirectory,
@@ -68,10 +65,8 @@ final class MavenHeuristicApplicabilityTest {
   void assessmentSnapshotRoundTripPreservesDistinctAmbiguousRawPackageOwners() throws IOException {
     final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "library", "1.0");
     final Path cacheDirectory = temporaryDirectory.resolve("ambiguous-package-owner-cache");
-    Files.createDirectories(cacheDirectory);
-    Files.write(
-        cacheDirectory.resolve("index.json"),
-        MavenAssessmentFixtures.ambiguousSameStatusPackageOwnerCache(coordinate));
+    MavenAssessmentFixtures.writeCacheDocument(
+        cacheDirectory, MavenAssessmentFixtures.ambiguousSameStatusPackageOwnerCache(coordinate));
     final VulnerabilityCacheManager.CacheConfig cacheConfig =
         new VulnerabilityCacheManager.CacheConfig(
             cacheDirectory,

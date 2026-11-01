@@ -56,6 +56,7 @@ class AdvisoryEvidenceImmutabilityTest {
     final OsvAdvisoryRecord record =
         new OsvAdvisoryRecord(
             "GHSA-owner",
+            "2026-10-31T00:00:00Z",
             mutableAliases,
             List.of(
                 new OsvAffectedPackage(

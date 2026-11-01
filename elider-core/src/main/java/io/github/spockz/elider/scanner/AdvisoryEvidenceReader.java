@@ -119,8 +119,13 @@ public final class AdvisoryEvidenceReader {
     requireObject(node, "OSV record");
     requireFields(
         node,
-        Set.of("osvId", "aliases", "affectedPackages", "cnaAffectedEntries", "evidence"),
+        Set.of(
+            "osvId", "modified", "aliases", "affectedPackages", "cnaAffectedEntries", "evidence"),
         "OSV record");
+    final JsonNode modifiedNode = node.get("modified");
+    if (modifiedNode == null || !modifiedNode.isTextual()) {
+      throw new IOException("modified must be RFC 3339 timestamp text");
+    }
     final List<AdvisoryEvidence> evidence = new ArrayList<>();
     final JsonNode evidenceNodes = node.get("evidence");
     if (!evidenceNodes.isArray()) {
@@ -148,6 +153,7 @@ public final class AdvisoryEvidenceReader {
     try {
       return new OsvAdvisoryRecord(
           requiredText(node, "osvId"),
+          modifiedNode.textValue(),
           readStringSet(node.get("aliases"), "aliases"),
           affectedPackages,
           cnaEntries,

@@ -256,7 +256,11 @@ mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:update-cve-in
 
 * **Cache location**: Stored in the OS user cache directory (outside `~/.m2`); override via `-Delide.cveCacheDirectory=/path/to/cache`.
 * **Freshness TTL**: Defaults to 24 hours (`-Delide.cveCacheTtlHours=24`). Use `-Delide.cveForceSync=true` to force synchronization.
-* **Offline resilience**: Normal builds skip network synchronization when offline, falling back safely to the local cache or bundled seed data.
+* **Offline resilience**: Normal builds skip network synchronization when offline. Only a producer-compatible cache with valid source metadata and advisory ranges is reusable; missing or invalid cache state falls back to the bundled seed.
+
+The 24-hour TTL measures time since the last successful local synchronization. On a due online refresh with a reusable cached snapshot, the plugin checks the OSV ZIP object's `Last-Modified` metadata with a HEAD request. It downloads the ZIP when source metadata is absent or incompatible, the source timestamp differs, the advertised ZIP timestamp is at least 24 hours old, or `-Delide.cveForceSync=true`; otherwise it reuses the cached snapshot. Any full download uses `Last-Modified` from its successful ZIP GET response as that snapshot's source timestamp, including cold and forced downloads. Each due refresh downloads the complete `Maven/modified_id.csv` and fetches records whose source `modified` value is newer than the staged owner record. Successful responses replace that OSV record's associations; explicit withdrawals remove that owner.
+
+The ZIP timestamp, each OSV record's `modified` value, and local `lastSyncTimestamp` describe different clocks. OSV does not document a shared watermark or CSV deletion events, so synchronization is eventually consistent: upstream publication delay, races, offline builds, failed requests, and removals awaiting a later full ZIP can extend how long local data differs from the source. A successful local sync is not a zero-lag or completeness guarantee.
 
 ### Declaring Project Vulnerability Mappings
 

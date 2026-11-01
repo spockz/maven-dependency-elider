@@ -1,7 +1,10 @@
-/* WHY: Shares complete and intentionally malformed ZIP payloads across refresh tests. */
+/* WHY: Shares snapshot and malformed cache fixtures across refresh tests. */
 
 package io.github.spockz.elider.scanner;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -57,6 +60,37 @@ public final class SnapshotZipFixtures {
   /** Creates a syntactically valid ZIP containing malformed JSON. */
   public static byte[] malformedJson() throws IOException {
     return raw("malformed.json", "{not-json");
+  }
+
+  /** Writes typed cache bytes with an invalid present CNA version type. */
+  public static byte[] invalidVersionTypeCache() throws IOException {
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode root = mapper.createObjectNode();
+    root.put("schemaVersion", 1);
+    final ArrayNode records = root.putArray("records");
+    final ObjectNode record = records.addObject();
+    record.put("osvId", "GHSA-bad");
+    record.put("modified", "2026-10-31T00:00:00Z");
+    record.putArray("aliases");
+    record.putArray("affectedPackages");
+    final ObjectNode entry = record.putArray("cnaAffectedEntries").addObject();
+    entry.put("entryIdentity", "containers.cna.affected[0]");
+    entry.putNull("vendor");
+    entry.put("product", "demo");
+    entry.putNull("packageUrl");
+    entry.putNull("collectionUrl");
+    entry.putNull("defaultStatus");
+    final ObjectNode version = entry.putArray("versions").addObject();
+    version.put("version", "1.0");
+    version.put("status", "affected");
+    version.put("versionType", "");
+    version.putNull("lessThan");
+    version.putNull("lessThanOrEqual");
+    version.putArray("changes");
+    entry.putArray("programFiles");
+    entry.putArray("programRoutines");
+    record.putArray("evidence");
+    return mapper.writeValueAsBytes(root);
   }
 
   /** Removes the central directory to simulate a truncated ZIP. */

@@ -46,8 +46,7 @@ final class UpdateCveIndexMojoTest {
   }
 
   @Test
-  void publishesTypedSnapshotAndDoesNotCallDeltaEndpoints()
-      throws IOException, MojoExecutionException {
+  void publishesTypedSnapshotAndChecksModifiedIndex() throws IOException, MojoExecutionException {
     final Path cache = temporaryDirectory.resolve("fresh-cache");
     final AtomicInteger snapshotRequests = new AtomicInteger();
     final AtomicInteger deltaRequests = new AtomicInteger();
@@ -57,13 +56,13 @@ final class UpdateCveIndexMojoTest {
       newMojo(cache, endpoint(server)).execute();
       final String persisted = Files.readString(cache.resolve("index.json"));
       assertAll(
-          "the update publishes a typed full snapshot without delta requests",
+          "the update publishes typed records from the snapshot and delta path",
           () ->
               assertThat(persisted)
                   .contains("\"schemaVersion\":1", "\"records\"", "GHSA-typed")
                   .doesNotContain("mappings"),
           () -> assertThat(snapshotRequests).hasValue(1),
-          () -> assertThat(deltaRequests).hasValue(0));
+          () -> assertThat(deltaRequests).hasValue(1));
     } finally {
       server.stop(0);
     }
@@ -135,6 +134,7 @@ final class UpdateCveIndexMojoTest {
         "/all.zip",
         exchange -> {
           snapshotRequests.incrementAndGet();
+          exchange.getResponseHeaders().set("Last-Modified", "Sat, 31 Oct 2026 00:00:00 GMT");
           exchange.sendResponseHeaders(status, payload.length);
           try (OutputStream output = exchange.getResponseBody()) {
             output.write(payload);
@@ -144,7 +144,8 @@ final class UpdateCveIndexMojoTest {
         "/modified_id.csv",
         exchange -> {
           deltaRequests.incrementAndGet();
-          exchange.sendResponseHeaders(500, -1);
+          exchange.sendResponseHeaders(200, 0);
+          exchange.getResponseBody().close();
         });
     return server;
   }
@@ -161,7 +162,7 @@ final class UpdateCveIndexMojoTest {
   private static byte[] snapshot() throws IOException {
     final String advisory =
         """
-        {"id":"GHSA-typed","aliases":["CVE-2026-10003"],"affected":[{"package":{"ecosystem":"Maven","name":"org.example:library"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"2.0"}]}]}]}
+        {"id":"GHSA-typed","modified":"2026-10-31T00:00:00Z","aliases":["CVE-2026-10003"],"affected":[{"package":{"ecosystem":"Maven","name":"org.example:library"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"2.0"}]}]}]}
         """;
     final ByteArrayOutputStream output = new ByteArrayOutputStream();
     try (ZipOutputStream zip = new ZipOutputStream(output)) {

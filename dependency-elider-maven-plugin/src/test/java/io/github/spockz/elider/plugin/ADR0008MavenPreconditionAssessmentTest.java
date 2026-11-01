@@ -662,6 +662,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final OsvAdvisoryRecord record =
         new OsvAdvisoryRecord(
             "GHSA-cache-fixture",
+            "2026-10-31T00:00:00Z",
             Set.of(mapping.cveId()),
             List.of(
                 new OsvAffectedPackage(

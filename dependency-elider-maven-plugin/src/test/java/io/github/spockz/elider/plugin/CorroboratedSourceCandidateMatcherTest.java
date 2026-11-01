@@ -200,6 +200,7 @@ class CorroboratedSourceCandidateMatcherTest {
             List.of());
     return new OsvAdvisoryRecord(
         "GHSA-candidate",
+        "2026-10-31T00:00:00Z",
         Set.of(CVE_ID),
         List.of(affectedPackage),
         List.of(entry),

@@ -2,6 +2,8 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -18,6 +20,9 @@ import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,6 +39,9 @@ final class MavenAssessmentFixtures {
 
   /** Version range used by cache-only proof-admission fixtures. */
   private static final String TEST_VERSION_RANGE = "[1.0,2.0)";
+
+  /** Source timestamp shared by deterministic advisory fixtures. */
+  private static final String SOURCE_MODIFIED = "2026-10-31T00:00:00Z";
 
   private MavenAssessmentFixtures() {
     // Static fixture methods only.
@@ -62,6 +70,7 @@ final class MavenAssessmentFixtures {
     final OsvAdvisoryRecord record =
         new OsvAdvisoryRecord(
             "GHSA-cache-only",
+            SOURCE_MODIFIED,
             Set.of(cveId),
             List.of(
                 new OsvAffectedPackage(
@@ -96,6 +105,43 @@ final class MavenAssessmentFixtures {
   }
 
   /* package */
+  static void writeCacheDocument(final Path cacheDirectory, final byte[] envelope)
+      throws IOException {
+    Files.createDirectories(cacheDirectory);
+    Files.write(cacheDirectory.resolve("index.json"), envelope);
+    Files.writeString(cacheDirectory.resolve("index.meta"), freshMetadata(Instant.now()));
+  }
+
+  /* package */
+  static void writeCacheRecords(final Path cacheDirectory, final List<OsvAdvisoryRecord> records)
+      throws IOException {
+    writeCacheDocument(
+        cacheDirectory, new VulnerabilityCacheEnvelopeWriter().encode(CACHE_PRODUCER, records));
+  }
+
+  /* package */
+  static byte[] cacheIndexWithInvalidMavenRange(
+      final ArtifactCoordinate coordinate, final String cveId) throws IOException {
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode envelope = (ObjectNode) mapper.readTree(cacheIndex(coordinate, cveId));
+    final ObjectNode evidence =
+        (ObjectNode)
+            envelope.path("advisoryDocument").path("records").path(0).path("evidence").path(0);
+    ((ObjectNode) evidence.path("scope")).put("versionRangeSpec", "[1.0,");
+    return mapper.writeValueAsBytes(envelope);
+  }
+
+  /* package */
+  static String freshMetadata(final Instant timestamp) {
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode metadata = mapper.createObjectNode();
+    metadata.put("schemaVersion", 1);
+    metadata.put("zipTimestamp", timestamp.toString());
+    metadata.put("lastSyncTimestamp", timestamp.toString());
+    return metadata.toString();
+  }
+
+  /* package */
   static byte[] legacyCommitCache() throws IOException {
     final ArtifactCoordinate coordinate =
         ArtifactCoordinate.of("org.apache.httpcomponents", "httpclient", "4.3.4");
@@ -123,6 +169,7 @@ final class MavenAssessmentFixtures {
     final OsvAdvisoryRecord record =
         new OsvAdvisoryRecord(
             "GHSA-transcript-httpclient",
+            SOURCE_MODIFIED,
             Set.of("CVE-2014-3577"),
             List.of(
                 new OsvAffectedPackage(
@@ -165,6 +212,7 @@ final class MavenAssessmentFixtures {
     final OsvAdvisoryRecord record =
         new OsvAdvisoryRecord(
             osvId,
+            SOURCE_MODIFIED,
             Set.of(cveId),
             List.of(affectedPackage),
             List.of(),
@@ -214,6 +262,7 @@ final class MavenAssessmentFixtures {
     final OsvAdvisoryRecord record =
         new OsvAdvisoryRecord(
             osvId,
+            SOURCE_MODIFIED,
             Set.of(cveId),
             List.of(exactVersion, exactVersionWithRange),
             List.of(),

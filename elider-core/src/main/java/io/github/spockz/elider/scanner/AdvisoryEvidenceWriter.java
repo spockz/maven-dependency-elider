@@ -69,6 +69,7 @@ public final class AdvisoryEvidenceWriter {
   private ObjectNode writeRecord(final OsvAdvisoryRecord record) {
     final ObjectNode node = mapper.createObjectNode();
     node.put("osvId", record.osvId());
+    node.put("modified", record.modified());
     writeStrings(node.putArray("aliases"), record.aliases());
     final ArrayNode affectedPackages = node.putArray("affectedPackages");
     record.affectedPackages().stream()

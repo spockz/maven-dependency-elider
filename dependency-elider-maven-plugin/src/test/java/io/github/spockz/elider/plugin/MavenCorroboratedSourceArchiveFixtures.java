@@ -44,6 +44,9 @@ final class MavenCorroboratedSourceArchiveFixtures {
   /** Exact version asserted by the CNA affected product. */
   static final String VERSION = "1.0";
 
+  /** Source timestamp carried by the deterministic OSV test record. */
+  private static final String SOURCE_MODIFIED = "2026-10-31T00:00:00Z";
+
   /** CNA programFiles value used by the SourceFile fixture. */
   static final String PROGRAM_FILE = "src/main/java/org/example/Outer.java";
 
@@ -112,6 +115,7 @@ final class MavenCorroboratedSourceArchiveFixtures {
   static byte[] osvSnapshot() throws IOException {
     final ObjectNode root = JSON.createObjectNode();
     root.put("id", "GHSA-source");
+    root.put("modified", SOURCE_MODIFIED);
     root.putArray("aliases").add(CVE_ID);
     final ObjectNode affected = root.putArray(AFFECTED).addObject();
     affected

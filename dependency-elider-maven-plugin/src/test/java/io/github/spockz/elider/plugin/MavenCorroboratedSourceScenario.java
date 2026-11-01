@@ -6,7 +6,6 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.scanner.OsvSnapshotIndexer;
-import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -62,10 +61,7 @@ final class MavenCorroboratedSourceScenario {
                     indexedRecords.getFirst()))
             : indexedRecords;
     final Path cacheDirectory = Files.createDirectories(directory.resolve("cache"));
-    Files.write(
-        cacheDirectory.resolve("index.json"),
-        new VulnerabilityCacheEnvelopeWriter()
-            .encode(MavenAssessmentFixtures.CACHE_PRODUCER, records));
+    MavenAssessmentFixtures.writeCacheRecords(cacheDirectory, records);
     final Path originalJar =
         MavenCorroboratedSourceArchiveFixtures.writeOriginalJar(
             directory.resolve("original.jar"), false);

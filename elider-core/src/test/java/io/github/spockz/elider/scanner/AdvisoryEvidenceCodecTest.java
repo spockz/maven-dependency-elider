@@ -136,6 +136,7 @@ class AdvisoryEvidenceCodecTest {
     final OsvAdvisoryRecord record =
         new OsvAdvisoryRecord(
             "GHSA-transcript-httpclient",
+            "2026-10-31T00:00:00Z",
             Set.of("CVE-2014-3577"),
             List.of(
                 new OsvAffectedPackage(
@@ -170,6 +171,7 @@ class AdvisoryEvidenceCodecTest {
     final OsvAdvisoryRecord noCve =
         new OsvAdvisoryRecord(
             "GHSA-no-cve",
+            "2026-10-31T00:00:00Z",
             Set.of("GHSA-alias-only"),
             List.of(
                 affectedPackage("Maven:https://repo.test", "org.example:library", List.of("2.1"))),
@@ -199,6 +201,7 @@ class AdvisoryEvidenceCodecTest {
     final OsvAdvisoryRecord second =
         new OsvAdvisoryRecord(
             "GHSA-second-owner",
+            "2026-10-31T00:00:00Z",
             Set.of("CVE-2025-12345"),
             first.affectedPackages(),
             List.of(),
@@ -219,7 +222,8 @@ class AdvisoryEvidenceCodecTest {
   void deterministicEncodingIgnoresRecordOrder() throws IOException {
     final OsvAdvisoryRecord first = recordWithVariants();
     final OsvAdvisoryRecord second =
-        new OsvAdvisoryRecord("GHSA-other", Set.of(), List.of(), List.of(), List.of());
+        new OsvAdvisoryRecord(
+            "GHSA-other", "2026-10-31T00:00:00Z", Set.of(), List.of(), List.of(), List.of());
 
     assertThat(writer.encode(List.of(first, second)))
         .isEqualTo(writer.encode(List.of(second, first)));
@@ -249,6 +253,7 @@ class AdvisoryEvidenceCodecTest {
                     () ->
                         new OsvAdvisoryRecord(
                             "GHSA-owner",
+                            "2026-10-31T00:00:00Z",
                             Set.of("CVE-2025-12345"),
                             recordWithVariants().affectedPackages(),
                             List.of(),
@@ -266,6 +271,7 @@ class AdvisoryEvidenceCodecTest {
                     () ->
                         new OsvAdvisoryRecord(
                             "GHSA-owner",
+                            "2026-10-31T00:00:00Z",
                             Set.of("CVE-2025-12345"),
                             recordWithVariants().affectedPackages(),
                             List.of(),
@@ -290,6 +296,7 @@ class AdvisoryEvidenceCodecTest {
                   () ->
                       new OsvAdvisoryRecord(
                           "GHSA-owner",
+                          "2026-10-31T00:00:00Z",
                           Set.of("CVE-2025-12345"),
                           recordWithVariants().affectedPackages(),
                           List.of(),
@@ -355,6 +362,26 @@ class AdvisoryEvidenceCodecTest {
           final ObjectNode overflow = documentWith(packageEvidence("GHSA-owner", scope()));
           overflow.put("schemaVersion", 4_294_967_297L);
           assertRejected(overflow, "schemaVersion");
+        },
+        () -> {
+          final ObjectNode invalidModified = documentWith(packageEvidence("GHSA-owner", scope()));
+          ((ObjectNode) invalidModified.path("records").get(0)).put("modified", 123);
+          assertRejected(invalidModified, "modified");
+        },
+        () -> {
+          final ObjectNode nullModified = documentWith(packageEvidence("GHSA-owner", scope()));
+          ((ObjectNode) nullModified.path("records").get(0)).putNull("modified");
+          assertRejected(nullModified, "modified");
+        },
+        () -> {
+          final ObjectNode invalidModified = documentWith(packageEvidence("GHSA-owner", scope()));
+          ((ObjectNode) invalidModified.path("records").get(0)).put("modified", "not-a-timestamp");
+          assertRejected(invalidModified, "modified");
+        },
+        () -> {
+          final ObjectNode missingModified = documentWith(packageEvidence("GHSA-owner", scope()));
+          ((ObjectNode) missingModified.path("records").get(0)).remove("modified");
+          assertRejected(missingModified, "OSV record");
         },
         () -> {
           final ObjectNode missingKind = documentWith(packageEvidence("GHSA-owner", scope()));
@@ -443,6 +470,7 @@ class AdvisoryEvidenceCodecTest {
                 Set.of("org.example:library")));
     return new OsvAdvisoryRecord(
         "GHSA-owner",
+        "2026-10-31T00:00:00Z",
         Set.of("CVE-2025-12345"),
         List.of(affectedPackage("Maven", "org.example:library", List.of())),
         List.of(
@@ -467,7 +495,8 @@ class AdvisoryEvidenceCodecTest {
   }
 
   private OsvAdvisoryRecord otherOwner() {
-    return new OsvAdvisoryRecord("GHSA-other", Set.of(), List.of(), List.of(), List.of());
+    return new OsvAdvisoryRecord(
+        "GHSA-other", "2026-10-31T00:00:00Z", Set.of(), List.of(), List.of(), List.of());
   }
 
   private static OsvAffectedPackage affectedPackage(
@@ -536,6 +565,7 @@ class AdvisoryEvidenceCodecTest {
                 List.of(
                     new OsvAdvisoryRecord(
                         "GHSA-owner",
+                        "2026-10-31T00:00:00Z",
                         Set.of("CVE-2025-12345"),
                         List.of(affectedPackage("Maven", "org.example:library", List.of())),
                         cnaEntries,

@@ -24,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
@@ -59,6 +61,7 @@ public final class OsvSnapshotIndexer {
   private static final String CONTAINERS_FIELD = "containers";
   private static final String NAME_FIELD = "name";
   private static final String VERSIONS_FIELD = "versions";
+  private static final String WITHDRAWN_FIELD = "withdrawn";
   private static final Pattern CVE_PATTERN = Pattern.compile("^CVE-[0-9]{4}-[0-9]{4,}$");
   private static final Pattern FQCN_PATTERN =
       Pattern.compile("\\b([a-z][a-z0-9_]*(\\.[a-z0-9_]+)+\\.[A-Z][a-zA-Z0-9_]*)\\b");
@@ -127,6 +130,53 @@ public final class OsvSnapshotIndexer {
     return List.copyOf(records);
   }
 
+  /** Strictly indexes one fetched OSV record; an empty result denotes an explicit withdrawal. */
+  public IndexedOsvRecord indexRecord(
+      final byte[] bytes, final Path cveListGitDir, final String expectedId) throws IOException {
+    final JsonNode root = readSingleJsonDocument(bytes, "OSV record");
+    if (!root.isObject()) {
+      throw new IOException("OSV record must be a JSON object");
+    }
+    final JsonNode id = root.get("id");
+    if (id == null || !id.isTextual() || !expectedId.equals(id.textValue())) {
+      throw new IOException("Fetched OSV record ID does not match modified index");
+    }
+    try {
+      final String modified = requiredSourceText(root, "modified");
+      final OsvAdvisoryRecord record = parseAdvisory(root, cveListGitDir, bytes);
+      return new IndexedOsvRecord(expectedId, modified, Optional.ofNullable(record));
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException("Invalid OSV record " + root.path("id").asText(""), exception);
+    }
+  }
+
+  /** Retains source revision metadata when a fetched record has no active advisory. */
+  public record IndexedOsvRecord(
+      String osvId, String modified, Optional<OsvAdvisoryRecord> advisory) {
+    /** Validates the source owner/revision pair and any active advisory projection. */
+    public IndexedOsvRecord {
+      if (osvId == null || osvId.isBlank()) {
+        throw new IllegalArgumentException("osvId must not be blank");
+      }
+      if (modified == null || modified.isBlank()) {
+        throw new IllegalArgumentException("modified must not be blank");
+      }
+      try {
+        Instant.parse(modified);
+      } catch (final java.time.format.DateTimeParseException exception) {
+        throw new IllegalArgumentException("modified must be an RFC 3339 timestamp", exception);
+      }
+      Objects.requireNonNull(advisory, "advisory");
+      advisory.ifPresent(
+          record -> {
+            if (!osvId.equals(record.osvId()) || !modified.equals(record.modified())) {
+              throw new IllegalArgumentException(
+                  "advisory identity and revision must match source");
+            }
+          });
+    }
+  }
+
   /** Parses one OSV record, retaining its identity even when no CVE alias exists. */
   public OsvAdvisoryRecord parseAdvisory(
       final JsonNode root, final Path cveListGitDir, final byte[] sourceBytes) {
@@ -138,9 +188,22 @@ public final class OsvSnapshotIndexer {
       throw new IllegalArgumentException("OSV record ID must be a non-blank string");
     }
     final String osvId = idNode.textValue();
-    if (root.has("withdrawn")) {
-      if (!root.path("withdrawn").isTextual() || root.path("withdrawn").asText().isBlank()) {
-        throw new IllegalArgumentException("withdrawn must be a non-blank timestamp");
+    final String modified = requiredSourceText(root, "modified");
+    try {
+      Instant.parse(modified);
+    } catch (final java.time.format.DateTimeParseException exception) {
+      throw new IllegalArgumentException("modified must be an RFC 3339 timestamp", exception);
+    }
+    if (root.has(WITHDRAWN_FIELD)) {
+      if (!root.path(WITHDRAWN_FIELD).isTextual()
+          || root.path(WITHDRAWN_FIELD).asText().isBlank()) {
+        throw new IllegalArgumentException(WITHDRAWN_FIELD + " must be a non-blank timestamp");
+      }
+      try {
+        Instant.parse(root.path(WITHDRAWN_FIELD).textValue());
+      } catch (final java.time.format.DateTimeParseException exception) {
+        throw new IllegalArgumentException(
+            WITHDRAWN_FIELD + " must be an RFC 3339 UTC timestamp", exception);
       }
       return null;
     }
@@ -193,7 +256,7 @@ public final class OsvSnapshotIndexer {
         throw new IllegalArgumentException("Could not read CVE source record " + cveId, exception);
       }
     }
-    return new OsvAdvisoryRecord(osvId, aliases, affectedPackages, cnaEntries, evidence);
+    return new OsvAdvisoryRecord(osvId, modified, aliases, affectedPackages, cnaEntries, evidence);
   }
 
   private static List<AdvisoryScope> readAffectedEntries(

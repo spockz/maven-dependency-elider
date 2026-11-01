@@ -10,6 +10,7 @@ import java.util.TreeSet;
 /** One active OSV record and all review-only evidence indexed from that record. */
 public record OsvAdvisoryRecord(
     String osvId,
+    String modified,
     Set<String> aliases,
     List<OsvAffectedPackage> affectedPackages,
     List<CveAffectedEntryContext> cnaAffectedEntries,
@@ -21,6 +22,12 @@ public record OsvAdvisoryRecord(
   public OsvAdvisoryRecord {
     if (osvId == null || osvId.isBlank()) {
       throw new IllegalArgumentException("osvId must not be blank");
+    }
+    Objects.requireNonNull(modified, "modified");
+    try {
+      java.time.Instant.parse(modified);
+    } catch (final java.time.format.DateTimeParseException exception) {
+      throw new IllegalArgumentException("modified must be an RFC 3339 timestamp", exception);
     }
     Objects.requireNonNull(aliases, "aliases");
     final Set<String> aliasCopy = new TreeSet<>();

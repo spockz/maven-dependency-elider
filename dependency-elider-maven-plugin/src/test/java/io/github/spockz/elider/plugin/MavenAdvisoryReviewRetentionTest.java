@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.scanner.OsvSnapshotIndexer;
-import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -66,10 +65,7 @@ class MavenAdvisoryReviewRetentionTest {
     final List<OsvAdvisoryRecord> indexed =
         new OsvSnapshotIndexer().indexZip(new ByteArrayInputStream(snapshot), tempDir);
     final Path cache = Files.createDirectories(tempDir.resolve("routine-cache"));
-    Files.write(
-        cache.resolve("index.json"),
-        new VulnerabilityCacheEnvelopeWriter()
-            .encode(MavenAssessmentFixtures.CACHE_PRODUCER, indexed));
+    MavenAssessmentFixtures.writeCacheRecords(cache, indexed);
 
     final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "demo", "1.0");
     final Path original = tempDir.resolve("routine-original.jar");
@@ -178,11 +174,11 @@ class MavenAdvisoryReviewRetentionTest {
   private byte[] routineOnlySnapshot() throws IOException {
     final String cveRecord =
         """
-        {"id":"GHSA-routine","aliases":["CVE-2025-12345"],"affected":[{"package":{"ecosystem":"Maven","name":"org.example:demo"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"1.0"},{"fixed":"2.0"}]}]}]}
+        {"id":"GHSA-routine","modified":"2026-10-31T00:00:00Z","aliases":["CVE-2025-12345"],"affected":[{"package":{"ecosystem":"Maven","name":"org.example:demo"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"1.0"},{"fixed":"2.0"}]}]}]}
         """;
     final String packageRecord =
         """
-        {"id":"GHSA-no-cve","aliases":["GHSA-alias"],"affected":[{"package":{"ecosystem":"Maven:custom","name":"org.example:demo"},"versions":["1.0"],"ranges":[{"type":"GIT","repo":"https://github.com/example/repo","events":[{"introduced":"1.0"},{"fixed":"2.0"}]}]}]}
+        {"id":"GHSA-no-cve","modified":"2026-10-31T00:00:00Z","aliases":["GHSA-alias"],"affected":[{"package":{"ecosystem":"Maven:custom","name":"org.example:demo"},"versions":["1.0"],"ranges":[{"type":"GIT","repo":"https://github.com/example/repo","events":[{"introduced":"1.0"},{"fixed":"2.0"}]}]}]}
         """;
     final ByteArrayOutputStream output = new ByteArrayOutputStream();
     try (ZipOutputStream zip = new ZipOutputStream(output)) {

@@ -78,6 +78,7 @@ class OsvSnapshotIndexerTest {
         """
         {
           "id":"GHSA-owner-one",
+          "modified":"2026-10-30T12:00:00Z",
           "aliases":["CVE-2025-12345","GHSA-alias-one"],
           "summary":"Vulnerability in org.example.One",
           "details":"org.example.Two is a separate candidate",
@@ -92,6 +93,7 @@ class OsvSnapshotIndexerTest {
         """
         {
           "id":"GHSA-owner-two",
+          "modified":"2026-10-30T12:00:00Z",
           "aliases":["CVE-2025-12345"],
           "affected":[{"package":{"ecosystem":"Maven","name":"org.example:library-one"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"1.0"},{"last_affected":"1.5"}]}]}]
         }
@@ -100,6 +102,7 @@ class OsvSnapshotIndexerTest {
         """
         {
           "id":"GHSA-without-cve",
+          "modified":"2026-10-30T12:00:00Z",
           "aliases":["GHSA-alias-only"],
           "affected":[{"package":{"ecosystem":"Maven:custom","name":"org.example:library-three"},"versions":["3.1"],"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"3.0"},{"fixed":"3.2"}]}]}]
         }
@@ -133,6 +136,8 @@ class OsvSnapshotIndexerTest {
     assertAll(
         "each OSV record retains its own aliases and package scopes",
         () -> assertThat(records).hasSize(3),
+        () -> assertThat(firstRecord.modified()).isEqualTo("2026-10-30T12:00:00Z"),
+        () -> assertThat(noCveRecord.modified()).isEqualTo("2026-10-30T12:00:00Z"),
         () ->
             assertThat(firstRecord.aliases())
                 .containsExactlyInAnyOrder("CVE-2025-12345", "GHSA-alias-one"),
@@ -222,6 +227,25 @@ class OsvSnapshotIndexerTest {
             assertThat(noCveRecord.affectedPackages())
                 .singleElement()
                 .satisfies(value -> assertThat(value.versions()).containsExactly("3.1")));
+  }
+
+  @Test
+  void sourceModifiedValueRoundTripsInTypedAdvisoryDocument() throws IOException {
+    final byte[] source =
+        OsvSnapshotFixtures.osvJson("GHSA-modified", "CVE-2026-12345")
+            .getBytes(StandardCharsets.UTF_8);
+    final OsvSnapshotIndexer.IndexedOsvRecord sourceRecord =
+        new OsvSnapshotIndexer().indexRecord(source, tempDir, "GHSA-modified");
+    final OsvAdvisoryRecord indexed = sourceRecord.advisory().orElseThrow();
+    final AdvisoryEvidenceWriter writer = new AdvisoryEvidenceWriter();
+    final OsvAdvisoryRecord decoded =
+        new AdvisoryEvidenceReader()
+            .read(new ByteArrayInputStream(writer.encode(List.of(indexed))))
+            .getFirst();
+    assertAll(
+        () -> assertThat(sourceRecord.modified()).isEqualTo("2026-10-31T00:00:00Z"),
+        () -> assertThat(indexed.modified()).isEqualTo(sourceRecord.modified()),
+        () -> assertThat(decoded.modified()).isEqualTo(indexed.modified()));
   }
 
   private static OsvAdvisoryRecord find(final List<OsvAdvisoryRecord> records, final String id) {

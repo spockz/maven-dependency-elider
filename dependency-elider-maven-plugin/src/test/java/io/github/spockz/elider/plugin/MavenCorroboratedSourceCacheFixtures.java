@@ -22,6 +22,7 @@ final class MavenCorroboratedSourceCacheFixtures {
     evidence.add(staleCandidate(structured));
     return new OsvAdvisoryRecord(
         record.osvId(),
+        record.modified(),
         record.aliases(),
         record.affectedPackages(),
         record.cnaAffectedEntries(),

@@ -111,6 +111,7 @@ class CorroboratedSourceClassCodecTest {
             CorroboratedSourceClassCandidate.MappingStatus.INCOMPLETE_REVIEW_ONLY);
     return new OsvAdvisoryRecord(
         "GHSA-corroborated",
+        "2026-10-31T00:00:00Z",
         Set.of(CVE_ID),
         List.of(
             new OsvAffectedPackage(
