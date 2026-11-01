@@ -5,8 +5,6 @@ package io.github.spockz.elider.model;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
-import java.nio.file.Path;
-import java.util.HashSet;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -25,17 +23,6 @@ public final class OmittedCodeProof {
       throws IOException {
     final VulnerabilitySymbolMapping mapping = requireEvidence(evidence);
     requireMatchingIdentity(mapping, trimRecord);
-    final ArtifactDigests originalDigests =
-        verifyDigest(
-            trimRecord.originalPath(), trimRecord.originalSha256(), trimRecord.originalSha1());
-    final ArtifactDigests trimmedDigests =
-        verifyDigest(
-            trimRecord.trimmedPath(), trimRecord.trimmedSha256(), trimRecord.trimmedSha1());
-    final Set<String> originalClasses =
-        OmittedArchiveClassInventory.read(trimRecord.originalPath());
-    final Set<String> trimmedClasses = OmittedArchiveClassInventory.read(trimRecord.trimmedPath());
-    final Set<String> absent = verifySymbols(mapping, originalClasses, trimmedClasses);
-    verifyUnchanged(trimRecord, originalDigests, trimmedDigests);
     final String impactDetail =
         mapping.sourceAdvisoryUrl() != null
             ? "Mapped vulnerable classes and their original nested classes are absent "
@@ -44,6 +31,19 @@ public final class OmittedCodeProof {
                 + ")."
             : "Mapped vulnerable classes and their original nested classes are absent "
                 + "from the trimmed artifact.";
+    final ArtifactDigests originalDigests =
+        PhysicalOmissionChecks.verifyDigest(
+            trimRecord.originalPath(), trimRecord.originalSha256(), trimRecord.originalSha1());
+    final ArtifactDigests trimmedDigests =
+        PhysicalOmissionChecks.verifyDigest(
+            trimRecord.trimmedPath(), trimRecord.trimmedSha256(), trimRecord.trimmedSha1());
+    final Set<String> originalClasses =
+        OmittedArchiveClassInventory.read(trimRecord.originalPath());
+    final Set<String> trimmedClasses = OmittedArchiveClassInventory.read(trimRecord.trimmedPath());
+    final Set<String> absent =
+        PhysicalOmissionChecks.verifySymbols(
+            mapping.vulnerableClasses(), originalClasses, trimmedClasses);
+    PhysicalOmissionChecks.verifyUnchanged(trimRecord, originalDigests, trimmedDigests);
     return new VexAttestation(
         mapping.cveId(),
         trimRecord.coordinate(),
@@ -54,12 +54,20 @@ public final class OmittedCodeProof {
         trimmedDigests.sha256());
   }
 
+  /** Revalidates current source claims and then proves omission. */
+  public static VexAttestation proveStructured(
+      final StructuredSourceProofRequest request, final ArtifactTrimRecord trimRecord)
+      throws IOException {
+    return StructuredOmittedCodeProof.prove(request, trimRecord);
+  }
+
   private static void requireMatchingIdentity(
       final VulnerabilitySymbolMapping mapping, final ArtifactTrimRecord record) {
     if (mapping == null || record == null) {
       throw new IllegalArgumentException("mapping and trimRecord are required");
     }
-    if (!sameArtifactIdentity(mapping.affectedCoordinate(), record.coordinate())) {
+    if (!PhysicalOmissionChecks.sameArtifactIdentity(
+        mapping.affectedCoordinate(), record.coordinate())) {
       throw new IllegalArgumentException("Mapping coordinate does not match trim record");
     }
   }
@@ -70,82 +78,6 @@ public final class OmittedCodeProof {
       throw new IllegalArgumentException("Explicit class evidence is required");
     }
     return evidence.mapping();
-  }
-
-  private static ArtifactDigests verifyDigest(
-      final Path path, final String expectedSha256, final String expectedSha1) throws IOException {
-    final ArtifactDigests digests = ArtifactDigests.read(path);
-    if (!digests.sha256().equals(expectedSha256) || !digests.sha1().equals(expectedSha1)) {
-      throw new IllegalArgumentException("Artifact digest no longer matches trim record");
-    }
-    return digests;
-  }
-
-  @SuppressWarnings("PMD.CyclomaticComplexity")
-  private static Set<String> verifySymbols(
-      final VulnerabilitySymbolMapping mapping,
-      final Set<String> originalClasses,
-      final Set<String> trimmedClasses) {
-    final Set<String> absent = new TreeSet<>();
-    for (final String mapped : mapping.vulnerableClasses()) {
-      final String binaryName = mapped.replace('.', '/');
-      if (!originalClasses.contains(binaryName)) {
-        throw new IllegalArgumentException(
-            "Mapped class is absent from original archive: " + mapped);
-      }
-      for (final String symbol : nestedSymbols(binaryName, originalClasses)) {
-        if (trimmedClasses.contains(symbol)) {
-          throw new IllegalArgumentException(
-              "Vulnerable class survives trimmed archive: " + symbol.replace('/', '.'));
-        }
-        absent.add(symbol.replace('/', '.'));
-      }
-      final String nestedPrefix = binaryName + "$";
-      for (final String trimmed : trimmedClasses) {
-        if (trimmed.startsWith(nestedPrefix)) {
-          throw new IllegalArgumentException(
-              "Vulnerable nested class survives trimmed archive: " + trimmed.replace('/', '.'));
-        }
-      }
-    }
-    return absent;
-  }
-
-  private static Set<String> nestedSymbols(
-      final String binaryName, final Set<String> originalClasses) {
-    final Set<String> symbols = new HashSet<>();
-    symbols.add(binaryName);
-    final String nestedPrefix = binaryName + "$";
-    for (final String original : originalClasses) {
-      if (original.startsWith(nestedPrefix)) {
-        symbols.add(original);
-      }
-    }
-    return symbols;
-  }
-
-  private static void verifyUnchanged(
-      final ArtifactTrimRecord record,
-      final ArtifactDigests originalDigests,
-      final ArtifactDigests trimmedDigests)
-      throws IOException {
-    final ArtifactDigests finalOriginal = ArtifactDigests.read(record.originalPath());
-    final ArtifactDigests finalTrimmed = ArtifactDigests.read(record.trimmedPath());
-    if (!finalOriginal.sha256().equals(originalDigests.sha256())
-        || !finalOriginal.sha1().equals(originalDigests.sha1())
-        || !finalTrimmed.sha256().equals(trimmedDigests.sha256())
-        || !finalTrimmed.sha1().equals(trimmedDigests.sha1())) {
-      throw new IllegalArgumentException("Artifact changed while archive contents were verified");
-    }
-  }
-
-  private static boolean sameArtifactIdentity(
-      final ArtifactCoordinate left, final ArtifactCoordinate right) {
-    return left.groupId().equals(right.groupId())
-        && left.artifactId().equals(right.artifactId())
-        && left.version().equals(right.version())
-        && left.type().equals(right.type())
-        && left.classifier().equals(right.classifier());
   }
 
   /** Evaluates whether a multi-symbol mapping had missing symbols. */
@@ -171,7 +103,8 @@ public final class OmittedCodeProof {
     if (mapping == null || trimRecord == null) {
       return Optional.empty();
     }
-    if (!sameArtifactIdentity(mapping.affectedCoordinate(), trimRecord.coordinate())) {
+    if (!PhysicalOmissionChecks.sameArtifactIdentity(
+        mapping.affectedCoordinate(), trimRecord.coordinate())) {
       return Optional.empty();
     }
     if (mapping.vulnerableClasses().size() < MULTI_SYMBOL_MINIMUM) {
@@ -208,7 +141,7 @@ public final class OmittedCodeProof {
     if (trimmedClasses.contains(binaryName)) {
       return true;
     }
-    for (final String symbol : nestedSymbols(binaryName, originalClasses)) {
+    for (final String symbol : PhysicalOmissionChecks.nestedSymbols(binaryName, originalClasses)) {
       if (trimmedClasses.contains(symbol)) {
         return true;
       }

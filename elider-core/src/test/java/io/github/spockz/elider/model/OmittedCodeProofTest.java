@@ -8,12 +8,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.correspondence.SourceReproductionResult;
+import io.github.spockz.elider.metadata.CycloneDxSbomGenerator;
+import io.github.spockz.elider.metadata.OpenVexGenerator;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -42,6 +47,85 @@ class OmittedCodeProofTest {
             java.lang.reflect.Modifier.isPublic(
                 VexAttestation.class.getDeclaredConstructors()[0].getModifiers()))
         .isFalse();
+  }
+
+  @Test
+  void openVexRejectsStructuredAttestationsWithConflictingSourceProvenance() throws Exception {
+    final Path componentPath = directory.resolve("component.jar");
+    Files.writeString(componentPath, "component bytes");
+    final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "demo", "1.0");
+    final ArtifactFileRef component = ArtifactFileRef.fromPath(coordinate, componentPath);
+    final String componentDigest = ArtifactDigests.read(componentPath).sha256();
+    final String sharedDigest = "a".repeat(64);
+    final VexAttestation first = structuredAttestation(coordinate, componentDigest, sharedDigest);
+    final VexAttestation second =
+        structuredAttestation(coordinate, componentDigest, "b".repeat(64));
+    final OpenVexGenerator generator = new OpenVexGenerator();
+    final CycloneDxSbomGenerator.RootIdentity root =
+        new CycloneDxSbomGenerator.RootIdentity("org.example", "app", "1.0", "app");
+    final OpenVexGenerator.DocumentMetadata metadata =
+        new OpenVexGenerator.DocumentMetadata(
+            "urn:uuid:123e4567-e89b-12d3-a456-426614174000",
+            "Elider Project",
+            "Build System",
+            Instant.parse("2026-10-29T00:00:00Z"),
+            1);
+
+    assertThatThrownBy(
+            () -> generator.generate(root, List.of(component), List.of(first, second), metadata))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Conflicting duplicate omitted-code VEX attestation");
+  }
+
+  private static VexAttestation structuredAttestation(
+      final ArtifactCoordinate coordinate,
+      final String componentDigest,
+      final String cveSourceDigest) {
+    final StructuredProofProvenance.RawScopeEvidence rawScope =
+        new StructuredProofProvenance.RawScopeEvidence(
+            "2026-10-28T00:00:00Z",
+            "Maven",
+            "org.example:demo",
+            List.of("1.0"),
+            List.of(),
+            "PUBLISHED",
+            null,
+            List.of(),
+            "AFFECTED",
+            "AFFECTED",
+            "exact OSV version claim",
+            "exact CNA version claim");
+    final StructuredProofProvenance provenance =
+        new StructuredProofProvenance(
+            "GHSA-test",
+            cveSourceDigest,
+            "containers.cna.affected[0]",
+            "purl:pkg:maven/org.example/demo@1.0",
+            StructuredProofProvenance.OsvSourceAuthority.CONFIGURED_PRODUCER_COMPATIBLE_INDEX,
+            new ArtifactCoordinate("org.example", "demo", "1.0", "jar", "sources", "compile"),
+            "c".repeat(64),
+            "remote:test-repository",
+            "pinned-jdk-21",
+            List.of("--release", "21", "-encoding", "UTF-8"),
+            true,
+            rawScope,
+            List.of(
+                new StructuredProofProvenance.ClaimAttribution(
+                    StructuredProofProvenance.ClaimType.FILE,
+                    "src/main/java/org/example/Vulnerable.java",
+                    "src/main/java/org/example/Vulnerable.java",
+                    null,
+                    List.of(
+                        new SourceReproductionResult.ClassEntry(
+                            "org/example/Vulnerable.class", "e".repeat(64))))));
+    return VexAttestation.structuredOmittedCode(
+        "CVE-2025-12345",
+        coordinate,
+        "Structured source claims were verified and omitted.",
+        Set.of("org.example.Vulnerable"),
+        "d".repeat(64),
+        componentDigest,
+        provenance);
   }
 
   @Test

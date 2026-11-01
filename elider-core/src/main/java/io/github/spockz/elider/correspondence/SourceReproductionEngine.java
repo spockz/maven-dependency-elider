@@ -62,6 +62,7 @@ public final class SourceReproductionEngine {
     requireClaimPresence(request.sourceClaims(), request.routineClaims(), sources);
     final SourceUnitCompiler.Compilation compilation =
         SourceUnitCompiler.compile(sources, originalPath, compilerIdentity);
+    SourceUnitIdentityValidator.requireUnique(compilation.units());
     SourceCorrespondenceAdmission.requireUniqueRoutineOwners(
         compilation.units(), request.routineClaims());
     SourceCorrespondenceAdmission.requireInventoryMatch(original.classes(), compilation.units());

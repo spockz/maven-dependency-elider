@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,6 +106,33 @@ final class MavenSourceCorrespondenceTestArtifacts {
     return new Archives(originalJar, sourcesJar);
   }
 
+  /* default */ static Path writeEmptyTrimmedJar(final Path path) throws IOException {
+    try (JarOutputStream ignored = new JarOutputStream(Files.newOutputStream(path))) {
+      return path;
+    }
+  }
+
+  // Each retained ZIP member needs a fresh entry object when copying the fixture.
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  /* default */ static Path copyJarWithoutEntry(
+      final Path original, final Path trimmed, final String omittedEntry) throws IOException {
+    try (JarFile input = new JarFile(original.toFile());
+        JarOutputStream output = new JarOutputStream(Files.newOutputStream(trimmed))) {
+      final Enumeration<JarEntry> entries = input.entries();
+      while (entries.hasMoreElements()) {
+        final JarEntry entry = entries.nextElement();
+        if (!entry.getName().equals(omittedEntry)) {
+          output.putNextEntry(new JarEntry(entry.getName()));
+          try (InputStream content = input.getInputStream(entry)) {
+            content.transferTo(output);
+          }
+          output.closeEntry();
+        }
+      }
+    }
+    return trimmed;
+  }
+
   /* default */ static RepositorySystem resolver(final Path sourcesJar) {
     return resolver(
         sourcesJar,
@@ -163,7 +191,9 @@ final class MavenSourceCorrespondenceTestArtifacts {
         + " public Runnable create() { class Local { void runLocal() {} }"
         + " final Local local = new Local();"
         + " return new Runnable() { public void run() { local.runLocal(); } }; }"
-        + " public static class Nested {} } class Sibling {}";
+        + " public static class Nested {} } class Sibling {}"
+        + " interface SiblingContract {} enum SiblingKind { ONLY }"
+        + " @interface SiblingAnnotation {} record SiblingRecord(int value) {}";
   }
 
   private static Path writeManifestHelper(final Path directory) throws IOException {

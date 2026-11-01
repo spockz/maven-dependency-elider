@@ -4,8 +4,14 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.correspondence.SourceReproductionEngine;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.OmittedCodeProof;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
+import io.github.spockz.elider.model.StructuredSourceProofRequest;
+import io.github.spockz.elider.model.VexAttestation;
+import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -92,6 +98,34 @@ final class MavenSourceCorrespondenceAssessment {
       evaluator.evaluate(item, evidence).ifPresent(results::add);
     }
     return List.copyOf(results);
+  }
+
+  /* default */ VexAttestation proveStructured(
+      final String osvId,
+      final StructuredSourceClassEvidence evidence,
+      final ArtifactCoordinate candidate,
+      final CacheConfig cacheConfig,
+      final ArtifactTrimRecord trimRecord)
+      throws IOException {
+    if (!canResolve() || cacheConfig.expectedProducer().isEmpty()) {
+      throw new IOException(
+          "Structured proof requires a configured source resolver and expected cache producer");
+    }
+    final MavenSourceClassifierResolver.ResolvedSourceArtifact sourceArtifact =
+        resolver.orElseThrow().resolve(candidate, project, session);
+    final StructuredSourceProofRequest request =
+        new StructuredSourceProofRequest(
+            osvId,
+            evidence,
+            candidate,
+            cacheConfig.cacheDirectory().resolve("cvelistV5"),
+            cacheConfig.cacheDirectory().resolve("index.json"),
+            cacheConfig.expectedProducer().orElseThrow(),
+            sourceArtifact.path(),
+            sourceArtifact.coordinate(),
+            sourceArtifact.repositoryProvenance(),
+            conventionalLayoutAssumed);
+    return OmittedCodeProof.proveStructured(request, trimRecord);
   }
 
   private Optional<SourceReproductionEngine> currentSourceReproductionEngine() {

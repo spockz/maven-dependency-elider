@@ -4,6 +4,7 @@ package io.github.spockz.elider.model;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -103,5 +104,33 @@ final class LiveStructuredSourceBoundaryTest {
     assertThatThrownBy(() -> LiveStructuredSourceValidator.observe(fixture.request()))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("outside the CVE directory");
+  }
+
+  @Test
+  void structuredProofRebindsLiveEvidenceBeforeAttemptingSourceReproduction() throws Exception {
+    final LiveStructuredSourceValidatorTest.Fixture fixture =
+        LiveStructuredSourceValidatorTest.fixture(
+            temporaryDirectory,
+            LiveStructuredSourceValidatorTest.cveJson(
+                LiveStructuredSourceValidatorTest.AFFECTED_STATUS, false));
+    final ArtifactTrimRecord trimRecord = unmaterializedTrimRecord(fixture.request());
+
+    assertThatThrownBy(() -> OmittedCodeProof.proveStructured(fixture.request(), trimRecord))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("original artifact must be a regular JAR file");
+  }
+
+  private ArtifactTrimRecord unmaterializedTrimRecord(final StructuredSourceProofRequest request) {
+    return new ArtifactTrimRecord(
+        request.candidate(),
+        temporaryDirectory.resolve("original.jar"),
+        "0".repeat(64),
+        "0".repeat(40),
+        temporaryDirectory.resolve("trimmed.jar"),
+        "1".repeat(64),
+        "1".repeat(40),
+        1,
+        0,
+        1);
   }
 }

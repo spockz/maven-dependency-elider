@@ -21,6 +21,24 @@ final class MavenSourceCorrespondenceAssessmentTest {
   /** Extra class entry used to prove complete inventory mismatch refusal. */
   private static final String EXTRA_CLASS_ENTRY = "org/example/Extra.class";
 
+  /** Source file emits this top-level sibling and related declaration families. */
+  private static final String SIBLING_BINARY_NAME = "org.example.Sibling";
+
+  /** Entry emitted for the top-level sibling. */
+  private static final String SIBLING_CLASS_ENTRY = "org/example/Sibling.class";
+
+  /** Binary name of the package-private sibling interface. */
+  private static final String SIBLING_CONTRACT = "org.example.SiblingContract";
+
+  /** Binary name of the package-private sibling enum. */
+  private static final String SIBLING_KIND = "org.example.SiblingKind";
+
+  /** Binary name of the package-private sibling annotation interface. */
+  private static final String SIBLING_ANNOTATION = "org.example.SiblingAnnotation";
+
+  /** Binary name of the package-private sibling record. */
+  private static final String SIBLING_RECORD = "org.example.SiblingRecord";
+
   /** Isolates generated archive fixtures for this test instance. */
   @TempDir private Path temporaryDirectory;
 
@@ -76,7 +94,13 @@ final class MavenSourceCorrespondenceAssessmentTest {
                         PARSE_ROUTINE, "org.example.Outer")),
         () ->
             assertThat(match.sourceUnits().getFirst().topLevelTypes())
-                .containsExactlyInAnyOrder("org.example.Outer", "org.example.Sibling"),
+                .containsExactlyInAnyOrder(
+                    "org.example.Outer",
+                    SIBLING_BINARY_NAME,
+                    SIBLING_CONTRACT,
+                    SIBLING_KIND,
+                    SIBLING_ANNOTATION,
+                    SIBLING_RECORD),
         () ->
             assertThat(
                     match.originalClassInventory().stream()
@@ -86,7 +110,11 @@ final class MavenSourceCorrespondenceAssessmentTest {
                     "org/example/Outer$1.class",
                     "org/example/Outer$1Local.class",
                     "org/example/Outer$Nested.class",
-                    "org/example/Sibling.class"),
+                    SIBLING_CLASS_ENTRY,
+                    "org/example/SiblingContract.class",
+                    "org/example/SiblingKind.class",
+                    "org/example/SiblingAnnotation.class",
+                    "org/example/SiblingRecord.class"),
         () ->
             assertThat(match.sourceUnits().getFirst().emittedClasses())
                 .containsExactlyElementsOf(match.originalClassInventory()),
@@ -121,10 +149,7 @@ final class MavenSourceCorrespondenceAssessmentTest {
         "the reproduced disjoint output union must equal the complete original inventory",
         () ->
             assertInventoryMismatch(
-                temporaryDirectory.resolve("missing-output"),
-                "org/example/Sibling.class",
-                null,
-                true),
+                temporaryDirectory.resolve("missing-output"), SIBLING_CLASS_ENTRY, null, true),
         () ->
             assertInventoryMismatch(
                 temporaryDirectory.resolve("extra-output"),

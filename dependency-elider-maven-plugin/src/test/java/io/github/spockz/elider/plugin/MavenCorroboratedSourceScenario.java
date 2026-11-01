@@ -23,6 +23,7 @@ final class MavenCorroboratedSourceScenario {
       VulnerabilityCacheManager.CacheConfig cacheConfig,
       ArtifactCoordinate coordinate,
       Path originalJar,
+      Path cveRecord,
       String cveDigest,
       ArtifactDigests originalDigest,
       ArtifactTrimRecord successfulTrimRecord,
@@ -169,7 +170,14 @@ final class MavenCorroboratedSourceScenario {
                     coordinate, originalJar, List.of(trimRecord), false, false),
                 null);
     return new Prepared(
-        cacheConfig, coordinate, originalJar, cveDigest, originalDigest, trimRecord, result);
+        cacheConfig,
+        coordinate,
+        originalJar,
+        cveRecord,
+        cveDigest,
+        originalDigest,
+        trimRecord,
+        result);
   }
 
   static MavenVulnerabilityAssessment.Result assessWithLayoutFlag(
