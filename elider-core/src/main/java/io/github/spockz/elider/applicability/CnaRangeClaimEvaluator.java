@@ -1,6 +1,6 @@
 /* WHY: Applies CVE version interval and ordered change semantics for one CNA claim. */
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 import io.github.spockz.elider.model.CveVersionClaim;
 import java.util.List;

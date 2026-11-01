@@ -6,6 +6,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
 import io.github.spockz.elider.engine.ClassUsageReport;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;

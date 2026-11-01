@@ -1,6 +1,6 @@
 /* WHY: Evaluates OSV versions and ranges without relying on flattened display ranges. */
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.OsvAffectedRange;

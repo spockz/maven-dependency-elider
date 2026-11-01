@@ -1,6 +1,6 @@
 /* WHY: Evaluates OSV range events separately from package-level exact-version claims. */
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 import io.github.spockz.elider.model.OsvAffectedRange;
 import java.util.Map;

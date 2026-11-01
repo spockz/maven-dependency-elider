@@ -1,6 +1,6 @@
 /* WHY: Maps supported CNA status strings to the shared applicability result. */
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 /** Recognizes the CVE status vocabulary used by the raw applicability evaluator. */
 final class CnaClaimStatusMapper {

@@ -1,6 +1,6 @@
 // WHY: Proves that source applicability comes from raw OSV and CVE version claims.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;

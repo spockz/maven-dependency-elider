@@ -1,6 +1,6 @@
 /* WHY: Evaluates raw CNA exact, default, and Maven range claims independently. */
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 import io.github.spockz.elider.model.CveAffectedEntryContext;
 import io.github.spockz.elider.model.CveVersionClaim;

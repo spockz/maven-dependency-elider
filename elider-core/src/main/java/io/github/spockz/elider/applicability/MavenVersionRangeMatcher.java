@@ -1,6 +1,6 @@
 // WHY: Makes Maven's recommended-version syntax exact while honoring explicit range bounds.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
@@ -12,11 +12,12 @@ import org.apache.maven.artifact.versioning.InvalidVersionSpecificationException
 import org.apache.maven.artifact.versioning.VersionRange;
 
 /** Evaluates an advisory version specification against one resolved Maven version. */
-@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.LawOfDemeter"})
-final class MavenVersionRangeMatcher {
+@SuppressWarnings("PMD.LawOfDemeter")
+public final class MavenVersionRangeMatcher {
   private MavenVersionRangeMatcher() {}
 
-  static boolean includes(final String specification, final String version) {
+  /** Tests one concrete version against a Maven range. */
+  public static boolean includes(final String specification, final String version) {
     final VersionRange range = parse(specification);
     if (range.hasRestrictions()) {
       return range.containsVersion(new DefaultArtifactVersion(version));
@@ -28,11 +29,13 @@ final class MavenVersionRangeMatcher {
             == 0;
   }
 
-  static void validate(final String specification) {
+  /** Parses and validates one Maven version specification. */
+  public static void validate(final String specification) {
     parse(specification);
   }
 
-  static void validateMappings(
+  /** Validates every configured mapping range and identifies its owner on failure. */
+  public static void validateMappings(
       final List<VulnerabilitySymbolMapping> mappings, final String source) {
     for (final VulnerabilitySymbolMapping mapping : mappings) {
       try {
@@ -52,7 +55,8 @@ final class MavenVersionRangeMatcher {
     }
   }
 
-  static void validateDownloadedMappings(
+  /** Validates downloaded mapping ranges and reports malformed input as I/O failure. */
+  public static void validateDownloadedMappings(
       final List<VulnerabilitySymbolMapping> mappings, final String source) throws IOException {
     try {
       validateMappings(mappings, source);
@@ -61,8 +65,9 @@ final class MavenVersionRangeMatcher {
     }
   }
 
-  static void validateAdvisoryRecords(final List<OsvAdvisoryRecord> records, final String source)
-      throws IOException {
+  /** Validates projected advisory ranges before a cache document is accepted. */
+  public static void validateAdvisoryRecords(
+      final List<OsvAdvisoryRecord> records, final String source) throws IOException {
     try {
       records.stream()
           .flatMap(record -> record.evidence().stream())

@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import java.util.Comparator;

@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
 import io.github.spockz.elider.model.ExplicitPrerequisiteEvidence;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 

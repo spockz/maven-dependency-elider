@@ -1,6 +1,6 @@
 /* WHY: Validates and orders CNA status changes against their declared Maven interval. */
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 import io.github.spockz.elider.model.CveVersionClaim;
 import java.util.Comparator;

@@ -1,6 +1,6 @@
 // WHY: Guards Maven version range boundaries and recommended-version interpretation.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

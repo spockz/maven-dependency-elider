@@ -1,6 +1,6 @@
 /* WHY: Rejects malformed and overlapping CNA claims before a candidate is selected. */
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.applicability;
 
 import io.github.spockz.elider.model.CveVersionClaim;
 import java.util.ArrayList;

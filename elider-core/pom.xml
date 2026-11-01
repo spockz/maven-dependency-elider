@@ -19,6 +19,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-artifact</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.guardsquare</groupId>
             <artifactId>proguard-core</artifactId>
             <version>9.4.0</version>
