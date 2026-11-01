@@ -265,6 +265,331 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
+  void packagedElideAndAnalyzeVerifyTheCapturedCliPolicyBeforeFailingClosed() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("ban-policy-goal-injection");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumerPom = fixtureRoot.resolve("consumer-elide/pom.xml");
+    final String ban = "org.example.unrelated:not-present";
+    final String originalPom = Files.readString(consumerPom);
+    final String pluginConfiguration = "</executions>\n                <configuration>";
+    final int pluginConfigurationIndex = originalPom.lastIndexOf(pluginConfiguration);
+    assertThat(pluginConfigurationIndex).isGreaterThanOrEqualTo(0);
+    Files.writeString(
+        consumerPom,
+        originalPom.substring(0, pluginConfigurationIndex)
+            + "</executions>\n                <configuration><banishedDependencies>"
+            + "${elide.banishedDependencies}</banishedDependencies>"
+            + originalPom.substring(pluginConfigurationIndex + pluginConfiguration.length()));
+
+    final String elideOutput =
+        runBanGoal(
+            fixtureRoot,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("elide.log"),
+            ban,
+            consumerPom,
+            "dependency-elider:elide@run-elider");
+    final String analyzeOutput =
+        runBanGoal(
+            fixtureRoot,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("analyze.log"),
+            ban,
+            consumerPom,
+            "dependency-elider:analyze@run-elider");
+    final String defaultCliOutput =
+        runBanGoal(
+            fixtureRoot,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("default-cli.log"),
+            ban,
+            consumerPom,
+            "dependency-elider:elide");
+    final String initializeOutput =
+        runBanGoal(
+            fixtureRoot,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("initialize.log"),
+            ban,
+            consumerPom,
+            "initialize");
+    final String processClassesOutput =
+        runBanGoal(
+            fixtureRoot,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("process-classes.log"),
+            ban,
+            consumerPom,
+            "-Delide.productionClassesComplete=true",
+            "process-classes");
+    final String treePromotionOutput =
+        runBanGoal(
+            fixtureRoot,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("tree-promotion.log"),
+            ban,
+            consumerPom,
+            "dependency:tree");
+
+    final Path managementPom = evidenceDirectory.resolve("plugin-management/pom.xml");
+    Files.createDirectories(managementPom.getParent());
+    Files.writeString(managementPom, pluginManagementOnlyPom());
+    final String managementCliOutput =
+        runBanGoal(
+            fixtureRoot,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("plugin-management-cli.log"),
+            ban,
+            managementPom,
+            "io.github.spockz:dependency-elider-maven-plugin:elide");
+
+    assertAll(
+        "Every selected execution injects the captured policy before strict enforcement blocks it",
+        () -> assertBanReachedGoal(elideOutput),
+        () -> assertBanReachedGoal(analyzeOutput),
+        () -> assertBanReachedGoal(defaultCliOutput),
+        () -> assertBanReachedGoal(initializeOutput),
+        () -> assertBanReachedGoal(processClassesOutput),
+        () -> assertBanReachedGoal(treePromotionOutput),
+        () -> assertBanReachedGoal(managementCliOutput),
+        () ->
+            assertNoBanInvocationOutputs(
+                fixtureRoot.resolve("ban-invocations"),
+                "elide",
+                "analyze",
+                "default-cli",
+                "initialize",
+                "process-classes",
+                "tree-promotion",
+                "plugin-management-cli"));
+  }
+
+  @Test
+  void defaultCliExecutionPolicyIsCapturedBeforeTransitiveCollection() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("default-cli-collection");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    addDropAsKeepLibraryDependency(localRepository);
+
+    final Path consumerPom = evidenceDirectory.resolve("consumer/pom.xml");
+    Files.createDirectories(consumerPom.getParent());
+    Files.writeString(consumerPom, defaultCliCollectionPom());
+    writeConsumerExtensions(
+        Files.createDirectories(consumerPom.getParent().resolve(MVN_DIRECTORY))
+            .resolve(EXTENSIONS_XML),
+        true);
+    final Path log = evidenceDirectory.resolve("collection.log");
+    final String output =
+        runExpectingFailure(
+            consumerPom.getParent(),
+            wrapper,
+            settings,
+            localRepository,
+            log,
+            PROCESS_TIMEOUT,
+            "-f",
+            consumerPom.toString(),
+            "validate",
+            "dependency-elider:elide");
+    final Path views =
+        consumerPom.getParent().resolve("target/ban-collection/ban-collection-later.tsv");
+    final List<String> rows = Files.readAllLines(views);
+
+    assertAll(
+        "Plain CLI elide selects the default-cli ban policy before TEST resolution",
+        () -> assertBanReachedGoal(output),
+        () ->
+            assertThat(rows)
+                .anyMatch(
+                    row -> row.startsWith("artifact\tDIRECT\t") && row.contains("keep-library")),
+        () ->
+            assertThat(rows)
+                .noneMatch(
+                    row -> row.startsWith("artifact\tDIRECT\t") && row.contains("drop-library")),
+        () ->
+            assertThat(rows)
+                .anyMatch(
+                    row -> row.startsWith("artifact\tRESOLVED\t") && row.contains("keep-library")),
+        () ->
+            assertThat(rows)
+                .noneMatch(
+                    row -> row.startsWith("artifact\tRESOLVED\t") && row.contains("drop-library")));
+  }
+
+  private static String runBanGoal(
+      final Path workingDirectory,
+      final Path wrapper,
+      final Path settings,
+      final Path localRepository,
+      final Path log,
+      final String ban,
+      final Path pom,
+      final String... goals)
+      throws IOException, InterruptedException, XMLStreamException {
+    final String invocationName = log.getFileName().toString().replaceFirst("\\.log$", "");
+    final Path invocationDirectory =
+        Files.createDirectories(
+            workingDirectory.resolve("ban-invocations").resolve(invocationName).resolve("project"));
+    copyDirectoryTree(pom.getParent(), invocationDirectory);
+    final Path invocationPom = invocationDirectory.resolve(pom.getFileName());
+    final Path extensionsDirectory =
+        Files.createDirectories(invocationDirectory.resolve(MVN_DIRECTORY));
+    writeConsumerExtensions(extensionsDirectory.resolve(EXTENSIONS_XML), true);
+    final List<String> arguments = new ArrayList<>();
+    arguments.add("-Delide.banishedDependencies=" + ban);
+    arguments.add("-f");
+    arguments.add(invocationPom.toString());
+    arguments.addAll(List.of(goals));
+    return runExpectingFailure(
+        invocationDirectory,
+        wrapper,
+        settings,
+        localRepository,
+        log,
+        PROCESS_TIMEOUT,
+        arguments.toArray(String[]::new));
+  }
+
+  private static void assertBanReachedGoal(final String output) {
+    assertThat(output)
+        .contains("strict ban enforcement is not available")
+        .doesNotContain("does not match the frozen selected execution policy");
+  }
+
+  private static void assertNoBanInvocationOutputs(
+      final Path invocationRoot, final String... invocationNames) {
+    assertAll(
+        "Rejected ban requests leave report outputs unpublished",
+        java.util.Arrays.stream(invocationNames)
+            .map(
+                name ->
+                    (org.junit.jupiter.api.function.Executable)
+                        () -> {
+                          final Path target =
+                              invocationRoot.resolve(name).resolve("project/target");
+                          assertAll(
+                              name,
+                              () -> assertThat(target.resolve("class-usage.json")).doesNotExist(),
+                              () ->
+                                  assertThat(target.resolve("lifecycle-elide-summary.json"))
+                                      .doesNotExist());
+                        })
+            .toList());
+  }
+
+  // WHY: Keep the Maven fixture XML readable.
+  @SuppressWarnings("PMD.VariableCanBeInlined")
+  private static String pluginManagementOnlyPom() {
+    final String pom =
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Exercises prefix CLI selection and version/config fallback to pluginManagement. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId>
+          <artifactId>ban-policy-plugin-management</artifactId>
+          <version>1.0.0</version>
+          <packaging>pom</packaging>
+          <build><pluginManagement><plugins>
+            <plugin><groupId>io.github.spockz</groupId>
+              <artifactId>dependency-elider-maven-plugin</artifactId>
+              <version>0.1.0-SNAPSHOT</version>
+              <configuration>
+                <banishedDependencies>${elide.banishedDependencies}</banishedDependencies>
+              </configuration>
+            </plugin>
+          </plugins></pluginManagement></build>
+        </project>
+        """;
+    return pom;
+  }
+
+  @SuppressWarnings("PMD.VariableCanBeInlined")
+  private static String defaultCliCollectionPom() {
+    final String pom =
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Proves the default-cli execution policy reaches collection before Mojo execution. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId>
+          <artifactId>default-cli-policy-consumer</artifactId>
+          <version>1.0.0</version>
+          <packaging>pom</packaging>
+          <properties>
+            <lifecycle.mode>ban-collection</lifecycle.mode>
+            <lifecycle.reportDirectory>${project.build.directory}/ban-collection</lifecycle.reportDirectory>
+          </properties>
+          <dependencies>
+            <dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>keep-library</artifactId><version>1.0.0</version></dependency>
+          </dependencies>
+          <build><plugins>
+            <plugin>
+              <groupId>io.github.spockz.elider.test</groupId>
+              <artifactId>lifecycle-probe-maven-plugin</artifactId>
+              <version>1.0.0</version>
+              <executions><execution><id>probe-before-cli-elider</id><phase>validate</phase><goals><goal>probe</goal></goals><configuration><mode>ban-collection</mode></configuration></execution></executions>
+              <configuration><reportDirectory>${lifecycle.reportDirectory}</reportDirectory></configuration>
+            </plugin>
+            <plugin>
+              <groupId>io.github.spockz</groupId>
+              <artifactId>dependency-elider-maven-plugin</artifactId>
+              <version>0.1.0-SNAPSHOT</version>
+              <configuration><banishedDependencies>org.example.plugin:other</banishedDependencies></configuration>
+              <executions><execution><id>default-cli</id><configuration><banishedDependencies>io.github.spockz.elider.test:drop-library</banishedDependencies></configuration></execution></executions>
+            </plugin>
+          </plugins></build>
+        </project>
+        """;
+    return pom;
+  }
+
+  private static void addDropAsKeepLibraryDependency(final Path localRepository)
+      throws IOException {
+    final Path keepPom =
+        localRepository
+            .resolve(GROUP_ID.replace('.', '/'))
+            .resolve("keep-library")
+            .resolve(VERSION)
+            .resolve("keep-library-" + VERSION + ".pom");
+    final String original = Files.readString(keepPom);
+    Files.writeString(
+        keepPom,
+        original.replace(
+            "</project>",
+            "<dependencies><dependency><groupId>"
+                + GROUP_ID
+                + "</groupId><artifactId>drop-library</artifactId><version>"
+                + VERSION
+                + "</version><scope>runtime</scope></dependency></dependencies></project>"));
+  }
+
+  @Test
   void resolverDecoratorChangesEachRepeatedTreeOutput() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);

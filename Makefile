@@ -76,11 +76,11 @@ lint-vale: ## Run prose checks on documentation
 vuln: ## Check dependencies against the OWASP vulnerability database
 	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) org.owasp:dependency-check-maven:$(DEPENDENCY_CHECK_VERSION):check
 
-test-core: ## Run core library unit tests
-	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl elider-core -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) test
+test-core: ## Run core library tests and JaCoCo coverage verification
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl elider-core -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) verify
 
 test-plugin: test-core ## Run core and plugin tests, isolating nested lifecycle builds
-	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl dependency-elider-maven-plugin -am install -DskipTests
+	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl dependency-elider-maven-plugin -am install -DskipTests -Djacoco.skip=true
 	$(MAVEN) $(MAVEN_ARGS) -T $(TEST_MAVEN_THREADS) -pl dependency-elider-maven-plugin -DforkCount=$(TEST_FORKS) -DreuseForks=true -Dtest.parallelism=$(TEST_JUNIT_PARALLELISM) verify
 
 test-all: ## Run the complete reactor verification suite

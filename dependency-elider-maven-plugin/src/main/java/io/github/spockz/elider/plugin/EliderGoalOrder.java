@@ -12,8 +12,9 @@ import org.apache.maven.project.MavenProject;
 final class EliderGoalOrder {
   static final int ONE_MATCH = 1;
 
-  private static final List<String> PREPARED_PHASE_ORDER =
+  static final List<String> DEFAULT_LIFECYCLE_PHASE_ORDER =
       List.of(
+          "validate",
           "initialize",
           "generate-sources",
           "process-sources",
@@ -97,12 +98,12 @@ final class EliderGoalOrder {
       final int lastCleanIndex,
       final int treeIndex,
       final String requiredPhase) {
-    final int requiredPhaseIndex = PREPARED_PHASE_ORDER.indexOf(requiredPhase);
+    final int requiredPhaseIndex = DEFAULT_LIFECYCLE_PHASE_ORDER.indexOf(requiredPhase);
     if (requiredPhaseIndex < 0) {
       return false;
     }
     for (int index = lastCleanIndex + 1; index < treeIndex; index++) {
-      final int goalPhaseIndex = PREPARED_PHASE_ORDER.indexOf(goals.get(index));
+      final int goalPhaseIndex = DEFAULT_LIFECYCLE_PHASE_ORDER.indexOf(goals.get(index));
       if (goalPhaseIndex >= requiredPhaseIndex) {
         return true;
       }

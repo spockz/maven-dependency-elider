@@ -21,10 +21,14 @@ import java.util.zip.ZipOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
+import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,7 +40,8 @@ import org.objectweb.asm.Opcodes;
   "PMD.AvoidAccessibilityAlteration",
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
-  "PMD.TooManyMethods"
+  "PMD.TooManyMethods",
+  "PMD.ExcessiveImports"
 })
 final class AnalyzeMojoTest {
   /** WHY: CVE fixtures use one stable vulnerable symbol in mappings and assertions. */
@@ -445,6 +450,8 @@ final class AnalyzeMojoTest {
     Files.writeString(report, previousReport);
     set(fixture.mojo, "banishedDependencies", List.of("org.example:used"));
     set(fixture.mojo, "reportFile", report.toFile());
+    fixture.project.setFile(tempDir.resolve("ban-consumer-pom.xml").toFile());
+    seedSelectedBanCapture(fixture.mojo, fixture.project, List.of("org.example:used"));
 
     assertAll(
         "analyze rejects ban requests before publishing a report",
@@ -511,6 +518,7 @@ final class AnalyzeMojoTest {
 
   @Test
   @DisplayName("ADR-0011: leafOnly skips intermediate module in AnalyzeMojo")
+  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
   void leafOnlySkipsIntermediateReactorModule() throws Exception {
     final AnalyzeMojo mojo = new AnalyzeMojo();
     final MavenProject intermediate = new MavenProject();
@@ -532,8 +540,15 @@ final class AnalyzeMojoTest {
 
     set(mojo, "project", intermediate);
     set(mojo, "session", session);
+    final Path report = tempDir.resolve("intermediate-ban-report.json");
+    Files.writeString(report, "existing report");
+    set(mojo, "reportFile", report.toFile());
+    set(mojo, "banishedDependencies", List.of("org.example:library"));
     // leafOnly is true by default: skips without failing on missing trace files
-    assertThatCode(mojo::execute).doesNotThrowAnyException();
+    assertAll(
+        "leafOnly Analyze skips before requiring a ban capture or publishing a report",
+        () -> assertThatCode(mojo::execute).doesNotThrowAnyException(),
+        () -> assertThat(Files.readString(report)).isEqualTo("existing report"));
   }
 
   private static void set(final Object target, final String name, final Object value)
@@ -614,8 +629,34 @@ final class AnalyzeMojoTest {
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "reportFile", tempDir.resolve("fixture-report.json").toFile());
-    return new Fixture(mojo);
+    return new Fixture(mojo, project);
   }
 
-  private record Fixture(AnalyzeMojo mojo) {}
+  private static void seedSelectedBanCapture(
+      final AnalyzeMojo mojo, final MavenProject project, final List<String> bans)
+      throws ReflectiveOperationException {
+    final Plugin plugin = new Plugin();
+    plugin.setVersion("1.0.0");
+    final MojoExecution execution = new MojoExecution(plugin, "analyze", "default-cli");
+    set(execution, "source", MojoExecution.Source.CLI);
+    set(mojo, "mojoExecution", execution);
+    final BanishedDependencyOriginalModel model =
+        BanishedDependencyOriginalModel.capture(
+            project,
+            List.of(
+                new BanishedDependencyOriginalModel.ExecutionPolicy(
+                    "default-cli", "analyze", "1.0.0", "cli", "CLI", bans)),
+            bans);
+    final BanishedDependencyCaptureStore store =
+        BanishedDependencyCaptureStore.empty().withModel(model);
+    final MavenSession session =
+        new MavenSession(
+            null, new DefaultRepositorySystemSession(), new DefaultMavenExecutionRequest(), null);
+    session.setCurrentProject(project);
+    set(mojo, "session", session);
+    EliderPreparationState.sessionData(session)
+        .set(BanishedDependencyLifecycleActivation.CAPTURE_STORE_KEY, null, store.toPayload());
+  }
+
+  private record Fixture(AnalyzeMojo mojo, MavenProject project) {}
 }

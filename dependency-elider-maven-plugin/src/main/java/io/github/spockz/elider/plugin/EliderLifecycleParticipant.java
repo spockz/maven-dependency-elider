@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import java.util.Properties;
+import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
@@ -11,6 +12,9 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
+import org.apache.maven.plugin.MavenPluginManager;
+import org.apache.maven.plugin.prefix.PluginPrefixResolver;
+import org.apache.maven.plugin.version.PluginVersionResolver;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
@@ -21,6 +25,15 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
   /** Number of goals required to safely rebind an execution. */
   private static final int SINGLE_GOAL_COUNT = 1;
 
+  /** Resolves goal descriptors without configuring or executing the selected Mojo. */
+  @Inject private MavenPluginManager mavenPluginManager;
+
+  /** Resolves Maven's configured prefix spelling for direct goal requests. */
+  @Inject private PluginPrefixResolver pluginPrefixResolver;
+
+  /** Resolves the selected plugin version when the project omits one. */
+  @Inject private PluginVersionResolver pluginVersionResolver;
+
   /** Required for Maven's component instantiation. */
   public EliderLifecycleParticipant() {
     super();
@@ -30,6 +43,9 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
   public void afterProjectsRead(final MavenSession session) throws MavenExecutionException {
     rebindProductionBytecodeExecutions(session);
     EliderTreePreparation.schedule(session);
+    new BanishedDependencyLifecycleActivation(
+            mavenPluginManager, pluginPrefixResolver, pluginVersionResolver)
+        .activate(session);
   }
 
   // WHY: Rebinding must fail closed when an execution cannot move by itself.

@@ -222,6 +222,8 @@ public final class ElideMojo extends PluginCacheMojoSupport {
       if (shouldSkipElision(executionId, projectId, executionSource)) {
         return;
       }
+      BanishedDependencyLifecycleActivation.verifyMojoConfiguration(
+          session, project, mojoExecution, banishedDependencies);
       executeAnalysis();
       EliderPreparationState.completeInjectedCliPreparation(
           session, executionId, projectId, executionSource);

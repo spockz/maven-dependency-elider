@@ -145,6 +145,8 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
     if (shouldSkipAnalysis()) {
       return;
     }
+    BanishedDependencyLifecycleActivation.verifyMojoConfiguration(
+        session, project, mojoExecution, banishedDependencies);
     try {
       final ElisionAnalysisModel.Analysis analysis =
           new MavenElisionService()

@@ -102,6 +102,7 @@ final class ElideMojoTest {
     final Field skip = ElideMojo.class.getDeclaredField("skip");
     skip.setAccessible(true);
     skip.setBoolean(mojo, true);
+    set(mojo, "banishedDependencies", List.of("org.example:library"));
 
     assertThatCode(mojo::execute).doesNotThrowAnyException();
   }
@@ -125,6 +126,7 @@ final class ElideMojoTest {
     set(mojo, "reportFile", report.toFile());
     set(mojo, "summaryFile", summary.toFile());
     set(mojo, "banishedDependencies", List.of("org.example:guarded"));
+    seedSelectedBanCapture(mojo, project, List.of("org.example:guarded"));
 
     assertAll(
         "elide rejects ban requests before publishing reports or changing Maven views",
@@ -132,6 +134,39 @@ final class ElideMojoTest {
             assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoFailureException.class)
                 .hasMessageContaining("strict ban enforcement is not available"),
+        () -> assertThat(Files.readString(report)).isEqualTo(previousReport),
+        () -> assertThat(Files.readString(summary)).isEqualTo(previousSummary),
+        () -> assertThat(project.getArtifacts()).isSameAs(resolvedBefore),
+        () -> assertThat(project.getDependencyArtifacts()).isSameAs(directBefore));
+  }
+
+  @Test
+  void uncapturedBanRequestFailsBeforePublishingReportsOrChangingArtifactViews()
+      throws IOException, ReflectiveOperationException {
+    final Artifact guarded = artifact("guarded", "used/Entry.class");
+    final MavenProject project = project(guarded, Set.of());
+    final Set<Artifact> resolvedBefore = project.getArtifacts();
+    final Set<Artifact> directBefore = project.getDependencyArtifacts();
+    final Path report = tempDir.resolve("uncaptured-ban-report.json");
+    final Path summary = tempDir.resolve("uncaptured-ban-summary.json");
+    final String previousReport = "previous class report";
+    final String previousSummary = "previous elision report";
+    Files.writeString(report, previousReport);
+    Files.writeString(summary, previousSummary);
+    final ElideMojo mojo = newMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(writeTrace("used.Entry\n").toFile()));
+    set(mojo, "reportFile", report.toFile());
+    set(mojo, "summaryFile", summary.toFile());
+    set(mojo, "banishedDependencies", List.of("org.example:guarded"));
+    setSelectedElideExecution(mojo);
+
+    assertAll(
+        "uncaptured ban requests fail during selection verification",
+        () ->
+            assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("was not captured during Maven selection preflight"),
         () -> assertThat(Files.readString(report)).isEqualTo(previousReport),
         () -> assertThat(Files.readString(summary)).isEqualTo(previousSummary),
         () -> assertThat(project.getArtifacts()).isSameAs(resolvedBefore),
@@ -3086,6 +3121,34 @@ final class ElideMojoTest {
       throw new IllegalStateException("Cannot initialize Maven Mojo fixture", exception);
     }
     return mojo;
+  }
+
+  private static void seedSelectedBanCapture(
+      final ElideMojo mojo, final MavenProject project, final List<String> bans)
+      throws ReflectiveOperationException {
+    setSelectedElideExecution(mojo);
+    final BanishedDependencyOriginalModel model =
+        BanishedDependencyOriginalModel.capture(
+            project,
+            List.of(
+                new BanishedDependencyOriginalModel.ExecutionPolicy(
+                    "default-elide", "elide", "1.0.0", "initialize", "LIFECYCLE", bans)),
+            bans);
+    final BanishedDependencyCaptureStore store =
+        BanishedDependencyCaptureStore.empty().withModel(model);
+    final MavenSession session = (MavenSession) fieldValue(mojo, "session");
+    EliderPreparationState.sessionData(session)
+        .set(BanishedDependencyLifecycleActivation.CAPTURE_STORE_KEY, null, store.toPayload());
+  }
+
+  private static void setSelectedElideExecution(final ElideMojo mojo)
+      throws ReflectiveOperationException {
+    final Plugin plugin = new Plugin();
+    plugin.setVersion("1.0.0");
+    final MojoExecution execution = new MojoExecution(plugin, "elide", "default-elide");
+    set(execution, "source", MojoExecution.Source.LIFECYCLE);
+    execution.setLifecyclePhase("initialize");
+    set(mojo, "mojoExecution", execution);
   }
 
   @SuppressWarnings("PMD.UseProperClassLoader")
