@@ -11,8 +11,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /** Reads logical class names while rejecting repeated physical archive paths. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
-final class OmittedArchiveClassInventory {
+public final class OmittedArchiveClassInventory {
   /** First release number allowed in a multi-release directory. */
   private static final int MINIMUM_VERSIONED_RELEASE = 9;
 
@@ -21,7 +20,8 @@ final class OmittedArchiveClassInventory {
 
   private OmittedArchiveClassInventory() {}
 
-  static Set<String> read(final Path path) throws IOException {
+  /** Reads the complete physical class-entry inventory from one regular archive. */
+  public static Set<String> read(final Path path) throws IOException {
     final Set<String> logicalNames = new HashSet<>();
     final Set<String> physicalEntryNames = new HashSet<>();
     try (ZipFile zip = new ZipFile(path.toFile())) {

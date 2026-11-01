@@ -33,7 +33,8 @@ final class SourceUnitCompiler {
   /* default */ static Compilation compile(
       final SourceCorrespondenceArchive sources,
       final Path originalJar,
-      final SourceJdkIdentity.Identity compilerIdentity)
+      final SourceJdkIdentity.Identity compilerIdentity,
+      final Runnable compilerTaskStarted)
       throws IOException {
     final JavaCompiler compiler = requireCompiler();
     try (SourceCompilationWorkspace workspace = SourceCompilationWorkspace.create()) {
@@ -42,7 +43,14 @@ final class SourceUnitCompiler {
       final Path emptySourcePath = workspace.directory("empty-source-path");
       final Path outputs = workspace.directory("outputs");
       final List<SourceReproductionResult.SourceUnit> sourceUnits =
-          compileUnits(sources, originalJar, compiler, extractedSources, emptySourcePath, outputs);
+          compileUnits(
+              sources,
+              originalJar,
+              compiler,
+              extractedSources,
+              emptySourcePath,
+              outputs,
+              compilerTaskStarted);
       if (compilerIdentity == null) {
         throw new IOException("Pinned JDK compiler identity is unavailable");
       }
@@ -84,7 +92,8 @@ final class SourceUnitCompiler {
       final JavaCompiler compiler,
       final Path extractedRoot,
       final Path emptySourcePath,
-      final Path outputs)
+      final Path outputs,
+      final Runnable compilerTaskStarted)
       throws IOException {
     final List<SourceReproductionResult.SourceUnit> units = new ArrayList<>();
     final Map<String, SourceReproductionResult.ClassEntry> emittedPaths = new HashMap<>();
@@ -100,7 +109,8 @@ final class SourceUnitCompiler {
               originalJar,
               emptySourcePath,
               unitOutput,
-              compiler);
+              compiler,
+              compilerTaskStarted);
       final SourceClassOutputInventory.Inventory outputInventory =
           SourceClassOutputInventory.read(unitOutput);
       final List<SourceReproductionResult.ClassEntry> classes = outputInventory.classes();
@@ -131,7 +141,8 @@ final class SourceUnitCompiler {
       final Path originalJar,
       final Path emptySourcePath,
       final Path output,
-      final JavaCompiler compiler)
+      final JavaCompiler compiler,
+      final Runnable compilerTaskStarted)
       throws IOException {
     final DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
     try (StandardJavaFileManager fileManager =
@@ -140,6 +151,7 @@ final class SourceUnitCompiler {
       final List<String> options = compilerOptions(originalJar, emptySourcePath, output);
       final JavacTask task =
           (JavacTask) compiler.getTask(null, fileManager, diagnostics, options, null, sourceUnits);
+      compilerTaskStarted.run();
       final List<CompilationUnitTree> parsed = new ArrayList<>();
       final Iterable<? extends CompilationUnitTree> parsedUnits = task.parse();
       for (final CompilationUnitTree parsedUnit : parsedUnits) {
@@ -204,7 +216,7 @@ final class SourceUnitCompiler {
     }
   }
 
-  private static List<String> fixedOptions() {
+  /* default */ static List<String> fixedOptions() {
     return List.of(
         "--release=21",
         "-encoding=UTF-8",

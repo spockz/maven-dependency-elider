@@ -5,21 +5,24 @@ package io.github.spockz.elider.correspondence;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Reproduces one exact source archive using the core's pinned compiler identity. */
 public final class SourceReproductionEngine {
-  /** JAR extension allowed by the initial non-transformed Java source path. */
-  private static final String JAR_TYPE = "jar";
+  /** Stable diagnostic label for the original artifact. */
+  private static final String ORIGINAL_LABEL = "original";
 
-  /** Maven classifier resolved for source/build correspondence. */
-  private static final String SOURCES_CLASSIFIER = "sources";
+  /** Stable diagnostic label for the sources artifact. */
+  private static final String SOURCES_LABEL = "sources";
 
   /** Compiler image is captured once for the enclosing assessment invocation. */
   private final SourceJdkIdentity.Resolution compilerIdentity;
+
+  /** Owns keyed metadata until the assessment makes its final proof decision. */
+  private final SourceReproductionInvocationCache invocationCache =
+      new SourceReproductionInvocationCache();
 
   private SourceReproductionEngine(final SourceJdkIdentity.Resolution compilerIdentity) {
     this.compilerIdentity = compilerIdentity;
@@ -42,101 +45,142 @@ public final class SourceReproductionEngine {
     }
   }
 
-  private static SourceReproductionResult.Completed reproduceStrict(
+  /** Returns invocation counts for archive and compiler work. */
+  public InvocationDiagnostics diagnostics() {
+    final SourceReproductionInvocationCache.Snapshot snapshot = invocationCache.snapshot();
+    return new InvocationDiagnostics(
+        snapshot.originalArchiveParses(),
+        snapshot.sourceArchiveParses(),
+        snapshot.compilerInvocations(),
+        snapshot.reproductionCacheHits(),
+        snapshot.physicalInventoryParses(),
+        snapshot.physicalInventoryCacheHits(),
+        snapshot.physicalInventoryReusesFromReproduction());
+  }
+
+  /** Reads or reuses a current physical inventory. */
+  public Set<String> readPhysicalClassInventory(
+      final ArtifactCoordinate coordinate, final Path path, final String expectedSha256)
+      throws IOException {
+    return invocationCache.readPhysicalClassInventory(coordinate, path, expectedSha256);
+  }
+
+  private SourceReproductionResult.Completed reproduceStrict(
       final SourceReproductionRequest request, final SourceJdkIdentity.Identity compilerIdentity)
       throws IOException {
-    validateCoordinates(request.candidate(), request.sourcesCoordinate());
-    final Path originalPath = requireJar(request.originalJar(), "original artifact");
-    final Path sourcePath = requireJar(request.sourcesJar(), "sources artifact");
+    final SourceReproductionRequestValidator.ValidatedPaths paths =
+        SourceReproductionRequestValidator.validate(request);
+    final Path originalPath = paths.original();
+    final Path sourcePath = paths.sources();
     final String originalSha256 = SourceFileDigest.sha256(originalPath);
     final String sourceSha256 = SourceFileDigest.sha256(sourcePath);
-    final SourceCorrespondenceArchive original =
-        SourceCorrespondenceArchiveReader.readOriginal(originalPath);
-    final SourceCorrespondenceArchive sources =
-        SourceCorrespondenceArchiveReader.readSources(sourcePath);
-    requireStableArchive("original", originalSha256, original.sha256());
-    requireStableArchive("sources", sourceSha256, sources.sha256());
+    final SourceReproductionInvocationCache.ReproductionKey key =
+        new SourceReproductionInvocationCache.ReproductionKey(
+            request.candidate().toId(),
+            request.sourcesCoordinate().toId(),
+            originalPath,
+            sourcePath,
+            originalSha256,
+            sourceSha256,
+            request.sourceRepositoryProvenance(),
+            request.conventionalLayoutAssumed(),
+            compilerIdentity.toString(),
+            SourceUnitCompiler.fixedOptions());
+    final java.util.Optional<SourceReproductionInvocationCache.PreparedReproduction> cached =
+        invocationCache.reproduction(key);
+    final SourceReproductionInvocationCache.PreparedReproduction prepared;
+    if (cached.isEmpty()) {
+      prepared =
+          prepareReproduction(
+              request, originalPath, sourcePath, compilerIdentity, originalSha256, sourceSha256);
+      invocationCache.cacheReproduction(
+          key, prepared, request.candidate(), originalPath, originalSha256);
+    } else {
+      invocationCache.recordReproductionHit();
+      prepared = cached.orElseThrow();
+    }
+    SourceReproductionRequestValidator.requireClaimPresence(
+        request.sourceClaims(), request.routineClaims(), prepared.sourceEntries());
     final Map<String, String> mappedFiles =
         SourceCorrespondencePathMapper.map(
-            request.sourceClaims(), sources.sourceEntries(), request.conventionalLayoutAssumed());
-    requireClaimPresence(request.sourceClaims(), request.routineClaims(), sources);
-    final SourceUnitCompiler.Compilation compilation =
-        SourceUnitCompiler.compile(sources, originalPath, compilerIdentity);
-    SourceUnitIdentityValidator.requireUnique(compilation.units());
+            request.sourceClaims(), prepared.sourceEntries(), request.conventionalLayoutAssumed());
     SourceCorrespondenceAdmission.requireUniqueRoutineOwners(
-        compilation.units(), request.routineClaims());
-    SourceCorrespondenceAdmission.requireInventoryMatch(original.classes(), compilation.units());
-    requireStableArchive("original", originalSha256, SourceFileDigest.sha256(originalPath));
-    requireStableArchive("sources", sourceSha256, SourceFileDigest.sha256(sourcePath));
+        prepared.compilation().units(), request.routineClaims());
+    SourceReproductionRequestValidator.requireStableArchive(
+        ORIGINAL_LABEL, originalSha256, SourceFileDigest.sha256(originalPath));
+    SourceReproductionRequestValidator.requireStableArchive(
+        SOURCES_LABEL, sourceSha256, SourceFileDigest.sha256(sourcePath));
     return new SourceReproductionResult.Completed(
         request.candidate(),
         request.sourcesCoordinate(),
         request.sourceRepositoryProvenance(),
         originalSha256,
         sourceSha256,
-        compilation.compilerIdentity(),
-        compilation.options(),
-        original.classes(),
-        compilation.units(),
+        prepared.compilation().compilerIdentity(),
+        prepared.compilation().options(),
+        prepared.originalClasses(),
+        prepared.compilation().units(),
         mappedFiles);
   }
 
-  private static void validateCoordinates(
-      final ArtifactCoordinate candidate, final ArtifactCoordinate sourceCoordinate)
+  private SourceReproductionInvocationCache.PreparedReproduction prepareReproduction(
+      final SourceReproductionRequest request,
+      final Path originalPath,
+      final Path sourcePath,
+      final SourceJdkIdentity.Identity compilerIdentity,
+      final String expectedOriginalSha256,
+      final String expectedSourceSha256)
       throws IOException {
-    if (candidate.version() == null || candidate.version().isBlank()) {
-      throw new IOException("Exact candidate version is required");
-    }
-    final boolean matches =
-        candidate.groupId().equals(sourceCoordinate.groupId())
-            && candidate.artifactId().equals(sourceCoordinate.artifactId())
-            && candidate.version().equals(sourceCoordinate.version())
-            && JAR_TYPE.equals(candidate.type())
-            && candidate.classifier().isEmpty()
-            && JAR_TYPE.equals(sourceCoordinate.type())
-            && SOURCES_CLASSIFIER.equals(sourceCoordinate.classifier());
-    if (!matches) {
-      throw new IOException("Sources artifact does not match the exact candidate GAVCE");
-    }
+    final SourceCorrespondenceArchive original =
+        readArchive(originalPath, expectedOriginalSha256, false);
+    final SourceCorrespondenceArchive sources = readArchive(sourcePath, expectedSourceSha256, true);
+    SourceReproductionRequestValidator.requireStableArchive(
+        ORIGINAL_LABEL, expectedOriginalSha256, original.sha256());
+    SourceReproductionRequestValidator.requireStableArchive(
+        SOURCES_LABEL, expectedSourceSha256, sources.sha256());
+    SourceReproductionRequestValidator.requireClaimPresence(
+        request.sourceClaims(), request.routineClaims(), sources.sourceEntries());
+    final SourceUnitCompiler.Compilation compilation =
+        SourceUnitCompiler.compile(
+            sources, originalPath, compilerIdentity, invocationCache::compilerTaskStarted);
+    SourceUnitIdentityValidator.requireUnique(compilation.units());
+    SourceCorrespondenceAdmission.requireInventoryMatch(original.classes(), compilation.units());
+    SourceReproductionRequestValidator.requireStableArchive(
+        ORIGINAL_LABEL, expectedOriginalSha256, SourceFileDigest.sha256(originalPath));
+    SourceReproductionRequestValidator.requireStableArchive(
+        SOURCES_LABEL, expectedSourceSha256, SourceFileDigest.sha256(sourcePath));
+    return new SourceReproductionInvocationCache.PreparedReproduction(
+        sources.sourceEntries(), original.classes(), compilation);
   }
 
-  private static Path requireJar(final Path path, final String label) throws IOException {
-    if (path == null) {
-      throw invalidArtifact(label, "must be a regular JAR file");
+  private SourceCorrespondenceArchive readArchive(
+      final Path path, final String sha256, final boolean sources) throws IOException {
+    final SourceCorrespondenceArchive parsed;
+    invocationCache.archiveParsed(sources);
+    if (sources) {
+      parsed = SourceCorrespondenceArchiveReader.readSources(path);
+    } else {
+      parsed = SourceCorrespondenceArchiveReader.readOriginal(path);
     }
-    final Path fileName = path.getFileName();
-    if (!Files.isRegularFile(path) || fileName == null) {
-      throw invalidArtifact(label, "must be a regular JAR file");
-    }
-    if (!fileName.toString().endsWith(".jar")) {
-      throw invalidArtifact(label, "must be a regular JAR file");
-    }
-    return path.toAbsolutePath().normalize();
+    SourceReproductionRequestValidator.requireStableArchive(
+        sources ? SOURCES_LABEL : ORIGINAL_LABEL, sha256, parsed.sha256());
+    return parsed;
   }
 
-  private static void requireClaimPresence(
-      final List<String> files,
-      final List<String> routines,
-      final SourceCorrespondenceArchive sources)
-      throws IOException {
-    if (files.isEmpty() && routines.isEmpty()) {
-      throw new IOException("At least one structured source or routine claim is required");
-    }
-    if (sources.sourceEntries().isEmpty()) {
-      throw new IOException("Sources archive contains no Java source units");
-    }
+  /** Releases candidate-local metadata after their final proof decision. */
+  public void releaseCandidates(final java.util.Collection<ArtifactCoordinate> candidates) {
+    invocationCache.releaseCandidates(candidates);
   }
 
-  private static void requireStableArchive(
-      final String label, final String expected, final String actual) throws IOException {
-    if (!expected.equals(actual)) {
-      throw invalidArtifact(label, "artifact changed during source reproduction");
-    }
-  }
-
-  private static IOException invalidArtifact(final String label, final String reason) {
-    return new IOException("The " + label + " " + reason);
-  }
+  /** Immutable counts of parsing, compilation, and cache hits. */
+  public record InvocationDiagnostics(
+      long originalArchiveParses,
+      long sourceArchiveParses,
+      long compilerInvocations,
+      long reproductionCacheHits,
+      long physicalInventoryParses,
+      long physicalInventoryCacheHits,
+      long physicalInventoryReusesFromReproduction) {}
 
   private static String reason(final Exception failure) {
     final String message = failure.getMessage();

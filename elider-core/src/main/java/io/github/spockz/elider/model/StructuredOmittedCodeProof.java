@@ -17,15 +17,19 @@ final class StructuredOmittedCodeProof {
   private StructuredOmittedCodeProof() {}
 
   /* default */ static VexAttestation prove(
-      final StructuredSourceProofRequest request, final ArtifactTrimRecord trimRecord)
+      final StructuredSourceProofRequest request,
+      final ArtifactTrimRecord trimRecord,
+      final SourceReproductionEngine reproductionEngine)
       throws IOException {
     Objects.requireNonNull(request, "request");
     Objects.requireNonNull(trimRecord, "trimRecord");
+    Objects.requireNonNull(reproductionEngine, "reproductionEngine");
     requireStructuredCandidate(request, trimRecord);
     final LiveStructuredSourceValidator.ObservedInputs before =
         LiveStructuredSourceValidator.observe(request);
     requireAffected(before);
-    final SourceReproductionResult reproduction = reproduce(request, trimRecord, before);
+    final SourceReproductionResult reproduction =
+        reproduce(request, trimRecord, before, reproductionEngine);
     if (reproduction instanceof SourceReproductionResult.Abstained abstained) {
       throw new IOException(abstained.rationale());
     }
@@ -41,7 +45,8 @@ final class StructuredOmittedCodeProof {
         provePhysicalOmission(
             new VerifiedStructuredEvidence(
                 request.sourceEvidence().scope().cveId(), selection.classNames(), provenance),
-            trimRecord);
+            trimRecord,
+            reproductionEngine);
     verifyFinalInputs(request, trimRecord, completed, before);
     return attestation;
   }
@@ -93,7 +98,8 @@ final class StructuredOmittedCodeProof {
   private static SourceReproductionResult reproduce(
       final StructuredSourceProofRequest request,
       final ArtifactTrimRecord trimRecord,
-      final LiveStructuredSourceValidator.ObservedInputs observed) {
+      final LiveStructuredSourceValidator.ObservedInputs observed,
+      final SourceReproductionEngine reproductionEngine) {
     final SourceReproductionRequest reproductionRequest =
         new SourceReproductionRequest(
             request.candidate(),
@@ -104,7 +110,7 @@ final class StructuredOmittedCodeProof {
             observed.cnaEntry().programFiles().stream().sorted().toList(),
             observed.cnaEntry().programRoutines().stream().sorted().toList(),
             request.conventionalLayoutAssumed());
-    return SourceReproductionEngine.forCurrentJdk().reproduce(reproductionRequest);
+    return reproductionEngine.reproduce(reproductionRequest);
   }
 
   private static void requireReproductionIdentity(
@@ -185,7 +191,9 @@ final class StructuredOmittedCodeProof {
   }
 
   private static VexAttestation provePhysicalOmission(
-      final VerifiedStructuredEvidence capability, final ArtifactTrimRecord trimRecord)
+      final VerifiedStructuredEvidence capability,
+      final ArtifactTrimRecord trimRecord,
+      final SourceReproductionEngine reproductionEngine)
       throws IOException {
     final ArtifactDigests original =
         PhysicalOmissionChecks.verifyDigest(
@@ -194,8 +202,11 @@ final class StructuredOmittedCodeProof {
         PhysicalOmissionChecks.verifyDigest(
             trimRecord.trimmedPath(), trimRecord.trimmedSha256(), trimRecord.trimmedSha1());
     final Set<String> originalClasses =
-        OmittedArchiveClassInventory.read(trimRecord.originalPath());
-    final Set<String> trimmedClasses = OmittedArchiveClassInventory.read(trimRecord.trimmedPath());
+        reproductionEngine.readPhysicalClassInventory(
+            trimRecord.coordinate(), trimRecord.originalPath(), trimRecord.originalSha256());
+    final Set<String> trimmedClasses =
+        reproductionEngine.readPhysicalClassInventory(
+            trimRecord.coordinate(), trimRecord.trimmedPath(), trimRecord.trimmedSha256());
     final Set<String> absent =
         PhysicalOmissionChecks.verifySymbols(
             capability.vulnerableClasses(), originalClasses, trimmedClasses);

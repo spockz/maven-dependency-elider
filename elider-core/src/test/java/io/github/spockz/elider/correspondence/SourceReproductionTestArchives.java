@@ -3,10 +3,12 @@
 package io.github.spockz.elider.correspondence;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Optional;
 import java.util.jar.Attributes;
@@ -14,6 +16,9 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 import javax.tools.ToolProvider;
 
 /** Builds real JAR fixtures with the pinned JDK compiler. */
@@ -112,6 +117,28 @@ final class SourceReproductionTestArchives {
     output.putNextEntry(new JarEntry(name));
     Files.copy(content, output);
     output.closeEntry();
+  }
+
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  /* default */ static void addResourceInPlace(final Path archive, final String resourceName)
+      throws IOException {
+    final Path replacement = archive.resolveSibling(archive.getFileName() + ".replacement");
+    try (ZipFile input = new ZipFile(archive.toFile());
+        ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(replacement))) {
+      final Enumeration<? extends ZipEntry> entries = input.entries();
+      while (entries.hasMoreElements()) {
+        final ZipEntry entry = entries.nextElement();
+        output.putNextEntry(new ZipEntry(entry.getName()));
+        try (InputStream contents = input.getInputStream(entry)) {
+          contents.transferTo(output);
+        }
+        output.closeEntry();
+      }
+      output.putNextEntry(new ZipEntry(resourceName));
+      output.write("cache-invalidation".getBytes(StandardCharsets.UTF_8));
+      output.closeEntry();
+    }
+    Files.move(replacement, archive, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
   }
 
   /* default */ record Archives(Path originalJar, Path sourcesJar) {}

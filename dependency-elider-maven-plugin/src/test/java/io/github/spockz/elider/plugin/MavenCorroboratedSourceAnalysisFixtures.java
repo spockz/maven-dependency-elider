@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /** Creates analysis inputs without duplicating test execution setup. */
 final class MavenCorroboratedSourceAnalysisFixtures {
@@ -38,6 +39,27 @@ final class MavenCorroboratedSourceAnalysisFixtures {
         new ElisionAnalysisModel.AnalysisEvidence(
             new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null),
         new TrimResult(trimRecords, List.of(), List.of(), List.of(), 0, 0L, 0, null),
+        null,
+        null);
+  }
+
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  static ElisionAnalysisModel.Analysis analysisWithSnapshots(
+      final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots,
+      final List<ArtifactTrimRecord> trimRecords) {
+    final Set<ArtifactCoordinate> retained =
+        snapshots.stream()
+            .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+            .collect(Collectors.toSet());
+    final ElisionDecision decision =
+        new ElisionDecision(retained, Set.of(), Map.of(), Map.of(), 0L);
+    return new ElisionAnalysisModel.Analysis(
+        new ElisionAnalysisModel.ArtifactViews(snapshots, true, List.of()),
+        decision,
+        decision,
+        new ElisionAnalysisModel.AnalysisEvidence(
+            new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null),
+        new TrimResult(trimRecords, List.of(), List.of(), List.of(), 0, 0L, 0),
         null,
         null);
   }

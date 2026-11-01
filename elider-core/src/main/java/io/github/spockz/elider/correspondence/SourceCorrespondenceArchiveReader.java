@@ -82,20 +82,19 @@ final class SourceCorrespondenceArchiveReader {
     final Enumeration<JarEntry> entries = jar.entries();
     while (entries.hasMoreElements()) {
       final JarEntry entry = entries.nextElement();
+      final String name = entry.getName();
+      final String layoutPath = entry.isDirectory() ? directoryPath(name, path) : name;
+      SourceArchiveLayout.requireSafePath(layoutPath, path);
+      SourceArchiveLayout.requireNonVersioned(layoutPath);
+      if (!physicalEntries.add(name)) {
+        throw new IOException("Duplicate archive entry: " + name);
+      }
       if (entry.isDirectory()) {
         continue;
       }
       totalBytes =
           readEntry(
-              jar,
-              entry,
-              path,
-              sources,
-              totalBytes,
-              physicalEntries,
-              sourceContents,
-              sourceEntries,
-              classDigests);
+              jar, entry, path, sources, totalBytes, sourceContents, sourceEntries, classDigests);
     }
     return new ReadContents(sourceContents, sourceEntries, classDigests);
   }
@@ -106,17 +105,11 @@ final class SourceCorrespondenceArchiveReader {
       final Path path,
       final boolean sources,
       final long totalBytes,
-      final Set<String> physicalEntries,
       final Map<String, byte[]> sourceContents,
       final List<String> sourceEntries,
       final Map<String, String> classDigests)
       throws IOException {
     final String name = entry.getName();
-    SourceArchiveLayout.requireSafePath(name, path);
-    SourceArchiveLayout.requireNonVersioned(name);
-    if (!physicalEntries.add(name)) {
-      throw new IOException("Duplicate archive entry: " + name);
-    }
     final boolean javaSource = sources && name.endsWith(JAVA_SUFFIX);
     if (sources && isUnsupportedSource(name)) {
       throw new IOException("Unsupported source language in sources archive: " + name);
@@ -133,6 +126,13 @@ final class SourceCorrespondenceArchiveReader {
       addBinary(name, content, classDigests);
     }
     return updatedBytes;
+  }
+
+  private static String directoryPath(final String name, final Path archive) throws IOException {
+    if (!name.endsWith("/")) {
+      throw new IOException("Malformed directory entry path in " + archive + ": " + name);
+    }
+    return name.substring(0, name.length() - 1);
   }
 
   private record ReadContents(

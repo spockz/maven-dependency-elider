@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 import org.eclipse.aether.RepositorySystemSession;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -26,6 +27,33 @@ final class MavenStructuredProofMutationGuardTest {
   /** Creates an isolated mutation-guard test instance. */
   @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.UncommentedEmptyConstructor"})
   MavenStructuredProofMutationGuardTest() {}
+
+  @Test
+  void repeatedPhysicalDirectoryNameCannotProduceStructuredProof() throws IOException {
+    final Path directory = temporaryDirectory.resolve("repeated-physical-directory");
+    final MavenCorroboratedSourceScenario.Prepared prepared =
+        MavenCorroboratedSourceScenario.prepareReproducibleClaim(
+            directory, List.of(MavenSourceCorrespondenceTestArtifacts.SOURCE_ENTRY), List.of());
+    final MavenSourceCorrespondenceTestArtifacts.Archives archives =
+        MavenSourceCorrespondenceTestArtifacts.write(directory, false, false);
+    MavenAdversarialSourceArchiveFixtures.addDuplicateDirectoryEntry(archives.originalJar());
+    final Path trimmed =
+        MavenSourceCorrespondenceTestArtifacts.writeEmptyTrimmedJar(directory.resolve(TRIMMED_JAR));
+
+    final MavenCorroboratedSourceScenario.AssessmentWithLog assessment =
+        MavenStructuredProofScenario.assessWithDebugLog(
+            prepared, archives, trimmed, true, ignored -> {});
+
+    assertAll(
+        "repeated original JAR directory records are rejected before inventory cache reuse",
+        () -> assertThat(assessment.result().attestations()).isEmpty(),
+        () -> assertThat(assessment.result().provenVulnerableCodeAbsent()).isEmpty(),
+        () -> assertThat(assessment.result().inactiveDueToMissingPrerequisites()).isEmpty(),
+        () -> assertThat(assessment.result().potentiallyConservativeCves()).isEmpty(),
+        () ->
+            assertThat(assessment.log().debugMessages())
+                .anyMatch(message -> message.contains("Duplicate archive entry: proofdup/")));
+  }
 
   @ParameterizedTest
   @EnumSource(InputMutation.class)

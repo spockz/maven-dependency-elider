@@ -169,6 +169,74 @@ final class SourceReproductionEngineTest {
                 .contains("Unsafe archive entry path"));
   }
 
+  @Test
+  void validatesDirectoryEntriesWithoutRejectingOrdinaryDirectories() throws IOException {
+    final SourceReproductionTestArchives.Archives ordinary =
+        archives(
+            temporaryDirectory.resolve("ordinary-directories"),
+            SOURCE_ENTRY,
+            SOURCE,
+            false,
+            Optional.empty(),
+            false);
+    SourceReproductionDirectoryEntries.add(ordinary.originalJar(), "org/", "org/example/");
+    SourceReproductionDirectoryEntries.add(
+        ordinary.sourcesJar(), "src/", "src/main/", "src/main/java/");
+    final SourceReproductionTestArchives.Archives unsafe =
+        archives(
+            temporaryDirectory.resolve("unsafe-directory"),
+            SOURCE_ENTRY,
+            SOURCE,
+            false,
+            Optional.empty(),
+            false);
+    SourceReproductionDirectoryEntries.add(unsafe.sourcesJar(), "../escape/");
+    final SourceReproductionTestArchives.Archives versioned =
+        archives(
+            temporaryDirectory.resolve("versioned-directory"),
+            SOURCE_ENTRY,
+            SOURCE,
+            false,
+            Optional.empty(),
+            false);
+    SourceReproductionDirectoryEntries.add(versioned.originalJar(), "META-INF/versions/21/");
+    final SourceReproductionTestArchives.Archives duplicate =
+        archives(
+            temporaryDirectory.resolve("duplicate-directory"),
+            SOURCE_ENTRY,
+            SOURCE,
+            false,
+            Optional.empty(),
+            false);
+    SourceReproductionDirectoryEntries.addDuplicate(duplicate.originalJar());
+    final SourceReproductionEngine engine = SourceReproductionEngine.forCurrentJdk();
+
+    final SourceReproductionResult ordinaryResult =
+        engine.reproduce(request(ordinary, List.of(SOURCE_ENTRY), List.of(), false));
+    final SourceReproductionResult unsafeResult =
+        engine.reproduce(request(unsafe, List.of(SOURCE_ENTRY), List.of(), false));
+    final SourceReproductionResult versionedResult =
+        engine.reproduce(request(versioned, List.of(SOURCE_ENTRY), List.of(), false));
+    final SourceReproductionResult duplicateResult =
+        engine.reproduce(request(duplicate, List.of(SOURCE_ENTRY), List.of(), false));
+
+    assertAll(
+        "ordinary directory records are allowed, but malformed directory records are not",
+        () -> assertThat(ordinaryResult).isInstanceOf(SourceReproductionResult.Completed.class),
+        () -> assertThat(unsafeResult).isInstanceOf(SourceReproductionResult.Abstained.class),
+        () ->
+            assertThat(((SourceReproductionResult.Abstained) unsafeResult).rationale())
+                .contains("Unsafe archive entry path"),
+        () -> assertThat(versionedResult).isInstanceOf(SourceReproductionResult.Abstained.class),
+        () ->
+            assertThat(((SourceReproductionResult.Abstained) versionedResult).rationale())
+                .contains("Multi-release archive entry is unsupported"),
+        () -> assertThat(duplicateResult).isInstanceOf(SourceReproductionResult.Abstained.class),
+        () ->
+            assertThat(((SourceReproductionResult.Abstained) duplicateResult).rationale())
+                .contains("Duplicate archive entry: cachedup/"));
+  }
+
   private static SourceReproductionRequest request(
       final SourceReproductionTestArchives.Archives archives,
       final List<String> files,

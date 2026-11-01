@@ -3,7 +3,6 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -131,8 +130,8 @@ final class MavenStructuredProofScenario {
     return new MavenCorroboratedSourceScenario.AssessmentWithLog(result, log);
   }
 
-  private static void copyCurrentCveRecord(final MavenCorroboratedSourceScenario.Prepared prepared)
-      throws IOException {
+  /* default */ static void copyCurrentCveRecord(
+      final MavenCorroboratedSourceScenario.Prepared prepared) throws IOException {
     final Path currentCveRecord =
         prepared
             .cacheConfig()
@@ -148,22 +147,11 @@ final class MavenStructuredProofScenario {
       final Path originalJar,
       final Path trimmedJar)
       throws IOException {
-    final ArtifactDigests originalDigest = ArtifactDigests.read(originalJar);
-    final ArtifactDigests trimmedDigest = ArtifactDigests.read(trimmedJar);
-    return new ArtifactTrimRecord(
-        prepared.coordinate(),
-        originalJar,
-        originalDigest.sha256(),
-        originalDigest.sha1(),
-        trimmedJar,
-        trimmedDigest.sha256(),
-        trimmedDigest.sha1(),
-        5,
-        0,
-        256);
+    return MavenSourceReproductionReuseScenarios.trimRecord(
+        prepared.coordinate(), originalJar, trimmedJar);
   }
 
-  private static MavenSourceCorrespondenceAssessment sourceAssessment(
+  /* default */ static MavenSourceCorrespondenceAssessment sourceAssessment(
       final MavenSourceCorrespondenceTestArtifacts.Archives archives,
       final boolean conventionalLayoutAssumed,
       final Consumer<RepositorySystemSession> resolutionObserver) {

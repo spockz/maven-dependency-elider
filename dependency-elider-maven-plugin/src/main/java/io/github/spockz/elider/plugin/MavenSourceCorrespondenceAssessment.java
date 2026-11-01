@@ -13,6 +13,7 @@ import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -125,7 +126,16 @@ final class MavenSourceCorrespondenceAssessment {
             sourceArtifact.coordinate(),
             sourceArtifact.repositoryProvenance(),
             conventionalLayoutAssumed);
-    return OmittedCodeProof.proveStructured(request, trimRecord);
+    return OmittedCodeProof.proveStructured(
+        request, trimRecord, currentSourceReproductionEngine().orElseThrow());
+  }
+
+  /* default */ Optional<SourceReproductionEngine.InvocationDiagnostics> invocationDiagnostics() {
+    return sourceReproductionEngine.map(SourceReproductionEngine::diagnostics);
+  }
+
+  /* default */ void releaseInvocationCandidates(final Collection<ArtifactCoordinate> candidates) {
+    sourceReproductionEngine.ifPresent(engine -> engine.releaseCandidates(candidates));
   }
 
   private Optional<SourceReproductionEngine> currentSourceReproductionEngine() {

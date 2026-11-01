@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.model;
 
+import io.github.spockz.elider.correspondence.SourceReproductionEngine;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
@@ -58,7 +59,16 @@ public final class OmittedCodeProof {
   public static VexAttestation proveStructured(
       final StructuredSourceProofRequest request, final ArtifactTrimRecord trimRecord)
       throws IOException {
-    return StructuredOmittedCodeProof.prove(request, trimRecord);
+    return proveStructured(request, trimRecord, SourceReproductionEngine.forCurrentJdk());
+  }
+
+  /** Reuses a claim-independent engine scoped to the enclosing assessment invocation. */
+  public static VexAttestation proveStructured(
+      final StructuredSourceProofRequest request,
+      final ArtifactTrimRecord trimRecord,
+      final SourceReproductionEngine reproductionEngine)
+      throws IOException {
+    return StructuredOmittedCodeProof.prove(request, trimRecord, reproductionEngine);
   }
 
   private static void requireMatchingIdentity(
