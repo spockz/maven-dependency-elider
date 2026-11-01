@@ -94,6 +94,10 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.retainedArtifacts")
   private List<String> retainedArtifacts;
 
+  /** Exact groupId:artifactId identities whose removal is explicitly requested. */
+  @Parameter(property = "elide.banishedDependencies")
+  private List<String> banishedDependencies;
+
   /** Optional production class output for static references. */
   @Parameter(property = "elide.productionOutput")
   private File productionOutput;
@@ -319,6 +323,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
     return new ElisionAnalysisModel.AnalysisOptions(
         traceFiles,
         retainedArtifacts,
+        banishedDependencies,
         effectiveProductionOutput(useProductionClasses),
         session,
         new ElisionAnalysisModel.CompletenessOptions(

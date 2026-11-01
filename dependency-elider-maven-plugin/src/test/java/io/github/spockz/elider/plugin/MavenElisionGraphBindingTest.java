@@ -80,6 +80,24 @@ final class MavenElisionGraphBindingTest extends MavenElisionGraphBindingTestSup
   }
 
   @Test
+  void operationFingerprintIncludesNormalizedBanRequests() throws Exception {
+    final Fixture fixture = fixture(true, JAR_BYTES);
+    final List<ElisionAnalysisModel.ArtifactSnapshot> inventory = List.of(fixture.snapshot());
+    final ElisionAnalysisModel.AnalysisOptions options = fixture.options();
+    final ElisionDecision decision =
+        new ElisionDecision(Set.of(coordinate(VERSION)), Set.of(), Map.of(), Map.of(), 0L);
+    final MavenElisionGraphBinding.Result normalized =
+        fixture.bind(withBans(options, List.of(" fixture : library ")), inventory, decision);
+    final MavenElisionGraphBinding.Result canonical =
+        fixture.bind(withBans(options, List.of("fixture:library")), inventory, decision);
+    final MavenElisionGraphBinding.Result changed =
+        fixture.bind(withBans(options, List.of("fixture:other")), inventory, decision);
+
+    assertThat(normalized.operationFingerprint()).isEqualTo(canonical.operationFingerprint());
+    assertThat(changed.operationFingerprint()).isNotEqualTo(canonical.operationFingerprint());
+  }
+
+  @Test
   void rejectsPairWithoutExplicitTestResolutionContext() throws Exception {
     final Fixture fixture = fixture(false, JAR_BYTES);
     final MavenElisionGraphBinding.Result result = fixture.bind(List.of(fixture.snapshot()));
@@ -111,5 +129,18 @@ final class MavenElisionGraphBindingTest extends MavenElisionGraphBindingTestSup
     assertThat(result.evaluation().failClosed()).isTrue();
     assertThat(result.evaluation().elidedArtifacts()).isEmpty();
     assertThat(result.evaluation().failClosedReason()).contains("Multiple plan-absent");
+  }
+
+  private static ElisionAnalysisModel.AnalysisOptions withBans(
+      final ElisionAnalysisModel.AnalysisOptions options, final List<String> bans) {
+    return new ElisionAnalysisModel.AnalysisOptions(
+        options.traceFiles(),
+        options.retainedArtifacts(),
+        bans,
+        options.productionOutput(),
+        options.session(),
+        options.completeness(),
+        options.trim(),
+        options.dynamicRoots());
   }
 }

@@ -26,13 +26,19 @@ final class ElisionArtifactPolicy {
   /* package */ static PruneConfig config(
       final List<String> retainedArtifacts, final Set<ArtifactCoordinate> keepArtifacts)
       throws MojoFailureException {
+    final Set<ArtifactCoordinate> retained = parseRetentionCoordinates(retainedArtifacts);
+    return new PruneConfig(Set.of(), keepArtifacts, ELIGIBLE_SCOPES, retained);
+  }
+
+  /* package */ static Set<ArtifactCoordinate> parseRetentionCoordinates(
+      final List<String> retainedArtifacts) throws MojoFailureException {
     final Set<ArtifactCoordinate> retained = new LinkedHashSet<>();
     if (retainedArtifacts != null) {
       for (final String text : retainedArtifacts) {
         retained.add(parseRetention(text));
       }
     }
-    return new PruneConfig(Set.of(), keepArtifacts, ELIGIBLE_SCOPES, retained);
+    return Set.copyOf(retained);
   }
 
   /* package */ static Set<ArtifactCoordinate> parsePassThroughCoordinates(
@@ -44,8 +50,7 @@ final class ElisionArtifactPolicy {
     }
     for (final String raw : requested) {
       final PassThroughCoordinate requestedCoordinate = passThroughCoordinate(raw);
-      final List<ArtifactSnapshot> matches =
-          snapshots.stream().filter(requestedCoordinate::matches).toList();
+      final List<ArtifactSnapshot> matches = matchingSnapshots(requestedCoordinate, snapshots);
       if (matches.isEmpty()) {
         throw new MojoFailureException(
             "elide.trimSkipArtifacts coordinate is not a resolved compile/runtime JAR: " + raw);
@@ -53,6 +58,22 @@ final class ElisionArtifactPolicy {
       matches.stream().map(ArtifactSnapshot::coordinate).forEach(result::add);
     }
     return result;
+  }
+
+  /* package */ static Set<ArtifactCoordinate> matchingPassThroughCoordinates(
+      final List<String> requested, final List<ArtifactSnapshot> snapshots)
+      throws MojoFailureException {
+    final Set<ArtifactCoordinate> result = new LinkedHashSet<>();
+    if (requested == null) {
+      return result;
+    }
+    for (final String raw : requested) {
+      final PassThroughCoordinate requestedCoordinate = passThroughCoordinate(raw);
+      matchingSnapshots(requestedCoordinate, snapshots).stream()
+          .map(ArtifactSnapshot::coordinate)
+          .forEach(result::add);
+    }
+    return Set.copyOf(result);
   }
 
   /* package */ static ElisionDecision retainNonJarArtifacts(
@@ -80,6 +101,11 @@ final class ElisionArtifactPolicy {
     }
     return new PassThroughCoordinate(
         parts[0], parts[1], parts[2], type, optionalPiece(parts, 4, ""));
+  }
+
+  private static List<ArtifactSnapshot> matchingSnapshots(
+      final PassThroughCoordinate requested, final List<ArtifactSnapshot> snapshots) {
+    return snapshots.stream().filter(requested::matches).toList();
   }
 
   private static String[] passThroughPieces(final String raw) throws MojoFailureException {

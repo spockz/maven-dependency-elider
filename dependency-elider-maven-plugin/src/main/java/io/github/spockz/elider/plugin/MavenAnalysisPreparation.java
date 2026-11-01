@@ -33,6 +33,27 @@ final class MavenAnalysisPreparation {
       throws IOException, MojoFailureException {
     verifyCompleteness(options.completeness());
     final Inventory inventory = inventory(project);
+    final BanishedDependencyPolicy.Resolution banResolution =
+        BanishedDependencyPolicy.resolve(
+            options.retainedArtifacts(),
+            options.banishedDependencies(),
+            options.trim().passThroughArtifacts(),
+            inventory.views().resolvedSnapshots(),
+            inventory.views().directSnapshots());
+    if (!banResolution.requested().isEmpty()) {
+      final List<BanishedDependency> currentMatches =
+          banResolution.matches().stream()
+              .filter(BanishedDependencyPolicy.Match::matched)
+              .map(BanishedDependencyPolicy.Match::dependency)
+              .toList();
+      throw new MojoFailureException(
+          "elide.banishedDependencies cannot be applied because strict ban enforcement is not "
+              + "available for this operation; the operation fails closed. Current inventory "
+              + "matches: "
+              + currentMatches
+              + "; no current inventory match: "
+              + banResolution.noCurrentInventoryMatch());
+    }
     final MavenAnalysisEvidence.RootEvidence evidence =
         MavenAnalysisEvidence.scan(project, options, inventory.candidates(), scanner);
     final Set<String> requiredClasses =

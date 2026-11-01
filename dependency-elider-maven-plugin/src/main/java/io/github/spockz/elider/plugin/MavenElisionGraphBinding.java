@@ -195,6 +195,12 @@ final class MavenElisionGraphBinding {
     fields.add(options.trim().mrjarStrategy());
     fields.add(Boolean.toString(options.trim().failOnUnsupportedModuleInfo()));
     fields.addAll(sorted(options.retainedArtifacts()));
+    fields.addAll(
+        options.banishedDependencies().stream()
+            .map(BanishedDependency::parse)
+            .map(dependency -> "banished=" + dependency)
+            .sorted()
+            .toList());
     fields.addAll(sorted(options.trim().explicitRoots()));
     fields.addAll(sorted(options.trim().passThroughArtifacts()));
     fields.addAll(

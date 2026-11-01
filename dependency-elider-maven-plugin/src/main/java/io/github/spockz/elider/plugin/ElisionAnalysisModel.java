@@ -32,16 +32,38 @@ final class ElisionAnalysisModel {
   /* default */ record AnalysisOptions(
       List<File> traceFiles,
       List<String> retainedArtifacts,
+      List<String> banishedDependencies,
       File productionOutput,
       MavenSession session,
       CompletenessOptions completeness,
       TrimOptions trim,
       DynamicRootOptions dynamicRoots) {
+    /* default */ AnalysisOptions(
+        final List<File> traceFiles,
+        final List<String> retainedArtifacts,
+        final File productionOutput,
+        final MavenSession session,
+        final CompletenessOptions completeness,
+        final TrimOptions trim,
+        final DynamicRootOptions dynamicRoots) {
+      this(
+          traceFiles,
+          retainedArtifacts,
+          List.of(),
+          productionOutput,
+          session,
+          completeness,
+          trim,
+          dynamicRoots);
+    }
+
     /* default */ MavenExecutionRequest request() {
       return session == null ? null : session.getRequest();
     }
 
     /* default */ AnalysisOptions {
+      banishedDependencies =
+          banishedDependencies == null ? List.of() : List.copyOf(banishedDependencies);
       if (trim.workers() < MIN_TRIM_WORKERS) {
         throw new IllegalArgumentException("trimWorkers must be at least 1");
       }
