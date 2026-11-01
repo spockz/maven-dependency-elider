@@ -105,25 +105,83 @@ final class AnalysisEnvironmentCompilerSettingsTest {
 
   @Test
   void inheritedUserReleasePropertyMatchesTheLiveMavenSessionPath() throws Exception {
+    final MavenProject project = project();
+    project.setFile(temporaryDirectory.resolve("release-project/pom.xml").toFile());
     final Properties defaults = new Properties();
     defaults.setProperty("maven.compiler.release", "11");
     final Properties user = new Properties(defaults);
-    final MavenSession session = session(user);
+    final MavenSession session = session(user, project);
+    final AnalysisEnvironment environment = AnalysisEnvironment.capture(project, session);
 
-    assertThat(MavenCompilerSettings.options(project(), session, List.of()))
-        .containsExactly("--release", "11");
+    assertAll(
+        "the inherited user release survives Maven request and Analyze environment capture",
+        () ->
+            assertThat(session.getUserProperties().getProperty("maven.compiler.release"))
+                .isEqualTo("11"),
+        () ->
+            assertThat(MavenCompilerSettings.options(project, session, List.of()))
+                .containsExactly("--release", "11"),
+        () ->
+            assertThat(
+                    environment.userPropertiesAsProperties().getProperty("maven.compiler.release"))
+                .isEqualTo("11"),
+        () ->
+            assertThat(
+                    MavenCompilerSettings.optionsWithEnvironment(project, environment, List.of()))
+                .containsExactly("--release", "11"));
   }
 
   @Test
-  void inheritedUserGuardPropertyIsNotLostByTheLiveMavenSessionPath() {
+  void inheritedUserGuardPropertyIsNotLostByTheLiveMavenSessionPath() throws Exception {
+    final MavenProject project = project();
+    project.setFile(temporaryDirectory.resolve("guard-project/pom.xml").toFile());
     final Properties defaults = new Properties();
     defaults.setProperty("maven.compiler.fork", "true");
     final Properties user = new Properties(defaults);
-    final MavenSession session = session(user);
+    final MavenSession session = session(user, project);
+    final AnalysisEnvironment environment = AnalysisEnvironment.capture(project, session);
 
-    assertThatThrownBy(() -> MavenCompilerSettings.options(project(), session, List.of()))
-        .isInstanceOf(java.io.IOException.class)
-        .hasMessageContaining("maven.compiler.fork");
+    assertAll(
+        "the inherited user guard survives Maven request and Analyze environment capture",
+        () ->
+            assertThat(session.getUserProperties().getProperty("maven.compiler.fork"))
+                .isEqualTo("true"),
+        () ->
+            assertThatThrownBy(() -> MavenCompilerSettings.options(project, session, List.of()))
+                .isInstanceOf(java.io.IOException.class)
+                .hasMessageContaining("maven.compiler.fork"),
+        () ->
+            assertThat(environment.userPropertiesAsProperties().getProperty("maven.compiler.fork"))
+                .isEqualTo("true"),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        MavenCompilerSettings.optionsWithEnvironment(
+                            project, environment, List.of()))
+                .isInstanceOf(java.io.IOException.class)
+                .hasMessageContaining("maven.compiler.fork"));
+  }
+
+  @Test
+  void explicitUserReleaseOverridesItsInheritedDefault() throws Exception {
+    final MavenProject project = project();
+    project.setFile(temporaryDirectory.resolve("override-project/pom.xml").toFile());
+    final Properties defaults = new Properties();
+    defaults.setProperty("maven.compiler.release", "11");
+    final Properties user = new Properties(defaults);
+    user.setProperty("maven.compiler.release", "13");
+    final MavenSession session = session(user, project);
+    final AnalysisEnvironment environment = AnalysisEnvironment.capture(project, session);
+
+    assertAll(
+        "an explicit user property overrides its inherited default in both paths",
+        () ->
+            assertThat(MavenCompilerSettings.options(project, session, List.of()))
+                .containsExactly("--release", "13"),
+        () ->
+            assertThat(
+                    MavenCompilerSettings.optionsWithEnvironment(project, environment, List.of()))
+                .containsExactly("--release", "13"));
   }
 
   private AnalysisEnvironment environment(
@@ -158,8 +216,21 @@ final class AnalysisEnvironmentCompilerSettingsTest {
   }
 
   private static MavenSession session(final Properties userProperties) {
-    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
-    request.setUserProperties(userProperties);
+    return session(userProperties, null);
+  }
+
+  private static MavenSession session(
+      final Properties userProperties, final MavenProject currentProject) {
+    final DefaultMavenExecutionRequest request =
+        new DefaultMavenExecutionRequest() {
+          @Override
+          public Properties getUserProperties() {
+            return userProperties;
+          }
+        };
+    if (currentProject != null && currentProject.getBasedir() != null) {
+      request.setBaseDirectory(currentProject.getBasedir());
+    }
     final PlexusContainer container =
         (PlexusContainer)
             Proxy.newProxyInstance(
@@ -167,6 +238,11 @@ final class AnalysisEnvironmentCompilerSettingsTest {
                 new Class<?>[] {PlexusContainer.class},
                 (proxy, method, arguments) ->
                     "lookup".equals(method.getName()) ? new DefaultToolchainManager() : null);
-    return new MavenSession(container, new DefaultRepositorySystemSession(), request, null);
+    final MavenSession session =
+        new MavenSession(container, new DefaultRepositorySystemSession(), request, null);
+    if (currentProject != null) {
+      session.setCurrentProject(currentProject);
+    }
+    return session;
   }
 }

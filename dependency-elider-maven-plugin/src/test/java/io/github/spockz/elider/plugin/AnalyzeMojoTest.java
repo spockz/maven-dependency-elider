@@ -305,6 +305,7 @@ final class AnalyzeMojoTest {
     final Path report = target.resolve("dependency-elider-class-usage.json");
     final AnalyzeMojo mojo = new AnalyzeMojo();
     set(mojo, "project", project);
+    set(mojo, "productionOutput", output.toFile());
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "productionClassesComplete", true);
     set(mojo, "reportFile", report.toFile());

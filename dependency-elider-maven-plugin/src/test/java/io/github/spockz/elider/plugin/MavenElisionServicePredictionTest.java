@@ -192,33 +192,45 @@ final class MavenElisionServicePredictionTest {
             fixtureDirectory,
             "captured-base",
             8,
-            "package projection; public class Api { public static String value() { return \"base\"; } }");
+            "package projection; public class Api { public static String value() { "
+                + "return \"base\"; } }");
     final Path versioned =
         MultiReleaseProjectionFixtures.compile(
             fixtureDirectory,
             "captured-v21",
             21,
-            "package projection; public class Api { public static String value() { return \"upper\"; } }");
+            "package projection; public class Api { public static String value() { "
+                + "return \"upper\"; } }");
     final Path versionNine =
         MultiReleaseProjectionFixtures.compile(
             fixtureDirectory,
             "captured-v9",
             9,
-            "package projection; public class Api { public static String value() { return \"nine\"; } }");
+            "package projection; public class Api { public static String value() { "
+                + "return \"nine\"; } }");
     final Path versionNineOnly =
         MultiReleaseProjectionFixtures.compile(
-            fixtureDirectory,
-            "captured-v9-only",
-            9,
-            "package projection; public class NineOnly {}");
+            fixtureDirectory, "captured-v9-only", 9, "package projection; class NineOnly {}");
     final Path versionTwentyOneOnly =
         MultiReleaseProjectionFixtures.compile(
             fixtureDirectory,
             "captured-v21-only",
             21,
             "package projection; public class TwentyOneOnly {}");
+    final Path baseTwentyOneOnly =
+        MultiReleaseProjectionFixtures.compile(
+            fixtureDirectory,
+            "captured-base-v21-only",
+            8,
+            "package projection; public class TwentyOneOnly {}");
     return MultiReleaseProjectionFixtures.createMultiReleaseJar(
-        fixtureDirectory, base, versionNine, versionNineOnly, versioned, versionTwentyOneOnly);
+        fixtureDirectory,
+        base,
+        versionNine,
+        versionNineOnly,
+        versioned,
+        versionTwentyOneOnly,
+        baseTwentyOneOnly);
   }
 
   private record Fixture(

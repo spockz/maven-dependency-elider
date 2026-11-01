@@ -57,17 +57,26 @@ final class MultiReleaseProjectionFixtures {
         .resolve(sourceClassName(source).replace(".java", ".class"));
   }
 
-  static Path createMultiReleaseJar(final Path root, final Path... classes) throws IOException {
+  static Path createMultiReleaseJar(
+      final Path root,
+      final Path baseApi,
+      final Path versionNineApi,
+      final Path versionNineOnly,
+      final Path versionTwentyOneApi,
+      final Path versionTwentyOneOnly,
+      final Path baseTwentyOneOnly)
+      throws IOException {
     final Path jar = root.resolve("projection.jar");
     final Manifest manifest = new Manifest();
     manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
     manifest.getMainAttributes().putValue("Multi-Release", "true");
     try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar), manifest)) {
-      addClass(output, classes[0], API_ENTRY);
-      addClass(output, classes[1], "META-INF/versions/9/" + API_ENTRY);
-      addClass(output, classes[2], "META-INF/versions/9/projection/NineOnly.class");
-      addClass(output, classes[3], "META-INF/versions/21/" + API_ENTRY);
-      addClass(output, classes[4], "META-INF/versions/21/projection/TwentyOneOnly.class");
+      addClass(output, baseApi, API_ENTRY);
+      addClass(output, baseTwentyOneOnly, "projection/TwentyOneOnly.class");
+      addClass(output, versionNineApi, "META-INF/versions/9/" + API_ENTRY);
+      addClass(output, versionNineOnly, "META-INF/versions/9/projection/NineOnly.class");
+      addClass(output, versionTwentyOneApi, "META-INF/versions/21/" + API_ENTRY);
+      addClass(output, versionTwentyOneOnly, "META-INF/versions/21/projection/TwentyOneOnly.class");
     }
     return jar;
   }

@@ -147,6 +147,22 @@ final class MavenAnalysisPreparation {
             + banResolution.noCurrentInventoryMatch());
   }
 
+  static void rejectBanRequestBeforePrediction(final List<String> configuredBans)
+      throws MojoFailureException {
+    final List<BanishedDependency> requested;
+    try {
+      requested = BanishedDependencyPolicy.normalize(configuredBans);
+    } catch (final IllegalArgumentException exception) {
+      throw new MojoFailureException(
+          "Invalid elide.banishedDependencies configuration: " + exception.getMessage(), exception);
+    }
+    if (!requested.isEmpty()) {
+      throw new MojoFailureException(
+          "elide.banishedDependencies cannot be applied because strict ban enforcement is not "
+              + "available for this operation; the operation fails closed before prediction.");
+    }
+  }
+
   private static void verifyCompleteness(final CompletenessOptions completeness)
       throws IOException {
     if (completeness.sourceRootsComplete() && completeness.productionClassesComplete()) {

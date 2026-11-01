@@ -87,51 +87,6 @@ final class MavenElisionGraphBinding {
     return new Result(evaluation, inventoryFingerprint, operationFingerprint, context.pair());
   }
 
-  static ResolverArtifactGraphCapturePair requireCapturedPair(
-      final MavenProject project,
-      final MavenSession session,
-      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory)
-      throws IOException {
-    final Object payload =
-        session == null || session.getRepositorySession() == null
-            ? null
-            : session
-                .getRepositorySession()
-                .getData()
-                .get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
-    if (payload == null) {
-      throw new IOException("Active Resolver capture is missing for Analyze");
-    }
-    final List<ResolverArtifactGraphCapturePair> compatible =
-        ResolverArtifactGraphSnapshotStore.fromPayload(payload)
-            .capturePairs()
-            .getOrDefault(projectKey(project), List.of())
-            .stream()
-            .map(ResolverArtifactGraphCapturePair::fromPayload)
-            .filter(
-                pair ->
-                    !pair.planPresent()
-                        && MavenElisionGraphInventory.matchesGraph(pair.after(), inventory))
-            .toList();
-    if (compatible.isEmpty()) {
-      throw new IOException("No captured effective Resolver graph matches Analyze inventory");
-    }
-    final Set<String> graphIdentities =
-        compatible.stream()
-            .map(
-                pair ->
-                    pair.before().graphFingerprint()
-                        + ":"
-                        + pair.after().graphFingerprint()
-                        + ":"
-                        + pair.captureToken())
-            .collect(java.util.stream.Collectors.toSet());
-    if (graphIdentities.size() != 1) {
-      throw new IOException("Analyze inventory matches multiple captured Resolver graph pairs");
-    }
-    return compatible.get(0);
-  }
-
   static Result bind(
       final MavenProject project,
       final ElisionAnalysisModel.AnalysisOptions options,
@@ -239,6 +194,51 @@ final class MavenElisionGraphBinding {
             .orElseThrow(
                 () -> new IllegalStateException("Selected graph capture pair disappeared"));
     return new Result(evaluation, inventoryFingerprint, operationFingerprint, pair);
+  }
+
+  static ResolverArtifactGraphCapturePair requireCapturedPair(
+      final MavenProject project,
+      final MavenSession session,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory)
+      throws IOException {
+    final Object payload =
+        session == null || session.getRepositorySession() == null
+            ? null
+            : session
+                .getRepositorySession()
+                .getData()
+                .get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
+    if (payload == null) {
+      throw new IOException("Active Resolver capture is missing for Analyze");
+    }
+    final List<ResolverArtifactGraphCapturePair> compatible =
+        ResolverArtifactGraphSnapshotStore.fromPayload(payload)
+            .capturePairs()
+            .getOrDefault(projectKey(project), List.of())
+            .stream()
+            .map(ResolverArtifactGraphCapturePair::fromPayload)
+            .filter(
+                pair ->
+                    !pair.planPresent()
+                        && MavenElisionGraphInventory.matchesGraph(pair.after(), inventory))
+            .toList();
+    if (compatible.isEmpty()) {
+      throw new IOException("No captured effective Resolver graph matches Analyze inventory");
+    }
+    final Set<String> graphIdentities =
+        compatible.stream()
+            .map(
+                pair ->
+                    pair.before().graphFingerprint()
+                        + ":"
+                        + pair.after().graphFingerprint()
+                        + ":"
+                        + pair.captureToken())
+            .collect(java.util.stream.Collectors.toSet());
+    if (graphIdentities.size() != 1) {
+      throw new IOException("Analyze inventory matches multiple captured Resolver graph pairs");
+    }
+    return compatible.get(0);
   }
 
   static void verifyInventoryFingerprint(

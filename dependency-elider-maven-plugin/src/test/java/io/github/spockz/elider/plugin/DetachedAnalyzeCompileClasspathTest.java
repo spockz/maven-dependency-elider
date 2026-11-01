@@ -130,6 +130,7 @@ final class DetachedAnalyzeCompileClasspathTest {
     Files.writeString(
         source, "package app; public final class UsesApi { org.example.api.Api value; }\n");
     final MavenProject live = project(sourceRoot);
+    live.getProperties().setProperty("maven.compiler.release", "17");
     final org.eclipse.aether.artifact.Artifact compileArtifact =
         resolverArtifact("org.example", "compile-api", "1.0", "jar", true, library);
     final org.eclipse.aether.artifact.Artifact pluginArtifact =

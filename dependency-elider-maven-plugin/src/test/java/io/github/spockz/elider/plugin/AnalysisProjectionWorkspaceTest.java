@@ -120,32 +120,44 @@ final class AnalysisProjectionWorkspaceTest {
             temporaryDirectory,
             "projection-base",
             8,
-            "package projection; public class Api { public static String value() { return \"base\"; } }");
+            "package projection; public class Api { public static String value() { "
+                + "return \"base\"; } }");
     final Path versioned =
         MultiReleaseProjectionFixtures.compile(
             temporaryDirectory,
             "projection-v21",
             21,
-            "package projection; public class Api { public static String value() { return \"upper\"; } }");
+            "package projection; public class Api { public static String value() { "
+                + "return \"upper\"; } }");
     final Path versionNine =
         MultiReleaseProjectionFixtures.compile(
             temporaryDirectory,
             "projection-v9",
             9,
-            "package projection; public class Api { public static String value() { return \"nine\"; } }");
+            "package projection; public class Api { public static String value() { "
+                + "return \"nine\"; } }");
     final Path versionNineOnly =
         MultiReleaseProjectionFixtures.compile(
-            temporaryDirectory,
-            "projection-v9-only",
-            9,
-            "package projection; public class NineOnly {}");
+            temporaryDirectory, "projection-v9-only", 9, "package projection; class NineOnly {}");
     final Path versionTwentyOneOnly =
         MultiReleaseProjectionFixtures.compile(
             temporaryDirectory,
             "projection-v21-only",
             21,
             "package projection; public class TwentyOneOnly {}");
+    final Path baseTwentyOneOnly =
+        MultiReleaseProjectionFixtures.compile(
+            temporaryDirectory,
+            "projection-base-v21-only",
+            8,
+            "package projection; public class TwentyOneOnly {}");
     return MultiReleaseProjectionFixtures.createMultiReleaseJar(
-        temporaryDirectory, base, versionNine, versionNineOnly, versioned, versionTwentyOneOnly);
+        temporaryDirectory,
+        base,
+        versionNine,
+        versionNineOnly,
+        versioned,
+        versionTwentyOneOnly,
+        baseTwentyOneOnly);
   }
 }

@@ -155,6 +155,7 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
     }
     BanishedDependencyLifecycleActivation.verifyMojoConfiguration(
         session, project, mojoExecution, banishedDependencies);
+    MavenAnalysisPreparation.rejectBanRequestBeforePrediction(banishedDependencies);
     try {
       final AnalyzePrediction prediction =
           predictionService.predict(
