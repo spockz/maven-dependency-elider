@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -54,7 +55,28 @@ final class ReportMojoTest {
         .hasMessageContaining("snapshot belongs to project directory");
   }
 
+  @Test
+  void rendersSavedLayoutAssumptionAndTimeWithoutCurrentGoalConfiguration()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final Path snapshotFile = temporaryDirectory.resolve("report.json");
+    final MavenElisionReportSnapshot saved = snapshot(true);
+    MavenElisionReportWriter.write(snapshotFile, saved);
+    final List<String> messages = new ArrayList<>();
+    final ReportMojo reportMojo = mojo(snapshotFile, project(), messages);
+
+    reportMojo.execute();
+
+    assertThat(messages)
+        .contains(
+            "Snapshot: last successful elide run at " + saved.generatedAt(),
+            "Conventional Java source layout assumption saved for this run: true");
+  }
+
   private MavenElisionReportSnapshot snapshot() throws IOException {
+    return snapshot(false);
+  }
+
+  private MavenElisionReportSnapshot snapshot(final boolean layoutAssumed) throws IOException {
     final ArtifactCoordinate dropped = coordinate("unused");
     final ArtifactCoordinate trimmed = coordinate("partial");
     final MediatedGraphReport graph =
@@ -69,12 +91,20 @@ final class ReportMojoTest {
         "2026-10-25T12:00:00Z",
         1,
         2048,
+        0,
+        0,
         List.of(new MavenElisionReportSnapshot.DroppedArtifact(dropped.toString(), 2048)),
         List.of(dropped.toString()),
         3,
         1536,
         List.of(new MavenElisionReportSnapshot.TrimmedArtifact(trimmed.toString(), 3, 1536)),
-        graph);
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of(),
+        graph,
+        layoutAssumed,
+        List.of());
   }
 
   private static ArtifactCoordinate coordinate(final String artifactId) {

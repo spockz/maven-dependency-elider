@@ -2,7 +2,9 @@
 
 package io.github.spockz.elider.plugin;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -216,6 +218,340 @@ final class MavenElisionReportSchemaTest {
         .hasMessageContaining("reason must be a non-blank string");
   }
 
+  @Test
+  void rejectsNonBooleanSavedLayoutAssumption() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("assumeConventionalJavaSourceLayout", "false");
+    final Path previous = temporaryDirectory.resolve("invalid-layout-flag.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("layout assumption must be a JSON boolean");
+  }
+
+  @Test
+  void rejectsMalformedSourceReviewRowAndNonBooleanRowFlag() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    final ObjectNode row = validSourceReviewRow(payload);
+    row.put("conventionalLayoutAssumed", "true");
+    final Path previous = temporaryDirectory.resolve("invalid-source-review-flag.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("source review assumption must be a JSON boolean");
+  }
+
+  @Test
+  void rejectsMalformedSourceReviewMatchShape() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    validSourceReviewRow(payload).putObject("matches").put("unexpected", true);
+    final Path previous = temporaryDirectory.resolve("invalid-source-review-match.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("source review matches must be an array");
+  }
+
+  @Test
+  void validatesPackageAndHeuristicAdvisoryRowsStrictly() {
+    assertAll(
+        "report-only advisory rows retain source identity and exact component scope",
+        () -> {
+          final ObjectNode payload = advisoryReportPayload();
+          final Path valid = temporaryDirectory.resolve("valid-advisory-report.json");
+          JSON.writeValue(valid.toFile(), payload);
+          assertThat(MavenElisionReportWriter.read(valid).advisoryReview().packageAdvisories())
+              .hasSize(1);
+        },
+        () ->
+            assertInvalidAdvisoryReport(
+                "unsupported-package-applicability.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("packageAdvisories").get(0))
+                        .put("applicability", "HIGH"),
+                "package applicability is unsupported"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "mismatched-package-coordinate.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("packageAdvisories").get(0))
+                        .put("packageName", "other:artifact"),
+                "package advisory identity conflicts with coordinate"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "package-applicability-conflicts-with-claims.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("packageAdvisories").get(0))
+                        .put("applicability", "NOT_APPLICABLE"),
+                "package applicability conflicts with raw OSV claims"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-cve-not-owned.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .put("cveId", "CVE-2026-99999"),
+                "Heuristic CVE must identify its OSV record or alias"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-source-owner-not-owned.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .put("sourceRecordId", "GHSA-other#details"),
+                "Heuristic source record must identify its OSV owner"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-package-identity-mismatch-unresolved.json",
+                payload -> {
+                  final ObjectNode row =
+                      (ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0);
+                  row.put("packageName", "other:artifact");
+                  row.put("applicability", "UNRESOLVED");
+                },
+                "package advisory identity conflicts with coordinate"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-applicability-disagrees-with-package-owner.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .put("applicability", "UNRESOLVED"),
+                "Heuristic applicability conflicts with its unique OSV package owner"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-nested-class.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .withArray("candidateClasses")
+                        .set(0, JSON.getNodeFactory().textNode("example.old.Candidate$Nested")),
+                "candidateClasses must contain top-level class names"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "heuristic-versioned-dependency.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .withArray("candidateDependencies")
+                        .add("example:library:1.0"),
+                "candidateDependencies must be exact group:artifact values"),
+        () ->
+            assertInvalidAdvisoryReport(
+                "proof-confidence-in-heuristic.json",
+                payload ->
+                    ((ObjectNode) payload.get("advisoryReview").get("heuristicAdvisories").get(0))
+                        .put("confidence", "HIGH"),
+                "heuristic confidence is unsupported"));
+  }
+
+  private void assertInvalidAdvisoryReport(
+      final String fileName,
+      final java.util.function.Consumer<ObjectNode> mutation,
+      final String diagnostic)
+      throws IOException {
+    final ObjectNode payload = advisoryReportPayload();
+    mutation.accept(payload);
+    final Path invalid = temporaryDirectory.resolve(fileName);
+    JSON.writeValue(invalid.toFile(), payload);
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(invalid))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(diagnostic);
+  }
+
+  private static ObjectNode advisoryReportPayload() {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("wholeArtifactsDropped", 0);
+    payload.put("originalJarBytesDropped", 0);
+    payload.put("droppedProgramClassEntries", 0);
+    payload.put("droppedProgramClassBytes", 0);
+    payload.withArray(DROPPED_ROWS).removeAll();
+    payload.withArray("rawDroppedCoordinates").removeAll();
+    final ObjectNode review = (ObjectNode) payload.get("advisoryReview");
+    review
+        .putArray("packageAdvisories")
+        .addObject()
+        .put("osvId", "GHSA-heuristic")
+        .putArray("aliases")
+        .add("CVE-2026-12345");
+    final ObjectNode packageRow = (ObjectNode) review.withArray("packageAdvisories").get(0);
+    packageRow.put("coordinate", "example:old:jar:1.0 (compile)");
+    packageRow.put("ecosystem", "Maven");
+    packageRow.put("packageName", "example:old");
+    packageRow.putArray("affectedVersions").add("1.0");
+    packageRow.putArray("ranges");
+    packageRow.put("applicability", "APPLICABLE");
+    packageRow.put("applicabilityRationale", "Exact version listed");
+    packageRow.put("inventoryDisposition", "REMOVED");
+    packageRow.putNull("sourceRecordSha256");
+
+    review
+        .putArray("heuristicAdvisories")
+        .addObject()
+        .put("osvId", "GHSA-heuristic")
+        .putArray("aliases")
+        .add("CVE-2026-12345");
+    final ObjectNode heuristic = (ObjectNode) review.withArray("heuristicAdvisories").get(0);
+    heuristic.put("cveId", "CVE-2026-12345");
+    heuristic.put("coordinate", "example:old:jar:1.0 (compile)");
+    heuristic.put("ecosystem", "Maven");
+    heuristic.put("packageName", "example:old");
+    heuristic.put("versionRangeSpec", "[1.0,2.0)");
+    heuristic.put("applicability", "APPLICABLE");
+    heuristic.put("applicabilityRationale", "Exact version listed");
+    heuristic.put("inventoryDisposition", "REMOVED");
+    heuristic.put("origin", "DESCRIPTION");
+    heuristic.put("sourceRecordId", "GHSA-heuristic#details");
+    heuristic.putNull("sourceUrl");
+    heuristic.putNull("sourceRecordSha256");
+    heuristic.put("confidence", "MEDIUM");
+    heuristic.putArray("candidateClasses").add("example.old.Candidate");
+    heuristic.putArray("candidateDependencies");
+    return payload;
+  }
+
+  @Test
+  void rejectsDuplicateKeysAndTrailingReportDocuments() throws IOException {
+    final Path duplicate = temporaryDirectory.resolve("duplicate-report-key.json");
+    final Path duplicateSource = temporaryDirectory.resolve("duplicate-source-review-key.json");
+    final Path trailing = temporaryDirectory.resolve("trailing-report-document.json");
+    java.nio.file.Files.writeString(duplicate, "{\"schemaVersion\":1,\"schemaVersion\":1}");
+    java.nio.file.Files.writeString(
+        duplicateSource,
+        "{\"sourceReviewFindings\":[{\"coordinate\":\"a\",\"coordinate\":\"b\"}]}");
+    java.nio.file.Files.writeString(trailing, "{\"schemaVersion\":1} {}");
+
+    assertAll(
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(duplicate))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Duplicate field 'schemaVersion'"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(duplicateSource))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Duplicate field 'coordinate'"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(trailing))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Trailing data in elision report"));
+  }
+
+  @Test
+  void rejectsNonCanonicalSourceCoordinatesAndSnapshotAssumptionMismatch() throws IOException {
+    final ObjectNode coordinatePayload = currentReportShapeWithDroppedRow();
+    validSourceReviewRow(coordinatePayload).put("coordinate", "example:dep:jar:1.0");
+    final Path coordinate = temporaryDirectory.resolve("noncanonical-source-coordinate.json");
+    JSON.writeValue(coordinate.toFile(), coordinatePayload);
+
+    final ObjectNode flagPayload = currentReportShapeWithDroppedRow();
+    validSourceReviewRow(flagPayload).put("conventionalLayoutAssumed", true);
+    final Path flag = temporaryDirectory.resolve("source-flag-mismatch.json");
+    JSON.writeValue(flag.toFile(), flagPayload);
+
+    assertAll(
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(coordinate))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("coordinate must include its scope"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(flag))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("assumption must match snapshot flag"));
+  }
+
+  @Test
+  void rejectsContradictorySavedSourceMatchDetails() throws IOException {
+    final ObjectNode tierPayload = sourceMatchPayload();
+    sourceMatch(tierPayload).put("multiReleaseTier", 17);
+    final ObjectNode classPayload = sourceMatchPayload();
+    sourceMatch(classPayload).put("classEntry", "org.other.Outer");
+    final ObjectNode physicalPathPayload = sourceMatchPayload();
+    sourceMatch(physicalPathPayload).put("physicalJarEntry", "org.example/Outer.class");
+    final ObjectNode sourcePayload = sourceMatchPayload();
+    sourceMatch(sourcePayload).put("sourceFileAttribute", "Different.java");
+    final ObjectNode claimPayload = sourceMatchPayload();
+    ((ObjectNode) claimPayload.withArray("sourceReviewFindings").get(0))
+        .withArray("programFiles")
+        .removeAll()
+        .add("src/main/java/org/example/Other.java");
+    final Path tier = writeReport("source-tier-mismatch.json", tierPayload);
+    final Path classEntry = writeReport("source-class-mismatch.json", classPayload);
+    final Path physicalPath =
+        writeReport("source-physical-path-mismatch.json", physicalPathPayload);
+    final Path source = writeReport("source-attribute-mismatch.json", sourcePayload);
+    final Path claim = writeReport("source-claim-mismatch.json", claimPayload);
+
+    assertAll(
+        "a valid baseline is accepted and each contradictory match is rejected for its defect",
+        this::assertValidSourceReviewReport,
+        () -> assertInvalidSourceMatch(tier, "physical entry conflicts with tier"),
+        () -> assertInvalidSourceMatch(classEntry, "class conflicts with physical entry"),
+        () -> assertInvalidSourceMatch(physicalPath, "class conflicts with physical entry"),
+        () -> assertInvalidSourceMatch(source, "conflicts with its programFiles claim"),
+        () -> assertInvalidSourceMatch(claim, "must reference a saved programFiles claim"));
+  }
+
+  private void assertValidSourceReviewReport() throws IOException {
+    final Path validReport = writeReport("valid-source-match.json", sourceMatchPayload());
+    final MavenElisionReportSnapshot validSnapshot = MavenElisionReportWriter.read(validReport);
+    assertThat(validSnapshot.sourceReviewFindings()).hasSize(1);
+  }
+
+  private static ObjectNode validSourceReviewRow(final ObjectNode payload) {
+    final ObjectNode row =
+        payload
+            .withArray("sourceReviewFindings")
+            .addObject()
+            .put("cveId", "CVE-2026-10001")
+            .put("coordinate", "example:dep:jar:1.0 (compile)")
+            .put("sourceRecordSha256", "a".repeat(64))
+            .put("cnaAffectedEntryIdentity", "containers.cna.affected[0]")
+            .put("affectedProductIdentity", "Example dep")
+            .put("conventionalLayoutAssumed", false)
+            .put("unresolvedRationale", "Verify source to class attribution");
+    row.putArray("programFiles").add("src/main/java/org/example/Outer.java");
+    row.putArray("programRoutines");
+    row.putArray("matches")
+        .addObject()
+        .put("programFile", "src/main/java/org/example/Outer.java")
+        .put("physicalJarEntry", "org/example/Outer.class")
+        .put("multiReleaseTier", 0)
+        .put("classEntry", "org.example.Outer")
+        .put("sourceFileAttribute", "Outer.java")
+        .put(
+            "packagePathComparison",
+            "source path package suffix matches class package org.example; exact source location "
+                + "and sibling class set remain unverified (src/main/java/org/example/Outer.java)")
+        .put("originalArchiveSha256", "b".repeat(64));
+    return row;
+  }
+
+  private static ObjectNode sourceMatch(final ObjectNode payload) {
+    return (ObjectNode)
+        payload.withArray("sourceReviewFindings").get(0).withArray("matches").get(0);
+  }
+
+  private Path writeReport(final String name, final ObjectNode payload) throws IOException {
+    final Path report = temporaryDirectory.resolve(name);
+    JSON.writeValue(report.toFile(), payload);
+    return report;
+  }
+
+  private static void assertInvalidSourceMatch(final Path report, final String diagnostic) {
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(report))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(diagnostic);
+  }
+
+  private static ObjectNode sourceMatchPayload() {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("wholeArtifactsDropped", 0);
+    payload.put("originalJarBytesDropped", 0);
+    payload.put("droppedProgramClassEntries", 0);
+    payload.put("droppedProgramClassBytes", 0);
+    payload.withArray(DROPPED_ROWS).removeAll();
+    validSourceReviewRow(payload);
+    return payload;
+  }
+
   static ObjectNode currentReportShapeWithDroppedRow() {
     final ObjectNode payload = JSON.createObjectNode();
     payload.put("schemaVersion", 1);
@@ -231,7 +567,7 @@ final class MavenElisionReportSchemaTest {
     payload
         .putArray(DROPPED_ROWS)
         .addObject()
-        .put("coordinate", "example:old:jar:1.0")
+        .put("coordinate", "example:old:jar:1.0 (compile)")
         .put("originalJarBytes", 1)
         .put(DROPPED_CLASSES, 0)
         .put(DROPPED_CLASS_BYTES, 0);
@@ -243,6 +579,10 @@ final class MavenElisionReportSchemaTest {
     payload.putArray("provenAbsentCves");
     payload.putArray("inactivePreconditionCves");
     payload.putArray("potentiallyConservativeCves");
+    payload.put("assumeConventionalJavaSourceLayout", false);
+    payload.putArray("sourceReviewFindings");
+    payload.putObject("advisoryReview").putArray("packageAdvisories");
+    ((ObjectNode) payload.get("advisoryReview")).putArray("heuristicAdvisories");
     final ObjectNode graph = payload.putObject("mediatedGraph");
     graph.put("available", false);
     graph.put("unavailableReason", "No graph was provided");

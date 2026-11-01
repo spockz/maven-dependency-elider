@@ -20,8 +20,12 @@ import org.junit.jupiter.api.io.TempDir;
   /** Service interface name used in root expectations. */
   private final String serviceName;
 
+  /** Provider class name used in root expectations. */
+  private final String providerName;
+
   /* package */ NativeImageServiceLoaderPolicyTest() {
-    serviceName = NativeImageServiceLoaderPolicyTestSupport.SERVICE;
+    serviceName = "org.example.spi.Service";
+    providerName = "org.example.spi.Provider";
   }
 
   /* package */
@@ -44,9 +48,7 @@ import org.junit.jupiter.api.io.TempDir;
             NativeImageServiceLoaderPolicyTestSupport.reversed(candidates), false);
 
     assertThat(List.of(forward.classNames(), reverse.classNames()))
-        .containsExactly(
-            Set.of(serviceName, NativeImageServiceLoaderPolicyTestSupport.PROVIDER),
-            Set.of(serviceName, NativeImageServiceLoaderPolicyTestSupport.PROVIDER));
+        .containsExactly(Set.of(serviceName, providerName), Set.of(serviceName, providerName));
   }
 
   /* package */
@@ -61,30 +63,25 @@ import org.junit.jupiter.api.io.TempDir;
         NativeImageServiceLoaderPolicyTestSupport.archive(
             temporaryDirectory,
             "service-excluded.jar",
-            "-H:ServiceLoaderFeatureExcludeServices="
-                + NativeImageServiceLoaderPolicyTestSupport.SERVICE);
+            "-H:ServiceLoaderFeatureExcludeServices=" + serviceName);
     final Path serviceDirect =
         NativeImageServiceLoaderPolicyTestSupport.archive(
             temporaryDirectory,
             "service-direct.jar",
-            "-H:ServiceLoaderFeatureExcludeServices="
-                + NativeImageServiceLoaderPolicyTestSupport.SERVICE
-                + " -H:Class="
-                + NativeImageServiceLoaderPolicyTestSupport.SERVICE);
+            "-H:ServiceLoaderFeatureExcludeServices=" + serviceName + " -H:Class=" + serviceName);
     final Path providerExcluded =
         NativeImageServiceLoaderPolicyTestSupport.archive(
             temporaryDirectory,
             "provider-excluded.jar",
-            "-H:ServiceLoaderFeatureExcludeServiceProviders="
-                + NativeImageServiceLoaderPolicyTestSupport.PROVIDER);
+            "-H:ServiceLoaderFeatureExcludeServiceProviders=" + providerName);
     final Path providerDirect =
         NativeImageServiceLoaderPolicyTestSupport.archive(
             temporaryDirectory,
             "provider-direct.jar",
             "-H:ServiceLoaderFeatureExcludeServiceProviders="
-                + NativeImageServiceLoaderPolicyTestSupport.PROVIDER
+                + providerName
                 + " -H:Class="
-                + NativeImageServiceLoaderPolicyTestSupport.PROVIDER);
+                + providerName);
     final Path descriptor =
         NativeImageServiceLoaderPolicyTestSupport.serviceArchive(temporaryDirectory);
     final Path provider =
@@ -134,14 +131,10 @@ import org.junit.jupiter.api.io.TempDir;
         .containsExactly(
             Set.of(),
             Set.of(),
-            Set.of(NativeImageServiceLoaderPolicyTestSupport.SERVICE),
-            Set.of(NativeImageServiceLoaderPolicyTestSupport.SERVICE),
-            Set.of(
-                NativeImageServiceLoaderPolicyTestSupport.SERVICE,
-                NativeImageServiceLoaderPolicyTestSupport.PROVIDER),
-            Set.of(
-                NativeImageServiceLoaderPolicyTestSupport.SERVICE,
-                NativeImageServiceLoaderPolicyTestSupport.PROVIDER));
+            Set.of(serviceName),
+            Set.of(serviceName),
+            Set.of(serviceName, providerName),
+            Set.of(serviceName, providerName));
   }
 
   /* package */
@@ -154,8 +147,7 @@ import org.junit.jupiter.api.io.TempDir;
         NativeImageServiceLoaderPolicyTestSupport.archive(
             temporaryDirectory,
             "excluded.jar",
-            "-H:ServiceLoaderFeatureExcludeServices="
-                + NativeImageServiceLoaderPolicyTestSupport.SERVICE);
+            "-H:ServiceLoaderFeatureExcludeServices=" + serviceName);
     final Path descriptor =
         NativeImageServiceLoaderPolicyTestSupport.serviceArchive(temporaryDirectory);
     final Path provider =

@@ -4,6 +4,8 @@ package io.github.spockz.elider.metadata;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.model.ConfidenceLevel;
+import io.github.spockz.elider.model.ExplicitEvidenceTestSupport;
 import io.github.spockz.elider.model.PreconditionClassInventory;
 import io.github.spockz.elider.model.PreconditionProof;
 import io.github.spockz.elider.model.VexAttestation;
@@ -36,10 +38,12 @@ record PreconditionVexTestFixture(
             "[1.0,2.0)",
             Set.of(),
             URI.create("https://example.org/advisory/CVE-2025-67890"),
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            ConfidenceLevel.HIGH,
             "org.example:optional",
             "org.example.RequiredApi");
-    final VexAttestation attestation = PreconditionProof.prove(mapping, inventory);
+    final VexAttestation attestation =
+        PreconditionProof.prove(
+            ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping), inventory);
     return new PreconditionVexTestFixture(
         affected, ArtifactFileRef.fromPath(affected, affectedPath), attestation);
   }

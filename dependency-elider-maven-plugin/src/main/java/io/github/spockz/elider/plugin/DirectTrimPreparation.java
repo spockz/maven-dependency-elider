@@ -3,11 +3,13 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.CacheProducerIdentity;
 import io.github.spockz.elider.plugin.TrimCandidatePlanner.CandidatePlan;
 import io.github.spockz.elider.plugin.TrimFingerprint.FingerprintOptions;
 import io.github.spockz.elider.plugin.TrimFingerprint.FingerprintSnapshot;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -42,6 +44,14 @@ final class DirectTrimPreparation {
             request.scanInputs(),
             request.scanInputs().classIndex().classesByArtifact(),
             TrimRootPlanner.commonRoots(request));
+    if (request.cacheProducerIdentity().isEmpty()) {
+      final Path ephemeralOutput = Files.createTempDirectory("dependency-elider-trim-output-");
+      ephemeralOutput.toFile().deleteOnExit();
+      for (final TrimCandidate candidate : candidates.work()) {
+        candidate.relocateOutput(ephemeralOutput);
+        candidate.output().toFile().deleteOnExit();
+      }
+    }
     final Path manifest = TrimPaths.cacheManifestPath(request.project());
     final long started = System.nanoTime();
     final FingerprintSnapshot fingerprint =
@@ -56,7 +66,10 @@ final class DirectTrimPreparation {
                 TrimFingerprint.ENGINE_VERSION,
                 platform,
                 List.of(release, runtimeRelease),
-                consumedInputIdentity(request.scanInputs())));
+                consumedInputIdentity(request.scanInputs()),
+                request
+                    .cacheProducerIdentity()
+                    .map(CacheProducerIdentity::canonicalCompatibilityIdentity)));
     return new PreparedDirectTrim(
         request, passThrough, candidates, manifest, started, fingerprint, release, runtimeRelease);
   }

@@ -66,7 +66,36 @@ final class ElisionAnalysisModel {
       List<String> passThroughArtifacts,
       boolean failOnUnsupportedModuleInfo,
       int workers,
-      String mrjarStrategy) {}
+      String mrjarStrategy,
+      PluginCacheProducerIdentityResolver.Resolution cacheProducerResolution) {
+    /* default */ TrimOptions {
+      java.util.Objects.requireNonNull(cacheProducerResolution, "cacheProducerResolution");
+    }
+
+    /* default */ TrimOptions(
+        final boolean enabled,
+        final List<String> explicitRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> passThroughArtifacts,
+        final boolean failOnUnsupportedModuleInfo,
+        final int workers,
+        final String mrjarStrategy) {
+      this(
+          enabled,
+          explicitRoots,
+          failOnUnsupportedMultiRelease,
+          passThroughArtifacts,
+          failOnUnsupportedModuleInfo,
+          workers,
+          mrjarStrategy,
+          unresolvedTrimCacheProducer());
+    }
+  }
+
+  private static PluginCacheProducerIdentityResolver.Resolution unresolvedTrimCacheProducer() {
+    return new PluginCacheProducerIdentityResolver.Resolution(
+        Optional.empty(), Optional.of("Trim cache producer identity was not provided"));
+  }
 
   /* default */ record DynamicRootOptions(boolean conservativeServiceLoaderRoots) {}
 

@@ -58,8 +58,9 @@ public final class PreconditionProof {
 
   /** Returns precondition evidence or fails closed when any proof gate is unmet. */
   public static VexAttestation prove(
-      final VulnerabilitySymbolMapping mapping, final PreconditionClassInventory inventory)
+      final ExplicitPrerequisiteEvidence evidence, final PreconditionClassInventory inventory)
       throws IOException {
+    final VulnerabilitySymbolMapping mapping = requireEvidence(evidence);
     final RequiredDependency requiredDependency = requireEligibleMapping(mapping);
     Objects.requireNonNull(inventory, "inventory");
     if (inventory.status() == PreconditionClassInventory.Status.INCOMPLETE) {
@@ -111,9 +112,6 @@ public final class PreconditionProof {
     if (mapping == null) {
       throw new IllegalArgumentException("mapping is required");
     }
-    if (mapping.confidenceLevel() != VulnerabilitySymbolMapping.ConfidenceLevel.HIGH) {
-      throw new IllegalArgumentException("Only HIGH confidence mappings can produce VEX evidence");
-    }
     if (mapping.affectedCoordinate().version() == null
         || mapping.affectedCoordinate().version().isBlank()) {
       throw new IllegalArgumentException(
@@ -128,6 +126,14 @@ public final class PreconditionProof {
       throw new IllegalArgumentException("Precondition proof requires an exact Maven identity");
     }
     return parseRequiredDependency(mapping.requiresDependency());
+  }
+
+  private static VulnerabilitySymbolMapping requireEvidence(
+      final ExplicitPrerequisiteEvidence evidence) {
+    if (evidence == null) {
+      throw new IllegalArgumentException("Explicit prerequisite evidence is required");
+    }
+    return evidence.mapping();
   }
 
   private static RequiredDependency parseRequiredDependency(final String value) {

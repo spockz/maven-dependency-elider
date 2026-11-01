@@ -5,6 +5,8 @@ package io.github.spockz.elider.metadata;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.model.ConfidenceLevel;
+import io.github.spockz.elider.model.ExplicitEvidenceTestSupport;
 import io.github.spockz.elider.model.OmittedCodeProof;
 import io.github.spockz.elider.model.PreconditionClassInventory;
 import io.github.spockz.elider.model.PreconditionProof;
@@ -65,8 +67,9 @@ record VexTestFixture(
             "[1.0,2.0)",
             Set.of("org.example.Vulnerable"),
             java.net.URI.create("https://example.org/advisory/CVE-2025-12345"),
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH);
-    VexAttestation attestation = OmittedCodeProof.prove(mapping, trimRecord);
+            ConfidenceLevel.HIGH);
+    VexAttestation attestation =
+        OmittedCodeProof.prove(ExplicitEvidenceTestSupport.classEvidence(mapping), trimRecord);
     return new VexTestFixture(coordinate, trimRecord, inventory, attestation);
   }
 
@@ -88,10 +91,11 @@ record VexTestFixture(
             "[1.0,2.0)",
             Set.of(),
             java.net.URI.create("https://example.org/advisory/CVE-2025-12345"),
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            ConfidenceLevel.HIGH,
             "org.example:optional",
             requiredClass);
-    return PreconditionProof.prove(mapping, inventory);
+    return PreconditionProof.prove(
+        ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping), inventory);
   }
 
   private static void writeJar(Path path, String... entries) throws IOException {

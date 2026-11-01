@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import java.io.IOException;
 import java.util.List;
@@ -57,6 +58,20 @@ final class MavenVersionRangeMatcher {
       validateMappings(mappings, source);
     } catch (final IllegalArgumentException exception) {
       throw new IOException(exception.getMessage(), exception);
+    }
+  }
+
+  static void validateAdvisoryRecords(final List<OsvAdvisoryRecord> records, final String source)
+      throws IOException {
+    try {
+      records.stream()
+          .flatMap(record -> record.evidence().stream())
+          .map(evidence -> evidence.scope().versionRangeSpec())
+          .distinct()
+          .forEach(MavenVersionRangeMatcher::validate);
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException(
+          "Invalid Maven version range in " + source + ": " + exception.getMessage(), exception);
     }
   }
 

@@ -3,9 +3,9 @@
 
 package io.github.spockz.elider.plugin;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.CacheProducerIdentity;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
@@ -20,14 +20,17 @@ import java.util.Set;
 
 /** Reads and writes validated trim cache envelopes. */
 final class JarTrimCache {
-  /** Uses one strict mapper for the cache envelope and canonical identity bytes. */
-  private static final ObjectMapper JSON =
-      new ObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+  /** Serializes cache manifests and canonical identity bytes. */
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   private JarTrimCache() {}
 
   /* package */ record CacheManifest(
-      int schemaVersion, String formatId, String fingerprint, List<CacheEntry> entries) {}
+      int schemaVersion,
+      String formatId,
+      CacheProducerIdentity producer,
+      String fingerprint,
+      List<CacheEntry> entries) {}
 
   /* package */ record CacheOutputMetadata(
       String originalSha1,
@@ -125,13 +128,14 @@ final class JarTrimCache {
       final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
       final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
       final List<ArtifactCoordinate> configuredPassThroughArtifacts,
+      final CacheProducerIdentity expectedProducer,
       final long started)
       throws IOException {
-    if (!Files.isRegularFile(manifestPath)) {
+    if (expectedProducer == null || !Files.isRegularFile(manifestPath)) {
       return null;
     }
-    final CacheManifest manifest = readManifest(manifestPath);
-    if (!validManifest(manifest, fingerprint, candidates.size())) {
+    final CacheManifest manifest = TrimCacheManifestReader.read(manifestPath);
+    if (!validManifest(manifest, fingerprint, candidates.size(), expectedProducer)) {
       return null;
     }
     final List<ArtifactTrimRecord> records = new ArrayList<>();
@@ -155,19 +159,16 @@ final class JarTrimCache {
         0);
   }
 
-  private static CacheManifest readManifest(final Path path) {
-    try {
-      return JSON.readValue(path.toFile(), CacheManifest.class);
-    } catch (final IOException exception) {
-      return null;
-    }
-  }
-
   private static boolean validManifest(
-      final CacheManifest manifest, final String fingerprint, final int candidateCount) {
+      final CacheManifest manifest,
+      final String fingerprint,
+      final int candidateCount,
+      final CacheProducerIdentity expectedProducer) {
     return manifest != null
         && manifest.schemaVersion() == MavenDependencyTrimmer.CACHE_SCHEMA_VERSION
         && MavenDependencyTrimmer.CACHE_FORMAT_ID.equals(manifest.formatId())
+        && manifest.producer() != null
+        && manifest.producer().isCompatibleWith(expectedProducer)
         && manifest.entries() != null
         && fingerprint.equals(manifest.fingerprint())
         && manifest.entries().size() == candidateCount;

@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.TreeSet;
@@ -39,6 +40,14 @@ final class TrimPaths {
         .resolve(ELIDED_ARTIFACTS)
         .resolve(".generations")
         .resolve(fingerprint);
+  }
+
+  /* package */ static Path ephemeralGenerationPath() throws IOException {
+    final Path parent = Files.createTempDirectory("dependency-elider-trim-output-");
+    parent.toFile().deleteOnExit();
+    final Path generation = parent.resolve("generation");
+    generation.toFile().deleteOnExit();
+    return generation;
   }
 
   /* package */ static Path cacheManifestPath(final MavenProject project) {

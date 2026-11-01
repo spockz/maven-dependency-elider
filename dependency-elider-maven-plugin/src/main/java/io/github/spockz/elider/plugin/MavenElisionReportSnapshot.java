@@ -3,6 +3,9 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ConfidenceLevel;
+import io.github.spockz.elider.model.EvidenceOrigin;
+import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.File;
 import java.io.IOException;
@@ -13,8 +16,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 
 /** Immutable result snapshot used by the Maven {@code report} goal. */
 @SuppressWarnings({
@@ -42,7 +47,10 @@ record MavenElisionReportSnapshot(
     List<CveFinding> provenAbsentCves,
     List<CveFinding> inactivePreconditionCves,
     List<ConservativeCveFinding> potentiallyConservativeCves,
-    MediatedGraphReport mediatedGraph) {
+    MediatedGraphReport mediatedGraph,
+    boolean assumeConventionalJavaSourceLayout,
+    List<SourceReviewFinding> sourceReviewFindings,
+    AdvisoryReview advisoryReview) {
   /** Current persisted JSON format version. */
   static final int SCHEMA_VERSION = 1;
 
@@ -69,6 +77,19 @@ record MavenElisionReportSnapshot(
     potentiallyConservativeCves =
         List.copyOf(
             Objects.requireNonNull(potentiallyConservativeCves, "potentiallyConservativeCves"));
+    sourceReviewFindings =
+        Objects.requireNonNull(sourceReviewFindings, "sourceReviewFindings").stream()
+            .distinct()
+            .sorted(
+                Comparator.comparing(SourceReviewFinding::coordinate)
+                    .thenComparing(SourceReviewFinding::cveId)
+                    .thenComparing(SourceReviewFinding::cnaAffectedEntryIdentity)
+                    .thenComparing(value -> String.join("\u0000", value.programFiles()))
+                    .thenComparing(value -> String.join("\u0000", value.programRoutines())))
+            .toList();
+    MavenElisionReportSourceReviewValidator.validate(
+        sourceReviewFindings, assumeConventionalJavaSourceLayout);
+    Objects.requireNonNull(advisoryReview, "advisoryReview");
     Objects.requireNonNull(mediatedGraph, "mediatedGraph");
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
@@ -103,6 +124,101 @@ record MavenElisionReportSnapshot(
         droppedArtifacts,
         trimmedArtifacts,
         projectGroupId + ":" + projectArtifactId + ":" + projectVersion);
+  }
+
+  MavenElisionReportSnapshot(
+      final int schemaVersion,
+      final String projectGroupId,
+      final String projectArtifactId,
+      final String projectVersion,
+      final String projectBaseDirectory,
+      final String generatedAt,
+      final int wholeArtifactsDropped,
+      final long originalJarBytesDropped,
+      final int droppedProgramClassEntries,
+      final long droppedProgramClassBytes,
+      final List<DroppedArtifact> droppedArtifacts,
+      final List<String> rawDroppedCoordinates,
+      final int programClassesPruned,
+      final long uncompressedProgramClassBytesPruned,
+      final List<TrimmedArtifact> trimmedArtifacts,
+      final List<CveFinding> removedCveComponents,
+      final List<CveFinding> provenAbsentCves,
+      final List<CveFinding> inactivePreconditionCves,
+      final List<ConservativeCveFinding> potentiallyConservativeCves,
+      final MediatedGraphReport mediatedGraph,
+      final boolean assumeConventionalJavaSourceLayout,
+      final List<SourceReviewFinding> sourceReviewFindings) {
+    this(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        removedCveComponents,
+        provenAbsentCves,
+        inactivePreconditionCves,
+        potentiallyConservativeCves,
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        sourceReviewFindings,
+        AdvisoryReview.empty());
+  }
+
+  MavenElisionReportSnapshot(
+      final int schemaVersion,
+      final String projectGroupId,
+      final String projectArtifactId,
+      final String projectVersion,
+      final String projectBaseDirectory,
+      final String generatedAt,
+      final int wholeArtifactsDropped,
+      final long originalJarBytesDropped,
+      final int droppedProgramClassEntries,
+      final long droppedProgramClassBytes,
+      final List<DroppedArtifact> droppedArtifacts,
+      final List<String> rawDroppedCoordinates,
+      final int programClassesPruned,
+      final long uncompressedProgramClassBytesPruned,
+      final List<TrimmedArtifact> trimmedArtifacts,
+      final List<CveFinding> removedCveComponents,
+      final List<CveFinding> provenAbsentCves,
+      final List<CveFinding> inactivePreconditionCves,
+      final List<ConservativeCveFinding> potentiallyConservativeCves,
+      final MediatedGraphReport mediatedGraph) {
+    this(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        removedCveComponents,
+        provenAbsentCves,
+        inactivePreconditionCves,
+        potentiallyConservativeCves,
+        mediatedGraph,
+        false,
+        List.of());
   }
 
   MavenElisionReportSnapshot(
@@ -239,45 +355,7 @@ record MavenElisionReportSnapshot(
     final int prunedClasses = sumPrunedClassCounts(trimmed);
     final long prunedBytes = sumPrunedClassBytes(trimmed);
     final Path projectBaseDirectory = canonicalProjectDirectory(project);
-    final List<CveFinding> removedCveComponents =
-        vulnerabilityAssessment == null
-            ? List.of()
-            : vulnerabilityAssessment.removedComponents().stream()
-                .map(finding -> new CveFinding(finding.cveId(), finding.coordinate().toId()))
-                .sorted(
-                    Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
-                .toList();
-    final List<CveFinding> provenAbsentCves =
-        vulnerabilityAssessment == null
-            ? List.of()
-            : vulnerabilityAssessment.provenVulnerableCodeAbsent().stream()
-                .map(finding -> new CveFinding(finding.cveId(), finding.coordinate().toId()))
-                .sorted(
-                    Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
-                .toList();
-    final List<CveFinding> inactivePreconditionCves =
-        vulnerabilityAssessment == null
-            ? List.of()
-            : vulnerabilityAssessment.inactiveDueToMissingPrerequisites().stream()
-                .map(finding -> new CveFinding(finding.cveId(), finding.coordinate().toId()))
-                .sorted(
-                    Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
-                .toList();
-    final List<ConservativeCveFinding> potentiallyConservativeCves =
-        vulnerabilityAssessment == null
-            ? List.of()
-            : vulnerabilityAssessment.potentiallyConservativeCves().stream()
-                .map(
-                    finding ->
-                        new ConservativeCveFinding(
-                            finding.cveId(),
-                            finding.coordinate().toId(),
-                            finding.reason(),
-                            finding.pomOverrideSnippet()))
-                .sorted(
-                    Comparator.comparing(ConservativeCveFinding::cveId)
-                        .thenComparing(ConservativeCveFinding::coordinate))
-                .toList();
+    final CveFindingGroups findingGroups = CveFindingGroups.from(vulnerabilityAssessment);
     return new MavenElisionReportSnapshot(
         SCHEMA_VERSION,
         project.getGroupId(),
@@ -297,14 +375,120 @@ record MavenElisionReportSnapshot(
         prunedClasses,
         prunedBytes,
         trimmed,
+        findingGroups.removedComponents(),
+        findingGroups.provenAbsent(),
+        findingGroups.inactivePrerequisites(),
+        findingGroups.potentiallyConservative(),
+        analysis.mediatedGraph() == null
+            ? MediatedGraphReport.unavailable(
+                "Mediated graph data is unavailable for this analysis")
+            : analysis.mediatedGraph(),
+        vulnerabilityAssessment != null && vulnerabilityAssessment.conventionalLayoutAssumed(),
+        sourceReviewFindings(vulnerabilityAssessment),
+        advisoryReview(vulnerabilityAssessment));
+  }
+
+  MavenElisionReportSnapshot withAdvisoryReview(final AdvisoryReview review) {
+    return new MavenElisionReportSnapshot(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
         removedCveComponents,
         provenAbsentCves,
         inactivePreconditionCves,
         potentiallyConservativeCves,
-        analysis.mediatedGraph() == null
-            ? MediatedGraphReport.unavailable(
-                "Mediated graph data is unavailable for this analysis")
-            : analysis.mediatedGraph());
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        sourceReviewFindings,
+        review);
+  }
+
+  static AdvisoryReview advisoryReview(final MavenVulnerabilityAssessment.Result assessment) {
+    if (assessment == null) {
+      return AdvisoryReview.empty();
+    }
+    return new AdvisoryReview(
+        assessment.packageAdvisoryFindings().stream().map(PackageAdvisoryFinding::from).toList(),
+        assessment.heuristicAdvisoryFindings().stream()
+            .map(HeuristicAdvisoryFinding::from)
+            .toList());
+  }
+
+  private record CveFindingGroups(
+      List<CveFinding> removedComponents,
+      List<CveFinding> provenAbsent,
+      List<CveFinding> inactivePrerequisites,
+      List<ConservativeCveFinding> potentiallyConservative) {
+    private static CveFindingGroups from(final MavenVulnerabilityAssessment.Result assessment) {
+      if (assessment == null) {
+        return new CveFindingGroups(List.of(), List.of(), List.of(), List.of());
+      }
+      return new CveFindingGroups(
+          cveFindings(assessment.removedComponents()),
+          cveFindings(assessment.provenVulnerableCodeAbsent()),
+          cveFindings(assessment.inactiveDueToMissingPrerequisites()),
+          assessment.potentiallyConservativeCves().stream()
+              .map(
+                  finding ->
+                      new ConservativeCveFinding(
+                          finding.cveId(),
+                          finding.coordinate().toId(),
+                          finding.reason(),
+                          finding.pomOverrideSnippet()))
+              .sorted(
+                  Comparator.comparing(ConservativeCveFinding::cveId)
+                      .thenComparing(ConservativeCveFinding::coordinate))
+              .toList());
+    }
+
+    private static List<CveFinding> cveFindings(
+        final List<MavenVulnerabilityAssessment.Finding> findings) {
+      return findings.stream()
+          .map(finding -> new CveFinding(finding.cveId(), finding.coordinate().toId()))
+          .sorted(Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
+          .toList();
+    }
+  }
+
+  private static List<SourceReviewFinding> sourceReviewFindings(
+      final List<MavenVulnerabilityAssessment.MatchedSourceClaim> claims) {
+    return claims.stream()
+        .map(
+            claim ->
+                new SourceReviewFinding(
+                    claim.cveId(),
+                    claim.coordinate().toString(),
+                    claim.sourceRecordSha256(),
+                    claim.cnaAffectedEntryIdentity(),
+                    claim.affectedProductIdentity(),
+                    claim.programFiles(),
+                    claim.programRoutines(),
+                    claim.conventionalLayoutAssumed(),
+                    claim.matches().stream().map(SourceReviewMatch::from).toList(),
+                    claim.unresolvedRationale()))
+        .distinct()
+        .sorted(
+            Comparator.comparing(SourceReviewFinding::coordinate)
+                .thenComparing(SourceReviewFinding::cveId)
+                .thenComparing(SourceReviewFinding::cnaAffectedEntryIdentity))
+        .toList();
+  }
+
+  private static List<SourceReviewFinding> sourceReviewFindings(
+      final MavenVulnerabilityAssessment.Result assessment) {
+    return assessment == null ? List.of() : sourceReviewFindings(assessment.matchedSourceClaims());
   }
 
   static TrimmedArtifact trimmedArtifact(final ArtifactTrimRecord record) {
@@ -469,6 +653,7 @@ record MavenElisionReportSnapshot(
       long uncompressedProgramClassBytesRemoved) {
     DroppedArtifact {
       requireNonBlank(coordinate, "coordinate");
+      MavenElisionReportSourceCoordinateValidator.validate(coordinate);
       require(originalJarBytes >= 0, "originalJarBytes must not be negative");
       require(programClassesRemoved >= 0, "programClassesRemoved must not be negative");
       require(
@@ -527,5 +712,314 @@ record MavenElisionReportSnapshot(
       requireNonBlank(reason, "reason");
       requireNonBlank(pomOverrideSnippet, "pomOverrideSnippet");
     }
+  }
+
+  /** Structured source claim saved for historical review, never as a finding. */
+  record SourceReviewFinding(
+      String cveId,
+      String coordinate,
+      String sourceRecordSha256,
+      String cnaAffectedEntryIdentity,
+      String affectedProductIdentity,
+      List<String> programFiles,
+      List<String> programRoutines,
+      boolean conventionalLayoutAssumed,
+      List<SourceReviewMatch> matches,
+      String unresolvedRationale) {
+    SourceReviewFinding {
+      requireNonBlank(cveId, "cveId");
+      require(cveId.matches("CVE-[0-9]{4}-[0-9]{4,}"), "Invalid CVE format: " + cveId);
+      requireNonBlank(coordinate, "coordinate");
+      requireNonBlank(sourceRecordSha256, "sourceRecordSha256");
+      require(
+          sourceRecordSha256.matches("[0-9a-f]{64}"),
+          "sourceRecordSha256 must be a lowercase SHA-256");
+      requireNonBlank(cnaAffectedEntryIdentity, "cnaAffectedEntryIdentity");
+      require(
+          cnaAffectedEntryIdentity.matches("containers\\.cna\\.affected\\[[0-9]+\\]"),
+          "cnaAffectedEntryIdentity must identify one CNA entry");
+      requireNonBlank(affectedProductIdentity, "affectedProductIdentity");
+      programFiles = sortedNonBlank(programFiles, "programFiles");
+      programRoutines = sortedNonBlank(programRoutines, "programRoutines");
+      require(!programFiles.isEmpty() || !programRoutines.isEmpty(), "Source claims are required");
+      matches =
+          Objects.requireNonNull(matches, "matches").stream()
+              .distinct()
+              .sorted(Comparator.comparing(SourceReviewMatch::physicalJarEntry))
+              .toList();
+      MavenElisionReportSourceReviewValidator.validateFinding(
+          coordinate, programFiles, matches, conventionalLayoutAssumed, conventionalLayoutAssumed);
+      requireNonBlank(unresolvedRationale, "unresolvedRationale");
+    }
+
+    private static List<String> sortedNonBlank(final List<String> values, final String field) {
+      return Objects.requireNonNull(values, field).stream()
+          .map(value -> Objects.requireNonNull(value, field + " item"))
+          .peek(value -> requireNonBlank(value, field + " item"))
+          .distinct()
+          .sorted()
+          .toList();
+    }
+  }
+
+  /** One freshly recomputed SourceFile match bound to a physical archive entry. */
+  record SourceReviewMatch(
+      String programFile,
+      String physicalJarEntry,
+      int multiReleaseTier,
+      String classEntry,
+      String sourceFileAttribute,
+      String packagePathComparison,
+      String originalArchiveSha256) {
+    SourceReviewMatch {
+      requireNonBlank(programFile, "programFile");
+      requireNonBlank(physicalJarEntry, "physicalJarEntry");
+      require(multiReleaseTier == 0 || multiReleaseTier >= 9, "Invalid multi-release tier");
+      requireNonBlank(classEntry, "classEntry");
+      requireNonBlank(sourceFileAttribute, "sourceFileAttribute");
+      requireNonBlank(packagePathComparison, "packagePathComparison");
+      requireNonBlank(originalArchiveSha256, "originalArchiveSha256");
+      require(
+          originalArchiveSha256.matches("[0-9a-f]{64}"),
+          "originalArchiveSha256 must be a lowercase SHA-256");
+      MavenElisionReportSourceReviewValidator.validateMatch(
+          programFile,
+          physicalJarEntry,
+          multiReleaseTier,
+          classEntry,
+          sourceFileAttribute,
+          packagePathComparison);
+    }
+
+    static SourceReviewMatch from(
+        final io.github.spockz.elider.model.CorroboratedSourceClassCandidate candidate) {
+      return new SourceReviewMatch(
+          candidate.programFile(),
+          candidate.physicalJarEntry(),
+          candidate.multiReleaseTier(),
+          candidate.classEntry(),
+          candidate.sourceFileAttribute(),
+          candidate.packagePathComparison(),
+          candidate.originalArchiveSha256());
+    }
+  }
+
+  /** Historical advisory rows separate from proof and classification fields. */
+  record AdvisoryReview(
+      List<PackageAdvisoryFinding> packageAdvisories,
+      List<HeuristicAdvisoryFinding> heuristicAdvisories) {
+    AdvisoryReview {
+      packageAdvisories =
+          Objects.requireNonNull(packageAdvisories, "packageAdvisories").stream()
+              .distinct()
+              .sorted(MavenElisionReportAdvisoryOrdering::comparePackageFindings)
+              .toList();
+      heuristicAdvisories =
+          Objects.requireNonNull(heuristicAdvisories, "heuristicAdvisories").stream()
+              .distinct()
+              .sorted(MavenElisionReportAdvisoryOrdering::compareHeuristicFindings)
+              .toList();
+      MavenElisionReportAdvisoryInvariants.validateHeuristicPackageOwners(
+          packageAdvisories.stream()
+              .map(
+                  value ->
+                      new MavenElisionReportAdvisoryInvariants.PackageOwner(
+                          value.osvId(),
+                          value.coordinate(),
+                          value.ecosystem(),
+                          value.packageName(),
+                          value.affectedVersions(),
+                          value.ranges(),
+                          value.applicability()))
+              .toList(),
+          heuristicAdvisories.stream()
+              .map(
+                  value ->
+                      new MavenElisionReportAdvisoryInvariants.HeuristicOwner(
+                          value.osvId(),
+                          value.coordinate(),
+                          value.ecosystem(),
+                          value.packageName(),
+                          value.applicability()))
+              .toList());
+    }
+
+    static AdvisoryReview empty() {
+      return new AdvisoryReview(List.of(), List.of());
+    }
+  }
+
+  /** Package-level OSV claim with exact component and inventory facts. */
+  record PackageAdvisoryFinding(
+      String osvId,
+      List<String> aliases,
+      String coordinate,
+      String ecosystem,
+      String packageName,
+      List<String> affectedVersions,
+      List<AffectedRange> ranges,
+      OsvPackageApplicability.Status applicability,
+      String applicabilityRationale,
+      MavenVulnerabilityAssessment.InventoryDisposition inventoryDisposition,
+      String sourceRecordSha256) {
+    PackageAdvisoryFinding {
+      requireNonBlank(osvId, "osvId");
+      aliases = sortedDistinctNonBlank(aliases, "aliases");
+      MavenElisionReportSourceCoordinateValidator.validate(coordinate);
+      requireNonBlank(ecosystem, "ecosystem");
+      requireNonBlank(packageName, "packageName");
+      affectedVersions = sortedDistinctNonBlank(affectedVersions, "affectedVersions");
+      ranges = List.copyOf(Objects.requireNonNull(ranges, "ranges"));
+      Objects.requireNonNull(applicability, "applicability");
+      requireNonBlank(applicabilityRationale, "applicabilityRationale");
+      Objects.requireNonNull(inventoryDisposition, "inventoryDisposition");
+      if (sourceRecordSha256 != null) {
+        require(
+            sourceRecordSha256.matches("[0-9a-f]{64}"),
+            "sourceRecordSha256 must be a lowercase SHA-256 when present");
+      }
+      MavenElisionReportAdvisoryInvariants.validatePackageIdentity(
+          coordinate, ecosystem, packageName);
+      MavenElisionReportAdvisoryInvariants.validatePackageApplicability(
+          coordinate, affectedVersions, ranges, applicability);
+    }
+
+    private static PackageAdvisoryFinding from(
+        final MavenVulnerabilityAssessment.PackageAdvisoryFinding finding) {
+      return new PackageAdvisoryFinding(
+          finding.osvId(),
+          finding.aliases().stream().sorted().toList(),
+          finding.coordinate().toString(),
+          finding.ecosystem(),
+          finding.packageName(),
+          finding.affectedVersions(),
+          finding.ranges().stream().map(AffectedRange::from).toList(),
+          finding.applicability(),
+          finding.applicabilityRationale(),
+          finding.inventoryDisposition(),
+          finding.sourceRecordSha256());
+    }
+  }
+
+  /** One unflattened OSV range and its ordered events. */
+  record AffectedRange(String type, String repo, List<Map<String, String>> events) {
+    AffectedRange {
+      requireNonBlank(type, "type");
+      events =
+          Objects.requireNonNull(events, "events").stream()
+              .map(event -> java.util.Collections.unmodifiableMap(new TreeMap<>(event)))
+              .toList();
+    }
+
+    private static AffectedRange from(final OsvAffectedRange range) {
+      return new AffectedRange(range.type(), range.repo(), range.events());
+    }
+  }
+
+  /** Review-only heuristic candidates retain their source and assessed component. */
+  record HeuristicAdvisoryFinding(
+      String osvId,
+      List<String> aliases,
+      String cveId,
+      String coordinate,
+      String ecosystem,
+      String packageName,
+      String versionRangeSpec,
+      OsvPackageApplicability.Status applicability,
+      String applicabilityRationale,
+      MavenVulnerabilityAssessment.InventoryDisposition inventoryDisposition,
+      EvidenceOrigin origin,
+      String sourceRecordId,
+      String sourceUrl,
+      String sourceRecordSha256,
+      ConfidenceLevel confidence,
+      List<String> candidateClasses,
+      List<String> candidateDependencies) {
+    HeuristicAdvisoryFinding {
+      requireNonBlank(osvId, "osvId");
+      aliases = sortedDistinctNonBlank(aliases, "aliases");
+      if (cveId != null) {
+        require(cveId.matches("CVE-[0-9]{4}-[0-9]{4,}"), "Invalid heuristic CVE identifier");
+      }
+      MavenElisionReportSourceCoordinateValidator.validate(coordinate);
+      requireNonBlank(ecosystem, "ecosystem");
+      requireNonBlank(packageName, "packageName");
+      requireNonBlank(versionRangeSpec, "versionRangeSpec");
+      Objects.requireNonNull(applicability, "applicability");
+      requireNonBlank(applicabilityRationale, "applicabilityRationale");
+      Objects.requireNonNull(inventoryDisposition, "inventoryDisposition");
+      Objects.requireNonNull(origin, "origin");
+      require(
+          origin == EvidenceOrigin.DESCRIPTION || origin == EvidenceOrigin.REFERENCE_URL,
+          "Heuristic report origin must be DESCRIPTION or REFERENCE_URL");
+      requireNonBlank(sourceRecordId, "sourceRecordId");
+      if (sourceUrl != null) {
+        try {
+          final java.net.URI uri = java.net.URI.create(sourceUrl);
+          require(
+              uri.isAbsolute()
+                  && ("http".equalsIgnoreCase(uri.getScheme())
+                      || "https".equalsIgnoreCase(uri.getScheme())),
+              "sourceUrl must be an absolute HTTP(S) URL");
+        } catch (final IllegalArgumentException exception) {
+          throw new IllegalArgumentException(
+              "sourceUrl must be an absolute HTTP(S) URL", exception);
+        }
+      }
+      if (sourceRecordSha256 != null) {
+        require(
+            sourceRecordSha256.matches("[0-9a-f]{64}"),
+            "sourceRecordSha256 must be a lowercase SHA-256 when present");
+      }
+      require(confidence == ConfidenceLevel.MEDIUM, "Heuristic report confidence must be MEDIUM");
+      candidateClasses = sortedDistinctNonBlank(candidateClasses, "candidateClasses");
+      candidateDependencies =
+          sortedDistinctNonBlank(candidateDependencies, "candidateDependencies");
+      require(
+          !candidateClasses.isEmpty() || !candidateDependencies.isEmpty(),
+          "Heuristic report requires at least one candidate");
+      MavenElisionReportAdvisoryInvariants.validateHeuristicIdentity(
+          osvId,
+          aliases,
+          cveId,
+          coordinate,
+          ecosystem,
+          packageName,
+          sourceRecordId,
+          candidateClasses,
+          candidateDependencies);
+    }
+
+    private static HeuristicAdvisoryFinding from(
+        final MavenVulnerabilityAssessment.HeuristicAdvisoryFinding finding) {
+      return new HeuristicAdvisoryFinding(
+          finding.osvId(),
+          finding.aliases().stream().sorted().toList(),
+          finding.cveId(),
+          finding.coordinate().toString(),
+          finding.ecosystem(),
+          finding.packageName(),
+          finding.versionRangeSpec(),
+          finding.applicability(),
+          finding.applicabilityRationale(),
+          finding.inventoryDisposition(),
+          finding.origin(),
+          finding.sourceRecordId(),
+          finding.sourceUrl(),
+          finding.sourceRecordSha256(),
+          finding.confidence(),
+          finding.candidateClasses().stream().sorted().toList(),
+          finding.candidateDependencies().stream().sorted().toList());
+    }
+  }
+
+  private static List<String> sortedDistinctNonBlank(
+      final List<String> values, final String field) {
+    return Objects.requireNonNull(values, field).stream()
+        .map(value -> Objects.requireNonNull(value, field + " item"))
+        .peek(value -> requireNonBlank(value, field + " item"))
+        .distinct()
+        .sorted()
+        .toList();
   }
 }

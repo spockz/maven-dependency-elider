@@ -33,7 +33,10 @@ final class MavenElisionServiceEffectiveOutputCacheTest
   /** Shared root included by every cache fixture. */
   private static final String ENTRY_TRACE = "closure/a/Entry";
 
-  /** Cache manifest property used to identify the effective operation. */
+  /** Manifest field identifying its independent format version. */
+  private static final String SCHEMA_VERSION_PROPERTY = "schemaVersion";
+
+  /** Manifest field identifying the effective operation. */
   private static final String FINGERPRINT_PROPERTY = "fingerprint";
 
   /** Creates the effective cache fixture. */
@@ -101,10 +104,9 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
     final ObjectMapper mapper = new ObjectMapper();
     final JsonNode original = mapper.readTree(manifest.toFile());
-    final String fingerprint = original.path(FINGERPRINT_PROPERTY).asText();
 
     final ObjectNode unsupportedVersion = original.deepCopy();
-    unsupportedVersion.put("schemaVersion", 13);
+    unsupportedVersion.put(SCHEMA_VERSION_PROPERTY, 13);
     EffectiveOutputCacheTestFiles.writeManifest(manifest, unsupportedVersion);
     assertCacheMiss(effective);
 
@@ -116,13 +118,14 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     Files.writeString(manifest, "null");
     assertCacheMiss(effective);
 
-    final ObjectNode missingEntries = EffectiveOutputCacheTestFiles.manifestNode(fingerprint);
-    missingEntries.putNull("entries");
+    final ObjectNode missingEntries = (ObjectNode) original.deepCopy();
+    missingEntries.remove("entries");
     EffectiveOutputCacheTestFiles.writeManifest(manifest, missingEntries);
     assertCacheMiss(effective);
 
-    final ObjectNode nullEntry = EffectiveOutputCacheTestFiles.manifestNode(fingerprint);
-    nullEntry.putArray("entries").addNull();
+    final ObjectNode nullEntry = (ObjectNode) original.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ArrayNode) nullEntry.get("entries"))
+        .set(0, mapper.getNodeFactory().nullNode());
     EffectiveOutputCacheTestFiles.writeManifest(manifest, nullEntry);
     assertCacheMiss(effective);
 
@@ -160,7 +163,7 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
     final ObjectMapper mapper = new ObjectMapper();
     final JsonNode firstManifest = mapper.readTree(manifest.toFile());
-    assertThat(firstManifest.path("schemaVersion").asInt())
+    assertThat(firstManifest.path(SCHEMA_VERSION_PROPERTY).asInt())
         .isEqualTo(MavenDependencyTrimmer.CACHE_SCHEMA_VERSION);
     final String firstFingerprint = firstManifest.path(FINGERPRINT_PROPERTY).asText();
     assertThat(trimEffective(targetEleven).cacheHits()).isPositive();
@@ -207,7 +210,8 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     assertThat(trimEffective(passThrough).cacheHits()).isZero();
     assertThat(mapper.readTree(manifest.toFile()).path(FINGERPRINT_PROPERTY).asText())
         .isNotEqualTo(targetFingerprint);
-    assertThat(mapper.readTree(manifest.toFile()).path("schemaVersion").asInt()).isEqualTo(1);
+    assertThat(mapper.readTree(manifest.toFile()).path(SCHEMA_VERSION_PROPERTY).asInt())
+        .isEqualTo(1);
   }
 
   private void writeMultiReleaseInput(final Fixture fixture, final int revision)

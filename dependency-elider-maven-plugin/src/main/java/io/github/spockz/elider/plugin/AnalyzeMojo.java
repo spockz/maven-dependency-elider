@@ -3,7 +3,6 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
@@ -13,7 +12,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
@@ -25,7 +23,7 @@ import org.apache.maven.project.MavenProject;
     requiresDependencyResolution = org.apache.maven.plugins.annotations.ResolutionScope.TEST,
     threadSafe = true)
 @SuppressWarnings({"PMD.TooManyFields", "PMD.ImmutableField"})
-public final class AnalyzeMojo extends AbstractMojo {
+public final class AnalyzeMojo extends PluginCacheMojoSupport {
   /** Maven annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
 
@@ -76,6 +74,10 @@ public final class AnalyzeMojo extends AbstractMojo {
   /** Retains unproven ServiceLoader dynamic roots declared in META-INF/services/. */
   @Parameter(property = "elide.conservativeServiceLoaderRoots", defaultValue = "true")
   private boolean conservativeServiceLoaderRoots = true;
+
+  /** Records the conventional-layout assumption on review-only source findings. */
+  @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_FALSE)
+  private boolean assumeConventionalJavaSourceLayout;
 
   /** Explicit trace files that supply runtime observations. */
   @Parameter(property = "elide.traceFiles", required = true)
@@ -145,10 +147,9 @@ public final class AnalyzeMojo extends AbstractMojo {
                       session,
                       new ElisionAnalysisModel.CompletenessOptions(
                           sourceRootsComplete, productionClassesComplete, false, true),
-                      new ElisionAnalysisModel.TrimOptions(
+                      trimOptions(
                           trimJars,
                           trimRoots == null ? List.of() : trimRoots,
-                          false,
                           trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
                           failOnUnsupportedModuleInfo,
                           trimWorkers,
@@ -192,19 +193,16 @@ public final class AnalyzeMojo extends AbstractMojo {
     final URI cveListGit =
         cveListGitUri == null || cveListGitUri.isBlank() ? null : URI.create(cveListGitUri);
     final CacheConfig config =
-        new CacheConfig(
+        vulnerabilityCacheConfig(
             cacheDirectory,
             osvSource,
             cveListGit,
             Duration.ofHours(cveCacheTtlHours),
             cveForceSync,
-            session != null && session.isOffline(),
-            VulnerabilityCacheManager.bundledEmptySeed());
-    final List<VulnerabilitySymbolMapping> manualMappings =
-        vulnerabilityMappings == null
-            ? List.of()
-            : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
-    return new MavenVulnerabilityAssessment(getLog()).assess(config, manualMappings, analysis);
+            session != null && session.isOffline());
+    return new MavenVulnerabilityAssessment(getLog(), assumeConventionalJavaSourceLayout)
+        .assess(
+            config, ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings), analysis, null);
   }
 
   private boolean shouldSkipAnalysis() {

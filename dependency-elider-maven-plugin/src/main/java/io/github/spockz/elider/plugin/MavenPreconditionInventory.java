@@ -38,7 +38,7 @@ final class MavenPreconditionInventory {
     }
 
     boolean complete() {
-      return classProviders.status() == PreconditionClassInventory.Status.COMPLETE;
+      return optInEnabled && classProviders.status() == PreconditionClassInventory.Status.COMPLETE;
     }
 
     /** Rechecks captured roots and rejects provider or target drift. */

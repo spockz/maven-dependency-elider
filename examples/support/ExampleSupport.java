@@ -904,9 +904,12 @@ public final class ExampleSupport {
     final JsonNode analysis = vulnerability.path("analysis");
     if (!"not_affected".equals(analysis.path("state").asText())
         || !"requires_dependency".equals(analysis.path("justification").asText())
-        || !analysis.path("detail").asText().contains("org.codehaus.janino.ClassBodyEvaluator")) {
+        || !analysis.path("detail").asText().contains("org.codehaus.janino.ClassBodyEvaluator")
+        || !analysis.path("detail").asText().contains("org.codehaus.janino:janino")
+        || !analysis.path("detail").asText().contains("complete declared Maven inventory")
+        || !analysis.path("detail").asText().contains("does not cover providers introduced outside")) {
       throw new IOException(
-          "CycloneDX precondition evidence must target the exact absent Janino class");
+          "CycloneDX precondition evidence must identify the absent Janino class and declared inventory boundary");
     }
     final JsonNode affected = vulnerability.path("affects");
     if (!affected.isArray()
@@ -926,7 +929,9 @@ public final class ExampleSupport {
     if (!"not_affected".equals(statement.path("status").asText())
         || statement.has("justification")
         || !impact.contains("org.codehaus.janino:janino")
-        || !impact.contains("org.codehaus.janino.ClassBodyEvaluator")) {
+        || !impact.contains("org.codehaus.janino.ClassBodyEvaluator")
+        || !impact.contains("complete declared Maven inventory")
+        || !impact.contains("does not cover providers introduced outside")) {
       throw new IOException("OpenVEX statement has invalid precondition evidence");
     }
     final JsonNode products = statement.path("products");

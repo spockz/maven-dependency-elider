@@ -4,7 +4,6 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactFileRef;
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
 import java.io.IOException;
@@ -112,7 +111,8 @@ final class MavenElisionOutputPublisher {
   private static MavenVulnerabilityAssessment.Result assess(
       final Request request, final MavenPreconditionInventory.Snapshot inventory)
       throws IOException {
-    return new MavenVulnerabilityAssessment(request.log())
+    return new MavenVulnerabilityAssessment(
+            request.log(), request.assumeConventionalJavaSourceLayout())
         .assess(
             request.cacheConfig(), request.vulnerabilityMappings(), request.analysis(), inventory);
   }
@@ -406,11 +406,12 @@ final class MavenElisionOutputPublisher {
       Log log,
       ElideMojo.PlanPublication planPublication,
       CacheConfig cacheConfig,
-      List<VulnerabilitySymbolMapping> vulnerabilityMappings,
+      ConfiguredVulnerabilityMappings vulnerabilityMappings,
       boolean preconditionProofEnabled,
+      boolean assumeConventionalJavaSourceLayout,
       AfterStaging afterStaging) {
     Request {
-      vulnerabilityMappings = List.copyOf(vulnerabilityMappings);
+      java.util.Objects.requireNonNull(vulnerabilityMappings, "vulnerabilityMappings");
     }
   }
 }

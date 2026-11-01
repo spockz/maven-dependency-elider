@@ -21,8 +21,9 @@ public final class OmittedCodeProof {
 
   /** Returns proof evidence or throws when checks fail. */
   public static VexAttestation prove(
-      final VulnerabilitySymbolMapping mapping, final ArtifactTrimRecord trimRecord)
+      final ExplicitClassMappingEvidence evidence, final ArtifactTrimRecord trimRecord)
       throws IOException {
+    final VulnerabilitySymbolMapping mapping = requireEvidence(evidence);
     requireMatchingIdentity(mapping, trimRecord);
     final ArtifactDigests originalDigests =
         verifyDigest(
@@ -61,9 +62,14 @@ public final class OmittedCodeProof {
     if (!sameArtifactIdentity(mapping.affectedCoordinate(), record.coordinate())) {
       throw new IllegalArgumentException("Mapping coordinate does not match trim record");
     }
-    if (mapping.confidenceLevel() != VulnerabilitySymbolMapping.ConfidenceLevel.HIGH) {
-      throw new IllegalArgumentException("Only HIGH confidence mappings can produce VEX evidence");
+  }
+
+  private static VulnerabilitySymbolMapping requireEvidence(
+      final ExplicitClassMappingEvidence evidence) {
+    if (evidence == null) {
+      throw new IllegalArgumentException("Explicit class evidence is required");
     }
+    return evidence.mapping();
   }
 
   private static ArtifactDigests verifyDigest(

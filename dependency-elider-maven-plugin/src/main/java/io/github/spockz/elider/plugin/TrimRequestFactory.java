@@ -43,6 +43,7 @@ final class TrimRequestFactory {
             trim.mrjarStrategy(),
             trim.enabled(),
             options.dynamicRoots().conservativeServiceLoaderRoots(),
-            trim.workers()));
+            trim.workers()),
+        trim.cacheProducerResolution().identity());
   }
 }

@@ -111,7 +111,8 @@ final class MavenDependencyTrimmer {
                 options.trim().mrjarStrategy(),
                 options.trim().enabled(),
                 options.dynamicRoots().conservativeServiceLoaderRoots(),
-                options.trim().workers()));
+                options.trim().workers()),
+            options.trim().cacheProducerResolution().identity());
     final Map<TrimArtifactRootKey, Set<String>> roots =
         TrimRootPlanner.artifactRootKeys(
             prepared.resolvedSnapshots(), effective.trimAnalysis().candidateRoots());

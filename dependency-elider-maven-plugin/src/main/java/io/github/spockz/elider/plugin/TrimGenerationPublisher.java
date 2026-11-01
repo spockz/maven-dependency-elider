@@ -4,6 +4,7 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.CacheProducerIdentity;
 import io.github.spockz.elider.plugin.JarTrimCache.CacheEntry;
 import io.github.spockz.elider.plugin.JarTrimCache.CacheManifest;
 import io.github.spockz.elider.plugin.TrimFingerprint.FingerprintSnapshot;
@@ -15,6 +16,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /** Publishes complete output and manifest generations with rollback. */
@@ -55,11 +57,15 @@ final class TrimGenerationPublisher {
       FingerprintSnapshot fingerprint,
       Path manifest,
       String completeFingerprint,
+      Path generation,
+      Optional<CacheProducerIdentity> producer,
       List<ArtifactCoordinate> multiRelease,
       List<ArtifactCoordinate> moduleInfo,
       List<ArtifactCoordinate> configured,
       int analysisRuns) {
     EffectivePublication {
+      java.util.Objects.requireNonNull(producer, "producer");
+      java.util.Objects.requireNonNull(generation, "generation");
       work = List.copyOf(work);
       multiRelease = List.copyOf(multiRelease);
       moduleInfo = List.copyOf(moduleInfo);
@@ -89,21 +95,27 @@ final class TrimGenerationPublisher {
         final List<CacheEntry> entries =
             JarTrimCache.orderedEntries(
                 publication.work(), prepared.entries(), "Missing effective trim cache entry: ");
-        JarTrimCache.writeManifest(
-            generation.stagedManifest(),
-            new CacheManifest(
-                MavenDependencyTrimmer.CACHE_SCHEMA_VERSION,
-                MavenDependencyTrimmer.CACHE_FORMAT_ID,
-                publication.completeFingerprint(),
-                entries));
+        if (publication.producer().isPresent()) {
+          JarTrimCache.writeManifest(
+              generation.stagedManifest(),
+              new CacheManifest(
+                  MavenDependencyTrimmer.CACHE_SCHEMA_VERSION,
+                  MavenDependencyTrimmer.CACHE_FORMAT_ID,
+                  publication.producer().orElseThrow(),
+                  publication.completeFingerprint(),
+                  entries));
+        }
         verifyEffectiveInputs(output, fingerprint);
         generationCommit =
-            TrimOutputGenerationPublisher.publish(
-                generation.stagedGeneration(),
-                generation.generation(),
-                generation.stagedManifest(),
-                publication.manifest(),
-                output.move());
+            publication.producer().isPresent()
+                ? TrimOutputGenerationPublisher.publish(
+                    generation.stagedGeneration(),
+                    generation.generation(),
+                    generation.stagedManifest(),
+                    publication.manifest(),
+                    output.move())
+                : TrimOutputGenerationPublisher.publishEphemeral(
+                    generation.stagedGeneration(), generation.generation(), output.move());
         return new TrimResult(
             prepared.records(),
             publication.multiRelease(),
@@ -135,24 +147,31 @@ final class TrimGenerationPublisher {
   private static PreparedGeneration prepareGeneration(final EffectivePublication publication)
       throws IOException {
     final Path manifest = publication.manifest();
-    final Path generation =
-        TrimPaths.generationPath(
-            publication.outputPlan().prepared().project(), publication.completeFingerprint());
-    final Path generationParent = generation.getParent();
-    if (generationParent == null) {
-      throw new IOException("Trim generation has no parent directory: " + generation);
+    final Path generation = publication.generation();
+    final Path stagedGeneration;
+    final Path stagedManifest;
+    if (publication.producer().isPresent()) {
+      final Path generationParent = generation.getParent();
+      if (generationParent == null) {
+        throw new IOException("Trim generation has no parent directory: " + generation);
+      }
+      Files.createDirectories(generationParent);
+      final Path manifestParent = manifest.getParent();
+      if (manifestParent == null) {
+        throw new IOException("Trim cache manifest has no parent directory: " + manifest);
+      }
+      Files.createDirectories(manifestParent);
+      final Path stagingRoot = manifestParent.resolve(".staging");
+      Files.createDirectories(stagingRoot);
+      stagedGeneration = Files.createTempDirectory(stagingRoot, "trim-");
+      stagedManifest = Files.createTempFile(manifestParent, ".trim-cache-stage-", ".json.tmp");
+    } else {
+      final Path stagingRoot = Files.createTempDirectory("dependency-elider-trim-stage-");
+      stagingRoot.toFile().deleteOnExit();
+      stagedGeneration = Files.createTempDirectory(stagingRoot, "trim-");
+      stagedGeneration.toFile().deleteOnExit();
+      stagedManifest = null;
     }
-    Files.createDirectories(generationParent);
-    final Path manifestParent = manifest.getParent();
-    if (manifestParent == null) {
-      throw new IOException("Trim cache manifest has no parent directory: " + manifest);
-    }
-    Files.createDirectories(manifestParent);
-    final Path stagingRoot = manifestParent.resolve(".staging");
-    Files.createDirectories(stagingRoot);
-    final Path stagedGeneration = Files.createTempDirectory(stagingRoot, "trim-");
-    final Path stagedManifest =
-        Files.createTempFile(manifestParent, ".trim-cache-stage-", ".json.tmp");
     return new PreparedGeneration(
         new EffectiveOutputStaging(stagedGeneration, stagedManifest),
         stagedGeneration,

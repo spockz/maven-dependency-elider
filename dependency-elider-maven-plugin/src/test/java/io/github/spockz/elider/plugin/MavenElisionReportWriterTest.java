@@ -151,7 +151,7 @@ final class MavenElisionReportWriterTest {
             "Program classes pruned from retained JARs: 4 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "3.02 KiB; excludes module descriptors and archive metadata)",
-            "Avoided CVEs (dropped artifacts): "
+            "Advisories associated with removed components: "
                 + "none matched the available vulnerability mappings",
             "Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
                 + " vulnerability mappings",
@@ -195,7 +195,7 @@ final class MavenElisionReportWriterTest {
             "Program classes pruned from retained JARs: 0 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "0 B; excludes module descriptors and archive metadata)",
-            "Avoided CVEs (dropped artifacts): "
+            "Advisories associated with removed components: "
                 + "none matched the available vulnerability mappings",
             "Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
                 + " vulnerability mappings");
@@ -268,7 +268,7 @@ final class MavenElisionReportWriterTest {
     assertThat(reread.potentiallyConservativeCves()).containsExactly(conservative);
     assertThat(MavenElisionReportWriter.render(reread))
         .contains(
-            "Avoided CVEs (dropped artifacts):",
+            "Advisories associated with removed components:",
             "  - CVE-2026-10001 org.example:removed:jar:1.0",
             "Mitigated CVEs (vulnerable code pruned by trimming):",
             "  - CVE-2025-11226 org.example:trimmed:jar:2.0",

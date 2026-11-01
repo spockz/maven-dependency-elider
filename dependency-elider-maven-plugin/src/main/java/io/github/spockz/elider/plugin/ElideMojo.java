@@ -2,7 +2,6 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
@@ -12,7 +11,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
@@ -28,7 +26,7 @@ import org.apache.maven.project.MavenProject;
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
 @SuppressWarnings({"PMD.TooManyFields", "PMD.ImmutableField"})
-public final class ElideMojo extends AbstractMojo {
+public final class ElideMojo extends PluginCacheMojoSupport {
   /** Maven's annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
 
@@ -83,6 +81,10 @@ public final class ElideMojo extends AbstractMojo {
   /** Retains unproven ServiceLoader dynamic roots declared in META-INF/services/. */
   @Parameter(property = "elide.conservativeServiceLoaderRoots", defaultValue = "true")
   private boolean conservativeServiceLoaderRoots = true;
+
+  /** Records the conventional-layout assumption on review-only source findings. */
+  @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_FALSE)
+  private boolean assumeConventionalJavaSourceLayout;
 
   /** Explicit runtime evidence used when the goal is active. */
   @Parameter(property = "elide.traceFiles")
@@ -281,6 +283,7 @@ public final class ElideMojo extends AbstractMojo {
               vulnerabilityCacheConfig(),
               configuredVulnerabilityMappings(),
               trimJars && preconditionClassPathComplete,
+              assumeConventionalJavaSourceLayout,
               afterStaging));
     }
   }
@@ -294,20 +297,17 @@ public final class ElideMojo extends AbstractMojo {
         osvSnapshotUri == null || osvSnapshotUri.isBlank() ? null : URI.create(osvSnapshotUri);
     final URI cveListGit =
         cveListGitUri == null || cveListGitUri.isBlank() ? null : URI.create(cveListGitUri);
-    return new CacheConfig(
+    return vulnerabilityCacheConfig(
         cacheDirectory,
         osvSource,
         cveListGit,
         Duration.ofHours(cveCacheTtlHours),
         cveForceSync,
-        session != null && session.isOffline(),
-        VulnerabilityCacheManager.bundledEmptySeed());
+        session != null && session.isOffline());
   }
 
-  private List<VulnerabilitySymbolMapping> configuredVulnerabilityMappings() {
-    return vulnerabilityMappings == null
-        ? List.of()
-        : vulnerabilityMappings.stream().map(VulnerabilityMappingConfig::toMapping).toList();
+  private ConfiguredVulnerabilityMappings configuredVulnerabilityMappings() {
+    return ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings);
   }
 
   private ElisionAnalysisModel.AnalysisOptions analysisOptions() {
@@ -321,10 +321,9 @@ public final class ElideMojo extends AbstractMojo {
         session,
         new ElisionAnalysisModel.CompletenessOptions(
             sourceRootsComplete, useProductionClasses, trustedProcessClassesContext, true),
-        new ElisionAnalysisModel.TrimOptions(
+        trimOptions(
             trimJars,
             trimRoots == null ? List.of() : trimRoots,
-            false,
             trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
             failOnUnsupportedModuleInfo,
             trimWorkers,

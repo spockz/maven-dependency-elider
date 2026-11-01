@@ -10,6 +10,7 @@ import java.util.TreeSet;
 import java.util.function.Function;
 import proguard.classfile.ClassPool;
 import proguard.classfile.Clazz;
+import proguard.classfile.kotlin.KotlinConstants;
 import proguard.classfile.util.ClassReferenceInitializer;
 import proguard.classfile.util.ClassSuperHierarchyInitializer;
 import proguard.classfile.util.InvalidReferenceVisitor;
@@ -84,8 +85,7 @@ final class ReferenceGraphIndexer {
             clazz.accept(hierarchyInitializer);
           }
         });
-    libraryPool.classesAccept(
-        new ClassReferenceInitializer(programPool, libraryPool, false, invalidReferenceVisitor));
+    initializeClassReferences(libraryPool, programPool, libraryPool, invalidReferenceVisitor);
   }
 
   private static void initializeProgramReferences(
@@ -94,8 +94,20 @@ final class ReferenceGraphIndexer {
       final InvalidReferenceVisitor invalidReferenceVisitor) {
     programPool.classesAccept(
         new ClassSuperHierarchyInitializer(programPool, libraryPool, invalidReferenceVisitor));
-    programPool.classesAccept(
-        new ClassReferenceInitializer(programPool, libraryPool, false, invalidReferenceVisitor));
+    initializeClassReferences(programPool, programPool, libraryPool, invalidReferenceVisitor);
+  }
+
+  // WHY: Serialize our traversals on ProGuard's class with the lazy shared pool.
+  @SuppressWarnings("PMD.AvoidSynchronizedStatement")
+  private static void initializeClassReferences(
+      final ClassPool targetPool,
+      final ClassPool programPool,
+      final ClassPool libraryPool,
+      final InvalidReferenceVisitor invalidReferenceVisitor) {
+    synchronized (KotlinConstants.class) {
+      targetPool.classesAccept(
+          new ClassReferenceInitializer(programPool, libraryPool, false, invalidReferenceVisitor));
+    }
   }
 
   private static ReferenceGraph graph(

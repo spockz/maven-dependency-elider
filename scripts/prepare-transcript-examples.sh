@@ -25,8 +25,10 @@ main() {
     java_home="$repo_root/$java_home"
   fi
   java="$java_home/bin/java"
-  if [[ ! -x $maven || ! -x $java ]] || ! command -v timeout >/dev/null || ! command -v curl >/dev/null; then
-    echo "Maven, Java, timeout, or curl executable is missing" >&2
+  javac="$java_home/bin/javac"
+  if [[ ! -x $maven || ! -x $java || ! -x $javac ]] \
+    || ! command -v timeout >/dev/null || ! command -v curl >/dev/null; then
+    echo "Maven, Java, javac, timeout, or curl executable is missing" >&2
     exit 2
   fi
   read -r -a maven_options <<<"$maven_args"
@@ -35,7 +37,6 @@ main() {
   evidence_dir=$(mktemp -d "$repo_root/.scratch/maven-dependency-elider-examples.transcript.XXXXXX")
   cache_dir="$evidence_dir/vulnerability-cache"
   mkdir -p -- "$cache_dir"
-  cp -- "$repo_root/scripts/fixtures/transcript-vulnerability-cache/index.json" "$cache_dir/index.json"
   active_process_pid=""
   cleanup() {
     local status=$?
@@ -50,6 +51,13 @@ main() {
 
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
     -pl dependency-elider-maven-plugin -am install -Dmaven.test.skip=true
+
+  "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
+    -pl dependency-elider-maven-plugin \
+    -Dtest=TranscriptCachePreparationTest \
+    "-Delide.transcriptCacheFixtureInput=$repo_root/scripts/fixtures/transcript-vulnerability-cache/index.json" \
+    "-Delide.transcriptCacheFixtureOutput=$cache_dir/index.json" \
+    test
 
   run_fixture_maven() {
     local fixture_dir=$1
@@ -177,6 +185,22 @@ main() {
         ;;
     esac
     run_fixture_maven "$fixture_dir" clean package "${elision_options[@]}"
+    if [[ $fixture == example-cve-safe-class-app ]]; then
+      support_classpath_file="$evidence_dir/example-support.classpath"
+      "$maven" "${maven_options[@]}" -f "$repo_root/dependency-elider-maven-plugin/pom.xml" \
+        dependency:build-classpath -DincludeScope=test "-Dmdep.outputFile=$support_classpath_file"
+      support_classes="$evidence_dir/example-support-classes"
+      mkdir -p -- "$support_classes"
+      "$javac" -classpath "$(<"$support_classpath_file")" -d "$support_classes" \
+        "$repo_root/examples/support/ExampleSupport.java"
+      "$java" --class-path "$support_classes:$(<"$support_classpath_file")" ExampleSupport \
+        verify-cve-sboms "$fixture" \
+        "$fixture_dir/target/baseline-sbom.cdx.json" \
+        "$fixture_dir/target/dependency-elider-sbom.cdx.json" \
+        "$fixture_dir/target/dependency-elider.openvex.json" \
+        "$repo_root/elider-core/src/test/resources/schema/bom-1.6.schema.json" \
+        "$repo_root/elider-core/src/test/resources/schema/openvex-0.2.0.schema.json"
+    fi
   done
 
 }

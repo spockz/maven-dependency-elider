@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ConfidenceLevel;
 import io.github.spockz.elider.model.PreconditionClassInventory;
 import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
 import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
@@ -319,11 +320,14 @@ final class ADR0008MavenPreconditionInventoryTest {
               TEST_RANGE,
               Set.of(),
               null,
-              VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+              ConfidenceLevel.HIGH,
               PREREQUISITE_COORDINATE,
               "org.example.MissingPrerequisite");
 
-      assertThatThrownBy(() -> PreconditionProof.prove(mapping, inventory))
+      assertThatThrownBy(
+              () ->
+                  PreconditionProof.prove(
+                      ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping), inventory))
           .isInstanceOf(IOException.class)
           .hasMessageContaining("Javac plugin service provider");
     }
@@ -343,12 +347,16 @@ final class ADR0008MavenPreconditionInventoryTest {
               TEST_RANGE,
               Set.of(),
               null,
-              VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+              ConfidenceLevel.HIGH,
               PREREQUISITE_COORDINATE,
               "org.example.MissingPrerequisite");
 
       assertThat(snapshot.complete()).isTrue();
-      assertThatThrownBy(() -> PreconditionProof.prove(mapping, snapshot.classProviders()))
+      assertThatThrownBy(
+              () ->
+                  PreconditionProof.prove(
+                      ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                      snapshot.classProviders()))
           .isInstanceOf(IOException.class)
           .hasMessageContaining("Javac plugin service provider");
     }
@@ -1990,14 +1998,18 @@ final class ADR0008MavenPreconditionInventoryTest {
             TEST_RANGE,
             Set.of(),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            ConfidenceLevel.HIGH,
             PREREQUISITE_COORDINATE,
             "hidden.ShadedPrerequisite");
 
     assertThat(snapshot.complete()).isTrue();
     assertThat(snapshot.classProviders().providers())
         .anySatisfy(provider -> assertThat(provider.path()).isEqualTo(outputTarget));
-    assertThatThrownBy(() -> PreconditionProof.prove(mapping, snapshot.classProviders()))
+    assertThatThrownBy(
+            () ->
+                PreconditionProof.prove(
+                    ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                    snapshot.classProviders()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
   }
@@ -2064,7 +2076,7 @@ final class ADR0008MavenPreconditionInventoryTest {
             TEST_RANGE,
             Set.of(),
             null,
-            VulnerabilitySymbolMapping.ConfidenceLevel.HIGH,
+            ConfidenceLevel.HIGH,
             PREREQUISITE_COORDINATE,
             "app.Holder$1");
 
@@ -2072,7 +2084,11 @@ final class ADR0008MavenPreconditionInventoryTest {
 
     assertThat(snapshot.complete()).isFalse();
     assertThat(snapshot.classProviders().detail()).contains("compiler-generated class providers");
-    assertThatThrownBy(() -> PreconditionProof.prove(mapping, snapshot.classProviders()))
+    assertThatThrownBy(
+            () ->
+                PreconditionProof.prove(
+                    ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                    snapshot.classProviders()))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
