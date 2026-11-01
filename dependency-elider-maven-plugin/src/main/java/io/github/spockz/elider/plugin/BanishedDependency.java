@@ -7,17 +7,20 @@ import java.util.Objects;
 /** Exact group and artifact identity selected by the ban policy. */
 record BanishedDependency(String groupId, String artifactId)
     implements Comparable<BanishedDependency> {
+  /** Number of coordinate pieces accepted by the exact G:A policy. */
+  private static final int PART_COUNT = 2;
+
   BanishedDependency {
     requirePart(groupId, "groupId");
     requirePart(artifactId, "artifactId");
   }
 
-  static BanishedDependency parse(final String raw) {
+  /* default */ static BanishedDependency parse(final String raw) {
     if (raw == null) {
       throw new IllegalArgumentException("coordinate is null");
     }
     final String[] parts = raw.trim().split(":", -1);
-    if (parts.length != 2) {
+    if (parts.length != PART_COUNT) {
       throw new IllegalArgumentException("expected exactly groupId:artifactId");
     }
     return new BanishedDependency(parts[0].trim(), parts[1].trim());
@@ -26,7 +29,10 @@ record BanishedDependency(String groupId, String artifactId)
   @Override
   public int compareTo(final BanishedDependency other) {
     final int groupComparison = groupId.compareTo(other.groupId);
-    return groupComparison != 0 ? groupComparison : artifactId.compareTo(other.artifactId);
+    if (groupComparison == 0) {
+      return artifactId.compareTo(other.artifactId);
+    }
+    return groupComparison;
   }
 
   @Override

@@ -57,10 +57,6 @@ final class ElisionAnalysisModel {
           dynamicRoots);
     }
 
-    /* default */ MavenExecutionRequest request() {
-      return session == null ? null : session.getRequest();
-    }
-
     /* default */ AnalysisOptions {
       banishedDependencies =
           banishedDependencies == null ? List.of() : List.copyOf(banishedDependencies);
@@ -72,6 +68,10 @@ final class ElisionAnalysisModel {
         throw new IllegalArgumentException(
             "elide.mrjarStrategy must be vertical-shading or pass-through");
       }
+    }
+
+    /* default */ MavenExecutionRequest request() {
+      return session == null ? null : session.getRequest();
     }
   }
 

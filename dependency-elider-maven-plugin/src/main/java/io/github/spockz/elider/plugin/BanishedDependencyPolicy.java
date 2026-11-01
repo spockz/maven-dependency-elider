@@ -1,5 +1,4 @@
-// WHY: Separates strict G:A ban matching and validation from the broader retention coordinate
-// grammar.
+// WHY: Keeps ban matching separate from retention coordinate grammar.
 
 package io.github.spockz.elider.plugin;
 
@@ -13,7 +12,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import org.apache.maven.plugin.MojoFailureException;
 
-/** Normalizes and evaluates explicit dependency ban requests against one current inventory. */
+/** Normalizes and evaluates explicit dependency bans against one inventory. */
 final class BanishedDependencyPolicy {
   /** Supported Maven dependency scopes for ban matching. */
   private static final Set<String> SUPPORTED_SCOPES = Set.of("compile", "runtime");
@@ -33,7 +32,7 @@ final class BanishedDependencyPolicy {
       try {
         normalized.add(BanishedDependency.parse(raw));
       } catch (final IllegalArgumentException exception) {
-        throw invalidConfiguration(raw, exception.getMessage());
+        throw invalidConfiguration(raw, exception);
       }
     }
     return List.copyOf(normalized);
@@ -50,40 +49,12 @@ final class BanishedDependencyPolicy {
     if (requests.isEmpty()) {
       return new Resolution(List.of());
     }
-    final Set<ArtifactCoordinate> retainedCoordinates =
-        ElisionArtifactPolicy.parseRetentionCoordinates(retainedArtifacts);
-    final Set<BanishedDependency> retainedIdentities = new LinkedHashSet<>();
-    for (final ArtifactCoordinate coordinate : retainedCoordinates) {
-      retainedIdentities.add(identityOf(coordinate));
-    }
-    for (final BanishedDependency request : requests) {
-      if (retainedIdentities.contains(request)) {
-        throw new MojoFailureException(
-            "elide.banishedDependencies conflicts with elide.retainedArtifacts for " + request);
-      }
-    }
-
-    final Set<BanishedDependency> trimSkipIdentities = new LinkedHashSet<>();
-    for (final ArtifactCoordinate coordinate :
-        ElisionArtifactPolicy.matchingPassThroughCoordinates(
-            trimSkipArtifacts, resolvedSnapshots)) {
-      trimSkipIdentities.add(identityOf(coordinate));
-    }
-    for (final BanishedDependency request : requests) {
-      if (trimSkipIdentities.contains(request)) {
-        throw new MojoFailureException(
-            "elide.banishedDependencies conflicts with matching elide.trimSkipArtifacts entry for "
-                + request);
-      }
-    }
+    validateRetentionConflicts(requests, retainedArtifacts);
+    validatePassThroughConflicts(requests, trimSkipArtifacts);
 
     final List<Match> matches = new ArrayList<>();
     for (final BanishedDependency request : requests) {
-      final List<ArtifactSnapshot> directMatches = matching(request, directSnapshots);
-      if (!directMatches.isEmpty()) {
-        throw new MojoFailureException(
-            "elide.banishedDependencies cannot match a direct artifact-view member: " + request);
-      }
+      rejectDirectMatch(request, directSnapshots);
       final List<ArtifactSnapshot> resolvedMatches = matching(request, resolvedSnapshots);
       for (final ArtifactSnapshot snapshot : resolvedMatches) {
         validateSupportedMatch(request, snapshot);
@@ -121,13 +92,71 @@ final class BanishedDependencyPolicy {
     return new BanishedDependency(coordinate.groupId(), coordinate.artifactId());
   }
 
-  private static MojoFailureException invalidConfiguration(final String raw, final String reason) {
+  private static void validateRetentionConflicts(
+      final List<BanishedDependency> requests, final List<String> retainedArtifacts)
+      throws MojoFailureException {
+    final Set<BanishedDependency> retainedIdentities = new LinkedHashSet<>();
+    for (final ArtifactCoordinate coordinate :
+        ElisionArtifactPolicy.parseRetentionCoordinates(retainedArtifacts)) {
+      retainedIdentities.add(identityOf(coordinate));
+    }
+    for (final BanishedDependency request : requests) {
+      if (retainedIdentities.contains(request)) {
+        throw new MojoFailureException(
+            "elide.banishedDependencies conflicts with elide.retainedArtifacts for " + request);
+      }
+    }
+  }
+
+  private static void validatePassThroughConflicts(
+      final List<BanishedDependency> requests, final List<String> trimSkipArtifacts)
+      throws MojoFailureException {
+    final Set<String> trimSkipIdentities = new LinkedHashSet<>();
+    for (final String configured :
+        trimSkipArtifacts == null ? List.<String>of() : trimSkipArtifacts) {
+      final String identity = passThroughIdentity(configured);
+      if (identity != null) {
+        trimSkipIdentities.add(identity);
+      }
+    }
+    for (final BanishedDependency request : requests) {
+      if (trimSkipIdentities.contains(request.toString())) {
+        throw new MojoFailureException(
+            "elide.banishedDependencies conflicts with matching elide.trimSkipArtifacts entry for "
+                + request);
+      }
+    }
+  }
+
+  private static String passThroughIdentity(final String configured) {
+    if (configured == null) {
+      return null;
+    }
+    final String[] parts = configured.trim().split(":", -1);
+    if (parts.length < 2 || parts[0].isBlank() || parts[1].isBlank()) {
+      return null;
+    }
+    return parts[0].trim() + ":" + parts[1].trim();
+  }
+
+  private static void rejectDirectMatch(
+      final BanishedDependency request, final List<ArtifactSnapshot> directSnapshots)
+      throws MojoFailureException {
+    if (!matching(request, directSnapshots).isEmpty()) {
+      throw new MojoFailureException(
+          "elide.banishedDependencies cannot match a direct artifact-view member: " + request);
+    }
+  }
+
+  private static MojoFailureException invalidConfiguration(
+      final String raw, final IllegalArgumentException cause) {
     return new MojoFailureException(
         "Invalid elide.banishedDependencies coordinate '"
             + raw
             + "'; expected exact groupId:artifactId without wildcards ("
-            + reason
-            + ")");
+            + cause.getMessage()
+            + ")",
+        cause);
   }
 
   /* default */ record Resolution(List<Match> matches) {

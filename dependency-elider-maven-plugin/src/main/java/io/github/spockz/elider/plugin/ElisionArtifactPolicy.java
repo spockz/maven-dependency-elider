@@ -60,22 +60,6 @@ final class ElisionArtifactPolicy {
     return result;
   }
 
-  /* package */ static Set<ArtifactCoordinate> matchingPassThroughCoordinates(
-      final List<String> requested, final List<ArtifactSnapshot> snapshots)
-      throws MojoFailureException {
-    final Set<ArtifactCoordinate> result = new LinkedHashSet<>();
-    if (requested == null) {
-      return result;
-    }
-    for (final String raw : requested) {
-      final PassThroughCoordinate requestedCoordinate = passThroughCoordinate(raw);
-      matchingSnapshots(requestedCoordinate, snapshots).stream()
-          .map(ArtifactSnapshot::coordinate)
-          .forEach(result::add);
-    }
-    return Set.copyOf(result);
-  }
-
   /* package */ static ElisionDecision retainNonJarArtifacts(
       final ElisionDecision jarDecision, final List<ArtifactSnapshot> snapshots) {
     final Set<ArtifactCoordinate> retained = new HashSet<>(jarDecision.retainedArtifacts());
