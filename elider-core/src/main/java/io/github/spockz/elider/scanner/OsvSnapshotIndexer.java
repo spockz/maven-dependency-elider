@@ -57,7 +57,8 @@ import java.util.zip.ZipInputStream;
   "PMD.ShortVariable",
   "PMD.CommentRequired",
   "PMD.CommentSize",
-  "PMD.AvoidInstantiatingObjectsInLoops"
+  "PMD.AvoidInstantiatingObjectsInLoops",
+  "PMD.CommentDefaultAccessModifier"
 })
 public final class OsvSnapshotIndexer {
   private static final String CONTAINERS_FIELD = "containers";
@@ -296,8 +297,8 @@ public final class OsvSnapshotIndexer {
     return scopes;
   }
 
-  private JsonNode readSingleJsonDocument(final byte[] bytes, final String description)
-      throws IOException {
+  /** Shares strict JSON parsing with the live CVE source reader. */
+  JsonNode readSingleJsonDocument(final byte[] bytes, final String description) throws IOException {
     try (JsonParser parser = mapper.getFactory().createParser(bytes)) {
       parser.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
       final JsonNode root = mapper.readTree(parser);
@@ -567,7 +568,8 @@ public final class OsvSnapshotIndexer {
     }
   }
 
-  private static CveAffectedEntryContext readCnaContext(
+  /** Shares indexed CNA entry decoding with the live CVE source reader. */
+  static CveAffectedEntryContext readCnaContext(
       final JsonNode entry, final int index, final CveSourceRecordMetadata sourceRecord) {
     final String product = entry.path("product").textValue();
     final List<CveVersionClaim> versions = new ArrayList<>();
@@ -603,7 +605,8 @@ public final class OsvSnapshotIndexer {
         readRoutineNames(entry.path("programRoutines")));
   }
 
-  private static void validateCveSourceShape(final JsonNode root) {
+  /** Applies the indexer's structural CNA checks to a live source record. */
+  static void validateCveSourceShape(final JsonNode root) {
     final JsonNode containers = optionalObject(root, CONTAINERS_FIELD, CONTAINERS_FIELD);
     if (containers == null) {
       return;
@@ -746,7 +749,8 @@ public final class OsvSnapshotIndexer {
     return MavenPackageIdentity.matchesCnaScope(entry, scope.affectedCoordinate());
   }
 
-  private static CveSourceRecordMetadata readCveSourceMetadata(
+  /** Shares source metadata decoding with the live CVE source reader. */
+  static CveSourceRecordMetadata readCveSourceMetadata(
       final JsonNode root, final String sourceRecordSha256) {
     final JsonNode metadata = root.get("cveMetadata");
     if (metadata == null) {
@@ -878,7 +882,8 @@ public final class OsvSnapshotIndexer {
     return value != null && value.isTextual() ? value.textValue() : null;
   }
 
-  private static String locateCveRecord(final Path gitDir, final String cveId) {
+  /** Locates the canonical CVEList path used by indexing and live validation. */
+  static String locateCveRecord(final Path gitDir, final String cveId) {
     if (gitDir == null || cveId == null || !Files.isDirectory(gitDir)) {
       return null;
     }
