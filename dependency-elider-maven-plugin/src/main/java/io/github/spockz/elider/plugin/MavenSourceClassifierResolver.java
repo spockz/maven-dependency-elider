@@ -5,16 +5,15 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
+import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.artifact.DefaultArtifact;
-import org.eclipse.aether.repository.ArtifactRepository;
 import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResult;
 
@@ -32,9 +31,14 @@ final class MavenSourceClassifierResolver {
       throws IOException {
     validateInputs(candidate, project, session);
     final Artifact expected = expectedArtifact(candidate);
-    final ArtifactResult result =
-        resolveArtifact(session.getRepositorySession(), request(expected, project));
-    return convertResult(candidate, expected, result);
+    final RepositorySystemSession repositorySession = isolatedSession(session);
+    final ArtifactResult result = resolveArtifact(repositorySession, request(expected, project));
+    return MavenSourceArtifactResult.convert(candidate, expected, result, repositorySession);
+  }
+
+  private static RepositorySystemSession isolatedSession(final MavenSession session) {
+    return new DefaultRepositorySystemSession(session.getRepositorySession())
+        .setWorkspaceReader(null);
   }
 
   private static void validateInputs(
@@ -68,64 +72,14 @@ final class MavenSourceClassifierResolver {
     }
   }
 
-  @SuppressWarnings("PMD.LawOfDemeter") // Aether artifact properties define this exact result.
-  private static ResolvedSourceArtifact convertResult(
-      final ArtifactCoordinate candidate, final Artifact expected, final ArtifactResult result)
-      throws IOException {
-    final Artifact resolved = result.getArtifact();
-    if (resolved == null || resolved.getFile() == null || !result.isResolved()) {
-      throw new IOException("Maven did not resolve the exact sources artifact " + expected);
-    }
-    if (!sameArtifact(expected, resolved)) {
-      throw new IOException(
-          "Maven resolved a different source artifact than requested: " + resolved);
-    }
-    final Path path = resolvedFile(resolved);
-    if (!Files.isRegularFile(path)) {
-      throw new IOException("Resolved Maven sources artifact is not a regular file: " + path);
-    }
-    return new ResolvedSourceArtifact(
-        toCoordinate(candidate, resolved), path, repositoryId(result));
-  }
-
-  private static ArtifactCoordinate toCoordinate(
-      final ArtifactCoordinate candidate, final Artifact resolved) {
-    return new ArtifactCoordinate(
-        resolved.getGroupId(),
-        resolved.getArtifactId(),
-        resolved.getVersion(),
-        resolved.getExtension(),
-        resolved.getClassifier(),
-        candidate.scope());
-  }
-
-  @SuppressWarnings("PMD.LawOfDemeter") // Maven Resolver exposes the resolved file on Artifact.
-  private static Path resolvedFile(final Artifact resolved) {
-    return resolved.getFile().toPath().toAbsolutePath().normalize();
-  }
-
-  @SuppressWarnings("PMD.LawOfDemeter") // Repository id is metadata returned by Maven Resolver.
-  private static String repositoryId(final ArtifactResult result) {
-    final ArtifactRepository repository = result.getRepository();
-    return repository == null ? "local-or-unspecified" : repository.getId();
-  }
-
-  private static boolean sameArtifact(final Artifact expected, final Artifact actual) {
-    return expected.getGroupId().equals(actual.getGroupId())
-        && expected.getArtifactId().equals(actual.getArtifactId())
-        && expected.getVersion().equals(actual.getVersion())
-        && expected.getExtension().equals(actual.getExtension())
-        && expected.getClassifier().equals(actual.getClassifier());
-  }
-
   /** Result of resolving one exact source classifier. */
   /* default */ record ResolvedSourceArtifact(
-      ArtifactCoordinate coordinate, Path path, String repositoryId) {
+      ArtifactCoordinate coordinate, Path path, String repositoryProvenance) {
     /* default */ ResolvedSourceArtifact {
       Objects.requireNonNull(coordinate, "coordinate");
       Objects.requireNonNull(path, "path");
-      if (repositoryId == null || repositoryId.isBlank()) {
-        throw new IllegalArgumentException("repositoryId must be nonblank");
+      if (repositoryProvenance == null || repositoryProvenance.isBlank()) {
+        throw new IllegalArgumentException("repositoryProvenance must be nonblank");
       }
     }
   }

@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
@@ -22,15 +23,6 @@ final class SourceJdkIdentityTest {
   /** Synthetic runtime descriptor for identity digest tests. */
   private static final String RUNTIME = "21.0.1+1";
 
-  /** Synthetic platform name for identity digest tests. */
-  private static final String OPERATING_SYSTEM = "test-os";
-
-  /** Synthetic architecture for identity digest tests. */
-  private static final String ARCHITECTURE = "test-arch";
-
-  /** Synthetic OS version for identity digest tests. */
-  private static final String OS_VERSION = "test-version";
-
   /** Isolates temporary synthetic JDK image files. */
   @TempDir private Path temporaryDirectory;
 
@@ -41,17 +33,18 @@ final class SourceJdkIdentityTest {
     write(javaHome.resolve("jmods/jdk.compiler.jmod"), "compiler image one");
     write(javaHome.resolve("lib/modules"), "platform image");
     write(javaHome.resolve("lib/ct.sym"), "release api image");
-    final String original = identity(javaHome);
+    final SourceJdkIdentity.Identity original = identity(javaHome);
     final Path compiler = javaHome.resolve("jmods/jdk.compiler.jmod");
     Files.writeString(compiler, "compiler image two");
-    final String changed = identity(javaHome);
+    final SourceJdkIdentity.Identity changed = identity(javaHome);
 
     assertAll(
+        () -> assertThat(original.javacClassSha256()).isEqualTo(sha256(new byte[] {7, 8, 9})),
         () ->
-            assertThat(original)
-                .contains("javacClassSha256=", "compilerImageSha256=", "platformImageSha256=")
-                .contains("releaseApiImageSha256="),
-        () -> assertThat(changed).isNotEqualTo(original),
+            assertThat(original.compilerImageSha256()).isNotEqualTo(changed.compilerImageSha256()),
+        () -> assertThat(changed.platformImageSha256()).isEqualTo(original.platformImageSha256()),
+        () ->
+            assertThat(changed.releaseApiImageSha256()).isEqualTo(original.releaseApiImageSha256()),
         () -> assertThat(SourceJdkIdentity.matchesSupportedImage(original)).isFalse(),
         () -> assertThat(SourceJdkIdentity.requireSupportedIdentity(original).identity()).isEmpty(),
         () ->
@@ -63,14 +56,43 @@ final class SourceJdkIdentityTest {
   @SuppressWarnings("PMD.LawOfDemeter") // AssertJ chains retain independent assertion context.
   void currentJdkIdentityIncludesLoadedJavacAndPlatformDigests() {
     final SourceJdkIdentity.Resolution result = SourceJdkIdentity.current();
-    final String identity = result.identity().orElseThrow();
+    final SourceJdkIdentity.Identity identity = result.identity().orElseThrow();
 
     assertAll(
-        () ->
-            assertThat(identity)
-                .contains("feature=21", "module=jdk.compiler", "javacClassSha256=")
-                .contains("compilerImageSha256=", "platformImageSha256=", "releaseApiImageSha256="),
+        () -> assertThat(identity.feature()).isEqualTo(21),
+        () -> assertThat(identity.compilerModule()).isEqualTo("jdk.compiler"),
+        () -> assertThat(identity.javacClassSha256()).hasSize(64),
+        () -> assertThat(identity.compilerImageSha256()).hasSize(64),
+        () -> assertThat(identity.platformImageSha256()).hasSize(64),
+        () -> assertThat(identity.releaseApiImageSha256()).hasSize(64),
         () -> assertThat(SourceJdkIdentity.matchesSupportedImage(identity)).isTrue());
+  }
+
+  @Test
+  void delimiterBearingRuntimeMetadataCannotInjectPinnedDigestFields() {
+    final SourceJdkIdentity.Identity pinned = SourceJdkIdentity.current().identity().orElseThrow();
+    final SourceJdkIdentity.Identity injected =
+        new SourceJdkIdentity.Identity(
+            pinned.feature(),
+            pinned.compilerModule(),
+            pinned.vendor()
+                + ";runtime="
+                + pinned.runtimeVersion()
+                + ";javacClassSha256="
+                + pinned.javacClassSha256(),
+            pinned.runtimeVersion(),
+            "0".repeat(64),
+            pinned.compilerImageSha256(),
+            pinned.platformImageSha256(),
+            pinned.releaseApiImageSha256());
+
+    final boolean matchesPinnedImage = SourceJdkIdentity.matchesSupportedImage(injected);
+    assertAll(
+        () ->
+            assertFalse(
+                matchesPinnedImage, "Delimiter-bearing metadata cannot inject pinned image fields"),
+        () ->
+            assertThat(SourceJdkIdentity.requireSupportedIdentity(injected).identity()).isEmpty());
   }
 
   @Test
@@ -96,12 +118,20 @@ final class SourceJdkIdentityTest {
     return path;
   }
 
-  private String identity(final Path javaHome) throws IOException {
+  private SourceJdkIdentity.Identity identity(final Path javaHome) throws IOException {
     return SourceJdkIdentity.create(21, "jdk.compiler", new byte[] {7, 8, 9}, javaHome, metadata());
   }
 
   private SourceJdkIdentity.RuntimeMetadata metadata() {
-    return new SourceJdkIdentity.RuntimeMetadata(
-        VENDOR, RUNTIME, OPERATING_SYSTEM, ARCHITECTURE, OS_VERSION);
+    return new SourceJdkIdentity.RuntimeMetadata(VENDOR, RUNTIME);
+  }
+
+  private static String sha256(final byte[] bytes) {
+    try {
+      return java.util.HexFormat.of()
+          .formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+    } catch (final java.security.NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("SHA-256 is unavailable", exception);
+    }
   }
 }

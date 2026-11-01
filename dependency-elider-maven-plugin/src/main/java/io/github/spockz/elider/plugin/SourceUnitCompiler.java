@@ -33,7 +33,7 @@ final class SourceUnitCompiler {
   /* default */ static Compilation compile(
       final SourceCorrespondenceArchive sources,
       final Path originalJar,
-      final String compilerIdentity)
+      final SourceJdkIdentity.Identity compilerIdentity)
       throws IOException {
     final JavaCompiler compiler = requireCompiler();
     try (SourceCompilationWorkspace workspace = SourceCompilationWorkspace.create()) {
@@ -43,10 +43,10 @@ final class SourceUnitCompiler {
       final Path outputs = workspace.directory("outputs");
       final List<SourceBuildCorrespondence.SourceUnit> sourceUnits =
           compileUnits(sources, originalJar, compiler, extractedSources, emptySourcePath, outputs);
-      if (compilerIdentity == null || compilerIdentity.isBlank()) {
+      if (compilerIdentity == null) {
         throw new IOException("Pinned JDK compiler identity is unavailable");
       }
-      return new Compilation(compilerIdentity, fixedOptions(), sourceUnits);
+      return new Compilation(compilerIdentity.toString(), fixedOptions(), sourceUnits);
     }
   }
 

@@ -4,6 +4,7 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
 import java.io.IOException;
@@ -113,10 +114,13 @@ final class MavenElisionOutputPublisher {
       throws IOException {
     return new MavenVulnerabilityAssessment(
             request.log(),
+            new VulnerabilityCacheManager(),
             request.assumeConventionalJavaSourceLayout(),
-            request.sourceClassifierResolver(),
-            request.project(),
-            request.session())
+            MavenSourceCorrespondenceAssessment.configured(
+                request.project(),
+                request.session(),
+                request.sourceClassifierResolver(),
+                request.assumeConventionalJavaSourceLayout()))
         .assess(
             request.cacheConfig(), request.vulnerabilityMappings(), request.analysis(), inventory);
   }

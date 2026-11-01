@@ -168,7 +168,7 @@ final class MavenSourceCorrespondenceClaimEvaluator {
             evidence.provenance().sourceRecordSha256(),
             evidence.cnaAffectedEntryIdentity(),
             reproduced.sourcesCoordinate().toId(),
-            reproduced.sourceRepositoryId(),
+            reproduced.sourceRepositoryProvenance(),
             reproduced.originalArchiveSha256(),
             reproduced.sourcesArchiveSha256(),
             reproduced.compilerIdentity(),

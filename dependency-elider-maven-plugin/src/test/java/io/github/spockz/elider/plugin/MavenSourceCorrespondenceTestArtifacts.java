@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -22,8 +22,11 @@ import java.util.jar.Manifest;
 import java.util.stream.Stream;
 import javax.tools.ToolProvider;
 import org.eclipse.aether.RepositorySystem;
+import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.repository.ArtifactRepository;
+import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResult;
 
@@ -103,18 +106,32 @@ final class MavenSourceCorrespondenceTestArtifacts {
   }
 
   /* default */ static RepositorySystem resolver(final Path sourcesJar) {
+    return resolver(
+        sourcesJar,
+        new RemoteRepository.Builder(
+                "fixture-remote", "default", "https://repo.example.invalid/maven2")
+            .build(),
+        ignored -> {});
+  }
+
+  @SuppressWarnings("PMD.CompareObjectsWithEquals") // Proxy equality must use object identity.
+  /* default */ static RepositorySystem resolver(
+      final Path sourcesJar,
+      final ArtifactRepository repository,
+      final Consumer<RepositorySystemSession> sessionObserver) {
     return (RepositorySystem)
         Proxy.newProxyInstance(
             Thread.currentThread().getContextClassLoader(),
             new Class<?>[] {RepositorySystem.class},
             (proxy, method, arguments) -> {
               if (RESOLVE_ARTIFACT_METHOD.equals(method.getName())) {
-                return resolveSourceArtifact(sourcesJar, arguments);
+                sessionObserver.accept((RepositorySystemSession) arguments[0]);
+                return resolveSourceArtifact(sourcesJar, repository, arguments);
               }
               return switch (method.getName()) {
                 case "toString" -> "Source correspondence resolver fixture";
                 case "hashCode" -> System.identityHashCode(proxy);
-                case "equals" -> Objects.equals(proxy, arguments[0]);
+                case "equals" -> proxy == arguments[0];
                 default -> throw new UnsupportedOperationException(method.getName());
               };
             });
@@ -122,7 +139,7 @@ final class MavenSourceCorrespondenceTestArtifacts {
 
   @SuppressWarnings("PMD.LawOfDemeter") // The proxy models the Maven Resolver request boundary.
   private static ArtifactResult resolveSourceArtifact(
-      final Path sourcesJar, final Object... arguments) {
+      final Path sourcesJar, final ArtifactRepository repository, final Object... arguments) {
     final ArtifactRequest request = (ArtifactRequest) arguments[1];
     final Artifact expected = request.getArtifact();
     final Artifact resolved =
@@ -133,7 +150,7 @@ final class MavenSourceCorrespondenceTestArtifacts {
                 expected.getExtension(),
                 expected.getVersion())
             .setFile(sourcesJar.toFile());
-    return new ArtifactResult(request).setArtifact(resolved);
+    return new ArtifactResult(request).setArtifact(resolved).setRepository(repository);
   }
 
   private static String outerSource(final boolean overload, final boolean manifestClassPath) {

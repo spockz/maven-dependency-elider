@@ -67,7 +67,7 @@ sealed interface SourceBuildCorrespondence {
       String sourceRecordSha256,
       String cnaAffectedEntryIdentity,
       String sourcesCoordinate,
-      String sourceRepositoryId,
+      String sourceRepositoryProvenance,
       String originalArchiveSha256,
       String sourcesArchiveSha256,
       String compilerIdentity,
@@ -84,8 +84,8 @@ sealed interface SourceBuildCorrespondence {
       if (sourcesCoordinate == null || sourcesCoordinate.isBlank()) {
         throw new IllegalArgumentException("sourcesCoordinate must be nonblank");
       }
-      if (sourceRepositoryId == null || sourceRepositoryId.isBlank()) {
-        throw new IllegalArgumentException("sourceRepositoryId must be nonblank");
+      if (sourceRepositoryProvenance == null || sourceRepositoryProvenance.isBlank()) {
+        throw new IllegalArgumentException("sourceRepositoryProvenance must be nonblank");
       }
       if (compilerIdentity == null || compilerIdentity.isBlank()) {
         throw new IllegalArgumentException("compilerIdentity must be nonblank");

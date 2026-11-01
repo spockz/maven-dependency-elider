@@ -202,10 +202,10 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
             session != null && session.isOffline());
     return new MavenVulnerabilityAssessment(
             getLog(),
+            new VulnerabilityCacheManager(),
             assumeConventionalJavaSourceLayout,
-            sourceClassifierResolver(),
-            project,
-            session)
+            MavenSourceCorrespondenceAssessment.configured(
+                project, session, sourceClassifierResolver(), assumeConventionalJavaSourceLayout))
         .assess(
             config, ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings), analysis, null);
   }

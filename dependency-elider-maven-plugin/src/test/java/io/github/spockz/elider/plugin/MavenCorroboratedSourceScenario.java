@@ -91,10 +91,10 @@ final class MavenCorroboratedSourceScenario {
             null);
     return new MavenVulnerabilityAssessment(
             new RecordingMavenLog(),
+            new VulnerabilityCacheManager(),
             conventionalLayoutAssumed,
-            java.util.Optional.of(resolver),
-            project,
-            session)
+            MavenSourceCorrespondenceAssessment.configured(
+                project, session, java.util.Optional.of(resolver), conventionalLayoutAssumed))
         .assess(
             prepared.cacheConfig(),
             ConfiguredVulnerabilityMappings.empty(),

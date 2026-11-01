@@ -41,6 +41,18 @@ final class SourceJdkIdentity {
   private static final String SUPPORTED_RELEASE_API_SHA256 =
       "fcd557bf5405e2c4ba71f66d91e508a08010c942cfdfc52d6adef34e8a84506a";
 
+  /** Exact supported compiler and platform identity. */
+  private static final Identity SUPPORTED_IDENTITY =
+      new Identity(
+          SUPPORTED_FEATURE,
+          COMPILER_MODULE,
+          SUPPORTED_VENDOR,
+          SUPPORTED_RUNTIME,
+          SUPPORTED_JAVAC_CLASS_SHA256,
+          SUPPORTED_COMPILER_IMAGE_SHA256,
+          SUPPORTED_PLATFORM_IMAGE_SHA256,
+          SUPPORTED_RELEASE_API_SHA256);
+
   private SourceJdkIdentity() {}
 
   @SuppressWarnings("PMD.ExceptionAsFlowControl") // Unsupported JDK images become explicit refusal.
@@ -52,25 +64,21 @@ final class SourceJdkIdentity {
       }
       final Path javaHome = Path.of(System.getProperty("java.home")).toRealPath();
       final byte[] compilerClass = compilerClassBytes(compiler);
-      final String value =
+      final Identity identity =
           create(
               Runtime.version().feature(),
               compiler.getClass().getModule().getName(),
               compilerClass,
               javaHome,
               new RuntimeMetadata(
-                  System.getProperty("java.vendor"),
-                  System.getProperty("java.runtime.version"),
-                  System.getProperty("os.name"),
-                  System.getProperty("os.arch"),
-                  System.getProperty("os.version")));
-      return requireSupportedIdentity(value);
+                  System.getProperty("java.vendor"), System.getProperty("java.runtime.version")));
+      return requireSupportedIdentity(identity);
     } catch (final IOException failure) {
       return Resolution.unavailable(failure.getMessage());
     }
   }
 
-  /* default */ static String create(
+  /* default */ static Identity create(
       final int feature,
       final String compilerModule,
       final byte[] compilerClass,
@@ -89,34 +97,22 @@ final class SourceJdkIdentity {
     if (compilerClass == null || compilerClass.length == 0) {
       throw new IOException("Loaded javac implementation bytes are unavailable");
     }
-    return String.join(
-        ";",
-        "feature=" + feature,
-        "module=" + compilerModule,
-        "vendor=" + requireText(runtime.vendor()),
-        "runtime=" + requireText(runtime.version()),
-        "os=" + requireText(runtime.operatingSystem()),
-        "arch=" + requireText(runtime.architecture()),
-        "osVersion=" + requireText(runtime.osVersion()),
-        "javacClassSha256=" + sha256(compilerClass),
-        "compilerImageSha256=" + ArtifactFileDigest.sha256(compilerImage),
-        "platformImageSha256=" + ArtifactFileDigest.sha256(platformImage),
-        "releaseApiImageSha256=" + ArtifactFileDigest.sha256(releaseApiImage));
+    return new Identity(
+        feature,
+        compilerModule,
+        requireText(runtime.vendor()),
+        requireText(runtime.version()),
+        sha256(compilerClass),
+        ArtifactFileDigest.sha256(compilerImage),
+        ArtifactFileDigest.sha256(platformImage),
+        ArtifactFileDigest.sha256(releaseApiImage));
   }
 
-  /* default */ static boolean matchesSupportedImage(final String identity) {
-    return identity != null
-        && identity.contains("feature=" + SUPPORTED_FEATURE + ";")
-        && identity.contains("module=" + COMPILER_MODULE + ";")
-        && identity.contains("vendor=" + SUPPORTED_VENDOR + ";")
-        && identity.contains("runtime=" + SUPPORTED_RUNTIME + ";")
-        && identity.contains("javacClassSha256=" + SUPPORTED_JAVAC_CLASS_SHA256 + ";")
-        && identity.contains("compilerImageSha256=" + SUPPORTED_COMPILER_IMAGE_SHA256 + ";")
-        && identity.contains("platformImageSha256=" + SUPPORTED_PLATFORM_IMAGE_SHA256 + ";")
-        && identity.contains("releaseApiImageSha256=" + SUPPORTED_RELEASE_API_SHA256);
+  /* default */ static boolean matchesSupportedImage(final Identity identity) {
+    return SUPPORTED_IDENTITY.equals(identity);
   }
 
-  /* default */ static Resolution requireSupportedIdentity(final String identity) {
+  /* default */ static Resolution requireSupportedIdentity(final Identity identity) {
     return matchesSupportedImage(identity)
         ? Resolution.supported(identity)
         : Resolution.unavailable(
@@ -158,14 +154,24 @@ final class SourceJdkIdentity {
     }
   }
 
-  /* default */ record Resolution(Optional<String> identity, Optional<String> refusal) {
+  /* default */ record Identity(
+      int feature,
+      String compilerModule,
+      String vendor,
+      String runtimeVersion,
+      String javacClassSha256,
+      String compilerImageSha256,
+      String platformImageSha256,
+      String releaseApiImageSha256) {}
+
+  /* default */ record Resolution(Optional<Identity> identity, Optional<String> refusal) {
     Resolution {
       if (identity.isPresent() == refusal.isPresent()) {
         throw new IllegalArgumentException("Exactly one source JDK identity outcome is required");
       }
     }
 
-    /* default */ static Resolution supported(final String identity) {
+    /* default */ static Resolution supported(final Identity identity) {
       return new Resolution(Optional.of(identity), Optional.empty());
     }
 
@@ -179,10 +185,5 @@ final class SourceJdkIdentity {
     }
   }
 
-  /* default */ record RuntimeMetadata(
-      String vendor,
-      String version,
-      String operatingSystem,
-      String architecture,
-      String osVersion) {}
+  /* default */ record RuntimeMetadata(String vendor, String version) {}
 }

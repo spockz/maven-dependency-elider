@@ -26,7 +26,7 @@ final class SourceArtifactReproducer {
       final List<String> sourceClaims,
       final List<String> routineClaims,
       final boolean conventionalLayoutAssumed,
-      final String compilerIdentity) {
+      final SourceJdkIdentity.Identity compilerIdentity) {
     try {
       return reproduceStrict(
           candidate,
@@ -48,7 +48,7 @@ final class SourceArtifactReproducer {
       final List<String> sourceClaims,
       final List<String> routineClaims,
       final boolean conventionalLayoutAssumed,
-      final String compilerIdentity)
+      final SourceJdkIdentity.Identity compilerIdentity)
       throws IOException {
     validateCoordinates(candidate, resolvedSources);
     final Path originalPath = requireJar(originalJar, "original artifact");
@@ -74,7 +74,7 @@ final class SourceArtifactReproducer {
     return new Reproduced(
         candidate,
         resolvedSources.coordinate(),
-        resolvedSources.repositoryId(),
+        resolvedSources.repositoryProvenance(),
         originalSha256,
         sourceSha256,
         compilation.compilerIdentity(),
@@ -170,7 +170,7 @@ final class SourceArtifactReproducer {
   /* default */ record Reproduced(
       ArtifactCoordinate candidate,
       ArtifactCoordinate sourcesCoordinate,
-      String sourceRepositoryId,
+      String sourceRepositoryProvenance,
       String originalArchiveSha256,
       String sourcesArchiveSha256,
       String compilerIdentity,
