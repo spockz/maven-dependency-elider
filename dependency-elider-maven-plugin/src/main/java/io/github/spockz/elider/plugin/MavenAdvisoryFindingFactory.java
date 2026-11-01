@@ -102,14 +102,24 @@ final class MavenAdvisoryFindingFactory {
             .filter(
                 affectedPackage ->
                     affectedPackage.ecosystem().equals(evidence.scope().ecosystem())
-                        && affectedPackage.packageName().equals(evidence.scope().packageName()))
-            .distinct()
+                        && affectedPackage.packageName().equals(evidence.scope().packageName())
+                        && matchesPackageCoordinate(affectedPackage, candidate))
             .toList();
     if (packages.size() != SINGLE_MATCH) {
       return new OsvPackageApplicability.Result(
           OsvPackageApplicability.Status.UNRESOLVED, AMBIGUOUS_OWNER);
     }
     return OsvPackageApplicability.evaluate(packages.getFirst(), candidate.version());
+  }
+
+  private static boolean matchesPackageCoordinate(
+      final OsvAffectedPackage affectedPackage, final ArtifactCoordinate candidate) {
+    final ArtifactCoordinate source = affectedPackage.coordinate();
+    return source.groupId().equals(candidate.groupId())
+        && source.artifactId().equals(candidate.artifactId())
+        && source.type().equals(candidate.type())
+        && source.classifier().equals(candidate.classifier())
+        && (source.version() == null || source.version().equals(candidate.version()));
   }
 
   private static boolean sameGavce(final ArtifactCoordinate left, final ArtifactCoordinate right) {

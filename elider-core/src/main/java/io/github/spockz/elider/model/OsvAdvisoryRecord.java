@@ -82,15 +82,18 @@ public record OsvAdvisoryRecord(
         throw new IllegalArgumentException("Evidence provenance must belong to this OSV record");
       }
       if (item instanceof StructuredSourceClassEvidence structured) {
-        validateStructuredEntryLink(structured, cnaAffectedEntries);
+        validateStructuredEntryLink(structured, cnaAffectedEntries, osvId, aliases);
       } else if (item instanceof CorroboratedSourceClassCandidate corroborated) {
-        validateCorroboratedEntryLink(corroborated, cnaAffectedEntries);
+        validateCorroboratedEntryLink(corroborated, cnaAffectedEntries, osvId, aliases);
       }
     }
   }
 
   private static void validateStructuredEntryLink(
-      final StructuredSourceClassEvidence evidence, final List<CveAffectedEntryContext> entries) {
+      final StructuredSourceClassEvidence evidence,
+      final List<CveAffectedEntryContext> entries,
+      final String osvId,
+      final Set<String> aliases) {
     final List<CveAffectedEntryContext> matches =
         entries.stream()
             .filter(entry -> entry.entryIdentity().equals(evidence.cnaAffectedEntryIdentity()))
@@ -100,15 +103,14 @@ public record OsvAdvisoryRecord(
           "Structured evidence must identify one CNA affected entry");
     }
     final CveAffectedEntryContext entry = matches.getFirst();
-    final String packageUrl =
-        "pkg:maven/"
-            + evidence.scope().affectedCoordinate().groupId()
-            + "/"
-            + evidence.scope().affectedCoordinate().artifactId();
-    final String productIdentity =
-        (entry.vendor() == null ? "" : entry.vendor()) + ":" + entry.product();
-    if (!packageUrl.equals(entry.packageUrl())
-        || !productIdentity.equals(evidence.affectedProductIdentity())
+    if (!MavenPackageIdentity.matchesCnaScope(entry, evidence.scope().affectedCoordinate())
+        || !hasExpectedSourceRecord(
+            entry,
+            evidence.affectedProductIdentity(),
+            evidence.scope().cveId(),
+            osvId,
+            aliases,
+            evidence.provenance().sourceRecordSha256())
         || !entry.programFiles().equals(evidence.programFiles())
         || !entry.programRoutines().equals(evidence.programRoutines())) {
       throw new IllegalArgumentException(
@@ -118,7 +120,9 @@ public record OsvAdvisoryRecord(
 
   private static void validateCorroboratedEntryLink(
       final CorroboratedSourceClassCandidate candidate,
-      final List<CveAffectedEntryContext> entries) {
+      final List<CveAffectedEntryContext> entries,
+      final String osvId,
+      final Set<String> aliases) {
     final List<CveAffectedEntryContext> matches =
         entries.stream()
             .filter(entry -> entry.entryIdentity().equals(candidate.cnaAffectedEntryIdentity()))
@@ -128,19 +132,32 @@ public record OsvAdvisoryRecord(
           "Corroborated candidate must identify one CNA affected entry");
     }
     final CveAffectedEntryContext entry = matches.getFirst();
-    final String packageUrl =
-        "pkg:maven/"
-            + candidate.artifactCoordinate().groupId()
-            + "/"
-            + candidate.artifactCoordinate().artifactId();
-    final String productIdentity =
-        (entry.vendor() == null ? "" : entry.vendor()) + ":" + entry.product();
-    if (!packageUrl.equals(entry.packageUrl())
-        || !productIdentity.equals(candidate.affectedProductIdentity())
+    if (!MavenPackageIdentity.matchesCnaArtifact(entry, candidate.artifactCoordinate())
+        || !hasExpectedSourceRecord(
+            entry,
+            candidate.affectedProductIdentity(),
+            candidate.scope().cveId(),
+            osvId,
+            aliases,
+            candidate.provenance().sourceRecordSha256())
         || !entry.programFiles().contains(candidate.programFile())
         || !entry.hasUnambiguousExactAffectedVersion(candidate.artifactCoordinate().version())) {
       throw new IllegalArgumentException(
           "Corroborated candidate must retain one exact CNA product/version claim");
     }
+  }
+
+  private static boolean hasExpectedSourceRecord(
+      final CveAffectedEntryContext entry,
+      final String expectedProductIdentity,
+      final String cveId,
+      final String osvId,
+      final Set<String> aliases,
+      final String expectedDigest) {
+    final String productIdentity =
+        (entry.vendor() == null ? "" : entry.vendor()) + ":" + entry.product();
+    return productIdentity.equals(expectedProductIdentity)
+        && entry.sourceRecord().authorizesStructuredClaims(cveId, osvId, aliases)
+        && entry.sourceRecord().sourceRecordSha256().equals(expectedDigest);
   }
 }

@@ -59,6 +59,7 @@ final class MavenCorroboratedSourceArchiveFixtures {
     final Path record = directory.resolve("cves/2025/12xxx/CVE-2025-12345.json");
     Files.createDirectories(record.getParent());
     final ObjectNode root = JSON.createObjectNode();
+    root.putObject("cveMetadata").put("cveId", CVE_ID).put("state", "PUBLISHED");
     final ArrayNode affected = root.putObject("containers").putObject("cna").putArray(AFFECTED);
     affected.add(cnaAffected("other", List.of("src/main/java/org/example/Outer.java")));
     affected.add(
@@ -82,18 +83,21 @@ final class MavenCorroboratedSourceArchiveFixtures {
   }
 
   static Path writeUnmatchedFileOnlyRecord(final Path directory) throws IOException {
-    return writeSourceRecord(directory, false);
+    return writeSourceRecord(directory, false, null);
   }
 
-  static Path writeRoutineOnlyRecord(final Path directory) throws IOException {
-    return writeSourceRecord(directory, true);
+  static Path writeRoutineOnlyRecord(final Path directory, final String defaultStatus)
+      throws IOException {
+    return writeSourceRecord(directory, true, defaultStatus);
   }
 
-  private static Path writeSourceRecord(final Path directory, final boolean routineOnly)
+  private static Path writeSourceRecord(
+      final Path directory, final boolean routineOnly, final String defaultStatus)
       throws IOException {
     final Path record = directory.resolve("cves/2025/12xxx/CVE-2025-12345.json");
     Files.createDirectories(record.getParent());
     final ObjectNode root = JSON.createObjectNode();
+    root.putObject("cveMetadata").put("cveId", CVE_ID).put("state", "PUBLISHED");
     final ObjectNode entry =
         root.putObject("containers")
             .putObject("cna")
@@ -102,7 +106,15 @@ final class MavenCorroboratedSourceArchiveFixtures {
             .put("vendor", "Example")
             .put("product", ARTIFACT_ID)
             .put("packageURL", MAVEN_PACKAGE_URL);
-    entry.putArray("versions").addObject().put("version", VERSION).put("status", AFFECTED);
+    if (defaultStatus == null) {
+      final ObjectNode version = entry.putArray("versions").addObject();
+      version.put("version", VERSION).put("status", AFFECTED);
+      if (routineOnly) {
+        version.put("versionType", "semver").put("lessThan", "2.0");
+      }
+    } else {
+      entry.put("defaultStatus", defaultStatus);
+    }
     if (routineOnly) {
       entry.putArray("programRoutines").addObject().put("name", "parse");
     } else {

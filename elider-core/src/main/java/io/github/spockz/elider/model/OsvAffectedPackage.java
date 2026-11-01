@@ -17,6 +17,18 @@ public record OsvAffectedPackage(
     requireText(ecosystem, "ecosystem");
     requireText(packageName, "packageName");
     Objects.requireNonNull(coordinate, "coordinate");
+    final int separator = packageName.indexOf(':');
+    if (separator <= 0
+        || separator == packageName.length() - 1
+        || separator != packageName.lastIndexOf(':')
+        || !coordinate.groupId().equals(packageName.substring(0, separator))
+        || !coordinate.artifactId().equals(packageName.substring(separator + 1))
+        || coordinate.version() != null
+        || !"jar".equals(coordinate.type())
+        || !coordinate.classifier().isEmpty()) {
+      throw new IllegalArgumentException(
+          "OSV Maven package coordinate must be its group:artifact with default jar identity");
+    }
     Objects.requireNonNull(versions, "versions");
     versions.forEach(value -> requireText(value, "version"));
     versions = List.copyOf(versions);

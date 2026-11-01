@@ -11,10 +11,12 @@ import java.util.TreeSet;
 /** Original product and version data from one CVE CNA affected entry. */
 public record CveAffectedEntryContext(
     String entryIdentity,
+    CveSourceRecordMetadata sourceRecord,
     String vendor,
     String product,
     String packageUrl,
     String collectionUrl,
+    String packageName,
     String defaultStatus,
     List<CveVersionClaim> versions,
     Set<String> programFiles,
@@ -22,6 +24,7 @@ public record CveAffectedEntryContext(
   /** Validates the locator and freezes the original version claims. */
   public CveAffectedEntryContext {
     requireText(entryIdentity, "entryIdentity");
+    Objects.requireNonNull(sourceRecord, "sourceRecord");
     requireText(product, "product");
     if (defaultStatus != null && defaultStatus.isBlank()) {
       throw new IllegalArgumentException("defaultStatus must not be blank when present");

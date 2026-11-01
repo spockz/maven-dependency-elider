@@ -9,6 +9,7 @@ import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CacheProducerIdentity;
 import io.github.spockz.elider.model.CveAffectedEntryContext;
+import io.github.spockz.elider.model.CveSourceRecordMetadata;
 import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
@@ -82,9 +83,12 @@ final class MavenAssessmentFixtures {
             List.of(
                 new CveAffectedEntryContext(
                     "containers.cna.affected[0]",
+                    new CveSourceRecordMetadata(
+                        true, true, true, cveId, true, "PUBLISHED", "a".repeat(64)),
                     "Example",
                     coordinate.artifactId(),
                     "pkg:maven/" + coordinate.groupId() + "/" + coordinate.artifactId(),
+                    null,
                     null,
                     null,
                     List.of(new CveVersionClaim("1.0", "affected", null, null, null, List.of())),

@@ -506,6 +506,8 @@ final class MavenElisionReportSchemaTest {
             .put("cnaAffectedEntryIdentity", "containers.cna.affected[0]")
             .put("affectedProductIdentity", "Example dep")
             .put("conventionalLayoutAssumed", false)
+            .put("applicability", "UNRESOLVED")
+            .put("applicabilityRationale", "Raw version claims do not establish applicability")
             .put("unresolvedRationale", "Verify source to class attribution");
     row.putArray("programFiles").add("src/main/java/org/example/Outer.java");
     row.putArray("programRoutines");

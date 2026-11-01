@@ -236,6 +236,12 @@ final class MavenElisionReportWriter {
           "    Source routines: "
               + (finding.programRoutines().isEmpty() ? "none" : finding.programRoutines()));
       lines.add("    Conventional layout assumption saved: " + finding.conventionalLayoutAssumed());
+      lines.add(
+          "    Raw advisory applicability: "
+              + finding.applicability()
+              + " ("
+              + finding.applicabilityRationale()
+              + ")");
       if (finding.matches().isEmpty()) {
         lines.add("    SourceFile matches: none");
       } else {

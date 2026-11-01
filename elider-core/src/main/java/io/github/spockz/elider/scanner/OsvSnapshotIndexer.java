@@ -9,9 +9,11 @@ import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CveAffectedEntryContext;
+import io.github.spockz.elider.model.CveSourceRecordMetadata;
 import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
+import io.github.spockz.elider.model.MavenPackageIdentity;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.OsvAffectedRange;
@@ -237,21 +239,26 @@ public final class OsvSnapshotIndexer {
           throw new IllegalArgumentException("CVE source record must be a JSON object");
         }
         validateCveSourceShape(cveRoot);
+        final String cveDigest = sha256(cveBytes);
+        final CveSourceRecordMetadata sourceMetadata = readCveSourceMetadata(cveRoot, cveDigest);
         final JsonNode affected = cveRoot.path(CONTAINERS_FIELD).path("cna").path("affected");
         if (affected.isArray()) {
           for (int index = 0; index < affected.size(); index++) {
             final JsonNode entry = affected.get(index);
-            final CveAffectedEntryContext context = readCnaContext(entry, index);
+            final CveAffectedEntryContext context = readCnaContext(entry, index, sourceMetadata);
             cnaEntries.add(context);
             for (final AdvisoryScope scope : scopes) {
-              if (matchesPackageUrl(context.packageUrl(), scope)) {
+              if (sourceMetadata.authorizesStructuredClaims(cveId, osvId, aliases)
+                  && matchesCnaProduct(context, scope)) {
                 addStructuredEvidence(
-                    entry, context.entryIdentity(), scope, cveId, sha256(cveBytes), evidence);
+                    entry, context.entryIdentity(), scope, cveId, cveDigest, evidence);
               }
             }
           }
         }
-        addCveTextEvidence(cveRoot, scopes, cveId, sha256(cveBytes), evidence);
+        if (sourceMetadata.authorizesStructuredClaims(cveId, osvId, aliases)) {
+          addCveTextEvidence(cveRoot, scopes, cveId, cveDigest, evidence);
+        }
       } catch (final IOException exception) {
         throw new IllegalArgumentException("Could not read CVE source record " + cveId, exception);
       }
@@ -560,7 +567,8 @@ public final class OsvSnapshotIndexer {
     }
   }
 
-  private static CveAffectedEntryContext readCnaContext(final JsonNode entry, final int index) {
+  private static CveAffectedEntryContext readCnaContext(
+      final JsonNode entry, final int index, final CveSourceRecordMetadata sourceRecord) {
     final String product = entry.path("product").textValue();
     final List<CveVersionClaim> versions = new ArrayList<>();
     final JsonNode versionsNode = entry.path(VERSIONS_FIELD);
@@ -583,10 +591,12 @@ public final class OsvSnapshotIndexer {
     }
     return new CveAffectedEntryContext(
         "containers.cna.affected[" + index + "]",
+        sourceRecord,
         entry.path("vendor").asText(null),
         product,
         entry.path("packageURL").asText(null),
         entry.path("collectionURL").asText(null),
+        entry.path("packageName").asText(null),
         optionalText(entry, "defaultStatus"),
         versions,
         readTextArray(entry.path("programFiles")),
@@ -617,7 +627,8 @@ public final class OsvSnapshotIndexer {
       throw new IllegalArgumentException(context + " must be an object");
     }
     requiredCnaText(entry, "product", context);
-    for (final String field : List.of("vendor", "packageURL", "collectionURL", "defaultStatus")) {
+    for (final String field :
+        List.of("vendor", "packageURL", "collectionURL", "packageName", "defaultStatus")) {
       optionalCnaText(entry, field, context);
     }
     final JsonNode versions = optionalArray(entry, VERSIONS_FIELD, context + ".versions");
@@ -730,16 +741,42 @@ public final class OsvSnapshotIndexer {
     }
   }
 
-  private static boolean matchesPackageUrl(final String packageUrl, final AdvisoryScope scope) {
-    if (packageUrl == null || packageUrl.isBlank()) {
-      return false;
+  private static boolean matchesCnaProduct(
+      final CveAffectedEntryContext entry, final AdvisoryScope scope) {
+    return MavenPackageIdentity.matchesCnaScope(entry, scope.affectedCoordinate());
+  }
+
+  private static CveSourceRecordMetadata readCveSourceMetadata(
+      final JsonNode root, final String sourceRecordSha256) {
+    final JsonNode metadata = root.get("cveMetadata");
+    if (metadata == null) {
+      return new CveSourceRecordMetadata(
+          false, false, false, null, false, null, sourceRecordSha256);
     }
-    final String expected =
-        "pkg:maven/"
-            + scope.affectedCoordinate().groupId()
-            + "/"
-            + scope.affectedCoordinate().artifactId();
-    return packageUrl.equals(expected);
+    if (!metadata.isObject()) {
+      if (!metadata.isNull()) {
+        return new CveSourceRecordMetadata(
+            true, false, false, null, false, null, sourceRecordSha256);
+      }
+      return new CveSourceRecordMetadata(true, false, false, null, false, null, sourceRecordSha256);
+    }
+    final JsonNode cveIdNode = metadata.get("cveId");
+    final JsonNode stateNode = metadata.get("state");
+    if (isInvalidNullableSourceText(cveIdNode) || isInvalidNullableSourceText(stateNode)) {
+      throw new IllegalArgumentException("cveMetadata.cveId and state must be text or null");
+    }
+    return new CveSourceRecordMetadata(
+        true,
+        true,
+        cveIdNode != null,
+        cveIdNode == null || cveIdNode.isNull() ? null : cveIdNode.textValue(),
+        stateNode != null,
+        stateNode == null || stateNode.isNull() ? null : stateNode.textValue(),
+        sourceRecordSha256);
+  }
+
+  private static boolean isInvalidNullableSourceText(final JsonNode value) {
+    return value != null && !value.isNull() && !value.isTextual();
   }
 
   private static void addStructuredEvidence(

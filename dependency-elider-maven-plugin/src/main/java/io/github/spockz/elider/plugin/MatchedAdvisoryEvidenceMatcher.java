@@ -58,7 +58,7 @@ final class MatchedAdvisoryEvidenceMatcher {
         if (evidence instanceof CorroboratedSourceClassCandidate) {
           continue;
         }
-        if (applies(evidence, candidate)) {
+        if (applies(record, evidence, candidate)) {
           matched.add(
               new MavenVulnerabilityAssessment.MatchedAdvisoryEvidence(
                   record.osvId(), record.aliases(), candidate, evidence));
@@ -128,8 +128,10 @@ final class MatchedAdvisoryEvidenceMatcher {
     }
   }
 
-  private static boolean applies(
-      final AdvisoryEvidence evidence, final ArtifactCoordinate candidate) {
+  private boolean applies(
+      final OsvAdvisoryRecord record,
+      final AdvisoryEvidence evidence,
+      final ArtifactCoordinate candidate) {
     final ArtifactCoordinate affected = evidence.scope().affectedCoordinate();
     final boolean sameComponent =
         affected.groupId().equals(candidate.groupId())
@@ -139,11 +141,10 @@ final class MatchedAdvisoryEvidenceMatcher {
     if (!sameComponent) {
       return false;
     }
-    // The heuristic scope is a lossy projection of OSV claims.
-    // Its raw versions are evaluated later.
-    return evidence instanceof io.github.spockz.elider.model.HeuristicCandidateEvidence
-        || MavenVersionRangeMatcher.includes(
-            evidence.scope().versionRangeSpec(), candidate.version());
+    if (evidence instanceof StructuredSourceClassEvidence structured) {
+      return MavenVulnerabilitySourceReview.matchesReviewClaim(record, structured, candidate);
+    }
+    return true;
   }
 
   private static boolean sameGavce(final ArtifactCoordinate left, final ArtifactCoordinate right) {

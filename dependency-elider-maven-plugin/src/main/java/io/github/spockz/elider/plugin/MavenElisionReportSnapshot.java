@@ -477,6 +477,8 @@ record MavenElisionReportSnapshot(
                     claim.programRoutines(),
                     claim.conventionalLayoutAssumed(),
                     claim.matches().stream().map(SourceReviewMatch::from).toList(),
+                    claim.applicability(),
+                    claim.applicabilityRationale(),
                     claim.unresolvedRationale()))
         .distinct()
         .sorted(
@@ -725,6 +727,8 @@ record MavenElisionReportSnapshot(
       List<String> programRoutines,
       boolean conventionalLayoutAssumed,
       List<SourceReviewMatch> matches,
+      OsvPackageApplicability.Status applicability,
+      String applicabilityRationale,
       String unresolvedRationale) {
     SourceReviewFinding {
       requireNonBlank(cveId, "cveId");
@@ -749,6 +753,8 @@ record MavenElisionReportSnapshot(
               .toList();
       MavenElisionReportSourceReviewValidator.validateFinding(
           coordinate, programFiles, matches, conventionalLayoutAssumed, conventionalLayoutAssumed);
+      Objects.requireNonNull(applicability, "applicability");
+      requireNonBlank(applicabilityRationale, "applicabilityRationale");
       requireNonBlank(unresolvedRationale, "unresolvedRationale");
     }
 

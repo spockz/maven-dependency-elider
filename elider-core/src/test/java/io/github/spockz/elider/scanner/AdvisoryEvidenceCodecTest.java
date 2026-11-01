@@ -102,7 +102,7 @@ class AdvisoryEvidenceCodecTest {
                                     .isEqualTo("pkg:maven/org.example/library"),
                             () ->
                                 assertThat(entry.collectionUrl())
-                                    .isEqualTo("https://example.test/repository"),
+                                    .isEqualTo("https://repo.maven.apache.org/maven2"),
                             () ->
                                 assertThat(entry.programFiles())
                                     .containsExactly("src/main/java/org/example/Unknown.java"),
@@ -476,10 +476,12 @@ class AdvisoryEvidenceCodecTest {
         List.of(
             new CveAffectedEntryContext(
                 "containers.cna.affected[0]",
+                OsvSnapshotFixtures.cveSourceMetadata("CVE-2025-12345", "PUBLISHED", digest),
                 "Example",
                 "library",
                 "pkg:maven/org.example/library",
-                "https://example.test/repository",
+                "https://repo.maven.apache.org/maven2",
+                "org.example:library",
                 "affected",
                 List.of(
                     new CveVersionClaim(
@@ -545,12 +547,17 @@ class AdvisoryEvidenceCodecTest {
           List.of(
               new CveAffectedEntryContext(
                   structured.cnaAffectedEntryIdentity(),
+                  OsvSnapshotFixtures.cveSourceMetadata(
+                      structured.scope().cveId(),
+                      "PUBLISHED",
+                      structured.provenance().sourceRecordSha256()),
                   productIdentity.substring(0, delimiter),
                   productIdentity.substring(delimiter + 1),
                   "pkg:maven/"
                       + structured.scope().affectedCoordinate().groupId()
                       + "/"
                       + structured.scope().affectedCoordinate().artifactId(),
+                  null,
                   null,
                   null,
                   List.of(),

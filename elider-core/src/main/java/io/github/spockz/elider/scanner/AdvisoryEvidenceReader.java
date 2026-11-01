@@ -11,7 +11,6 @@ import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
 import io.github.spockz.elider.model.CveAffectedEntryContext;
-import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
@@ -140,7 +139,7 @@ public final class AdvisoryEvidenceReader {
       throw new IOException("cnaAffectedEntries must be an array");
     }
     for (final JsonNode entry : cnaNodes) {
-      cnaEntries.add(readCnaEntry(entry));
+      cnaEntries.add(CnaAffectedEntryReader.read(entry));
     }
     final List<OsvAffectedPackage> affectedPackages = new ArrayList<>();
     final JsonNode packageNodes = node.get("affectedPackages");
@@ -230,88 +229,6 @@ public final class AdvisoryEvidenceReader {
       values.add(value.textValue());
     }
     return List.copyOf(values);
-  }
-
-  private CveAffectedEntryContext readCnaEntry(final JsonNode node) throws IOException {
-    requireObject(node, "CNA affected entry");
-    requireFields(
-        node,
-        Set.of(
-            "entryIdentity",
-            "vendor",
-            "product",
-            "packageUrl",
-            "collectionUrl",
-            "defaultStatus",
-            "versions",
-            "programFiles",
-            "programRoutines"),
-        "CNA affected entry");
-    final List<CveVersionClaim> versions = readCnaVersions(node.get("versions"));
-    return new CveAffectedEntryContext(
-        requiredText(node, "entryIdentity"),
-        optionalText(node, "vendor"),
-        requiredText(node, "product"),
-        optionalText(node, "packageUrl"),
-        optionalText(node, "collectionUrl"),
-        optionalText(node, "defaultStatus"),
-        versions,
-        Set.copyOf(readStringSet(node.get("programFiles"), "programFiles")),
-        Set.copyOf(readStringSet(node.get("programRoutines"), "programRoutines")));
-  }
-
-  private List<CveVersionClaim> readCnaVersions(final JsonNode versionNodes) throws IOException {
-    if (versionNodes == null || !versionNodes.isArray()) {
-      throw new IOException("CNA versions must be an array");
-    }
-    final List<CveVersionClaim> versions = new ArrayList<>();
-    for (final JsonNode version : versionNodes) {
-      versions.add(readCnaVersion(version));
-    }
-    return List.copyOf(versions);
-  }
-
-  private CveVersionClaim readCnaVersion(final JsonNode version) throws IOException {
-    requireObject(version, "CNA version");
-    requireFields(
-        version,
-        Set.of("version", "status", "versionType", "lessThan", "lessThanOrEqual", "changes"),
-        "CNA version");
-    return new CveVersionClaim(
-        requiredText(version, "version"),
-        requiredText(version, "status"),
-        optionalText(version, "versionType"),
-        optionalText(version, "lessThan"),
-        optionalText(version, "lessThanOrEqual"),
-        readCnaChanges(version.get("changes")));
-  }
-
-  private List<Map<String, String>> readCnaChanges(final JsonNode changeNodes) throws IOException {
-    if (changeNodes == null) {
-      return List.of();
-    }
-    if (!changeNodes.isArray()) {
-      throw new IOException("CNA version changes must be an array");
-    }
-    final List<Map<String, String>> changes = new ArrayList<>();
-    for (final JsonNode change : changeNodes) {
-      requireObject(change, "CNA version change");
-      changes.add(readCnaChange(change));
-    }
-    return List.copyOf(changes);
-  }
-
-  private Map<String, String> readCnaChange(final JsonNode change) throws IOException {
-    final Map<String, String> fields = new LinkedHashMap<>();
-    final Iterator<Map.Entry<String, JsonNode>> changeFields = change.fields();
-    while (changeFields.hasNext()) {
-      final Map.Entry<String, JsonNode> field = changeFields.next();
-      if (!field.getValue().isTextual()) {
-        throw new IOException("CNA version change fields must be strings");
-      }
-      fields.put(field.getKey(), field.getValue().textValue());
-    }
-    return Map.copyOf(fields);
   }
 
   private AdvisoryEvidence readEvidence(final JsonNode node) throws IOException {

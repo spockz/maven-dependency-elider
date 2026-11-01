@@ -34,20 +34,32 @@ final class MavenCorroboratedSourceScenario {
 
   static Prepared prepare(final Path directory) throws IOException {
     return prepareFromCveRecord(
-        directory, MavenCorroboratedSourceArchiveFixtures.writeCveRecord(directory), true);
+        directory,
+        MavenCorroboratedSourceArchiveFixtures.writeCveRecord(directory),
+        true,
+        MavenCorroboratedSourceArchiveFixtures.VERSION);
   }
 
-  static Prepared prepareUnresolvedClaim(final Path directory, final boolean routineOnly)
+  static Prepared prepareSourceClaim(
+      final Path directory,
+      final boolean routineOnly,
+      final String defaultStatus,
+      final String version)
       throws IOException {
     final Path cveRecord =
         routineOnly
-            ? MavenCorroboratedSourceArchiveFixtures.writeRoutineOnlyRecord(directory)
+            ? MavenCorroboratedSourceArchiveFixtures.writeRoutineOnlyRecord(
+                directory, defaultStatus)
             : MavenCorroboratedSourceArchiveFixtures.writeUnmatchedFileOnlyRecord(directory);
-    return prepareFromCveRecord(directory, cveRecord, false);
+    return prepareFromCveRecord(directory, cveRecord, false, version);
   }
 
   private static Prepared prepareFromCveRecord(
-      final Path directory, final Path cveRecord, final boolean ownerAssertion) throws IOException {
+      final Path directory,
+      final Path cveRecord,
+      final boolean ownerAssertion,
+      final String version)
+      throws IOException {
     final String cveDigest = ArtifactDigests.read(cveRecord).sha256();
     final List<OsvAdvisoryRecord> indexedRecords =
         new OsvSnapshotIndexer()
@@ -71,7 +83,7 @@ final class MavenCorroboratedSourceScenario {
         ArtifactCoordinate.of(
             MavenCorroboratedSourceArchiveFixtures.GROUP_ID,
             MavenCorroboratedSourceArchiveFixtures.ARTIFACT_ID,
-            MavenCorroboratedSourceArchiveFixtures.VERSION);
+            version);
     final ArtifactDigests originalDigest = ArtifactDigests.read(originalJar);
     final ArtifactDigests trimmedDigest = ArtifactDigests.read(trimmedJar);
     final ArtifactTrimRecord trimRecord =

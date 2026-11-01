@@ -5,6 +5,7 @@ package io.github.spockz.elider.scanner;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.CveAffectedEntryContext;
+import io.github.spockz.elider.model.CveSourceRecordMetadata;
 import io.github.spockz.elider.model.CveVersionClaim;
 import java.util.Map;
 import java.util.Set;
@@ -18,15 +19,28 @@ final class CnaAffectedEntryCodec {
   /* package */
   static void write(final ObjectNode target, final CveAffectedEntryContext entry) {
     target.put("entryIdentity", entry.entryIdentity());
+    writeSourceRecord(target.putObject("sourceRecord"), entry.sourceRecord());
     putOptional(target, "vendor", entry.vendor());
     target.put("product", entry.product());
     putOptional(target, "packageUrl", entry.packageUrl());
     putOptional(target, "collectionUrl", entry.collectionUrl());
+    putOptional(target, "packageName", entry.packageName());
     putOptional(target, "defaultStatus", entry.defaultStatus());
     final ArrayNode versions = target.putArray("versions");
     entry.versions().forEach(value -> writeVersion(versions.addObject(), value));
     writeStrings(target.putArray("programFiles"), entry.programFiles());
     writeStrings(target.putArray("programRoutines"), entry.programRoutines());
+  }
+
+  private static void writeSourceRecord(
+      final ObjectNode target, final CveSourceRecordMetadata sourceRecord) {
+    target.put("cveMetadataPresent", sourceRecord.cveMetadataPresent());
+    target.put("cveMetadataObject", sourceRecord.cveMetadataObject());
+    target.put("cveIdPresent", sourceRecord.cveIdPresent());
+    putOptional(target, "cveId", sourceRecord.cveId());
+    target.put("statePresent", sourceRecord.statePresent());
+    putOptional(target, "state", sourceRecord.state());
+    target.put("sourceRecordSha256", sourceRecord.sourceRecordSha256());
   }
 
   private static void writeVersion(final ObjectNode target, final CveVersionClaim claim) {

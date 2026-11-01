@@ -51,6 +51,7 @@ class MavenAdvisoryReviewRetentionTest {
         cveFile,
         """
         {
+          "cveMetadata":{"cveId":"CVE-2025-12345","state":"PUBLISHED"},
           "containers":{"cna":{"affected":[{
             "vendor":"Example",
             "product":"demo",

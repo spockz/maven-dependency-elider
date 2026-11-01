@@ -5,6 +5,7 @@ package io.github.spockz.elider.scanner;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.model.CveSourceRecordMetadata;
 
 /** Builds valid minimal OSV Maven records for source-ingestion tests. */
 public final class OsvSnapshotFixtures {
@@ -46,5 +47,11 @@ public final class OsvSnapshotFixtures {
     record.put("withdrawn", modified);
     record.putArray("affected");
     return record.toString();
+  }
+
+  /** Creates source metadata for a retained CNA entry fixture. */
+  public static CveSourceRecordMetadata cveSourceMetadata(
+      final String cveId, final String state, final String sourceRecordSha256) {
+    return new CveSourceRecordMetadata(true, true, true, cveId, true, state, sourceRecordSha256);
   }
 }

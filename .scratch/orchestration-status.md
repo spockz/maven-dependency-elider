@@ -441,3 +441,120 @@ The production publication seam is `MavenElisionOutputPublisher`, not `MavenTrim
   - Documentation updated: RQ-0011, RQ-0015, README, plugin usage, FAQ, and contributor decisions. Standalone `make test-examples` is not part of this slice; transcript marker updates will be generated through the repository target if needed.
   - **Current WP-VEX-02 status:** typed owner proof admission and physical gates are implemented; package and heuristic findings are report-only with exact candidate coordinates, applicability, OSV ownership, and inventory facts; producer identity gates and safe-class schema verification are implemented. Exact complete source-to-binary attribution remains incomplete (AC1/AC9); no confidence label or layout flag promotes a candidate. Standalone `make test-examples` has not been run and remains unverified; repository transcript checks are the available example-output gate. Package/heuristic rows are implemented as historical report DTOs, never proof, VEX, mitigation, or classification entries. Exact affected-version claims can be applicable; unsupported or ambiguous range semantics remain unresolved. OSV records without CVE aliases remain package-owned and do not acquire synthetic CVEs.
   - **Acceptance boundary:** Current slices satisfy the typed evidence/proof separation, POM-only proof authority and ADR-0008 physical gates, typed OSV/CNA cache ingestion and producer-bound caches, report-only structured source claims with a saved layout assumption, package/heuristic report retention and applicability, and the safe-class transcript verifier. AC1/AC9 automated complete source-to-binary attribution is still deferred; standalone example-suite verification remains unverified. Broader CNA range reconciliation and heuristic source attribution are not claimed by this slice.
+<!-- WHY: Tracks WP-VEX-02 scope, evidence, review state, and delivery dependencies in this isolated worktree. -->
+# WP-VEX-02 Orchestration Status
+
+## Identity and baseline
+
+- Work package: **WP-VEX-02 — verified structured source attribution**.
+- Branch/worktree: `track/wp-vex-02-verified-structured-source-attribution` at `.scratch/worktrees/track-wp-vex-02-verified-structured-source-attribution`.
+- Base: `4c1ec6c1bfc9c64394e26c16f0d2e6be3d0d18b4` (`Record OSV sync integration`).
+- Delivery target: local `main`; integration is pending and must preserve its unrelated dirty files.
+- Starting state: feature worktree clean. Main remained at the base with 52 pre-existing dirty/untracked paths; status and SHA-256 snapshots before and after worktree creation matched.
+- Baseline: clean, detached, non-hardlinked clone at `/tmp/mde-baseline-private-4c1ec6c.gbsBk0`; private Maven home/repository/cache. `make check` passed, exit 0. Evidence log: `/tmp/mde-baseline-private-4c1ec6c-make-check.log`. Reported counts: 287 core tests; 593 plugin tests (592 passed, 1 skipped); 16 lifecycle integration tests; coverage and transcript checks passed. The clone was clean after the run. An earlier shared/default-cache attempt terminated with exit 143 and is excluded from baseline evidence.
+
+## Controlling design sources
+
+- [WP-VEX-01](../docs/handovers/2026-10-27-wp-vex-01-vulnerability-assessment-and-vex-evidence.md): typed-ingestion and proof separation history.
+- [WP-VEX-02 typed handover](../docs/handovers/2026-10-29-wp-vex-02-typed-advisory-evidence-and-precondition-vex.md): current evidence, attribution, proof, reporting, cache, fixture, and AC1–AC13 requirements.
+- [WP-VEX-02 precondition handover](../docs/handovers/2026-10-29-wp-vex-02-precondition-gated-vex-generation.md): unchanged publication/inventory gates.
+- [WP-VEX-02 typed-core slice plan](../docs/handovers/2026-10-31-wp-vex-02-typed-core-slice-plan.md): historical first proof-seam slice, not the complete work package.
+- [ADR-0003](../docs/adr/0003-proguard-core-intra-jar-trimming-and-cyclonedx-pedigree.md), [ADR-0005](../docs/adr/0005-released-format-versioning.md), [ADR-0006](../docs/adr/0006-dual-source-vulnerability-advisory-ingestion-from-cvelist-v5-and-osv-maven.md), and [ADR-0008](../docs/adr/0008-precondition-gated-vex-attestations.md).
+- [RQ-0008](../docs/research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md), [RQ-0013](../docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md), and [RQ-0015](../docs/research/RQ-0015-actionable-advisory-gap-detection-and-heuristic-elision-candidates.md).
+
+## Architect matrix
+
+All rows begin **PLANNED / unverified** at this base. Owners: implementation `/root/typed_evidence_implementer`; architecture decisions and acceptance `/root`; independent review pending assignment. Evidence links and status will be updated per slice. `PARTIAL` means the scoped safe behavior exists but the complete WP criterion is not satisfied.
+
+| ID | Required outcome / boundary | Initial status | Slice owner |
+| :--- | :--- | :--- | :--- |
+| AC1 | Exact structured-source-to-binary attribution can support proof only when complete source output is established; no basename-only promotion. | PLANNED; source lookup/completeness unresolved | Implementer; architecture by coordinator |
+| AC2 | Preserve source record identity/digest, affected product/version, source claims, and attribution provenance through selection. | PLANNED | Implementer |
+| AC3 | Prose/reference/URL candidates remain separate review evidence and cannot be elevated by unrelated structured claims. | PLANNED | Implementer |
+| AC4 | LOW/MEDIUM advisories stay visible as review information and never create VEX/mitigation claims. | PLANNED | Implementer |
+| AC5 | Omitted-code VEX requires exact validated mapping, original presence, complete output-tier absence, and digest identity. | PLANNED; preserve existing proof gates | Implementer |
+| AC6 | Precondition VEX retains exact coordinate/class, complete opted-in inventory, freshness/digest, and publication checks from ADR-0008. | PLANNED; preserve existing ADR-0008 contract | Implementer |
+| AC7 | Strict unreleased schema-v1 readers/writers/validators reject malformed or provenance-free authority; no compatibility alias/migration. | PLANNED | Implementer |
+| AC8 | Safe-class end-to-end output is checked for exact Logback/CVE/Janino, inventory boundary, formats, and cross-format digest agreement. | PLANNED | Implementer |
+| AC9 | Positive/negative file and routine cases prove complete exact attribution without cross-product/version leakage. | PLANNED; automatic proof deferred until completeness is solved | Implementer; architecture by coordinator |
+| AC10 | Until exact lookup exists, unresolved source claims produce actionable review guidance and no automatic VEX; explicit POM proof remains usable. | PLANNED | Implementer |
+| AC11 | Conventional-layout option is false by default, recorded historically, and cannot waive complete class-set proof. | PLANNED | Implementer |
+| AC12 | Vulnerability and trim caches independently enforce schema and exact producer/build identity; cache data cannot restore proof authority. | PLANNED | Implementer |
+| AC13 | Formatting, static analysis, focused/module/integration tests, transcript check, and required end-to-end examples are reported accurately. | PLANNED; standalone example suite status tracked separately | Implementer |
+| MATCH | Bind CNA claim only to exact machine-readable Maven product identity and one source-record affected-entry locator; display-name resemblance is insufficient. | PLANNED | Implementer |
+| RANGE | Require the concrete version to satisfy exact OSV and CNA scopes; unknown, conflicting, unsupported, or non-comparable ranges fail closed. | PLANNED; broad range reconciliation remains research unless fully evidenced | Implementer; architecture by coordinator |
+| COMPLETE | Prove all top-level sibling types and nested/local/anonymous outputs from the exact artifact/source build; GAV and source JAR are not identity. | PLANNED; highest-risk gate | Implementer; architecture by coordinator |
+| ROUTINE | Resolve routine overloads/repeated names to a unique declaring class set; routine names alone remain review-only. | PLANNED | Implementer |
+| CONFLICT | Conflicting applicable source/product/mapping claims suppress proof and publication. | PLANNED | Implementer |
+| TRUST | Preserve CNA trust assumptions explicitly; arbitrary caller inputs and cache rows cannot mint proof capability. | PLANNED | Implementer |
+| PUBLISH | Stale/changed proof bytes, inventory, or output transactions block publication; retain existing atomicity and digest checks. | PLANNED | Implementer |
+| REPORT | Keep package, heuristic, and unresolved source evidence distinct from proof/classification; render accurate saved provenance and review steps. | PLANNED | Implementer |
+
+## Decisions and known risks
+
+- No new owner/proof hierarchy or confidence marker. Confidence is descriptive. Only current validated effective-POM owner assertions may enter the existing proof-specific APIs.
+- GAV plus a source-JAR coordinate is not source/binary identity. Proof requires exact original binary bytes and exact source bytes to be connected by a reproducible build; arbitrary caller-supplied reproduction cannot create capability. A source archive coordinate is only a locator, not proof that those bytes generated the assessed artifact.
+- Resolve a `programFiles` source path only by an exact path in the identified source archive or by the explicit conventional-layout assumption. Source lookup remains disabled until its reproducible resolver is implemented and reviewed. A basename or `SourceFile` match is corroboration only.
+- Reproduction is a set of separately tracked compilation tasks, one per source unit, with annotation processors and compiler plugins disabled. Every task must use an explicitly supported classpath/compiler configuration. The union of emitted class entries must form a bijection with the source-attributed class output set, and each emitted class's bytes must equal the corresponding exact original archive entry bytes. Missing, extra, ambiguous, or byte-different output blocks proof.
+- `JavaFileManager` sibling/origin callbacks are not a portable provenance guarantee and cannot be used as the completeness oracle. Completeness comes from recorded source units and reproduced class bytes, not compiler callback behavior.
+- Initial compiler support is deliberately narrow: JDK 21 `javac` only, with compiler identity/options/classpath and supported source/release levels explicitly recorded in fixtures. Until each combination is covered, other JDKs, compilers, releases, flags, processors, plugins, generated sources, and transformations abstain. This is not a claim of general Java compiler support.
+- Unknown range applicability blocks proof. Cached/advisory evidence never restores proof authority.
+- Routine names can be overloaded or repeated. A layout assumption cannot bypass completeness. Stale proof bytes block publication.
+- Initial support may be limited to non-MRJAR Java builds only where the complete emitted class inventory is reproduced. MRJAR, generated-source, and transforming builds remain review-only unless every tier/output is proven. Existing MRJAR physical safeguards must remain intact.
+
+### S1 claim and identity contract
+
+S1 uses raw source claims as the only applicability authority. `OsvAffectedPackage.versions`, `ranges`, and ordered range events plus each raw CNA product entry's `versions` and `defaultStatus` determine applicability. Per [OSV data documentation](https://google.github.io/osv.dev/data/) and the [OSV schema](https://ossf.github.io/osv-schema/), a version is included when explicitly listed **or** when it falls in a supported affected range; these are alternative/compact encodings, not an intersection. Preserve each OSV `affected[]` package entry and each CNA product entry independently because entries can encode package/platform distinctions. If multiple entries apply to one candidate without an unambiguous identity/platform selection, return `UNKNOWN`; do not flatten or union ambiguous entries. `AdvisoryScope.versionRangeSpec` is a compatibility/report projection only; it must never authorize automatic candidate matching or proof. The plugin-layer evaluator returns exactly `AFFECTED`, `UNAFFECTED`, or `UNKNOWN`; proof eligibility requires both the selected OSV package and exactly one selected CNA product entry to evaluate `AFFECTED` for the same concrete Maven version. Any unknown, unsupported, malformed, overlapping, conflicting, or ambiguous claim evaluates `UNKNOWN` or is rejected before evaluation.
+
+The CNA version rules follow the official [CVE 5.0 product and version encoding](https://github.com/CVEProject/cve-schema/blob/main/schema/docs/versions.md): affected product objects remain separate; version objects for one product are required to describe disjoint sets; a missing `defaultStatus` means `unknown`; a single-version object has only `version` and `status`; a range requires `versionType` and exactly one upper bound; `lessThan` is exclusive and `lessThanOrEqual` inclusive; `changes` refine a range at ordered `at` versions and clients must order them with that version type before evaluation. S1 supports only `versionType: maven` for range claims. `custom`, Git/source-control, other ecosystems, unknown status, bad bounds/change ordering, overlap, or any unresolved conflict cannot be treated as affected. A concrete exact-version claim may be evaluated as a single-version claim, but malformed extra range fields do not become ignorable merely because the `version` string equals the candidate.
+
+Product identity must bind the actual artifact's full GAVCE. A parsed Maven PURL uses namespace as groupId and name as artifactId; its `type` defaults to `jar`, and classifier is optional. Any supplied version, type, classifier, qualifier, or subpath must be supported and agree with the candidate coordinate; absent attributes may use only an explicit, documented claim/default basis, otherwise identity is `UNKNOWN`. A `packageURL` containing unsupported qualifiers/subpaths or contradicting the other identity claims is refused. An alternative `collectionURL` plus `packageName` route is allowed only for a recognized collection identity with an unambiguous Maven `group:artifact` encoding. Vendor/product display names, names alone, or one identity source that contradicts another never match. `cveMetadata.cveId` must equal the requested CVE ID/OSV alias and `cveMetadata.state` must be `PUBLISHED`; mismatched or non-published CVE records cannot contribute structured claims.
+
+## S1 acceptance and tests
+
+S1 ends when typed claim selection has an exact, reviewable provenance chain but has not attempted source compilation or proof admission:
+
+1. Validate requested CVE identity/state (`cveMetadata.cveId` matches requested CVE ID/OSV alias and state is `PUBLISHED`) before considering claims. Bind one CNA `affected[]` entry to an OSV-owned record using exact machine-readable identity and preserve its stable entry locator; never join on display name, namespace, or package-prefix resemblance. Do not aggregate products.
+2. Carry exact assessed GAVCE, OSV record ID, CVE/alias identity, source-record digest, entry locator, and original OSV/CNA claims without flattening or cross-entry aggregation. Resolve product identity only through a fully agreeing Maven PURL or a recognized, exact `collectionURL` plus Maven `packageName` route.
+3. Use raw `OsvAffectedPackage` and raw CNA entry claims only. For OSV, explicit `versions` membership OR inclusion in any supported range is affected; preserve multiple matching package entries and return unknown if they cannot be selected unambiguously for the candidate. The tri-state plugin evaluator returns `AFFECTED`, `UNAFFECTED`, or `UNKNOWN`; only both sources returning `AFFECTED` permit a candidate to proceed. Never use `AdvisoryScope.versionRangeSpec` to admit automatic matching.
+4. For CNA exact versions, evaluate the exact concrete version claim without range fields. For ranges, require `versionType: maven`; implement exclusive `lessThan`, inclusive `lessThanOrEqual`, and ordered `changes`. Missing `defaultStatus` is `UNKNOWN`; only `affected`/`unaffected` yield definite states. Treat malformed bounds, range/object overlap, unsupported/custom/Git version types, unknown status, conflicting claims, and ambiguity as `UNKNOWN` or refusal.
+5. Keep file and routine claims distinct. Missing/ambiguous product identity, multiple applicable entries, routine overloads, or routine names without owner information produce review-only findings rather than guessed class sets.
+6. Preserve immutable raw claims and provenance through strict writer/read/validation; malformed or contradictory rows fail closed. No cache/source row can mint POM owner evidence.
+
+Focused S1 tests should include: exact PURL success; PURL type/group/artifact/version/qualifier contradictions; recognized `collectionURL`+`packageName` success and ambiguous/unrecognized rejection; same display name with different package identity rejection; multiple CNA products where exactly one matches; requested-CVE mismatch and non-`PUBLISHED` state refusal; stable locator and digest retention; OSV exact-version positive, range-only positive, and a version listed/ranged by either encoding (union, not intersection); supported range exclusion; missing/unsupported OSV range type; multiple OSV entries with an ambiguous package/platform identity; unknown CNA default when no version object matches; exact-version positive; missing/unsupported CNA range type; exclusive and inclusive upper-bound edges; ordered (including shuffled) `changes`; disjoint version objects and overlap refusal; malformed bounds; conflicting OSV/CNA scopes; alias/owner consistency; duplicate/ambiguous applicable entry refusal; file-only and routine-only preservation; overloaded/repeated routine ambiguity; strict codec round-trip and malformed serialized-claim rejection. Each negative must assert the specific `UNKNOWN`/refused result and prove no proof/VEX/classification output is created. Source-to-class compilation, byte equality, cache/config/report integration, and VEX publication belong to S2–S5, not S1.
+
+## Single-track slice DAG
+
+One implementation track, with review gates between slices:
+
+```text
+S1 Exact claim identity and range
+  -> S2 Source/build identity and complete-output model
+  -> S3 Live artifact verification and narrow proof admission
+  -> S4 Cache, configuration, report, and VEX integration
+  -> S5 Integrated positive/negative fixtures, docs, transcript and example gates
+```
+
+| Slice | Scope / exit gate | State |
+| :--- | :--- | :--- |
+| S1 | Exact CNA entry/product identity, exact OSV+CNA range decision, ambiguity/conflict behavior, immutable evidence provenance. | IMPLEMENTED; formatter, lint, focused/full checks pass; independent review pending |
+| S2 | Establish reproducible source/build-to-artifact identity and complete class output, including siblings and all relevant tiers; unsupported cases abstain. | BLOCKED ON S1 review/commit |
+| S3 | Recompute against live exact artifact bytes and permit only complete validated evidence through existing proof APIs. | BLOCKED ON S2 |
+| S4 | Integrate effective-POM/config, cache non-authority, historical reporting, and VEX/publication while preserving ADR-0008. | BLOCKED ON S3 |
+| S5 | Cross-product/range/conflict/negative regression matrix, user/contributor docs, transcript refresh, full checks, and explicit example-suite evidence. | BLOCKED ON S4 |
+
+## Review, docs, and scope tracking
+
+- Review state: S1 implementation is stable for independent review; dependent work remains blocked until S1 approval and commit. Overall acceptance and final integration are pending.
+- Required docs/RQs: update the typed WP-VEX-02 handover, ADR-0006 only where an approved decision changes, and RQ-0008/RQ-0013/RQ-0015 with evidence links and unresolved questions. Keep ADR-0008 unchanged unless the owner explicitly authorizes a decision change. Refresh README/site usage/FAQ/contributor docs only where user-visible behavior changes.
+- Exclusions: WP-SPRING-01 and RQ-0018 are unrelated. All pre-existing dirty/untracked main paths are out of scope and must remain byte-for-byte/status-identical. No merge to main until review and checks pass.
+- Source-to-binary automatic attribution remains an explicit open research/design risk until S2/S3 establish complete reproducibility. `make test-examples` has not been run on this branch; do not claim its criterion verified until explicitly executed and reviewed.
+- Delivery target: local `main`, pending approved integration. Main remains untouched.
+
+## Current S1 execution status
+
+- S1 design received coordinator GO. Implementation is complete pending independent review and commit; no S2 work has started.
+- Current changes implement source CVE metadata retention, exact Maven package identity checks, and raw OSV/CNA tri-state applicability. Maven package identity checks recognize only the canonical Maven Central HTTPS endpoint with no port or default port 443; nondefault ports fail closed.
+- `make fmt` passed. Focused core selectors passed 21/21 (`/tmp/wp-vex-02-s1-core-focused-final.log`). Focused plugin source/range/matcher selectors passed 9/9 (`/tmp/wp-vex-02-s1-plugin-focused-final.log`), including affected `defaultStatus`, disjoint OSV range union, and unsupported sibling range refusal.
+- `make fmt` passed (`/tmp/wp-vex-02-s1-review-rows-fmt-3.log`). Focused core selectors passed 21/21 (`/tmp/wp-vex-02-s1-core-focused-final.log`); focused plugin source/range/matcher selectors passed 9/9 (`/tmp/wp-vex-02-s1-plugin-focused-final.log`); final review-row/assessment/report selectors passed 29/29 (`/tmp/wp-vex-02-s1-review-rows-focused-final.log`), including APPLICABLE, UNRESOLVED, and NOT_APPLICABLE rows and the no-candidate/no-proof assertion for NOT_APPLICABLE. `make lint-java` passed after the final code changes (`/tmp/wp-vex-02-s1-review-rows-lint-java-2.log`). A fixture-specific cache rejection selector also passed 1/1 (`/tmp/wp-vex-02-s1-masked-fixture-test.log`).
+- Full verification required correcting malformed-cache fixtures and retaining review-only structured source rows when raw applicability is UNKNOWN or UNAFFECTED; only AFFECTED rows can produce corroborated candidates. The corrected routine-retention fixture has valid published CVE metadata and an unsupported `semver` range. After `make update-transcripts` (`/tmp/wp-vex-02-s1-update-transcripts.log`) updated exactly three README applicability rationale lines, a fresh `./mvnw clean` passed (`/tmp/wp-vex-02-s1-final-clean-2.log`) and final capped `make check` passed with exit 0 (`/tmp/wp-vex-02-s1-make-check-post-transcripts.log`): 293 core tests, 599 plugin tests (0 failures/errors, 1 property-gated skip), 16 lifecycle ITs, coverage, Markdown lint, and transcript drift check all passed. `git diff --check` passed. No standalone `make test-examples` was run. Independent review and commit remain pending; no S2 work has started.

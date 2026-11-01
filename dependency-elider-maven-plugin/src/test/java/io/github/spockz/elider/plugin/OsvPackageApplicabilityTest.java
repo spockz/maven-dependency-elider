@@ -14,6 +14,45 @@ import org.junit.jupiter.api.Test;
 
 /** Tests that report applicability preserves raw OSV uncertainty. */
 final class OsvPackageApplicabilityTest {
+  /** Canonical Maven ecosystem label used by the fixtures. */
+  private static final String MAVEN_ECOSYSTEM = "Maven";
+
+  /** Exact group and artifact used by the fixtures. */
+  private static final String PACKAGE_NAME = "org.example:library";
+
+  /** Supported ecosystem range type. */
+  private static final String ECOSYSTEM_RANGE = "ECOSYSTEM";
+
+  /** First fixture lower bound. */
+  private static final String VERSION_1 = "1.0";
+
+  /** Second fixture upper bound. */
+  private static final String VERSION_3 = "3.0";
+
+  /** Upper endpoint of the second disjoint fixture range. */
+  private static final String VERSION_4 = "4.0";
+
+  /** Concrete affected version used by the exact-version fixture. */
+  private static final String VERSION_EXACT = "1.2";
+
+  /** Concrete version absent from the exact-version fixture. */
+  private static final String VERSION_UNLISTED = "1.3";
+
+  /** Concrete version inside the first interval. */
+  private static final String VERSION_1_9 = "1.9";
+
+  /** Concrete version inside and at the boundary of fixture ranges. */
+  private static final String VERSION_2_5 = "2.5";
+
+  /** Concrete version inside the second disjoint interval. */
+  private static final String VERSION_3_5 = "3.5";
+
+  /** Concrete version inside the unsupported-range fixture. */
+  private static final String VERSION_1_5 = "1.5";
+
+  /** Unsupported source range type. */
+  private static final String GIT_RANGE = "GIT";
+
   /** OSV introduced event key. */
   private static final String INTRODUCED = "introduced";
 
@@ -32,61 +71,97 @@ final class OsvPackageApplicabilityTest {
   OsvPackageApplicabilityTest() {}
 
   @Test
-  void reportsExactVersionsAndOneSupportedMavenInterval() {
+  void reportsExactVersionsAndSupportedMavenRangesAsAnAffectedUnion() {
     final OsvAffectedPackage exact =
-        new OsvAffectedPackage("Maven", "org.example:library", PACKAGE, List.of("1.2"), List.of());
+        new OsvAffectedPackage(
+            MAVEN_ECOSYSTEM, PACKAGE_NAME, PACKAGE, List.of(VERSION_EXACT), List.of());
     final OsvAffectedPackage interval =
-        packageWithRange("ECOSYSTEM", List.of(Map.of(INTRODUCED, "1.0"), Map.of(FIXED, VERSION_2)));
+        packageWithRange(
+            ECOSYSTEM_RANGE, List.of(Map.of(INTRODUCED, VERSION_1), Map.of(FIXED, VERSION_2)));
 
     assertAll(
         "only preserved exact versions and one Maven interval can assert applicability",
         () ->
-            assertThat(OsvPackageApplicability.evaluate(exact, "1.2").status())
+            assertThat(OsvPackageApplicability.evaluate(exact, VERSION_EXACT).status())
                 .isEqualTo(OsvPackageApplicability.Status.APPLICABLE),
         () ->
-            assertThat(OsvPackageApplicability.evaluate(exact, "1.3").status())
+            assertThat(OsvPackageApplicability.evaluate(exact, VERSION_UNLISTED).status())
                 .isEqualTo(OsvPackageApplicability.Status.NOT_APPLICABLE),
         () ->
-            assertThat(OsvPackageApplicability.evaluate(interval, "1.9").status())
+            assertThat(OsvPackageApplicability.evaluate(interval, VERSION_1_9).status())
                 .isEqualTo(OsvPackageApplicability.Status.APPLICABLE),
         () ->
-            assertThat(OsvPackageApplicability.evaluate(interval, "2.0").status())
+            assertThat(OsvPackageApplicability.evaluate(interval, VERSION_2).status())
                 .isEqualTo(OsvPackageApplicability.Status.NOT_APPLICABLE));
   }
 
   @Test
-  void unsupportedGitAndNonContiguousRangesRemainUnresolved() {
+  void unionsSupportedRangesAndRefusesUnsupportedOrOverlappingEvents() {
     final OsvAffectedPackage git =
-        packageWithRange("GIT", List.of(Map.of(INTRODUCED, "1.0"), Map.of(FIXED, VERSION_2)));
-    final OsvAffectedPackage multiple =
+        packageWithRange(
+            GIT_RANGE, List.of(Map.of(INTRODUCED, VERSION_1), Map.of(FIXED, VERSION_2)));
+    final OsvAffectedPackage multipleRanges =
         new OsvAffectedPackage(
-            "Maven",
-            "org.example:library",
+            MAVEN_ECOSYSTEM,
+            PACKAGE_NAME,
             PACKAGE,
             List.of(),
             List.of(
                 new OsvAffectedRange(
-                    "ECOSYSTEM",
+                    ECOSYSTEM_RANGE,
                     null,
-                    List.of(Map.of(INTRODUCED, "1.0"), Map.of(FIXED, VERSION_2))),
+                    List.of(Map.of(INTRODUCED, VERSION_1), Map.of(FIXED, VERSION_2))),
                 new OsvAffectedRange(
-                    "ECOSYSTEM", null, List.of(Map.of(INTRODUCED, "3.0"), Map.of(FIXED, "4.0")))));
+                    ECOSYSTEM_RANGE,
+                    null,
+                    List.of(Map.of(INTRODUCED, VERSION_3), Map.of(FIXED, VERSION_4)))));
+    final OsvAffectedPackage overlappingEvents =
+        packageWithRange(
+            ECOSYSTEM_RANGE,
+            List.of(
+                Map.of(INTRODUCED, VERSION_1),
+                Map.of(FIXED, VERSION_3),
+                Map.of(INTRODUCED, VERSION_2),
+                Map.of(FIXED, VERSION_4)));
+    final OsvAffectedPackage supportedWithUnsupportedSibling =
+        new OsvAffectedPackage(
+            MAVEN_ECOSYSTEM,
+            PACKAGE_NAME,
+            PACKAGE,
+            List.of(),
+            List.of(
+                new OsvAffectedRange(
+                    ECOSYSTEM_RANGE,
+                    null,
+                    List.of(Map.of(INTRODUCED, VERSION_3), Map.of(FIXED, VERSION_4))),
+                new OsvAffectedRange(
+                    GIT_RANGE,
+                    null,
+                    List.of(Map.of(INTRODUCED, VERSION_1), Map.of(FIXED, VERSION_2)))));
 
     assertAll(
-        "unsupported range semantics are explicit report uncertainty",
+        "supported OSV ranges form a union while malformed or unsupported claims stay unknown",
         () ->
-            assertThat(OsvPackageApplicability.evaluate(git, "1.5").status())
+            assertThat(OsvPackageApplicability.evaluate(git, VERSION_1_5).status())
                 .isEqualTo(OsvPackageApplicability.Status.UNRESOLVED),
         () ->
-            assertThat(OsvPackageApplicability.evaluate(multiple, "1.5").status())
+            assertThat(OsvPackageApplicability.evaluate(multipleRanges, VERSION_3_5).status())
+                .isEqualTo(OsvPackageApplicability.Status.APPLICABLE),
+        () ->
+            assertThat(OsvPackageApplicability.evaluate(overlappingEvents, VERSION_2_5).status())
+                .isEqualTo(OsvPackageApplicability.Status.UNRESOLVED),
+        () ->
+            assertThat(
+                    OsvPackageApplicability.evaluate(supportedWithUnsupportedSibling, VERSION_3_5)
+                        .status())
                 .isEqualTo(OsvPackageApplicability.Status.UNRESOLVED));
   }
 
   private static OsvAffectedPackage packageWithRange(
       final String type, final List<Map<String, String>> events) {
     return new OsvAffectedPackage(
-        "Maven",
-        "org.example:library",
+        MAVEN_ECOSYSTEM,
+        PACKAGE_NAME,
         PACKAGE,
         List.of(),
         List.of(new OsvAffectedRange(type, null, events)));

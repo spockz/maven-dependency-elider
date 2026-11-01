@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.CveSourceRecordMetadata;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
@@ -68,9 +69,12 @@ class AdvisoryEvidenceImmutabilityTest {
             List.of(
                 new io.github.spockz.elider.model.CveAffectedEntryContext(
                     "containers.cna.affected[0]",
+                    new CveSourceRecordMetadata(
+                        true, true, true, cveId, true, "PUBLISHED", "a".repeat(64)),
                     "Example",
                     "library",
                     "pkg:maven/org.example/library",
+                    null,
                     null,
                     null,
                     List.of(),

@@ -11,6 +11,7 @@ import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
 import io.github.spockz.elider.model.CveAffectedEntryContext;
+import io.github.spockz.elider.model.CveSourceRecordMetadata;
 import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
@@ -85,9 +86,12 @@ class CorroboratedSourceClassCodecTest {
     final CveAffectedEntryContext entry =
         new CveAffectedEntryContext(
             ENTRY_ID,
+            new CveSourceRecordMetadata(
+                true, true, true, CVE_ID, true, "PUBLISHED", "a".repeat(64)),
             "Example",
             "library",
             "pkg:maven/org.example/library",
+            null,
             null,
             "affected",
             versions,

@@ -27,6 +27,8 @@ final class MavenElisionReportSourcePayloadValidator {
           PROGRAM_ROUTINES,
           "conventionalLayoutAssumed",
           "matches",
+          "applicability",
+          "applicabilityRationale",
           "unresolvedRationale");
 
   private MavenElisionReportSourcePayloadValidator() {}
@@ -61,8 +63,19 @@ final class MavenElisionReportSourcePayloadValidator {
       throw new IOException("Elision report source review assumption must match snapshot flag");
     }
     validateNonBlank(row.get("unresolvedRationale"), "unresolvedRationale");
+    validateApplicability(row.get("applicability"));
+    validateNonBlank(row.get("applicabilityRationale"), "applicabilityRationale");
     MavenElisionReportSourceMatchPayloadValidator.validate(
         row.get("matches"), row.get(PROGRAM_FILES));
+  }
+
+  private static void validateApplicability(final JsonNode value) throws IOException {
+    if (value == null
+        || !value.isTextual()
+        || java.util.Arrays.stream(OsvPackageApplicability.Status.values())
+            .noneMatch(status -> status.name().equals(value.textValue()))) {
+      throw new IOException("Elision report source review applicability must be a known status");
+    }
   }
 
   private static void validateSha256(final JsonNode value) throws IOException {

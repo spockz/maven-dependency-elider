@@ -118,6 +118,8 @@ final class MavenElisionSourceReviewReportTest {
                         + "location and sibling class set remain unverified "
                         + "(src/main/java/org/example/Outer.java)",
                     "b".repeat(64))),
+            OsvPackageApplicability.Status.APPLICABLE,
+            "OSV and the exact CNA product entry both mark the version affected",
             "SourceFile matches are review leads only; verify the complete source-unit class set.");
     return new MavenElisionReportSnapshot(
         MavenElisionReportSnapshot.SCHEMA_VERSION,

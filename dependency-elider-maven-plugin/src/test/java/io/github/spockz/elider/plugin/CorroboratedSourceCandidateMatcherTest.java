@@ -1,4 +1,4 @@
-/* WHY: Guards the exact-version and CNA-entry gates for SourceFile review candidates. */
+/* WHY: Guards the raw version and exact CNA-entry gates for SourceFile review candidates. */
 
 package io.github.spockz.elider.plugin;
 
@@ -9,10 +9,12 @@ import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CveAffectedEntryContext;
+import io.github.spockz.elider.model.CveSourceRecordMetadata;
 import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
+import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import io.github.spockz.elider.scanner.JarSourceFileIndex;
 import java.io.IOException;
@@ -46,7 +48,7 @@ class CorroboratedSourceCandidateMatcherTest {
   /** Conflicting CNA state that must suppress the candidate. */
   private static final String UNAFFECTED = "unaffected";
 
-  /** Default status that cannot replace an exact version claim. */
+  /** Default status used when no CNA version claim matches. */
   private static final String DEFAULT_STATUS = "affected";
 
   /** OSV version scope used by the matching scenarios. */
@@ -66,22 +68,19 @@ class CorroboratedSourceCandidateMatcherTest {
   @TempDir private Path tempDir;
 
   @Test
-  void requiresOneUnboundedExactAffectedClaimAndMatchingOsvScope() throws IOException {
+  void requiresUnambiguousRawOsvAndCnaApplicability() throws IOException {
     final Path archive = writeArchive();
     final JarSourceFileIndex sourceIndex = JarSourceFileIndex.read(archive);
 
     assertAll(
-        "version ranges and default status do not substitute for an exact CNA affected claim",
+        "only agreeing supported raw OSV and CNA claims produce a source review candidate",
         () ->
-            assertThat(candidates(record(OSV_RANGE, "0.9", AFFECTED, DEFAULT_STATUS), sourceIndex))
-                .isEmpty(),
+            assertThat(candidates(record(OSV_RANGE, "0.9", AFFECTED, null), sourceIndex)).isEmpty(),
         () ->
             assertThat(
                     candidates(record(OSV_RANGE, VERSION, UNAFFECTED, DEFAULT_STATUS), sourceIndex))
                 .isEmpty(),
-        () ->
-            assertThat(candidates(record(OSV_RANGE, null, null, DEFAULT_STATUS), sourceIndex))
-                .isEmpty(),
+        () -> assertThat(candidates(record(OSV_RANGE, null, null, null), sourceIndex)).isEmpty(),
         () ->
             assertThat(
                     candidates(record("[2.0,3.0)", VERSION, AFFECTED, DEFAULT_STATUS), sourceIndex))
@@ -91,12 +90,12 @@ class CorroboratedSourceCandidateMatcherTest {
                     candidates(
                         recordWithClaims(
                             OSV_RANGE,
-                            DEFAULT_STATUS,
+                            null,
                             List.of(
                                 new CveVersionClaim(
-                                    VERSION, AFFECTED, null, "1.1", null, List.of()))),
+                                    VERSION, AFFECTED, "maven", "1.1", null, List.of()))),
                         sourceIndex))
-                .isEmpty(),
+                .hasSize(1),
         () ->
             assertThat(
                     candidates(
@@ -139,7 +138,57 @@ class CorroboratedSourceCandidateMatcherTest {
                 .isEmpty(),
         () ->
             assertThat(candidates(record(OSV_RANGE, VERSION, AFFECTED, "unaffected"), sourceIndex))
-                .hasSize(1));
+                .hasSize(1),
+        () ->
+            assertThat(candidates(record(OSV_RANGE, null, null, DEFAULT_STATUS), sourceIndex))
+                .hasSize(1),
+        () ->
+            assertThat(
+                    candidates(
+                        withDuplicateCnaProduct(record(OSV_RANGE, VERSION, AFFECTED, null)),
+                        sourceIndex))
+                .isEmpty(),
+        () ->
+            assertThat(
+                    candidates(
+                        withDuplicateOsvPackage(record(OSV_RANGE, VERSION, AFFECTED, null)),
+                        sourceIndex))
+                .isEmpty());
+  }
+
+  private static OsvAdvisoryRecord withDuplicateCnaProduct(final OsvAdvisoryRecord source) {
+    final CveAffectedEntryContext original = source.cnaAffectedEntries().getFirst();
+    final CveAffectedEntryContext duplicate =
+        new CveAffectedEntryContext(
+            "containers.cna.affected[1]",
+            original.sourceRecord(),
+            original.vendor(),
+            original.product(),
+            original.packageUrl(),
+            original.collectionUrl(),
+            original.packageName(),
+            original.defaultStatus(),
+            original.versions(),
+            original.programFiles(),
+            original.programRoutines());
+    return new OsvAdvisoryRecord(
+        source.osvId(),
+        source.modified(),
+        source.aliases(),
+        source.affectedPackages(),
+        List.of(original, duplicate),
+        source.evidence());
+  }
+
+  private static OsvAdvisoryRecord withDuplicateOsvPackage(final OsvAdvisoryRecord source) {
+    final OsvAffectedPackage affectedPackage = source.affectedPackages().getFirst();
+    return new OsvAdvisoryRecord(
+        source.osvId(),
+        source.modified(),
+        source.aliases(),
+        List.of(affectedPackage, affectedPackage),
+        source.cnaAffectedEntries(),
+        source.evidence());
   }
 
   private List<io.github.spockz.elider.model.CorroboratedSourceClassCandidate> candidates(
@@ -173,9 +222,12 @@ class CorroboratedSourceCandidateMatcherTest {
     final CveAffectedEntryContext entry =
         new CveAffectedEntryContext(
             "containers.cna.affected[0]",
+            new CveSourceRecordMetadata(
+                true, true, true, CVE_ID, true, "PUBLISHED", "a".repeat(64)),
             "Example",
             ARTIFACT_NAME,
             "pkg:maven/org.example/demo",
+            null,
             null,
             defaultStatus,
             versions,
@@ -197,7 +249,7 @@ class CorroboratedSourceCandidateMatcherTest {
             PACKAGE_NAME,
             ArtifactCoordinate.of("org.example", ARTIFACT_NAME, null),
             List.of(),
-            List.of());
+            List.of(osvRange(osvRange)));
     return new OsvAdvisoryRecord(
         "GHSA-candidate",
         "2026-10-31T00:00:00Z",
@@ -205,6 +257,17 @@ class CorroboratedSourceCandidateMatcherTest {
         List.of(affectedPackage),
         List.of(entry),
         List.of(evidence));
+  }
+
+  private static OsvAffectedRange osvRange(final String specification) {
+    final String bounds = specification.substring(1, specification.length() - 1);
+    final int separator = bounds.indexOf(',');
+    return new OsvAffectedRange(
+        "ECOSYSTEM",
+        null,
+        List.of(
+            Map.of("introduced", bounds.substring(0, separator)),
+            Map.of("fixed", bounds.substring(separator + 1))));
   }
 
   private Path writeArchive() throws IOException {

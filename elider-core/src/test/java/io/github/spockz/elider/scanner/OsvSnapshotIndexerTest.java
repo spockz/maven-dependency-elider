@@ -5,6 +5,9 @@ package io.github.spockz.elider.scanner;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.model.CveSourceRecordMetadata;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
@@ -31,6 +34,8 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.AvoidInstantiatingObjectsInLoops"
 })
 class OsvSnapshotIndexerTest {
+  private static final String SHARED_CVE_ALIAS = "CVE-2025-12345";
+
   @TempDir Path tempDir;
 
   @Test
@@ -41,6 +46,7 @@ class OsvSnapshotIndexerTest {
         cvePath,
         """
         {
+          "cveMetadata":{"cveId":"CVE-2025-12345","state":"PUBLISHED"},
           "containers": {
             "cna": {
               "descriptions": [{"lang":"en","value":"org.example.One is affected"}],
@@ -140,8 +146,8 @@ class OsvSnapshotIndexerTest {
         () -> assertThat(noCveRecord.modified()).isEqualTo("2026-10-30T12:00:00Z"),
         () ->
             assertThat(firstRecord.aliases())
-                .containsExactlyInAnyOrder("CVE-2025-12345", "GHSA-alias-one"),
-        () -> assertThat(secondRecord.aliases()).containsExactly("CVE-2025-12345"),
+                .containsExactlyInAnyOrder(SHARED_CVE_ALIAS, "GHSA-alias-one"),
+        () -> assertThat(secondRecord.aliases()).containsExactly(SHARED_CVE_ALIAS),
         () -> assertThat(firstRecord.affectedPackages()).hasSize(2),
         () ->
             assertThat(firstRecord.affectedPackages().getFirst().ranges().get(1).repo())
@@ -246,6 +252,57 @@ class OsvSnapshotIndexerTest {
         () -> assertThat(sourceRecord.modified()).isEqualTo("2026-10-31T00:00:00Z"),
         () -> assertThat(indexed.modified()).isEqualTo(sourceRecord.modified()),
         () -> assertThat(decoded.modified()).isEqualTo(indexed.modified()));
+  }
+
+  @Test
+  void retainsMismatchedOrNonPublishedCveMetadataWithoutStructuredEvidence() throws IOException {
+    assertAll(
+        "CVE source identity and state remain visible but do not authorize structured claims",
+        () -> assertReviewOnlySourceMetadata("CVE-2025-99999", "PUBLISHED", "CVE-2025-99999"),
+        () -> assertReviewOnlySourceMetadata(SHARED_CVE_ALIAS, "REJECTED", SHARED_CVE_ALIAS));
+  }
+
+  private void assertReviewOnlySourceMetadata(
+      final String sourceCveId, final String state, final String expectedSourceCveId)
+      throws IOException {
+    final Path cvePath = tempDir.resolve("cves/2025/12xxx/CVE-2025-12345.json");
+    Files.createDirectories(cvePath.getParent());
+    Files.writeString(cvePath, cveSourceJson(sourceCveId, state));
+    final String osv = OsvSnapshotFixtures.osvJson("GHSA-source-metadata", SHARED_CVE_ALIAS);
+    final OsvAdvisoryRecord record =
+        new OsvSnapshotIndexer()
+            .indexZip(
+                new ByteArrayInputStream(createZip(List.of(new ZipItem("record.json", osv)))),
+                tempDir)
+            .getFirst();
+    final CveSourceRecordMetadata retainedSource =
+        record.cnaAffectedEntries().getFirst().sourceRecord();
+
+    assertAll(
+        "mismatched or unpublished source is retained but cannot mint structured evidence",
+        () -> assertThat(retainedSource.cveId()).isEqualTo(expectedSourceCveId),
+        () -> assertThat(retainedSource.state()).isEqualTo(state),
+        () ->
+            assertThat(record.evidence())
+                .noneMatch(StructuredSourceClassEvidence.class::isInstance),
+        () ->
+            assertThat(record.evidence())
+                .noneMatch(value -> value.provenance().origin() == EvidenceOrigin.CVE_LIST));
+  }
+
+  private static String cveSourceJson(final String cveId, final String state) {
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode root = mapper.createObjectNode();
+    root.putObject("cveMetadata").put("cveId", cveId).put("state", state);
+    final ObjectNode affected =
+        root.putObject("containers").putObject("cna").putArray("affected").addObject();
+    affected
+        .put("vendor", "Example")
+        .put("product", "library")
+        .put("packageURL", "pkg:maven/org.example/library");
+    affected.putArray("versions").addObject().put("version", "1.0").put("status", "affected");
+    affected.putArray("programFiles").add("src/main/java/org/example/Library.java");
+    return root.toString();
   }
 
   private static OsvAdvisoryRecord find(final List<OsvAdvisoryRecord> records, final String id) {
