@@ -2,6 +2,9 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.correspondence.SourceReproductionEngine;
+import io.github.spockz.elider.correspondence.SourceReproductionRequest;
+import io.github.spockz.elider.correspondence.SourceReproductionResult;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
@@ -34,8 +37,8 @@ final class MavenSourceCorrespondenceClaimEvaluator {
   /** Absent when source correspondence is disabled for this invocation. */
   private final Optional<MavenSourceClassifierResolver> resolver;
 
-  /** Shared compiler identity for this assessment. */
-  private final SourceJdkIdentity.Resolution sourceJdkIdentity;
+  /** Core engine captures the pinned compiler identity once for this assessment. */
+  private final Optional<SourceReproductionEngine> sourceReproductionEngine;
 
   /** Enables only the documented source-root translation. */
   private final boolean conventionalLayoutAssumed;
@@ -58,7 +61,7 @@ final class MavenSourceCorrespondenceClaimEvaluator {
       final MavenSession session,
       final Optional<MavenSourceClassifierResolver> resolver,
       final boolean conventionalLayoutAssumed,
-      final SourceJdkIdentity.Resolution sourceJdkIdentity) {
+      final Optional<SourceReproductionEngine> sourceReproductionEngine) {
     this.candidate = candidate;
     this.records = List.copyOf(records);
     this.artifacts = List.copyOf(artifacts);
@@ -66,7 +69,7 @@ final class MavenSourceCorrespondenceClaimEvaluator {
     this.session = session;
     this.resolver = resolver;
     this.conventionalLayoutAssumed = conventionalLayoutAssumed;
-    this.sourceJdkIdentity = sourceJdkIdentity;
+    this.sourceReproductionEngine = sourceReproductionEngine;
   }
 
   /* default */ Optional<SourceBuildCorrespondence> evaluate(
@@ -89,8 +92,8 @@ final class MavenSourceCorrespondenceClaimEvaluator {
     if (snapshots.size() != ONE_MATCH || resolver.isEmpty()) {
       return abstained(item, evidence, snapshotFailureReason(snapshots.size()));
     }
-    if (sourceJdkIdentity.identity().isEmpty()) {
-      return abstained(item, evidence, sourceJdkIdentity.refusal().orElseThrow());
+    if (sourceReproductionEngine.isEmpty()) {
+      return abstained(item, evidence, "Core source reproduction engine is unavailable");
     }
     resolveSourceArtifact();
     if (resolutionFailure != null) {
@@ -139,27 +142,31 @@ final class MavenSourceCorrespondenceClaimEvaluator {
       final StructuredSourceClassEvidence evidence,
       final MavenSourceClassifierResolver.ResolvedSourceArtifact sources,
       final java.nio.file.Path originalJar) {
-    final SourceArtifactReproducer.Outcome outcome =
-        SourceArtifactReproducer.reproduce(
-            candidate,
-            sources,
-            originalJar,
-            evidence.programFiles().stream().sorted().toList(),
-            evidence.programRoutines().stream().sorted().toList(),
-            conventionalLayoutAssumed,
-            sourceJdkIdentity.identity().orElseThrow());
+    final SourceReproductionResult outcome =
+        sourceReproductionEngine
+            .orElseThrow()
+            .reproduce(
+                new SourceReproductionRequest(
+                    candidate,
+                    sources.coordinate(),
+                    originalJar,
+                    sources.path(),
+                    sources.repositoryProvenance(),
+                    evidence.programFiles().stream().sorted().toList(),
+                    evidence.programRoutines().stream().sorted().toList(),
+                    conventionalLayoutAssumed));
     return toCorrespondence(item, evidence, outcome);
   }
 
   private Optional<SourceBuildCorrespondence> toCorrespondence(
       final MavenVulnerabilityAssessment.MatchedAdvisoryEvidence item,
       final StructuredSourceClassEvidence evidence,
-      final SourceArtifactReproducer.Outcome outcome) {
-    if (outcome instanceof SourceArtifactReproducer.Abstained failure) {
+      final SourceReproductionResult outcome) {
+    if (outcome instanceof SourceReproductionResult.Abstained failure) {
       return abstained(item, evidence, failure.rationale());
     }
-    final SourceArtifactReproducer.Reproduced reproduced =
-        (SourceArtifactReproducer.Reproduced) outcome;
+    final SourceReproductionResult.Completed reproduced =
+        (SourceReproductionResult.Completed) outcome;
     return Optional.of(
         new SourceBuildCorrespondence.Matched(
             candidate,

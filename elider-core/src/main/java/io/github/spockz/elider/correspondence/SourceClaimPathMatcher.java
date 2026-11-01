@@ -1,22 +1,23 @@
 // WHY: Keeps basename and package-suffix comparisons review-only instead of treating them as proof.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 /** Applies conservative path checks to source-file claims and class-file metadata. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
-final class SourceClaimPathMatcher {
+public final class SourceClaimPathMatcher {
   /** Java source suffix retained by structured source claims. */
   private static final String JAVA_SUFFIX = ".java";
 
   private SourceClaimPathMatcher() {}
 
-  static boolean isSupportedJavaSourceClaim(final String sourceClaim) {
+  /** Checks whether a claimed path is an admissible relative Java source path. */
+  public static boolean isSupportedJavaSourceClaim(final String sourceClaim) {
     return sourceClaim.endsWith(JAVA_SUFFIX)
         && !sourceClaim.contains("://")
         && !sourceClaim.startsWith("/");
   }
 
-  static boolean isTopLevelClassName(final String classEntry) {
+  /** Checks whether a binary name denotes a supported top-level class. */
+  public static boolean isTopLevelClassName(final String classEntry) {
     return classEntry.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+")
         && !classEntry.contains("$")
         && !classEntry.endsWith(".package-info")
@@ -25,13 +26,15 @@ final class SourceClaimPathMatcher {
         && !"module-info".equals(classEntry);
   }
 
-  static String basename(final String path) {
+  /** Returns the final path segment using either slash convention. */
+  public static String basename(final String path) {
     final String normalized = path.replace('\\', '/');
     final int separator = normalized.lastIndexOf('/');
     return normalized.substring(separator + 1);
   }
 
-  static boolean hasPackageSuffix(final String sourceClaim, final String classPackage) {
+  /** Checks path/package suffix agreement without asserting exact source location. */
+  public static boolean hasPackageSuffix(final String sourceClaim, final String classPackage) {
     final String normalized = sourceClaim.replace('\\', '/');
     final int basenameSeparator = normalized.lastIndexOf('/');
     if (basenameSeparator <= 0) {
@@ -57,12 +60,14 @@ final class SourceClaimPathMatcher {
     return true;
   }
 
-  static String classPackage(final String classEntry) {
+  /** Returns the package portion of a binary class name. */
+  public static String classPackage(final String classEntry) {
     final int separator = classEntry.lastIndexOf('.');
     return separator < 0 ? "" : classEntry.substring(0, separator);
   }
 
-  static String packageComparison(final String sourceClaim, final String classEntry) {
+  /** Describes the limited package suffix comparison for review-only findings. */
+  public static String packageComparison(final String sourceClaim, final String classEntry) {
     return "source path package suffix matches class package "
         + classPackage(classEntry)
         + "; exact source location and sibling class set remain unverified ("

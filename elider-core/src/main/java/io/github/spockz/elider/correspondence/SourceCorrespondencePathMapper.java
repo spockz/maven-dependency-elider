@@ -1,6 +1,6 @@
 // WHY: Applies only exact or explicitly assumed conventional source path mapping.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import java.io.IOException;
 import java.util.ArrayList;

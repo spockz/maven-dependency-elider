@@ -1,7 +1,7 @@
 // WHY: Holds only verified physical class digests or exact Java source bytes needed for
 // reproduction.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -17,7 +17,7 @@ final class SourceCorrespondenceArchive {
   private final Map<String, byte[]> sourceContents;
 
   /** Complete binary inventory or the empty inventory for a source archive. */
-  private final List<SourceBuildCorrespondence.ClassEntry> classEntries;
+  private final List<SourceReproductionResult.ClassEntry> classEntries;
 
   /** Stable names used to create one compilation task per source unit. */
   private final List<String> entryNames;
@@ -27,7 +27,7 @@ final class SourceCorrespondenceArchive {
   SourceCorrespondenceArchive(
       final String sha256,
       final Map<String, byte[]> sourceContents,
-      final List<SourceBuildCorrespondence.ClassEntry> classes,
+      final List<SourceReproductionResult.ClassEntry> classes,
       final List<String> sourceEntries) {
     this.archiveDigest = sha256;
     final Map<String, byte[]> copiedContents = new HashMap<>();
@@ -49,7 +49,7 @@ final class SourceCorrespondenceArchive {
     return bytes.clone();
   }
 
-  /* default */ List<SourceBuildCorrespondence.ClassEntry> classes() {
+  /* default */ List<SourceReproductionResult.ClassEntry> classes() {
     return classEntries;
   }
 

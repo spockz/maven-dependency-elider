@@ -1,7 +1,7 @@
 // WHY: Ensures source bytes retained from archives cannot be mutated through constructor inputs
 // or result accessors.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

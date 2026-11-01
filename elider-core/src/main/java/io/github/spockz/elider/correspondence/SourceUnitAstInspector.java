@@ -1,6 +1,6 @@
 // WHY: Extracts source declarations and routine owners only after javac analysis resolves them.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
@@ -44,10 +44,10 @@ final class SourceUnitAstInspector {
     return Set.copyOf(names);
   }
 
-  private static List<SourceBuildCorrespondence.RoutineDeclaration> routineDeclarations(
+  private static List<SourceReproductionResult.RoutineDeclaration> routineDeclarations(
       final CompilationUnitTree unit, final JavacTask task) throws IOException {
     final Trees trees = Trees.instance(task);
-    final List<SourceBuildCorrespondence.RoutineDeclaration> declarations = new ArrayList<>();
+    final List<SourceReproductionResult.RoutineDeclaration> declarations = new ArrayList<>();
     final String[] unresolved = new String[1];
     new TreePathScanner<Void, Void>() {
       @Override
@@ -68,7 +68,7 @@ final class SourceUnitAstInspector {
       final TreePath methodPath,
       final Trees trees,
       final JavacTask task,
-      final List<SourceBuildCorrespondence.RoutineDeclaration> declarations,
+      final List<SourceReproductionResult.RoutineDeclaration> declarations,
       final String... unresolved) {
     final Element element = trees.getElement(methodPath);
     if (!(element instanceof ExecutableElement executable)
@@ -77,7 +77,7 @@ final class SourceUnitAstInspector {
       return;
     }
     declarations.add(
-        new SourceBuildCorrespondence.RoutineDeclaration(
+        new SourceReproductionResult.RoutineDeclaration(
             method.getName().toString(), binaryName(task, owner)));
   }
 
@@ -87,7 +87,7 @@ final class SourceUnitAstInspector {
   }
 
   /* default */ record Inspection(
-      Set<String> topLevelTypes, List<SourceBuildCorrespondence.RoutineDeclaration> routines) {
+      Set<String> topLevelTypes, List<SourceReproductionResult.RoutineDeclaration> routines) {
     Inspection {
       topLevelTypes = Set.copyOf(topLevelTypes);
       routines = List.copyOf(routines);

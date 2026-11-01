@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.correspondence.SourceReproductionResult;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -71,7 +72,7 @@ final class MavenSourceCorrespondenceAssessmentTest {
         () ->
             assertThat(match.sourceUnits().getFirst().routineDeclarations())
                 .contains(
-                    new SourceBuildCorrespondence.RoutineDeclaration(
+                    new SourceReproductionResult.RoutineDeclaration(
                         PARSE_ROUTINE, "org.example.Outer")),
         () ->
             assertThat(match.sourceUnits().getFirst().topLevelTypes())
@@ -79,7 +80,7 @@ final class MavenSourceCorrespondenceAssessmentTest {
         () ->
             assertThat(
                     match.originalClassInventory().stream()
-                        .map(SourceBuildCorrespondence.ClassEntry::path))
+                        .map(SourceReproductionResult.ClassEntry::path))
                 .containsExactlyInAnyOrder(
                     "org/example/Outer.class",
                     "org/example/Outer$1.class",

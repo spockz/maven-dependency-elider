@@ -1,6 +1,6 @@
 // WHY: Binds byte reproduction to the exact supported javac and JDK platform image.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -103,9 +103,9 @@ final class SourceJdkIdentity {
         requireText(runtime.vendor()),
         requireText(runtime.version()),
         sha256(compilerClass),
-        ArtifactFileDigest.sha256(compilerImage),
-        ArtifactFileDigest.sha256(platformImage),
-        ArtifactFileDigest.sha256(releaseApiImage));
+        SourceFileDigest.sha256(compilerImage),
+        SourceFileDigest.sha256(platformImage),
+        SourceFileDigest.sha256(releaseApiImage));
   }
 
   /* default */ static boolean matchesSupportedImage(final Identity identity) {

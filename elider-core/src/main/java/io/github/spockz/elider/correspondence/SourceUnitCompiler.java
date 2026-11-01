@@ -1,6 +1,6 @@
 // WHY: Isolates every exact Java source unit and records every emitted class family.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
@@ -41,7 +41,7 @@ final class SourceUnitCompiler {
       writeSources(sources, extractedSources);
       final Path emptySourcePath = workspace.directory("empty-source-path");
       final Path outputs = workspace.directory("outputs");
-      final List<SourceBuildCorrespondence.SourceUnit> sourceUnits =
+      final List<SourceReproductionResult.SourceUnit> sourceUnits =
           compileUnits(sources, originalJar, compiler, extractedSources, emptySourcePath, outputs);
       if (compilerIdentity == null) {
         throw new IOException("Pinned JDK compiler identity is unavailable");
@@ -78,7 +78,7 @@ final class SourceUnitCompiler {
   }
 
   @SuppressWarnings("PMD.UseConcurrentHashMap") // This map is thread-confined to one compilation.
-  private static List<SourceBuildCorrespondence.SourceUnit> compileUnits(
+  private static List<SourceReproductionResult.SourceUnit> compileUnits(
       final SourceCorrespondenceArchive sources,
       final Path originalJar,
       final JavaCompiler compiler,
@@ -86,8 +86,8 @@ final class SourceUnitCompiler {
       final Path emptySourcePath,
       final Path outputs)
       throws IOException {
-    final List<SourceBuildCorrespondence.SourceUnit> units = new ArrayList<>();
-    final Map<String, SourceBuildCorrespondence.ClassEntry> emittedPaths = new HashMap<>();
+    final List<SourceReproductionResult.SourceUnit> units = new ArrayList<>();
+    final Map<String, SourceReproductionResult.ClassEntry> emittedPaths = new HashMap<>();
     int emittedClassCount = 0;
     long emittedClassBytes = 0;
     int index = 0;
@@ -103,20 +103,20 @@ final class SourceUnitCompiler {
               compiler);
       final SourceClassOutputInventory.Inventory outputInventory =
           SourceClassOutputInventory.read(unitOutput);
-      final List<SourceBuildCorrespondence.ClassEntry> classes = outputInventory.classes();
+      final List<SourceReproductionResult.ClassEntry> classes = outputInventory.classes();
       emittedClassCount += classes.size();
       emittedClassBytes += outputInventory.totalBytes();
       SourceClassOutputInventory.requireAggregateBounds(emittedClassCount, emittedClassBytes);
       if (classes.isEmpty() && !compiled.topLevelTypes().isEmpty()) {
         throw new IOException("Source unit emitted no classes: " + sourceEntry);
       }
-      for (final SourceBuildCorrespondence.ClassEntry emitted : classes) {
+      for (final SourceReproductionResult.ClassEntry emitted : classes) {
         if (emittedPaths.putIfAbsent(emitted.path(), emitted) != null) {
           throw new IOException("Two source units emitted the same class entry: " + emitted.path());
         }
       }
       units.add(
-          new SourceBuildCorrespondence.SourceUnit(
+          new SourceReproductionResult.SourceUnit(
               sourceEntry,
               sha256(sources.sourceContent(sourceEntry)),
               compiled.topLevelTypes(),
@@ -224,12 +224,12 @@ final class SourceUnitCompiler {
   }
 
   private record UnitCompilation(
-      Set<String> topLevelTypes, List<SourceBuildCorrespondence.RoutineDeclaration> routines) {}
+      Set<String> topLevelTypes, List<SourceReproductionResult.RoutineDeclaration> routines) {}
 
   /* default */ record Compilation(
       String compilerIdentity,
       List<String> options,
-      List<SourceBuildCorrespondence.SourceUnit> units) {
+      List<SourceReproductionResult.SourceUnit> units) {
     Compilation {
       options = List.copyOf(options);
       units = List.copyOf(units);

@@ -1,6 +1,6 @@
 // WHY: Streams ZIP entries through a digest so unrelated archive payloads stay out of memory.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

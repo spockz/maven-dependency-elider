@@ -1,7 +1,7 @@
 // WHY: Validates archive structure while retaining only the source bytes and class hashes needed
 // later.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -59,14 +59,13 @@ final class SourceCorrespondenceArchiveReader {
     if (!sources && contents.classDigests().isEmpty()) {
       throw new IOException("Original JAR contains no physical class entries");
     }
-    final List<SourceBuildCorrespondence.ClassEntry> classes =
+    final List<SourceReproductionResult.ClassEntry> classes =
         contents.classDigests().entrySet().stream()
             .sorted(Map.Entry.comparingByKey())
-            .map(
-                entry -> new SourceBuildCorrespondence.ClassEntry(entry.getKey(), entry.getValue()))
+            .map(entry -> new SourceReproductionResult.ClassEntry(entry.getKey(), entry.getValue()))
             .toList();
     return new SourceCorrespondenceArchive(
-        ArtifactFileDigest.sha256(path),
+        SourceFileDigest.sha256(path),
         contents.sourceContents(),
         classes,
         contents.sourceEntries().stream().sorted().toList());

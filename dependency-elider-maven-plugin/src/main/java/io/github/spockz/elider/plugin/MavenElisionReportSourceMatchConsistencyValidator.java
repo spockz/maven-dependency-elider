@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.correspondence.SourceClaimPathMatcher;
 import java.io.IOException;
 import java.util.List;
 

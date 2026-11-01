@@ -12,6 +12,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** Checks live source request identity and checkout containment. */
 final class LiveStructuredSourceBoundaryTest {
+  /** Unique CVE identifier used in the boundary fixture. */
+  private static final String CVE_ID = "CVE-2025-12345";
+
   /** Per-test isolated source tree and cache location. */
   @TempDir private Path temporaryDirectory;
 
@@ -89,10 +92,7 @@ final class LiveStructuredSourceBoundaryTest {
     final Path checkout = fixture.request().cveListGitDir();
     final Path cvesRoot = checkout.resolve("cves");
     final Path outsideRoot = temporaryDirectory.resolve("outside-cves");
-    final Path outsideRecord =
-        outsideRoot
-            .resolve("2025/12xxx")
-            .resolve(LiveStructuredSourceValidatorTest.CVE_ID + ".json");
+    final Path outsideRecord = outsideRoot.resolve("2025/12xxx").resolve(CVE_ID + ".json");
     Files.createDirectories(outsideRecord.getParent());
     Files.move(fixture.sourcePath(), outsideRecord);
     Files.delete(cvesRoot.resolve("2025/12xxx"));

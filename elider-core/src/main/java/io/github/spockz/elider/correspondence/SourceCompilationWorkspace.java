@@ -1,6 +1,6 @@
 // WHY: Gives each correspondence attempt isolated compiler directories and deterministic cleanup.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import java.io.IOException;
 import java.nio.file.Files;

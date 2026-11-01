@@ -1,6 +1,6 @@
 // WHY: Enforces unique routine owners and complete byte-equal physical class inventories.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -17,14 +17,14 @@ final class SourceCorrespondenceAdmission {
   private SourceCorrespondenceAdmission() {}
 
   /* default */ static void requireUniqueRoutineOwners(
-      final List<SourceBuildCorrespondence.SourceUnit> units, final List<String> claims)
+      final List<SourceReproductionResult.SourceUnit> units, final List<String> claims)
       throws IOException {
     if (claims == null || claims.isEmpty()) {
       return;
     }
     for (final String claim : claims) {
       requireRoutineName(claim);
-      final List<SourceBuildCorrespondence.RoutineDeclaration> matches =
+      final List<SourceReproductionResult.RoutineDeclaration> matches =
           units.stream()
               .flatMap(unit -> unit.routineDeclarations().stream())
               .filter(declaration -> declaration.name().equals(claim))
@@ -38,8 +38,8 @@ final class SourceCorrespondenceAdmission {
   /* default */
   @SuppressWarnings("PMD.UseConcurrentHashMap") // Inventory maps are local to this validation.
   static void requireInventoryMatch(
-      final List<SourceBuildCorrespondence.ClassEntry> original,
-      final List<SourceBuildCorrespondence.SourceUnit> units)
+      final List<SourceReproductionResult.ClassEntry> original,
+      final List<SourceReproductionResult.SourceUnit> units)
       throws IOException {
     final Map<String, String> expected = new HashMap<>();
     original.forEach(entry -> expected.put(entry.path(), entry.sha256()));
@@ -66,10 +66,10 @@ final class SourceCorrespondenceAdmission {
 
   @SuppressWarnings("PMD.UseConcurrentHashMap") // Reproduction maps are local to this validation.
   private static Map<String, String> reproducedInventory(
-      final List<SourceBuildCorrespondence.SourceUnit> units) throws IOException {
+      final List<SourceReproductionResult.SourceUnit> units) throws IOException {
     final Map<String, String> reproduced = new HashMap<>();
-    for (final SourceBuildCorrespondence.SourceUnit unit : units) {
-      for (final SourceBuildCorrespondence.ClassEntry entry : unit.emittedClasses()) {
+    for (final SourceReproductionResult.SourceUnit unit : units) {
+      for (final SourceReproductionResult.ClassEntry entry : unit.emittedClasses()) {
         if (reproduced.putIfAbsent(entry.path(), entry.sha256()) != null) {
           throw new IOException("Duplicate reproduced class path: " + entry.path());
         }

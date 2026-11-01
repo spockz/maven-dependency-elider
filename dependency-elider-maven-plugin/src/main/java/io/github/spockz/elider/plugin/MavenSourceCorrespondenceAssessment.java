@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.correspondence.SourceReproductionEngine;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
@@ -26,8 +27,11 @@ final class MavenSourceCorrespondenceAssessment {
   /** Path-root translation is a user assumption, never a completeness signal. */
   private final boolean conventionalLayoutAssumed;
 
-  /** Memoized compiler image identity. */
-  private Optional<SourceJdkIdentity.Resolution> sourceJdkIdentity = Optional.empty();
+  /** Memoized engine captures the pinned compiler image once per assessment. */
+  private Optional<SourceReproductionEngine> sourceReproductionEngine = Optional.empty();
+
+  /** Distinguishes lazy engine initialization from a separately represented outcome. */
+  private boolean sourceReproductionEngineInitialized;
 
   private MavenSourceCorrespondenceAssessment(
       final MavenProject project,
@@ -80,7 +84,7 @@ final class MavenSourceCorrespondenceAssessment {
             session,
             resolver,
             conventionalLayoutAssumed,
-            currentJdkIdentity());
+            currentSourceReproductionEngine());
     final List<SourceBuildCorrespondence> results = new ArrayList<>();
     for (final MavenVulnerabilityAssessment.MatchedAdvisoryEvidence item : structuredClaims) {
       final StructuredSourceClassEvidence evidence =
@@ -90,15 +94,13 @@ final class MavenSourceCorrespondenceAssessment {
     return List.copyOf(results);
   }
 
-  private SourceJdkIdentity.Resolution currentJdkIdentity() {
-    if (sourceJdkIdentity.isEmpty()) {
-      final SourceJdkIdentity.Resolution current =
-          canResolve()
-              ? SourceJdkIdentity.current()
-              : SourceJdkIdentity.Resolution.unavailable(
-                  "Maven source artifact resolver is unavailable");
-      sourceJdkIdentity = Optional.of(current);
+  private Optional<SourceReproductionEngine> currentSourceReproductionEngine() {
+    if (!sourceReproductionEngineInitialized) {
+      if (canResolve()) {
+        sourceReproductionEngine = Optional.of(SourceReproductionEngine.forCurrentJdk());
+      }
+      sourceReproductionEngineInitialized = true;
     }
-    return sourceJdkIdentity.orElseThrow();
+    return sourceReproductionEngine;
   }
 }

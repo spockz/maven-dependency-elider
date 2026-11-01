@@ -1,8 +1,8 @@
 // WHY: Captures bounded compiler class outputs by physical path and content digest.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
-import io.github.spockz.elider.plugin.SourceBuildCorrespondence.ClassEntry;
+import io.github.spockz.elider.correspondence.SourceReproductionResult.ClassEntry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,7 +36,7 @@ final class SourceClassOutputInventory {
         validateOutputPath(path);
         totalBytes += Files.size(file);
         validateOutputBounds(classes.size(), totalBytes);
-        classes.add(new ClassEntry(path, ArtifactFileDigest.sha256(file)));
+        classes.add(new ClassEntry(path, SourceFileDigest.sha256(file)));
       }
     }
     classes.sort(Comparator.comparing(ClassEntry::path));

@@ -1,6 +1,6 @@
 // WHY: Rejects archive metadata and paths outside the supported ordinary-JAR layout.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import java.io.IOException;
 import java.nio.file.Path;

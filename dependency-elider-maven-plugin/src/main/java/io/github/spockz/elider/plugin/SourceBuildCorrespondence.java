@@ -2,13 +2,12 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.correspondence.SourceReproductionResult;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
-import java.util.TreeSet;
 
 /** Immutable result of a single exact source/build correspondence attempt. */
 @SuppressWarnings("PMD.PublicMemberInNonPublicType") // Interface records are implicitly public.
@@ -25,41 +24,6 @@ sealed interface SourceBuildCorrespondence {
   /** Returns the source entry locator that selected the structured claim. */
   String cnaAffectedEntryIdentity();
 
-  record ClassEntry(String path, String sha256) {
-    public ClassEntry {
-      if (path == null || path.isBlank() || sha256 == null || !sha256.matches("[0-9a-f]{64}")) {
-        throw new IllegalArgumentException("Invalid correspondence class entry");
-      }
-    }
-  }
-
-  record SourceUnit(
-      String sourceEntry,
-      String sourceSha256,
-      Set<String> topLevelTypes,
-      List<RoutineDeclaration> routineDeclarations,
-      List<ClassEntry> emittedClasses) {
-    public SourceUnit {
-      if (sourceEntry == null || sourceEntry.isBlank()) {
-        throw new IllegalArgumentException("sourceEntry must be nonblank");
-      }
-      if (sourceSha256 == null || !sourceSha256.matches("[0-9a-f]{64}")) {
-        throw new IllegalArgumentException("sourceSha256 must be a lowercase SHA-256");
-      }
-      topLevelTypes = Collections.unmodifiableSet(new TreeSet<>(topLevelTypes));
-      routineDeclarations = List.copyOf(routineDeclarations);
-      emittedClasses = List.copyOf(emittedClasses);
-    }
-  }
-
-  record RoutineDeclaration(String name, String ownerBinaryName) {
-    public RoutineDeclaration {
-      if (name == null || name.isBlank() || ownerBinaryName == null || ownerBinaryName.isBlank()) {
-        throw new IllegalArgumentException("Routine declaration identity is required");
-      }
-    }
-  }
-
   record Matched(
       ArtifactCoordinate candidate,
       String osvId,
@@ -73,8 +37,8 @@ sealed interface SourceBuildCorrespondence {
       String compilerIdentity,
       List<String> compilerOptions,
       Map<String, String> mappedProgramFiles,
-      List<ClassEntry> originalClassInventory,
-      List<SourceUnit> sourceUnits)
+      List<SourceReproductionResult.ClassEntry> originalClassInventory,
+      List<SourceReproductionResult.SourceUnit> sourceUnits)
       implements SourceBuildCorrespondence {
     public Matched {
       requireOwnerIdentity(candidate, osvId, cveId);

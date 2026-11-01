@@ -1,7 +1,7 @@
 // WHY: Proves source correspondence identity changes with compiler/platform bytes and rejects
 // unsupported compiler runtimes.
 
-package io.github.spockz.elider.plugin;
+package io.github.spockz.elider.correspondence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
