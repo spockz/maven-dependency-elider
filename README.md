@@ -388,7 +388,7 @@ Run standalone CVE fixture baselines:
 
 The transcripts below come from configured Maven invocations. Run `make update-transcripts` to refresh them. Report dependency graphs keep the first three rows; an elision count and SHA-256 digest detect changes in omitted rows. Rerun the displayed fixture's full `report` command to inspect its graph without elision.
 
-The pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md) supplies two package-advisory contexts and a commit-derived class candidate for stable examples. The report retains these as review-only advisory evidence; only validated effective-POM `HIGH` assertions can enter physical proof.
+The pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md) supplies two package-advisory contexts and a commit-derived class candidate for stable examples. These package and heuristic rows remain review-only; only a validated effective-POM `HIGH` assertion or the separate live-verified structured CNA capability can enter physical proof.
 
 The excerpts below show the expected report categories for the checked-in fixtures. The safe-class fixture uses the explicit complete-inventory opt-in and exact-class mapping required for its precondition finding.
 
