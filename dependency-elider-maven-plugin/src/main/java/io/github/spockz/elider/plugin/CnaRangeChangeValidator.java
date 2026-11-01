@@ -1,9 +1,12 @@
-/* WHY: Validates ordered CNA status changes against their declared Maven interval. */
+/* WHY: Validates and orders CNA status changes against their declared Maven interval. */
 
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.CveVersionClaim;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.artifact.versioning.ComparableVersion;
 
@@ -11,18 +14,29 @@ import org.apache.maven.artifact.versioning.ComparableVersion;
 final class CnaRangeChangeValidator {
   private CnaRangeChangeValidator() {}
 
-  /* package */ static MavenRawScopeApplicability.Result validate(
+  /* package */ static Optional<List<Map<String, String>>> validatedChanges(
       final CveVersionClaim claim, final String upper, final boolean inclusiveUpper) {
-    String previousChange = null;
-    for (final Map<String, String> change : claim.changes()) {
+    final List<Map<String, String>> changes = claim.changes();
+    for (final Map<String, String> change : changes) {
       final MavenRawScopeApplicability.Result validation =
-          validateOneChange(change, claim.version(), upper, previousChange, inclusiveUpper);
+          validateOneChange(change, claim.version(), upper, inclusiveUpper);
       if (validation != null) {
-        return validation;
+        return Optional.empty();
       }
-      previousChange = change.get("at");
     }
-    return null;
+    final List<VersionedChange> ordered =
+        changes.stream()
+            .map(change -> new VersionedChange(change, new ComparableVersion(change.get("at"))))
+            .sorted(Comparator.comparing(VersionedChange::version))
+            .toList();
+    ComparableVersion previousVersion = null;
+    for (final VersionedChange change : ordered) {
+      if (previousVersion != null && previousVersion.compareTo(change.version()) == 0) {
+        return Optional.empty();
+      }
+      previousVersion = change.version();
+    }
+    return Optional.of(ordered.stream().map(VersionedChange::claim).toList());
   }
 
   /* package */ static boolean appliesAtOrBefore(final String change, final String candidate) {
@@ -33,7 +47,6 @@ final class CnaRangeChangeValidator {
       final Map<String, String> change,
       final String lowerVersion,
       final String upperVersion,
-      final String previousChange,
       final boolean inclusiveUpper) {
     final String changeVersion = change.get("at");
     if (!change.keySet().equals(Set.of("at", "status"))
@@ -41,7 +54,7 @@ final class CnaRangeChangeValidator {
       return MavenRawScopeApplicability.unknown(
           "CNA change has malformed fields or an invalid version");
     }
-    if (!isWithinRange(changeVersion, lowerVersion, upperVersion, previousChange, inclusiveUpper)) {
+    if (!isWithinRange(changeVersion, lowerVersion, upperVersion, inclusiveUpper)) {
       return MavenRawScopeApplicability.unknown(
           "CNA changes are unordered or outside their version range");
     }
@@ -51,15 +64,12 @@ final class CnaRangeChangeValidator {
   }
 
   private static boolean isWithinRange(
-      final String current,
-      final String lower,
-      final String upper,
-      final String previous,
-      final boolean inclusiveUpper) {
+      final String current, final String lower, final String upper, final boolean inclusiveUpper) {
     final ComparableVersion currentVersion = new ComparableVersion(current);
     final int upperComparison = currentVersion.compareTo(new ComparableVersion(upper));
-    return (previous == null || currentVersion.compareTo(new ComparableVersion(previous)) > 0)
-        && currentVersion.compareTo(new ComparableVersion(lower)) >= 0
+    return currentVersion.compareTo(new ComparableVersion(lower)) >= 0
         && (inclusiveUpper ? upperComparison <= 0 : upperComparison < 0);
   }
+
+  private record VersionedChange(Map<String, String> claim, ComparableVersion version) {}
 }

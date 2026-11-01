@@ -3,6 +3,9 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.CveVersionClaim;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /** Matches exact versions and supported Maven ranges in individual CNA claims. */
 final class CnaRangeClaimEvaluator {
@@ -57,13 +60,14 @@ final class CnaRangeClaimEvaluator {
       final String version,
       final String upper,
       final boolean inclusiveUpper) {
-    final MavenRawScopeApplicability.Result validation =
-        CnaRangeChangeValidator.validate(claim, upper, inclusiveUpper);
-    if (validation != null) {
-      return validation;
+    final Optional<List<Map<String, String>>> checkedChanges =
+        CnaRangeChangeValidator.validatedChanges(claim, upper, inclusiveUpper);
+    if (checkedChanges.isEmpty()) {
+      return MavenRawScopeApplicability.unknown(
+          "CNA changes are malformed, duplicated, or outside their version range");
     }
     String status = claim.status();
-    for (final java.util.Map<String, String> change : claim.changes()) {
+    for (final Map<String, String> change : checkedChanges.orElseThrow()) {
       if (CnaRangeChangeValidator.appliesAtOrBefore(change.get("at"), version)) {
         status = change.get("status");
       }

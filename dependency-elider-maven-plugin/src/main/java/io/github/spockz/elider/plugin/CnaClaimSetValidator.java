@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.CveVersionClaim;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.apache.maven.artifact.versioning.ComparableVersion;
 
 /** Validates claim set boundaries and status values for one CNA product entry. */
@@ -57,10 +58,11 @@ final class CnaClaimSetValidator {
       return MavenRawScopeApplicability.unknown(
           "CNA range cannot be evaluated with Maven semantics");
     }
-    final MavenRawScopeApplicability.Result changes =
-        CnaRangeChangeValidator.validate(claim, upper, inclusiveUpper);
-    if (changes != null) {
-      return changes;
+    final Optional<List<java.util.Map<String, String>>> changes =
+        CnaRangeChangeValidator.validatedChanges(claim, upper, inclusiveUpper);
+    if (changes.isEmpty()) {
+      return MavenRawScopeApplicability.unknown(
+          "CNA changes are malformed, duplicated, or outside their version range");
     }
     intervals.add(new CnaClaimInterval(claim.version(), upper, inclusiveUpper));
     return null;

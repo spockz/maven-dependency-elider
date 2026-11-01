@@ -95,6 +95,56 @@ final class MavenElisionSourceReviewReportTest {
                             .isEqualTo(scenario.originalDigest().sha256())));
   }
 
+  @Test
+  void ambiguousCnaProductsRemainUnresolvedReportRowsWithoutProof() {
+    assertAll(
+        "product entry order cannot select a CNA owner",
+        () -> assertAmbiguousProducts(temporaryDirectory.resolve("ambiguous-products"), false),
+        () -> assertAmbiguousProducts(temporaryDirectory.resolve("reversed-products"), true));
+  }
+
+  private void assertAmbiguousProducts(final Path directory, final boolean reverse)
+      throws IOException {
+    final MavenCorroboratedSourceScenario.Prepared scenario =
+        MavenCorroboratedSourceScenario.prepareAmbiguousProductClaim(directory, reverse);
+    final MavenVulnerabilityAssessment.Result assessment = scenario.result();
+    final ElisionAnalysisModel.Analysis analysis =
+        MavenCorroboratedSourceAnalysisFixtures.analysis(
+            scenario.coordinate(),
+            scenario.originalJar(),
+            List.of(scenario.successfulTrimRecord()),
+            false,
+            false);
+    final MavenProject project = new MavenProject();
+    project.setGroupId("org.example");
+    project.setArtifactId("assessment-project");
+    project.setVersion("1.0");
+    project.setFile(directory.resolve("pom.xml").toFile());
+    final MavenElisionReportSnapshot snapshot =
+        MavenElisionReportSnapshot.from(project, analysis, assessment);
+    final Path report = directory.resolve("report.json");
+    MavenElisionReportWriter.write(report, snapshot);
+    final MavenElisionReportSnapshot restored = MavenElisionReportWriter.read(report);
+
+    assertAll(
+        "multiple exact CNA product entries remain unresolved review rows",
+        () -> assertThat(assessment.matchedSourceClaims()).hasSize(2),
+        () -> assertThat(MavenCorroboratedSourceScenario.candidates(assessment)).isEmpty(),
+        () -> assertThat(assessment.attestations()).isEmpty(),
+        () -> assertThat(assessment.provenVulnerableCodeAbsent()).isEmpty(),
+        () -> assertThat(assessment.inactiveDueToMissingPrerequisites()).isEmpty(),
+        () -> assertThat(assessment.potentiallyConservativeCves()).isEmpty(),
+        () -> assertThat(assessment.removedComponents()).isEmpty(),
+        () -> assertThat(snapshot.sourceReviewFindings()).hasSize(2),
+        () -> assertThat(restored).isEqualTo(snapshot),
+        () ->
+            assertThat(restored.sourceReviewFindings())
+                .allSatisfy(
+                    finding ->
+                        assertThat(finding.applicability())
+                            .isEqualTo(OsvPackageApplicability.Status.UNRESOLVED)));
+  }
+
   private static MavenElisionReportSnapshot sourceReviewSnapshot(final boolean assumed)
       throws IOException {
     final MavenElisionReportSnapshot.SourceReviewFinding finding =

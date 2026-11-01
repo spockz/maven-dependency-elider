@@ -165,7 +165,7 @@ final class MavenRawScopeApplicabilityTest {
   }
 
   @Test
-  void cnaChangesApplyInOrderAndOverlappingClaimsRemainUnknown() {
+  void cnaChangesSortByMavenVersionAndRejectDuplicatesOrOverlappingClaims() {
     final CveAffectedEntryContext changes =
         entry(
             null,
@@ -200,24 +200,87 @@ final class MavenRawScopeApplicabilityTest {
                         Map.of("at", VERSION_2, STATUS, UNAFFECTED)))));
     final CveAffectedEntryContext missingRangeType =
         entry(null, List.of(claim(VERSION_1, AFFECTED, null, VERSION_4, null, List.of())));
+    final CveAffectedEntryContext duplicateChanges =
+        entry(
+            null,
+            List.of(
+                claim(
+                    VERSION_1,
+                    AFFECTED,
+                    MAVEN,
+                    VERSION_4,
+                    null,
+                    List.of(
+                        Map.of("at", VERSION_2, STATUS, UNAFFECTED),
+                        Map.of("at", "2.0", STATUS, AFFECTED)))));
+    final CveAffectedEntryContext invalidChangeStatus =
+        entry(
+            null,
+            List.of(
+                claim(
+                    VERSION_1,
+                    AFFECTED,
+                    MAVEN,
+                    VERSION_4,
+                    null,
+                    List.of(Map.of("at", VERSION_2, STATUS, "not-a-cve-status")))));
 
     assertAll(
-        "ordered CNA changes determine status while competing claims abstain",
+        "CNA changes sort by Maven versions and malformed claims abstain",
         () ->
-            assertThat(MavenRawScopeApplicability.evaluateCna(changes, VERSION_1).status())
-                .isEqualTo(MavenRawScopeApplicability.Status.AFFECTED),
+            assertAll(
+                "ordered change list transitions",
+                () ->
+                    assertThat(MavenRawScopeApplicability.evaluateCna(changes, "1.5").status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.AFFECTED),
+                () ->
+                    assertThat(MavenRawScopeApplicability.evaluateCna(changes, VERSION_2).status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.UNAFFECTED),
+                () ->
+                    assertThat(
+                            MavenRawScopeApplicability.evaluateCna(changes, VERSION_2_5).status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.UNAFFECTED),
+                () ->
+                    assertThat(MavenRawScopeApplicability.evaluateCna(changes, VERSION_3).status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.AFFECTED),
+                () ->
+                    assertThat(MavenRawScopeApplicability.evaluateCna(changes, "3.5").status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.AFFECTED)),
         () ->
-            assertThat(MavenRawScopeApplicability.evaluateCna(changes, VERSION_2).status())
-                .isEqualTo(MavenRawScopeApplicability.Status.UNAFFECTED),
-        () ->
-            assertThat(MavenRawScopeApplicability.evaluateCna(changes, VERSION_3).status())
-                .isEqualTo(MavenRawScopeApplicability.Status.AFFECTED),
+            assertAll(
+                "shuffled change list has identical transitions",
+                () ->
+                    assertThat(
+                            MavenRawScopeApplicability.evaluateCna(shuffledChanges, "1.5").status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.AFFECTED),
+                () ->
+                    assertThat(
+                            MavenRawScopeApplicability.evaluateCna(shuffledChanges, VERSION_2)
+                                .status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.UNAFFECTED),
+                () ->
+                    assertThat(
+                            MavenRawScopeApplicability.evaluateCna(shuffledChanges, VERSION_2_5)
+                                .status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.UNAFFECTED),
+                () ->
+                    assertThat(
+                            MavenRawScopeApplicability.evaluateCna(shuffledChanges, VERSION_3)
+                                .status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.AFFECTED),
+                () ->
+                    assertThat(
+                            MavenRawScopeApplicability.evaluateCna(shuffledChanges, "3.5").status())
+                        .isEqualTo(MavenRawScopeApplicability.Status.AFFECTED)),
         () ->
             assertThat(MavenRawScopeApplicability.evaluateCna(overlap, VERSION_2_5).status())
                 .isEqualTo(MavenRawScopeApplicability.Status.UNKNOWN),
         () ->
+            assertThat(MavenRawScopeApplicability.evaluateCna(duplicateChanges, VERSION_2).status())
+                .isEqualTo(MavenRawScopeApplicability.Status.UNKNOWN),
+        () ->
             assertThat(
-                    MavenRawScopeApplicability.evaluateCna(shuffledChanges, VERSION_2_5).status())
+                    MavenRawScopeApplicability.evaluateCna(invalidChangeStatus, VERSION_2).status())
                 .isEqualTo(MavenRawScopeApplicability.Status.UNKNOWN),
         () ->
             assertThat(

@@ -54,6 +54,15 @@ final class MavenCorroboratedSourceScenario {
     return prepareFromCveRecord(directory, cveRecord, false, version);
   }
 
+  static Prepared prepareAmbiguousProductClaim(final Path directory, final boolean reverse)
+      throws IOException {
+    return prepareFromCveRecord(
+        directory,
+        MavenAmbiguousCnaProductFixture.write(directory, reverse),
+        false,
+        MavenCorroboratedSourceArchiveFixtures.VERSION);
+  }
+
   private static Prepared prepareFromCveRecord(
       final Path directory,
       final Path cveRecord,
