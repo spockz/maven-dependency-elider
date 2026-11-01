@@ -32,7 +32,8 @@ final class TierInventoryReader {
     final TrimPassThroughPlan passThrough =
         TrimPassThroughPlanner.passThroughPlan(operation.request());
     final Path projectionDirectory =
-        TrimPaths.analysisLibraryDirectory(operation.request().project());
+        TrimPaths.analysisLibraryDirectory(
+            operation.request().project(), operation.request().environment());
     final Map<ElisionAnalysisModel.ArtifactSnapshot, MultiReleaseCandidateInfo> multiRelease =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
     final Set<Integer> tiers = new TreeSet<>();

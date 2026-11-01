@@ -250,10 +250,14 @@ final class AnalyzeMojoTest {
             "  Estimated original JAR bytes for those artifacts: "
                 + MavenElisionReportWriter.formatBytes(Files.size(unused.getFile().toPath()))
                 + " (sum of original on-disk input JAR sizes; final package delta may differ)",
-            "  Advisories associated with components that would be removed: ",
-            "    CVE-2026-19001 org.example:unused-runtime:jar:1.0",
+            "  Advisories associated with components that would be removed: "
+                + "none verified by published trim evidence",
             "  Mitigated CVEs (vulnerable code that would be pruned by trimming): "
-                + "none matched the available vulnerability mappings");
+                + "no published omission proof",
+            "  CVEs that would be inactive due to unmet prerequisite dependencies: "
+                + "no precondition proof available",
+            "  Vulnerability mappings that remain unverified by the in-memory Analyze prediction:",
+            "    CVE-2026-19001 org.example:unused-runtime:jar:1.0");
     assertThat(project.getArtifacts()).isSameAs(artifacts).containsExactlyInAnyOrder(used, unused);
     assertThat(unused.getFile()).isSameAs(unusedFile);
     assertThat(log.messages())
@@ -330,7 +334,7 @@ final class AnalyzeMojoTest {
   }
 
   @Test
-  void predictsCvesWhoseClassesWouldBeProvenAbsentByDryRunTrimming()
+  void doesNotClaimTrimmedCodeProofWithoutPublishedTrimEvidence()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact runtime = artifactWithClasses("runtime-cve", "runtime-cve.jar");
     final File original = runtime.getFile();
@@ -361,13 +365,18 @@ final class AnalyzeMojoTest {
     mojo.execute();
 
     assertThat(log.messages())
-        .anyMatch(
+        .contains(
+            "  Vulnerability mappings that remain unverified by the in-memory Analyze prediction:",
+            "    CVE-2026-19002 org.example:runtime-cve:jar:1.0")
+        .noneMatch(
             line ->
                 line.startsWith(
-                    "  Mitigated CVEs (vulnerable code that would be pruned by trimming):"))
-        .contains("    CVE-2026-19002 org.example:runtime-cve:jar:1.0");
+                        "  Mitigated CVEs (vulnerable code that would be pruned by trimming):")
+                    && line.contains("CVE-2026-19002"));
     assertThat(project.getArtifacts()).containsExactly(runtime);
     assertThat(runtime.getFile()).isSameAs(original);
+    assertThat(TrimPaths.cacheManifestPath(project)).doesNotExist();
+    assertThat(TrimPaths.generationPath(project, "prediction-only")).doesNotExist();
   }
 
   @Test
@@ -450,6 +459,13 @@ final class AnalyzeMojoTest {
     Files.writeString(report, previousReport);
     set(fixture.mojo, "banishedDependencies", List.of("org.example:used"));
     set(fixture.mojo, "reportFile", report.toFile());
+    set(
+        fixture.mojo,
+        "predictionService",
+        (AnalyzePredictionService)
+            (project, options, resolver) -> {
+              throw new MojoFailureException("prediction service was called before ban rejection");
+            });
     fixture.project.setFile(tempDir.resolve("ban-consumer-pom.xml").toFile());
     seedSelectedBanCapture(fixture.mojo, fixture.project, List.of("org.example:used"));
 
@@ -556,6 +572,34 @@ final class AnalyzeMojoTest {
     final Field field = target.getClass().getDeclaredField(name);
     field.setAccessible(true);
     field.set(target, value);
+    if (target instanceof AnalyzeMojo mojo && "project".equals(name)) {
+      installLegacyPredictionFixture(mojo);
+    }
+  }
+
+  private static void installLegacyPredictionFixture(final AnalyzeMojo mojo)
+      throws ReflectiveOperationException {
+    set(
+        mojo,
+        "predictionService",
+        (AnalyzePredictionService)
+            (project, options, resolver) -> {
+              final ElisionAnalysisModel.Analysis analysis =
+                  new MavenElisionService().analyze(project, options);
+              final String fingerprint =
+                  MavenElisionGraphBinding.sha256(List.of("test-prediction"));
+              return new AnalyzePrediction(
+                  AnalyzePrediction.Provenance.DETACHED_CURRENT_MODEL,
+                  analysis.artifacts().resolvedSnapshots(),
+                  List.copyOf(analysis.effectiveDecision().retainedArtifacts()),
+                  List.copyOf(analysis.effectiveDecision().elidedArtifacts()),
+                  List.of(),
+                  analysis.evidence(),
+                  fingerprint,
+                  ResolvedArtifactInventoryFingerprint.fingerprint(
+                      analysis.artifacts().resolvedSnapshots()),
+                  analysis.policyIdentity().operationFingerprint());
+            });
   }
 
   private Artifact artifact(

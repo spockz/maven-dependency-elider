@@ -49,6 +49,57 @@ final class MavenElisionGraphInventory {
     return expected.size() == inventory.size() && matchesGraphKeys(graph, expected);
   }
 
+  static boolean matchesDirectGraph(
+      final ResolverArtifactGraphSnapshot graph,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory) {
+    final Set<String> expected = new HashSet<>();
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : inventory) {
+      expected.add(inventoryKey(snapshot.coordinate(), snapshot.coordinate().type()));
+    }
+    if (expected.size() != inventory.size()) {
+      return false;
+    }
+    final Map<String, Map<String, Object>> nodes = new java.util.HashMap<>();
+    graph
+        .nodes()
+        .forEach(
+            node -> {
+              final Object id = node.get(ResolverArtifactGraphSnapshotSchema.NODE_ID);
+              if (id instanceof String nodeId) {
+                nodes.put(nodeId, node);
+              }
+            });
+    final Set<String> actual = new HashSet<>();
+    for (final Map<String, Object> edge : graph.edges()) {
+      if (!java.util.Objects.equals(
+          graph.rootNodeId(), edge.get(ResolverArtifactGraphSnapshotSchema.PARENT_NODE_ID))) {
+        continue;
+      }
+      final Object childId = edge.get(ResolverArtifactGraphSnapshotSchema.CHILD_NODE_ID);
+      if (!(childId instanceof String nodeId)) {
+        return false;
+      }
+      final Map<String, Object> node = nodes.get(nodeId);
+      final EffectiveGraphDecisionIndex.Gavce identity =
+          node == null ? null : EffectiveGraphDecisionIndex.gavce(node);
+      final Object scope =
+          node == null ? null : node.get(ResolverArtifactGraphSnapshotSchema.EFFECTIVE_SCOPE);
+      if (identity == null || !(scope instanceof String value) || value.isBlank()) {
+        return false;
+      }
+      actual.add(inventoryKey(identity, value));
+    }
+    return actual.equals(expected)
+        && actual.size()
+            == graph.edges().stream()
+                .filter(
+                    edge ->
+                        java.util.Objects.equals(
+                            graph.rootNodeId(),
+                            edge.get(ResolverArtifactGraphSnapshotSchema.PARENT_NODE_ID)))
+                .count();
+  }
+
   private static boolean matchesGraphKeys(
       final ResolverArtifactGraphSnapshot graph, final Set<String> expected) {
     final Set<String> actual = new HashSet<>();

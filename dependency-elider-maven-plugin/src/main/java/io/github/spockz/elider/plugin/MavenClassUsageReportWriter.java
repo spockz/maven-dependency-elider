@@ -30,16 +30,27 @@ final class MavenClassUsageReportWriter {
       final ClassUsageReport report,
       final Optional<BytecodeReferenceScan> bytecodeScan)
       throws IOException {
+    write(output, report, bytecodeScan, null);
+  }
+
+  static void write(
+      final Path output,
+      final ClassUsageReport report,
+      final Optional<BytecodeReferenceScan> bytecodeScan,
+      final AnalyzePrediction prediction)
+      throws IOException {
     final Path normalized = output.toAbsolutePath().normalize();
     final Path parent = normalized.getParent();
     if (parent != null) {
       Files.createDirectories(parent);
     }
-    JSON.writeValue(normalized.toFile(), document(report, bytecodeScan));
+    JSON.writeValue(normalized.toFile(), document(report, bytecodeScan, prediction));
   }
 
   private static Map<String, Object> document(
-      final ClassUsageReport report, final Optional<BytecodeReferenceScan> bytecodeScan) {
+      final ClassUsageReport report,
+      final Optional<BytecodeReferenceScan> bytecodeScan,
+      final AnalyzePrediction prediction) {
     final boolean staticAvailable =
         bytecodeScan.filter(BytecodeReferenceScan::complete).isPresent();
     final Map<String, Object> document = new LinkedHashMap<>();
@@ -69,6 +80,34 @@ final class MavenClassUsageReportWriter {
             .toList());
     document.put(
         "classes", report.classes().stream().map(MavenClassUsageReportWriter::classRow).toList());
+    if (prediction != null) {
+      document.put("dependencyPrediction", predictionDocument(prediction));
+    }
+    return document;
+  }
+
+  private static Map<String, Object> predictionDocument(final AnalyzePrediction prediction) {
+    final Map<String, Object> document = new LinkedHashMap<>();
+    document.put("provenance", prediction.provenance().name());
+    document.put("environmentFingerprint", prediction.environmentFingerprint());
+    document.put("inventoryFingerprint", prediction.inventoryFingerprint());
+    document.put("operationFingerprint", prediction.operationFingerprint());
+    document.put(
+        "retainedArtifacts",
+        prediction.retainedArtifacts().stream().map(Object::toString).toList());
+    document.put(
+        "wouldElideArtifacts",
+        prediction.wouldElideArtifacts().stream().map(Object::toString).toList());
+    document.put(
+        "plannedClassRemovals",
+        prediction.plannedTrims().stream()
+            .map(
+                planned ->
+                    Map.of(
+                        "status", "PLANNED_UNVERIFIED",
+                        "coordinate", planned.coordinate().toString(),
+                        "classes", planned.removedClasses().stream().sorted().toList()))
+            .toList());
     return document;
   }
 

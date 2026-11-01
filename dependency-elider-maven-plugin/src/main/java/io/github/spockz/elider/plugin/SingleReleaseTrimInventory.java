@@ -258,7 +258,8 @@ final class SingleReleaseTrimInventory {
       throws IOException {
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Path> result = TrimCollections.orderedMap();
     final int runtimeRelease = Runtime.version().feature();
-    final Path projectionDirectory = TrimPaths.analysisLibraryDirectory(request.project());
+    final Path projectionDirectory =
+        TrimPaths.analysisLibraryDirectory(request.project(), request.environment());
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : inventory) {
       if (!MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(snapshot.coordinate().scope())) {
         continue;

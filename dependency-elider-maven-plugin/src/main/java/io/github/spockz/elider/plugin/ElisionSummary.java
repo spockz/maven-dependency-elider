@@ -120,6 +120,57 @@ final class ElisionSummary {
     reportCves(log, vulnerabilityAssessment, true);
   }
 
+  static void reportPrediction(
+      final Log log,
+      final AnalyzePrediction prediction,
+      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment,
+      final boolean trimJars)
+      throws IOException {
+    final String fallback = prediction.evidence().sourceAttributionFallback();
+    if (fallback != null) {
+      log.warn(
+          "Post-compile source attribution used conservative fallback; all compile-visible "
+              + "artifacts and indexed classes were retained: "
+              + fallback);
+    }
+    if (!log.isInfoEnabled()) {
+      return;
+    }
+    final MavenElisionReportSnapshot.DroppedArtifactSummary droppedArtifacts =
+        MavenElisionReportSnapshot.droppedArtifactSummary(prediction);
+    final int inputCount = prediction.inputArtifacts().size();
+    final int elidedCount = droppedArtifacts.artifacts().size();
+    final String percentage =
+        inputCount == 0
+            ? "N/A"
+            : String.format(Locale.ROOT, "%.1f%%", elidedCount * 100.0 / inputCount);
+    log.info("Dependency Elider analysis summary");
+    log.info(
+        "  Artifacts that would be elided by this analysis: "
+            + elidedCount
+            + " / "
+            + inputCount
+            + " ("
+            + percentage
+            + ")");
+    log.info(
+        "  Estimated original JAR bytes for those artifacts: "
+            + MavenElisionReportWriter.formatBytes(droppedArtifacts.originalJarBytes())
+            + " (sum of original on-disk input JAR sizes; final package delta may differ)");
+    log.info(
+        "  Program class entries in JARs that would be dropped: "
+            + droppedArtifacts.programClassesRemoved()
+            + " (uncompressed .class entry payload bytes: "
+            + MavenElisionReportWriter.formatBytes(
+                droppedArtifacts.uncompressedProgramClassBytesRemoved())
+            + "; excludes module descriptors and archive sanitation metadata)");
+    log.info(
+        trimJars
+            ? "  JAR trim cache: unavailable (Analyze reports an in-memory prediction only)"
+            : "  JAR trim cache: unavailable (trim stage not run)");
+    reportCves(log, vulnerabilityAssessment, true);
+  }
+
   /** Prints measured class payload metrics when retained JAR trimming ran. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static void reportTrimmed(
@@ -222,9 +273,13 @@ final class ElisionSummary {
         predicted
             ? "  CVEs that would be inactive due to unmet prerequisite dependencies: "
             : "  CVEs inactive due to unmet prerequisite dependencies: ";
-    reportFindings(log, removedHeading, assessment.removedComponents());
-    reportFindings(log, provenHeading, assessment.provenVulnerableCodeAbsent());
-    reportFindings(log, inactiveHeading, assessment.inactiveDueToMissingPrerequisites());
+    final String noVerifiedEvidence = predicted ? "none verified by published trim evidence" : null;
+    final String noOmissionProof = predicted ? "no published omission proof" : null;
+    final String noPreconditionProof = predicted ? "no precondition proof available" : null;
+    reportFindings(log, removedHeading, assessment.removedComponents(), noVerifiedEvidence);
+    reportFindings(log, provenHeading, assessment.provenVulnerableCodeAbsent(), noOmissionProof);
+    reportFindings(
+        log, inactiveHeading, assessment.inactiveDueToMissingPrerequisites(), noPreconditionProof);
     reportConservativeDrops(log, assessment.potentiallyConservativeCves(), predicted);
   }
 
@@ -237,7 +292,7 @@ final class ElisionSummary {
     }
     final String heading =
         predicted
-            ? "  CVEs that would be excluded due to conservative multi-symbol checks:"
+            ? "  Vulnerability mappings that remain unverified by the in-memory Analyze prediction:"
             : "  CVEs excluded due to conservative multi-symbol checks:";
     if (findings.isEmpty()) {
       log.info(heading + " none detected");
@@ -260,11 +315,23 @@ final class ElisionSummary {
       final Log log,
       final String heading,
       final java.util.List<MavenVulnerabilityAssessment.Finding> findings) {
+    reportFindings(log, heading, findings, null);
+  }
+
+  private static void reportFindings(
+      final Log log,
+      final String heading,
+      final java.util.List<MavenVulnerabilityAssessment.Finding> findings,
+      final String predictedEmptyMessage) {
     if (!log.isInfoEnabled()) {
       return;
     }
     if (findings.isEmpty()) {
-      log.info(heading + "none matched the available vulnerability mappings");
+      log.info(
+          heading
+              + (predictedEmptyMessage == null
+                  ? "none matched the available vulnerability mappings"
+                  : predictedEmptyMessage));
       return;
     }
     log.info(heading);

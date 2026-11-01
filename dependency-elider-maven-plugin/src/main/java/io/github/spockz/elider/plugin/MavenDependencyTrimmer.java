@@ -144,7 +144,10 @@ final class MavenDependencyTrimmer {
             move);
     final MavenProject project = request.project();
     final List<String> compilerOptions =
-        MavenCompilerSettings.platformReleaseOptions(project, request.session());
+        request.environment() == null
+            ? MavenCompilerSettings.platformReleaseOptions(project, request.session())
+            : MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
+                project, request.environment());
     final Path javaHome =
         Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
     final int release = TrimPlatform.releaseFromOptions(compilerOptions, javaHome);

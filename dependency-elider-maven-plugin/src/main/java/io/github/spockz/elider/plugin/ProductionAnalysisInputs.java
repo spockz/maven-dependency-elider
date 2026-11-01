@@ -38,6 +38,29 @@ final class ProductionAnalysisInputs {
       final Optional<BytecodeReferenceScan> bytecodeScan,
       final Set<String> outputClassNames)
       throws IOException {
+    return compilerInputs(
+        project,
+        session,
+        null,
+        candidates,
+        index,
+        sourceRootsComplete,
+        productionClassesComplete,
+        bytecodeScan,
+        outputClassNames);
+  }
+
+  /* default */ static CompilerInputs compilerInputs(
+      final MavenProject project,
+      final MavenSession session,
+      final AnalysisEnvironment environment,
+      final List<ArtifactFileRef> candidates,
+      final ArtifactClassIndex index,
+      final boolean sourceRootsComplete,
+      final boolean productionClassesComplete,
+      final Optional<BytecodeReferenceScan> bytecodeScan,
+      final Set<String> outputClassNames)
+      throws IOException {
     final List<String> classpath;
     try {
       classpath = project.getCompileClasspathElements();
@@ -52,11 +75,18 @@ final class ProductionAnalysisInputs {
     if (sourceRootsComplete) {
       final List<Path> sources =
           JavaSourceReferenceScanner.sourceFiles(project.getCompileSourceRoots());
-      SourceRootCompleteness.verifySourceRootsComplete(project, session, sources);
+      if (environment == null) {
+        SourceRootCompleteness.verifySourceRootsComplete(project, session, sources);
+      } else {
+        SourceRootCompleteness.verifySourceRootsComplete(project, environment, sources);
+      }
       if (sources.stream().anyMatch(ProductionAnalysisInputs::isModuleDescriptor)) {
         throw new IOException("Source attribution does not support Java module descriptors");
       }
-      final List<String> options = MavenCompilerSettings.options(project, session, classpath);
+      final List<String> options =
+          environment == null
+              ? MavenCompilerSettings.options(project, session, classpath)
+              : MavenCompilerSettings.optionsWithEnvironment(project, environment, classpath);
       final JavaSourceReferenceScanner.SourceScan sourceScan =
           new JavaSourceReferenceScanner().scanFilesDetailed(sources, classpath, options);
       requiredClasses.addAll(sourceScan.referencedTypes());
@@ -66,6 +96,7 @@ final class ProductionAnalysisInputs {
       return PostCompileSourceAttribution.analyze(
           project,
           session,
+          environment,
           classpath,
           candidates,
           compileVisibleArtifacts,

@@ -39,6 +39,102 @@ final class MavenElisionGraphBinding {
   static Result bind(
       final MavenProject project,
       final ElisionAnalysisModel.AnalysisOptions options,
+      final MavenAnalysisResolutionContext context,
+      final ElisionDecision rawDecision,
+      final TraceData trace,
+      final Set<String> requiredRoots,
+      final List<NativeImageConsumedInput> consumedInputs,
+      final MavenElisionPolicyIdentity.Options policyOptions)
+      throws IOException, MojoFailureException {
+    final List<ElisionAnalysisModel.ArtifactSnapshot> inventory =
+        context.artifacts().resolvedSnapshots();
+    final String projectKey = projectKey(project);
+    final String inventoryFingerprint = ResolvedArtifactInventoryFingerprint.fingerprint(inventory);
+    final String operationFingerprint =
+        sha256(
+            List.of(
+                context.provenance().name(),
+                context.environment().fingerprint(),
+                context.graphPairFingerprint(),
+                operationFingerprint(
+                    project,
+                    options,
+                    inventoryFingerprint,
+                    trace,
+                    requiredRoots,
+                    rawDecision,
+                    consumedInputs,
+                    policyOptions)));
+    if (!MavenElisionGraphInventory.matchesDecision(inventory, rawDecision)
+        || !MavenElisionGraphInventory.matchesGraph(context.pair().after(), inventory)) {
+      return failClosed(
+          projectKey,
+          rawDecision,
+          inventoryFingerprint,
+          operationFingerprint,
+          "Analyze resolution context does not match its graph and decision inventory");
+    }
+    if (!options.completeness().testResolutionContext()) {
+      return failClosed(
+          projectKey,
+          rawDecision,
+          inventoryFingerprint,
+          operationFingerprint,
+          "Maven goal does not establish TEST resolution context");
+    }
+    final EffectiveGraphPolicy.Evaluation evaluation =
+        EffectiveGraphPolicy.evaluatePair(context.pair(), rawDecision);
+    return new Result(evaluation, inventoryFingerprint, operationFingerprint, context.pair());
+  }
+
+  static ResolverArtifactGraphCapturePair requireCapturedPair(
+      final MavenProject project,
+      final MavenSession session,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory)
+      throws IOException {
+    final Object payload =
+        session == null || session.getRepositorySession() == null
+            ? null
+            : session
+                .getRepositorySession()
+                .getData()
+                .get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
+    if (payload == null) {
+      throw new IOException("Active Resolver capture is missing for Analyze");
+    }
+    final List<ResolverArtifactGraphCapturePair> compatible =
+        ResolverArtifactGraphSnapshotStore.fromPayload(payload)
+            .capturePairs()
+            .getOrDefault(projectKey(project), List.of())
+            .stream()
+            .map(ResolverArtifactGraphCapturePair::fromPayload)
+            .filter(
+                pair ->
+                    !pair.planPresent()
+                        && MavenElisionGraphInventory.matchesGraph(pair.after(), inventory))
+            .toList();
+    if (compatible.isEmpty()) {
+      throw new IOException("No captured effective Resolver graph matches Analyze inventory");
+    }
+    final Set<String> graphIdentities =
+        compatible.stream()
+            .map(
+                pair ->
+                    pair.before().graphFingerprint()
+                        + ":"
+                        + pair.after().graphFingerprint()
+                        + ":"
+                        + pair.captureToken())
+            .collect(java.util.stream.Collectors.toSet());
+    if (graphIdentities.size() != 1) {
+      throw new IOException("Analyze inventory matches multiple captured Resolver graph pairs");
+    }
+    return compatible.get(0);
+  }
+
+  static Result bind(
+      final MavenProject project,
+      final ElisionAnalysisModel.AnalysisOptions options,
       final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
       final ElisionDecision rawDecision,
       final TraceData trace,
@@ -165,7 +261,7 @@ final class MavenElisionGraphBinding {
   }
 
   @SuppressWarnings("PMD.LawOfDemeter")
-  private static String projectKey(final MavenProject project) {
+  static String projectKey(final MavenProject project) {
     if (project.getBasedir() == null) {
       return "<missing-project-identity>";
     }
@@ -208,8 +304,11 @@ final class MavenElisionGraphBinding {
       throws IOException, MojoFailureException {
     final List<String> fields = new ArrayList<>();
     fields.add(inventoryFingerprint);
-    MavenCompilerSettings.releaseIdentity(project, options.session())
-        .forEach(option -> fields.add("compiler-option=" + option));
+    final List<String> compilerIdentity =
+        options.environment() == null
+            ? MavenCompilerSettings.releaseIdentity(project, options.session())
+            : MavenCompilerSettings.releaseIdentityWithEnvironment(project, options.environment());
+    compilerIdentity.forEach(option -> fields.add("compiler-option=" + option));
     fields.add("runtime-release=" + Runtime.version().feature());
     fields.add(
         "java-home=" + Path.of(System.getProperty("java.home")).toAbsolutePath().normalize());

@@ -118,6 +118,127 @@ final class DependencyContextLifecycleIT {
 
   private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(180);
 
+  @Test
+  void analyzeWithoutCoreExtensionReportsDetachedPredictionWithoutPublishingTrimOutputs()
+      throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path evidenceDirectory =
+        Files.createDirectories(temporaryDirectory.resolve("detached-analyze-prediction"));
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    installMediationConflict(localRepository);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = Files.createDirectories(evidenceDirectory.resolve("consumer"));
+    final Path target = consumer.resolve("target");
+    Files.createDirectories(target);
+    final Path report = target.resolve("class-usage.json");
+    Files.writeString(
+        consumer.resolve(TRACE_FILE),
+        KEEP_ENTRY_ROOT + "io.github.spockz.elider.fixture.drop.DropEntry\n");
+    final Path source = consumer.resolve("src/main/java/prediction/UsesResolvedApis.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(
+        source,
+        "package prediction; public final class UsesResolvedApis { "
+            + "io.github.spockz.elider.fixture.keep.KeepEntry keep; "
+            + "io.github.spockz.elider.fixture.drop.DropEntry drop; }\n");
+    final Path generations = target.resolve("elided-artifacts/.generations");
+    Files.createDirectories(generations);
+    final Path generationSentinel = generations.resolve("sentinel");
+    Files.writeString(generationSentinel, "generation sentinel");
+    final Path cacheManifest = target.resolve("elided-artifacts/.trim-analysis-cache.json");
+    Files.createDirectories(cacheManifest.getParent());
+    Files.writeString(cacheManifest, "cache sentinel");
+    final Path outputManifest = target.resolve("dependency-elider-generated-outputs.json");
+    Files.writeString(outputManifest, "output sentinel");
+    final Path archiveSentinel = target.resolve("elided-artifacts/keep-library-1.0.0-trimmed.jar");
+    Files.writeString(archiveSentinel, "archive sentinel");
+    final Path pom = consumer.resolve(POM_XML);
+    Files.writeString(
+        pom,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Exercises detached Analyze resolution in a consumer without the core extension. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId><artifactId>detached-analyze-consumer</artifactId><version>1.0.0</version>
+          <properties><maven.compiler.release>17</maven.compiler.release><maven.compiler.proc>none</maven.compiler.proc></properties>
+          <dependencies>
+            <dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>keep-library</artifactId><version>1.0.0</version></dependency>
+            <dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>drop-library</artifactId><version>2.0.0</version></dependency>
+          </dependencies>
+          <build><directory>${project.basedir}/target</directory><plugins><plugin>
+            <groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version>
+            <configuration>
+              <traceFiles>${project.basedir}/trace.txt</traceFiles>
+              <reportFile>${project.build.directory}/class-usage.json</reportFile>
+              <leafOnly>false</leafOnly><trimJars>true</trimJars><sourceRootsComplete>true</sourceRootsComplete>
+            </configuration>
+          </plugin></plugins></build>
+        </project>
+        """);
+
+    assertThat(consumer.resolve(MVN_DIRECTORY).resolve(EXTENSIONS_XML)).doesNotExist();
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("analyze.log"),
+            PROCESS_TIMEOUT,
+            "-f",
+            pom.toString(),
+            "compile",
+            "dependency-elider:analyze");
+
+    final JsonNode reportJson = JSON.readTree(report.toFile());
+    final JsonNode prediction = reportJson.path("dependencyPrediction");
+    assertAll(
+        "Analyze reports one detached current-model prediction without trim publication",
+        () -> assertThat(output).contains(BUILD_SUCCESS),
+        () ->
+            assertThat(prediction.path("provenance").asText()).isEqualTo("DETACHED_CURRENT_MODEL"),
+        () ->
+            assertThat(prediction.path("retainedArtifacts").toString())
+                .isEqualTo(
+                    "[\"io.github.spockz.elider.test:drop-library:jar:2.0.0 (compile)\","
+                        + "\"io.github.spockz.elider.test:keep-library:jar:1.0.0 (compile)\"]"),
+        () -> assertThat(prediction.path("wouldElideArtifacts").isArray()).isTrue(),
+        () -> assertThat(prediction.path("plannedClassRemovals").isArray()).isTrue(),
+        () ->
+            assertThat(prediction.path("plannedClassRemovals").toString())
+                .contains("PLANNED_UNVERIFIED", "UnusedEntry"),
+        () -> assertThat(Files.readString(generationSentinel)).isEqualTo("generation sentinel"),
+        () -> assertThat(Files.readString(cacheManifest)).isEqualTo("cache sentinel"),
+        () -> assertThat(Files.readString(outputManifest)).isEqualTo("output sentinel"),
+        () -> assertThat(Files.readString(archiveSentinel)).isEqualTo("archive sentinel"));
+  }
+
+  private static void installMediationConflict(final Path localRepository) throws IOException {
+    final Path group = localRepository.resolve("io/github/spockz/elider/test");
+    final Path keepPom = group.resolve("keep-library/1.0.0/keep-library-1.0.0.pom");
+    final String keepModel = Files.readString(keepPom);
+    Files.writeString(
+        keepPom,
+        keepModel.replace(
+            "</project>",
+            "<dependencies><dependency><groupId>io.github.spockz.elider.test</groupId>"
+                + "<artifactId>drop-library</artifactId><version>1.0.0</version>"
+                + "</dependency></dependencies></project>"));
+    final Path version = group.resolve("drop-library/2.0.0");
+    Files.createDirectories(version);
+    Files.copy(
+        group.resolve("drop-library/1.0.0/drop-library-1.0.0.jar"),
+        version.resolve("drop-library-2.0.0.jar"));
+    Files.writeString(
+        version.resolve("drop-library-2.0.0.pom"),
+        "<project><modelVersion>4.0.0</modelVersion>"
+            + "<groupId>io.github.spockz.elider.test</groupId>"
+            + "<artifactId>drop-library</artifactId><version>2.0.0</version>"
+            + "<packaging>jar</packaging></project>");
+  }
+
   @BeforeAll
   static void installBootstrapSeed() throws Exception {
     final Path repositoryRoot = repositoryRoot();

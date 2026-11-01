@@ -45,7 +45,7 @@ Elision requires evidence of classes loaded during execution. Capture runtime te
 
 ## 3. Dry-Run Analysis (`analyze`)
 
-Run `analyze` to inspect potential dependency drops and byte savings without altering project artifacts, classpaths, or packaged outputs. The goal writes class-usage evidence to `elide.reportFile` (default `target/dependency-elider-class-usage.json`); choose a path under `.scratch` if the output should not be kept with build artifacts:
+Run `analyze` to inspect potential dependency drops and byte savings without altering Maven artifact views, resolver plans, or packaged outputs. The goal writes class-usage evidence to `elide.reportFile` (default `target/dependency-elider-class-usage.json`). Its schema-1 JSON includes a `dependencyPrediction` section with retained and predicted-elided coordinates, planned class removals marked `PLANNED_UNVERIFIED`, environment/inventory/operation fingerprints, and provenance (`CAPTURED_EFFECTIVE_RESOLVER` or `DETACHED_CURRENT_MODEL`). Detached provenance describes only that request-local resolution. Configured vulnerability mappings remain unresolved unless a published trim archive supports an omission proof. Prediction does not stage or commit trim archives or publish output-manifest/generation state. MRJAR analysis may create temporary classpath projections in an operation-owned directory; that directory is removed when prediction completes or fails. Choose a path under `.scratch` if the report should not be kept with build artifacts:
 
 ```sh
 mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
@@ -83,12 +83,29 @@ Process exit status: 0
 [INFO]   Artifacts that would be elided by this analysis: 0 / 25 (0.0%)
 [INFO]   Estimated original JAR bytes for those artifacts: 0 B (sum of original on-disk input JAR sizes; final package delta may differ)
 [INFO]   Program class entries in JARs that would be dropped: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
-[INFO]   JAR trim cache: 6 validated hit(s), 0 analysis run(s); maximum validated hit <CACHE_HIT_TIME>
-[INFO]   Advisories associated with components that would be removed: none matched the available vulnerability mappings
-[INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming):
+[INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
+[INFO]   Advisories associated with components that would be removed: none verified by published trim evidence
+[INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming): no published omission proof
+[INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: no precondition proof available
+[INFO]   Vulnerability mappings that remain unverified by the in-memory Analyze prediction:
 [INFO]     CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
-[INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
-[INFO]   CVEs that would be excluded due to conservative multi-symbol checks: none detected
+[INFO]       Reason: Analyze did not publish a trimmed archive, so this vulnerability mapping remains unresolved and no omitted-code proof is claimed.
+[INFO]       Actionable POM override to certify if absent classes do not apply to your version:
+[INFO]         <configuration>
+[INFO]           <vulnerabilityMappings>
+[INFO]             <vulnerabilityMapping>
+[INFO]               <cveId>CVE-2022-42889</cveId>
+[INFO]               <groupId>org.apache.commons</groupId>
+[INFO]               <artifactId>commons-text</artifactId>
+[INFO]               <versionRangeSpec>[1.0,1.10.0)</versionRangeSpec>
+[INFO]               <vulnerableClasses>
+[INFO]                 <vulnerableClass>org.apache.commons.text.lookup.StringLookup</vulnerableClass>
+[INFO]               </vulnerableClasses>
+[INFO]               <sourceAdvisoryUrl>https://nvd.nist.gov/vuln/detail/CVE-2022-42889</sourceAdvisoryUrl>
+[INFO]               <confidenceLevel>HIGH</confidenceLevel>
+[INFO]             </vulnerabilityMapping>
+[INFO]           </vulnerabilityMappings>
+[INFO]         </configuration>
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------

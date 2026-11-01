@@ -1,0 +1,16 @@
+// WHY: Lets Mojo tests prove guard ordering without subclassing the final analysis facade.
+
+package io.github.spockz.elider.plugin;
+
+import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
+import java.io.IOException;
+import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.ProjectDependenciesResolver;
+
+@FunctionalInterface
+interface AnalyzePredictionService {
+  AnalyzePrediction predict(
+      MavenProject project, AnalysisOptions options, ProjectDependenciesResolver resolver)
+      throws IOException, MojoFailureException;
+}

@@ -22,6 +22,23 @@ final class SourceRootCompleteness {
   /* default */ static void verifySourceRootsComplete(
       final MavenProject project, final MavenSession session, final List<Path> currentSources)
       throws IOException {
+    verifySourceRootsComplete(project, session, null, currentSources);
+  }
+
+  /* default */ static void verifySourceRootsComplete(
+      final MavenProject project,
+      final AnalysisEnvironment environment,
+      final List<Path> currentSources)
+      throws IOException {
+    verifySourceRootsComplete(project, null, environment, currentSources);
+  }
+
+  private static void verifySourceRootsComplete(
+      final MavenProject project,
+      final MavenSession session,
+      final AnalysisEnvironment environment,
+      final List<Path> currentSources)
+      throws IOException {
     if (currentSources.isEmpty()) {
       throw new IOException(
           "elide.sourceRootsComplete=true requires current production Java sources");
@@ -31,7 +48,7 @@ final class SourceRootCompleteness {
         throw new IOException("A declared production source root is not present: " + root);
       }
     }
-    if (hasUnknownSourceGeneration(project, session)) {
+    if (hasUnknownSourceGeneration(project, session, environment)) {
       throw new IOException(
           "elide.sourceRootsComplete=true conflicts with a source-generation lifecycle execution; "
               + "use -Delide.productionClassesComplete=true or bind dependency-elider:elide to "
@@ -40,16 +57,33 @@ final class SourceRootCompleteness {
   }
 
   /* default */ static boolean hasUnknownSourceGeneration(final MavenProject project) {
-    return hasUnknownSourceGeneration(project, null);
+    return hasUnknownSourceGeneration(project, (MavenSession) null);
   }
 
   /* default */ static boolean hasUnknownSourceGeneration(
       final MavenProject project, final MavenSession session) {
+    return hasUnknownSourceGeneration(project, session, null);
+  }
+
+  /* default */ static boolean hasUnknownSourceGeneration(
+      final MavenProject project, final AnalysisEnvironment environment) {
+    return hasUnknownSourceGeneration(project, null, environment);
+  }
+
+  private static boolean hasUnknownSourceGeneration(
+      final MavenProject project,
+      final MavenSession session,
+      final AnalysisEnvironment environment) {
     final org.apache.maven.model.Build build = project.getBuild();
     if (unsupportedBuild(project, build)) {
       return true;
     }
-    if (MavenCompilerSettings.hasConfiguredAnnotationProcessing(project, session)) {
+    final boolean annotationProcessingConfigured =
+        environment == null
+            ? MavenCompilerSettings.hasConfiguredAnnotationProcessing(project, session)
+            : MavenCompilerSettings.hasConfiguredAnnotationProcessingWithEnvironment(
+                project, environment);
+    if (annotationProcessingConfigured) {
       return true;
     }
     for (final Plugin plugin : build.getPlugins()) {

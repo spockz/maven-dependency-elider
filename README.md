@@ -634,7 +634,7 @@ Process exit status: 0
 
 ## Dry-Run Analysis Output (`analyze`)
 
-The `analyze` goal previews dependencies and byte savings without changing artifacts, classpaths, or packages. It writes class-usage evidence to `elide.reportFile`; the transcript invocation places that output under ignored `.scratch/`:
+The `analyze` goal previews dependencies and byte savings without changing Maven artifact views or resolver plans. It writes class-usage evidence and a `dependencyPrediction` section to `elide.reportFile`. The prediction records retained/elided coordinates, planned class removals marked `PLANNED_UNVERIFIED`, environment/inventory/operation fingerprints, and whether it used the captured effective Resolver graph or a detached current-model resolution. Detached provenance describes only that request-local resolution. Analyze leaves configured vulnerability mappings unresolved unless a published trim archive supports an omission proof. Prediction does not stage or commit trim archives or publish output-manifest/generation state. MRJAR analysis may create temporary classpath projections in an operation-owned directory; that directory is removed when prediction completes or fails. The transcript invocation places the report under ignored `.scratch/`:
 
 <!-- BEGIN:transcript:analyze-basic-app -->
 
@@ -665,11 +665,11 @@ Process exit status: 0
 [INFO]   Artifacts that would be elided by this analysis: 2 / 13 (15.4%)
 [INFO]   Estimated original JAR bytes for those artifacts: 942.11 KiB (sum of original on-disk input JAR sizes; final package delta may differ)
 [INFO]   Program class entries in JARs that would be dropped: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
-[INFO]   JAR trim cache: 0 validated hit(s), 3 analysis run(s)
-[INFO]   Advisories associated with components that would be removed: none matched the available vulnerability mappings
-[INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming): none matched the available vulnerability mappings
-[INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
-[INFO]   CVEs that would be excluded due to conservative multi-symbol checks: none detected
+[INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
+[INFO]   Advisories associated with components that would be removed: none verified by published trim evidence
+[INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming): no published omission proof
+[INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: no precondition proof available
+[INFO]   Vulnerability mappings that remain unverified by the in-memory Analyze prediction: none detected
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-basic-app-class-usage.json
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------

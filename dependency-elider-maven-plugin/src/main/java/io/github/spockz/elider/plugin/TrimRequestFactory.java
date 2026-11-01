@@ -23,6 +23,7 @@ final class TrimRequestFactory {
     return new TrimRequest(
         prepared.project(),
         options.session(),
+        options.environment(),
         prepared.resolvedSnapshots(),
         new TrimScanInputs(
             prepared.index(),

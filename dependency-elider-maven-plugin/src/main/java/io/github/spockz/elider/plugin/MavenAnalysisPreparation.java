@@ -32,32 +32,27 @@ final class MavenAnalysisPreparation {
   /* default */ static PreparedAnalysis prepare(
       final MavenProject project, final AnalysisOptions options, final DynamicRootScanner scanner)
       throws IOException, MojoFailureException {
+    return prepare(project, options, scanner, null);
+  }
+
+  /* default */ static PreparedAnalysis prepare(
+      final MavenProject project,
+      final AnalysisOptions requestedOptions,
+      final DynamicRootScanner scanner,
+      final MavenAnalysisResolutionContext resolutionContext)
+      throws IOException, MojoFailureException {
+    final AnalysisOptions options =
+        resolutionContext == null
+            ? requestedOptions
+            : requestedOptions.withEnvironment(resolutionContext.environment());
     verifyCompleteness(options.completeness());
-    final Inventory inventory = inventory(project);
-    final BanishedDependencyPolicy.Resolution banResolution =
-        BanishedDependencyPolicy.resolve(
-            options.retainedArtifacts(),
-            options.banishedDependencies(),
-            project.getDependencies(),
-            options.trim().passThroughArtifacts(),
-            inventory.views().resolvedSnapshots(),
-            inventory.views().directSnapshots());
-    if (!banResolution.requested().isEmpty()) {
-      final List<BanishedDependency> currentMatches =
-          banResolution.matches().stream()
-              .filter(BanishedDependencyPolicy.Match::matched)
-              .map(BanishedDependencyPolicy.Match::dependency)
-              .toList();
-      throw new MojoFailureException(
-          "elide.banishedDependencies cannot be applied because strict ban enforcement is not "
-              + "available for this operation; the operation fails closed. Current inventory "
-              + "matches: "
-              + currentMatches
-              + "; no current inventory match: "
-              + banResolution.noCurrentInventoryMatch());
-    }
+    final MavenProject analysisProject =
+        resolutionContext == null ? project : resolutionContext.project();
+    final Inventory inventory =
+        resolutionContext == null ? inventory(project) : inventory(resolutionContext);
+    rejectRequestedBans(analysisProject, options, inventory.views());
     final MavenAnalysisEvidence.RootEvidence evidence =
-        MavenAnalysisEvidence.scan(project, options, inventory.candidates(), scanner);
+        MavenAnalysisEvidence.scan(analysisProject, options, inventory.candidates(), scanner);
     final MavenElisionPolicyIdentity.Options policyOptions =
         MavenElisionPolicyIdentity.normalize(options);
     final Set<String> requiredClasses =
@@ -74,23 +69,33 @@ final class MavenAnalysisPreparation {
     final ClassUsageReport classUsageReport =
         ClassUsageReport.classify(evidence.index(), evidence.trace(), evidence.bytecodeScan());
     NativeImageConsumedInput.verifyAll(evidence.dynamicRoots().consumedInputs());
-    verifyInventory(project, inventory);
+    verifyInventory(project, inventory, resolutionContext);
     final ElisionDecision decision =
         rawDecision(options, inventory, evidence, keep, requiredClasses);
     final MavenElisionGraphBinding.Result graphBinding =
-        MavenElisionGraphBinding.bind(
-            project,
-            options,
-            inventory.views().resolvedSnapshots(),
-            decision,
-            evidence.trace(),
-            requiredClasses,
-            evidence.dynamicRoots().consumedInputs(),
-            policyOptions);
-    verifyGraphBinding(project, inventory, graphBinding);
+        resolutionContext == null
+            ? MavenElisionGraphBinding.bind(
+                analysisProject,
+                options,
+                inventory.views().resolvedSnapshots(),
+                decision,
+                evidence.trace(),
+                requiredClasses,
+                evidence.dynamicRoots().consumedInputs(),
+                policyOptions)
+            : MavenElisionGraphBinding.bind(
+                analysisProject,
+                options,
+                resolutionContext,
+                decision,
+                evidence.trace(),
+                requiredClasses,
+                evidence.dynamicRoots().consumedInputs(),
+                policyOptions);
+    verifyGraphBinding(project, inventory, graphBinding, resolutionContext);
     NativeImageConsumedInput.verifyAll(evidence.dynamicRoots().consumedInputs());
     return new PreparedAnalysis(
-        project,
+        analysisProject,
         options,
         inventory.views().resolvedSnapshots(),
         inventory.views().directArtifactsPresent(),
@@ -110,7 +115,36 @@ final class MavenAnalysisPreparation {
         inventory.directFingerprint(),
         graphBinding,
         policyOptions,
-        evidence.sourceAttributionFallback());
+        evidence.sourceAttributionFallback(),
+        resolutionContext);
+  }
+
+  static void rejectRequestedBans(
+      final MavenProject project, final AnalysisOptions options, final ArtifactViews views)
+      throws MojoFailureException {
+    final BanishedDependencyPolicy.Resolution banResolution =
+        BanishedDependencyPolicy.resolve(
+            options.retainedArtifacts(),
+            options.banishedDependencies(),
+            project.getDependencies(),
+            options.trim().passThroughArtifacts(),
+            views.resolvedSnapshots(),
+            views.directSnapshots());
+    if (banResolution.requested().isEmpty()) {
+      return;
+    }
+    final List<BanishedDependency> currentMatches =
+        banResolution.matches().stream()
+            .filter(BanishedDependencyPolicy.Match::matched)
+            .map(BanishedDependencyPolicy.Match::dependency)
+            .toList();
+    throw new MojoFailureException(
+        "elide.banishedDependencies cannot be applied because strict ban enforcement is not "
+            + "available for this operation; the operation fails closed. Current inventory "
+            + "matches: "
+            + currentMatches
+            + "; no current inventory match: "
+            + banResolution.noCurrentInventoryMatch());
   }
 
   private static void verifyCompleteness(final CompletenessOptions completeness)
@@ -144,6 +178,23 @@ final class MavenAnalysisPreparation {
         new ArtifactViews(resolved, directPresent, direct),
         resolvedFingerprint,
         directFingerprint,
+        candidates);
+  }
+
+  private static Inventory inventory(final MavenAnalysisResolutionContext context)
+      throws IOException {
+    context.verify();
+    final List<ArtifactSnapshot> resolved = context.artifacts().resolvedSnapshots();
+    final List<ArtifactFileRef> candidates = new ArrayList<>();
+    for (final ArtifactSnapshot snapshot : resolved) {
+      if (MavenArtifactInventory.isJarCandidate(snapshot)) {
+        candidates.add(ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath()));
+      }
+    }
+    return new Inventory(
+        context.artifacts(),
+        context.resolvedFingerprint(),
+        context.directFingerprint(),
         candidates);
   }
 
@@ -185,14 +236,23 @@ final class MavenAnalysisPreparation {
     return ElisionArtifactPolicy.retainNonJarArtifacts(jars, inventory.views().resolvedSnapshots());
   }
 
-  private static void verifyInventory(final MavenProject project, final Inventory inventory)
+  private static void verifyInventory(
+      final MavenProject project,
+      final Inventory inventory,
+      final MavenAnalysisResolutionContext resolutionContext)
       throws IOException {
     final ArtifactViews views = inventory.views();
-    MavenArtifactInventory.verifyProjectInventory(
-        project,
-        views.directArtifactsPresent(),
-        inventory.resolvedFingerprint(),
-        inventory.directFingerprint());
+    if (resolutionContext == null
+        || resolutionContext.provenance()
+            == AnalyzePrediction.Provenance.CAPTURED_EFFECTIVE_RESOLVER) {
+      MavenArtifactInventory.verifyProjectInventory(
+          resolutionContext == null ? project : resolutionContext.liveProject(),
+          views.directArtifactsPresent(),
+          inventory.resolvedFingerprint(),
+          inventory.directFingerprint());
+    } else {
+      resolutionContext.verify();
+    }
     MavenElisionGraphBinding.verifyInventoryFingerprint(
         views.resolvedSnapshots(), inventory.resolvedFingerprint());
   }
@@ -200,7 +260,8 @@ final class MavenAnalysisPreparation {
   private static void verifyGraphBinding(
       final MavenProject project,
       final Inventory inventory,
-      final MavenElisionGraphBinding.Result graphBinding)
+      final MavenElisionGraphBinding.Result graphBinding,
+      final MavenAnalysisResolutionContext resolutionContext)
       throws IOException {
     MavenElisionGraphBinding.verifyInventoryFingerprint(
         inventory.views().resolvedSnapshots(), graphBinding.inventoryFingerprint());
@@ -208,11 +269,17 @@ final class MavenAnalysisPreparation {
       throw new IOException("Resolved artifact inventory changed during analysis preparation");
     }
     final ArtifactViews views = inventory.views();
-    MavenArtifactInventory.verifyProjectInventory(
-        project,
-        views.directArtifactsPresent(),
-        inventory.resolvedFingerprint(),
-        inventory.directFingerprint());
+    if (resolutionContext == null
+        || resolutionContext.provenance()
+            == AnalyzePrediction.Provenance.CAPTURED_EFFECTIVE_RESOLVER) {
+      MavenArtifactInventory.verifyProjectInventory(
+          resolutionContext == null ? project : resolutionContext.liveProject(),
+          views.directArtifactsPresent(),
+          inventory.resolvedFingerprint(),
+          inventory.directFingerprint());
+    } else {
+      resolutionContext.verify();
+    }
   }
 
   private record Inventory(

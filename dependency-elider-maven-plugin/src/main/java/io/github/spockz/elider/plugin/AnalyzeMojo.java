@@ -14,9 +14,11 @@ import java.util.List;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.ProjectDependenciesResolver;
 
 /** Analyzes a resolved Maven dependency set using explicit runtime traces. */
 @Mojo(
@@ -35,6 +37,12 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   /** Maven session used to detect an externally selected compiler toolchain. */
   @Parameter(defaultValue = "${session}", readonly = true)
   private MavenSession session;
+
+  /** Resolver used to bind Analyze evidence to one captured or detached graph. */
+  @Component private ProjectDependenciesResolver projectDependenciesResolver;
+
+  /** Coordinates prediction; package tests may inject a focused result fixture. */
+  private AnalyzePredictionService predictionService = new MavenElisionService()::predict;
 
   /** Raw execution configuration used to reject the obsolete retention parameter. */
   @Parameter(defaultValue = "${mojoExecution}", readonly = true)
@@ -148,33 +156,34 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
     BanishedDependencyLifecycleActivation.verifyMojoConfiguration(
         session, project, mojoExecution, banishedDependencies);
     try {
-      final ElisionAnalysisModel.Analysis analysis =
-          new MavenElisionService()
-              .analyze(
-                  project,
-                  new ElisionAnalysisModel.AnalysisOptions(
-                      traceFiles,
-                      retainedArtifacts,
-                      banishedDependencies,
-                      effectiveProductionOutput(),
-                      session,
-                      new ElisionAnalysisModel.CompletenessOptions(
-                          sourceRootsComplete, productionClassesComplete, false, true),
-                      trimOptions(
-                          trimJars,
-                          trimRoots == null ? List.of() : trimRoots,
-                          trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
-                          failOnUnsupportedModuleInfo,
-                          trimWorkers,
-                          mrjarStrategy),
-                      new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots)));
+      final AnalyzePrediction prediction =
+          predictionService.predict(
+              project,
+              new ElisionAnalysisModel.AnalysisOptions(
+                  traceFiles,
+                  retainedArtifacts,
+                  banishedDependencies,
+                  productionOutput,
+                  session,
+                  new ElisionAnalysisModel.CompletenessOptions(
+                      sourceRootsComplete, productionClassesComplete, false, true),
+                  trimOptions(
+                      trimJars,
+                      trimRoots == null ? List.of() : trimRoots,
+                      trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
+                      failOnUnsupportedModuleInfo,
+                      trimWorkers,
+                      mrjarStrategy),
+                  new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots)),
+              projectDependenciesResolver);
       MavenClassUsageReportWriter.write(
           reportFile.toPath(),
-          analysis.evidence().classUsageReport(),
-          analysis.evidence().bytecodeScan());
+          prediction.evidence().classUsageReport(),
+          prediction.evidence().bytecodeScan(),
+          prediction);
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
-          assessVulnerabilities(analysis);
-      ElisionSummary.reportAnalysis(getLog(), analysis, vulnerabilityAssessment, trimJars);
+          assessVulnerabilities(prediction);
+      ElisionSummary.reportPrediction(getLog(), prediction, vulnerabilityAssessment, trimJars);
       if (getLog().isInfoEnabled()) {
         getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
       }
@@ -184,19 +193,8 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
     }
   }
 
-  private File effectiveProductionOutput() {
-    if (productionOutput != null || !productionClassesComplete) {
-      return productionOutput;
-    }
-    if (project == null || project.getBuild() == null) {
-      return null;
-    }
-    final String outputDirectory = project.getBuild().getOutputDirectory();
-    return outputDirectory == null || outputDirectory.isBlank() ? null : new File(outputDirectory);
-  }
-
   private MavenVulnerabilityAssessment.Result assessVulnerabilities(
-      final ElisionAnalysisModel.Analysis analysis) throws IOException {
+      final AnalyzePrediction prediction) throws IOException {
     final Path cacheDirectory =
         cveCacheDirectory == null
             ? VulnerabilityCacheManager.defaultCacheDirectory()
@@ -219,8 +217,7 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
             assumeConventionalJavaSourceLayout,
             MavenSourceCorrespondenceAssessment.configured(
                 project, session, sourceClassifierResolver(), assumeConventionalJavaSourceLayout))
-        .assess(
-            config, ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings), analysis, null);
+        .assess(config, ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings), prediction);
   }
 
   private boolean shouldSkipAnalysis() {

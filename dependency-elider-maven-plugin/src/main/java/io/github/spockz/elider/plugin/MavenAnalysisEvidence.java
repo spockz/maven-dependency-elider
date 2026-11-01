@@ -44,6 +44,7 @@ final class MavenAnalysisEvidence {
         ProductionAnalysisInputs.compilerInputs(
             project,
             options.session(),
+            options.environment(),
             candidates,
             index,
             completeness.sourceRootsComplete(),
@@ -74,6 +75,11 @@ final class MavenAnalysisEvidence {
 
   private static Path invocationBaseForProject(
       final MavenProject project, final AnalysisOptions options) {
+    if (options.environment() != null) {
+      return options.environment().invocationBase() == null
+          ? projectBasePath(project.getBasedir())
+          : options.environment().invocationBase();
+    }
     return invocationBase(options.request(), project.getBasedir());
   }
 

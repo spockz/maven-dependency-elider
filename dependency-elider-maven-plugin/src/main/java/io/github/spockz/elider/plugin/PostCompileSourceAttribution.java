@@ -32,6 +32,29 @@ final class PostCompileSourceAttribution {
       final Optional<BytecodeReferenceScan> bytecodeScan,
       final Set<String> outputClassNames)
       throws IOException {
+    return analyze(
+        project,
+        session,
+        null,
+        classpath,
+        candidates,
+        compileVisibleArtifacts,
+        indexedClasses,
+        bytecodeScan,
+        outputClassNames);
+  }
+
+  /* package */ static CompilerInputs analyze(
+      final MavenProject project,
+      final MavenSession session,
+      final AnalysisEnvironment environment,
+      final List<String> classpath,
+      final List<ArtifactFileRef> candidates,
+      final Set<ArtifactFileRef> compileVisibleArtifacts,
+      final Map<ArtifactFileRef, Set<String>> indexedClasses,
+      final Optional<BytecodeReferenceScan> bytecodeScan,
+      final Set<String> outputClassNames)
+      throws IOException {
     final BytecodeReferenceScan scan =
         bytecodeScan.orElseThrow(
             () ->
@@ -61,7 +84,9 @@ final class PostCompileSourceAttribution {
         sourceClasspath.add(output.toString());
       }
       final List<String> sourceOptions =
-          MavenCompilerSettings.postCompileSourceOptions(project, session);
+          environment == null
+              ? MavenCompilerSettings.postCompileSourceOptions(project, session)
+              : MavenCompilerSettings.postCompileSourceOptionsWithEnvironment(project, environment);
       final JavaSourceReferenceScanner.SourceScan sourceScan =
           new JavaSourceReferenceScanner()
               .scanFilesDetailed(sourceFiles, sourceClasspath, sourceOptions);

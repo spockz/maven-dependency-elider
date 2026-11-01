@@ -110,7 +110,10 @@ final class MultiReleaseJarTrimmer {
       throws IOException, MojoFailureException {
     final MavenProject project = request.project();
     final List<String> compilerOptions =
-        MavenCompilerSettings.platformReleaseOptions(project, request.session());
+        request.environment() == null
+            ? MavenCompilerSettings.platformReleaseOptions(project, request.session())
+            : MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
+                project, request.environment());
     final Path javaHome =
         Path.of(System.getProperty(MavenDependencyTrimmer.JAVA_HOME_PROPERTY))
             .toAbsolutePath()

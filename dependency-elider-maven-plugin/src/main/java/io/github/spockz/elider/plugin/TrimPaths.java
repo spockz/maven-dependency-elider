@@ -35,6 +35,13 @@ final class TrimPaths {
             .normalize();
   }
 
+  /* package */ static Path analysisLibraryDirectory(
+      final MavenProject project, final AnalysisEnvironment environment) {
+    return environment == null || environment.projectionDirectory() == null
+        ? analysisLibraryDirectory(project)
+        : environment.projectionDirectory();
+  }
+
   /* package */ static Path generationPath(final MavenProject project, final String fingerprint) {
     return buildDirectory(project)
         .resolve(ELIDED_ARTIFACTS)

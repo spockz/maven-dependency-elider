@@ -17,6 +17,7 @@ import java.util.List;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.ProjectDependenciesResolver;
 
 /** Coordinates shared trace analysis and a nonmutating Maven artifact plan. */
 final class MavenElisionService {
@@ -95,6 +96,44 @@ final class MavenElisionService {
   /* package */ Analysis analyze(final MavenProject project, final AnalysisOptions options)
       throws IOException, MojoFailureException {
     return finish(prepare(project, options));
+  }
+
+  /* package */ AnalyzePrediction predict(
+      final MavenProject project,
+      final AnalysisOptions options,
+      final ProjectDependenciesResolver resolver)
+      throws IOException, MojoFailureException {
+    final MavenProject currentModel = MavenAnalysisResolutionContext.currentModel(project);
+    MavenAnalysisPreparation.rejectRequestedBans(
+        currentModel, options, new ElisionAnalysisModel.ArtifactViews(List.of(), false, List.of()));
+    final AnalysisOptions projectOptions =
+        options.productionOutput() == null && options.completeness().productionClassesComplete()
+            ? options.withProductionOutput(defaultProductionOutput(currentModel))
+            : options;
+    final AnalysisEnvironment environment =
+        AnalysisEnvironment.capture(project, projectOptions.session());
+    try (AnalysisProjectionWorkspace workspace = AnalysisProjectionWorkspace.create()) {
+      final AnalysisEnvironment operationEnvironment =
+          environment.withProjectionDirectory(workspace.directory());
+      final MavenAnalysisResolutionContext context =
+          MavenAnalysisResolutionContext.forAnalyze(
+              currentModel, project, projectOptions.session(), resolver, operationEnvironment);
+      final PreparedAnalysis prepared =
+          MavenAnalysisPreparation.prepare(
+              context.project(),
+              projectOptions.withEnvironment(operationEnvironment),
+              DependencyDynamicRoots::scan,
+              context);
+      return AnalyzePrediction.from(ElisionReachabilityEngine.finishAnalysis(prepared));
+    }
+  }
+
+  private static File defaultProductionOutput(final MavenProject project) {
+    if (project.getBuild() == null) {
+      return null;
+    }
+    final String outputDirectory = project.getBuild().getOutputDirectory();
+    return outputDirectory == null || outputDirectory.isBlank() ? null : new File(outputDirectory);
   }
 
   /* package */ PreparedAnalysis prepare(final MavenProject project, final AnalysisOptions options)

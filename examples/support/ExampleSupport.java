@@ -234,6 +234,7 @@ public final class ExampleSupport {
       throw new IOException("Report does not identify the copied baseline production output");
     }
     final JsonNode groups = report.path("groups");
+    validateDependencyPrediction(report.get("dependencyPrediction"));
     final Set<String> neither = names(groups.path("neitherReferencedNorObserved"));
     final Set<String> observedMail = matchingMailClasses(report.path("runtimeObservedClasses"));
     final Set<String> runtimeOnlyMail =
@@ -252,6 +253,172 @@ public final class ExampleSupport {
     if (!neither.contains("org.apache.commons.codec.binary.Hex")) {
       throw new IOException(
           "Unused Commons Codec Hex was not classified as neither observed nor referenced");
+    }
+  }
+
+  private static void validateDependencyPrediction(final JsonNode prediction) throws IOException {
+    if (prediction == null) {
+      return;
+    }
+    if (!prediction.isObject()) {
+      throw new IOException("dependencyPrediction must be a JSON object");
+    }
+    final JsonNode provenance = prediction.path("provenance");
+    if (!provenance.isTextual()
+        || !Set.of("CAPTURED_EFFECTIVE_RESOLVER", "DETACHED_CURRENT_MODEL")
+            .contains(provenance.textValue())) {
+      throw new IOException("dependencyPrediction provenance is unsupported");
+    }
+    for (final String field :
+        List.of("environmentFingerprint", "inventoryFingerprint", "operationFingerprint")) {
+      final JsonNode fingerprint = prediction.path(field);
+      if (!fingerprint.isTextual() || !fingerprint.textValue().matches("[0-9a-f]{64}")) {
+        throw new IOException("dependencyPrediction " + field + " must be a SHA-256 string");
+      }
+    }
+    for (final String field : List.of("retainedArtifacts", "wouldElideArtifacts")) {
+      final JsonNode coordinates = prediction.path(field);
+      if (!coordinates.isArray()) {
+        throw new IOException("dependencyPrediction " + field + " must be an array");
+      }
+      ReportCoordinate previous = null;
+      final Set<String> unique = new HashSet<>();
+      for (final JsonNode coordinate : coordinates) {
+        if (!coordinate.isTextual() || coordinate.textValue().isBlank()) {
+          throw new IOException("dependencyPrediction coordinates must be non-empty strings");
+        }
+        final String text = coordinate.textValue();
+        final ReportCoordinate parsed;
+        try {
+          parsed = parseCanonicalCoordinate(text);
+        } catch (final IllegalArgumentException exception) {
+          throw new IOException("dependencyPrediction coordinate is not canonical", exception);
+        }
+        if (previous != null && previous.compareTo(parsed) >= 0) {
+          throw new IOException("dependencyPrediction coordinates are not canonical");
+        }
+        if (!unique.add(text)) {
+          throw new IOException("dependencyPrediction coordinates contain duplicates");
+        }
+        previous = parsed;
+      }
+    }
+    final Set<String> retained = coordinateTexts(prediction.path("retainedArtifacts"));
+    final Set<String> wouldElide = coordinateTexts(prediction.path("wouldElideArtifacts"));
+    final Set<String> overlap = new HashSet<>(retained);
+    overlap.retainAll(wouldElide);
+    if (!overlap.isEmpty()) {
+      throw new IOException("dependencyPrediction retained and would-elide coordinates overlap");
+    }
+    final JsonNode plannedRemovals = prediction.path("plannedClassRemovals");
+    if (!plannedRemovals.isArray()) {
+      throw new IOException("dependencyPrediction plannedClassRemovals must be an array");
+    }
+    ReportCoordinate previousCoordinate = null;
+    for (final JsonNode removal : plannedRemovals) {
+      if (!removal.isObject()) {
+        throw new IOException("dependencyPrediction planned class removal must be an object");
+      }
+      if (!"PLANNED_UNVERIFIED".equals(removal.path("status").asText())) {
+        throw new IOException("dependencyPrediction planned class removal status is unsupported");
+      }
+      final JsonNode coordinate = removal.path("coordinate");
+      if (!coordinate.isTextual() || coordinate.textValue().isBlank()) {
+        throw new IOException("dependencyPrediction planned class removal coordinate is invalid");
+      }
+      final ReportCoordinate parsedCoordinate;
+      try {
+        parsedCoordinate = parseCanonicalCoordinate(coordinate.textValue());
+      } catch (final IllegalArgumentException exception) {
+        throw new IOException(
+            "dependencyPrediction planned class removal coordinate is not canonical", exception);
+      }
+      if (!retained.contains(coordinate.textValue())) {
+        throw new IOException(
+            "dependencyPrediction planned class removal must reference a retained artifact");
+      }
+      if (previousCoordinate != null && previousCoordinate.compareTo(parsedCoordinate) >= 0) {
+        throw new IOException("dependencyPrediction planned class removals are not canonical");
+      }
+      previousCoordinate = parsedCoordinate;
+      final JsonNode classes = removal.path("classes");
+      if (!classes.isArray() || classes.size() == 0) {
+        throw new IOException("dependencyPrediction planned removal classes must be non-empty");
+      }
+      String previousClass = null;
+      for (final JsonNode className : classes) {
+        if (!className.isTextual() || className.textValue().isBlank()) {
+          throw new IOException("dependencyPrediction planned removal classes must be strings");
+        }
+        if (previousClass != null && previousClass.compareTo(className.textValue()) >= 0) {
+          throw new IOException("dependencyPrediction planned removal classes are not canonical");
+        }
+        previousClass = className.textValue();
+      }
+    }
+  }
+
+  private static Set<String> coordinateTexts(final JsonNode node) throws IOException {
+    if (!node.isArray()) {
+      throw new IOException("dependencyPrediction artifact coordinates must be arrays");
+    }
+    final Set<String> coordinates = new HashSet<>();
+    for (final JsonNode coordinate : node) {
+      if (!coordinate.isTextual()) {
+        throw new IOException("dependencyPrediction coordinates must be non-empty strings");
+      }
+      coordinates.add(coordinate.textValue());
+    }
+    return coordinates;
+  }
+
+  private static ReportCoordinate parseCanonicalCoordinate(final String text) {
+    final int scopeMarker = text.lastIndexOf(" (");
+    if (scopeMarker <= 0 || !text.endsWith(")")) {
+      throw new IllegalArgumentException("coordinate must include scope");
+    }
+    final String scope = text.substring(scopeMarker + 2, text.length() - 1);
+    final String[] parts = text.substring(0, scopeMarker).split(":", -1);
+    if ((parts.length != 4 && parts.length != 5)
+        || scope.isBlank()
+        || scope.chars().anyMatch(Character::isWhitespace)) {
+      throw new IllegalArgumentException("coordinate has malformed components");
+    }
+    for (final String part : parts) {
+      if (part.isBlank() || part.chars().anyMatch(Character::isWhitespace)) {
+        throw new IllegalArgumentException("coordinate has a blank or whitespace component");
+      }
+    }
+    final ReportCoordinate coordinate =
+        parts.length == 4
+            ? new ReportCoordinate(parts[0], parts[1], parts[3], parts[2], "", scope)
+            : new ReportCoordinate(parts[0], parts[1], parts[4], parts[2], parts[3], scope);
+    if (!coordinate.render().equals(text)) {
+      throw new IllegalArgumentException("coordinate is not canonical");
+    }
+    return coordinate;
+  }
+
+  private record ReportCoordinate(
+      String groupId, String artifactId, String version, String type, String classifier, String scope)
+      implements Comparable<ReportCoordinate> {
+    private String render() {
+      final String artifactIdText =
+          classifier.isEmpty()
+              ? groupId + ":" + artifactId + ":" + type + ":" + version
+              : groupId + ":" + artifactId + ":" + type + ":" + classifier + ":" + version;
+      return artifactIdText + " (" + scope + ")";
+    }
+
+    @Override
+    public int compareTo(final ReportCoordinate other) {
+      int compared = groupId.compareTo(other.groupId);
+      if (compared == 0) compared = artifactId.compareTo(other.artifactId);
+      if (compared == 0) compared = version.compareTo(other.version);
+      if (compared == 0) compared = type.compareTo(other.type);
+      if (compared == 0) compared = classifier.compareTo(other.classifier);
+      if (compared == 0) compared = scope.compareTo(other.scope);
+      return compared;
     }
   }
 

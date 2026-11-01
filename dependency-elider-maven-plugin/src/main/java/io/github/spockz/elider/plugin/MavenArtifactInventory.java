@@ -27,6 +27,12 @@ final class MavenArtifactInventory {
   /* package */ static void verifyPreparedInventory(final PreparedAnalysis prepared)
       throws IOException {
     NativeImageConsumedInput.verifyAll(prepared.dynamicRootInputs().consumedInputs());
+    final MavenAnalysisResolutionContext resolutionContext = prepared.resolutionContext();
+    if (resolutionContext != null
+        && resolutionContext.provenance() == AnalyzePrediction.Provenance.DETACHED_CURRENT_MODEL) {
+      resolutionContext.verify();
+      return;
+    }
     verifyProjectInventory(
         prepared.project(),
         prepared.directArtifactsPresent(),

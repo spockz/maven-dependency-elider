@@ -87,16 +87,22 @@ final class MavenCompilerSettings {
       final MavenProject project, final MavenSession session, final List<String> compileClasspath)
       throws IOException {
     rejectSelectedToolchain(session);
+    return options(project, userProperties(session), compileClasspath);
+  }
+
+  private static List<String> options(
+      final MavenProject project,
+      final Properties userProperties,
+      final List<String> compileClasspath)
+      throws IOException {
     final List<Xpp3Dom> configurations = compilerConfigurations(project);
-    final Properties userProperties =
-        session == null ? new Properties() : session.getUserProperties();
     rejectUnsupportedSettings(configurations, project.getProperties(), userProperties);
     final String release =
-        value("release", "maven.compiler.release", project, session, configurations);
+        value("release", "maven.compiler.release", project, userProperties, configurations);
     final String source =
-        value("source", "maven.compiler.source", project, session, configurations);
+        value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
-        value("target", "maven.compiler.target", project, session, configurations);
+        value("target", "maven.compiler.target", project, userProperties, configurations);
     if (release != null && (source != null || target != null)) {
       throw new IOException("Cannot attribute source with both compiler release and source/target");
     }
@@ -110,26 +116,40 @@ final class MavenCompilerSettings {
           "Source attribution requires effective compiler release or source/target settings");
     }
     final String encoding =
-        value("encoding", "maven.compiler.encoding", project, session, configurations);
+        value("encoding", "maven.compiler.encoding", project, userProperties, configurations);
     final String projectEncoding =
         project.getProperties().getProperty("project.build.sourceEncoding");
     final String effectiveEncoding = encoding == null ? projectEncoding : encoding;
     if (effectiveEncoding != null && !effectiveEncoding.isBlank()) {
       options.addAll(List.of("-encoding", effectiveEncoding));
     }
-    rejectAnnotationProcessors(project, session, configurations, compileClasspath);
+    rejectAnnotationProcessors(project, userProperties, configurations, compileClasspath);
     return List.copyOf(options);
+  }
+
+  static List<String> optionsWithEnvironment(
+      final MavenProject project,
+      final AnalysisEnvironment environment,
+      final List<String> compileClasspath)
+      throws IOException {
+    requireUnselectedToolchain(environment);
+    return options(project, environment.userPropertiesAsProperties(), compileClasspath);
   }
 
   static List<String> releaseIdentity(final MavenProject project, final MavenSession session)
       throws IOException {
+    return releaseIdentity(project, userProperties(session));
+  }
+
+  private static List<String> releaseIdentity(
+      final MavenProject project, final Properties userProperties) throws IOException {
     final List<Xpp3Dom> configurations = compilerConfigurations(project);
     final String release =
-        value("release", "maven.compiler.release", project, session, configurations);
+        value("release", "maven.compiler.release", project, userProperties, configurations);
     final String source =
-        value("source", "maven.compiler.source", project, session, configurations);
+        value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
-        value("target", "maven.compiler.target", project, session, configurations);
+        value("target", "maven.compiler.target", project, userProperties, configurations);
     if (release != null && (source != null || target != null)) {
       throw new IOException("Cannot identify compiler release with both release and source/target");
     }
@@ -142,42 +162,58 @@ final class MavenCompilerSettings {
     return List.of("unspecified-compiler-release");
   }
 
+  static List<String> releaseIdentityWithEnvironment(
+      final MavenProject project, final AnalysisEnvironment environment) throws IOException {
+    requireUnselectedToolchain(environment);
+    return releaseIdentity(project, environment.userPropertiesAsProperties());
+  }
+
   /** Resolves only the platform release used by bytecode trimming after compilation. */
   static List<String> platformReleaseOptions(final MavenProject project, final MavenSession session)
       throws IOException {
     rejectSelectedToolchain(session);
+    return platformReleaseOptions(project, userProperties(session));
+  }
+
+  private static List<String> platformReleaseOptions(
+      final MavenProject project, final Properties userProperties) throws IOException {
     final List<Xpp3Dom> configurations = compilerConfigurations(project);
-    rejectUnsupportedPlatformSettings(
-        configurations,
-        project.getProperties(),
-        session == null ? new Properties() : session.getUserProperties());
+    rejectUnsupportedPlatformSettings(configurations, project.getProperties(), userProperties);
     final String release =
-        value("release", "maven.compiler.release", project, session, configurations);
+        value("release", "maven.compiler.release", project, userProperties, configurations);
     final String source =
-        value("source", "maven.compiler.source", project, session, configurations);
+        value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
-        value("target", "maven.compiler.target", project, session, configurations);
+        value("target", "maven.compiler.target", project, userProperties, configurations);
     return sourceLevelOptions(release, source, target, false);
+  }
+
+  static List<String> platformReleaseOptionsWithEnvironment(
+      final MavenProject project, final AnalysisEnvironment environment) throws IOException {
+    requireUnselectedToolchain(environment);
+    return platformReleaseOptions(project, environment.userPropertiesAsProperties());
   }
 
   /** Resolves post-compile source attribution options without invoking configured processors. */
   static List<String> postCompileSourceOptions(
       final MavenProject project, final MavenSession session) throws IOException {
     rejectSelectedToolchain(session);
+    return postCompileSourceOptions(project, userProperties(session));
+  }
+
+  private static List<String> postCompileSourceOptions(
+      final MavenProject project, final Properties userProperties) throws IOException {
     final List<Xpp3Dom> configurations = compilerConfigurations(project);
-    rejectUnsupportedPlatformSettings(
-        configurations,
-        project.getProperties(),
-        session == null ? new Properties() : session.getUserProperties());
+    rejectUnsupportedPlatformSettings(configurations, project.getProperties(), userProperties);
     final String release =
-        value("release", "maven.compiler.release", project, session, configurations);
+        value("release", "maven.compiler.release", project, userProperties, configurations);
     final String source =
-        value("source", "maven.compiler.source", project, session, configurations);
+        value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
-        value("target", "maven.compiler.target", project, session, configurations);
+        value("target", "maven.compiler.target", project, userProperties, configurations);
     final List<String> options = new ArrayList<>(sourceLevelOptions(release, source, target, true));
     final String encoding =
-        value("encoding", "maven.compiler.encoding", project, session, configurations);
+        value("encoding", "maven.compiler.encoding", project, userProperties, configurations);
     final String projectEncoding =
         project.getProperties().getProperty("project.build.sourceEncoding");
     final String effectiveEncoding = encoding == null ? projectEncoding : encoding;
@@ -186,6 +222,12 @@ final class MavenCompilerSettings {
     }
     options.add("-proc:none");
     return List.copyOf(options);
+  }
+
+  static List<String> postCompileSourceOptionsWithEnvironment(
+      final MavenProject project, final AnalysisEnvironment environment) throws IOException {
+    requireUnselectedToolchain(environment);
+    return postCompileSourceOptions(project, environment.userPropertiesAsProperties());
   }
 
   private static List<String> sourceLevelOptions(
@@ -218,6 +260,14 @@ final class MavenCompilerSettings {
   /** Reports effective processor settings across project and Maven session properties. */
   static boolean hasConfiguredAnnotationProcessing(
       final MavenProject project, final MavenSession session) {
+    return hasConfiguredAnnotationProcessing(
+        project, systemProperties(session), userProperties(session));
+  }
+
+  private static boolean hasConfiguredAnnotationProcessing(
+      final MavenProject project,
+      final Properties systemProperties,
+      final Properties userProperties) {
     final List<Xpp3Dom> configurations = compilerConfigurations(project);
     for (final Xpp3Dom configuration : configurations) {
       for (final String name :
@@ -245,12 +295,8 @@ final class MavenCompilerSettings {
     }
     final Properties properties = new Properties();
     properties.putAll(project.getProperties());
-    if (session != null && session.getSystemProperties() != null) {
-      properties.putAll(session.getSystemProperties());
-    }
-    if (session != null && session.getUserProperties() != null) {
-      properties.putAll(session.getUserProperties());
-    }
+    properties.putAll(systemProperties);
+    properties.putAll(userProperties);
     final String configuredProc = properties.getProperty("maven.compiler.proc");
     final boolean processingDisabled =
         configuredProc != null && "none".equalsIgnoreCase(configuredProc.trim());
@@ -280,6 +326,22 @@ final class MavenCompilerSettings {
       return true;
     }
     return false;
+  }
+
+  static boolean hasConfiguredAnnotationProcessingWithEnvironment(
+      final MavenProject project, final AnalysisEnvironment environment) {
+    return hasConfiguredAnnotationProcessing(
+        project,
+        environment.systemPropertiesAsProperties(),
+        environment.userPropertiesAsProperties());
+  }
+
+  private static void requireUnselectedToolchain(final AnalysisEnvironment environment)
+      throws IOException {
+    if (environment == null
+        || environment.jdkToolchainState() != AnalysisEnvironment.JdkToolchainState.UNSELECTED) {
+      throw new IOException("Cannot verify the selected Maven JDK toolchain");
+    }
   }
 
   private static void rejectUnsupportedPlatformSettings(
@@ -559,11 +621,12 @@ final class MavenCompilerSettings {
 
   private static void rejectAnnotationProcessors(
       final MavenProject project,
-      final MavenSession session,
+      final Properties userProperties,
       final List<Xpp3Dom> configurations,
       final List<String> classpath)
       throws IOException {
-    final String proc = value("proc", "maven.compiler.proc", project, session, configurations);
+    final String proc =
+        value("proc", "maven.compiler.proc", project, userProperties, configurations);
     if (PROCESSING_DISABLED.equalsIgnoreCase(proc)) {
       return;
     }
@@ -594,14 +657,14 @@ final class MavenCompilerSettings {
       final String name,
       final String property,
       final MavenProject project,
-      final MavenSession session,
+      final Properties userProperties,
       final List<Xpp3Dom> configurations)
       throws IOException {
     final Set<String> configuredValues = new LinkedHashSet<>();
     for (final Xpp3Dom configuration : configurations) {
       final Xpp3Dom configured = configuration.getChild(name);
       if (hasValue(configured)) {
-        configuredValues.add(resolve(configured.getValue().trim(), project, session));
+        configuredValues.add(resolve(configured.getValue().trim(), project, userProperties));
       }
     }
     if (hasConflictingValues(configuredValues)) {
@@ -610,8 +673,7 @@ final class MavenCompilerSettings {
     if (!configuredValues.isEmpty()) {
       return configuredValues.iterator().next();
     }
-    final String configuredProperty =
-        session == null ? null : session.getUserProperties().getProperty(property);
+    final String configuredProperty = userProperties.getProperty(property);
     if (configuredProperty != null && !configuredProperty.isBlank()) {
       return configuredProperty.trim();
     }
@@ -626,19 +688,34 @@ final class MavenCompilerSettings {
         : effectiveProperty.trim();
   }
 
+  private static Properties userProperties(final MavenSession session) {
+    return session == null ? new Properties() : copyProperties(session.getUserProperties());
+  }
+
+  private static Properties systemProperties(final MavenSession session) {
+    return session == null ? new Properties() : copyProperties(session.getSystemProperties());
+  }
+
+  private static Properties copyProperties(final Properties source) {
+    final Properties copy = new Properties();
+    if (source != null) {
+      source.stringPropertyNames().forEach(key -> copy.setProperty(key, source.getProperty(key)));
+    }
+    return copy;
+  }
+
   private static boolean hasConflictingValues(final Set<String> values) {
     return values.size() > SINGLE_VALUE_COUNT;
   }
 
   private static String resolve(
-      final String value, final MavenProject project, final MavenSession session)
+      final String value, final MavenProject project, final Properties userProperties)
       throws IOException {
     if (!value.startsWith("${") || !value.endsWith("}")) {
       return value;
     }
     final String property = value.substring(2, value.length() - 1);
-    final String userValue =
-        session == null ? null : session.getUserProperties().getProperty(property);
+    final String userValue = userProperties.getProperty(property);
     final String resolved =
         userValue == null ? project.getProperties().getProperty(property) : userValue;
     if (resolved == null || resolved.isBlank()) {

@@ -37,7 +37,29 @@ final class ElisionAnalysisModel {
       MavenSession session,
       CompletenessOptions completeness,
       TrimOptions trim,
-      DynamicRootOptions dynamicRoots) {
+      DynamicRootOptions dynamicRoots,
+      AnalysisEnvironment environment) {
+    /* default */ AnalysisOptions(
+        final List<File> traceFiles,
+        final List<String> retainedArtifacts,
+        final List<String> banishedDependencies,
+        final File productionOutput,
+        final MavenSession session,
+        final CompletenessOptions completeness,
+        final TrimOptions trim,
+        final DynamicRootOptions dynamicRoots) {
+      this(
+          traceFiles,
+          retainedArtifacts,
+          banishedDependencies,
+          productionOutput,
+          session,
+          completeness,
+          trim,
+          dynamicRoots,
+          null);
+    }
+
     /* default */ AnalysisOptions(
         final List<File> traceFiles,
         final List<String> retainedArtifacts,
@@ -54,7 +76,8 @@ final class ElisionAnalysisModel {
           session,
           completeness,
           trim,
-          dynamicRoots);
+          dynamicRoots,
+          null);
     }
 
     /* default */ AnalysisOptions {
@@ -73,6 +96,32 @@ final class ElisionAnalysisModel {
 
     /* default */ MavenExecutionRequest request() {
       return session == null ? null : session.getRequest();
+    }
+
+    /* default */ AnalysisOptions withEnvironment(final AnalysisEnvironment value) {
+      return new AnalysisOptions(
+          traceFiles,
+          retainedArtifacts,
+          banishedDependencies,
+          productionOutput,
+          null,
+          completeness,
+          trim,
+          dynamicRoots,
+          value);
+    }
+
+    /* default */ AnalysisOptions withProductionOutput(final File value) {
+      return new AnalysisOptions(
+          traceFiles,
+          retainedArtifacts,
+          banishedDependencies,
+          value,
+          session,
+          completeness,
+          trim,
+          dynamicRoots,
+          environment);
     }
   }
 
@@ -179,7 +228,8 @@ final class ElisionAnalysisModel {
       String directInputFingerprint,
       MavenElisionGraphBinding.Result graphBinding,
       MavenElisionPolicyIdentity.Options policyOptions,
-      String sourceAttributionFallback) {
+      String sourceAttributionFallback,
+      MavenAnalysisResolutionContext resolutionContext) {
     /* default */ PreparedAnalysis {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);

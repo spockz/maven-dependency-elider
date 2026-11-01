@@ -61,6 +61,17 @@ final class MavenAdvisoryFindingFactory {
       final Collection<ArtifactCoordinate> removedArtifacts,
       final Collection<ArtifactCoordinate> retainedArtifacts,
       final List<ArtifactTrimRecord> trimRecords) {
+    return inventoryDisposition(
+        candidate, removedArtifacts, retainedArtifacts, trimRecords, java.util.Set.of());
+  }
+
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  static MavenVulnerabilityAssessment.InventoryDisposition inventoryDisposition(
+      final ArtifactCoordinate candidate,
+      final Collection<ArtifactCoordinate> removedArtifacts,
+      final Collection<ArtifactCoordinate> retainedArtifacts,
+      final List<ArtifactTrimRecord> trimRecords,
+      final Collection<ArtifactCoordinate> plannedUnverifiedCandidates) {
     if (removedArtifacts.stream().anyMatch(value -> sameGavce(value, candidate))) {
       return MavenVulnerabilityAssessment.InventoryDisposition.REMOVED;
     }
@@ -69,6 +80,9 @@ final class MavenAdvisoryFindingFactory {
     }
     if (retainedArtifacts.stream().anyMatch(value -> sameGavce(value, candidate))) {
       return MavenVulnerabilityAssessment.InventoryDisposition.RETAINED_UNCHANGED;
+    }
+    if (plannedUnverifiedCandidates.stream().anyMatch(value -> sameGavce(value, candidate))) {
+      return MavenVulnerabilityAssessment.InventoryDisposition.PLANNED_UNVERIFIED;
     }
     throw new IllegalArgumentException(
         "Matched advisory candidate is absent from the analyzed inventory: " + candidate);

@@ -62,7 +62,8 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
         prepared.directInputFingerprint(),
         binding,
         prepared.policyOptions(),
-        prepared.sourceAttributionFallback());
+        prepared.sourceAttributionFallback(),
+        prepared.resolutionContext());
   }
 
   static ArtifactCoordinate coordinate(

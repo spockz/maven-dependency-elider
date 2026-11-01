@@ -1,0 +1,230 @@
+// WHY: Exercises the production prediction path with a captured graph and MRJAR input.
+
+package io.github.spockz.elider.plugin;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
+
+import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
+import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
+import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
+import io.github.spockz.elider.plugin.ElisionAnalysisModel.TrimOptions;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashSet;
+import java.util.List;
+import org.apache.maven.artifact.Artifact;
+import org.apache.maven.artifact.DefaultArtifact;
+import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
+import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.Build;
+import org.apache.maven.plugin.descriptor.PluginDescriptor;
+import org.apache.maven.project.MavenProject;
+import org.apache.maven.toolchain.DefaultToolchainManager;
+import org.codehaus.plexus.PlexusContainer;
+import org.eclipse.aether.DefaultRepositorySystemSession;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+final class MavenElisionServicePredictionTest {
+  @TempDir private Path temporaryDirectory;
+
+  @Test
+  void predictsCapturedEffectiveMrjarWithoutPublishingTrimState() throws Exception {
+    final Fixture fixture = fixture(true);
+    final Object captureBefore =
+        fixture
+            .repositorySession()
+            .getData()
+            .get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
+    final Object planBefore =
+        fixture.repositorySession().getData().get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
+    final Path generation = TrimPaths.generationPath(fixture.project(), "prediction-only");
+    final Path output = MavenGeneratedOutputs.manifestPath(fixture.project());
+    Files.createDirectories(output.getParent());
+    Files.writeString(output, "existing-output-manifest");
+    final Path targetArchive =
+        TrimPaths.analysisLibraryDirectory(fixture.project()).resolve("sentinel.jar");
+    Files.createDirectories(targetArchive.getParent());
+    Files.writeString(targetArchive, "existing-analysis-archive");
+
+    final AnalyzePrediction prediction =
+        new MavenElisionService().predict(fixture.project(), fixture.options(), null);
+
+    assertAll(
+        "captured-effective Analyze predicts without publishing trim state",
+        () ->
+            assertThat(prediction.provenance())
+                .isEqualTo(AnalyzePrediction.Provenance.CAPTURED_EFFECTIVE_RESOLVER),
+        () -> assertThat(fixture.project().getArtifacts()).containsExactly(fixture.artifact()),
+        () ->
+            assertThat(fixture.project().getDependencyArtifacts())
+                .containsExactly(fixture.artifact()),
+        () ->
+            assertThat(prediction.plannedTrims())
+                .singleElement()
+                .satisfies(
+                    trim ->
+                        assertAll(
+                            "only target-tier classes are predicted for removal",
+                            () -> assertThat(trim.removedClasses()).contains("projection.NineOnly"),
+                            () ->
+                                assertThat(trim.removedClasses())
+                                    .doesNotContain("projection.TwentyOneOnly"))),
+        () -> assertThat(fixture.artifact().getFile()).isEqualTo(fixture.archive().toFile()),
+        () ->
+            assertThat(
+                    fixture
+                        .repositorySession()
+                        .getData()
+                        .get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY))
+                .isEqualTo(captureBefore),
+        () ->
+            assertThat(
+                    fixture
+                        .repositorySession()
+                        .getData()
+                        .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
+                .isEqualTo(planBefore),
+        () -> assertThat(generation).doesNotExist(),
+        () -> assertThat(output).hasContent("existing-output-manifest"),
+        () -> assertThat(targetArchive).hasContent("existing-analysis-archive"));
+  }
+
+  @Test
+  void refusesCapturedEffectivePredictionWhenThePairIsMissing() throws Exception {
+    final Fixture fixture = fixture(false);
+    final Path reportSentinel = temporaryDirectory.resolve("unchanged-report.json");
+    Files.writeString(reportSentinel, "report sentinel");
+
+    assertAll(
+        "missing captured graph refuses prediction without changing report output",
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        new MavenElisionService()
+                            .predict(fixture.project(), fixture.options(), null))
+                .isInstanceOf(java.io.IOException.class)
+                .hasMessageContaining("missing for Analyze"),
+        () -> assertThat(reportSentinel).hasContent("report sentinel"));
+  }
+
+  private Fixture fixture(final boolean capturePair) throws Exception {
+    final Path fixtureDirectory = Files.createTempDirectory(temporaryDirectory, "prediction-");
+    final MavenProject project = new MavenProject();
+    project.setGroupId("fixture");
+    project.setArtifactId("consumer");
+    project.setVersion("1.0");
+    project.setPackaging("jar");
+    project.setFile(Files.createFile(fixtureDirectory.resolve("pom.xml")).toFile());
+    project.getProperties().setProperty("maven.compiler.release", "17");
+    final Build build = new Build();
+    build.setDirectory(fixtureDirectory.resolve("target").toString());
+    build.setOutputDirectory(fixtureDirectory.resolve("classes").toString());
+    project.setBuild(build);
+    final Path archive = multiReleaseArchive(fixtureDirectory);
+    final DefaultArtifactHandler handler = new DefaultArtifactHandler("jar");
+    handler.setAddedToClasspath(true);
+    final Artifact artifact =
+        new DefaultArtifact("fixture", "library", "1.0", "compile", "jar", null, handler);
+    artifact.setFile(archive.toFile());
+    project.setArtifacts(new LinkedHashSet<>(List.of(artifact)));
+    project.setDependencyArtifacts(new LinkedHashSet<>(List.of(artifact)));
+    final Path sourceRoot = Files.createDirectories(fixtureDirectory.resolve("prediction-source"));
+    Files.writeString(
+        sourceRoot.resolve("App.java"),
+        "package consumer; public class App { private projection.Api api; }\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
+    final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
+    if (capturePair) {
+      MavenElisionGraphBindingTestSupport.appendPair(
+          repositorySession, MavenElisionGraphBindingTestSupport.projectKey(project), "capture-1");
+    }
+    final MavenSession session = session(project, repositorySession);
+    MavenOriginalInputAudit.markHookPresent(session);
+    final Path trace = fixtureDirectory.resolve("captured-mrjar.lst");
+    Files.writeString(trace, "consumer.App\nprojection.Api\n");
+    final AnalysisOptions options =
+        new AnalysisOptions(
+            List.of(trace.toFile()),
+            List.of(),
+            List.of(),
+            null,
+            session,
+            new CompletenessOptions(true, false, false, true),
+            new TrimOptions(
+                true,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new DynamicRootOptions(false));
+    return new Fixture(project, artifact, archive, repositorySession, options);
+  }
+
+  private MavenSession session(
+      final MavenProject project, final DefaultRepositorySystemSession repositorySession) {
+    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+    request.setBaseDirectory(project.getBasedir());
+    final PlexusContainer container =
+        (PlexusContainer)
+            java.lang.reflect.Proxy.newProxyInstance(
+                PlexusContainer.class.getClassLoader(),
+                new Class<?>[] {PlexusContainer.class},
+                (proxy, method, arguments) ->
+                    "lookup".equals(method.getName()) ? new DefaultToolchainManager() : null);
+    final MavenSession session = new MavenSession(container, repositorySession, request, null);
+    session.setCurrentProject(project);
+    final PluginDescriptor descriptor = new PluginDescriptor();
+    descriptor.setGroupId(PluginDescriptor.getDefaultPluginGroupId());
+    descriptor.setArtifactId(PluginDescriptor.getDefaultPluginArtifactId("toolchains"));
+    session.getPluginContext(descriptor, project);
+    return session;
+  }
+
+  private Path multiReleaseArchive(final Path fixtureDirectory) throws Exception {
+    final Path base =
+        MultiReleaseProjectionFixtures.compile(
+            fixtureDirectory,
+            "captured-base",
+            8,
+            "package projection; public class Api { public static String value() { return \"base\"; } }");
+    final Path versioned =
+        MultiReleaseProjectionFixtures.compile(
+            fixtureDirectory,
+            "captured-v21",
+            21,
+            "package projection; public class Api { public static String value() { return \"upper\"; } }");
+    final Path versionNine =
+        MultiReleaseProjectionFixtures.compile(
+            fixtureDirectory,
+            "captured-v9",
+            9,
+            "package projection; public class Api { public static String value() { return \"nine\"; } }");
+    final Path versionNineOnly =
+        MultiReleaseProjectionFixtures.compile(
+            fixtureDirectory,
+            "captured-v9-only",
+            9,
+            "package projection; public class NineOnly {}");
+    final Path versionTwentyOneOnly =
+        MultiReleaseProjectionFixtures.compile(
+            fixtureDirectory,
+            "captured-v21-only",
+            21,
+            "package projection; public class TwentyOneOnly {}");
+    return MultiReleaseProjectionFixtures.createMultiReleaseJar(
+        fixtureDirectory, base, versionNine, versionNineOnly, versioned, versionTwentyOneOnly);
+  }
+
+  private record Fixture(
+      MavenProject project,
+      Artifact artifact,
+      Path archive,
+      DefaultRepositorySystemSession repositorySession,
+      AnalysisOptions options) {}
+}

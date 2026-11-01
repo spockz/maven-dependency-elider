@@ -31,6 +31,72 @@ public final class ExampleSupportContractTest {
       final ObjectNode nonStringClass = report(productionOutput);
       ((ArrayNode) nonStringClass.path("runtimeObservedClasses")).add(17);
       rejects(nonStringClass, productionOutput, "class name to be a JSON string");
+
+      final ObjectNode malformedPrediction = report(productionOutput);
+      malformedPrediction.putObject("dependencyPrediction").put("provenance", "unknown");
+      rejects(malformedPrediction, productionOutput, "provenance is unsupported");
+
+      final ObjectNode malformedPredictionCoordinates = report(productionOutput);
+      final ObjectNode prediction = prediction(malformedPredictionCoordinates);
+      prediction.putArray("retainedArtifacts").add(17);
+      prediction.putArray("wouldElideArtifacts");
+      prediction.putArray("plannedClassRemovals");
+      rejects(
+          malformedPredictionCoordinates,
+          productionOutput,
+          "coordinates must be non-empty strings");
+
+      final ObjectNode nonCanonicalPlannedRemovals = report(productionOutput);
+      final ObjectNode plannedPrediction = prediction(nonCanonicalPlannedRemovals);
+      plannedPrediction.putArray("retainedArtifacts").add("org.example:library:jar:1.0 (compile)");
+      plannedPrediction.putArray("wouldElideArtifacts");
+      final ObjectNode planned = plannedPrediction.putArray("plannedClassRemovals").addObject();
+      planned.put("status", "PLANNED_UNVERIFIED");
+      planned.put("coordinate", "org.example:library:jar:1.0 (compile)");
+      planned.putArray("classes").add("z.Last").add("a.First");
+      rejects(nonCanonicalPlannedRemovals, productionOutput, "classes are not canonical");
+
+      final ObjectNode malformedCanonicalCoordinate = report(productionOutput);
+      final ObjectNode canonicalPrediction = prediction(malformedCanonicalCoordinate);
+      canonicalPrediction.putArray("retainedArtifacts").add("org.example:library:jar:1.0");
+      canonicalPrediction.putArray("wouldElideArtifacts");
+      canonicalPrediction.putArray("plannedClassRemovals");
+      rejects(malformedCanonicalCoordinate, productionOutput, "coordinate is not canonical");
+
+      final ObjectNode duplicateCoordinate = report(productionOutput);
+      final ObjectNode duplicatePrediction = prediction(duplicateCoordinate);
+      duplicatePrediction
+          .putArray("retainedArtifacts")
+          .add("org.example:library:jar:1.0 (compile)")
+          .add("org.example:library:jar:1.0 (compile)");
+      duplicatePrediction.putArray("wouldElideArtifacts");
+      duplicatePrediction.putArray("plannedClassRemovals");
+      rejects(duplicateCoordinate, productionOutput, "coordinates are not canonical");
+
+      final ObjectNode overlapCoordinate = report(productionOutput);
+      final ObjectNode overlapPrediction = prediction(overlapCoordinate);
+      overlapPrediction.putArray("retainedArtifacts").add("org.example:library:jar:1.0 (compile)");
+      overlapPrediction.putArray("wouldElideArtifacts").add("org.example:library:jar:1.0 (compile)");
+      overlapPrediction.putArray("plannedClassRemovals");
+      rejects(overlapCoordinate, productionOutput, "coordinates overlap");
+
+      final ObjectNode plannedElidedCoordinate = report(productionOutput);
+      final ObjectNode plannedElidedPrediction = prediction(plannedElidedCoordinate);
+      plannedElidedPrediction.putArray("retainedArtifacts");
+      plannedElidedPrediction
+          .putArray("wouldElideArtifacts")
+          .add("org.example:library:jar:1.0 (compile)");
+      final ObjectNode plannedElided =
+          plannedElidedPrediction.putArray("plannedClassRemovals").addObject();
+      plannedElided.put("status", "PLANNED_UNVERIFIED");
+      plannedElided.put("coordinate", "org.example:library:jar:1.0 (compile)");
+      plannedElided.putArray("classes").add("example.Removed");
+      rejects(
+          plannedElidedCoordinate,
+          productionOutput,
+          "must reference a retained artifact");
+
+      ExampleSupport.validateClassUsageReport(reportWithValidPrediction(productionOutput), productionOutput);
     } finally {
       Files.deleteIfExists(productionOutput);
     }
@@ -134,6 +200,47 @@ public final class ExampleSupportContractTest {
     groups.putArray("applicationReferenced");
     report.putArray("runtimeObservedClasses");
     return report;
+  }
+
+  private static ObjectNode prediction(final ObjectNode report) {
+    final ObjectNode prediction = report.putObject("dependencyPrediction");
+    prediction.put("provenance", "DETACHED_CURRENT_MODEL");
+    prediction.put("environmentFingerprint", "c".repeat(64));
+    prediction.put("inventoryFingerprint", "a".repeat(64));
+    prediction.put("operationFingerprint", "b".repeat(64));
+    return prediction;
+  }
+
+  private static ObjectNode reportWithValidPrediction(final Path productionOutput) {
+    final ObjectNode report = report(productionOutput);
+    final ObjectNode groups = (ObjectNode) report.path("groups");
+    groups
+        .putArray("runtimeObservedWithoutApplicationReference")
+        .add("jakarta.mail.Session");
+    report.putArray("runtimeObservedClasses").add("jakarta.mail.Session");
+    groups
+        .putArray("neitherReferencedNorObserved")
+        .add("org.apache.commons.codec.binary.Hex");
+    final ObjectNode prediction = prediction(report);
+    prediction
+        .putArray("retainedArtifacts")
+        .add("org.example:library:jar:1.0 (compile)")
+        .add("org.example:library:jar:tests:1.0 (compile)")
+        .add("org.example:library:jar:2.0 (compile)");
+    prediction.putArray("wouldElideArtifacts").add("org.example:unused:jar:2.0 (runtime)");
+    final ArrayNode plannedRows = prediction.putArray("plannedClassRemovals");
+    plannedRow(plannedRows, "org.example:library:jar:1.0 (compile)", "example.Removed");
+    plannedRow(plannedRows, "org.example:library:jar:tests:1.0 (compile)", "example.TestsRemoved");
+    plannedRow(plannedRows, "org.example:library:jar:2.0 (compile)", "example.NewerRemoved");
+    return report;
+  }
+
+  private static void plannedRow(
+      final ArrayNode rows, final String coordinate, final String className) {
+    final ObjectNode planned = rows.addObject();
+    planned.put("status", "PLANNED_UNVERIFIED");
+    planned.put("coordinate", coordinate);
+    planned.putArray("classes").add(className);
   }
 
   private static void rejects(

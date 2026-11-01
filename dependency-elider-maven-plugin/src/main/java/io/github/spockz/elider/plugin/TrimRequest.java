@@ -15,6 +15,7 @@ import org.apache.maven.project.MavenProject;
 record TrimRequest(
     MavenProject project,
     MavenSession session,
+    AnalysisEnvironment environment,
     List<ElisionAnalysisModel.ArtifactSnapshot> candidates,
     TrimScanInputs scanInputs,
     Set<ArtifactCoordinate> retainedCoordinates,
@@ -36,11 +37,33 @@ record TrimRequest(
     this(
         project,
         session,
+        null,
         candidates,
         scanInputs,
         retainedCoordinates,
         evidence,
         policy,
         Optional.empty());
+  }
+
+  /* package */ TrimRequest(
+      final MavenProject project,
+      final MavenSession session,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> candidates,
+      final TrimScanInputs scanInputs,
+      final Set<ArtifactCoordinate> retainedCoordinates,
+      final TrimEvidence evidence,
+      final TrimPolicy policy,
+      final Optional<CacheProducerIdentity> cacheProducerIdentity) {
+    this(
+        project,
+        session,
+        null,
+        candidates,
+        scanInputs,
+        retainedCoordinates,
+        evidence,
+        policy,
+        cacheProducerIdentity);
   }
 }

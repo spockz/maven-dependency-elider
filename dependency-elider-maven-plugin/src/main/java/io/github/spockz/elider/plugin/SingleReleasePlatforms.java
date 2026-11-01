@@ -22,7 +22,10 @@ final class SingleReleasePlatforms {
       return runtimeRelease;
     }
     final List<String> compilerOptions =
-        MavenCompilerSettings.platformReleaseOptions(request.project(), request.session());
+        request.environment() == null
+            ? MavenCompilerSettings.platformReleaseOptions(request.project(), request.session())
+            : MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
+                request.project(), request.environment());
     return TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
   }
 
