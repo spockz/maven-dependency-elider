@@ -76,13 +76,13 @@ final class DependencyContextLifecycleIT {
   private static final String SEED_PLAN_DISABLED = "-Dlifecycle.seedPlan=false";
   private static final String ELIDER_SUMMARY = "Dependency Elider summary";
 
-  /** Builds immutable fixture artifacts once; failures retain the evidence directory. */
+  /** Builds fixtures once and retains evidence after failures. */
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
   private static Path seedDirectory;
 
   private static Path seedRepository;
 
-  /** Isolates fixture builds and retains subprocess evidence when a test fails. */
+  /** Isolates fixture builds and retains failed subprocess evidence. */
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
   private Path temporaryDirectory;
 
@@ -2748,7 +2748,7 @@ final class DependencyContextLifecycleIT {
             .redirectErrorStream(true)
             .redirectOutput(logFile.toFile());
     final Map<String, String> environment = processBuilder.environment();
-    // Nested invocations use the explicit local-only mirror and their own command arguments.
+    // WHY: The child uses generated local settings and explicit arguments.
     environment.remove("MAVEN_ARGS");
     environment.put("JAVA_HOME", System.getProperty("java.home"));
     environment.put("HOME", isolatedHome.toString());

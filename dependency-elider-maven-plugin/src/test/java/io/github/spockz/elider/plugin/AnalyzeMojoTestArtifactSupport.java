@@ -20,7 +20,7 @@ import org.objectweb.asm.Opcodes;
 /** Creates temporary artifact files used by focused AnalyzeMojo tests. */
 final class AnalyzeMojoTestArtifactSupport {
   private AnalyzeMojoTestArtifactSupport() {
-    // Static fixture construction keeps this support type from becoming a test instance.
+    // WHY: Static helpers need no test instance.
   }
 
   /* package */ static Artifact artifact(

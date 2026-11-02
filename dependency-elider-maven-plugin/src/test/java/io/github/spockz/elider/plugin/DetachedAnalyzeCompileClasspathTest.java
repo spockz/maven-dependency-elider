@@ -1,5 +1,4 @@
-// WHY: Proves a detached Resolver result is restored into the project view used for javac
-// attribution.
+// WHY: Proves Resolver restores the project view needed for javac attribution.
 
 package io.github.spockz.elider.plugin;
 
@@ -23,24 +22,26 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests source attribution through the detached Maven project model. */
+/** Tests detached Maven compile attribution. JUnit supplies the implicit constructor. */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class DetachedAnalyzeCompileClasspathTest {
+  /** Maven group for the generated compile artifact. */
   private static final String GROUP_ID = "org.example";
 
+  /** Artifact identifier for the generated compile dependency. */
   private static final String ARTIFACT_ID = "compile-api";
 
+  /** Version of the generated compile dependency. */
   private static final String VERSION = "1.0";
 
+  /** Archive type for the generated compile dependency. */
   private static final String JAR_TYPE = "jar";
 
+  /** Maven scope used for the compile dependency. */
   private static final String COMPILE_SCOPE = "compile";
 
-  /** Holds the source and archive fixtures used by the detached project test. */
+  /** Holds source and archive fixtures for the detached project. */
   @TempDir private Path temporaryDirectory;
-
-  /* package */ DetachedAnalyzeCompileClasspathTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
 
   @Test
   void sourceReferencesAreAttributedToDetachedResolvedCompileArtifact() throws Exception {

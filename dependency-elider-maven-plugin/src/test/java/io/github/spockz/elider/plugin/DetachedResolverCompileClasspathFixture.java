@@ -1,4 +1,6 @@
-/* WHY: Isolates Maven Resolver graph wiring from the observable compile-classpath assertions. */
+/*
+ * WHY: Isolates Resolver graph wiring from compile-classpath assertions.
+ */
 
 package io.github.spockz.elider.plugin;
 
@@ -28,10 +30,7 @@ import org.eclipse.aether.graph.DefaultDependencyNode;
 import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.DependencyNode;
 
-/**
- * Builds a Resolver graph/session/result fixture. Its Aether and Maven types form one integration
- * boundary, so the fixture builder intentionally carries the related imports and references.
- */
+/** Builds one Resolver and Maven graph fixture. Their APIs form a single integration boundary. */
 @SuppressWarnings("PMD.CouplingBetweenObjects")
 final class DetachedResolverCompileClasspathFixture {
   /** Group identifier shared by the fixture's direct and resolver artifacts. */
@@ -197,8 +196,8 @@ final class DetachedResolverCompileClasspathFixture {
     return project;
   }
 
-  /** Returns the resolved artifact view and live-project invariants for assertions. */
-  record Fixture(
+  /** Returns the resolved view and live-project invariants. */
+  /* default */ record Fixture(
       MavenProject live,
       MavenAnalysisResolutionContext context,
       ArtifactCoordinate coordinate,

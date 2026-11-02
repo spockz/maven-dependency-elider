@@ -1,4 +1,4 @@
-// WHY: Prevents prediction rows from calling retained upper-tier classes planned removals.
+// WHY: Keeps upper-tier-retained classes out of prediction removal rows.
 
 package io.github.spockz.elider.plugin;
 
@@ -7,12 +7,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-/** Tests prediction-only removal reporting for classes retained by upper-tier inputs. */
+/** Tests upper-tier removal reporting. JUnit supplies the implicit constructor. */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalyzePredictionTest {
-  /* package */ AnalyzePredictionTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
-
   @Test
   void upperTierOnlyClassIsNotReportedAsPlannedRemoval() {
     final Set<String> removed =

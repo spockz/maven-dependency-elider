@@ -1,4 +1,4 @@
-// WHY: Keeps unverified advisory mappings separate from prediction results and trim proofs.
+// WHY: Keeps unverified advisory mappings separate from predictions and proofs.
 
 package io.github.spockz.elider.plugin;
 
@@ -7,7 +7,7 @@ import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import java.util.List;
 import java.util.Set;
 
-/** Builds review findings for mappings that Analyze cannot prove from unpublished trim output. */
+/** Builds review findings for unverified vulnerability mappings. */
 final class MavenPredictionMappingReview {
   private MavenPredictionMappingReview() {
     throw new AssertionError("No instances");

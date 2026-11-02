@@ -1,4 +1,5 @@
-// WHY: Locks Analyze compiler settings to Maven's frozen user-over-system-over-project precedence.
+// WHY: Locks Analyze settings to Maven's frozen user-over-system-over-project
+// precedence.
 
 package io.github.spockz.elider.plugin;
 
@@ -16,24 +17,32 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests Maven compiler property precedence and inherited user-property handling. */
+/**
+ * Tests Maven compiler property precedence and inherited user properties. JUnit supplies the
+ * implicit constructor.
+ */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalysisEnvironmentCompilerSettingsTest {
+  /** Maven compiler property that selects the Java language release. */
   private static final String MAVEN_COMPILER_RELEASE = "maven.compiler.release";
 
+  /** Maven compiler property that selects annotation processing. */
   private static final String MAVEN_COMPILER_PROCESSING = "maven.compiler.proc";
 
+  /** Maven compiler property that controls forked compilation. */
   private static final String MAVEN_COMPILER_FORK = "maven.compiler.fork";
 
+  /** Javac option for the requested Java release. */
   private static final String RELEASE_OPTION = "--release";
 
+  /** Value that enables a Maven compiler plugin boolean property. */
   private static final String TRUE_PROPERTY_VALUE = Boolean.TRUE.toString();
+
+  /** Processing mode that makes annotation processing explicit. */
+  private static final String PROCESSING_FULL = "full";
 
   /** Holds the project base directories used by the compiler fixtures. */
   @TempDir private Path temporaryDirectory;
-
-  /* package */ AnalysisEnvironmentCompilerSettingsTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
 
   @Test
   void interpolatedCompilerSettingsPreferUserOverSystemOverProject() throws Exception {
@@ -56,11 +65,12 @@ final class AnalysisEnvironmentCompilerSettingsTest {
   void userProcessorNoneOverrideDisablesAnnotationProcessing() throws Exception {
     final MavenProject project = project();
     project.getProperties().setProperty(MAVEN_COMPILER_RELEASE, "17");
-    project.getProperties().setProperty(MAVEN_COMPILER_PROCESSING, "full");
+    project.getProperties().setProperty(MAVEN_COMPILER_PROCESSING, PROCESSING_FULL);
     compilerPlugin(project, null);
     final AnalysisEnvironment safeOverride =
         environment(
-            Map.of(MAVEN_COMPILER_PROCESSING, "full"), Map.of(MAVEN_COMPILER_PROCESSING, "none"));
+            Map.of(MAVEN_COMPILER_PROCESSING, PROCESSING_FULL),
+            Map.of(MAVEN_COMPILER_PROCESSING, "none"));
 
     final List<String> options =
         MavenCompilerSettings.optionsWithEnvironment(project, safeOverride, List.of());
@@ -72,11 +82,12 @@ final class AnalysisEnvironmentCompilerSettingsTest {
   void userProcessorFullOverrideIsRejected() throws Exception {
     final MavenProject project = project();
     project.getProperties().setProperty(MAVEN_COMPILER_RELEASE, "17");
-    project.getProperties().setProperty(MAVEN_COMPILER_PROCESSING, "full");
+    project.getProperties().setProperty(MAVEN_COMPILER_PROCESSING, PROCESSING_FULL);
     compilerPlugin(project, null);
     final AnalysisEnvironment unsafeOverride =
         environment(
-            Map.of(MAVEN_COMPILER_PROCESSING, "none"), Map.of(MAVEN_COMPILER_PROCESSING, "full"));
+            Map.of(MAVEN_COMPILER_PROCESSING, "none"),
+            Map.of(MAVEN_COMPILER_PROCESSING, PROCESSING_FULL));
     assertThatThrownBy(
             () ->
                 MavenCompilerSettings.optionsWithEnvironment(project(), unsafeOverride, List.of()))

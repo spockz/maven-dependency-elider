@@ -11,10 +11,10 @@ import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 
-/** Supports test setup that injects plugin state not exposed through public setters. */
+/** Supports setup for plugin fields without public setters. */
 final class AnalyzeMojoTestFieldSupport {
   private AnalyzeMojoTestFieldSupport() {
-    // Static field setup keeps the support type from becoming a test instance.
+    // WHY: Static helpers need no test instance.
   }
 
   @SuppressWarnings("PMD.AvoidAccessibilityAlteration")

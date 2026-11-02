@@ -1,4 +1,6 @@
-/* WHY: Protects inherited Maven user defaults as they cross Analyze environment capture. */
+/*
+ * WHY: Preserves inherited Maven defaults during Analyze environment capture.
+ */
 
 package io.github.spockz.elider.plugin;
 
@@ -15,18 +17,23 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests inherited Maven user properties on the live session and captured Analyze paths. */
+/**
+ * Tests inherited user properties on live sessions and captured Analyze paths. JUnit supplies the
+ * implicit constructor.
+ */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalysisEnvironmentInheritedUserPropertiesTest {
+  /** Maven property that selects the Java language release. */
   private static final String MAVEN_COMPILER_RELEASE = "maven.compiler.release";
 
+  /** Maven property that controls forked compilation. */
   private static final String MAVEN_COMPILER_FORK = "maven.compiler.fork";
+
+  /** Javac option that selects the Java language release. */
+  private static final String RELEASE_OPTION = "--release";
 
   /** Holds the project files used to create Maven sessions. */
   @TempDir private Path temporaryDirectory;
-
-  /* package */ AnalysisEnvironmentInheritedUserPropertiesTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
 
   @Test
   void inheritedUserReleasePropertyMatchesTheLiveMavenSessionPath() throws Exception {
@@ -45,14 +52,14 @@ final class AnalysisEnvironmentInheritedUserPropertiesTest {
                 .isEqualTo("11"),
         () ->
             assertThat(MavenCompilerSettings.options(project, session, List.of()))
-                .containsExactly("--release", "11"),
+                .containsExactly(RELEASE_OPTION, "11"),
         () ->
             assertThat(environment.userPropertiesAsProperties().getProperty(MAVEN_COMPILER_RELEASE))
                 .isEqualTo("11"),
         () ->
             assertThat(
                     MavenCompilerSettings.optionsWithEnvironment(project, environment, List.of()))
-                .containsExactly("--release", "11"));
+                .containsExactly(RELEASE_OPTION, "11"));
   }
 
   @Test
@@ -101,11 +108,11 @@ final class AnalysisEnvironmentInheritedUserPropertiesTest {
         "an explicit user property overrides its inherited default in both paths",
         () ->
             assertThat(MavenCompilerSettings.options(project, session, List.of()))
-                .containsExactly("--release", "13"),
+                .containsExactly(RELEASE_OPTION, "13"),
         () ->
             assertThat(
                     MavenCompilerSettings.optionsWithEnvironment(project, environment, List.of()))
-                .containsExactly("--release", "13"));
+                .containsExactly(RELEASE_OPTION, "13"));
   }
 
   private MavenProject project(final String name) {

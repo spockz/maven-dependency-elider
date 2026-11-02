@@ -1,4 +1,4 @@
-// WHY: Proves Analyze's temporary MRJAR projections are operation-local and cleaned on every exit.
+// WHY: Verifies MRJAR projections stay operation-local and are cleaned up.
 
 package io.github.spockz.elider.plugin;
 
@@ -21,17 +21,14 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests that temporary MRJAR projections stay isolated and are cleaned on every exit. */
+/** Tests MRJAR projection isolation and cleanup. JUnit supplies the implicit constructor. */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalysisProjectionWorkspaceTest {
   /** Provides a base for project outputs and isolated projection workspaces. */
   @TempDir private Path temporaryDirectory;
 
-  /* package */ AnalysisProjectionWorkspaceTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
-
   @Test
-  // WHY: This one expensive archive fixture covers both success and failure cleanup paths.
+  // WHY: One archive fixture covers success and failure cleanup paths.
   @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void predictionProjectionDirectoryIsIsolatedAndRemovedAfterSuccessAndFailure() throws Exception {
     final MavenProject project = project();
@@ -67,7 +64,7 @@ final class AnalysisProjectionWorkspaceTest {
       assertThatThrownBy(
               () ->
                   MultiReleaseLibraryProjection.create(malformed, coordinate, failedDirectory, 21))
-          .isInstanceOf(java.io.IOException.class);
+          .isInstanceOf(IOException.class);
     }
     assertAll(
         "failed projection cleanup preserves pre-existing project output",
@@ -76,7 +73,7 @@ final class AnalysisProjectionWorkspaceTest {
   }
 
   @Test
-  // WHY: The test needs two overlapping predictions to prove their workspaces are isolated.
+  // WHY: Overlapping predictions prove their workspaces stay isolated.
   @SuppressWarnings("PMD.DoNotUseThreads")
   void concurrentPredictionWorkspacesDoNotShareProjectionFiles() throws Exception {
     final Path archive = archive();

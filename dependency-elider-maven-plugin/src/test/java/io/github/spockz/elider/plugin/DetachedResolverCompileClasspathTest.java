@@ -1,6 +1,5 @@
 /*
- * WHY: Proves Resolver-restored compile classpaths preserve source attribution without mutating
- * Maven's live model.
+ * WHY: Proves Resolver-restored classpaths preserve attribution and leave the live model intact.
  */
 
 package io.github.spockz.elider.plugin;
@@ -14,14 +13,11 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests compile-visible artifacts restored from a request-local Resolver result. */
+/** Tests Resolver-restored compile artifacts. JUnit supplies the implicit constructor. */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class DetachedResolverCompileClasspathTest {
   /** Holds the generated project and archive fixtures. */
   @TempDir private Path temporaryDirectory;
-
-  /* package */ DetachedResolverCompileClasspathTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
 
   @Test
   void resolverResultUsesMavenTypeHandlersForCompileAndNonClasspathArtifacts() throws IOException {

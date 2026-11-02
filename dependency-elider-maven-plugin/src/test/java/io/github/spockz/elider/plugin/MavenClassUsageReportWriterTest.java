@@ -1,9 +1,10 @@
-// WHY: Verifies Analyze prediction fields without coupling them to trim publication records.
+// WHY: Verifies Analyze prediction fields independently from trim publication.
 
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,25 +22,29 @@ import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests the prediction fields written to Analyze reports without trim publication records. */
+/**
+ * Tests Analyze prediction fields without trim publication records. JUnit supplies the implicit
+ * constructor.
+ */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class MavenClassUsageReportWriterTest {
-  private static final String EXAMPLE_GROUP_ID = "org.example";
-
-  private static final String JAR_TYPE = "jar";
-
-  private static final String RETAINED_ARTIFACTS_FIELD = "retainedArtifacts";
-
-  private static final String PLANNED_CLASS_REMOVALS_FIELD = "plannedClassRemovals";
-
-  /* package */ MavenClassUsageReportWriterTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
-
-  /** Serializes report fixtures with the same mapper used by production. */
+  /** JSON mapper used to inspect serialized report fixtures. */
   private static final ObjectMapper JSON = new ObjectMapper();
 
-  /** Holds report inputs and outputs created by the test. */
+  /** Temporary directory for report inputs and outputs. */
   @TempDir private Path temporaryDirectory;
+
+  /** Maven group used by artifact report fixtures. */
+  private static final String EXAMPLE_GROUP_ID = "org.example";
+
+  /** Archive type used by artifact report fixtures. */
+  private static final String JAR_TYPE = "jar";
+
+  /** JSON field containing retained artifact coordinates. */
+  private static final String RETAINED_ARTIFACTS_FIELD = "retainedArtifacts";
+
+  /** JSON field containing planned class removals. */
+  private static final String PLANNED_CLASS_REMOVALS_FIELD = "plannedClassRemovals";
 
   @Test
   void writesPredictionProvenanceWithoutPublishedTrimState() throws Exception {
@@ -154,8 +159,8 @@ final class MavenClassUsageReportWriterTest {
         () -> assertThat(dependencyPrediction.path("environmentFingerprint").asText()).hasSize(64),
         () -> assertThat(dependencyPrediction.path("inventoryFingerprint").asText()).hasSize(64),
         () -> assertThat(dependencyPrediction.path("operationFingerprint").asText()).hasSize(64),
-        () -> assertThat(publishesTrimmedArtifacts).isFalse(),
-        () -> assertThat(publishesOutputPath).isFalse(),
-        () -> assertThat(publishesOutputSha256).isFalse());
+        () -> assertFalse(publishesTrimmedArtifacts),
+        () -> assertFalse(publishesOutputPath),
+        () -> assertFalse(publishesOutputSha256));
   }
 }

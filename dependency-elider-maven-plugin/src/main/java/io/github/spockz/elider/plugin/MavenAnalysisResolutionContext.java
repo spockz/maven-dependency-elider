@@ -1,4 +1,4 @@
-// WHY: Keeps one Analyze resolver graph and its direct/resolved artifact views bound together.
+// WHY: Binds an Analyze resolver graph to direct and resolved artifact views.
 
 package io.github.spockz.elider.plugin;
 
@@ -297,13 +297,12 @@ record MavenAnalysisResolutionContext(
     return artifacts;
   }
 
-  @SuppressWarnings("PMD.LawOfDemeter") // Resolver dependency nodes own the edge payload.
   private static Dependency dependency(final DependencyNode node) {
     return node.getDependency();
   }
 
   @SuppressWarnings("PMD.CompareObjectsWithEquals")
-  // This invariant must distinguish the live project from a clone by object identity.
+  // WHY: Identity distinguishes the live project from its clone.
   private static boolean sameInstance(final Object left, final Object right) {
     return left == right;
   }

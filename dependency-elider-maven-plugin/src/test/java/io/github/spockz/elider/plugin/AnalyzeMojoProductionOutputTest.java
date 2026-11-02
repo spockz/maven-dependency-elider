@@ -1,14 +1,12 @@
-/* WHY: Keeps production bytecode-output checks separate from artifact-adaptation scenarios. */
+/*
+ * WHY: Keeps production output checks separate from artifact adaptation.
+ */
 
 package io.github.spockz.elider.plugin;
 
-import static io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.artifact;
-import static io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.fixture;
-import static io.github.spockz.elider.plugin.AnalyzeMojoTestFieldSupport.set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.Fixture;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,45 +23,50 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
 /**
- * Tests Analyze's configured production output and complete-bytecode evidence. Assertions inspect
- * nested report fields through Jackson's path API.
+ * Tests Analyze's configured output and complete-bytecode evidence. Report fields use Jackson's
+ * path API. JUnit supplies the implicit constructor.
  */
-@SuppressWarnings("PMD.LawOfDemeter")
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalyzeMojoProductionOutputTest {
+  /** Class name used for the unused artifact fixture. */
   private static final String UNUSED_CLASS = "unused.Idle";
 
+  /** Maven packaging type used for generated test artifacts. */
   private static final String JAR_TYPE = "jar";
 
+  /** Analyze mojo field that selects the production class directory. */
   private static final String PRODUCTION_OUTPUT_FIELD = "productionOutput";
+
+  /** Maven artifact version used by output scenarios. */
+  private static final String VERSION = "1.0";
+
+  /** Dependency scope used for compile-visible artifacts. */
+  private static final String COMPILE_SCOPE = "compile";
 
   /** Holds generated projects, classes, traces, and reports. */
   @TempDir private Path tempDir;
 
-  /* package */ AnalyzeMojoProductionOutputTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
-
   @Test
   @DisplayName("ADR-0010/analyze uses configured bytecode output and reports compile savings")
-  // WHY: One execution checks output resolution, complete evidence, and report fields together.
+  // WHY: One execution proves output resolution and report evidence together.
   @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void productionClassesCompleteUsesConfiguredOutputAndReportsCompileCveSavings()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
-        artifact(
+        AnalyzeMojoTestArtifactSupport.artifact(
             tempDir,
             "used-bytecode",
-            "1.0",
-            "compile",
+            VERSION,
+            COMPILE_SCOPE,
             JAR_TYPE,
             "used-bytecode.jar",
             "used/Sample.class");
     final Artifact unused =
-        artifact(
+        AnalyzeMojoTestArtifactSupport.artifact(
             tempDir,
             "unused-compile",
-            "1.0",
-            "compile",
+            VERSION,
+            COMPILE_SCOPE,
             JAR_TYPE,
             "unused-compile.jar",
             "unused/Idle.class");
@@ -93,19 +96,20 @@ final class AnalyzeMojoProductionOutputTest {
     Files.writeString(trace, "used/Sample\n");
     final Path report = target.resolve("dependency-elider-class-usage.json");
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, PRODUCTION_OUTPUT_FIELD, output.toFile());
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "productionClassesComplete", true);
-    set(mojo, "reportFile", report.toFile());
-    set(mojo, "cveCacheDirectory", tempDir.resolve("bytecode-analysis-cache").toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, PRODUCTION_OUTPUT_FIELD, output.toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
+    AnalyzeMojoTestFieldSupport.set(mojo, "productionClassesComplete", true);
+    AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(
+        mojo, "cveCacheDirectory", tempDir.resolve("bytecode-analysis-cache").toFile());
     final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
     mapping.setCveId("CVE-2026-19003");
     mapping.setGroupId("org.example");
     mapping.setArtifactId("unused-compile");
-    mapping.setVersion("1.0");
+    mapping.setVersion(VERSION);
     mapping.setVulnerableClasses(List.of(UNUSED_CLASS));
-    set(mojo, "vulnerabilityMappings", List.of(mapping));
+    AnalyzeMojoTestFieldSupport.set(mojo, "vulnerabilityMappings", List.of(mapping));
     final RecordingMavenLog log = new RecordingMavenLog();
     mojo.setLog(log);
 
@@ -124,23 +128,25 @@ final class AnalyzeMojoProductionOutputTest {
   }
 
   @Test
-  // WHY: One report is read twice to check both stable serialization and all evidence groups.
+  // WHY: One report proves stable serialization and complete evidence.
   @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void writesCompleteStaticGroupsAndDeterministicClassNames()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
-        artifact(tempDir, "used", "1.0", "compile", JAR_TYPE, "used.jar", "used/Sample.class");
+        AnalyzeMojoTestArtifactSupport.artifact(
+            tempDir, "used", VERSION, COMPILE_SCOPE, JAR_TYPE, "used.jar", "used/Sample.class");
     final Artifact runtimeOnly =
-        artifact(
+        AnalyzeMojoTestArtifactSupport.artifact(
             tempDir,
             "runtime-only",
-            "1.0",
-            "compile",
+            VERSION,
+            COMPILE_SCOPE,
             JAR_TYPE,
             "runtime-only.jar",
             "runtimeOnly/Type.class");
     final Artifact unused =
-        artifact(tempDir, "unused", "1.0", "compile", JAR_TYPE, "unused.jar", "unused/Idle.class");
+        AnalyzeMojoTestArtifactSupport.artifact(
+            tempDir, "unused", VERSION, COMPILE_SCOPE, JAR_TYPE, "unused.jar", "unused/Idle.class");
     final MavenProject project = new MavenProject();
     project.setArtifacts(new LinkedHashSet<>(List.of(used, runtimeOnly, unused)));
     final Path trace = tempDir.resolve("complete.lst");
@@ -154,10 +160,10 @@ final class AnalyzeMojoProductionOutputTest {
     Files.write(productionOutput.resolve("app/Main.class"), writer.toByteArray());
     final Path report = tempDir.resolve("complete-report.json");
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, PRODUCTION_OUTPUT_FIELD, productionOutput.toFile());
-    set(mojo, "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
+    AnalyzeMojoTestFieldSupport.set(mojo, PRODUCTION_OUTPUT_FIELD, productionOutput.toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
 
     mojo.execute();
     final String firstOutput = Files.readString(report);
@@ -179,15 +185,17 @@ final class AnalyzeMojoProductionOutputTest {
   }
 
   @Test
-  // WHY: The rejection and unpublished report are two sides of the same output boundary.
+  // WHY: Rejection and an unpublished report prove the output boundary.
   @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void rejectsInvalidClassOutputWithoutWritingReport()
       throws IOException, ReflectiveOperationException {
-    final Fixture fixture = fixture(tempDir, "used/Sample\n");
+    final AnalyzeMojoTestArtifactSupport.Fixture fixture =
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
     final Path report = tempDir.resolve("invalid-scan.json");
     final AnalyzeMojo mojo = fixture.mojo();
-    set(mojo, PRODUCTION_OUTPUT_FIELD, tempDir.resolve("missing-classes").toFile());
-    set(mojo, "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(
+        mojo, PRODUCTION_OUTPUT_FIELD, tempDir.resolve("missing-classes").toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
 
     assertThatThrownBy(mojo::execute)
         .isInstanceOf(MojoFailureException.class)

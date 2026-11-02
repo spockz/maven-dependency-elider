@@ -1,4 +1,4 @@
-// WHY: Freezes Maven build configuration needed by prediction without retaining mutable sessions.
+// WHY: Freezes Maven configuration for prediction without retaining sessions.
 
 package io.github.spockz.elider.plugin;
 
@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import org.apache.maven.execution.MavenExecutionRequest;
@@ -17,7 +18,7 @@ import org.apache.maven.project.MavenProject;
 import org.apache.maven.toolchain.DefaultToolchainManager;
 import org.apache.maven.toolchain.ToolchainManager;
 
-/** Immutable Maven settings consumed by source attribution and in-memory closure. */
+/** Frozen Maven settings for source attribution and in-memory closure. */
 record AnalysisEnvironment(
     Map<String, String> systemProperties,
     Map<String, String> userProperties,
@@ -66,10 +67,12 @@ record AnalysisEnvironment(
     final java.util.List<String> fields = new ArrayList<>();
     fields.add("analysis-environment-v1");
     fields.add("toolchain-state=" + jdkToolchainState.name());
-    fields.add(invocationBase == null ? "invocation-base=absent" : "invocation-base=present");
-    if (invocationBase != null) {
-      fields.add(invocationBase.toString());
-    }
+    final Optional<Path> configuredInvocationBase = Optional.ofNullable(invocationBase);
+    fields.add(
+        configuredInvocationBase.isPresent()
+            ? "invocation-base=present"
+            : "invocation-base=absent");
+    configuredInvocationBase.ifPresent(path -> fields.add(path.toString()));
     appendProperties(fields, "system", systemProperties);
     appendProperties(fields, "user", userProperties);
     return MavenElisionGraphBinding.sha256(fields);

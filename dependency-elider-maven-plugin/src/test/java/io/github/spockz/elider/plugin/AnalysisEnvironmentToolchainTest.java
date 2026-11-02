@@ -1,4 +1,4 @@
-// WHY: Proves Analyze accepts only Maven's verified absence of a selected JDK toolchain.
+// WHY: Verifies Analyze rejects selected Maven JDK toolchains.
 
 package io.github.spockz.elider.plugin;
 
@@ -18,14 +18,11 @@ import org.codehaus.plexus.PlexusContainer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests that Analyze accepts only Maven's verified absence of a selected JDK toolchain. */
+/** Tests Analyze's verified no-toolchain path. JUnit supplies the implicit constructor. */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalysisEnvironmentToolchainTest {
   /** Holds the base directory used by the toolchain session fixture. */
   @TempDir private Path temporaryDirectory;
-
-  /* package */ AnalysisEnvironmentToolchainTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
 
   @Test
   void capturesOnlyAbsentDefaultToolchainContextAndRejectsAnySelectedEntry() throws Exception {

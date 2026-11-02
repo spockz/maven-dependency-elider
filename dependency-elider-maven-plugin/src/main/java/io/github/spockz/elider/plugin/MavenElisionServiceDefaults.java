@@ -1,4 +1,4 @@
-// WHY: Keeps legacy Analyze option presets outside the checked analysis lifecycle coordinator.
+// WHY: Keeps legacy Analyze presets outside the checked lifecycle coordinator.
 
 package io.github.spockz.elider.plugin;
 
@@ -14,7 +14,11 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
-/** Builds supported Analyze option presets and delegates them to the service. */
+/**
+ * Builds supported Analyze option presets and delegates them to the service. Its implicit
+ * constructor supports Maven mojo subclasses.
+ */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 abstract class MavenElisionServiceDefaults {
   /* default */ final Analysis analyze(
       final MavenProject project,

@@ -1,4 +1,4 @@
-// WHY: Exercises the production prediction path with a captured graph and MRJAR input.
+// WHY: Exercises prediction with a captured graph and MRJAR input.
 
 package io.github.spockz.elider.plugin;
 
@@ -10,7 +10,6 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.TrimOptions;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,20 +32,20 @@ import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
-/** Tests captured-effective prediction, output resolution, and publication boundaries. */
+/**
+ * Tests captured prediction, output resolution, and publication boundaries. JUnit supplies the
+ * implicit constructor.
+ */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class MavenElisionServicePredictionTest {
   /** Contains project inputs and output files for each prediction scenario. */
   @TempDir private Path temporaryDirectory;
-
-  /* package */ MavenElisionServicePredictionTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
 
   @Test
   void predictsCapturedEffectiveMrjarWithoutPublishingTrimState() throws Exception {
     final Fixture fixture = fixture(true);
     final DefaultRepositorySystemSession repositorySession = fixture.repositorySession();
-    final SessionData sessionDataBefore = repositorySession.getData();
+    final SessionData sessionDataBefore = sessionData(repositorySession);
     final Object captureBefore =
         sessionDataBefore.get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
     final Object planBefore = sessionDataBefore.get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
@@ -61,7 +60,7 @@ final class MavenElisionServicePredictionTest {
 
     final AnalyzePrediction prediction =
         new MavenElisionService().predict(fixture.project(), fixture.options(), null);
-    final SessionData sessionDataAfter = repositorySession.getData();
+    final SessionData sessionDataAfter = sessionData(repositorySession);
 
     assertAll(
         "captured-effective Analyze predicts without publishing trim state",
@@ -141,10 +140,7 @@ final class MavenElisionServicePredictionTest {
   void resolvesRelativeProductionOutputAgainstProjectWhenProcessDirectoryDiffers()
       throws Exception {
     final Fixture fixture = fixture(true);
-    final MavenProject project = fixture.project();
-    final File projectBaseFile = project.getBasedir();
-    final Path projectBasePath = projectBaseFile.toPath();
-    final Path projectBase = projectBasePath.toAbsolutePath().normalize();
+    final Path projectBase = fixture.projectBase();
     final Path processDirectory =
         Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
     fixture.project().getBuild().setOutputDirectory("target/classes");
@@ -191,6 +187,12 @@ final class MavenElisionServicePredictionTest {
         completeness,
         options.trim(),
         options.dynamicRoots());
+  }
+
+  // WHY: The test checks identity of Resolver's session data.
+  @SuppressWarnings("PMD.LawOfDemeter")
+  private static SessionData sessionData(final DefaultRepositorySystemSession session) {
+    return session.getData();
   }
 
   private static Path createProductionOutputClass(final Path output) throws IOException {
@@ -256,7 +258,7 @@ final class MavenElisionServicePredictionTest {
                 MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
                 MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
             new DynamicRootOptions(false));
-    return new Fixture(project, artifact, archive, repositorySession, options);
+    return new Fixture(project, fixtureDirectory, artifact, archive, repositorySession, options);
   }
 
   private MavenSession session(
@@ -316,6 +318,7 @@ final class MavenElisionServicePredictionTest {
 
   private record Fixture(
       MavenProject project,
+      Path projectBase,
       Artifact artifact,
       Path archive,
       DefaultRepositorySystemSession repositorySession,

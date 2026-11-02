@@ -1,18 +1,11 @@
-// WHY: Ensures analyze rejects missing explicit evidence instead of producing a misleading result.
+// WHY: Ensures Analyze rejects missing evidence instead of misleading users.
 
 package io.github.spockz.elider.plugin;
 
-import static io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.artifact;
-import static io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.artifactWithClasses;
-import static io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.fixture;
-import static io.github.spockz.elider.plugin.AnalyzeMojoTestFieldSupport.seedSelectedBanCapture;
-import static io.github.spockz.elider.plugin.AnalyzeMojoTestFieldSupport.set;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-import io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.Fixture;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,36 +21,43 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Verifies conservative Maven artifact adaptation and explicit trace requirements. */
-@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.LawOfDemeter", "PMD.TooManyMethods"})
+/**
+ * Verifies conservative artifact adaptation and explicit trace requirements. JUnit supplies the
+ * implicit constructor.
+ */
+@SuppressWarnings({
+  "PMD.UnitTestContainsTooManyAsserts",
+  "PMD.LawOfDemeter",
+  "PMD.AtLeastOneConstructor"
+})
 final class AnalyzeMojoTest {
-  /** WHY: CVE fixtures use one stable vulnerable symbol in mappings and assertions. */
+  /** CVE fixtures share one vulnerable symbol. */
   private static final String UNUSED_CLASS = "unused.Idle";
 
   /** Temporary directory for ZIP fixtures and explicit trace files. */
   @TempDir private Path tempDir;
-
-  /** Creates the focused test fixture. */
-  @SuppressWarnings({"PMD.UncommentedEmptyConstructor", "PMD.CommentDefaultAccessModifier"})
-  AnalyzeMojoTest() {}
 
   @Test
   @SuppressWarnings("PMD.AvoidDuplicateLiterals")
   void analyzesExplicitTraceWithoutMutatingArtifactsAndReportsCompleteInput()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
-        artifact(tempDir, "used", "1.0", "compile", "jar", "used.jar", "used/Sample.class");
+        AnalyzeMojoTestArtifactSupport.artifact(
+            tempDir, "used", "1.0", "compile", "jar", "used.jar", "used/Sample.class");
     final Artifact unused =
-        artifact(tempDir, "unused", "1.0", "compile", "jar", "unused.jar", "unused/Sample.class");
+        AnalyzeMojoTestArtifactSupport.artifact(
+            tempDir, "unused", "1.0", "compile", "jar", "unused.jar", "unused/Sample.class");
     final Artifact excluded =
-        artifact(
+        AnalyzeMojoTestArtifactSupport.artifact(
             tempDir, "excluded", "2.0", "runtime", "jar", "excluded.jar", "excluded/Sample.class");
     final Artifact testScoped =
-        artifact(tempDir, "test-only", "1.0", "test", "jar", "test.jar", "test/Sample.class");
+        AnalyzeMojoTestArtifactSupport.artifact(
+            tempDir, "test-only", "1.0", "test", "jar", "test.jar", "test/Sample.class");
     final Artifact nonJar =
         new DefaultArtifact(
             "org.example",
@@ -82,11 +82,11 @@ final class AnalyzeMojoTest {
     final Path trace = tempDir.resolve("runtime.lst");
     Files.writeString(trace, "used/Sample\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "retainedArtifacts", List.of("org.example:excluded"));
+    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
+    AnalyzeMojoTestFieldSupport.set(mojo, "retainedArtifacts", List.of("org.example:excluded"));
     final Path report = tempDir.resolve("analysis.json");
-    set(mojo, "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
     final RecordingMavenLog log = new RecordingMavenLog();
     mojo.setLog(log);
 
@@ -128,10 +128,10 @@ final class AnalyzeMojoTest {
   void reportsPredictedElisionsAndExactOriginalJarBytesWithoutMutation()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
-        artifact(
+        AnalyzeMojoTestArtifactSupport.artifact(
             tempDir, "used", "1.0", "compile", "jar", "analysis-used.jar", "used/Sample.class");
     final Artifact unused =
-        artifact(
+        AnalyzeMojoTestArtifactSupport.artifact(
             tempDir,
             "unused-runtime",
             "1.0",
@@ -146,17 +146,19 @@ final class AnalyzeMojoTest {
     final Path trace = tempDir.resolve("predicted-elisions.lst");
     Files.writeString(trace, "used/Sample\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "reportFile", tempDir.resolve("predicted-elisions.json").toFile());
-    set(mojo, "cveCacheDirectory", tempDir.resolve("analysis-cve-cache").toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
+    AnalyzeMojoTestFieldSupport.set(
+        mojo, "reportFile", tempDir.resolve("predicted-elisions.json").toFile());
+    AnalyzeMojoTestFieldSupport.set(
+        mojo, "cveCacheDirectory", tempDir.resolve("analysis-cve-cache").toFile());
     final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
     mapping.setCveId("CVE-2026-19001");
     mapping.setGroupId("org.example");
     mapping.setArtifactId("unused-runtime");
     mapping.setVersion("1.0");
     mapping.setVulnerableClasses(List.of(UNUSED_CLASS));
-    set(mojo, "vulnerabilityMappings", List.of(mapping));
+    AnalyzeMojoTestFieldSupport.set(mojo, "vulnerabilityMappings", List.of(mapping));
     final RecordingMavenLog log = new RecordingMavenLog();
     mojo.setLog(log);
 
@@ -189,7 +191,9 @@ final class AnalyzeMojoTest {
   @Test
   void doesNotClaimTrimmedCodeProofWithoutPublishedTrimEvidence()
       throws IOException, ReflectiveOperationException, MojoFailureException {
-    final Artifact runtime = artifactWithClasses(tempDir, "runtime-cve", "runtime-cve.jar");
+    final Artifact runtime =
+        AnalyzeMojoTestArtifactSupport.artifactWithClasses(
+            tempDir, "runtime-cve", "runtime-cve.jar");
     final File original = runtime.getFile();
     final MavenProject project = new MavenProject();
     project.setArtifacts(new LinkedHashSet<>(List.of(runtime)));
@@ -200,18 +204,20 @@ final class AnalyzeMojoTest {
     final Path trace = tempDir.resolve("trim-analysis.lst");
     Files.writeString(trace, "sample.Keep\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "trimJars", true);
-    set(mojo, "reportFile", tempDir.resolve("trim-analysis.json").toFile());
-    set(mojo, "cveCacheDirectory", tempDir.resolve("trim-analysis-cache").toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
+    AnalyzeMojoTestFieldSupport.set(mojo, "trimJars", true);
+    AnalyzeMojoTestFieldSupport.set(
+        mojo, "reportFile", tempDir.resolve("trim-analysis.json").toFile());
+    AnalyzeMojoTestFieldSupport.set(
+        mojo, "cveCacheDirectory", tempDir.resolve("trim-analysis-cache").toFile());
     final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
     mapping.setCveId("CVE-2026-19002");
     mapping.setGroupId("org.example");
     mapping.setArtifactId("runtime-cve");
     mapping.setVersion("1.0");
     mapping.setVulnerableClasses(List.of("sample.Drop"));
-    set(mojo, "vulnerabilityMappings", List.of(mapping));
+    AnalyzeMojoTestFieldSupport.set(mojo, "vulnerabilityMappings", List.of(mapping));
     final RecordingMavenLog log = new RecordingMavenLog();
     mojo.setLog(log);
 
@@ -234,8 +240,9 @@ final class AnalyzeMojoTest {
 
   @Test
   void rejectsInvalidRetentionCoordinates() throws IOException, ReflectiveOperationException {
-    final Fixture fixture = fixture(tempDir, "used/Sample\n");
-    set(fixture.mojo(), "retainedArtifacts", List.of("org.example"));
+    final AnalyzeMojoTestArtifactSupport.Fixture fixture =
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
+    AnalyzeMojoTestFieldSupport.set(fixture.mojo(), "retainedArtifacts", List.of("org.example"));
 
     assertThatThrownBy(fixture.mojo()::execute)
         .isInstanceOf(MojoFailureException.class)
@@ -245,13 +252,15 @@ final class AnalyzeMojoTest {
   @Test
   void banRequestFailsClosedWithoutPublishingReport()
       throws IOException, ReflectiveOperationException {
-    final Fixture fixture = fixture(tempDir, "used/Sample\n");
+    final AnalyzeMojoTestArtifactSupport.Fixture fixture =
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
     final Path report = tempDir.resolve("ban-guard-report.json");
     final String previousReport = "previous report";
     Files.writeString(report, previousReport);
-    set(fixture.mojo(), "banishedDependencies", List.of("org.example:used"));
-    set(fixture.mojo(), "reportFile", report.toFile());
-    set(
+    AnalyzeMojoTestFieldSupport.set(
+        fixture.mojo(), "banishedDependencies", List.of("org.example:used"));
+    AnalyzeMojoTestFieldSupport.set(fixture.mojo(), "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(
         fixture.mojo(),
         "predictionService",
         (AnalyzePredictionService)
@@ -259,7 +268,8 @@ final class AnalyzeMojoTest {
               throw new MojoFailureException("prediction service was called before ban rejection");
             });
     fixture.project().setFile(tempDir.resolve("ban-consumer-pom.xml").toFile());
-    seedSelectedBanCapture(fixture.mojo(), fixture.project(), List.of("org.example:used"));
+    AnalyzeMojoTestFieldSupport.seedSelectedBanCapture(
+        fixture.mojo(), fixture.project(), List.of("org.example:used"));
 
     assertAll(
         "analyze rejects ban requests before publishing a report",
@@ -274,7 +284,8 @@ final class AnalyzeMojoTest {
   @Test
   void rejectsTraceObservationsThatMatchNoDependency()
       throws IOException, ReflectiveOperationException {
-    final Fixture fixture = fixture(tempDir, "missing/Sample\n");
+    final AnalyzeMojoTestArtifactSupport.Fixture fixture =
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "missing/Sample\n");
 
     assertThatThrownBy(fixture.mojo()::execute)
         .isInstanceOf(MojoFailureException.class)
@@ -284,8 +295,8 @@ final class AnalyzeMojoTest {
   @Test
   void rejectsAnEmptyTraceList() throws ReflectiveOperationException {
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", new MavenProject());
-    set(mojo, "traceFiles", List.of());
+    AnalyzeMojoTestFieldSupport.set(mojo, "project", new MavenProject());
+    AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of());
 
     assertThatThrownBy(mojo::execute)
         .isInstanceOf(MojoFailureException.class)
@@ -326,7 +337,6 @@ final class AnalyzeMojoTest {
 
   @Test
   @DisplayName("ADR-0011: leafOnly skips intermediate module in AnalyzeMojo")
-  @SuppressWarnings("PMD.AvoidDuplicateLiterals")
   void leafOnlySkipsIntermediateReactorModule() throws Exception {
     final AnalyzeMojo mojo = new AnalyzeMojo();
     final MavenProject intermediate = new MavenProject();
@@ -346,16 +356,16 @@ final class AnalyzeMojoTest {
             new ReactorLeafModuleDetectorTest.StubProjectDependencyGraph(
                 List.of(intermediate, leaf), Map.of(intermediate, List.of(leaf))));
 
-    set(mojo, "project", intermediate);
-    set(mojo, "session", session);
+    AnalyzeMojoTestFieldSupport.set(mojo, "project", intermediate);
+    AnalyzeMojoTestFieldSupport.set(mojo, "session", session);
     final Path report = tempDir.resolve("intermediate-ban-report.json");
     Files.writeString(report, "existing report");
-    set(mojo, "reportFile", report.toFile());
-    set(mojo, "banishedDependencies", List.of("org.example:library"));
+    AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, "banishedDependencies", List.of("org.example:library"));
     // leafOnly is true by default: skips without failing on missing trace files
     assertAll(
         "leafOnly Analyze skips before requiring a ban capture or publishing a report",
-        () -> assertThatCode(mojo::execute).doesNotThrowAnyException(),
+        () -> Assertions.assertThatCode(mojo::execute).doesNotThrowAnyException(),
         () -> assertThat(Files.readString(report)).isEqualTo("existing report"));
   }
 }

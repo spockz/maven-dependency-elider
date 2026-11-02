@@ -1,4 +1,6 @@
-/* WHY: Keeps native-image archive policy checks separate from general artifact analysis cases. */
+/*
+ * WHY: Keeps native-image policy checks separate from artifact analysis.
+ */
 
 package io.github.spockz.elider.plugin;
 
@@ -22,17 +24,19 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests native-image configuration handling during Analyze without archive mutation. */
+/**
+ * Tests native-image handling without archive mutation. JUnit supplies the implicit constructor.
+ */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalyzeMojoNativeImageTest {
+  /** JAR packaging type used by generated Maven artifacts. */
+  private static final String JAR_TYPE = "jar";
+
   /** Holds generated archives and reports for the native-image scenarios. */
   @TempDir private Path tempDir;
 
-  /* package */ AnalyzeMojoNativeImageTest() {
-    // JUnit creates each test instance through the package-visible no-argument constructor.
-  }
-
   @Test
-  // WHY: The output and artifact checks jointly prove allowed arguments do not mutate inputs.
+  // WHY: Output and artifact checks prove allowed arguments preserve inputs.
   @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UnitTestContainsTooManyAsserts"})
   void analyzeAcceptsPermissiveNativeImageArgsWithTrimmingDisabled()
       throws IOException, ReflectiveOperationException, MojoFailureException {
@@ -52,9 +56,9 @@ final class AnalyzeMojoNativeImageTest {
             "native-image",
             "1.0",
             "compile",
-            "jar",
+            JAR_TYPE,
             null,
-            new DefaultArtifactHandler("jar"));
+            new DefaultArtifactHandler(JAR_TYPE));
     artifact.setFile(archive.toFile());
     final MavenProject project = new MavenProject();
     project.setArtifacts(new LinkedHashSet<>(Set.of(artifact)));
@@ -73,7 +77,7 @@ final class AnalyzeMojoNativeImageTest {
   }
 
   @Test
-  // WHY: Rejection must preserve both the original dependency views and archive file.
+  // WHY: Rejection must preserve dependency views and archive bytes.
   @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UnitTestContainsTooManyAsserts"})
   void analyzeRejectsHiddenNativeImageIndirectionWithoutMutatingArtifacts()
       throws IOException, ReflectiveOperationException {
@@ -92,9 +96,9 @@ final class AnalyzeMojoNativeImageTest {
             "native-image-indirection",
             "1.0",
             "compile",
-            "jar",
+            JAR_TYPE,
             null,
-            new DefaultArtifactHandler("jar"));
+            new DefaultArtifactHandler(JAR_TYPE));
     artifact.setFile(archive.toFile());
     final Set<Artifact> artifacts = new LinkedHashSet<>(Set.of(artifact));
     final MavenProject project = new MavenProject();

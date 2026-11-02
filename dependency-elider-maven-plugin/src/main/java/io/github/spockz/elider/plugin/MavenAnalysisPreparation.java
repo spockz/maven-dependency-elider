@@ -21,7 +21,6 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
 /** Prepares a checked raw plan before any trimming or artifact publication. */
-@SuppressWarnings("PMD.CouplingBetweenObjects")
 final class MavenAnalysisPreparation {
   private MavenAnalysisPreparation() {}
 
