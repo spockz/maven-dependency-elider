@@ -5,7 +5,6 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.trimmer.JdkApiClassTableReader;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.List;
 import proguard.classfile.ClassPool;
 
@@ -18,8 +17,8 @@ final class SingleReleasePlatforms {
 
   /* package */ record JdkClassTables(ClassPool candidate, ClassPool passThrough) {}
 
-  /* package */ static int analysisRelease(
-      final TrimRequest request, final Path javaHome, final int runtimeRelease) throws IOException {
+  /* package */ static int analysisRelease(final TrimRequest request, final int runtimeRelease)
+      throws IOException {
     if (!request.policy().trimEnabled()) {
       return runtimeRelease;
     }
@@ -28,7 +27,7 @@ final class SingleReleasePlatforms {
             ? MavenCompilerSettings.platformReleaseOptions(request.project(), request.session())
             : MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
                 request.project(), request.environment());
-    return TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
+    return TrimPlatform.targetReleaseFromOptions(compilerOptions);
   }
 
   /* package */ static JdkClassTables readJdkClassTables(
@@ -42,22 +41,17 @@ final class SingleReleasePlatforms {
   }
 
   /* package */ record AnalysisPlatform(
-      Path javaHome,
       int targetRelease,
       int runtimeRelease,
       List<JdkPlatformContext.PlatformSnapshot> snapshots,
       JdkClassTables tables) {}
 
   /* package */ static AnalysisPlatform prepare(final TrimRequest request) throws IOException {
-    final Path javaHome =
-        Path.of(System.getProperty(MavenDependencyTrimmer.JAVA_HOME_PROPERTY))
-            .toAbsolutePath()
-            .normalize();
     final int runtimeRelease = Runtime.version().feature();
-    final int targetRelease = analysisRelease(request, javaHome, runtimeRelease);
+    final int targetRelease = analysisRelease(request, runtimeRelease);
     final List<JdkPlatformContext.PlatformSnapshot> snapshots =
         List.of(MavenPlatformContextHolder.forOperation(request.session()).snapshot());
     return new AnalysisPlatform(
-        javaHome, targetRelease, runtimeRelease, snapshots, readJdkClassTables(snapshots));
+        targetRelease, runtimeRelease, snapshots, readJdkClassTables(snapshots));
   }
 }

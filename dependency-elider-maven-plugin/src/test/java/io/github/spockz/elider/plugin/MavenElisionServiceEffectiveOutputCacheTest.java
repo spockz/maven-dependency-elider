@@ -148,13 +148,24 @@ final class MavenElisionServiceEffectiveOutputCacheTest
   @Test
   void multiReleaseFingerprintTracksSourceTargetStrategyAndTierPlatformIdentity() throws Exception {
     final Fixture fixture = fixture(false, false, false, false, 11);
+    fixture.mavenProject().getProperties().remove("maven.compiler.release");
+    fixture.mavenProject().getProperties().setProperty("maven.compiler.source", "8");
+    fixture.mavenProject().getProperties().setProperty("maven.compiler.target", "11");
     writeMultiReleaseInput(fixture, 1);
     final Path trace = trace(temporaryDirectory, ENTRY_TRACE);
     final ServiceOperation targetEleven =
         operation(fixture, trace, null, true, List.of(), "vertical-shading");
     final ElisionAnalysisModel.EffectiveAnalysis firstEffective =
         targetEleven.service().finishAnalysis(targetEleven.prepared());
-    assertThat(firstEffective.trimAnalysis().analyzedTiers()).containsExactly(11, 17, 21);
+    assertAll(
+        "source 8 and target 11 use target 11 while retaining the active runtime boundary",
+        () -> assertThat(firstEffective.trimAnalysis().targetRelease()).isEqualTo(11),
+        () ->
+            assertThat(firstEffective.trimAnalysis().runtimeRelease())
+                .isEqualTo(Runtime.version().feature()),
+        () ->
+            assertThat(firstEffective.trimAnalysis().analyzedTiers())
+                .containsExactly(11, 17, Runtime.version().feature()));
     final List<String> firstPlatformIdentities = firstEffective.trimAnalysis().platformIdentities();
     final TrimResult first = MavenDependencyTrimmer.trimEffectiveOutputs(firstEffective);
     final ArtifactTrimRecord firstRecord = outputRecord(first, fixture);
@@ -192,6 +203,8 @@ final class MavenElisionServiceEffectiveOutputCacheTest
         mapper.readTree(manifest.toFile()).path(FINGERPRINT_PROPERTY).asText();
     assertThat(changedInputFingerprint).isNotEqualTo(firstFingerprint);
 
+    fixture.mavenProject().getProperties().remove("maven.compiler.source");
+    fixture.mavenProject().getProperties().remove("maven.compiler.target");
     fixture.mavenProject().getProperties().setProperty("maven.compiler.release", "17");
     final ServiceOperation targetSeventeen =
         operation(fixture, trace, null, true, List.of(), "vertical-shading");
@@ -199,9 +212,13 @@ final class MavenElisionServiceEffectiveOutputCacheTest
         targetSeventeen.service().finishAnalysis(targetSeventeen.prepared());
     assertAll(
         "target release changes MR selection without changing the active JDK class table",
+        () -> assertThat(targetSeventeenEffective.trimAnalysis().targetRelease()).isEqualTo(17),
+        () ->
+            assertThat(targetSeventeenEffective.trimAnalysis().runtimeRelease())
+                .isEqualTo(Runtime.version().feature()),
         () ->
             assertThat(targetSeventeenEffective.trimAnalysis().analyzedTiers())
-                .containsExactly(17, 21),
+                .containsExactly(17, Runtime.version().feature()),
         () ->
             assertThat(targetSeventeenEffective.trimAnalysis().platformIdentities())
                 .isEqualTo(firstPlatformIdentities));

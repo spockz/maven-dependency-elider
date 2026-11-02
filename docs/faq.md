@@ -61,7 +61,7 @@ A failure before the publication commit restores the previous reports, output ge
 
 ### What if my application runs on a different JDK than Maven?
 
-MRJAR linkage analysis uses the configured target release for the baseline and the active Maven runtime release as its upper analysis boundary. The JDK class table describes that active runtime; it does not validate API availability for an older target. If the deployed application uses a newer JDK, higher-tier entries are preserved but their references to sibling JARs are not included in the analyzed closure. Run the build with the deployment JDK to verify those links. Pass-through preserves the MRJAR bytes but does not preserve sibling dependencies referenced only from unanalysed tiers.
+MRJAR linkage analysis uses the configured release first, then the configured target (the target value of a source/target pair), and the active Maven runtime release as its upper analysis boundary. A source-only setting does not establish Elider's analysis target; when neither release nor target is configured, Elider uses the active runtime feature version. This fallback is an analysis policy, not a claim about Maven compiler's emitted bytecode default. The JDK class table describes the active runtime; it does not validate API availability for an older target. If the deployed application uses a newer JDK, higher-tier entries are preserved but their references to sibling JARs are not included in the analyzed closure. Run the build with the deployment JDK to verify those links. Pass-through preserves the MRJAR bytes but does not preserve sibling dependencies referenced only from unanalysed tiers.
 
 ### What if generated sources are not available before `INITIALIZE`?
 

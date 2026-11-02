@@ -114,11 +114,7 @@ final class MultiReleaseJarTrimmer {
             ? MavenCompilerSettings.platformReleaseOptions(project, request.session())
             : MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
                 project, request.environment());
-    final Path javaHome =
-        Path.of(System.getProperty(MavenDependencyTrimmer.JAVA_HOME_PROPERTY))
-            .toAbsolutePath()
-            .normalize();
-    final int release = TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
+    final int release = TrimPlatform.targetReleaseFromOptions(compilerOptions);
     final int runtimeRelease = Runtime.version().feature();
     if (release > runtimeRelease && decision.hasVerticalShadingCandidate()) {
       throw new IOException(

@@ -45,9 +45,6 @@ final class MavenDependencyTrimmer {
   /** A single worker preserves sequential operation for constrained builds. */
   /* package */ static final int MIN_TRIM_WORKERS = 1;
 
-  /** Platform analysis uses the same JDK home as the Maven process. */
-  /* package */ static final String JAVA_HOME_PROPERTY = "java.home";
-
   private MavenDependencyTrimmer() {}
 
   /* package */ static TrimResult trimEffectiveOutputs(
@@ -148,9 +145,7 @@ final class MavenDependencyTrimmer {
             ? MavenCompilerSettings.platformReleaseOptions(project, request.session())
             : MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
                 project, request.environment());
-    final Path javaHome =
-        Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
-    final int targetRelease = TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
+    final int targetRelease = TrimPlatform.targetReleaseFromOptions(compilerOptions);
     final int runtimeRelease = Runtime.version().feature();
     verifyAnalysisPlatform(effective, targetRelease, runtimeRelease);
     final JdkPlatformContext context = MavenPlatformContextHolder.forOperation(request.session());
@@ -164,9 +159,7 @@ final class MavenDependencyTrimmer {
     final MavenSession session = request.session();
     final List<String> compilerOptions =
         MavenCompilerSettings.platformReleaseOptions(project, session);
-    final Path javaHome =
-        Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
-    final int targetRelease = TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
+    final int targetRelease = TrimPlatform.targetReleaseFromOptions(compilerOptions);
     final int runtimeRelease = Runtime.version().feature();
     final JdkPlatformContext platformContext = MavenPlatformContextHolder.forOperation(session);
     return TrimOutputCoordinator.trimPrepared(

@@ -6,6 +6,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.engine.DependencyPruner;
 import io.github.spockz.elider.engine.PruneConfig;
@@ -209,28 +210,66 @@ final class JavaSourceReferenceScannerTest {
     configuration.addChild(release);
     project.getBuild().addPlugin(compilerPlugin(configuration));
 
-    assertThat(MavenCompilerSettings.options(project, null, List.of()))
-        .containsExactly("--release", "17");
+    assertAll(
+        "plugin configuration overrides the conflicting project compiler property",
+        () ->
+            assertThat(MavenCompilerSettings.options(project, null, List.of()))
+                .containsExactly("--release", "17"),
+        () ->
+            assertThat(MavenCompilerSettings.platformReleaseOptions(project, null))
+                .containsExactly("--release", "17"));
+  }
+
+  @Test
+  @DisplayName("ADR-0010/platform release options honor javac release precedence")
+  void platformReleaseOptionsPreferReleaseWhenSourceAndTargetAlsoExist() throws IOException {
+    final MavenProject project = new MavenProject();
+    project.getProperties().setProperty("maven.compiler.release", "17");
+    project.getProperties().setProperty("maven.compiler.source", "8");
+    project.getProperties().setProperty("maven.compiler.target", "11");
+
+    assertAll(
+        "release mode selects one platform target even when Maven also has source and target",
+        () ->
+            assertThat(MavenCompilerSettings.platformReleaseOptions(project, null))
+                .containsExactly("--release", "17"),
+        () ->
+            assertThat(
+                    TrimPlatform.targetReleaseFromOptions(
+                        MavenCompilerSettings.platformReleaseOptions(project, null)))
+                .isEqualTo(17));
   }
 
   @Test
   void honorsPluginSourceAndTargetSettings() throws IOException {
     final MavenProject project = new MavenProject();
+    project.getProperties().setProperty("maven.compiler.target", "17");
     final Xpp3Dom configuration = new Xpp3Dom("configuration");
     final Xpp3Dom source = new Xpp3Dom("source");
-    source.setValue("11");
+    source.setValue("8");
     final Xpp3Dom target = new Xpp3Dom("target");
     target.setValue("11");
     configuration.addChild(source);
     configuration.addChild(target);
     project.getBuild().addPlugin(compilerPlugin(configuration));
 
-    assertThat(MavenCompilerSettings.options(project, null, List.of()))
-        .containsExactly("-source", "11", "-target", "11");
+    assertAll(
+        "the target setting controls MR selection while the configured source remains intact",
+        () ->
+            assertThat(MavenCompilerSettings.options(project, null, List.of()))
+                .containsExactly("-source", "8", "-target", "11"),
+        () ->
+            assertThat(MavenCompilerSettings.platformReleaseOptions(project, null))
+                .containsExactly("-source", "8", "-target", "11"),
+        () ->
+            assertThat(
+                    TrimPlatform.targetReleaseFromOptions(
+                        MavenCompilerSettings.platformReleaseOptions(project, null)))
+                .isEqualTo(11));
   }
 
   @Test
-  void rejectsConflictingReleaseAndSourceTargetConfiguration() {
+  void separatesSourceAttributionRestrictionsFromPlatformReleasePrecedence() throws IOException {
     final MavenProject project = new MavenProject();
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Xpp3Dom configuration = new Xpp3Dom("configuration");
@@ -242,9 +281,15 @@ final class JavaSourceReferenceScannerTest {
     configuration.addChild(target);
     project.getBuild().addPlugin(compilerPlugin(configuration));
 
-    assertThatThrownBy(() -> MavenCompilerSettings.options(project, null, List.of()))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("both compiler release and source/target");
+    assertAll(
+        "source attribution stays strict while platform resolution follows compiler precedence",
+        () ->
+            assertThatThrownBy(() -> MavenCompilerSettings.options(project, null, List.of()))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("both compiler release and source/target"),
+        () ->
+            assertThat(MavenCompilerSettings.platformReleaseOptions(project, null))
+                .containsExactly("--release", "21"));
   }
 
   @Test
@@ -286,6 +331,38 @@ final class JavaSourceReferenceScannerTest {
 
     assertThat(MavenCompilerSettings.platformReleaseOptions(project, null))
         .containsExactly("--release", "21");
+  }
+
+  @Test
+  @DisplayName("ADR-0010/platform release options allow the runtime-default target")
+  void platformReleaseOptionsAllowUnspecifiedRelease() throws IOException {
+    assertThat(MavenCompilerSettings.platformReleaseOptions(new MavenProject(), null)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("ADR-0010/platform release options honor target-only and source-only settings")
+  void platformReleaseOptionsResolveTargetWithoutRequiringSource() throws IOException {
+    final MavenProject targetOnly = new MavenProject();
+    targetOnly.getProperties().setProperty("maven.compiler.target", "11");
+    final MavenProject sourceOnly = new MavenProject();
+    sourceOnly.getProperties().setProperty("maven.compiler.source", "8");
+
+    assertAll(
+        "only a configured release or target selects the MR baseline",
+        () ->
+            assertThat(MavenCompilerSettings.platformReleaseOptions(targetOnly, null))
+                .containsExactly("-target", "11"),
+        () ->
+            assertThat(
+                    TrimPlatform.targetReleaseFromOptions(
+                        MavenCompilerSettings.platformReleaseOptions(targetOnly, null)))
+                .isEqualTo(11),
+        () -> assertThat(MavenCompilerSettings.platformReleaseOptions(sourceOnly, null)).isEmpty(),
+        () ->
+            assertThat(
+                    TrimPlatform.targetReleaseFromOptions(
+                        MavenCompilerSettings.platformReleaseOptions(sourceOnly, null)))
+                .isEqualTo(Runtime.version().feature()));
   }
 
   @Test

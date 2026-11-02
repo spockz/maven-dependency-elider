@@ -168,7 +168,7 @@ final class MavenCompilerSettings {
     return releaseIdentity(project, environment.userPropertiesAsProperties());
   }
 
-  /** Resolves only the platform release used by bytecode trimming after compilation. */
+  /** Resolves only release or target settings used by bytecode trimming after compilation. */
   static List<String> platformReleaseOptions(final MavenProject project, final MavenSession session)
       throws IOException {
     rejectSelectedToolchain(session);
@@ -181,11 +181,19 @@ final class MavenCompilerSettings {
     rejectUnsupportedPlatformSettings(configurations, project.getProperties(), userProperties);
     final String release =
         value("release", "maven.compiler.release", project, userProperties, configurations);
+    if (release != null) {
+      return List.of("--release", release);
+    }
     final String source =
         value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
         value("target", "maven.compiler.target", project, userProperties, configurations);
-    return sourceLevelOptions(release, source, target, false);
+    if (target == null) {
+      return List.of();
+    }
+    return source == null
+        ? List.of("-target", target)
+        : List.of("-source", source, "-target", target);
   }
 
   static List<String> platformReleaseOptionsWithEnvironment(
@@ -211,7 +219,7 @@ final class MavenCompilerSettings {
         value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
         value("target", "maven.compiler.target", project, userProperties, configurations);
-    final List<String> options = new ArrayList<>(sourceLevelOptions(release, source, target, true));
+    final List<String> options = new ArrayList<>(sourceLevelOptions(release, source, target));
     final String encoding =
         value("encoding", "maven.compiler.encoding", project, userProperties, configurations);
     final String projectEncoding =
@@ -231,11 +239,7 @@ final class MavenCompilerSettings {
   }
 
   private static List<String> sourceLevelOptions(
-      final String release,
-      final String source,
-      final String target,
-      final boolean allowJavacDefault)
-      throws IOException {
+      final String release, final String source, final String target) throws IOException {
     if (release != null && (source != null || target != null)) {
       throw new IOException("Cannot attribute source with both compiler release and source/target");
     }
@@ -245,7 +249,7 @@ final class MavenCompilerSettings {
     if (source != null && target != null) {
       return List.of("-source", source, "-target", target);
     }
-    if (allowJavacDefault && source == null && target == null) {
+    if (source == null && target == null) {
       return List.of();
     }
     throw new IOException(
