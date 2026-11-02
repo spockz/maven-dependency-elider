@@ -178,15 +178,15 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
               projectDependenciesResolver);
       verifyBanPrediction(prediction);
       final ExclusionReview exclusionReview = ExclusionReview.capture(project, session);
+      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
+          assessVulnerabilities(prediction);
+      ElisionSummary.reportPrediction(getLog(), prediction, vulnerabilityAssessment, trimJars);
       MavenClassUsageReportWriter.write(
           reportFile.toPath(),
           prediction.evidence().classUsageReport(),
           prediction.evidence().bytecodeScan(),
           prediction,
           exclusionReview);
-      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
-          assessVulnerabilities(prediction);
-      ElisionSummary.reportPrediction(getLog(), prediction, vulnerabilityAssessment, trimJars);
       if (getLog().isInfoEnabled()) {
         ExclusionReviewRenderer.render(exclusionReview).forEach(getLog()::info);
       }
