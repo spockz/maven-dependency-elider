@@ -65,7 +65,7 @@ To enable whole-artifact dependency pruning, register the core extension in your
 </extensions>
 ```
 
-> **Note**: Without this extension, whole-artifact candidates are retained, though intra-JAR trimming still functions.
+> **Note**: Without this extension, trace-derived whole-artifact candidates remain retained, though intra-JAR trimming still functions. The `elide` goal can apply explicit bans only after isolated Resolver planning, retained-content closure checks, and publication validation succeed.
 
 ### 3. Capture Runtime Telemetry
 
@@ -165,6 +165,8 @@ With this configuration:
 The `elide` goal writes two structured JSON records:
 
 * `target/dependency-elider-report.json` (`-Delide.summaryFile`): Persisted snapshot consumed by `dependency-elider:report`.
+
+The persisted Elide summary records ban outcomes in `appliedBans`. Its `rawDroppedCoordinates` metric excludes policy-forced absences, while total absent-artifact metrics include them.
 * `target/dependency-elider-class-usage.json` (`-Delide.reportFile`): Detailed class-usage evidence.
 
 The saved elision report and Analyze class-usage report include `exclusionReview`, with an explicit
@@ -428,6 +430,7 @@ Process exit status: 0
 [INFO] Whole artifacts dropped: 2 (original JAR file bytes: 942.11 KiB)
 [INFO] Program classes removed with dropped JARs: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 2
+[INFO] Applied bans: none
 [INFO]   - commons-codec:commons-codec:jar:1.19.0 (compile): 365.93 KiB original JAR, 115 class entries, 413.65 KiB
 [INFO]   - org.apache.httpcomponents:httpclient:jar:4.3.4 (compile): 576.18 KiB original JAR, 420 class entries, 1.11 MiB
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
@@ -495,6 +498,7 @@ Process exit status: 0
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
+[INFO] Applied bans: none
 [INFO] Program classes pruned from retained JARs: 3429 (uncompressed omitted .class payload bytes: 8.57 MiB; excludes module descriptors and archive metadata)
 [INFO]   - com.fasterxml.jackson.core:jackson-core:jar:2.18.2 (compile): 20 classes, 82.33 KiB
 [INFO]   - com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile): 53 classes, 92.44 KiB
@@ -569,6 +573,7 @@ Process exit status: 0
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
+[INFO] Applied bans: none
 [INFO] Program classes pruned from retained JARs: 330 (uncompressed omitted .class payload bytes: 1.04 MiB; excludes module descriptors and archive metadata)
 [INFO]   - com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile): 20 classes, 82.33 KiB
 [INFO]   - com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile): 70 classes, 163.47 KiB
@@ -634,6 +639,7 @@ Process exit status: 0
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
+[INFO] Applied bans: none
 [INFO] Program classes pruned from retained JARs: 5 (uncompressed omitted .class payload bytes: 6.38 KiB; excludes module descriptors and archive metadata)
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
 [INFO] Advisories associated with removed components: none matched the available vulnerability mappings
@@ -667,7 +673,9 @@ Process exit status: 0
 
 The `analyze` goal previews dependencies and byte savings without changing Maven artifact views or resolver plans. It writes class-usage evidence and a `dependencyPrediction` section to `elide.reportFile`. The prediction records retained/elided coordinates, planned class removals marked `PLANNED_UNVERIFIED`, environment/inventory/operation fingerprints, and whether it used the captured effective Resolver graph or a detached current-model resolution. Detached provenance describes only that request-local resolution. Analyze leaves configured vulnerability mappings unresolved unless a published trim archive supports an omission proof. Prediction does not stage or commit trim archives or publish output-manifest/generation state. MRJAR analysis may create temporary classpath projections in an operation-owned directory; that directory is removed when prediction completes or fails. The transcript invocation places the report under ignored `.scratch/`:
 
-Without the core extension, `analyze` can preview strict `banishedDependencies` for supported resolved compile/runtime JARs. The schema-1 `dependencyPrediction.banPlan` records normalized matched and unmatched coordinates, labels matched artifacts `FORCED_ABSENT_AFTER_RESOLUTION`, and marks every entry `applied=false`. The plan is bound to the detached current-model Resolver graph and fails if runtime trace, source, production bytecode, dynamic metadata, resource/provider closure, or graph protection requires a banned artifact. An unmatched entry is not an absence proof. Analyze replaces the report only after prediction and vulnerability assessment succeed; it never changes Maven artifact views. Active-extension Analyze bans and all `elide` bans remain fail-closed until their separate enforcement slice is complete.
+With or without the core extension, `analyze` can predict strict `banishedDependencies` for supported compile/runtime JARs, using either a detached current-model Resolver graph or the captured effective graph with a complete original-input audit. The schema-1 `dependencyPrediction.banPlan` records each request as matched (`FORCED_ABSENT_AFTER_RESOLUTION`), excluded before resolution (`EXCLUDED_BEFORE_RESOLUTION`), or unmatched (`UNMATCHED`); every prediction row has `applied=false`. The plan fails if runtime trace, source, production bytecode, dynamic metadata, retained-resource/provider closure, or graph protection requires a banned artifact. An unmatched entry is not an absence proof. Analyze replaces the report only after prediction and vulnerability assessment succeed; it never changes Maven artifact views.
+
+The `elide` goal applies only a validated ban plan before transactional publication. It reports the same three outcomes in `appliedBans`; unmatched requests are not applied, and neither pre-resolution exclusions nor unmatched requests identify a live artifact to remove. Policy-forced absences are excluded from `rawDroppedCoordinates` but included in total absent-artifact metrics.
 
 <!-- BEGIN:transcript:analyze-basic-app -->
 

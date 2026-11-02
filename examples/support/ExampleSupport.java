@@ -661,7 +661,9 @@ public final class ExampleSupport {
     for (final JsonNode row : plan) {
       if (!row.isObject()
           || !fieldNames(row)
-              .equals(Set.of("dependency", "status", "matchedArtifacts", "applied"))) {
+              .equals(
+                  Set.of(
+                      "dependency", "status", "matchedArtifacts", "originalArtifacts", "applied"))) {
         throw new IOException("dependencyPrediction ban plan row has unsupported fields");
       }
       final ReportBanIdentity dependency = parseBanIdentity(row.path("dependency"));
@@ -675,13 +677,32 @@ public final class ExampleSupport {
       }
       final JsonNode status = row.path("status");
       if (!status.isTextual()
-          || !Set.of("FORCED_ABSENT_AFTER_RESOLUTION", "NO_CURRENT_INVENTORY_MATCH")
+          || !Set.of(
+                  "FORCED_ABSENT_AFTER_RESOLUTION",
+                  "EXCLUDED_BEFORE_RESOLUTION",
+                  "UNMATCHED")
               .contains(status.textValue())) {
         throw new IOException("dependencyPrediction ban plan status is unsupported");
       }
       final Set<String> matched = validateBanMatches(row.path("matchedArtifacts"), dependency, wouldElide);
-      if (status.textValue().equals("FORCED_ABSENT_AFTER_RESOLUTION") != !matched.isEmpty()) {
+      final Set<String> original = validateOriginalBanMatches(row.path("originalArtifacts"), dependency);
+      final String classification = status.textValue();
+      final boolean statusMatches =
+          switch (classification) {
+            case "FORCED_ABSENT_AFTER_RESOLUTION" -> !matched.isEmpty();
+            case "EXCLUDED_BEFORE_RESOLUTION" -> matched.isEmpty() && !original.isEmpty();
+            case "UNMATCHED" -> matched.isEmpty() && original.isEmpty();
+            default -> false;
+          };
+      if (!statusMatches) {
         throw new IOException("dependencyPrediction ban plan status disagrees with matches");
+      }
+      final Set<String> originalIdentities =
+          original.stream().map(ExampleSupport::banGavce).collect(java.util.stream.Collectors.toSet());
+      if (matched.stream()
+          .map(ExampleSupport::banGavce)
+          .anyMatch(identity -> !originalIdentities.contains(identity))) {
+        throw new IOException("dependencyPrediction original audit does not include effective ban matches");
       }
       final Set<String> expected = new HashSet<>();
       for (final String coordinate : input) {
@@ -737,6 +758,53 @@ public final class ExampleSupport {
       previous = coordinate;
     }
     return coordinates;
+  }
+
+  private static Set<String> validateOriginalBanMatches(
+      final JsonNode matches, final ReportBanIdentity dependency) throws IOException {
+    if (!matches.isArray()) {
+      throw new IOException("dependencyPrediction ban originalArtifacts must be an array");
+    }
+    final Set<String> coordinates = new HashSet<>();
+    ReportCoordinate previous = null;
+    for (final JsonNode match : matches) {
+      if (!match.isTextual()) {
+        throw new IOException("dependencyPrediction ban originalArtifacts must be coordinate strings");
+      }
+      final ReportCoordinate coordinate;
+      try {
+        coordinate = parseCanonicalCoordinate(match.textValue());
+      } catch (final IllegalArgumentException exception) {
+        throw new IOException("dependencyPrediction original artifact is not canonical", exception);
+      }
+      if (!"jar".equals(coordinate.type())
+          || !Set.of("compile", "runtime").contains(coordinate.scope())) {
+        throw new IOException(
+            "dependencyPrediction ban original artifact must be a compile/runtime JAR");
+      }
+      if (previous != null && previous.compareTo(coordinate) >= 0) {
+        throw new IOException("dependencyPrediction ban originalArtifacts are not canonical");
+      }
+      if (!dependency.matches(coordinate)) {
+        throw new IOException("dependencyPrediction original artifact has another identity");
+      }
+      coordinates.add(match.textValue());
+      previous = coordinate;
+    }
+    return coordinates;
+  }
+
+  private static String banGavce(final String coordinateText) {
+    final ReportCoordinate coordinate = parseCanonicalCoordinate(coordinateText);
+    return coordinate.groupId()
+        + ":"
+        + coordinate.artifactId()
+        + ":"
+        + coordinate.version()
+        + ":"
+        + coordinate.type()
+        + ":"
+        + coordinate.classifier();
   }
 
   private static ReportBanIdentity parseBanIdentity(final JsonNode node) throws IOException {

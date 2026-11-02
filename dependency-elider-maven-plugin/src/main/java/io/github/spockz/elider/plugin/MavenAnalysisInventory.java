@@ -56,7 +56,7 @@ final class MavenAnalysisInventory {
     final ArtifactViews views = inventory.views();
     if (resolutionContext == null
         || resolutionContext.provenance()
-            == AnalyzePrediction.Provenance.CAPTURED_EFFECTIVE_RESOLVER) {
+            == MavenAnalysisResolutionContext.Provenance.CAPTURED_EFFECTIVE_RESOLVER) {
       verifyMavenInventory(project, views, inventory, resolutionContext);
     } else {
       resolutionContext.verify();
@@ -79,7 +79,7 @@ final class MavenAnalysisInventory {
     final ArtifactViews views = inventory.views();
     if (resolutionContext == null
         || resolutionContext.provenance()
-            == AnalyzePrediction.Provenance.CAPTURED_EFFECTIVE_RESOLVER) {
+            == MavenAnalysisResolutionContext.Provenance.CAPTURED_EFFECTIVE_RESOLVER) {
       verifyMavenInventory(project, views, inventory, resolutionContext);
     } else {
       resolutionContext.verify();

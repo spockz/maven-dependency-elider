@@ -151,6 +151,65 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
+  void validatesAppliedBanCoordinatesAndPolicyCorrespondence() throws IOException {
+    final ObjectNode valid = appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    final Path validPath = temporaryDirectory.resolve("valid-applied-ban.json");
+    JSON.writeValue(validPath.toFile(), valid);
+
+    final ObjectNode wrongFamily =
+        appliedBanReport("example:drop", "example:other:jar:1.0 (runtime)");
+    final Path wrongFamilyPath = temporaryDirectory.resolve("wrong-ban-family.json");
+    JSON.writeValue(wrongFamilyPath.toFile(), wrongFamily);
+
+    final ObjectNode unsupportedType =
+        appliedBanReport("example:drop", "example:drop:zip:1.0 (runtime)");
+    final Path unsupportedTypePath = temporaryDirectory.resolve("unsupported-ban-type.json");
+    JSON.writeValue(unsupportedTypePath.toFile(), unsupportedType);
+
+    final ObjectNode unsupportedScope =
+        appliedBanReport("example:drop", "example:drop:jar:1.0 (test)");
+    final Path unsupportedScopePath = temporaryDirectory.resolve("unsupported-ban-scope.json");
+    JSON.writeValue(unsupportedScopePath.toFile(), unsupportedScope);
+
+    final ObjectNode policyMismatch =
+        appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    policyMismatch.with("policy").putArray("banishedDependencies").add("example:other");
+    final Path policyMismatchPath = temporaryDirectory.resolve("applied-ban-policy-mismatch.json");
+    JSON.writeValue(policyMismatchPath.toFile(), policyMismatch);
+
+    assertAll(
+        "applied ban outcomes correspond exactly to normalized policy and supported GAVCE values",
+        () -> assertThat(MavenElisionReportWriter.read(validPath).appliedBans()).hasSize(1),
+        () -> assertInvalidAppliedBan(wrongFamilyPath, "G:A does not match its dependency"),
+        () -> assertInvalidAppliedBan(unsupportedTypePath, "must be a compile/runtime JAR"),
+        () -> assertInvalidAppliedBan(unsupportedScopePath, "must be a compile/runtime JAR"),
+        () -> assertInvalidAppliedBan(policyMismatchPath, "do not match policy"));
+  }
+
+  private ObjectNode appliedBanReport(final String dependency, final String coordinate) {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("wholeArtifactsDropped", 0);
+    payload.put("originalJarBytesDropped", 0);
+    payload.put("droppedProgramClassEntries", 0);
+    payload.put("droppedProgramClassBytes", 0);
+    payload.putArray(DROPPED_ROWS).removeAll();
+    payload.with("policy").putArray("banishedDependencies").add(dependency);
+    final ObjectNode ban = payload.putArray("appliedBans").addObject();
+    ban.put("dependency", dependency);
+    ban.put("status", "FORCED_ABSENT_AFTER_RESOLUTION");
+    ban.putArray("matchedArtifacts").add(coordinate);
+    ban.putArray("originalArtifacts").add(coordinate);
+    ban.put("applied", true);
+    return payload;
+  }
+
+  private void assertInvalidAppliedBan(final Path path, final String message) {
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(path))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(message);
+  }
+
+  @Test
   void rejectsNullDroppedArtifactClassMetrics() throws IOException {
     final ObjectNode payload = currentReportShapeWithDroppedRow();
     final ObjectNode row = (ObjectNode) payload.withArray(DROPPED_ROWS).get(0);
@@ -666,6 +725,7 @@ final class MavenElisionReportSchemaTest {
         "exclusionReview",
         JSON.valueToTree(
             ExclusionReview.unavailable("No pre-injection declaration capture is available")));
+    payload.putArray("appliedBans");
     final ObjectNode graph = payload.putObject("mediatedGraph");
     graph.put("available", false);
     graph.put("unavailableReason", "No graph was provided");

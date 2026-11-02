@@ -48,7 +48,7 @@ final class MavenElisionServicePredictionTest {
         "captured-effective Analyze predicts without publishing trim state",
         () ->
             assertThat(prediction.provenance())
-                .isEqualTo(AnalyzePrediction.Provenance.CAPTURED_EFFECTIVE_RESOLVER),
+                .isEqualTo(MavenAnalysisResolutionContext.Provenance.CAPTURED_EFFECTIVE_RESOLVER),
         () -> assertThat(fixture.project().getArtifacts()).containsExactly(fixture.artifact()),
         () ->
             assertThat(fixture.project().getDependencyArtifacts())

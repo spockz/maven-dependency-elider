@@ -52,7 +52,12 @@ final class MavenElisionReportPayloadValidator {
           "advisoryReview",
           "verifiedStructuredProofs",
           "policy",
-          "exclusionReview");
+          "exclusionReview",
+          "appliedBans");
+
+  /** Exact fields persisted for each applied ban outcome. */
+  private static final Set<String> APPLIED_BAN_FIELDS =
+      Set.of("dependency", "status", "matchedArtifacts", "originalArtifacts", "applied");
 
   /** Exact fields for the producing policy and operation identity. */
   private static final Set<String> POLICY_FIELDS =
@@ -132,7 +137,121 @@ final class MavenElisionReportPayloadValidator {
         payload.get("verifiedStructuredProofs"),
         payload.get("assumeConventionalJavaSourceLayout").booleanValue());
     ExclusionReviewPayloadValidator.validate(payload.get("exclusionReview"));
+    validateAppliedBans(
+        payload.get("appliedBans"), textValues(payload.path("policy").get("banishedDependencies")));
     MavenElisionReportGraphPayloadValidator.validate(payload.get("mediatedGraph"));
+  }
+
+  private static void validateAppliedBans(
+      final JsonNode rows, final List<String> policyDependencies) throws IOException {
+    if (rows == null || !rows.isArray()) {
+      throw new IOException("Elision report appliedBans must be an array");
+    }
+    final List<String> rowDependencies = new java.util.ArrayList<>();
+    for (final JsonNode row : rows) {
+      rowDependencies.add(validateAppliedBanRow(row));
+    }
+    if (!rowDependencies.equals(policyDependencies)) {
+      throw new IOException("Elision report applied bans do not match policy banishedDependencies");
+    }
+  }
+
+  private static String validateAppliedBanRow(final JsonNode row) throws IOException {
+    if (!row.isObject() || !fieldNames(row).equals(APPLIED_BAN_FIELDS)) {
+      throw new IOException("Elision report ban row fields do not match schema version 1");
+    }
+    final JsonNode dependencyNode = row.get("dependency");
+    final JsonNode statusNode = row.get("status");
+    if (dependencyNode == null
+        || !dependencyNode.isTextual()
+        || dependencyNode.textValue().isBlank()) {
+      throw new IOException("Elision report ban dependency must be nonblank text");
+    }
+    if (statusNode == null || !statusNode.isTextual()) {
+      throw new IOException("Elision report ban status must be text");
+    }
+    final String dependency = dependencyNode.textValue();
+    final BanishedDependency parsedDependency = parseBanDependency(dependency);
+    if (!parsedDependency.toString().equals(dependency)) {
+      throw new IOException("Elision report ban dependency is not canonical");
+    }
+    final MavenBanPlan.Entry.Status parsedStatus = parseBanStatus(statusNode.textValue());
+    final JsonNode matched = row.get("matchedArtifacts");
+    final JsonNode original = row.get("originalArtifacts");
+    final JsonNode applied = row.get("applied");
+    if (!canonicalTextArray(matched)
+        || !canonicalTextArray(original)
+        || applied == null
+        || !applied.isBoolean()) {
+      throw new IOException("Elision report ban artifact lists or applied flag are malformed");
+    }
+    final List<String> matchedValues = textValues(matched);
+    final List<String> originalValues = textValues(original);
+    validateBanArtifactCoordinates(matchedValues, parsedDependency);
+    validateBanArtifactCoordinates(originalValues, parsedDependency);
+    validateAppliedBanOutcome(parsedStatus, applied.booleanValue(), matchedValues, originalValues);
+    return dependency;
+  }
+
+  private static BanishedDependency parseBanDependency(final String value) throws IOException {
+    try {
+      return BanishedDependencyPolicy.normalize(List.of(value)).getFirst();
+    } catch (final org.apache.maven.plugin.MojoFailureException exception) {
+      throw new IOException("Elision report ban dependency is invalid", exception);
+    }
+  }
+
+  private static MavenBanPlan.Entry.Status parseBanStatus(final String value) throws IOException {
+    try {
+      return MavenBanPlan.Entry.Status.valueOf(value);
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException("Elision report ban status is invalid", exception);
+    }
+  }
+
+  private static void validateAppliedBanOutcome(
+      final MavenBanPlan.Entry.Status status,
+      final boolean applied,
+      final List<String> matched,
+      final List<String> original)
+      throws IOException {
+    if (applied != (status != MavenBanPlan.Entry.Status.UNMATCHED)
+        || !matched.equals(matched.stream().distinct().sorted().toList())
+        || !original.equals(original.stream().distinct().sorted().toList())
+        || !original.containsAll(matched)) {
+      throw new IOException("Elision report ban outcome is inconsistent");
+    }
+    if (status == MavenBanPlan.Entry.Status.FORCED_ABSENT_AFTER_RESOLUTION && matched.isEmpty()) {
+      throw new IOException("Forced-absent ban has no effective match");
+    }
+    if (status == MavenBanPlan.Entry.Status.EXCLUDED_BEFORE_RESOLUTION
+        && (!matched.isEmpty() || original.isEmpty())) {
+      throw new IOException("Excluded-before-resolution ban has inconsistent matches");
+    }
+    if (status == MavenBanPlan.Entry.Status.UNMATCHED
+        && (!matched.isEmpty() || !original.isEmpty())) {
+      throw new IOException("Unmatched ban carries artifact matches");
+    }
+  }
+
+  private static void validateBanArtifactCoordinates(
+      final List<String> coordinates, final BanishedDependency dependency) throws IOException {
+    for (final String text : coordinates) {
+      final io.github.spockz.elider.model.ArtifactCoordinate coordinate;
+      try {
+        coordinate = MavenElisionReportSourceCoordinateValidator.parseCanonical(text);
+      } catch (final IllegalArgumentException exception) {
+        throw new IOException("Elision report ban artifact coordinate is not canonical", exception);
+      }
+      if (!"jar".equals(coordinate.type())
+          || !Set.of("compile", "runtime").contains(coordinate.scope())) {
+        throw new IOException("Elision report ban artifact must be a compile/runtime JAR");
+      }
+      if (!dependency.groupId().equals(coordinate.groupId())
+          || !dependency.artifactId().equals(coordinate.artifactId())) {
+        throw new IOException("Elision report ban artifact G:A does not match its dependency");
+      }
+    }
   }
 
   @SuppressWarnings("PMD.CyclomaticComplexity")

@@ -231,15 +231,26 @@ public final class ExampleSupportContractTest {
     final ArrayNode rows = prediction.putArray("banPlan");
     final ObjectNode unmatched = rows.addObject();
     unmatched.put("dependency", "org.example:missing");
-    unmatched.put("status", "NO_CURRENT_INVENTORY_MATCH");
+    unmatched.put("status", "UNMATCHED");
     unmatched.putArray("matchedArtifacts");
+    unmatched.putArray("originalArtifacts");
     unmatched.put("applied", false);
     final ObjectNode matched = rows.addObject();
     matched.put("dependency", "org.example:unused");
     matched.put("status", "FORCED_ABSENT_AFTER_RESOLUTION");
     matched.putArray("matchedArtifacts").add("org.example:unused:jar:2.0 (runtime)");
+    matched.putArray("originalArtifacts").add("org.example:unused:jar:2.0 (runtime)");
     matched.put("applied", false);
     ExampleSupport.validateClassUsageReport(valid, productionOutput);
+
+    final ObjectNode excluded = valid.deepCopy();
+    final ObjectNode excludedRow =
+        (ObjectNode) excluded.path("dependencyPrediction").path("banPlan").get(0);
+    excludedRow.put("status", "EXCLUDED_BEFORE_RESOLUTION");
+    excludedRow
+        .putArray("originalArtifacts")
+        .add("org.example:missing:jar:3.0 (runtime)");
+    ExampleSupport.validateClassUsageReport(excluded, productionOutput);
 
     final ObjectNode missingPlan = valid.deepCopy();
     ((ObjectNode) missingPlan.path("dependencyPrediction")).remove("banPlan");
@@ -317,8 +328,16 @@ public final class ExampleSupportContractTest {
 
     final ObjectNode falseStatus = valid.deepCopy();
     ((ObjectNode) falseStatus.path("dependencyPrediction").path("banPlan").get(1))
-        .put("status", "NO_CURRENT_INVENTORY_MATCH");
+        .put("status", "UNMATCHED");
     rejects(falseStatus, productionOutput, "ban plan status disagrees with matches");
+
+    final ObjectNode excludedWithoutOriginal = excluded.deepCopy();
+    ((ObjectNode) excludedWithoutOriginal.path("dependencyPrediction").path("banPlan").get(0))
+        .putArray("originalArtifacts");
+    rejects(
+        excludedWithoutOriginal,
+        productionOutput,
+        "ban plan status disagrees with matches");
 
     final ObjectNode wrongDisposition = valid.deepCopy();
     ((ObjectNode) wrongDisposition.path("dependencyPrediction"))

@@ -153,13 +153,13 @@ final class ElisionSummary {
             + " ("
             + percentage
             + ")");
-    for (final AnalyzeBanPlan.Entry entry : prediction.banPlan().entries()) {
+    for (final MavenBanPlan.Entry entry : prediction.banPlan().entries()) {
       log.info(
           "  Ban plan, applied=false: "
               + entry.dependency()
-              + (entry.matched()
-                  ? " -> forced_absent_after_resolution " + entry.artifacts()
-                  : " -> no current inventory match"));
+              + " -> "
+              + entry.status().name().toLowerCase(Locale.ROOT)
+              + (entry.artifacts().isEmpty() ? "" : " " + entry.artifacts()));
     }
     log.info(
         "  Estimated original JAR bytes for those artifacts: "

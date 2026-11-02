@@ -144,14 +144,13 @@ final class MavenClassUsageReportWriter {
                   entry -> {
                     final Map<String, Object> row = new LinkedHashMap<>();
                     row.put("dependency", entry.dependency().toString());
-                    row.put(
-                        "status",
-                        entry.matched()
-                            ? "FORCED_ABSENT_AFTER_RESOLUTION"
-                            : "NO_CURRENT_INVENTORY_MATCH");
+                    row.put("status", entry.status().name());
                     row.put(
                         "matchedArtifacts",
                         entry.artifacts().stream().map(Object::toString).toList());
+                    row.put(
+                        "originalArtifacts",
+                        entry.originalArtifacts().stream().map(Object::toString).toList());
                     row.put("applied", false);
                     return row;
                   })

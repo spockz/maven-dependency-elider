@@ -5,7 +5,6 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
-import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -13,11 +12,13 @@ import java.util.List;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.ProjectDependenciesResolver;
 
 /** Applies graph-verified dependency changes during Maven initialization. */
 @Mojo(
@@ -27,6 +28,9 @@ import org.apache.maven.project.MavenProject;
     threadSafe = true)
 @SuppressWarnings({"PMD.TooManyFields", "PMD.ImmutableField"})
 public final class ElideMojo extends PluginCacheMojoSupport {
+  /** PMD key shared by test-mutable fields. */
+  private static final String PMD_IMMUTABLE_FIELD = "PMD.ImmutableField";
+
   /** Maven's annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
 
@@ -37,6 +41,9 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   /** Maven session used to detect an externally selected compiler toolchain. */
   @Parameter(defaultValue = "${session}", readonly = true, required = true)
   private MavenSession session;
+
+  /** Resolver used to bind an isolated ban plan to the current Maven model. */
+  @Component private ProjectDependenciesResolver projectDependenciesResolver;
 
   /** Current execution source and ID for the injected preparation duplicate guard. */
   @Parameter(defaultValue = "${mojoExecution}", readonly = true, required = true)
@@ -94,7 +101,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.retainedArtifacts")
   private List<String> retainedArtifacts;
 
-  /** Trimmed groupId:artifactId only; bans currently fail closed pre-analysis. */
+  /** Trimmed groupId:artifactId only; each ban must be absent before publication. */
   @Parameter(property = "elide.banishedDependencies")
   private List<String> banishedDependencies;
 
@@ -175,16 +182,21 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   private File summaryFile;
 
   /** Mutable for tests that inject plan publication failure. */
-  @SuppressWarnings("PMD.ImmutableField")
-  private PlanPublication planPublication = ResolverArtifactPlanPublisher::publish;
+  @SuppressWarnings(PMD_IMMUTABLE_FIELD)
+  private MavenElideExecutionConfiguration.PlanPublication planPublication =
+      ResolverArtifactPlanPublisher::publish;
 
   /**
    * Test mutation hook for report stages.
    *
    * <p>Verifies inventory freshness before publication.
    */
-  @SuppressWarnings("PMD.ImmutableField")
+  @SuppressWarnings(PMD_IMMUTABLE_FIELD)
   private MavenElisionOutputPublisher.AfterStaging afterStaging = () -> {};
+
+  /** Failure hook after generation staging. */
+  @SuppressWarnings(PMD_IMMUTABLE_FIELD)
+  private MavenElisionOutputPublisher.AfterStaging afterGenerationStaging = () -> {};
 
   /** Maven switch that skips analysis and mutation. */
   @Parameter(property = "elide.skip", defaultValue = DEFAULT_FALSE)
@@ -194,106 +206,49 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.leafOnly", defaultValue = "true")
   private boolean leafOnly = true;
 
-  /** Package callback used to test publication ordering. */
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  @FunctionalInterface
-  interface PlanPublication {
-    /** Installs the resolver plan after report and view staging succeeds. */
-    void publish(
-        MavenSession session,
-        MavenProject project,
-        List<io.github.spockz.elider.trimmer.ArtifactTrimRecord> trimRecords,
-        ResolverArtifactGraphProjection graphProjection)
-        throws IOException;
-  }
-
   /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
   @Override
   public void execute() throws MojoFailureException {
-    LegacyRetentionSetting.rejectIfConfigured(project, session, mojoExecution);
-    final String executionId = mojoExecution == null ? null : mojoExecution.getExecutionId();
-    final String projectId = project == null ? null : project.getId();
-    final MojoExecution.Source executionSource = EliderPreparationState.source(mojoExecution);
-    if (EliderPreparationState.consumePreparedLifecycleDuplicate(
-        session, executionId, projectId, executionSource)) {
-      return;
-    }
-    try {
-      if (shouldSkipElision(executionId, projectId, executionSource)) {
-        return;
-      }
-      BanishedDependencyLifecycleActivation.verifyMojoConfiguration(
-          session, project, mojoExecution, banishedDependencies);
-      executeAnalysis();
-      EliderPreparationState.completeInjectedCliPreparation(
-          session, executionId, projectId, executionSource);
-    } catch (final IOException | IllegalArgumentException exception) {
-      throw new MojoFailureException(
-          "Dependency elision failed: " + exception.getMessage(), exception);
-    }
+    final MavenElideExecutionConfiguration.Lifecycle lifecycle = executionLifecycle();
+    MavenElideExecution.execute(lifecycle, getLog(), () -> executionConfiguration(lifecycle));
   }
 
-  private boolean shouldSkipElision(
-      final String executionId, final String projectId, final MojoExecution.Source executionSource)
-      throws IOException {
-    if (skip) {
-      publishEmptyPlan();
-      EliderPreparationState.completeInjectedCliPreparation(
-          session, executionId, projectId, executionSource);
-      return true;
-    }
-    if (leafOnly && ReactorLeafModuleDetector.isIntermediateReactorModule(project, session)) {
-      if (getLog().isInfoEnabled()) {
-        getLog()
-            .info(
-                "Skipping dependency elision on intermediate reactor module: "
-                    + (project == null ? "unknown" : project.getArtifactId()));
-      }
-      publishEmptyPlan();
-      EliderPreparationState.completeInjectedCliPreparation(
-          session, executionId, projectId, executionSource);
-      return true;
-    }
-    return false;
+  private MavenElideExecutionConfiguration.Lifecycle executionLifecycle() {
+    return new MavenElideExecutionConfiguration.Lifecycle(
+        project,
+        session,
+        mojoExecution,
+        projectDependenciesResolver,
+        skip,
+        leafOnly,
+        banishedDependencies);
   }
 
-  private void publishEmptyPlan() throws IOException {
-    ResolverArtifactPlanPublisher.publish(session, project, List.of());
-  }
-
-  private void executeAnalysis() throws IOException, MojoFailureException {
-    final MavenElisionService service = new MavenElisionService();
-    final ElisionAnalysisModel.PreparedAnalysis prepared =
-        service.prepare(project, analysisOptions());
-    final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
-    final ElisionAnalysisModel.Analysis analysis = service.finishEffectiveOutputs(effective);
-    try (TrimOutputGenerationCommitHandle generation = analysis.trimResult().generationCommit()) {
-      MavenElisionOutputPublisher.publish(
-          new MavenElisionOutputPublisher.Request(
-              project,
-              session,
-              service,
-              analysis,
-              generation,
-              new MavenElisionOutputPublisher.ReportFiles(
-                  reportFile,
-                  MavenGeneratedOutputs.outputFile(
-                      sbomFile, project, "dependency-elider-sbom.cdx.json"),
-                  MavenGeneratedOutputs.outputFile(
-                      baselineSbomFile, project, "baseline-sbom.cdx.json"),
-                  MavenGeneratedOutputs.outputFile(
-                      vexFile, project, "dependency-elider.openvex.json"),
-                  summaryFile,
-                  trimJars),
-              getLog(),
-              planPublication,
-              vulnerabilityCacheConfig(),
-              configuredVulnerabilityMappings(),
-              trimJars && preconditionClassPathComplete,
-              assumeConventionalJavaSourceLayout,
-              sourceClassifierResolver(),
-              afterStaging));
-    }
+  private MavenElideExecutionConfiguration executionConfiguration(
+      final MavenElideExecutionConfiguration.Lifecycle lifecycle) {
+    return new MavenElideExecutionConfiguration(
+        lifecycle,
+        analysisOptions(),
+        new MavenElideExecutionConfiguration.Publication(
+            new MavenElisionOutputPublisher.ReportFiles(
+                reportFile,
+                MavenGeneratedOutputs.outputFile(
+                    sbomFile, project, "dependency-elider-sbom.cdx.json"),
+                MavenGeneratedOutputs.outputFile(
+                    baselineSbomFile, project, "baseline-sbom.cdx.json"),
+                MavenGeneratedOutputs.outputFile(
+                    vexFile, project, "dependency-elider.openvex.json"),
+                summaryFile,
+                trimJars),
+            getLog(),
+            planPublication,
+            vulnerabilityCacheConfig(),
+            configuredVulnerabilityMappings(),
+            trimJars && preconditionClassPathComplete,
+            assumeConventionalJavaSourceLayout,
+            sourceClassifierResolver(),
+            afterStaging,
+            afterGenerationStaging));
   }
 
   private CacheConfig vulnerabilityCacheConfig() {

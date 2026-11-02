@@ -4,6 +4,8 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -28,6 +30,11 @@ final class MavenOriginalInputAudit {
   static void markHookPresent(final MavenSession session) {
     Objects.requireNonNull(session, "session");
     EliderPreparationState.sessionData(session).set(HOOK_PRESENT_KEY, Boolean.TRUE);
+  }
+
+  static boolean hookPresent(final MavenSession session) {
+    return session != null
+        && Boolean.TRUE.equals(EliderPreparationState.sessionData(session).get(HOOK_PRESENT_KEY));
   }
 
   static boolean isAuditMode(final RepositorySystemSession session) {
@@ -55,6 +62,32 @@ final class MavenOriginalInputAudit {
           "Original-input ban policy is unsupported: " + exception.getMessage(), exception);
     }
     return inventory;
+  }
+
+  static void verifyFresh(
+      final Inventory inventory, final MavenProject liveProject, final MavenSession session)
+      throws IOException {
+    final BanishedDependencyOriginalModel captured = requireCapture(liveProject, session);
+    if (!inventory.project().equals(captured.project())
+        || !inventory.sourceFingerprint().equals(captured.sourceFingerprint())) {
+      throw new IOException("Original-input audit no longer matches its frozen project capture");
+    }
+    for (final AuditArtifact artifact : inventory.resolvedArtifacts()) {
+      verifyArtifactFresh(artifact);
+    }
+  }
+
+  private static void verifyArtifactFresh(final AuditArtifact artifact) throws IOException {
+    if (artifact.filePath() == null) {
+      return;
+    }
+    final Path path = Path.of(artifact.filePath()).toAbsolutePath().normalize();
+    if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
+      throw new IOException("Original-input audit artifact is no longer readable: " + path);
+    }
+    if (!artifact.sha256().equals(ArtifactFileDigest.sha256(path))) {
+      throw new IOException("Original-input audit artifact bytes changed: " + path);
+    }
   }
 
   private static BanishedDependencyOriginalModel requireCapture(

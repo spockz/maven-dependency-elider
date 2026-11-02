@@ -29,7 +29,8 @@ final class MavenArtifactInventory {
     NativeImageConsumedInput.verifyAll(prepared.dynamicRootInputs().consumedInputs());
     final MavenAnalysisResolutionContext resolutionContext = prepared.resolutionContext();
     if (resolutionContext != null
-        && resolutionContext.provenance() == AnalyzePrediction.Provenance.DETACHED_CURRENT_MODEL) {
+        && resolutionContext.provenance()
+            == MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL) {
       resolutionContext.verify();
       return;
     }

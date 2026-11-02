@@ -11,6 +11,7 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
@@ -205,9 +206,12 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
     if (requested.isEmpty()) {
       return;
     }
-    if (prediction.provenance() != AnalyzePrediction.Provenance.DETACHED_CURRENT_MODEL
+    if (!Set.of(
+                MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL,
+                MavenAnalysisResolutionContext.Provenance.CAPTURED_EFFECTIVE_RESOLVER)
+            .contains(prediction.provenance())
         || !prediction.banPlan().entries().stream()
-            .map(AnalyzeBanPlan.Entry::dependency)
+            .map(MavenBanPlan.Entry::dependency)
             .toList()
             .equals(requested)
         || !prediction

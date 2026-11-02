@@ -95,7 +95,7 @@ Not necessarily. Many vulnerability tools report by artifact coordinates and ver
 
 The report also retains package-only and heuristic advisory candidates as review rows. Each row names the exact assessed component and reports applicability from preserved OSV claims; unsupported ranges stay unresolved. Inventory disposition describes whether that component was removed, trimmed, or unchanged and does not claim mitigation. Verify the source and exact artifact before adding any POM mapping.
 
-The saved report's `policy` section records canonical `retainedArtifacts`, `banishedDependencies`, and the SHA-256 identity of the operation that produced the snapshot. This is policy provenance; a configured ban is not evidence that removal succeeded.
+The saved report's `policy` section records canonical `retainedArtifacts`, `banishedDependencies`, and the SHA-256 identity of the operation that produced the snapshot. `appliedBans` records each request as `FORCED_ABSENT_AFTER_RESOLUTION`, `EXCLUDED_BEFORE_RESOLUTION`, or `UNMATCHED`, with the original and effective artifact matches. `rawDroppedCoordinates` excludes artifacts removed because of an explicit ban; whole-artifact drop metrics still describe every artifact absent from the final Maven view.
 
 ### What happens if an advisory maps multiple vulnerable classes that do not exist in an older version?
 

@@ -9,7 +9,6 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootScanner;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.EffectiveAnalysis;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.PreparedAnalysis;
 import java.io.IOException;
-import java.util.List;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
@@ -32,30 +31,10 @@ final class MavenElisionService extends MavenElisionServiceDefaults {
       final AnalysisOptions options,
       final ProjectDependenciesResolver resolver)
       throws IOException, MojoFailureException {
-    final MavenProject currentModel = MavenAnalysisResolutionContext.currentModel(project);
-    BanishedDependencyPolicy.resolve(
-        options.retainedArtifacts(),
-        options.banishedDependencies(),
-        currentModel.getDependencies(),
-        options.trim().passThroughArtifacts(),
-        List.of(),
-        List.of());
-    final AnalysisEnvironment environment = AnalysisEnvironment.capture(project, options.session());
-    try (AnalysisProjectionWorkspace workspace = AnalysisProjectionWorkspace.create()) {
-      final AnalysisEnvironment operationEnvironment =
-          environment.withProjectionDirectory(workspace.directory());
-      final MavenAnalysisResolutionContext context =
-          MavenAnalysisResolutionContext.forAnalyze(
-              currentModel, project, options.session(), resolver, operationEnvironment);
-      final AnalyzeBanPlan banPlan = AnalyzeBanPlan.create(context, options);
-      final PreparedAnalysis prepared =
-          MavenAnalysisPreparation.prepare(
-              context.project(),
-              options.withEnvironment(operationEnvironment),
-              DependencyDynamicRoots::scan,
-              context,
-              banPlan);
-      return AnalyzePrediction.from(ElisionReachabilityEngine.finishAnalysis(prepared));
+    try (MavenBanPreparation preparation =
+        MavenBanPreparation.prepare(project, options, resolver)) {
+      return AnalyzePrediction.from(
+          ElisionReachabilityEngine.finishAnalysis(preparation.analysis()));
     }
   }
 
@@ -70,6 +49,16 @@ final class MavenElisionService extends MavenElisionServiceDefaults {
       final DynamicRootScanner dynamicRootScanner)
       throws IOException, MojoFailureException {
     return MavenAnalysisPreparation.prepare(project, options, dynamicRootScanner);
+  }
+
+  /* package */ PreparedAnalysis prepare(
+      final MavenProject project,
+      final AnalysisOptions options,
+      final MavenAnalysisResolutionContext context,
+      final MavenBanPlan banPlan)
+      throws IOException, MojoFailureException {
+    return MavenAnalysisPreparation.prepare(
+        project, options, DependencyDynamicRoots::scan, context, banPlan);
   }
 
   /* package */ Analysis finish(final PreparedAnalysis prepared)

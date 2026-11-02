@@ -254,33 +254,34 @@ final class MavenElisionReportWriterTest {
                 + "</configuration>");
     final MavenElisionReportSnapshot populated =
         new MavenElisionReportSnapshot(
-            base.schemaVersion(),
-            base.projectGroupId(),
-            base.projectArtifactId(),
-            base.projectVersion(),
-            base.projectBaseDirectory(),
-            base.generatedAt(),
-            base.wholeArtifactsDropped(),
-            base.originalJarBytesDropped(),
-            base.droppedProgramClassEntries(),
-            base.droppedProgramClassBytes(),
-            base.droppedArtifacts(),
-            base.rawDroppedCoordinates(),
-            base.programClassesPruned(),
-            base.uncompressedProgramClassBytesPruned(),
-            base.trimmedArtifacts(),
-            List.of(
-                new MavenElisionReportSnapshot.CveFinding(
-                    "CVE-2026-10001", "org.example:removed:jar:1.0")),
-            List.of(
-                new MavenElisionReportSnapshot.CveFinding(
-                    "CVE-2025-11226", "org.example:trimmed:jar:2.0")),
-            List.of(
-                new MavenElisionReportSnapshot.CveFinding(
-                    "CVE-2025-11227", "ch.qos.logback:logback-core:jar:1.5.15")),
-            List.of(conservative),
-            base.mediatedGraph(),
-            base.policy());
+                base.schemaVersion(),
+                base.projectGroupId(),
+                base.projectArtifactId(),
+                base.projectVersion(),
+                base.projectBaseDirectory(),
+                base.generatedAt(),
+                base.wholeArtifactsDropped(),
+                base.originalJarBytesDropped(),
+                base.droppedProgramClassEntries(),
+                base.droppedProgramClassBytes(),
+                base.droppedArtifacts(),
+                base.rawDroppedCoordinates(),
+                base.programClassesPruned(),
+                base.uncompressedProgramClassBytesPruned(),
+                base.trimmedArtifacts(),
+                List.of(
+                    new MavenElisionReportSnapshot.CveFinding(
+                        "CVE-2026-10001", "org.example:removed:jar:1.0")),
+                List.of(
+                    new MavenElisionReportSnapshot.CveFinding(
+                        "CVE-2025-11226", "org.example:trimmed:jar:2.0")),
+                List.of(
+                    new MavenElisionReportSnapshot.CveFinding(
+                        "CVE-2025-11227", "ch.qos.logback:logback-core:jar:1.5.15")),
+                List.of(conservative),
+                base.mediatedGraph(),
+                base.policy())
+            .withAppliedBans(base.appliedBans());
     final Path output = temporaryDirectory.resolve("target/cve-report.json");
 
     MavenElisionReportWriter.write(output, populated);
@@ -337,34 +338,38 @@ final class MavenElisionReportWriterTest {
 
   private MavenElisionReportSnapshot snapshot() throws IOException {
     return new MavenElisionReportSnapshot(
-        MavenElisionReportSnapshot.SCHEMA_VERSION,
-        GROUP_ID,
-        "consumer",
-        PROJECT_VERSION,
-        temporaryDirectory.toRealPath().toString(),
-        GENERATED_AT,
-        1,
-        2048,
-        List.of(
-            new MavenElisionReportSnapshot.DroppedArtifact(
-                ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION).toString(),
-                2048,
-                2,
-                18)),
-        List.of(ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION).toString()),
-        4,
-        3096,
-        List.of(
-            new MavenElisionReportSnapshot.TrimmedArtifact(
-                ArtifactCoordinate.of(GROUP_ID, "trimmed", "2.0").toString(), 4, 3096)),
-        MediatedGraphReportTestSupport.reportForOutputs(
-            ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION),
-            ArtifactCoordinate.of(GROUP_ID, "trimmed", "2.0"),
-            GROUP_ID + ":consumer:1.0"),
-        new MavenElisionPolicyIdentity(
-            List.of("org.example:kept::jar:"),
-            List.of("org.example:banned"),
-            MavenElisionGraphBinding.sha256(List.of("report-policy-test"))));
+            MavenElisionReportSnapshot.SCHEMA_VERSION,
+            GROUP_ID,
+            "consumer",
+            PROJECT_VERSION,
+            temporaryDirectory.toRealPath().toString(),
+            GENERATED_AT,
+            1,
+            2048,
+            List.of(
+                new MavenElisionReportSnapshot.DroppedArtifact(
+                    ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION).toString(),
+                    2048,
+                    2,
+                    18)),
+            List.of(ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION).toString()),
+            4,
+            3096,
+            List.of(
+                new MavenElisionReportSnapshot.TrimmedArtifact(
+                    ArtifactCoordinate.of(GROUP_ID, "trimmed", "2.0").toString(), 4, 3096)),
+            MediatedGraphReportTestSupport.reportForOutputs(
+                ArtifactCoordinate.of(GROUP_ID, REMOVED_ARTIFACT, REMOVED_VERSION),
+                ArtifactCoordinate.of(GROUP_ID, "trimmed", "2.0"),
+                GROUP_ID + ":consumer:1.0"),
+            new MavenElisionPolicyIdentity(
+                List.of("org.example:kept::jar:"),
+                List.of("org.example:banned"),
+                MavenElisionGraphBinding.sha256(List.of("report-policy-test"))))
+        .withAppliedBans(
+            List.of(
+                new MavenElisionReportSnapshot.AppliedBan(
+                    "org.example:banned", "UNMATCHED", List.of(), List.of(), false)));
   }
 
   private static long writeDroppedJar(final Path path) throws IOException {

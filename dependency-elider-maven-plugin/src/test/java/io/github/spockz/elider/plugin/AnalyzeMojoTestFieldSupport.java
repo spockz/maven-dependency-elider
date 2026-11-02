@@ -40,7 +40,7 @@ final class AnalyzeMojoTestFieldSupport {
               final String fingerprint =
                   MavenElisionGraphBinding.sha256(List.of("test-prediction"));
               return new AnalyzePrediction(
-                  AnalyzePrediction.Provenance.DETACHED_CURRENT_MODEL,
+                  MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL,
                   analysis.artifacts().resolvedSnapshots(),
                   List.copyOf(analysis.effectiveDecision().retainedArtifacts()),
                   List.copyOf(analysis.effectiveDecision().elidedArtifacts()),

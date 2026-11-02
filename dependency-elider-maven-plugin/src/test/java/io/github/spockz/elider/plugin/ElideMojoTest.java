@@ -108,7 +108,7 @@ final class ElideMojoTest {
   }
 
   @Test
-  void banRequestFailsClosedBeforePublishingReportsOrChangingArtifactViews()
+  void capturedBanRequestFailsClosedWithoutTheActiveLifecycleHook()
       throws IOException, ReflectiveOperationException {
     final Artifact guarded = artifact("guarded", "used/Entry.class");
     final MavenProject project = project(guarded, Set.of());
@@ -129,11 +129,12 @@ final class ElideMojoTest {
     seedSelectedBanCapture(mojo, project, List.of("org.example:guarded"));
 
     assertAll(
-        "elide rejects ban requests before publishing reports or changing Maven views",
+        "elide cannot accept a frozen selection capture without its lifecycle hook",
         () ->
             assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoFailureException.class)
-                .hasMessageContaining("strict ban enforcement is not available"),
+                .hasMessageContaining(
+                    "cannot ignore selected ban capture without the active lifecycle hook"),
         () -> assertThat(Files.readString(report)).isEqualTo(previousReport),
         () -> assertThat(Files.readString(summary)).isEqualTo(previousSummary),
         () -> assertThat(project.getArtifacts()).isSameAs(resolvedBefore),
@@ -141,7 +142,7 @@ final class ElideMojoTest {
   }
 
   @Test
-  void uncapturedBanRequestFailsBeforePublishingReportsOrChangingArtifactViews()
+  void noExtensionBanRequestFailsClosedWhenResolverInjectionIsUnavailable()
       throws IOException, ReflectiveOperationException {
     final Artifact guarded = artifact("guarded", "used/Entry.class");
     final MavenProject project = project(guarded, Set.of());
@@ -162,11 +163,12 @@ final class ElideMojoTest {
     setSelectedElideExecution(mojo);
 
     assertAll(
-        "uncaptured ban requests fail during selection verification",
+        "no-extension ban requests require an injected detached Resolver",
         () ->
             assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoFailureException.class)
-                .hasMessageContaining("was not captured during Maven selection preflight"),
+                .hasMessageContaining(
+                    "Detached Maven resolution requires a ProjectDependenciesResolver"),
         () -> assertThat(Files.readString(report)).isEqualTo(previousReport),
         () -> assertThat(Files.readString(summary)).isEqualTo(previousSummary),
         () -> assertThat(project.getArtifacts()).isSameAs(resolvedBefore),
@@ -348,7 +350,7 @@ final class ElideMojoTest {
     set(
         mojo,
         "planPublication",
-        (ElideMojo.PlanPublication)
+        (MavenElideExecutionConfiguration.PlanPublication)
             (ignoredSession, ignoredProject, ignoredRecords, ignoredProjection) -> {
               throw new IOException("injected resolver plan publication failure");
             });

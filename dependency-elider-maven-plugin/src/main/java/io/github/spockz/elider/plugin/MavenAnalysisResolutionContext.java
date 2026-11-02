@@ -1,8 +1,7 @@
-// WHY: Binds an Analyze resolver graph to direct and resolved artifact views.
+// WHY: Binds an isolated Maven resolver graph to exact direct and resolved artifact views.
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.plugin.AnalyzePrediction.Provenance;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactViews;
 import java.io.IOException;
@@ -33,6 +32,12 @@ record MavenAnalysisResolutionContext(
     String resolvedFingerprint,
     String directFingerprint,
     ResolverArtifactGraphCapturePair pair) {
+  /** Identifies which Maven inventory the isolated Resolver context represents. */
+  /* package */ enum Provenance {
+    CAPTURED_EFFECTIVE_RESOLVER,
+    DETACHED_CURRENT_MODEL
+  }
+
   MavenAnalysisResolutionContext {
     Objects.requireNonNull(project, "project");
     Objects.requireNonNull(liveProject, "liveProject");
@@ -43,11 +48,10 @@ record MavenAnalysisResolutionContext(
     Objects.requireNonNull(directFingerprint, "directFingerprint");
     Objects.requireNonNull(pair, "pair");
     if (sameInstance(project, liveProject)) {
-      throw new IllegalArgumentException("Analyze resolution context must own a project clone");
+      throw new IllegalArgumentException("Maven resolution context must own a project clone");
     }
     if (!MavenElisionGraphInventory.matchesGraph(pair.after(), artifacts.resolvedSnapshots())) {
-      throw new IllegalArgumentException(
-          "Analyze graph pair does not match its resolved inventory");
+      throw new IllegalArgumentException("Maven graph pair does not match its resolved inventory");
     }
   }
 
@@ -67,7 +71,7 @@ record MavenAnalysisResolutionContext(
     final ResolverArtifactGraphCapturePair pair =
         MavenElisionGraphBinding.requireCapturedPair(project, session, resolved);
     if (directPresent && !MavenElisionGraphInventory.matchesDirectGraph(pair.after(), direct)) {
-      throw new IOException("Captured Analyze graph does not match its direct inventory");
+      throw new IOException("Captured Maven graph does not match its direct inventory");
     }
     return create(
         project,
@@ -84,7 +88,7 @@ record MavenAnalysisResolutionContext(
     return new MavenProject(project);
   }
 
-  /* default */ static MavenAnalysisResolutionContext forAnalyze(
+  /* default */ static MavenAnalysisResolutionContext forOperation(
       final MavenProject project,
       final MavenProject liveProject,
       final MavenSession session,
@@ -108,10 +112,12 @@ record MavenAnalysisResolutionContext(
       final ProjectDependenciesResolver resolver,
       final AnalysisEnvironment environment)
       throws IOException {
-    Objects.requireNonNull(resolver, "resolver");
+    if (resolver == null) {
+      throw new IOException("Detached Maven resolution requires a ProjectDependenciesResolver");
+    }
     final RepositorySystemSession baseSession = repositorySession(session);
     if (baseSession == null) {
-      throw new IOException("Detached Analyze resolution requires a Maven Resolver session");
+      throw new IOException("Detached Maven resolution requires a Resolver session");
     }
     final MavenProject detachedProject = detachedProject(project);
     final String projectKey = MavenElisionGraphBinding.projectKey(project);
@@ -180,7 +186,7 @@ record MavenAnalysisResolutionContext(
     final List<ArtifactSnapshot> direct = snapshotsFromNodes(validated.graph().getChildren());
     final ResolverArtifactGraphCapturePair pair = validated.graphPair();
     if (!MavenElisionGraphInventory.matchesGraph(pair.after(), resolved)) {
-      throw new IOException("Detached Analyze graph does not match its resolver inventory");
+      throw new IOException("Detached Maven graph does not match its resolver inventory");
     }
     if (!direct.stream()
             .map(ArtifactSnapshot::coordinate)
@@ -188,7 +194,7 @@ record MavenAnalysisResolutionContext(
             .toList()
             .equals(MavenOriginalInputArtifacts.direct(validated.graph()))
         || !MavenElisionGraphInventory.matchesDirectGraph(pair.after(), direct)) {
-      throw new IOException("Detached Analyze direct inventory does not match its graph");
+      throw new IOException("Detached Maven direct inventory does not match its graph");
     }
     return new DetachedInventories(resolved, direct, pair);
   }
@@ -205,7 +211,7 @@ record MavenAnalysisResolutionContext(
           && (snapshot.filePath() == null
               || !Files.isRegularFile(snapshot.filePath())
               || !Files.isReadable(snapshot.filePath()))) {
-        throw new IOException("Analyze provider is no longer readable: " + snapshot.coordinate());
+        throw new IOException("Maven provider is no longer readable: " + snapshot.coordinate());
       }
     }
   }
@@ -267,7 +273,7 @@ record MavenAnalysisResolutionContext(
     final Set<Artifact> artifacts = new java.util.LinkedHashSet<>();
     for (final Dependency dependency : dependencies) {
       if (dependency == null || dependency.getArtifact() == null) {
-        throw new IllegalArgumentException("Detached Analyze resolver returned a null dependency");
+        throw new IllegalArgumentException("Detached Maven resolver returned a null dependency");
       }
       final Artifact artifact =
           org.apache.maven.RepositoryUtils.toArtifact(dependency.getArtifact());
@@ -282,12 +288,12 @@ record MavenAnalysisResolutionContext(
     for (final DependencyNode node : nodes) {
       if (node == null) {
         throw new IllegalArgumentException(
-            "Detached Analyze resolver returned a null direct dependency");
+            "Detached Maven resolver returned a null direct dependency");
       }
       final Dependency dependency = dependency(node);
       if (dependency == null || dependency.getArtifact() == null) {
         throw new IllegalArgumentException(
-            "Detached Analyze resolver returned a null direct dependency");
+            "Detached Maven resolver returned a null direct dependency");
       }
       final Artifact artifact =
           org.apache.maven.RepositoryUtils.toArtifact(dependency.getArtifact());
@@ -309,7 +315,7 @@ record MavenAnalysisResolutionContext(
 
   private static ArtifactSnapshot snapshot(final Dependency dependency) {
     if (dependency == null || dependency.getArtifact() == null) {
-      throw new IllegalArgumentException("Detached Analyze resolver returned a null dependency");
+      throw new IllegalArgumentException("Detached Maven resolver returned a null dependency");
     }
     return snapshot(dependency.getArtifact(), dependency.getScope());
   }

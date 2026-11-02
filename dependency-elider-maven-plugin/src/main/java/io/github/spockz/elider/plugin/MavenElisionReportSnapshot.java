@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /** Immutable result snapshot used by the Maven {@code report} goal. */
 @SuppressWarnings({
@@ -55,7 +56,8 @@ record MavenElisionReportSnapshot(
     AdvisoryReview advisoryReview,
     List<VerifiedStructuredProofFinding> verifiedStructuredProofs,
     MavenElisionPolicyIdentity policy,
-    ExclusionReview exclusionReview) {
+    ExclusionReview exclusionReview,
+    List<AppliedBan> appliedBans) {
   /** Current persisted JSON format version. */
   static final int SCHEMA_VERSION = 1;
 
@@ -118,6 +120,7 @@ record MavenElisionReportSnapshot(
     Objects.requireNonNull(mediatedGraph, "mediatedGraph");
     Objects.requireNonNull(policy, "policy");
     Objects.requireNonNull(exclusionReview, "exclusionReview");
+    appliedBans = List.copyOf(Objects.requireNonNull(appliedBans, "appliedBans"));
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
     require(droppedProgramClassEntries >= 0, "droppedProgramClassEntries must not be negative");
@@ -257,7 +260,8 @@ record MavenElisionReportSnapshot(
         advisoryReview,
         List.of(),
         policy,
-        ExclusionReview.unavailable("No pre-injection declaration capture is available"));
+        ExclusionReview.unavailable("No pre-injection declaration capture is available"),
+        List.of());
   }
 
   MavenElisionReportSnapshot(
@@ -305,7 +309,10 @@ record MavenElisionReportSnapshot(
         mediatedGraph,
         false,
         List.of(),
-        policy);
+        AdvisoryReview.empty(),
+        policy,
+        ExclusionReview.unavailable("No pre-injection declaration capture is available"),
+        List.of());
   }
 
   MavenElisionReportSnapshot(
@@ -451,6 +458,9 @@ record MavenElisionReportSnapshot(
     final CveFindingGroups findingGroups = CveFindingGroups.from(vulnerabilityAssessment);
     final List<VerifiedStructuredProofFinding> verifiedProofs =
         verifiedStructuredProofs(vulnerabilityAssessment);
+    final Set<ArtifactCoordinate> rawTraceDrops =
+        new TreeSet<>(analysis.traceDecision().elidedArtifacts());
+    rawTraceDrops.removeAll(analysis.banPlan().forcedAbsentAfterResolution());
     return new MavenElisionReportSnapshot(
         SCHEMA_VERSION,
         project.getGroupId(),
@@ -463,10 +473,7 @@ record MavenElisionReportSnapshot(
         droppedSummary.programClassesRemoved(),
         droppedSummary.uncompressedProgramClassBytesRemoved(),
         dropped,
-        analysis.decision().elidedArtifacts().stream()
-            .map(ArtifactCoordinate::toString)
-            .sorted()
-            .toList(),
+        rawTraceDrops.stream().map(ArtifactCoordinate::toString).sorted().toList(),
         prunedClasses,
         prunedBytes,
         trimmed,
@@ -483,7 +490,17 @@ record MavenElisionReportSnapshot(
         advisoryReview(vulnerabilityAssessment),
         verifiedProofs,
         analysis.policyIdentity(),
-        ExclusionReview.unavailable("No pre-injection declaration capture is available"));
+        ExclusionReview.unavailable("No pre-injection declaration capture is available"),
+        analysis.banPlan().entries().stream()
+            .map(
+                entry ->
+                    new AppliedBan(
+                        entry.dependency().toString(),
+                        entry.status().name(),
+                        entry.artifacts().stream().map(Object::toString).sorted().toList(),
+                        entry.originalArtifacts().stream().map(Object::toString).sorted().toList(),
+                        entry.status() != MavenBanPlan.Entry.Status.UNMATCHED))
+            .toList());
   }
 
   private static List<VerifiedStructuredProofFinding> verifiedStructuredProofs(
@@ -560,7 +577,8 @@ record MavenElisionReportSnapshot(
         review,
         verifiedStructuredProofs,
         policy,
-        exclusionReview);
+        exclusionReview,
+        appliedBans);
   }
 
   MavenElisionReportSnapshot withExclusionReview(final ExclusionReview review) {
@@ -590,7 +608,39 @@ record MavenElisionReportSnapshot(
         advisoryReview,
         verifiedStructuredProofs,
         policy,
-        review);
+        review,
+        appliedBans);
+  }
+
+  MavenElisionReportSnapshot withAppliedBans(final List<AppliedBan> bans) {
+    return new MavenElisionReportSnapshot(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        removedCveComponents,
+        provenAbsentCves,
+        inactivePreconditionCves,
+        potentiallyConservativeCves,
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        sourceReviewFindings,
+        advisoryReview,
+        verifiedStructuredProofs,
+        policy,
+        exclusionReview,
+        bans);
   }
 
   static AdvisoryReview advisoryReview(final MavenVulnerabilityAssessment.Result assessment) {
@@ -1041,6 +1091,55 @@ record MavenElisionReportSnapshot(
       require(
           uncompressedProgramClassBytesPruned >= 0,
           "uncompressedProgramClassBytesPruned must not be negative");
+    }
+  }
+
+  /** One requested ban and its applied Elide outcome. */
+  record AppliedBan(
+      String dependency,
+      String status,
+      List<String> matchedArtifacts,
+      List<String> originalArtifacts,
+      boolean applied) {
+    AppliedBan {
+      requireNonBlank(dependency, "dependency");
+      try {
+        final List<String> normalized =
+            BanishedDependencyPolicy.normalize(List.of(dependency)).stream()
+                .map(Object::toString)
+                .toList();
+        require(normalized.equals(List.of(dependency)), "Ban dependency is not canonical");
+      } catch (final org.apache.maven.plugin.MojoFailureException exception) {
+        throw new IllegalArgumentException("Ban dependency is invalid", exception);
+      }
+      final MavenBanPlan.Entry.Status parsedStatus = parseStatus(status);
+      matchedArtifacts = sortedDistinctNonBlank(matchedArtifacts, "matchedArtifacts");
+      originalArtifacts = sortedDistinctNonBlank(originalArtifacts, "originalArtifacts");
+      require(
+          applied == (parsedStatus != MavenBanPlan.Entry.Status.UNMATCHED),
+          "Ban applied flag disagrees with its status");
+      if (parsedStatus == MavenBanPlan.Entry.Status.FORCED_ABSENT_AFTER_RESOLUTION) {
+        require(!matchedArtifacts.isEmpty(), "Forced-absent ban has no effective match");
+      } else if (parsedStatus == MavenBanPlan.Entry.Status.EXCLUDED_BEFORE_RESOLUTION) {
+        require(
+            matchedArtifacts.isEmpty() && !originalArtifacts.isEmpty(),
+            "Excluded-before-resolution ban has inconsistent artifact matches");
+      } else {
+        require(
+            matchedArtifacts.isEmpty() && originalArtifacts.isEmpty(),
+            "Unmatched ban carries artifact matches");
+      }
+      require(
+          originalArtifacts.containsAll(matchedArtifacts),
+          "Ban effective matches are absent from the original audit");
+    }
+
+    private static MavenBanPlan.Entry.Status parseStatus(final String status) {
+      try {
+        return MavenBanPlan.Entry.Status.valueOf(status);
+      } catch (final IllegalArgumentException exception) {
+        throw new IllegalArgumentException("Ban status is invalid", exception);
+      }
     }
   }
 

@@ -6,9 +6,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.model.TraceData;
-import io.github.spockz.elider.plugin.AnalyzePrediction.Provenance;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactViews;
+import io.github.spockz.elider.plugin.MavenAnalysisResolutionContext.Provenance;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;

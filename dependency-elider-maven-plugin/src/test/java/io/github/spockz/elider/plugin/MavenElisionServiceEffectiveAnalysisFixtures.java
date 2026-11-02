@@ -47,6 +47,7 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
         prepared.resolvedSnapshots(),
         prepared.directArtifactsPresent(),
         prepared.directSnapshots(),
+        prepared.traceDecision(),
         prepared.rawDecision(),
         prepared.classUsageReport(),
         prepared.bytecodeScan(),

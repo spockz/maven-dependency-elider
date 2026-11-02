@@ -37,6 +37,14 @@ final class MavenElisionOutputPublisher {
   }
 
   static void publish(final Request request) throws IOException, MojoFailureException {
+    if (request.banPlan().requested()) {
+      if (request.applicationBinding() == null) {
+        throw new MojoFailureException("Elide ban publication has no live Maven view binding");
+      }
+      request.banPlan().verifyContext(request.applicationBinding().resolutionContext());
+      request.applicationBinding().verifyFresh(request.project());
+      request.banPlan().verifyAuditFresh(request.project(), request.session());
+    }
     MavenElisionOutputLogger.passThroughWarnings(request.log(), request.analysis());
     final ExclusionReview exclusionReview =
         ExclusionReview.capture(request.project(), request.session());
@@ -51,7 +59,7 @@ final class MavenElisionOutputPublisher {
       final Request request,
       final ElisionAnalysisModel.ApplyPlan plan,
       final ExclusionReview exclusionReview)
-      throws IOException {
+      throws IOException, MojoFailureException {
     final Path summary =
         MavenElisionReportWriter.outputPath(request.files().summary(), request.project());
     final List<Path> outputTargets = outputTargets(request, summary);
@@ -83,6 +91,10 @@ final class MavenElisionOutputPublisher {
           request.analysis(),
           outputTargets,
           stages.paths());
+      if (request.banPlan().requested()) {
+        request.applicationBinding().verifyFresh(request.project());
+        request.banPlan().verifyAuditFresh(request.project(), request.session());
+      }
       cleanupStaleVex(request, assessment, staleVexDigest, outputs);
       outputs.publish(stages.digests());
       publishViewsAndPlan(request, plan);
@@ -315,16 +327,25 @@ final class MavenElisionOutputPublisher {
       "PMD.AvoidCatchingGenericException") // Project view rollback must include unchecked updater
   // failures.
   private static void publishViewsAndPlan(
-      final Request request, final ElisionAnalysisModel.ApplyPlan plan) throws IOException {
+      final Request request, final ElisionAnalysisModel.ApplyPlan plan)
+      throws IOException, MojoFailureException {
     final MavenProject project = request.project();
     final Set<Artifact> originalArtifacts = new LinkedHashSet<>(project.getArtifacts());
     final Set<Artifact> originalResolvedArtifacts = resolvedArtifactView(project);
     final Map<Artifact, File> originalFiles = originalArtifactFiles(plan);
     try {
+      if (request.banPlan().requested()) {
+        request.applicationBinding().verifyFresh(project);
+        request.banPlan().verifyAuditFresh(project, request.session());
+      }
       MavenArtifactViewUpdater.apply(plan, request.analysis().trimResult().records());
       final Set<Artifact> retained = new LinkedHashSet<>(plan.resolvedArtifacts());
       project.setResolvedArtifacts(retained);
       project.setArtifacts(retained);
+      if (request.banPlan().requested()) {
+        MavenBanPublicationVerifier.verify(
+            request.banPlan(), request.applicationBinding(), project, plan, request.analysis());
+      }
       request
           .planPublication()
           .publish(
@@ -332,7 +353,7 @@ final class MavenElisionOutputPublisher {
               project,
               request.analysis().trimResult().records(),
               request.analysis().graphProjection());
-    } catch (final IOException | RuntimeException failure) {
+    } catch (final IOException | MojoFailureException | RuntimeException failure) {
       restoreProjectViews(project, originalArtifacts, originalResolvedArtifacts, originalFiles);
       throw failure;
     }
@@ -419,15 +440,18 @@ final class MavenElisionOutputPublisher {
       TrimOutputGenerationCommitHandle generation,
       ReportFiles files,
       Log log,
-      ElideMojo.PlanPublication planPublication,
+      MavenElideExecutionConfiguration.PlanPublication planPublication,
       CacheConfig cacheConfig,
       ConfiguredVulnerabilityMappings vulnerabilityMappings,
       boolean preconditionProofEnabled,
       boolean assumeConventionalJavaSourceLayout,
       Optional<MavenSourceClassifierResolver> sourceClassifierResolver,
-      AfterStaging afterStaging) {
+      AfterStaging afterStaging,
+      MavenBanPlan banPlan,
+      MavenArtifactViewBinding applicationBinding) {
     Request {
       java.util.Objects.requireNonNull(vulnerabilityMappings, "vulnerabilityMappings");
+      java.util.Objects.requireNonNull(banPlan, "banPlan");
     }
   }
 }

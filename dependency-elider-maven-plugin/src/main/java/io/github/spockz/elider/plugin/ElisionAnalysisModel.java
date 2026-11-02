@@ -217,6 +217,7 @@ final class ElisionAnalysisModel {
       List<ArtifactSnapshot> resolvedSnapshots,
       boolean directArtifactsPresent,
       List<ArtifactSnapshot> directSnapshots,
+      ElisionDecision traceDecision,
       ElisionDecision rawDecision,
       ClassUsageReport classUsageReport,
       Optional<BytecodeReferenceScan> bytecodeScan,
@@ -234,7 +235,7 @@ final class ElisionAnalysisModel {
       MavenElisionPolicyIdentity.Options policyOptions,
       String sourceAttributionFallback,
       MavenAnalysisResolutionContext resolutionContext,
-      AnalyzeBanPlan banPlan) {
+      MavenBanPlan banPlan) {
     /* default */ PreparedAnalysis {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);
@@ -250,7 +251,7 @@ final class ElisionAnalysisModel {
 
   /* default */ record EffectiveAnalysis(
       PreparedAnalysis prepared,
-      AnalyzeBanPlan banPlan,
+      MavenBanPlan banPlan,
       EffectiveGraphPolicy.Evaluation graphEvaluation,
       ElisionDecision rawDecision,
       ElisionDecision effectiveDecision,
@@ -297,10 +298,30 @@ final class ElisionAnalysisModel {
       Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots,
       boolean productionClassesComplete,
       boolean trustedProcessClassesContext,
-      String sourceAttributionFallback) {
+      String sourceAttributionFallback,
+      Set<String> projectOutputClasses) {
     /* default */ AnalysisEvidence {
       unprovenServiceRoots =
           unprovenServiceRoots != null ? Map.copyOf(unprovenServiceRoots) : Map.of();
+      projectOutputClasses =
+          projectOutputClasses == null ? Set.of() : Set.copyOf(projectOutputClasses);
+    }
+
+    /* package */ AnalysisEvidence(
+        final ClassUsageReport classUsageReport,
+        final Optional<BytecodeReferenceScan> bytecodeScan,
+        final Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots,
+        final boolean productionClassesComplete,
+        final boolean trustedProcessClassesContext,
+        final String sourceAttributionFallback) {
+      this(
+          classUsageReport,
+          bytecodeScan,
+          unprovenServiceRoots,
+          productionClassesComplete,
+          trustedProcessClassesContext,
+          sourceAttributionFallback,
+          Set.of());
     }
   }
 
@@ -312,7 +333,31 @@ final class ElisionAnalysisModel {
       TrimResult trimResult,
       ResolverArtifactGraphProjection graphProjection,
       MediatedGraphReport mediatedGraph,
-      MavenElisionPolicyIdentity policyIdentity) {}
+      MavenElisionPolicyIdentity policyIdentity,
+      ElisionDecision traceDecision,
+      MavenBanPlan banPlan) {
+    /* default */ Analysis(
+        final ArtifactViews artifacts,
+        final ElisionDecision decision,
+        final ElisionDecision effectiveDecision,
+        final AnalysisEvidence evidence,
+        final TrimResult trimResult,
+        final ResolverArtifactGraphProjection graphProjection,
+        final MediatedGraphReport mediatedGraph,
+        final MavenElisionPolicyIdentity policyIdentity) {
+      this(
+          artifacts,
+          decision,
+          effectiveDecision,
+          evidence,
+          trimResult,
+          graphProjection,
+          mediatedGraph,
+          policyIdentity,
+          decision,
+          MavenBanPlan.empty());
+    }
+  }
 
   /* default */ static ArtifactViews artifactViews(final PreparedAnalysis prepared) {
     return new ArtifactViews(
@@ -331,7 +376,8 @@ final class ElisionAnalysisModel {
         dynamicRoots.unprovenServiceRootsByCoordinate(),
         completeness.productionClassesComplete(),
         completeness.trustedProcessClassesContext(),
-        prepared.sourceAttributionFallback());
+        prepared.sourceAttributionFallback(),
+        prepared.projectOutputClasses());
   }
 
   /* default */ record ArtifactSnapshot(

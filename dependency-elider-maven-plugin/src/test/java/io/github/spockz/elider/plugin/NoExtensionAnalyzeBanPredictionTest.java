@@ -10,14 +10,18 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.TrimOptions;
+import io.github.spockz.elider.trimmer.ArtifactDigests;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.apache.maven.execution.DefaultMavenExecutionRequest;
@@ -25,6 +29,7 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.DependencyResolutionResult;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
@@ -55,13 +60,21 @@ final class NoExtensionAnalyzeBanPredictionTest {
   private static final String GROUP_ID = "fixture";
   private static final String JAR_TYPE = "jar";
   private static final String VERSION = "1.0";
+  private static final String BANNED_ARTIFACT_ID = "banned";
+  private static final String USED_ARTIFACT_ID = "used";
+  private static final String SUMMARY_FILENAME = "elide-summary.json";
+  private static final String CLASS_USAGE_FILENAME = "elide-class-usage.json";
+  private static final String BANNED_PROVIDER_FAILURE =
+      "no retained provider for class banned.Idle";
+  private static final String PREVIOUS_REPORT = "prior report\n";
+  private static final String PREVIOUS_SUMMARY = "prior summary\n";
 
   /** Isolates each graph and evidence fixture from the other scenarios. */
   @TempDir private Path temporaryDirectory;
 
   @Test
   void plansSafeTransitiveBanWithoutChangingLiveViews() throws Exception {
-    final Fixture fixture = fixture(USED_TRACE);
+    final Fixture fixture = basicFixture(USED_TRACE);
     final Set<org.apache.maven.artifact.Artifact> liveResolved = fixture.project().getArtifacts();
     final Set<org.apache.maven.artifact.Artifact> liveDirect =
         fixture.project().getDependencyArtifacts();
@@ -74,7 +87,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         "detached ban is only an uncommitted prediction tied to its Resolver inventory",
         () ->
             assertThat(prediction.provenance())
-                .isEqualTo(AnalyzePrediction.Provenance.DETACHED_CURRENT_MODEL),
+                .isEqualTo(MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL),
         () ->
             assertThat(prediction.banPlan().entries())
                 .singleElement()
@@ -101,7 +114,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
 
   @Test
   void reportsMatchedAndUnmatchedBansAsUnappliedSchemaOnePlans() throws Exception {
-    final Fixture fixture = fixture(USED_TRACE);
+    final Fixture fixture = basicFixture(USED_TRACE);
     final AnalyzePrediction prediction =
         new MavenElisionService()
             .predict(
@@ -136,8 +149,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         () -> assertThat(rows.get(0).path("matchedArtifacts").size()).isEqualTo(1),
         () -> assertThat(rows.get(0).path("applied").asBoolean()).isFalse(),
         () -> assertThat(rows.get(1).path("dependency").asText()).isEqualTo("fixture:missing"),
-        () ->
-            assertThat(rows.get(1).path("status").asText()).isEqualTo("NO_CURRENT_INVENTORY_MATCH"),
+        () -> assertThat(rows.get(1).path("status").asText()).isEqualTo("UNMATCHED"),
         () -> assertThat(rows.get(1).path("matchedArtifacts").size()).isZero(),
         () -> assertThat(rows.get(1).path("applied").asBoolean()).isFalse(),
         () ->
@@ -146,19 +158,132 @@ final class NoExtensionAnalyzeBanPredictionTest {
   }
 
   @Test
+  void activeAuditAnalyzeReportsExcludedBanWithoutChangingLiveState() throws Exception {
+    final Fixture fixture = activeExcludedFixture(USED_TRACE);
+    final List<org.apache.maven.artifact.Artifact> resolvedBefore =
+        List.copyOf(fixture.project().getArtifacts());
+    final List<org.apache.maven.artifact.Artifact> directBefore =
+        List.copyOf(fixture.project().getDependencyArtifacts());
+    final Object priorResolverPlan = new Object();
+    fixture
+        .repositorySession()
+        .getData()
+        .set(ResolverArtifactPlanPublisher.SESSION_DATA_KEY, priorResolverPlan);
+
+    final AnalyzePrediction prediction =
+        new MavenElisionService()
+            .predict(fixture.project(), fixture.options(List.of(BAN)), fixture.resolver());
+    final Path report = temporaryDirectory.resolve("active-audit-ban-plan.json");
+    MavenClassUsageReportWriter.write(
+        report,
+        prediction.evidence().classUsageReport(),
+        prediction.evidence().bytecodeScan(),
+        prediction);
+    final com.fasterxml.jackson.databind.JsonNode row =
+        new com.fasterxml.jackson.databind.ObjectMapper()
+            .readTree(report.toFile())
+            .path("dependencyPrediction")
+            .path("banPlan")
+            .get(0);
+
+    assertAll(
+        "active Analyze predicts from original audit without changing Resolver state",
+        () ->
+            assertThat(prediction.provenance())
+                .isEqualTo(MavenAnalysisResolutionContext.Provenance.CAPTURED_EFFECTIVE_RESOLVER),
+        () ->
+            assertThat(prediction.banPlan().entries().getFirst().status())
+                .isEqualTo(MavenBanPlan.Entry.Status.EXCLUDED_BEFORE_RESOLUTION),
+        () -> assertThat(row.path("status").asText()).isEqualTo("EXCLUDED_BEFORE_RESOLUTION"),
+        () -> assertThat(row.path("matchedArtifacts")).hasSize(0),
+        () -> assertThat(row.path("originalArtifacts")).hasSize(1),
+        () -> assertThat(row.path("applied").asBoolean()).isFalse(),
+        () -> assertSameArtifactReferences(fixture.project().getArtifacts(), resolvedBefore),
+        () ->
+            assertSameArtifactReferences(fixture.project().getDependencyArtifacts(), directBefore),
+        () ->
+            assertThat(
+                    fixture
+                        .repositorySession()
+                        .getData()
+                        .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
+                .isSameAs(priorResolverPlan));
+  }
+
+  @Test
+  void elideAppliesSafeTransitiveBanWithTrimDisabledAndEnabled() throws Exception {
+    final Fixture withoutTrim = basicFixture(USED_TRACE);
+    final Fixture withTrim = basicFixture(USED_TRACE);
+    final ElideMojo withoutTrimMojo = elideMojo(withoutTrim, false);
+    final ElideMojo withTrimMojo = elideMojo(withTrim, true);
+    final org.apache.maven.artifact.Artifact withoutTrimUsed =
+        withoutTrim.project().getDependencyArtifacts().iterator().next();
+    final org.apache.maven.artifact.Artifact withTrimUsed =
+        withTrim.project().getDependencyArtifacts().iterator().next();
+    final Set<org.apache.maven.artifact.Artifact> withoutTrimDirect =
+        withoutTrim.project().getDependencyArtifacts();
+    final Set<org.apache.maven.artifact.Artifact> withTrimDirect =
+        withTrim.project().getDependencyArtifacts();
+
+    withoutTrimMojo.execute();
+    withTrimMojo.execute();
+    final ResolverArtifactPlan withoutTrimPlan = resolverPlan(withoutTrim);
+    final ResolverArtifactPlan withTrimPlan = resolverPlan(withTrim);
+
+    assertAll(
+        "safe transitive bans are applied in both trim modes before resolver-plan publication",
+        () -> assertAppliedBan(withoutTrim, withoutTrimPlan, withoutTrimUsed, withoutTrimDirect),
+        () -> assertAppliedBan(withTrim, withTrimPlan, withTrimUsed, withTrimDirect));
+  }
+
+  @Test
+  void elideAppliesMatchedClasslessJarBan() throws Exception {
+    final Fixture fixture = basicFixture(USED_TRACE);
+    final org.apache.maven.artifact.Artifact bannedArtifact =
+        fixture.project().getArtifacts().stream()
+            .filter(artifact -> BANNED_ARTIFACT_ID.equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow();
+    writeClasslessJar(bannedArtifact.getFile().toPath());
+    final ElideMojo mojo = elideMojo(fixture, false);
+
+    mojo.execute();
+
+    final MavenElisionReportSnapshot summary =
+        MavenElisionReportWriter.read(fixture.trace().getParent().resolve(SUMMARY_FILENAME));
+    assertAll(
+        "a matched archive without classes is safely absent from the final Maven and output views",
+        () ->
+            assertThat(fixture.project().getArtifacts())
+                .noneMatch(artifact -> BANNED_ARTIFACT_ID.equals(artifact.getArtifactId())),
+        () ->
+            assertThat(fixture.project().getDependencyArtifacts())
+                .extracting(org.apache.maven.artifact.Artifact::getArtifactId)
+                .containsExactly(USED_ARTIFACT_ID),
+        () -> assertThat(summary.appliedBans()).hasSize(1),
+        () ->
+            assertThat(summary.appliedBans().getFirst().matchedArtifacts())
+                .containsExactly("fixture:banned:jar:1.0 (runtime)"),
+        () -> assertThat(summary.appliedBans().getFirst().applied()).isTrue(),
+        () ->
+            assertThat(resolverPlan(fixture).replacements().keySet())
+                .noneMatch(identity -> BANNED_ARTIFACT_ID.equals(identity.artifactId())));
+  }
+
+  @Test
   void rejectsRuntimeObservationOfBannedProviderBeforePrediction() throws Exception {
-    final Fixture fixture = fixture("used.Api\nbanned.Idle\n");
+    final Fixture fixture = basicFixture("used.Api\nbanned.Idle\n");
 
     assertThatThrownBy(
             () ->
                 new MavenElisionService()
                     .predict(fixture.project(), fixture.options(List.of(BAN)), fixture.resolver()))
-        .hasMessageContaining("runtime trace requires class banned.Idle");
+        .hasMessageContaining(BANNED_PROVIDER_FAILURE);
   }
 
   @Test
   void keepsActiveHookMissingCaptureDistinctFromPluginOnlyPlanning() throws Exception {
-    final Fixture fixture = fixture(USED_TRACE);
+    final Fixture fixture = basicFixture(USED_TRACE);
     MavenOriginalInputAudit.markHookPresent(fixture.session());
 
     assertThatThrownBy(
@@ -166,19 +291,19 @@ final class NoExtensionAnalyzeBanPredictionTest {
                 new MavenElisionService()
                     .predict(fixture.project(), fixture.options(List.of(BAN)), fixture.resolver()))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("Active Resolver capture is missing for Analyze");
+        .hasMessageContaining("Original-input audit has no frozen project capture");
   }
 
   @Test
   void rejectsPreMediationVersionProtectionAndAncestorPromotion() throws Exception {
-    final Fixture competing = fixture(USED_TRACE);
+    final Fixture competing = basicFixture(USED_TRACE);
     final DefaultDependencyNode direct =
         (DefaultDependencyNode) competing.root().getChildren().getFirst();
     final DependencyNode winner = direct.getChildren().getFirst();
     final org.eclipse.aether.graph.Dependency otherVersion =
         new org.eclipse.aether.graph.Dependency(
             new org.eclipse.aether.artifact.DefaultArtifact(
-                GROUP_ID, "banned", "", JAR_TYPE, "2.0"),
+                GROUP_ID, BANNED_ARTIFACT_ID, "", JAR_TYPE, "2.0"),
             "runtime");
     direct.setChildren(List.of(winner, new DefaultDependencyNode(otherVersion)));
     competing
@@ -188,7 +313,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
               direct.setChildren(List.of(winner));
               return root;
             });
-    final Fixture ancestor = fixture(USED_TRACE);
+    final Fixture ancestor = basicFixture(USED_TRACE);
     final DefaultDependencyNode bannedNode =
         (DefaultDependencyNode) ancestor.root().getChildren().getFirst().getChildren().getFirst();
     bannedNode.setChildren(List.of(new DefaultDependencyNode(ancestor.usedDependency())));
@@ -211,7 +336,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         "retained bytecode cannot promote the banned provider in either trim mode",
         () ->
             assertThatThrownBy(() -> predict(fixture))
-                .hasMessageContaining("retained bytecode, resources, or providers"),
+                .hasMessageContaining(BANNED_PROVIDER_FAILURE),
         () ->
             assertThatThrownBy(
                     () ->
@@ -220,7 +345,152 @@ final class NoExtensionAnalyzeBanPredictionTest {
                                 fixture.project(),
                                 fixture.options(List.of(BAN), true),
                                 fixture.resolver()))
-                .hasMessageContaining("retained bytecode, resources, or providers"));
+                .hasMessageContaining(BANNED_PROVIDER_FAILURE));
+  }
+
+  @SuppressWarnings(
+      "PMD.UnitTestContainsTooManyAsserts") // assertAll checks each rollback invariant
+  // independently.
+  @Test
+  void retainedBytecodeConflictLeavesReportsViewsAndResolverPlanUntouched() throws Exception {
+    final Fixture fixture = fixture(USED_TRACE, true);
+    final ElideMojo mojo = elideMojo(fixture, false);
+    final Path directory = fixture.trace().getParent();
+    final Path report = directory.resolve(CLASS_USAGE_FILENAME);
+    final Path summary = directory.resolve(SUMMARY_FILENAME);
+    Files.writeString(report, PREVIOUS_REPORT);
+    Files.writeString(summary, PREVIOUS_SUMMARY);
+    final List<org.apache.maven.artifact.Artifact> resolvedView =
+        List.copyOf(fixture.project().getArtifacts());
+    final List<org.apache.maven.artifact.Artifact> directView =
+        List.copyOf(fixture.project().getDependencyArtifacts());
+    final Map<org.apache.maven.artifact.Artifact, java.io.File> artifactFiles =
+        artifactFiles(resolvedView, directView);
+    final Object priorResolverPlan = new Object();
+    fixture
+        .repositorySession()
+        .getData()
+        .set(ResolverArtifactPlanPublisher.SESSION_DATA_KEY, priorResolverPlan);
+
+    assertThatThrownBy(mojo::execute).hasMessageContaining(BANNED_PROVIDER_FAILURE);
+
+    assertAll(
+        "a retained bytecode conflict fails before any report, view, file pointer, or plan changes",
+        () -> assertThat(Files.readString(report)).isEqualTo(PREVIOUS_REPORT),
+        () -> assertThat(Files.readString(summary)).isEqualTo(PREVIOUS_SUMMARY),
+        () -> assertSameArtifactReferences(fixture.project().getArtifacts(), resolvedView),
+        () -> assertSameArtifactReferences(fixture.project().getDependencyArtifacts(), directView),
+        () -> assertThat(artifactFiles(resolvedView, directView)).isEqualTo(artifactFiles),
+        () ->
+            assertThat(
+                    fixture
+                        .repositorySession()
+                        .getData()
+                        .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
+                .isSameAs(priorResolverPlan));
+  }
+
+  @SuppressWarnings(
+      "PMD.UnitTestContainsTooManyAsserts") // assertAll checks each rollback invariant
+  // independently.
+  @Test
+  void planPublicationFailureRollsBackFilesViewsAndResolverPlan() throws Exception {
+    final Fixture fixture = basicFixture(USED_TRACE);
+    final ElideMojo mojo = elideMojo(fixture, false);
+    final Path directory = fixture.trace().getParent();
+    final Path report = directory.resolve(CLASS_USAGE_FILENAME);
+    final Path summary = directory.resolve(SUMMARY_FILENAME);
+    Files.writeString(report, PREVIOUS_REPORT);
+    Files.writeString(summary, PREVIOUS_SUMMARY);
+    final List<org.apache.maven.artifact.Artifact> resolvedView =
+        List.copyOf(fixture.project().getArtifacts());
+    final List<org.apache.maven.artifact.Artifact> directView =
+        List.copyOf(fixture.project().getDependencyArtifacts());
+    final Map<org.apache.maven.artifact.Artifact, java.io.File> artifactFiles =
+        artifactFiles(resolvedView, directView);
+    final Object priorResolverPlan = new Object();
+    fixture
+        .repositorySession()
+        .getData()
+        .set(ResolverArtifactPlanPublisher.SESSION_DATA_KEY, priorResolverPlan);
+    set(
+        mojo,
+        "planPublication",
+        (MavenElideExecutionConfiguration.PlanPublication)
+            (session, project, trimRecords, graphProjection) -> {
+              throw new IOException("injected resolver plan failure");
+            });
+
+    assertThatThrownBy(mojo::execute).hasMessageContaining("injected resolver plan failure");
+
+    assertAll(
+        "publication failure restores staged files, exact Maven views and artifact file pointers",
+        () -> assertThat(Files.readString(report)).isEqualTo(PREVIOUS_REPORT),
+        () -> assertThat(Files.readString(summary)).isEqualTo(PREVIOUS_SUMMARY),
+        () -> assertSameArtifactReferences(fixture.project().getArtifacts(), resolvedView),
+        () -> assertSameArtifactReferences(fixture.project().getDependencyArtifacts(), directView),
+        () -> assertThat(artifactFiles(resolvedView, directView)).isEqualTo(artifactFiles),
+        () ->
+            assertThat(
+                    fixture
+                        .repositorySession()
+                        .getData()
+                        .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
+                .isSameAs(priorResolverPlan));
+  }
+
+  @SuppressWarnings(
+      "PMD.UnitTestContainsTooManyAsserts") // assertAll independently checks every rollback
+  // surface.
+  @Test
+  void failureAfterTrimGenerationStagingRollsBackBeforePublication() throws Exception {
+    final Fixture fixture = basicFixture(USED_TRACE);
+    final ElideMojo mojo = elideMojo(fixture, true);
+    final Path directory = fixture.trace().getParent();
+    final Path report = directory.resolve(CLASS_USAGE_FILENAME);
+    final Path summary = directory.resolve(SUMMARY_FILENAME);
+    Files.writeString(report, PREVIOUS_REPORT);
+    Files.writeString(summary, PREVIOUS_SUMMARY);
+    final List<org.apache.maven.artifact.Artifact> resolvedView =
+        List.copyOf(fixture.project().getArtifacts());
+    final List<org.apache.maven.artifact.Artifact> directView =
+        List.copyOf(fixture.project().getDependencyArtifacts());
+    final Map<org.apache.maven.artifact.Artifact, java.io.File> artifactFiles =
+        artifactFiles(resolvedView, directView);
+    final Path generatedOutputRoot =
+        Path.of(fixture.project().getBuild().getDirectory()).resolve("elided-artifacts");
+    final List<String> priorGenerationFiles = fileSnapshot(generatedOutputRoot);
+    final Object priorResolverPlan = new Object();
+    fixture
+        .repositorySession()
+        .getData()
+        .set(ResolverArtifactPlanPublisher.SESSION_DATA_KEY, priorResolverPlan);
+    set(
+        mojo,
+        "afterGenerationStaging",
+        (MavenElisionOutputPublisher.AfterStaging)
+            () -> {
+              throw new IOException("injected failure after trim generation staging");
+            });
+
+    assertThatThrownBy(mojo::execute)
+        .hasMessageContaining("injected failure after trim generation staging");
+
+    assertAll(
+        "a failed post-stage binding step closes the generation handle before any publication",
+        () -> assertThat(Files.readString(report)).isEqualTo(PREVIOUS_REPORT),
+        () -> assertThat(Files.readString(summary)).isEqualTo(PREVIOUS_SUMMARY),
+        () -> assertSameArtifactReferences(fixture.project().getArtifacts(), resolvedView),
+        () -> assertSameArtifactReferences(fixture.project().getDependencyArtifacts(), directView),
+        () -> assertThat(artifactFiles(resolvedView, directView)).isEqualTo(artifactFiles),
+        () -> assertThat(fileSnapshot(generatedOutputRoot)).isEqualTo(priorGenerationFiles),
+        () ->
+            assertThat(
+                    fixture
+                        .repositorySession()
+                        .getData()
+                        .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
+                .isSameAs(priorResolverPlan));
   }
 
   @Test
@@ -257,7 +527,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
 
   @Test
   void rejectsRetainedResourceIncludeMaskedByBannedArchiveExclude() throws Exception {
-    final Fixture fixture = fixture(USED_TRACE);
+    final Fixture fixture = basicFixture(USED_TRACE);
     final Path directory = fixture.trace().getParent();
     jar(
         directory.resolve("used.jar"),
@@ -301,7 +571,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
                         fixture.project(),
                         fixture.options(List.of(BAN), false, true),
                         fixture.resolver()))
-        .hasMessageContaining("dynamic metadata or provider requires class banned.Idle");
+        .hasMessageContaining(BANNED_PROVIDER_FAILURE);
   }
 
   private static AnalyzePrediction predict(final Fixture fixture)
@@ -310,8 +580,207 @@ final class NoExtensionAnalyzeBanPredictionTest {
         .predict(fixture.project(), fixture.options(List.of(BAN)), fixture.resolver());
   }
 
-  private Fixture fixture(final String traceContents) throws IOException {
+  @SuppressWarnings(
+      "PMD.AvoidAccessibilityAlteration") // The descriptor is injected by Maven in production.
+  private ElideMojo elideMojo(final Fixture fixture, final boolean trim)
+      throws ReflectiveOperationException {
+    fixture.session().getRequest().setOffline(true);
+    final ElideMojo mojo = new ElideMojo();
+    mojo.setLog(new SystemStreamLog());
+    set(mojo, "project", fixture.project());
+    set(mojo, "session", fixture.session());
+    set(mojo, "projectDependenciesResolver", fixture.resolver());
+    set(mojo, "traceFiles", List.of(fixture.trace().toFile()));
+    set(mojo, "banishedDependencies", List.of(BAN));
+    set(mojo, "sourceRootsComplete", true);
+    set(mojo, "trimJars", trim);
+    set(mojo, "leafOnly", false);
+    set(mojo, "reportFile", fixture.trace().getParent().resolve(CLASS_USAGE_FILENAME).toFile());
+    set(mojo, "summaryFile", fixture.trace().getParent().resolve(SUMMARY_FILENAME).toFile());
+    set(
+        mojo,
+        "cveCacheDirectory",
+        fixture.trace().getParent().resolve("vulnerability-cache").toFile());
+    final Field pluginDescriptor =
+        PluginCacheMojoSupport.class.getDeclaredField("pluginDescriptor");
+    pluginDescriptor.setAccessible(true);
+    pluginDescriptor.set(mojo, MavenPluginDescriptorFixtures.releasedPluginDescriptor());
+    return mojo;
+  }
+
+  private static void assertAppliedBan(
+      final Fixture fixture,
+      final ResolverArtifactPlan plan,
+      final org.apache.maven.artifact.Artifact retained,
+      final Set<org.apache.maven.artifact.Artifact> directBefore)
+      throws IOException {
+    final MavenElisionReportSnapshot summary =
+        MavenElisionReportWriter.read(fixture.trace().getParent().resolve(SUMMARY_FILENAME));
+    assertAll(
+        "the requested transitive artifact is absent from the final Maven and Resolver views",
+        () -> assertThat(fixture.project().getArtifacts()).containsExactly(retained),
+        () -> assertThat(fixture.project().getDependencyArtifacts()).isSameAs(directBefore),
+        () ->
+            assertThat(fixture.project().getArtifacts())
+                .noneMatch(artifact -> BANNED_ARTIFACT_ID.equals(artifact.getArtifactId())),
+        () -> assertThat(plan.graphProjection()).isNotNull(),
+        () -> assertThat(plan.graphProjection().removedNodeIds()).hasSize(1),
+        () -> assertThat(summary.appliedBans()).hasSize(1),
+        () ->
+            assertThat(summary.appliedBans().getFirst().status())
+                .isEqualTo("FORCED_ABSENT_AFTER_RESOLUTION"),
+        () -> assertThat(summary.appliedBans().getFirst().applied()).isTrue(),
+        () ->
+            assertThat(summary.rawDroppedCoordinates())
+                .noneMatch(coordinate -> coordinate.startsWith("fixture:banned:")),
+        () ->
+            assertThat(summary.droppedArtifacts())
+                .anyMatch(artifact -> artifact.coordinate().startsWith("fixture:banned:")),
+        () ->
+            assertThat(plan.replacements().keySet())
+                .noneMatch(identity -> BANNED_ARTIFACT_ID.equals(identity.artifactId())));
+  }
+
+  private static ResolverArtifactPlan resolverPlan(final Fixture fixture) {
+    final Object payload =
+        fixture
+            .session()
+            .getRepositorySession()
+            .getData()
+            .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
+    return ResolverArtifactPlanStore.fromPayload(payload)
+        .find(
+            new ResolverArtifactPlan.ProjectIdentity(
+                fixture.project().getBasedir().toPath(),
+                fixture.project().getGroupId(),
+                fixture.project().getArtifactId(),
+                fixture.project().getVersion()));
+  }
+
+  @SuppressWarnings("PMD.UseConcurrentHashMap") // Artifact file snapshots must key by identity.
+  private static Map<org.apache.maven.artifact.Artifact, java.io.File> artifactFiles(
+      final Iterable<org.apache.maven.artifact.Artifact> resolved,
+      final Iterable<org.apache.maven.artifact.Artifact> direct) {
+    final Map<org.apache.maven.artifact.Artifact, java.io.File> files =
+        new java.util.IdentityHashMap<>();
+    resolved.forEach(artifact -> files.put(artifact, artifact.getFile()));
+    direct.forEach(artifact -> files.putIfAbsent(artifact, artifact.getFile()));
+    return files;
+  }
+
+  private static void assertSameArtifactReferences(
+      final Iterable<org.apache.maven.artifact.Artifact> actual,
+      final List<org.apache.maven.artifact.Artifact> expected) {
+    final List<org.apache.maven.artifact.Artifact> actualItems = new ArrayList<>();
+    actual.forEach(actualItems::add);
+    assertThat(actualItems).hasSameSizeAs(expected);
+    for (int index = 0; index < expected.size(); index++) {
+      assertThat(actualItems.get(index)).isSameAs(expected.get(index));
+    }
+  }
+
+  @SuppressWarnings(
+      "PMD.AvoidAccessibilityAlteration") // Tests supply Maven-injected private state.
+  private static void set(final Object target, final String name, final Object value)
+      throws ReflectiveOperationException {
+    final Field field = target.getClass().getDeclaredField(name);
+    field.setAccessible(true);
+    field.set(target, value);
+  }
+
+  private static List<String> fileSnapshot(final Path root) throws IOException {
+    if (!Files.exists(root)) {
+      return List.of();
+    }
+    try (Stream<Path> paths = Files.walk(root)) {
+      final List<Path> files = paths.filter(Files::isRegularFile).sorted().toList();
+      final List<String> snapshot = new ArrayList<>(files.size());
+      for (final Path file : files) {
+        snapshot.add(root.relativize(file) + ":" + ArtifactDigests.read(file).sha256());
+      }
+      return List.copyOf(snapshot);
+    }
+  }
+
+  private Fixture basicFixture(final String traceContents) throws IOException {
     return fixture(traceContents, false);
+  }
+
+  private Fixture activeExcludedFixture(final String traceContents) throws IOException {
+    final Fixture fixture = basicFixture(traceContents);
+    final DependencyNode originalRoot = fixture.root();
+    final org.eclipse.aether.graph.Dependency bannedDependency =
+        originalRoot.getChildren().getFirst().getChildren().getFirst().getDependency();
+    final DefaultDependencyNode effectiveRoot =
+        new DefaultDependencyNode(
+            new org.eclipse.aether.artifact.DefaultArtifact(
+                GROUP_ID, "consumer", "", "pom", VERSION));
+    effectiveRoot.setChildren(List.of(new DefaultDependencyNode(fixture.usedDependency())));
+    final ProjectDependenciesResolver activeResolver =
+        resolutionRequest -> {
+          final RepositorySystemSession repositorySession =
+              resolutionRequest.getRepositorySession();
+          final boolean audit = MavenOriginalInputAudit.isAuditMode(repositorySession);
+          final DependencyNode selectedRoot = audit ? originalRoot : effectiveRoot;
+          final List<org.eclipse.aether.graph.Dependency> dependencies =
+              audit
+                  ? List.of(fixture.usedDependency(), bannedDependency)
+                  : List.of(fixture.usedDependency());
+          final DependencyNode transformed;
+          try {
+            transformed =
+                repositorySession
+                    .getDependencyGraphTransformer()
+                    .transformGraph(selectedRoot, context(repositorySession));
+          } catch (final org.eclipse.aether.RepositoryException exception) {
+            throw new IllegalStateException("Cannot transform active audit fixture", exception);
+          }
+          return result(dependencies, transformed);
+        };
+    final org.apache.maven.artifact.Artifact retained =
+        fixture.project().getArtifacts().stream()
+            .filter(artifact -> USED_ARTIFACT_ID.equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow();
+    fixture.project().setArtifacts(new LinkedHashSet<>(List.of(retained)));
+    fixture.project().setDependencyArtifacts(new LinkedHashSet<>(List.of(retained)));
+    final BanishedDependencyOriginalModel captured =
+        BanishedDependencyOriginalModel.capture(
+            fixture.project(),
+            List.of(
+                new BanishedDependencyOriginalModel.ExecutionPolicy(
+                    "run", "elide", VERSION, "initialize", "LIFECYCLE", List.of(BAN))),
+            List.of(BAN));
+    fixture
+        .project()
+        .setDependencies(
+            BanishedDependencyLifecycleActivation.injectExclusions(
+                fixture.project(), List.of(BAN)));
+    EliderPreparationState.sessionData(fixture.session())
+        .set(
+            BanishedDependencyLifecycleActivation.CAPTURE_STORE_KEY,
+            BanishedDependencyCaptureStore.empty().withModel(captured).toPayload());
+    final String projectKey = MavenElisionGraphBinding.projectKey(fixture.project());
+    final ResolverArtifactGraphSnapshot before =
+        ResolverArtifactGraphSnapshot.capture(effectiveRoot, projectKey, false, null, 0L, 1L);
+    final ResolverArtifactGraphSnapshot after =
+        ResolverArtifactGraphSnapshot.capture(effectiveRoot, projectKey, false, null, 0L, 1L);
+    final ResolverArtifactGraphCapturePair effectivePair =
+        new ResolverArtifactGraphCapturePair(
+            projectKey, "active-effective-fixture", 1L, false, null, 0L, before, after);
+    EliderPreparationState.sessionData(fixture.session())
+        .set(
+            EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY,
+            ResolverArtifactGraphSnapshotStore.empty().append(effectivePair).toPayload());
+    MavenOriginalInputAudit.markHookPresent(fixture.session());
+    return new Fixture(
+        fixture.project(),
+        fixture.session(),
+        fixture.repositorySession(),
+        activeResolver,
+        fixture.trace(),
+        (DefaultDependencyNode) originalRoot,
+        fixture.usedDependency());
   }
 
   private Fixture fixture(final String traceContents, final boolean usedReferencesBanned)
@@ -356,15 +825,16 @@ final class NoExtensionAnalyzeBanPredictionTest {
     project.setBuild(build);
     final Dependency declared = new Dependency();
     declared.setGroupId(GROUP_ID);
-    declared.setArtifactId("used");
+    declared.setArtifactId(USED_ARTIFACT_ID);
     declared.setVersion(VERSION);
     project.getDependencies().add(declared);
     final Path sourceRoot = Files.createDirectories(directory.resolve("src"));
     Files.writeString(
         sourceRoot.resolve("App.java"), "public class App { private used.Api value; }\n");
     project.addCompileSourceRoot(sourceRoot.toString());
-    final org.eclipse.aether.artifact.Artifact used = resolverArtifact("used", usedJar);
-    final org.eclipse.aether.artifact.Artifact banned = resolverArtifact("banned", bannedJar);
+    final org.eclipse.aether.artifact.Artifact used = resolverArtifact(USED_ARTIFACT_ID, usedJar);
+    final org.eclipse.aether.artifact.Artifact banned =
+        resolverArtifact(BANNED_ARTIFACT_ID, bannedJar);
     final org.eclipse.aether.graph.Dependency usedDependency =
         new org.eclipse.aether.graph.Dependency(used, "compile");
     final org.eclipse.aether.graph.Dependency bannedDependency =
@@ -461,6 +931,14 @@ final class NoExtensionAnalyzeBanPredictionTest {
       }
     }
     return path;
+  }
+
+  private static void writeClasslessJar(final Path path) throws IOException {
+    try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(path))) {
+      zip.putNextEntry(new ZipEntry("data.txt"));
+      zip.write("resource-only".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      zip.closeEntry();
+    }
   }
 
   private static org.eclipse.aether.artifact.Artifact resolverArtifact(

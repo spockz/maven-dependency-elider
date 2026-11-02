@@ -70,7 +70,7 @@ final class MavenClassUsageReportWriterTest {
             new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null);
     final AnalyzePrediction prediction =
         new AnalyzePrediction(
-            AnalyzePrediction.Provenance.DETACHED_CURRENT_MODEL,
+            MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL,
             List.of(new ArtifactSnapshot(mavenArtifact, retained, input)),
             List.of(retainedNewerVersion, retainedClassifier, retained),
             List.of(elided),

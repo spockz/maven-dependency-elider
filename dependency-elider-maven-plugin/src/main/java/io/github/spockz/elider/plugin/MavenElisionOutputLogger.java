@@ -44,6 +44,17 @@ final class MavenElisionOutputLogger {
           assessment);
     }
     if (log.isInfoEnabled()) {
+      request
+          .banPlan()
+          .entries()
+          .forEach(
+              entry ->
+                  log.info(
+                      "  Dependency ban: "
+                          + entry.dependency()
+                          + " -> "
+                          + entry.status().name().toLowerCase(java.util.Locale.ROOT)
+                          + (entry.artifacts().isEmpty() ? "" : " " + entry.artifacts())));
       ExclusionReviewRenderer.render(reportSnapshot.exclusionReview()).forEach(log::info);
       log.info(
           "  Class usage report: "

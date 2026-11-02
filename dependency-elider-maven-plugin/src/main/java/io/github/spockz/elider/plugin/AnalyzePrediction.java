@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisEvidence;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
+import io.github.spockz.elider.plugin.MavenAnalysisResolutionContext.Provenance;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import java.io.IOException;
 import java.util.List;
@@ -24,7 +25,7 @@ record AnalyzePrediction(
     String environmentFingerprint,
     String inventoryFingerprint,
     String operationFingerprint,
-    AnalyzeBanPlan banPlan) {
+    MavenBanPlan banPlan) {
   /* default */ AnalyzePrediction(
       final Provenance provenance,
       final List<ArtifactSnapshot> inputArtifacts,
@@ -45,7 +46,7 @@ record AnalyzePrediction(
         environmentFingerprint,
         inventoryFingerprint,
         operationFingerprint,
-        AnalyzeBanPlan.empty());
+        MavenBanPlan.empty());
   }
 
   AnalyzePrediction {
@@ -130,12 +131,6 @@ record AnalyzePrediction(
     final Set<String> removed = new TreeSet<>(inputClasses);
     removed.removeAll(retained);
     return Set.copyOf(removed);
-  }
-
-  /** Resolver source used to produce this prediction's dependency graph. */
-  /* default */ enum Provenance {
-    CAPTURED_EFFECTIVE_RESOLVER,
-    DETACHED_CURRENT_MODEL
   }
 
   /* default */ record PlannedTrim(ArtifactCoordinate coordinate, Set<String> removedClasses)

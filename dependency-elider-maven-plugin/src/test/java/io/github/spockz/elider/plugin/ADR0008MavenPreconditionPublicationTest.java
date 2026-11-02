@@ -365,7 +365,7 @@ final class ADR0008MavenPreconditionPublicationTest {
     set(
         fixture.mojo(),
         "planPublication",
-        (ElideMojo.PlanPublication)
+        (MavenElideExecutionConfiguration.PlanPublication)
             (ignoredSession, ignoredProject, ignoredRecords, ignoredProjection) -> {
               throw new IOException("injected resolver publication failure");
             });

@@ -49,7 +49,7 @@ final class ElisionReachabilityEngine {
 
   /* default */ static EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)
       throws IOException, MojoFailureException {
-    final AnalyzeBanPlan banPlan = prepared.banPlan();
+    final MavenBanPlan banPlan = prepared.banPlan();
     final ElisionDecision rawDecision = prepared.rawDecision();
     final MavenElisionGraphBinding.Result binding = prepared.graphBinding();
     if (!prepared.inputFingerprint().equals(binding.inventoryFingerprint())) {
@@ -57,6 +57,7 @@ final class ElisionReachabilityEngine {
     }
     EffectiveGraphPolicy.Evaluation evaluation = binding.evaluation();
     banPlan.verifyGraph(evaluation);
+    banPlan.verifyAuditBytesFresh();
     ElisionDecision policyInput = rawDecision;
     ElisionDecision effectiveDecision = evaluation.effectiveDecision(rawDecision);
     final Set<ArtifactCoordinate> forcedUnchanged =
@@ -65,17 +66,21 @@ final class ElisionReachabilityEngine {
     TrimAnalysisResult analysis;
     while (true) {
       MavenArtifactInventory.verifyPreparedInventory(prepared);
+      banPlan.verifyAuditBytesFresh();
       final TrimRequest trimRequest =
           TrimRequestFactory.fromPreparedAnalysis(
               prepared, effectiveDecision.retainedArtifacts(), prepared.sourceRequiredClasses());
       analysis =
           MavenDependencyTrimmer.analyzeInMemory(trimRequest, discoveredRoots, forcedUnchanged);
       MavenArtifactInventory.verifyPreparedInventory(prepared);
+      banPlan.verifyAuditBytesFresh();
+      banPlan.verifyRetainedClosure(prepared, effectiveDecision, analysis, forcedUnchanged);
       final Set<ArtifactCoordinate> newlyReachedDrops =
           newlyReachedDrops(analysis, effectiveDecision);
       banPlan.verifyNoPromotion(newlyReachedDrops);
       if (newlyReachedDrops.isEmpty()) {
         banPlan.verifyGraph(evaluation);
+        banPlan.verifyAuditBytesFresh();
         return new EffectiveAnalysis(
             prepared,
             banPlan,
@@ -94,6 +99,7 @@ final class ElisionReachabilityEngine {
       policyInput = promoteForBytecode(policyInput, newlyReachedDrops);
       evaluation = EffectiveGraphPolicy.evaluatePair(binding.pair(), policyInput);
       banPlan.verifyGraph(evaluation);
+      banPlan.verifyAuditBytesFresh();
       effectiveDecision = evaluation.effectiveDecision(rawDecision);
       forcedUnchanged.addAll(newlyReachedDrops);
       addUnchangedPolicyArtifacts(evaluation, forcedUnchanged);

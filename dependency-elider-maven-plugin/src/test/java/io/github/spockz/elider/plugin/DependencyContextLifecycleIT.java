@@ -75,6 +75,7 @@ final class DependencyContextLifecycleIT {
   private static final String KEEP_ENTRY_ROOT = "io.github.spockz.elider.fixture.keep.KeepEntry\n";
   private static final String SEED_PLAN_DISABLED = "-Dlifecycle.seedPlan=false";
   private static final String ELIDER_SUMMARY = "Dependency Elider summary";
+  private static final String LIFECYCLE_ELIDE_SUMMARY = "target/lifecycle-elide-summary.json";
 
   /** Builds fixtures once and retains evidence after failures. */
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -430,7 +431,7 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
-  void packagedElideAndAnalyzeVerifyTheCapturedCliPolicyBeforeFailingClosed() throws Exception {
+  void packagedGoalsHonorFrozenBanSelectionBeforeInputValidation() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
     final Path evidenceDirectory = temporaryDirectory.resolve("ban-policy-goal-injection");
@@ -528,14 +529,40 @@ final class DependencyContextLifecycleIT {
             "io.github.spockz:dependency-elider-maven-plugin:elide");
 
     assertAll(
-        "Every selected execution injects the captured policy before strict enforcement blocks it",
-        () -> assertBanReachedGoal(elideOutput),
-        () -> assertActiveExtensionAnalyzeBanRejected(analyzeOutput),
-        () -> assertBanReachedGoal(defaultCliOutput),
-        () -> assertBanReachedGoal(initializeOutput),
-        () -> assertBanReachedGoal(processClassesOutput),
-        () -> assertBanReachedGoal(treePromotionOutput),
-        () -> assertBanReachedGoal(managementCliOutput),
+        "Selected invocations validate the frozen policy before failing on a specific input guard",
+        () ->
+            assertExpectedGoalFailure(
+                elideOutput,
+                "Dependency elision failed: "
+                    + fixtureRoot.resolve("ban-invocations/elide/project/trace.txt")),
+        () ->
+            assertExpectedGoalFailure(
+                analyzeOutput,
+                "Dependency analysis failed closed: "
+                    + fixtureRoot.resolve("ban-invocations/analyze/project/trace.txt")),
+        () ->
+            assertExpectedGoalFailure(
+                defaultCliOutput,
+                "Dependency elision failed: At least one supported trace input is required"),
+        () ->
+            assertExpectedGoalFailure(
+                initializeOutput,
+                "Dependency elision failed: "
+                    + fixtureRoot.resolve("ban-invocations/initialize/project/trace.txt")),
+        () ->
+            assertExpectedGoalFailure(
+                processClassesOutput,
+                "Dependency elision failed: Analyze inventory matches multiple captured "
+                    + "Resolver graph pairs"),
+        () ->
+            assertExpectedGoalFailure(
+                treePromotionOutput,
+                "Dependency elision failed: "
+                    + fixtureRoot.resolve("ban-invocations/tree-promotion/project/trace.txt")),
+        () ->
+            assertExpectedGoalFailure(
+                managementCliOutput,
+                "Dependency elision failed: At least one supported trace input is required"),
         () ->
             assertNoBanInvocationOutputs(
                 fixtureRoot.resolve("ban-invocations"),
@@ -546,6 +573,133 @@ final class DependencyContextLifecycleIT {
                 "process-classes",
                 "tree-promotion",
                 "plugin-management-cli"));
+  }
+
+  @Test
+  void packagedElidePublishesAnOriginalAuditBanExcludedBeforeResolution() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
+    final Path evidenceDirectory = temporaryDirectory.resolve("active-extension-excluded-ban");
+    Files.createDirectories(evidenceDirectory);
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    addDropAsKeepLibraryDependency(localRepository);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = fixtureRoot.resolve("consumer-elide");
+    final Path consumerPom = consumer.resolve(POM_XML);
+    final String originalPom = Files.readString(consumerPom);
+    final String directDropDependency =
+        "        <dependency>\n"
+            + "            <groupId>"
+            + GROUP_ID
+            + "</groupId>\n"
+            + "            <artifactId>drop-library</artifactId>\n"
+            + "            <version>"
+            + VERSION
+            + "</version>\n"
+            + "            <scope>runtime</scope>\n"
+            + "        </dependency>\n";
+    assertThat(originalPom).contains(directDropDependency);
+    final String withoutDirectDrop = originalPom.replace(directDropDependency, "");
+    final String incompleteSources = "<sourceRootsComplete>false</sourceRootsComplete>";
+    assertThat(withoutDirectDrop).contains(incompleteSources);
+    Files.writeString(
+        consumerPom,
+        withoutDirectDrop.replace(
+            incompleteSources,
+            incompleteSources + "<productionClassesComplete>true</productionClassesComplete>"));
+    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    writeProductionClassOutput(consumer.resolve("target/classes"));
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String analyzeOutput =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("active-extension-excluded-ban-analyze.log"),
+            PROCESS_TIMEOUT,
+            "-Delide.banishedDependencies=" + GROUP_ID + ":drop-library",
+            "-f",
+            consumerPom.toString(),
+            "dependency-elider:analyze@run-elider");
+    final JsonNode analyzeReport =
+        JSON.readTree(consumer.resolve("target/dependency-elider-class-usage.json").toFile());
+    final JsonNode analyzeBan = analyzeReport.path("dependencyPrediction").path("banPlan").get(0);
+    final boolean analyzeBanApplied = analyzeBan.path("applied").asBoolean();
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("active-extension-excluded-ban.log"),
+            PROCESS_TIMEOUT,
+            "-Delide.banishedDependencies=" + GROUP_ID + ":drop-library",
+            "-f",
+            consumerPom.toString(),
+            "dependency-elider:elide@run-elider",
+            "lifecycle-probe:post-elide-probe");
+    final Path summaryPath = consumer.resolve(LIFECYCLE_ELIDE_SUMMARY);
+    final JsonNode summary = JSON.readTree(summaryPath.toFile());
+    final JsonNode ban = summary.path("appliedBans").get(0);
+    final boolean banApplied = ban.path("applied").asBoolean();
+    final List<String> postElideViews =
+        Files.readAllLines(consumer.resolve("target/lifecycle-elide/post-elide.tsv"));
+    final JsonNode sbom =
+        JSON.readTree(consumer.resolve("target/dependency-elider-sbom.cdx.json").toFile());
+
+    assertAll(
+        "active Analyze predicts without application and Elide publishes its audited exclusion",
+        () -> assertThat(analyzeOutput).contains(BUILD_SUCCESS),
+        () ->
+            assertThat(analyzeBan.path("status").asText()).isEqualTo("EXCLUDED_BEFORE_RESOLUTION"),
+        () -> assertThat(analyzeBan.path("matchedArtifacts")).hasSize(0),
+        () -> assertThat(analyzeBan.path("originalArtifacts")).hasSize(1),
+        () ->
+            org.junit.jupiter.api.Assertions.assertFalse(
+                analyzeBanApplied, "Analyze must predict the ban without applying it"),
+        () -> assertThat(output).contains(BUILD_SUCCESS),
+        () -> assertThat(ban.path("dependency").asText()).isEqualTo(GROUP_ID + ":drop-library"),
+        () -> assertThat(ban.path("status").asText()).isEqualTo("EXCLUDED_BEFORE_RESOLUTION"),
+        () -> assertThat(ban.path("matchedArtifacts")).hasSize(0),
+        () ->
+            assertThat(ban.path("originalArtifacts").get(0).asText())
+                .contains(GROUP_ID + ":drop-library:jar:" + VERSION),
+        () ->
+            org.junit.jupiter.api.Assertions.assertTrue(
+                banApplied, "Elide must record that the audited ban was applied"),
+        () ->
+            assertThat(postElideViews)
+                .noneMatch(
+                    row -> row.startsWith("artifact\tRESOLVED\t") && row.contains("drop-library")),
+        () ->
+            assertThat(
+                    StreamSupport.stream(sbom.path("components").spliterator(), false)
+                        .map(component -> component.path("name").asText())
+                        .toList())
+                .doesNotContain("drop-library"));
+  }
+
+  private static void writeProductionClassOutput(final Path outputDirectory) throws IOException {
+    final Path classFile = outputDirectory.resolve("ban/ProductionRoots.class");
+    Files.createDirectories(classFile.getParent());
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(
+        Opcodes.V17, Opcodes.ACC_PUBLIC, "ban/ProductionRoots", null, "java/lang/Object", null);
+    writer
+        .visitField(
+            Opcodes.ACC_PRIVATE,
+            "keep",
+            "Lio/github/spockz/elider/fixture/keep/KeepEntry;",
+            null,
+            null)
+        .visitEnd();
+    writer.visitEnd();
+    Files.write(classFile, writer.toByteArray());
   }
 
   @Test
@@ -703,23 +857,23 @@ final class DependencyContextLifecycleIT {
         arguments.toArray(String[]::new));
   }
 
+  private static void assertExpectedGoalFailure(
+      final String output, final String expectedDiagnostic) {
+    assertThat(output)
+        .contains("BUILD FAILURE", expectedDiagnostic)
+        .doesNotContain("does not match the frozen selected execution policy");
+  }
+
   private static void assertBanReachedGoal(final String output) {
     assertThat(output)
         .contains("strict ban enforcement is not available")
         .doesNotContain("does not match the frozen selected execution policy");
   }
 
-  private static void assertActiveExtensionAnalyzeBanRejected(final String output) {
-    assertThat(output)
-        .contains(
-            "requires detached no-extension Analyze; active extension requests remain fail-closed")
-        .doesNotContain("does not match the frozen selected execution policy");
-  }
-
   private static void assertNoBanInvocationOutputs(
       final Path invocationRoot, final String... invocationNames) {
     assertAll(
-        "Rejected ban requests leave report outputs unpublished",
+        "Input validation failures leave report outputs unpublished",
         java.util.Arrays.stream(invocationNames)
             .map(
                 name ->
@@ -1495,7 +1649,7 @@ final class DependencyContextLifecycleIT {
           .doesNotContain("PRODUCTION_PLAN_EVENT_SEEDED", RESOLVER_EVENT_PREFIX);
       assertTreeRows(output, 2, skipElide ? 1 : 0, 1);
       assertThat(countOccurrences(output, ELIDER_SUMMARY)).isEqualTo(skipElide ? 0 : 1);
-      final Path summary = consumer.resolve("target/lifecycle-elide-summary.json");
+      final Path summary = consumer.resolve(LIFECYCLE_ELIDE_SUMMARY);
       if (skipElide) {
         assertThat(summary).doesNotExist();
       } else {
@@ -1555,8 +1709,7 @@ final class DependencyContextLifecycleIT {
     assertThat(output).contains("Apache Maven 3.9.11", BUILD_SUCCESS);
     assertThat(countOccurrences(output, ELIDER_SUMMARY)).isOne();
     assertTreeRows(output, 1, 0, 1);
-    final JsonNode report =
-        JSON.readTree(consumer.resolve("target/lifecycle-elide-summary.json").toFile());
+    final JsonNode report = JSON.readTree(consumer.resolve(LIFECYCLE_ELIDE_SUMMARY).toFile());
     assertThat(report.path("wholeArtifactsDropped").asInt()).isOne();
     assertThat(report.path("droppedArtifacts")).hasSize(1);
     assertThat(report.path("mediatedGraph").path("available").asBoolean()).isTrue();
@@ -1871,7 +2024,7 @@ final class DependencyContextLifecycleIT {
             SHORT_TREE_GOAL);
 
     assertThat(output).contains(BUILD_SUCCESS, TREE_HEADER).doesNotContain(ELIDER_SUMMARY);
-    assertThat(consumer.resolve("target/lifecycle-elide-summary.json")).doesNotExist();
+    assertThat(consumer.resolve(LIFECYCLE_ELIDE_SUMMARY)).doesNotExist();
   }
 
   @Test

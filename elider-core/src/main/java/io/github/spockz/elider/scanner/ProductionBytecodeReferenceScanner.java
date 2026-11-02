@@ -11,6 +11,8 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.stream.Stream;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassReader;
@@ -28,6 +30,9 @@ import org.objectweb.asm.signature.SignatureVisitor;
 
 /** Scans class files beneath a caller supplied production output directory. */
 public final class ProductionBytecodeReferenceScanner {
+  /** The class-file suffix shared by directory and archive scans. */
+  private static final String CLASS_SUFFIX = ".class";
+
   /** Creates a production class reference scanner. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
   public ProductionBytecodeReferenceScanner() {}
@@ -49,6 +54,84 @@ public final class ProductionBytecodeReferenceScanner {
     return new BytecodeReferenceScan(scope, references, count, true);
   }
 
+  /** Scans every class entry in a JAR, including each multi-release tier. */
+  // Malformed class bytes must fail this input scan as an IOException.
+  public BytecodeReferenceScan scanArchive(final Path archivePath) throws IOException {
+    return scanArchive(archivePath, className -> true);
+  }
+
+  /** Scans retained classes across all JAR tiers, including MRJAR entries. */
+  public BytecodeReferenceScan scanArchive(
+      final Path archivePath, final Set<String> retainedInternalNames) throws IOException {
+    if (retainedInternalNames == null) {
+      throw new IllegalArgumentException("retainedInternalNames must not be null");
+    }
+    return scanArchive(archivePath, retainedInternalNames::contains);
+  }
+
+  private BytecodeReferenceScan scanArchive(
+      final Path archivePath, final java.util.function.Predicate<String> selectedClass)
+      throws IOException {
+    if (archivePath == null || !Files.isRegularFile(archivePath)) {
+      throw new IOException("Bytecode archive is missing or not a regular file: " + archivePath);
+    }
+    final Path scope = archivePath.toAbsolutePath().normalize();
+    final Set<String> references = new HashSet<>();
+    int count = 0;
+    try (JarFile archive = new JarFile(scope.toFile())) {
+      final java.util.Enumeration<JarEntry> entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        count += scanArchiveEntry(archive, scope, entries.nextElement(), selectedClass, references);
+      }
+    }
+    return new BytecodeReferenceScan(scope, references, count, true);
+  }
+
+  private static int scanArchiveEntry(
+      final JarFile archive,
+      final Path scope,
+      final JarEntry entry,
+      final java.util.function.Predicate<String> selectedClass,
+      final Set<String> references)
+      throws IOException {
+    if (entry.isDirectory() || !entry.getName().endsWith(CLASS_SUFFIX)) {
+      return 0;
+    }
+    final String logicalName = logicalClassEntryName(entry.getName());
+    final String internalName =
+        logicalName.substring(0, logicalName.length() - CLASS_SUFFIX.length());
+    if (!selectedClass.test(internalName)) {
+      return 0;
+    }
+    try (java.io.InputStream input = archive.getInputStream(entry)) {
+      return scanClassFile(scope.resolve(entry.getName()), input.readAllBytes(), references);
+    }
+  }
+
+  @SuppressWarnings("PMD.CyclomaticComplexity")
+  // Each malformed version-path form is rejected before class selection.
+  private static String logicalClassEntryName(final String entryName) throws IOException {
+    final String versionsPrefix = "META-INF/versions/";
+    if (!entryName.startsWith(versionsPrefix)) {
+      return entryName;
+    }
+    final int versionEnd = entryName.indexOf('/', versionsPrefix.length());
+    if (versionEnd < 0 || versionEnd == entryName.length() - 1) {
+      throw new IOException("Malformed multi-release class entry " + entryName);
+    }
+    final String versionText = entryName.substring(versionsPrefix.length(), versionEnd);
+    final int version;
+    try {
+      version = Integer.parseInt(versionText);
+    } catch (final NumberFormatException exception) {
+      throw new IOException("Malformed multi-release class entry " + entryName, exception);
+    }
+    if (version < 9 || !Integer.toString(version).equals(versionText)) {
+      throw new IOException("Noncanonical multi-release class entry " + entryName);
+    }
+    return entryName.substring(versionEnd + 1);
+  }
+
   private static int scanPath(final Path path, final Set<String> references) throws IOException {
     final BasicFileAttributes attributes =
         Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
@@ -66,6 +149,7 @@ public final class ProductionBytecodeReferenceScanner {
 
   /* package */
   @SuppressWarnings("PMD.AvoidCatchingGenericException")
+  // ASM reports malformed class structures as unchecked exceptions.
   static int scanClassFile(final Path path, final byte[] content, final Set<String> references)
       throws IOException {
     try {

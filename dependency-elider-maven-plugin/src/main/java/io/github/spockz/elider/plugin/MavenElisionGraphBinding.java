@@ -380,5 +380,10 @@ final class MavenElisionGraphBinding {
       EffectiveGraphPolicy.Evaluation evaluation,
       String inventoryFingerprint,
       String operationFingerprint,
-      ResolverArtifactGraphCapturePair pair) {}
+      ResolverArtifactGraphCapturePair pair) {
+    Result withAdditionalOperationFingerprint(final String identity) {
+      return new Result(
+          evaluation, inventoryFingerprint, sha256(List.of(operationFingerprint, identity)), pair);
+    }
+  }
 }

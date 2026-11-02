@@ -36,7 +36,9 @@ final class MavenEffectiveAnalysisReport {
               effective
                   .prepared()
                   .policyOptions()
-                  .withOperationFingerprint(effective.operationFingerprint()));
+                  .withOperationFingerprint(effective.operationFingerprint()),
+              effective.prepared().traceDecision(),
+              effective.banPlan());
       cleanup.transferOwnership();
       return analysis;
     }

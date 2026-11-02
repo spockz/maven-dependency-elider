@@ -47,7 +47,7 @@ Elision requires evidence of classes loaded during execution. Capture runtime te
 
 Run `analyze` to inspect potential dependency drops and byte savings without altering Maven artifact views, resolver plans, or packaged outputs. The goal writes class-usage evidence to `elide.reportFile` (default `target/dependency-elider-class-usage.json`). Its schema-1 JSON includes a `dependencyPrediction` section with retained and predicted-elided coordinates, planned class removals marked `PLANNED_UNVERIFIED`, environment/inventory/operation fingerprints, and provenance (`CAPTURED_EFFECTIVE_RESOLVER` or `DETACHED_CURRENT_MODEL`). Detached provenance describes only that request-local resolution. Configured vulnerability mappings remain unresolved unless a published trim archive supports an omission proof. Prediction does not stage or commit trim archives or publish output-manifest/generation state. MRJAR analysis may create temporary classpath projections in an operation-owned directory; that directory is removed when prediction completes or fails. Choose a path under `.scratch` if the report should not be kept with build artifacts:
 
-Without the core extension, `analyze` can plan exact `groupId:artifactId` bans against a detached current-model Resolver graph. Schema-1 `dependencyPrediction.banPlan` records matched and unmatched requests, marks matched artifacts `FORCED_ABSENT_AFTER_RESOLUTION`, and sets `applied=false`; `banContextFingerprint` binds the plan to that detached graph. Analysis fails if trace, source, bytecode, resource/provider metadata from a retained artifact, or graph closure requires a banned artifact. An unmatched request is not an absence proof. Active-extension Analyze bans remain fail-closed; `elide` still rejects all nonempty bans.
+With or without the core extension, `analyze` can predict exact `groupId:artifactId` bans for supported compile/runtime JARs. It uses either a detached current-model Resolver graph or the captured effective graph with a complete original-input audit. Schema-1 `dependencyPrediction.banPlan` classifies each request as matched (`FORCED_ABSENT_AFTER_RESOLUTION`), excluded before resolution (`EXCLUDED_BEFORE_RESOLUTION`), or unmatched (`UNMATCHED`); every prediction row has `applied=false`. Analysis fails if trace, source, bytecode, retained-resource/provider metadata, or graph closure requires a banned artifact. An unmatched request is not an absence proof. Analyze only predicts and never applies bans or changes Maven artifact views.
 
 ```sh
 mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
@@ -132,7 +132,7 @@ Process exit status: 0
 | `-Delide.trimJars` | `false` | When `true`, simulates intra-JAR trimming and evaluates CVE absence proofs without modifying files. |
 | `-Delide.trimWorkers` | `4` | Maximum worker threads for JAR preparation, closure analysis, and archive sanitization. Actual concurrency is also capped by available processors and pending work; `1` runs sequentially. |
 | `-Delide.retainedArtifacts` | *(empty)* | Comma-separated coordinates (`groupId:artifactId[:version[:type[:classifier]]]`) to retain regardless of trace evidence. |
-| `-Delide.banishedDependencies` | *(empty)* | Comma-separated exact, trimmed `groupId:artifactId` requests; wildcards and version/type/classifier fields are unsupported. Without the extension, Analyze plans supported bans but never applies them. Active-extension Analyze bans fail closed. |
+| `-Delide.banishedDependencies` | *(empty)* | Comma-separated exact, trimmed `groupId:artifactId` requests; wildcards and version/type/classifier fields are unsupported. Analyze predicts matched, pre-resolution-excluded, or unmatched outcomes and never applies them. Elide applies only a validated plan before publication. |
 | `-Delide.productionOutput` | *(empty)* | Path to compiled classes (e.g. `target/classes`) to enable static code reference scanning. |
 | `-Delide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader SPI roots; when `false`, prunes unproven SPI roots. |
 | `-Delide.reportFile` | `target/dependency-elider-class-usage.json` | Path for the class-usage analysis report. |
@@ -159,7 +159,9 @@ To enable whole-artifact dependency removal, declare the core extension in the c
 </extensions>
 ```
 
-> **Important**: Without this extension, whole-artifact drops fail closed (all candidate JARs remain retained), though retained-JAR trimming still functions.
+> **Important**: Without this extension, trace-derived whole-artifact drops fail closed (all candidates remain retained), though retained-JAR trimming still functions. `elide` can apply explicit bans only after isolated Resolver planning, retained-content closure checks, and publication validation succeed.
+
+The persisted Elide summary records applied-ban outcomes in `appliedBans`: matched artifacts are `FORCED_ABSENT_AFTER_RESOLUTION`, declarations removed before resolution are `EXCLUDED_BEFORE_RESOLUTION`, and unmatched requests are `UNMATCHED`. Unmatched requests are not applied and do not prove absence. `rawDroppedCoordinates` excludes policy-forced absences, while total absent-artifact metrics include them.
 
 ### Step 2: Run the Elision Build
 
