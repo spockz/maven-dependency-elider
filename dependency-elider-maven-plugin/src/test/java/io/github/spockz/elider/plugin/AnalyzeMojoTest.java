@@ -247,7 +247,7 @@ final class AnalyzeMojoTest {
   }
 
   @Test
-  void banRequestFailsClosedWithoutPublishingReport()
+  void selectedBanCaptureWithoutHookFailsClosedWithoutPublishingReport()
       throws IOException, ReflectiveOperationException {
     final AnalyzeMojoTestArtifactSupport.Fixture fixture =
         AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
@@ -269,12 +269,11 @@ final class AnalyzeMojoTest {
         fixture.mojo(), fixture.project(), List.of("org.example:used"));
 
     assertAll(
-        "analyze rejects ban requests before publishing a report",
+        "analyze rejects a selected capture without its lifecycle hook before publishing",
         () ->
             assertThatThrownBy(fixture.mojo()::execute)
                 .isInstanceOf(MojoFailureException.class)
-                .hasMessageContaining(
-                    "cannot be applied because strict ban enforcement is not available"),
+                .hasMessageContaining("cannot ignore selected ban capture"),
         () -> assertThat(Files.readString(report)).isEqualTo(previousReport));
   }
 

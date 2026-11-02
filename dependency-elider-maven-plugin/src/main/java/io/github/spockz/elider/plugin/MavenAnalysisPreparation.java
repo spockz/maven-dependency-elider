@@ -27,7 +27,7 @@ final class MavenAnalysisPreparation {
   /* default */ static PreparedAnalysis prepare(
       final MavenProject project, final AnalysisOptions options, final DynamicRootScanner scanner)
       throws IOException, MojoFailureException {
-    return prepare(project, options, scanner, null);
+    return prepare(project, options, scanner, null, AnalyzeBanPlan.empty());
   }
 
   /* default */ static PreparedAnalysis prepare(
@@ -35,6 +35,16 @@ final class MavenAnalysisPreparation {
       final AnalysisOptions requestedOptions,
       final DynamicRootScanner scanner,
       final MavenAnalysisResolutionContext resolutionContext)
+      throws IOException, MojoFailureException {
+    return prepare(project, requestedOptions, scanner, resolutionContext, AnalyzeBanPlan.empty());
+  }
+
+  /* default */ static PreparedAnalysis prepare(
+      final MavenProject project,
+      final AnalysisOptions requestedOptions,
+      final DynamicRootScanner scanner,
+      final MavenAnalysisResolutionContext resolutionContext,
+      final AnalyzeBanPlan banPlan)
       throws IOException, MojoFailureException {
     final AnalysisOptions options =
         resolutionContext == null
@@ -47,9 +57,16 @@ final class MavenAnalysisPreparation {
         resolutionContext == null
             ? MavenAnalysisInventory.capture(project)
             : MavenAnalysisInventory.capture(resolutionContext);
-    rejectRequestedBans(analysisProject, options, inventory.views());
+    if (banPlan.requested()) {
+      banPlan.verifyContext(resolutionContext);
+    } else {
+      rejectRequestedBans(analysisProject, options, inventory.views());
+    }
     final MavenAnalysisEvidence.RootEvidence evidence =
         MavenAnalysisEvidence.scan(analysisProject, options, inventory.candidates(), scanner);
+    if (banPlan.requested()) {
+      banPlan.verifyEvidence(evidence);
+    }
     final MavenElisionPolicyIdentity.Options policyOptions =
         MavenElisionPolicyIdentity.normalize(options);
     final Set<String> requiredClasses =
@@ -67,8 +84,8 @@ final class MavenAnalysisPreparation {
         ClassUsageReport.classify(evidence.index(), evidence.trace(), evidence.bytecodeScan());
     NativeImageConsumedInput.verifyAll(evidence.dynamicRoots().consumedInputs());
     MavenAnalysisInventory.verifyInventory(project, inventory, resolutionContext);
-    final ElisionDecision decision =
-        rawDecision(options, inventory, evidence, keep, requiredClasses);
+    final ElisionDecision raw = rawDecision(options, inventory, evidence, keep, requiredClasses);
+    final ElisionDecision decision = banPlan.forceAbsent(raw);
     final MavenElisionGraphBinding.Result graphBinding =
         resolutionContext == null
             ? MavenElisionGraphBinding.bind(
@@ -113,7 +130,8 @@ final class MavenAnalysisPreparation {
         graphBinding,
         policyOptions,
         evidence.sourceAttributionFallback(),
-        resolutionContext);
+        resolutionContext,
+        banPlan);
   }
 
   /* default */ static void rejectRequestedBans(

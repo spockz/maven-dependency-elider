@@ -153,9 +153,8 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
     if (shouldSkipAnalysis()) {
       return;
     }
-    BanishedDependencyLifecycleActivation.verifyMojoConfiguration(
+    BanishedDependencyLifecycleActivation.verifyAnalyzeConfiguration(
         session, project, mojoExecution, banishedDependencies);
-    MavenAnalysisPreparation.rejectBanRequestBeforePrediction(banishedDependencies);
     try {
       final AnalyzePrediction prediction =
           predictionService.predict(
@@ -177,20 +176,40 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
                       mrjarStrategy),
                   new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots)),
               projectDependenciesResolver);
+      verifyBanPrediction(prediction);
+      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
+          assessVulnerabilities(prediction);
+      ElisionSummary.reportPrediction(getLog(), prediction, vulnerabilityAssessment, trimJars);
       MavenClassUsageReportWriter.write(
           reportFile.toPath(),
           prediction.evidence().classUsageReport(),
           prediction.evidence().bytecodeScan(),
           prediction);
-      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
-          assessVulnerabilities(prediction);
-      ElisionSummary.reportPrediction(getLog(), prediction, vulnerabilityAssessment, trimJars);
       if (getLog().isInfoEnabled()) {
         getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
       }
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency analysis failed closed: " + exception.getMessage(), exception);
+    }
+  }
+
+  private void verifyBanPrediction(final AnalyzePrediction prediction) throws MojoFailureException {
+    final List<BanishedDependency> requested =
+        BanishedDependencyPolicy.normalize(banishedDependencies);
+    if (requested.isEmpty()) {
+      return;
+    }
+    if (prediction.provenance() != AnalyzePrediction.Provenance.DETACHED_CURRENT_MODEL
+        || !prediction.banPlan().entries().stream()
+            .map(AnalyzeBanPlan.Entry::dependency)
+            .toList()
+            .equals(requested)
+        || !prediction
+            .wouldElideArtifacts()
+            .containsAll(prediction.banPlan().forcedAbsentAfterResolution())) {
+      throw new MojoFailureException(
+          "Analyze prediction does not prove the requested detached ban plan");
     }
   }
 

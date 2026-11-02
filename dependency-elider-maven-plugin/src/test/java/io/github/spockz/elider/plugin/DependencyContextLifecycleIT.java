@@ -315,7 +315,8 @@ final class DependencyContextLifecycleIT {
         "dependency-elider-maven-plugin",
         "-am",
         "install",
-        "-DskipTests");
+        "-DskipTests",
+        "-Djacoco.skip=true");
     run(
         repositoryRoot,
         wrapper,
@@ -529,7 +530,7 @@ final class DependencyContextLifecycleIT {
     assertAll(
         "Every selected execution injects the captured policy before strict enforcement blocks it",
         () -> assertBanReachedGoal(elideOutput),
-        () -> assertBanReachedGoal(analyzeOutput),
+        () -> assertActiveExtensionAnalyzeBanRejected(analyzeOutput),
         () -> assertBanReachedGoal(defaultCliOutput),
         () -> assertBanReachedGoal(initializeOutput),
         () -> assertBanReachedGoal(processClassesOutput),
@@ -705,6 +706,13 @@ final class DependencyContextLifecycleIT {
   private static void assertBanReachedGoal(final String output) {
     assertThat(output)
         .contains("strict ban enforcement is not available")
+        .doesNotContain("does not match the frozen selected execution policy");
+  }
+
+  private static void assertActiveExtensionAnalyzeBanRejected(final String output) {
+    assertThat(output)
+        .contains(
+            "requires detached no-extension Analyze; active extension requests remain fail-closed")
         .doesNotContain("does not match the frozen selected execution policy");
   }
 

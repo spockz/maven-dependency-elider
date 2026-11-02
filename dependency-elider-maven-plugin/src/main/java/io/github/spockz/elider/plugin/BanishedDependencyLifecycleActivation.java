@@ -163,6 +163,34 @@ final class BanishedDependencyLifecycleActivation {
     }
   }
 
+  /** Plugin-only Analyze lacks capture. An active hook must prove selected policy. */
+  static void verifyAnalyzeConfiguration(
+      final MavenSession session,
+      final MavenProject project,
+      final MojoExecution execution,
+      final List<String> configuredBans)
+      throws MojoFailureException {
+    final List<BanishedDependency> requested = BanishedDependencyPolicy.normalize(configuredBans);
+    if (requested.isEmpty()) {
+      verifyMojoConfiguration(session, project, execution, configuredBans);
+      return;
+    }
+    if (session == null || session.getRepositorySession() == null) {
+      throw new MojoFailureException("Analyze bans require a live Maven Resolver session");
+    }
+    final org.eclipse.aether.SessionData data = EliderPreparationState.sessionData(session);
+    final boolean hookPresent =
+        Boolean.TRUE.equals(data.get(MavenOriginalInputAudit.HOOK_PRESENT_KEY));
+    if (!hookPresent) {
+      if (data.get(CAPTURE_STORE_KEY) != null) {
+        throw new MojoFailureException(
+            "Analyze cannot ignore selected ban capture without the active lifecycle hook");
+      }
+      return;
+    }
+    verifyMojoConfiguration(session, project, execution, configuredBans);
+  }
+
   private List<SelectedExecution> select(final MavenSession session, final List<String> goals)
       throws MavenExecutionException {
     final MavenProject project = session.getCurrentProject();

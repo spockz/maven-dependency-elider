@@ -33,8 +33,13 @@ final class MavenElisionService extends MavenElisionServiceDefaults {
       final ProjectDependenciesResolver resolver)
       throws IOException, MojoFailureException {
     final MavenProject currentModel = MavenAnalysisResolutionContext.currentModel(project);
-    MavenAnalysisPreparation.rejectRequestedBans(
-        currentModel, options, new ElisionAnalysisModel.ArtifactViews(List.of(), false, List.of()));
+    BanishedDependencyPolicy.resolve(
+        options.retainedArtifacts(),
+        options.banishedDependencies(),
+        currentModel.getDependencies(),
+        options.trim().passThroughArtifacts(),
+        List.of(),
+        List.of());
     final AnalysisEnvironment environment = AnalysisEnvironment.capture(project, options.session());
     try (AnalysisProjectionWorkspace workspace = AnalysisProjectionWorkspace.create()) {
       final AnalysisEnvironment operationEnvironment =
@@ -42,12 +47,14 @@ final class MavenElisionService extends MavenElisionServiceDefaults {
       final MavenAnalysisResolutionContext context =
           MavenAnalysisResolutionContext.forAnalyze(
               currentModel, project, options.session(), resolver, operationEnvironment);
+      final AnalyzeBanPlan banPlan = AnalyzeBanPlan.create(context, options);
       final PreparedAnalysis prepared =
           MavenAnalysisPreparation.prepare(
               context.project(),
               options.withEnvironment(operationEnvironment),
               DependencyDynamicRoots::scan,
-              context);
+              context,
+              banPlan);
       return AnalyzePrediction.from(ElisionReachabilityEngine.finishAnalysis(prepared));
     }
   }

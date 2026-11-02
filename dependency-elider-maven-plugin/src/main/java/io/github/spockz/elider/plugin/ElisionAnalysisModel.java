@@ -25,6 +25,7 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 
 /** Defines immutable inputs and results shared by Maven elision collaborators. */
+@SuppressWarnings("PMD.CouplingBetweenObjects")
 final class ElisionAnalysisModel {
   private ElisionAnalysisModel() {}
 
@@ -167,6 +168,8 @@ final class ElisionAnalysisModel {
       Set<String> classNames,
       Set<ArtifactCoordinate> declaringArtifacts,
       Set<ArtifactCoordinate> resourceProviderArtifacts,
+      Map<ArtifactCoordinate, Set<String>> classRootsByDeclaringArtifact,
+      Map<ArtifactCoordinate, Set<ArtifactCoordinate>> resourceProvidersByDeclaringArtifact,
       Map<Path, DependencyDynamicRoots.RootScan> scansByPath,
       Map<ArtifactCoordinate, Set<String>> unprovenServiceRootsByCoordinate,
       Set<String> provenServiceInterfaces,
@@ -175,6 +178,8 @@ final class ElisionAnalysisModel {
       classNames = Set.copyOf(classNames);
       declaringArtifacts = Set.copyOf(declaringArtifacts);
       resourceProviderArtifacts = Set.copyOf(resourceProviderArtifacts);
+      classRootsByDeclaringArtifact = immutableSets(classRootsByDeclaringArtifact);
+      resourceProvidersByDeclaringArtifact = immutableSets(resourceProvidersByDeclaringArtifact);
       scansByPath = Map.copyOf(scansByPath);
       unprovenServiceRootsByCoordinate = Map.copyOf(unprovenServiceRootsByCoordinate);
       provenServiceInterfaces = Set.copyOf(provenServiceInterfaces);
@@ -185,7 +190,24 @@ final class ElisionAnalysisModel {
         final Set<String> classNames,
         final Set<ArtifactCoordinate> declaringArtifacts,
         final Map<Path, DependencyDynamicRoots.RootScan> scansByPath) {
-      this(classNames, declaringArtifacts, Set.of(), scansByPath, Map.of(), Set.of(), List.of());
+      this(
+          classNames,
+          declaringArtifacts,
+          Set.of(),
+          Map.of(),
+          Map.of(),
+          scansByPath,
+          Map.of(),
+          Set.of(),
+          List.of());
+    }
+
+    private static <T> Map<ArtifactCoordinate, Set<T>> immutableSets(
+        final Map<ArtifactCoordinate, Set<T>> values) {
+      return values.entrySet().stream()
+          .collect(
+              java.util.stream.Collectors.toUnmodifiableMap(
+                  Map.Entry::getKey, entry -> Set.copyOf(entry.getValue())));
     }
   }
 
@@ -211,7 +233,8 @@ final class ElisionAnalysisModel {
       MavenElisionGraphBinding.Result graphBinding,
       MavenElisionPolicyIdentity.Options policyOptions,
       String sourceAttributionFallback,
-      MavenAnalysisResolutionContext resolutionContext) {
+      MavenAnalysisResolutionContext resolutionContext,
+      AnalyzeBanPlan banPlan) {
     /* default */ PreparedAnalysis {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);
@@ -221,11 +244,13 @@ final class ElisionAnalysisModel {
       sourceRequiredClasses = Set.copyOf(sourceRequiredClasses);
       pruningRequiredClasses = Set.copyOf(pruningRequiredClasses);
       java.util.Objects.requireNonNull(productionOutputFingerprint, "productionOutputFingerprint");
+      java.util.Objects.requireNonNull(banPlan, "banPlan");
     }
   }
 
   /* default */ record EffectiveAnalysis(
       PreparedAnalysis prepared,
+      AnalyzeBanPlan banPlan,
       EffectiveGraphPolicy.Evaluation graphEvaluation,
       ElisionDecision rawDecision,
       ElisionDecision effectiveDecision,
@@ -235,6 +260,9 @@ final class ElisionAnalysisModel {
       String operationFingerprint,
       ResolverArtifactGraphProjection graphProjection) {
     /* default */ EffectiveAnalysis {
+      if (!prepared.banPlan().equals(banPlan)) {
+        throw new IllegalArgumentException("Effective analysis changed its prepared ban plan");
+      }
       forcedUnchangedCoordinates = Set.copyOf(forcedUnchangedCoordinates);
     }
   }

@@ -9,6 +9,7 @@ import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,10 +42,21 @@ final class MavenClassUsageReportWriter {
       throws IOException {
     final Path normalized = output.toAbsolutePath().normalize();
     final Path parent = normalized.getParent();
-    if (parent != null) {
-      Files.createDirectories(parent);
+    if (parent == null) {
+      throw new IOException("Class usage report needs a parent directory");
     }
-    JSON.writeValue(normalized.toFile(), document(report, bytecodeScan, prediction));
+    Files.createDirectories(parent);
+    final Path temporary = Files.createTempFile(parent, ".class-usage-", ".json");
+    try {
+      JSON.writeValue(temporary.toFile(), document(report, bytecodeScan, prediction));
+      Files.move(
+          temporary,
+          normalized,
+          StandardCopyOption.ATOMIC_MOVE,
+          StandardCopyOption.REPLACE_EXISTING);
+    } finally {
+      Files.deleteIfExists(temporary);
+    }
   }
 
   private static Map<String, Object> document(
@@ -108,6 +120,28 @@ final class MavenClassUsageReportWriter {
                         "coordinate", planned.coordinate().toString(),
                         "classes", planned.removedClasses().stream().sorted().toList()))
             .toList());
+    if (prediction.banPlan().requested()) {
+      document.put("banContextFingerprint", prediction.banPlan().contextFingerprint());
+      document.put(
+          "banPlan",
+          prediction.banPlan().entries().stream()
+              .map(
+                  entry -> {
+                    final Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("dependency", entry.dependency().toString());
+                    row.put(
+                        "status",
+                        entry.matched()
+                            ? "FORCED_ABSENT_AFTER_RESOLUTION"
+                            : "NO_CURRENT_INVENTORY_MATCH");
+                    row.put(
+                        "matchedArtifacts",
+                        entry.artifacts().stream().map(Object::toString).toList());
+                    row.put("applied", false);
+                    return row;
+                  })
+              .toList());
+    }
     return document;
   }
 

@@ -107,6 +107,9 @@ final class DynamicRootOrchestrator {
     final Set<String> patternRoots = new HashSet<>();
     NativeImagePolicyRoots.applyResourcePatterns(
         resourcePatterns, context, patternRoots, resourceProviderPaths);
+    final DynamicRootProvenance provenance =
+        DynamicRootProvenance.collect(
+            candidates, scansByPath, effectiveRootsByPath, resourcePatterns, context);
     classNames.addAll(patternRoots);
     routedRoots.addAll(patternRoots);
     addOwnerRoots(routedRoots, candidates, context, scansByPath);
@@ -122,6 +125,8 @@ final class DynamicRootOrchestrator {
         classNames,
         declaringArtifacts,
         resourceProviders,
+        provenance.classRootsByDeclaringArtifact(),
+        provenance.resourceProvidersByDeclaringArtifact(),
         scansByPath,
         unprovenRootsByCoordinate,
         provenServiceInterfaces,

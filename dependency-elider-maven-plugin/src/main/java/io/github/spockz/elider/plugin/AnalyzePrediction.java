@@ -23,7 +23,31 @@ record AnalyzePrediction(
     AnalysisEvidence evidence,
     String environmentFingerprint,
     String inventoryFingerprint,
-    String operationFingerprint) {
+    String operationFingerprint,
+    AnalyzeBanPlan banPlan) {
+  /* default */ AnalyzePrediction(
+      final Provenance provenance,
+      final List<ArtifactSnapshot> inputArtifacts,
+      final List<ArtifactCoordinate> retainedArtifacts,
+      final List<ArtifactCoordinate> wouldElideArtifacts,
+      final List<PlannedTrim> plannedTrims,
+      final AnalysisEvidence evidence,
+      final String environmentFingerprint,
+      final String inventoryFingerprint,
+      final String operationFingerprint) {
+    this(
+        provenance,
+        inputArtifacts,
+        retainedArtifacts,
+        wouldElideArtifacts,
+        plannedTrims,
+        evidence,
+        environmentFingerprint,
+        inventoryFingerprint,
+        operationFingerprint,
+        AnalyzeBanPlan.empty());
+  }
+
   AnalyzePrediction {
     Objects.requireNonNull(provenance, "provenance");
     inputArtifacts = List.copyOf(inputArtifacts);
@@ -34,6 +58,7 @@ record AnalyzePrediction(
     Objects.requireNonNull(environmentFingerprint, "environmentFingerprint");
     Objects.requireNonNull(inventoryFingerprint, "inventoryFingerprint");
     Objects.requireNonNull(operationFingerprint, "operationFingerprint");
+    Objects.requireNonNull(banPlan, "banPlan");
   }
 
   /* default */ static AnalyzePrediction from(final ElisionAnalysisModel.EffectiveAnalysis analysis)
@@ -47,7 +72,8 @@ record AnalyzePrediction(
         ElisionAnalysisModel.evidence(analysis.prepared()),
         analysis.prepared().resolutionContext().environment().fingerprint(),
         analysis.inventoryFingerprint(),
-        analysis.operationFingerprint());
+        analysis.operationFingerprint(),
+        analysis.banPlan());
   }
 
   private static List<PlannedTrim> plannedTrims(

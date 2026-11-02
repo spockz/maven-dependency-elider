@@ -63,7 +63,8 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
         binding,
         prepared.policyOptions(),
         prepared.sourceAttributionFallback(),
-        prepared.resolutionContext());
+        prepared.resolutionContext(),
+        prepared.banPlan());
   }
 
   static ArtifactCoordinate coordinate(

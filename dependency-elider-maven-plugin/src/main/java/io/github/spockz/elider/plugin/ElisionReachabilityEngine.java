@@ -49,12 +49,14 @@ final class ElisionReachabilityEngine {
 
   /* default */ static EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)
       throws IOException, MojoFailureException {
+    final AnalyzeBanPlan banPlan = prepared.banPlan();
     final ElisionDecision rawDecision = prepared.rawDecision();
     final MavenElisionGraphBinding.Result binding = prepared.graphBinding();
     if (!prepared.inputFingerprint().equals(binding.inventoryFingerprint())) {
       throw new IOException("Graph binding does not match the prepared artifact inventory");
     }
     EffectiveGraphPolicy.Evaluation evaluation = binding.evaluation();
+    banPlan.verifyGraph(evaluation);
     ElisionDecision policyInput = rawDecision;
     ElisionDecision effectiveDecision = evaluation.effectiveDecision(rawDecision);
     final Set<ArtifactCoordinate> forcedUnchanged =
@@ -71,9 +73,12 @@ final class ElisionReachabilityEngine {
       MavenArtifactInventory.verifyPreparedInventory(prepared);
       final Set<ArtifactCoordinate> newlyReachedDrops =
           newlyReachedDrops(analysis, effectiveDecision);
+      banPlan.verifyNoPromotion(newlyReachedDrops);
       if (newlyReachedDrops.isEmpty()) {
+        banPlan.verifyGraph(evaluation);
         return new EffectiveAnalysis(
             prepared,
+            banPlan,
             evaluation,
             rawDecision,
             effectiveDecision,
@@ -88,6 +93,7 @@ final class ElisionReachabilityEngine {
       }
       policyInput = promoteForBytecode(policyInput, newlyReachedDrops);
       evaluation = EffectiveGraphPolicy.evaluatePair(binding.pair(), policyInput);
+      banPlan.verifyGraph(evaluation);
       effectiveDecision = evaluation.effectiveDecision(rawDecision);
       forcedUnchanged.addAll(newlyReachedDrops);
       addUnchangedPolicyArtifacts(evaluation, forcedUnchanged);

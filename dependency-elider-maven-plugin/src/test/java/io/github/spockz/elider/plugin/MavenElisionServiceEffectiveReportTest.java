@@ -81,6 +81,7 @@ final class MavenElisionServiceEffectiveReportTest
     final ElisionAnalysisModel.EffectiveAnalysis invalidReport =
         new ElisionAnalysisModel.EffectiveAnalysis(
             valid.prepared(),
+            valid.banPlan(),
             EffectiveGraphPolicy.failClosed(
                 valid.graphEvaluation().projectKey(),
                 valid.rawDecision(),
