@@ -13,6 +13,7 @@ import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -139,6 +140,10 @@ final class DependencyContextLifecycleIT {
 
     assertAll(
         "Lifecycle mirrors use the selected local cache and block remote repositories",
+        () ->
+            assertThat(configuredRepositoryUri)
+                .isEqualTo(configuredRepository.toUri().toASCIIString()),
+        () -> assertThat(URI.create(configuredRepositoryUri).getScheme()).isEqualTo("file"),
         () ->
             assertThat(configuredSettings)
                 .contains(
