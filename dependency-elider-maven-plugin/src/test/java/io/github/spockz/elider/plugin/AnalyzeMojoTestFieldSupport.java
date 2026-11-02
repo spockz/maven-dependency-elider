@@ -23,12 +23,9 @@ final class AnalyzeMojoTestFieldSupport {
     final Field field = target.getClass().getDeclaredField(name);
     field.setAccessible(true);
     field.set(target, value);
-    if (target instanceof AnalyzeMojo mojo && "project".equals(name)) {
-      installLegacyPredictionFixture(mojo);
-    }
   }
 
-  private static void installLegacyPredictionFixture(final AnalyzeMojo mojo)
+  /* package */ static void installLegacyPredictionFixture(final AnalyzeMojo mojo)
       throws ReflectiveOperationException {
     set(
         mojo,

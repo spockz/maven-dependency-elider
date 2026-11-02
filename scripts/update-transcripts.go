@@ -276,7 +276,33 @@ func invocationFixturePath(root, evidencePath string, item invocation) (string, 
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(workingDirectory, file)
 	}
+	file, err = safeRepositoryPath(root, file)
+	if err != nil {
+		return "", err
+	}
+	file, err = canonicalizeMavenFilePath(file)
+	if err != nil {
+		return "", fmt.Errorf("transcript %s: resolve Maven fixture path: %w", item.ID, err)
+	}
 	return safeRepositoryPath(root, file)
+}
+
+func canonicalizeMavenFilePath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve path %q: %w", path, err)
+	}
+	info, err := os.Stat(absolute)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("inspect path %q: %w", absolute, err)
+		}
+		return absolute, nil
+	}
+	if info.IsDir() {
+		return filepath.Join(absolute, "pom.xml"), nil
+	}
+	return absolute, nil
 }
 
 func isMavenCommand(command string) bool {

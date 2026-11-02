@@ -583,7 +583,7 @@ public final class ExampleSupport {
     if (!overlap.isEmpty()) {
       throw new IOException("dependencyPrediction retained and would-elide coordinates overlap");
     }
-    validateBanPlan(prediction, provenance.textValue(), retained, wouldElide);
+    validateBanPlan(prediction, retained, wouldElide);
     final JsonNode plannedRemovals = prediction.path("plannedClassRemovals");
     if (!plannedRemovals.isArray()) {
       throw new IOException("dependencyPrediction plannedClassRemovals must be an array");
@@ -634,7 +634,6 @@ public final class ExampleSupport {
 
   private static void validateBanPlan(
       final JsonNode prediction,
-      final String provenance,
       final Set<String> retained,
       final Set<String> wouldElide)
       throws IOException {
@@ -645,9 +644,6 @@ public final class ExampleSupport {
     }
     if (context == null || plan == null) {
       throw new IOException("dependencyPrediction ban context and plan must appear together");
-    }
-    if (!"DETACHED_CURRENT_MODEL".equals(provenance)) {
-      throw new IOException("dependencyPrediction ban plan requires detached provenance");
     }
     if (!context.isTextual() || !context.textValue().matches("[0-9a-f]{64}")) {
       throw new IOException("dependencyPrediction banContextFingerprint must be a SHA-256 string");

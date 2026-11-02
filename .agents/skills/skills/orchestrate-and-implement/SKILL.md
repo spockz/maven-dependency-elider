@@ -1,6 +1,6 @@
 ---
 name: orchestrate-and-implement
-description: Implements a work package within one coordinating thread/session, decomposing its scope into tracks and committable slices with dedicated implementers and reviewers, progressive integration, and verified closeout.
+description: Implements a work package within one coordinating thread/session, decomposing its scope into tracks and committable slices with dedicated implementers and reviewers, explicit requirement coverage, progressive integration, and verified closeout.
 ---
 
 <!-- This skill coordinates multi-track implementations from a handover document, enforcing sliced atomic commits, dedicated implementer-reviewer pairings, cross-model Gemini MCP reviews, and verified integration. Compatible with Codex and Antigravity execution harnesses. -->
@@ -22,6 +22,8 @@ A handover, specification, ADR, or research question supplies requirements; it m
 Each work package belongs to a single coordinating thread/session. If work moves to a new thread/session, define a new work package from the recorded remaining scope and link it to the previous package. Context compaction within the same thread does not create a new work package.
 
 Distinguish session closeout from work package completion. Mark a work package complete only when its agreed scope is implemented, reviewed, integrated, and verified. If the session ends earlier, record the package as incomplete, preserve unfinished work, and hand over exact remaining criteria. Do not silently narrow its scope or equate a closed session with completed implementation.
+
+Apply the [Completion Review Protocol](references/review_triangle.md#completion-review-protocol) before delegation, at track completion, and at whole-system integration. Maintain a requirement-to-evidence matrix in the existing orchestration ledger. Derive it from the agreed source specification and user amendments, including main capabilities described outside the acceptance checklist. Reviewers must check that the matrix itself covers the source scope; approved slices and passing tests cannot establish that no work was omitted.
 
 ## Model Roles and Environment Mappings
 
@@ -210,16 +212,16 @@ flowchart TD
 ### Step 1: Define the Work Package, Ingest Requirements, and Verify Seams
 
 1. **Establish the Handover File**: Start from the handover file supplied in the initial prompt. If none is supplied but the prompt defines the requested work, save that initial prompt verbatim as `.scratch/handover.md` before planning, delegation, or edits. Record the source handover path in the orchestration status. Do not reconstruct the initial assignment from later chat context.
-2. **Define Work Package**: Record its name or identifier, owning thread/session, selected scope, acceptance criteria, and source handover in `.scratch/orchestration-status.md`. Select a bounded package for this session rather than assuming an entire project roadmap is the assignment. If continuing work from another session, create a new package linked to the prior package's closeout handover.
-3. **Ingest Specification**: Read the requirements from the established handover file.
+2. **Define Work Package**: Record its name or identifier, owning thread/session, agreed scope, acceptance criteria, source paths/revisions, and intended integration target in `.scratch/orchestration-status.md`. A supplied roadmap may contain future work, but a request to implement a named package includes its full agreed scope. Session size, track boundaries, and document status labels do not authorize narrowing it. If continuing work from another session, link the prior package's remaining criteria without dropping them.
+3. **Ingest Specification**: Read the established handover and applicable user amendments. Reconcile multiple documents sharing a package identifier before decomposition; identify which scope is authoritative and preserve added requirements. Record unresolved scope conflicts explicitly. Build the requirement-to-evidence matrix from these sources, with every required capability and acceptance criterion represented.
 4. **Documentation and Research Discovery**: Identify the user-facing documentation surfaces affected by the requested behavior, including README and example documentation, Maven usage/site source pages, goal/help text, and published API comments where applicable. Search existing research questions for related decisions, evidence, and unresolved concerns; record the relevant documents and whether they may need an update.
-5. **Architectural Scrutiny**: The Critical Architect verifies the work package's functional requirements, acceptance criteria, ADR alignment, decoupling seams, and identified documentation/research follow-ups.
+5. **Architectural Scrutiny**: The Critical Architect independently compares the source specification and user amendments with the matrix, checking for missing pillars, refusal conditions, integration work, and acceptance obligations before verifying ADR alignment and decoupling seams.
 6. **Clearance**: Issue formal track boundaries and DAG sequencing within the work package to the coordinator thread.
 
 ### Step 2: Formulate DAG and Partition Slices
 
 1. **Map Dependencies**: Map package imports and concrete code dependencies using `go list -f '{{.ImportPath}}: {{.Imports}}' ./...`.
-2. **Partition Slices**: Partition tracks into ordered, committable functional capability slices, each with defined targets, surgical test commands, and observable invariants.
+2. **Partition Slices**: Partition tracks into ordered, committable functional capability slices, each with requirement IDs, defined targets, surgical test commands, and observable invariants. Give every matrix row an accountable track owner; assign wiring and shared acceptance criteria explicitly so they cannot fall between tracks.
 3. **Queue Tracks**: Queue independent tracks for immediate execution; place dependent tracks in `PENDING` until interface contracts integrate.
 
 ### Step 3: Provision Worktrees and Spawn Threads
@@ -239,7 +241,7 @@ flowchart TD
 
 3. **Leverage Ambient Caches**: Transparently reuse external caches (`GOCACHE`, `GOMODCACHE`).
 4. **Spawn Threads**: For each track that is ready to start, launch exactly one Implementer and one Track Reviewer using mapped environment profiles. Keep those two agents assigned to that track through all slices, fixups, and track completion. Launch no per-slice agents. Reuse a single session-wide Critical Architect for upfront scrutiny and later escalations; do not spawn a separate architect for every track. Gemini review uses the bridge tool and does not add an agent.
-5. **Initialise Ledger**: Record initial states in `.scratch/orchestration-status.md`.
+5. **Dispatch Scope and Evidence Contract**: Give each implementer and reviewer the authoritative source references, package-wide capability summary, assigned requirement IDs, boundary obligations, and expected evidence. Record initial states in the existing ledger; do not replace the requirement matrix with a list of planned slices.
 
 ### Step 4: Implement Slices with Surgical Iteration and Pipelining
 
@@ -251,20 +253,20 @@ flowchart TD
    git add <slice-target-paths> && git commit -m "<track-name>: <slice-summary>"
    ```
 
-4. **Pipeline**: Submit diff to Track Reviewer and advance to subsequent slices immediately without idling.
+4. **Pipeline**: Submit the commit, relevant requirement rows, implementation/wiring locations, and verification evidence to the Track Reviewer. Mark partial or unverified requirements explicitly, then advance to subsequent slices without idling.
 5. **In-Flight Review Handling**: If the reviewer requests changes for Slice $N$ while Slice $N+1$ is in progress: pause forward work, isolate and commit uncommitted edits belonging to Slice $N+1$ via a targeted WIP commit (`git add <slice-n+1-target-paths> && git commit -m "wip: slice-<n+1> in-flight"`), stage the fixup changes and commit as a targeted fixup (`git add <slice-n-fix-paths> && git commit -m "fixup! <slice-n-summary>"`), rebase the track branch via `git rebase -i --autosquash "$BASE_REF"`, optionally uncommit the WIP commit via `git reset HEAD~1`, re-verify with `make check`, and resubmit.
 6. **Log Tool Defects**: Record any MCP tool errors in `.scratch/suboptimal-tools/<track-name>.md`.
 
 ### Step 5: Execute Track Review Gate
 
-1. **Inspect Review Triangle**: Track Reviewer evaluates Code and Tests, Code Quality, ADR Adherence, and Scope Fidelity. As part of Scope Fidelity, confirm that relevant README, Maven usage/site pages, goal/help descriptions, and published source comments were updated with the implementation. Inspect related research questions for new findings and ensure resolved portions are marked implemented/fixed with evidence; request changes when applicable updates are missing or stale.
+1. **Inspect Review Triangle**: Track Reviewer reads the assigned source criteria before evaluating the diff, checks completion evidence under the Completion Review Protocol, then evaluates Code and Tests, Code Quality, ADR Adherence, and Scope Fidelity. As part of Scope Fidelity, confirm that relevant README, Maven usage/site pages, goal/help descriptions, and published source comments were updated with the implementation. Inspect related research questions for new findings and ensure resolved portions are marked implemented/fixed with evidence; request changes when applicable updates are missing or stale.
 2. **Issue Verdict**: Record structured verdict to `.scratch/reviews/<track-name>-slice-<id>.md`, naming updated documentation and research-question paths or explaining briefly why none apply:
    * **CHANGES REQUESTED**: Mandate fixups for any stylistic, naming, comment, or structural flaw.
-   * **APPROVED**: Slice accepted and locked.
+   * **APPROVED**: Slice accepted for its stated scope. Record remaining track requirements; slice approval is not track or package completion.
 
 ### Step 6: Track Completion, Gemini Review, and Track Wrap-Up Analysis
 
-1. **Pre-Integration Sweep**: Confirm all track slices are `APPROVED` and run `make check` inside the worktree.
+1. **Track Completion Gate**: The Track Reviewer reconciles all assigned source requirements with the track's actual implementation and verification evidence, including required behavior absent from the diff. Record the completion verdict and uncovered boundary obligations in `.scratch/reviews/<track-name>-completion.md`. All slice approvals are necessary but insufficient: unresolved required work prevents declaring the track complete. Confirm approved slices and run `make check` inside the worktree.
 2. **Execute Track Wrap-Up Analysis**: Run the standard session wrap-up analysis on the completed track:
    * Assess semantic tool QoL (beneficial, neutral, harmful, or unknown), compare agent efficiency with built-in alternatives (`rg`, `apply_patch`), and record wall-clock runtimes.
    * Document manual source-edit fallbacks in `.scratch/manual-edits/<track-name>.md`.
@@ -302,8 +304,8 @@ flowchart TD
 ### Step 8: Whole-System Integration Review
 
 1. **Integrated Gemini Review**: Call `gemini_review_diff` on the integrated checkout.
-2. **System Triangle Review**: Critical Architect inspects cumulative diffs, cross-component cohesion, and regression safety.
-3. **Record Verdict**: Write integration receipt to `.scratch/reviews/integration-step-<id>.md`.
+2. **System Completion and Triangle Review**: The Critical Architect independently reconstructs the full agreed scope from its sources and user amendments, then reconciles it with the matrix and actual integrated checkout. Check every main capability and acceptance criterion, including requirements never assigned a slice, unchanged old behavior, and disconnected components. Verify representative production paths across track boundaries and the intended integration target; inspect cumulative diffs, cohesion, and regression safety as well. During progressive integration, name pending tracks; at final integration, unresolved required rows prevent a complete verdict.
+3. **Record Verdict**: Write integration receipt to `.scratch/reviews/integration-step-<id>.md`, recording the reviewed commit/tree, target ref, completion evidence, and missing or unverified criteria separately from code-quality findings. Recheck affected evidence after rebases, conflict resolutions, or subsequent changes. Branch names and commit ancestry alone do not prove that the intended behavior landed.
 
 ### Step 9: Follow-Up Routing and Continuity
 
@@ -325,7 +327,8 @@ flowchart TD
 ### Step 11: Work Package Closeout, Final Presentation, and Wrap-Up Handoff
 
 1. **Bundle Track Analyses into Closeout Artifact**: Compile `.scratch/handover-closeout.md`, then persist a sibling of the source handover by inserting `-closeout` before `.md`. For this work package, the required versioned artifact is `docs/handovers/2026-10-25-intra-jar-trimming-work-package-closeout.md`; use the same naming rule for other handover filenames. The sibling carries the consolidated closeout content:
-   * Work package identity, owning thread/session, agreed acceptance criteria, and an explicit complete or incomplete verdict. For incomplete packages, identify remaining criteria, preserved work, and candidate scope for a new package in a later session.
+   * Work package identity, owning thread/session, authoritative source revisions and user amendments, the final requirement-to-evidence matrix, and an explicit complete or incomplete verdict. Preserve enough implementation and verification evidence in this versioned closeout to survive scratch cleanup. For incomplete packages, identify missing, partial, unverified, or unintegrated criteria and their owners. Record user-authorized scope changes explicitly; do not silently relabel unfinished requirements as future work.
+   * The reviewed integration ref/commit and actual delivery target/ref/commit. Distinguish verified integration from pending delivery, local `main` from a remote branch, and committed content from uncommitted work. After the final handoff merge, confirm the target contains the reviewed result and update delivery status before claiming it landed.
    * Cumulative git diff statistics and integrated commit log on `$BASE_REF`.
    * Bundled per-track wrap-up QoL assessments (`.scratch/reviews/*-wrapup.md`), tool runtime comparisons, and net agent-efficiency conclusions.
    * Project-wide verification proofs (`make check`, txtar scripts, and benchmark sweeps).

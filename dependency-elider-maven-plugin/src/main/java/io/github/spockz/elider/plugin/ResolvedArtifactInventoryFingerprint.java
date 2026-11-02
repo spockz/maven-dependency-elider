@@ -8,12 +8,15 @@ import io.github.spockz.elider.trimmer.ArtifactDigests;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Fingerprints the resolved Maven artifact files and their resolver extensions. */
@@ -27,6 +30,13 @@ final class ResolvedArtifactInventoryFingerprint {
   }
 
   static String fingerprint(final List<ElisionAnalysisModel.ArtifactSnapshot> inventory)
+      throws IOException {
+    return fingerprint(inventory, new HashMap<>());
+  }
+
+  private static String fingerprint(
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
+      final Map<Path, String> contentDigests)
       throws IOException {
     final List<String> entries = new ArrayList<>();
     final Set<String> identities = new HashSet<>();
@@ -42,7 +52,7 @@ final class ResolvedArtifactInventoryFingerprint {
         throw new IOException(
             "Duplicate resolved artifact identity cannot bind graph pair: " + identity);
       }
-      entries.add(inventoryEntry(snapshot, extension));
+      entries.add(inventoryEntry(snapshot, extension, contentDigests));
     }
     entries.sort(Comparator.naturalOrder());
     return sha256(entries);
@@ -51,9 +61,31 @@ final class ResolvedArtifactInventoryFingerprint {
   static void verifyFingerprint(
       final List<ElisionAnalysisModel.ArtifactSnapshot> inventory, final String expectedFingerprint)
       throws IOException {
-    if (expectedFingerprint == null || !expectedFingerprint.equals(fingerprint(inventory))) {
+    verifyFingerprint(inventory, expectedFingerprint, new HashMap<>());
+  }
+
+  private static void verifyFingerprint(
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
+      final String expectedFingerprint,
+      final Map<Path, String> contentDigests)
+      throws IOException {
+    if (expectedFingerprint == null
+        || !expectedFingerprint.equals(fingerprint(inventory, contentDigests))) {
       throw new IOException("Resolved artifact inventory changed after fingerprinting");
     }
+  }
+
+  // WHY: The map is local to one call and never shared between threads.
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  static void verifyFingerprints(
+      final List<ElisionAnalysisModel.ArtifactSnapshot> firstInventory,
+      final String firstExpectedFingerprint,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> secondInventory,
+      final String secondExpectedFingerprint)
+      throws IOException {
+    final Map<Path, String> contentDigests = new HashMap<>();
+    verifyFingerprint(firstInventory, firstExpectedFingerprint, contentDigests);
+    verifyFingerprint(secondInventory, secondExpectedFingerprint, contentDigests);
   }
 
   /** Reads the resolver extension through Maven's artifact handler. */
@@ -68,18 +100,29 @@ final class ResolvedArtifactInventoryFingerprint {
   }
 
   private static String inventoryEntry(
-      final ElisionAnalysisModel.ArtifactSnapshot snapshot, final String extension)
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot,
+      final String extension,
+      final Map<Path, String> contentDigests)
       throws IOException {
     final String path = snapshot.filePath() == null ? "<missing>" : snapshot.filePath().toString();
-    final String digest = digest(snapshot, extension);
+    final String digest = digest(snapshot, extension, contentDigests);
     return snapshot.coordinate() + "\t" + extension + "\t" + path + "\t" + digest;
   }
 
   private static String digest(
-      final ElisionAnalysisModel.ArtifactSnapshot snapshot, final String extension)
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot,
+      final String extension,
+      final Map<Path, String> contentDigests)
       throws IOException {
     if (snapshot.filePath() != null && Files.isRegularFile(snapshot.filePath())) {
-      return ArtifactDigests.read(snapshot.filePath()).sha256();
+      final Path path = snapshot.filePath();
+      final String cachedDigest = contentDigests.get(path);
+      if (cachedDigest != null) {
+        return cachedDigest;
+      }
+      final String digest = ArtifactDigests.read(path).sha256();
+      contentDigests.put(path, digest);
+      return digest;
     }
     if (JAR_EXTENSION.equals(extension)) {
       throw new IOException("Resolved JAR has no file path: " + snapshot.coordinate());

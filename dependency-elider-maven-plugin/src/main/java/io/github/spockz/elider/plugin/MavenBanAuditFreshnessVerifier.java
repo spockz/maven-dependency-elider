@@ -17,7 +17,7 @@ final class MavenBanAuditFreshnessVerifier {
       throws IOException {
     auditContext.verifyArtifactBytes();
     if (auditContext.inventory() != null) {
-      MavenOriginalInputAudit.verifyFresh(auditContext.inventory(), project, session);
+      MavenOriginalInputAudit.verifyCaptureFresh(auditContext.inventory(), project, session);
     }
   }
 }

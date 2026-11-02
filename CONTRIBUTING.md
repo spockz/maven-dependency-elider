@@ -10,7 +10,7 @@ To build the project locally, run linters, and execute the full test verificatio
 - **JDK 21 or newer**. The project compiles with Java 21 language and API compatibility.
 - **A POSIX shell and `make`** for the documented developer commands.
 - **Node.js and `npm`** to install the Markdown linter (`markdownlint-cli2`) used by `make check`.
-- **Bash and the `timeout` utility** for `make test-examples`. Node.js is already required for Markdown linting; the example helpers use only its built-in modules and the JDK `jar` command.
+- **Bash and the `timeout` utility** for `make test-examples` and the fixture scheduler checks. The example helpers use shell and the JDK `jar` command.
 - *(Optional)* **Caddy** (`https://caddyserver.com`) to preview the documentation site locally with `make serve`.
 
 The Maven Wrapper (`mvnw`) is included in the repository, so a separate Maven installation is not required.
@@ -37,7 +37,7 @@ make tools
 make check
 ```
 
-`make check` formats Java sources first, then runs Java checks/tests alongside Markdown linting. Top-level Make goals are serialized; `check` and `lint-check` explicitly parallelize only their independent Java and Markdown branches using `MAKE_JOBS` (default 12). `MAVEN_THREADS` defaults to `MAKE_JOBS` and is passed to Maven as `-T` for eligible reactor modules. `TEST_FORKS` defaults to 4 and runs test classes in separate Surefire JVMs; methods within a class remain sequential. The plugin lifecycle integration class runs afterward in one fork because it launches nested Maven builds that write reactor targets. Run individual checks with:
+`make check` formats Java sources first, then runs Java checks/tests alongside Markdown linting. Top-level Make goals are serialized; `check` and `lint-check` explicitly parallelize only their independent Java and Markdown branches using `MAKE_JOBS` (default 12). `MAVEN_THREADS` defaults to `MAKE_JOBS` and is passed to Maven as `-T` for eligible reactor modules. Test goals use `TEST_MAVEN_THREADS=2`, `TEST_FORKS=2`, and `TEST_JUNIT_PARALLELISM=2` by default: Surefire runs test classes in up to two JVM forks and JUnit runs up to two test classes concurrently within a fork. Failsafe runs the plugin lifecycle integration tests in the `verify` phase; those tests launch nested Maven builds that write reactor targets. Run individual checks with:
 
 - `make lint-java` — Run Checkstyle, PMD, and SpotBugs.
 - `make lint-markdown` — Run `markdownlint-cli2` across all documentation.

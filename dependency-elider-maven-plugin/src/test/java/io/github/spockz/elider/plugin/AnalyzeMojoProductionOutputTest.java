@@ -94,6 +94,7 @@ final class AnalyzeMojoProductionOutputTest {
     final Path report = target.resolve("dependency-elider-class-usage.json");
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, PRODUCTION_OUTPUT_FIELD, output.toFile());
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
     AnalyzeMojoTestFieldSupport.set(mojo, "productionClassesComplete", true);
@@ -158,6 +159,7 @@ final class AnalyzeMojoProductionOutputTest {
     final Path report = tempDir.resolve("complete-report.json");
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
     AnalyzeMojoTestFieldSupport.set(mojo, PRODUCTION_OUTPUT_FIELD, productionOutput.toFile());
     AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
@@ -190,6 +192,7 @@ final class AnalyzeMojoProductionOutputTest {
         AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
     final Path report = tempDir.resolve("invalid-scan.json");
     final AnalyzeMojo mojo = fixture.mojo();
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(
         mojo, PRODUCTION_OUTPUT_FIELD, tempDir.resolve("missing-classes").toFile());
     AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());

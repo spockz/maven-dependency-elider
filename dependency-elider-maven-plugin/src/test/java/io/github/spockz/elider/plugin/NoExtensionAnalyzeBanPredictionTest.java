@@ -215,28 +215,23 @@ final class NoExtensionAnalyzeBanPredictionTest {
 
   @Test
   void elideAppliesSafeTransitiveBanWithTrimDisabledAndEnabled() throws Exception {
-    final Fixture withoutTrim = basicFixture(USED_TRACE);
-    final Fixture withTrim = basicFixture(USED_TRACE);
-    final ElideMojo withoutTrimMojo = elideMojo(withoutTrim, false);
-    final ElideMojo withTrimMojo = elideMojo(withTrim, true);
-    final org.apache.maven.artifact.Artifact withoutTrimUsed =
-        withoutTrim.project().getDependencyArtifacts().iterator().next();
-    final org.apache.maven.artifact.Artifact withTrimUsed =
-        withTrim.project().getDependencyArtifacts().iterator().next();
-    final Set<org.apache.maven.artifact.Artifact> withoutTrimDirect =
-        withoutTrim.project().getDependencyArtifacts();
-    final Set<org.apache.maven.artifact.Artifact> withTrimDirect =
-        withTrim.project().getDependencyArtifacts();
-
-    withoutTrimMojo.execute();
-    withTrimMojo.execute();
-    final ResolverArtifactPlan withoutTrimPlan = resolverPlan(withoutTrim);
-    final ResolverArtifactPlan withTrimPlan = resolverPlan(withTrim);
-
     assertAll(
         "safe transitive bans are applied in both trim modes before resolver-plan publication",
-        () -> assertAppliedBan(withoutTrim, withoutTrimPlan, withoutTrimUsed, withoutTrimDirect),
-        () -> assertAppliedBan(withTrim, withTrimPlan, withTrimUsed, withTrimDirect));
+        () -> assertSafeTransitiveBanApplied(false),
+        () -> assertSafeTransitiveBanApplied(true));
+  }
+
+  private void assertSafeTransitiveBanApplied(final boolean trimJars)
+      throws IOException, MojoFailureException, ReflectiveOperationException {
+    final Fixture fixture = basicFixture(USED_TRACE);
+    final ElideMojo mojo = elideMojo(fixture, trimJars);
+    final org.apache.maven.artifact.Artifact used =
+        fixture.project().getDependencyArtifacts().iterator().next();
+    final Set<org.apache.maven.artifact.Artifact> direct =
+        fixture.project().getDependencyArtifacts();
+
+    mojo.execute();
+    assertAppliedBan(fixture, used, direct);
   }
 
   @Nested
@@ -714,12 +709,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
 
   private static void assertAppliedBan(
       final Fixture fixture,
-      final ResolverArtifactPlan plan,
       final org.apache.maven.artifact.Artifact retained,
-      final Set<org.apache.maven.artifact.Artifact> directBefore)
-      throws IOException {
-    final MavenElisionReportSnapshot summary =
-        MavenElisionReportWriter.read(fixture.trace().getParent().resolve(SUMMARY_FILENAME));
+      final Set<org.apache.maven.artifact.Artifact> directBefore) {
     assertAll(
         "the requested transitive artifact is absent from the final Maven and Resolver views",
         () -> assertThat(fixture.project().getArtifacts()).containsExactly(retained),
@@ -727,22 +718,45 @@ final class NoExtensionAnalyzeBanPredictionTest {
         () ->
             assertThat(fixture.project().getArtifacts())
                 .noneMatch(artifact -> BANNED_ARTIFACT_ID.equals(artifact.getArtifactId())),
-        () -> assertThat(plan.graphProjection()).isNotNull(),
-        () -> assertThat(plan.graphProjection().removedNodeIds()).hasSize(1),
-        () -> assertThat(summary.appliedBans()).hasSize(1),
         () ->
-            assertThat(summary.appliedBans().getFirst().status())
-                .isEqualTo("FORCED_ABSENT_AFTER_RESOLUTION"),
-        () -> assertThat(summary.appliedBans().getFirst().applied()).isTrue(),
+            assertAll(
+                "the published Resolver plan records the ban",
+                () -> {
+                  final ResolverArtifactPlan plan = resolverPlan(fixture);
+                  assertAll(
+                      () -> assertThat(plan.graphProjection()).isNotNull(),
+                      () -> assertThat(plan.graphProjection().removedNodeIds()).hasSize(1),
+                      () ->
+                          assertThat(plan.replacements().keySet())
+                              .noneMatch(
+                                  identity -> BANNED_ARTIFACT_ID.equals(identity.artifactId())));
+                }),
         () ->
-            assertThat(summary.rawDroppedCoordinates())
-                .noneMatch(coordinate -> coordinate.startsWith("fixture:banned:")),
-        () ->
-            assertThat(summary.droppedArtifacts())
-                .anyMatch(artifact -> artifact.coordinate().startsWith("fixture:banned:")),
-        () ->
-            assertThat(plan.replacements().keySet())
-                .noneMatch(identity -> BANNED_ARTIFACT_ID.equals(identity.artifactId())));
+            assertAll(
+                "the persisted report records the applied ban",
+                () -> {
+                  final MavenElisionReportSnapshot summary =
+                      MavenElisionReportWriter.read(
+                          fixture.trace().getParent().resolve(SUMMARY_FILENAME));
+                  assertAll(
+                      () -> {
+                        assertThat(summary.appliedBans()).hasSize(1);
+                        final MavenElisionReportSnapshot.AppliedBan appliedBan =
+                            summary.appliedBans().getFirst();
+                        assertAll(
+                            () ->
+                                assertThat(appliedBan.status())
+                                    .isEqualTo("FORCED_ABSENT_AFTER_RESOLUTION"),
+                            () -> assertThat(appliedBan.applied()).isTrue());
+                      },
+                      () ->
+                          assertThat(summary.rawDroppedCoordinates())
+                              .noneMatch(coordinate -> coordinate.startsWith("fixture:banned:")),
+                      () ->
+                          assertThat(summary.droppedArtifacts())
+                              .anyMatch(
+                                  artifact -> artifact.coordinate().startsWith("fixture:banned:")));
+                }));
   }
 
   private static ResolverArtifactPlan resolverPlan(final Fixture fixture) {

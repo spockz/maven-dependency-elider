@@ -217,8 +217,8 @@ snapshot was captured before main progressed as commit
 `767ec799e111e6b99087bf9f427f4d43d0ed9a00`) and remains on the
 `codex/wp-policy-01-pre-progressed-main-rebase` recovery branch. The requested
 rebase excludes replaying that snapshot commit because progressed main already
-carries the snapshot's tracked state; the current main worktree's 12 modified
-tracked paths and 5 untracked paths remain to be restored after fast-forward.
+carries the snapshot's tracked state; the original main worktree's tracked and
+untracked snapshot was restored from the retained recovery stash after fast-forward.
 The old untracked WP-POLICY handover is intentionally replaced by this final
 version. The verified implementation candidate is `335f1f8aef20ac2567198df0b658c09af299cd9e`
 (tree `5d4a16e6d364f349f259232e45ae20aebe26347a`). Rebase corrections preserve

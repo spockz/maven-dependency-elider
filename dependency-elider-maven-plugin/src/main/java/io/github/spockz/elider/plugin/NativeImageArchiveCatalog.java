@@ -21,12 +21,15 @@ import java.util.jar.JarFile;
   static NativeImageArchiveInventory inventory(final Path path) throws IOException {
     final Set<String> logicalClasses = new TreeSet<>();
     final Set<String> resources = new HashSet<>();
+    final Set<String> duplicateResources = new HashSet<>();
     try (JarFile archive = new JarFile(path.toFile())) {
       final Enumeration<JarEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
         final JarEntry entry = entries.nextElement();
         final String entryName = entry.getName();
-        resources.add(entryName);
+        if (!resources.add(entryName)) {
+          duplicateResources.add(entryName);
+        }
         if (!entry.isDirectory() && entryName.endsWith(".class")) {
           final String logicalName = MultiReleaseClassInventory.logicalClassName(entryName);
           if (!MultiReleaseClassInventory.isModuleDescriptor(logicalName)) {
@@ -38,7 +41,8 @@ import java.util.jar.JarFile;
         }
       }
     }
-    return new NativeImageArchiveInventory(path, Set.copyOf(logicalClasses), Set.copyOf(resources));
+    return new NativeImageArchiveInventory(
+        path, Set.copyOf(logicalClasses), Set.copyOf(resources), Set.copyOf(duplicateResources));
   }
 
   /* package */
@@ -49,19 +53,63 @@ import java.util.jar.JarFile;
       final NativeImageScanContext.DescriptorReader reader,
       final Set<Path> providers)
       throws IOException {
-    boolean found = false;
     try (JarFile archive = new JarFile(candidate.path().toFile())) {
+      return readArchiveResource(
+          archive,
+          candidate.path(),
+          candidate.duplicateResources().contains(resourcePath),
+          resourcePath,
+          kind,
+          reader,
+          providers);
+    }
+  }
+
+  /* package */
+  static boolean readArchiveResource(
+      final JarFile archive,
+      final Path archivePath,
+      final boolean duplicateResource,
+      final String resourcePath,
+      final NativeImageDescriptorKind kind,
+      final NativeImageScanContext.DescriptorReader reader,
+      final Set<Path> providers)
+      throws IOException {
+    if (duplicateResource) {
+      boolean found = false;
       final Enumeration<JarEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
         final JarEntry entry = entries.nextElement();
-        if (!entry.isDirectory() && resourcePath.equals(entry.getName())) {
+        if (matchesResource(entry, resourcePath)) {
+          readEntry(archive, archivePath, entry, resourcePath, kind, reader, providers);
           found = true;
-          providers.add(candidate.path());
-          NativeImageInput.archiveEntry(archive, entry, kind)
-              .readDescriptor(reader, resourcePath, candidate.path());
         }
       }
+      return found;
     }
-    return found;
+    final JarEntry entry = archive.getJarEntry(resourcePath);
+    if (entry == null || entry.isDirectory()) {
+      return false;
+    }
+    readEntry(archive, archivePath, entry, resourcePath, kind, reader, providers);
+    return true;
+  }
+
+  /* package */ static boolean matchesResource(final JarEntry entry, final String resourcePath) {
+    return !entry.isDirectory() && resourcePath.equals(entry.getName());
+  }
+
+  private static void readEntry(
+      final JarFile archive,
+      final Path archivePath,
+      final JarEntry entry,
+      final String resourcePath,
+      final NativeImageDescriptorKind kind,
+      final NativeImageScanContext.DescriptorReader reader,
+      final Set<Path> providers)
+      throws IOException {
+    providers.add(archivePath);
+    NativeImageInput.archiveEntry(archive, entry, kind)
+        .readDescriptor(reader, resourcePath, archivePath);
   }
 }

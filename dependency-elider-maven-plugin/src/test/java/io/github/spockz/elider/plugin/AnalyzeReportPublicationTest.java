@@ -23,6 +23,7 @@ final class AnalyzeReportPublicationTest {
   void assessmentFailurePreservesExistingReport() throws Exception {
     final AnalyzeMojoTestArtifactSupport.Fixture fixture =
         AnalyzeMojoTestArtifactSupport.fixture(temporaryDirectory, "used/Sample\n");
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(fixture.mojo());
     final Path report = temporaryDirectory.resolve("fixture-report.json");
     Files.writeString(report, "previous complete report");
     final VulnerabilityMappingConfig invalidMapping = new VulnerabilityMappingConfig();

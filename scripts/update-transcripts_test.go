@@ -31,6 +31,12 @@ func TestInvocationUsesPreparedMavenRepositoryWithoutRenderingItsPath(t *testing
 
 func TestInvocationFixturePathUsesMavenFileArgument(t *testing.T) {
 	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "examples", "first"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "examples", "second"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	first := invocation{
 		ID:               "first",
 		WorkingDirectory: ".",
@@ -42,6 +48,12 @@ func TestInvocationFixturePathUsesMavenFileArgument(t *testing.T) {
 		WorkingDirectory: ".",
 		Command:          "./mvnw",
 		Args:             []string{"-f=./examples/first/pom.xml"},
+	}
+	directoryFixture := invocation{
+		ID:               "directory-fixture",
+		WorkingDirectory: ".",
+		Command:          "./mvnw",
+		Args:             []string{"-f", "examples/first"},
 	}
 	second := invocation{
 		ID:               "second",
@@ -58,12 +70,19 @@ func TestInvocationFixturePathUsesMavenFileArgument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	directoryFixturePath, err := invocationFixturePath(root, "", directoryFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
 	secondPath, err := invocationFixturePath(root, "", second)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if firstPath != sameFixturePath {
 		t.Fatalf("equivalent Maven -f paths produced different fixture keys: %q and %q", firstPath, sameFixturePath)
+	}
+	if firstPath != directoryFixturePath {
+		t.Fatalf("Maven -f directory and explicit pom.xml paths produced different fixture keys: %q and %q", firstPath, directoryFixturePath)
 	}
 	if firstPath == secondPath {
 		t.Fatalf("different Maven -f paths shared a fixture key: %q", firstPath)

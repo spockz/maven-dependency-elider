@@ -64,6 +64,7 @@ final class AnalyzeMojoNativeImageTest {
     Files.writeString(trace, "used.Sample\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
     set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "trimJars", false);
     set(mojo, "reportFile", tempDir.resolve("native-image-analysis.json").toFile());
@@ -106,6 +107,7 @@ final class AnalyzeMojoNativeImageTest {
     Files.writeString(trace, "used/Sample\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
     set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "reportFile", tempDir.resolve("native-image-indirection-analysis.json").toFile());
 

@@ -178,29 +178,21 @@ final class BanishedDependencyLifecycleActivation {
       final MojoExecution execution,
       final List<String> configuredBans)
       throws MojoFailureException {
-    final List<BanishedDependency> requested = BanishedDependencyPolicy.normalize(configuredBans);
-    if (requested.isEmpty()) {
-      verifyMojoConfiguration(session, project, execution, configuredBans);
-      return;
-    }
-    if (session == null || session.getRepositorySession() == null) {
-      throw new MojoFailureException("Analyze bans require a live Maven Resolver session");
-    }
-    final org.eclipse.aether.SessionData data = EliderPreparationState.sessionData(session);
-    final boolean hookPresent =
-        Boolean.TRUE.equals(data.get(MavenOriginalInputAudit.HOOK_PRESENT_KEY));
-    if (!hookPresent) {
-      if (data.get(CAPTURE_STORE_KEY) != null) {
-        throw new MojoFailureException(
-            "Analyze cannot ignore selected ban capture without the active lifecycle hook");
-      }
-      return;
-    }
-    verifyMojoConfiguration(session, project, execution, configuredBans);
+    verifyGoalConfiguration("Analyze", session, project, execution, configuredBans);
   }
 
   /** Elide may resolve an isolated current model when the core extension is absent. */
   static void verifyElideConfiguration(
+      final MavenSession session,
+      final MavenProject project,
+      final MojoExecution execution,
+      final List<String> configuredBans)
+      throws MojoFailureException {
+    verifyGoalConfiguration("Elide", session, project, execution, configuredBans);
+  }
+
+  private static void verifyGoalConfiguration(
+      final String goal,
       final MavenSession session,
       final MavenProject project,
       final MojoExecution execution,
@@ -212,7 +204,7 @@ final class BanishedDependencyLifecycleActivation {
       return;
     }
     if (session == null || session.getRepositorySession() == null) {
-      throw new MojoFailureException("Elide bans require a live Maven Resolver session");
+      throw new MojoFailureException(goal + " bans require a live Maven Resolver session");
     }
     final org.eclipse.aether.SessionData data = EliderPreparationState.sessionData(session);
     final boolean hookPresent =
@@ -220,7 +212,7 @@ final class BanishedDependencyLifecycleActivation {
     if (!hookPresent) {
       if (data.get(CAPTURE_STORE_KEY) != null) {
         throw new MojoFailureException(
-            "Elide cannot ignore selected ban capture without the active lifecycle hook");
+            goal + " cannot ignore selected ban capture without the active lifecycle hook");
       }
       return;
     }

@@ -13,6 +13,9 @@ import java.util.jar.JarOutputStream;
 
 /** Reusable archive inputs for classpath resource behavior tests. */
 /* package */ final class NativeImageScanContextTestSupport {
+  /** Local-header and central-directory records for one ZIP filename. */
+  private static final int ZIP_ENTRY_NAME_RECORD_COUNT = 2;
+
   /* package */
   /** Properties entry used by native-image option fixtures. */
   static final String PROPERTIES_ENTRY = "META-INF/native-image/test/native-image.properties";
@@ -46,12 +49,54 @@ import java.util.jar.JarOutputStream;
     return path;
   }
 
+  /* package */ static Path duplicateEntryJar(
+      final Path directory,
+      final String name,
+      final String resourceName,
+      final String firstBody,
+      final String alternateName,
+      final String secondBody)
+      throws IOException {
+    final byte[] alternate = alternateName.getBytes(StandardCharsets.UTF_8);
+    final byte[] replacement = resourceName.getBytes(StandardCharsets.UTF_8);
+    if (replacement.length != alternate.length) {
+      throw new IllegalArgumentException("ZIP entry names must have equal UTF-8 lengths");
+    }
+    final Path path = jar(directory, name, resourceName, firstBody, alternateName, secondBody);
+    final byte[] archive = Files.readAllBytes(path);
+    int matchCount = 0;
+    int offset = 0;
+    while (offset <= archive.length - alternate.length) {
+      if (matchesAt(archive, alternate, offset)) {
+        System.arraycopy(replacement, 0, archive, offset, replacement.length);
+        matchCount++;
+        offset += alternate.length;
+      } else {
+        offset++;
+      }
+    }
+    if (matchCount != ZIP_ENTRY_NAME_RECORD_COUNT) {
+      throw new IOException("Expected one local and one central ZIP entry name record");
+    }
+    Files.write(path, archive);
+    return path;
+  }
+
   /** Writes one ZIP entry. */
   private static void writeEntry(
       final JarOutputStream output, final String name, final byte[] content) throws IOException {
     output.putNextEntry(new JarEntry(name));
     output.write(content);
     output.closeEntry();
+  }
+
+  private static boolean matchesAt(final byte[] bytes, final byte[] expected, final int offset) {
+    for (int index = 0; index < expected.length; index++) {
+      if (bytes[offset + index] != expected[index]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** Returns paired fixture names and bodies. */

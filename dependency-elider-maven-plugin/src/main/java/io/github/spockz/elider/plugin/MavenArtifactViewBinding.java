@@ -7,7 +7,6 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.Analysis;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactViews;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -24,6 +23,9 @@ record MavenArtifactViewBinding(
     String resolvedFingerprint,
     String directFingerprint,
     MavenAnalysisResolutionContext resolutionContext) {
+  /** Prefix for detached resolver diagnostics. */
+  private static final String DETACHED_RESOLVER = "Detached Resolver ";
+
   MavenArtifactViewBinding {
     Objects.requireNonNull(liveViews, "liveViews");
     Objects.requireNonNull(resolvedFingerprint, "resolvedFingerprint");
@@ -50,13 +52,17 @@ record MavenArtifactViewBinding(
   /* package */ static MavenArtifactViewBinding bind(
       final LiveSnapshot live, final MavenAnalysisResolutionContext context) throws IOException {
     if (live.liveViews().directArtifactsPresent() != context.artifacts().directArtifactsPresent()) {
-      throw new IOException("Detached Resolver changed Maven direct-view presence");
+      throw new IOException(DETACHED_RESOLVER + "changed Maven direct-view presence");
     }
     requireUniqueCompleteCorrespondence(
         "resolved", live.liveViews().resolvedSnapshots(), context.artifacts().resolvedSnapshots());
     if (live.liveViews().directArtifactsPresent()) {
       requireUniqueCompleteCorrespondence(
           "direct", live.liveViews().directSnapshots(), context.artifacts().directSnapshots());
+    }
+    requireSameFingerprint("resolved", live.resolvedFingerprint(), context.resolvedFingerprint());
+    if (live.liveViews().directArtifactsPresent()) {
+      requireSameFingerprint("direct", live.directFingerprint(), context.directFingerprint());
     }
     return new MavenArtifactViewBinding(
         live.liveViews(), live.resolvedFingerprint(), live.directFingerprint(), context);
@@ -77,12 +83,10 @@ record MavenArtifactViewBinding(
   }
 
   /* package */ void verifyFresh(final MavenProject project) throws IOException {
-    verifyOriginalInputsFresh();
+    resolutionContext.verify();
     final List<Artifact> resolved = new ArrayList<>(project.getArtifacts());
     MavenArtifactViewValidation.validateCurrentView(
         "resolved", resolved, liveViews.resolvedSnapshots());
-    ResolvedArtifactInventoryFingerprint.verifyFingerprint(
-        liveViews.resolvedSnapshots(), resolvedFingerprint);
     final Set<Artifact> directView = project.getDependencyArtifacts();
     final boolean directPresent = directView != null;
     if (directPresent != liveViews.directArtifactsPresent()) {
@@ -90,19 +94,18 @@ record MavenArtifactViewBinding(
     }
     final List<Artifact> direct = directView == null ? List.of() : new ArrayList<>(directView);
     MavenArtifactViewValidation.validateCurrentView("direct", direct, liveViews.directSnapshots());
-    if (liveViews.directArtifactsPresent()) {
-      ResolvedArtifactInventoryFingerprint.verifyFingerprint(
-          liveViews.directSnapshots(), directFingerprint);
-    }
   }
 
   /* package */ void verifyOriginalInputsFresh() throws IOException {
     resolutionContext.verify();
-    ResolvedArtifactInventoryFingerprint.verifyFingerprint(
-        liveViews.resolvedSnapshots(), resolvedFingerprint);
-    if (liveViews.directArtifactsPresent()) {
-      ResolvedArtifactInventoryFingerprint.verifyFingerprint(
-          liveViews.directSnapshots(), directFingerprint);
+  }
+
+  private static void requireSameFingerprint(
+      final String viewName, final String liveFingerprint, final String detachedFingerprint)
+      throws IOException {
+    if (!liveFingerprint.equals(detachedFingerprint)) {
+      throw new IOException(
+          DETACHED_RESOLVER + viewName + " inventory does not match the live Maven view");
     }
   }
 
@@ -112,7 +115,7 @@ record MavenArtifactViewBinding(
       final List<ArtifactSnapshot> detached)
       throws IOException {
     if (live.size() != detached.size()) {
-      throw new IOException("Detached Resolver " + viewName + " view is incomplete");
+      throw new IOException(DETACHED_RESOLVER + viewName + " view is incomplete");
     }
     final Set<ArtifactKey> liveKeys = keys(viewName, live);
     final Set<ArtifactKey> detachedKeys = keys(viewName, detached);
@@ -129,7 +132,7 @@ record MavenArtifactViewBinding(
       final ArtifactKey key = ArtifactKey.of(snapshot);
       if (!result.add(key)) {
         throw new IOException(
-            "Detached Resolver "
+            DETACHED_RESOLVER
                 + viewName
                 + " view has ambiguous duplicate artifact "
                 + key.coordinate());
@@ -147,8 +150,7 @@ record MavenArtifactViewBinding(
     }
   }
 
-  private record ArtifactKey(
-      ArtifactCoordinate coordinate, String extension, Path path, String sha256) {
+  private record ArtifactKey(ArtifactCoordinate coordinate, String extension, Path path) {
     private static ArtifactKey of(final ArtifactSnapshot snapshot) throws IOException {
       final String extension = ResolvedArtifactInventoryFingerprint.resolverExtension(snapshot);
       if (extension == null || extension.isBlank()) {
@@ -156,8 +158,7 @@ record MavenArtifactViewBinding(
             "Cannot bind Maven artifact type to Resolver extension: " + snapshot.coordinate());
       }
       final Path path = snapshot.filePath();
-      final String sha256 = path == null ? "missing" : ArtifactDigests.read(path).sha256();
-      return new ArtifactKey(snapshot.coordinate(), extension, path, sha256);
+      return new ArtifactKey(snapshot.coordinate(), extension, path);
     }
   }
 }

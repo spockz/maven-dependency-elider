@@ -301,7 +301,10 @@ final class MavenElisionServiceTest {
     final Artifact second = resolvedArtifact("library", "runtime", "resolved-b.jar");
     final MavenProject project = projectWith(identitySet(first, second), null);
 
-    assertThatThrownBy(() -> new MavenElisionService().analyze(project, List.of(), List.of(), null))
+    assertThatThrownBy(
+            () ->
+                new MavenElisionService()
+                    .analyze(project, MavenElisionTestOptions.options(List.of(), List.of(), null)))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Conflicting files for artifact identity");
     assertThat(project.getArtifacts()).containsExactlyInAnyOrder(first, second);
@@ -331,7 +334,9 @@ final class MavenElisionServiceTest {
     Files.writeString(trace, "observed/RuntimeEntry\n");
 
     final ElisionAnalysisModel.Analysis analysis =
-        new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
+        new MavenElisionService()
+            .analyze(
+                project, MavenElisionTestOptions.options(List.of(trace.toFile()), List.of(), null));
 
     assertThat(Files.exists(generatedSources)).isFalse();
     assertThat(analysis.decision().retainedArtifacts())
@@ -357,7 +362,9 @@ final class MavenElisionServiceTest {
     Files.writeString(trace, "observed/RuntimeEntry\n");
 
     final ElisionAnalysisModel.Analysis analysis =
-        new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
+        new MavenElisionService()
+            .analyze(
+                project, MavenElisionTestOptions.options(List.of(trace.toFile()), List.of(), null));
 
     assertThat(project.getCompileSourceRoots()).isEmpty();
     assertThat(analysis.decision().retainedArtifacts())
@@ -403,7 +410,10 @@ final class MavenElisionServiceTest {
 
     final ElisionAnalysisModel.Analysis analysis =
         new MavenElisionService()
-            .analyze(project, List.of(trace.toFile()), List.of(), null, null, true);
+            .analyze(
+                project,
+                MavenElisionTestOptions.options(
+                    List.of(trace.toFile()), List.of(), null, null, true));
 
     assertThat(analysis.decision().retainedArtifacts())
         .containsExactlyInAnyOrder(
@@ -442,7 +452,10 @@ final class MavenElisionServiceTest {
     assertThatThrownBy(
             () ->
                 new MavenElisionService()
-                    .analyze(project, List.of(trace.toFile()), List.of(), null, null, true))
+                    .analyze(
+                        project,
+                        MavenElisionTestOptions.options(
+                            List.of(trace.toFile()), List.of(), null, null, true)))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("source-generation lifecycle execution");
   }
@@ -960,7 +973,9 @@ final class MavenElisionServiceTest {
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     final Path trace = tempDir.resolve(traceName);
     Files.writeString(trace, "library/Unused\n");
-    return new MavenElisionService().analyze(project, List.of(trace.toFile()), List.of(), null);
+    return new MavenElisionService()
+        .analyze(
+            project, MavenElisionTestOptions.options(List.of(trace.toFile()), List.of(), null));
   }
 
   @SafeVarargs

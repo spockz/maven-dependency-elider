@@ -81,6 +81,7 @@ final class AnalyzeMojoTest {
     Files.writeString(trace, "used/Sample\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
     AnalyzeMojoTestFieldSupport.set(mojo, "retainedArtifacts", List.of("org.example:excluded"));
     final Path report = tempDir.resolve("analysis.json");
@@ -129,6 +130,7 @@ final class AnalyzeMojoTest {
   void writesFrozenRepeatedExclusionsToAnalyzeReport() throws Exception {
     final AnalyzeMojoTestArtifactSupport.Fixture fixture =
         AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(fixture.mojo());
     final MavenProject project = fixture.project();
     project.setFile(tempDir.resolve("pom.xml").toFile());
     project.setGroupId("example");
@@ -197,6 +199,7 @@ final class AnalyzeMojoTest {
     Files.writeString(trace, "used/Sample\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
     AnalyzeMojoTestFieldSupport.set(
         mojo, "reportFile", tempDir.resolve("predicted-elisions.json").toFile());
@@ -255,6 +258,7 @@ final class AnalyzeMojoTest {
     Files.writeString(trace, "sample.Keep\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
     AnalyzeMojoTestFieldSupport.set(mojo, "trimJars", true);
     AnalyzeMojoTestFieldSupport.set(
@@ -292,6 +296,7 @@ final class AnalyzeMojoTest {
   void rejectsInvalidRetentionCoordinates() throws IOException, ReflectiveOperationException {
     final AnalyzeMojoTestArtifactSupport.Fixture fixture =
         AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(fixture.mojo());
     AnalyzeMojoTestFieldSupport.set(fixture.mojo(), "retainedArtifacts", List.of("org.example"));
 
     assertThatThrownBy(fixture.mojo()::execute)
@@ -335,6 +340,7 @@ final class AnalyzeMojoTest {
       throws IOException, ReflectiveOperationException {
     final AnalyzeMojoTestArtifactSupport.Fixture fixture =
         AnalyzeMojoTestArtifactSupport.fixture(tempDir, "missing/Sample\n");
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(fixture.mojo());
 
     assertThatThrownBy(fixture.mojo()::execute)
         .isInstanceOf(MojoFailureException.class)
@@ -345,6 +351,7 @@ final class AnalyzeMojoTest {
   void rejectsAnEmptyTraceList() throws ReflectiveOperationException {
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, "project", new MavenProject());
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of());
 
     assertThatThrownBy(mojo::execute)

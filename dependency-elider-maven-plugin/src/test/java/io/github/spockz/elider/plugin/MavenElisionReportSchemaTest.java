@@ -297,6 +297,66 @@ final class MavenElisionReportSchemaTest {
                 "Excluded-before-resolution ban appears in retained or trimmed"));
   }
 
+  @Test
+  void unmatchedBanMustBeAbsentFromEveryPersistedInventorySection() throws IOException {
+    final ObjectNode valid = excludedBanReport("example:drop");
+    markBanUnmatched(valid);
+    final Path validPath = writeReport("valid-unmatched-ban.json", valid);
+    final ObjectNode unavailableGraph = valid.deepCopy();
+    setGraph(unavailableGraph, MediatedGraphReport.unavailable("No graph was provided"));
+    final Path unavailableGraphPath =
+        writeReport("valid-unmatched-ban-without-graph.json", unavailableGraph);
+    final ObjectNode unrelated = valid.deepCopy();
+    setGraph(
+        unrelated,
+        MediatedGraphBanReportTestSupport.retained(
+            ArtifactCoordinate.of("example", "other", "1.0"), "example:consumer:1.0"));
+    final Path unrelatedPath = writeReport("valid-unmatched-ban-unrelated-graph.json", unrelated);
+
+    final ObjectNode retained = valid.deepCopy();
+    setGraph(
+        retained,
+        MediatedGraphBanReportTestSupport.retained(
+            banArtifact("2.0", "tests"), "example:consumer:1.0"));
+    final Path retainedPath = writeReport("unmatched-ban-retained.json", retained);
+
+    final ObjectNode dropped = appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    markBanUnmatched(dropped);
+    final Path droppedPath = writeReport("unmatched-ban-dropped.json", dropped);
+    setGraph(dropped, MediatedGraphReport.unavailable("No graph was provided"));
+    final Path droppedWithoutGraphPath =
+        writeReport("unmatched-ban-dropped-without-graph.json", dropped);
+
+    final ObjectNode trimmed = unavailableGraph.deepCopy();
+    addTrimmedArtifact(trimmed, "example:drop:jar:2.0:tests (runtime)");
+    final Path trimmedPath = writeReport("unmatched-ban-trimmed-without-graph.json", trimmed);
+
+    final ObjectNode graphOnly = valid.deepCopy();
+    setGraph(
+        graphOnly,
+        MediatedGraphBanReportTestSupport.dropped(banArtifact("1.0", ""), "example:consumer:1.0"));
+    final Path graphOnlyPath = writeReport("unmatched-ban-elided-graph-node.json", graphOnly);
+
+    assertAll(
+        "unmatched requests cannot conceal any resolved G:A match, regardless of disposition",
+        () -> MavenElisionReportWriter.read(validPath),
+        () -> MavenElisionReportWriter.read(unavailableGraphPath),
+        () -> MavenElisionReportWriter.read(unrelatedPath),
+        () -> assertInvalidAppliedBan(retainedPath, "Unmatched ban appears"),
+        () -> assertInvalidAppliedBan(droppedPath, "Unmatched ban appears"),
+        () -> assertInvalidAppliedBan(droppedWithoutGraphPath, "Unmatched ban appears"),
+        () -> assertInvalidAppliedBan(trimmedPath, "Unmatched ban appears"),
+        () -> assertInvalidAppliedBan(graphOnlyPath, "Unmatched ban appears"));
+  }
+
+  private static void markBanUnmatched(final ObjectNode payload) {
+    final ObjectNode ban = (ObjectNode) payload.withArray("appliedBans").get(0);
+    ban.put("status", "UNMATCHED");
+    ban.put("applied", false);
+    ban.withArray("matchedArtifacts").removeAll();
+    ban.withArray("originalArtifacts").removeAll();
+  }
+
   private ObjectNode excludedBanReport(final String dependency) throws IOException {
     final ObjectNode payload = appliedBanReport(dependency, dependency + ":jar:1.0 (runtime)");
     payload.withArray(DROPPED_ROWS).removeAll();

@@ -26,6 +26,34 @@ Before initialising track worktrees or writing source code:
 
 ---
 
+## Completion Review Protocol
+
+Review both the correctness of delivered work and whether the agreed work is fully delivered. A feature with no implementation, tests, or diff can otherwise escape every slice review.
+
+### Source scope and requirement matrix
+
+Use the authoritative handover/specification paths and revisions plus applicable user instructions. Reconcile duplicate package identifiers and revised handovers: a status such as “draft” or “implemented” is not authority to omit user-agreed scope. Record explicit scope decisions; if the sources remain contradictory, mark the affected scope unresolved and continue independent work.
+
+Keep one compact matrix in `.scratch/orchestration-status.md`, at capability/acceptance-criterion granularity. Reuse existing IDs or assign stable ones; do not create a row for every helper or incidental code change.
+
+| Requirement ID and source | Required behavior or deliverable | Track owner and integration responsibility | Implementation/wiring evidence | Verification evidence and result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+
+Include main pillars in the narrative, explicit refusal/negative conditions, interface wiring, and required documentation or measurable targets as applicable. Record what the user actually requested; do not turn optional proposals into mandatory scope. Every required row needs an owner, including work spanning tracks. The architect must check the matrix against the source requirements before track dispatch.
+
+### Evidence and reviewer responsibilities
+
+* **Implementer:** Link each claimed capability to its production path or other required deliverable and suitable verification. Tests must assert the relevant behavior, including specified refusal cases; name a plausible missing or incorrect implementation those assertions would reject. Reuse adequate existing checks. Documents or type declarations alone cannot prove implemented runtime behavior. Keep partial work and missing evidence visible.
+* **Track reviewer:** Read assigned source criteria independently of the implementer's summary. Check that the assignment covers its part of the package and report unassigned or ambiguous boundary work to the coordinator. For a slice, assess its promised scope and retain unfinished rows. At track completion, reconcile all assigned criteria with the actual track tree; a list of approved slices can still omit a required capability entirely.
+* **Integration reviewer:** Reconstruct the package's main capabilities and acceptance criteria from the authoritative sources before relying on the matrix or track receipts. Compare them with the integrated tree, including areas with no changed files. Check production wiring from inputs through decisions to observable outputs across track boundaries. Ask whether the relevant evidence would still pass if a required capability were absent, bypassed, or left at its old behavior. Check each required criterion, not only a sample of package pillars.
+* **Coordinator:** Keep the evidence current and route omissions to an accountable owner. A missing requirement within the agreed package is unfinished work; it does not become scope expansion merely because no track was assigned it. Only an explicit user scope decision can defer or remove a required deliverable; architect approval of a technical approach cannot narrow the user's request.
+
+Use statuses that distinguish `MISSING`, `PARTIAL`, `IMPLEMENTED_UNVERIFIED`, `VERIFIED`, and `USER_DEFERRED`; record unresolved scope separately. `VERIFIED` requires the promised deliverable and appropriate evidence in the reviewed state. For final integration it also requires presence in the intended integrated tree. Report the requirement still unmet under an authorized deferral, even if the revised scope is complete. Test counts, green suites, reviewer approvals, matching branch names, or commit ancestry alone are not completion evidence. Rebased or cherry-picked work may be present under different commits; check the actual content.
+
+A missing or unverified required criterion blocks a complete verdict for the scope being approved. An intermediate slice or progressive integration may be approved with explicitly pending later work; that approval must not imply package completion. An unavailable optional peer reviewer does not waive the completion gate.
+
+---
+
 ## The Four Evaluation Pillars
 
 ```mermaid
@@ -87,7 +115,7 @@ Enforce strict compliance with Architecture Decision Records (ADRs) partitioned 
 
 * **Do**: Evaluate slice and track scope against the current work package's recorded acceptance criteria. At final integration, report the work package as complete or incomplete independently of whether the session is closing; a handover preserves unfinished requirements for a new package in a later session.
 * **Do**: Keep code modifications strictly within assigned packages, interfaces, and file boundaries.
-* **Do**: Confirm that every requirement in the slice assignment is verifiable in code, documentation, or tests.
+* **Do**: Apply the Completion Review Protocol to the scope being approved. Confirm each requirement has the appropriate deliverable and evidence; a document describing a runtime feature or a test checking only its data model does not demonstrate that the feature works.
 * **Do**: When code changes user-visible behavior, supported inputs, configuration, Maven goal behavior, examples, or an architectural finding, verify that applicable user-facing documentation is updated in the same slice. Check README and example guidance, Maven usage/site source pages, goal/help text, and source comments or Javadocs that are published or copied into those pages. Require an update when relevant; avoid unrelated documentation churn and record a brief not-applicable rationale when appropriate.
 * **Do**: Search existing research questions relevant to the changed behavior. Check whether the new implementation or evidence answers part of a question; update it with findings and code/test links, and mark resolved or implemented portions accordingly. Keep open questions and limits explicit; leave unrelated research questions untouched.
 * **Do**: Include documentation and research-question paths, or a brief not-applicable rationale, in the review receipt.
@@ -104,7 +132,7 @@ Enforce strict compliance with Architecture Decision Records (ADRs) partitioned 
 2. Invoke `gemini_review_diff`:
    * `model`: `"gemini-3.8-medium"`
    * `repository_path`: `".scratch/worktrees/track-<track-name>"`
-   * `prompt`: Track goals, acceptance criteria, ADR invariants, and completed diff summary.
+   * `prompt`: Authoritative scope sources, assigned requirement rows and evidence, acceptance criteria, ADR invariants, and completed diff summary. Request a completion check as well as review of the changed code.
 3. Arbitrate findings with Sol 6.1 against ADRs: adopt genuine defects, and record any overruled items with explicit rationale in the review receipt.
 4. Implement fixes via Luna 6 high, verify with `make check`, and re-review before integration.
 
@@ -203,6 +231,14 @@ The reviewer issues `CHANGES REQUESTED` if any finding across Pillars 1 to 4 req
 
 ```markdown
 ### Review Verdict: [APPROVED | CHANGES REQUESTED]
+
+#### 0. Completion of the Reviewed Scope
+- Review scope: <slice, track, progressive integration, or final package; source paths/revisions and user amendments>
+- Reviewed state: <worktree, branch, commit/tree, and any uncommitted changes; intended integration target>
+- Completion: [Complete for stated scope | Incomplete | Unverified]
+- Coverage: <requirement IDs and independently checked implementation/wiring and verification evidence; link the matrix>
+- Gaps: <missing, partial, unverified, or unintegrated criteria; owner and required next action>
+- Remaining scope: <pending later tracks/slices and explicit user-authorized deferrals; never implied package completion>
 
 #### 1. Code and Tests (Handover & ADR Assertion Fidelity)
 - Status: [Satisfied | Deficient]

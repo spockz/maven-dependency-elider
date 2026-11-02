@@ -84,6 +84,14 @@ record_worker_activity() {
   exec 8>&-
 }
 
+await_worker_start() {
+  local fixture=$1
+  if ! timeout --foreground 5s cat "$TEST_ROOT/started-$fixture" >/dev/null; then
+    echo "Timed out waiting for fixture worker $fixture to start" >&2
+    return 1
+  fi
+}
+
 run_fixture_worker() {
   local fixture=$1
   record_worker_activity 1
@@ -131,7 +139,7 @@ test_overlap_limit_and_log_order() {
   scheduler_pid=$!
   track_test_scheduler "$scheduler_pid"
   for fixture in first second; do
-    IFS= read -r _ <"$TEST_ROOT/started-$fixture"
+    await_worker_start "$fixture"
   done
   if [[ $(<"$TEST_ROOT/peak") != 2 ]]; then
     echo "Two workers did not overlap at the synchronization barrier" >&2
@@ -141,7 +149,7 @@ test_overlap_limit_and_log_order() {
     printf 'release\n' >"$TEST_ROOT/release-$fixture"
   done
   for fixture in third fourth; do
-    IFS= read -r _ <"$TEST_ROOT/started-$fixture"
+    await_worker_start "$fixture"
     printf 'release\n' >"$TEST_ROOT/release-$fixture"
   done
   if wait "$scheduler_pid"; then
@@ -231,7 +239,10 @@ test_interrupted_queued_workers() {
     run_fixture_workers 1 "$evidence" first second third >"$output" 2>&1 &
     scheduler_pid=$!
     track_test_scheduler "$scheduler_pid"
-    IFS= read -r fixture <"$TEST_ROOT/started-first"
+    fixture=$(timeout --foreground 5s cat "$TEST_ROOT/started-first") || {
+      echo "Timed out waiting for queued-fixture test worker to start" >&2
+      return 1
+    }
     test "$fixture" = first
     kill -"$signal" "$scheduler_pid"
     set +e
@@ -279,7 +290,7 @@ test_interrupted_active_workers() {
   scheduler_pid=$!
   track_test_scheduler "$scheduler_pid"
   for fixture in active-one active-two; do
-    IFS= read -r _ <"$TEST_ROOT/started-$fixture"
+    await_worker_start "$fixture"
   done
   kill -TERM "$scheduler_pid"
   set +e
@@ -328,7 +339,7 @@ run_cleanup_probe() {
   scheduler_group=$(ps -o pgid= -p "$scheduler_pid" | tr -d ' ')
   printf 'scheduler %s %s\n' "$scheduler_pid" "$scheduler_group" >>"$CLEANUP_OBSERVATION"
   for fixture in cleanup-one cleanup-two; do
-    IFS= read -r _ <"$TEST_ROOT/started-$fixture"
+    await_worker_start "$fixture"
   done
   false
 }
@@ -391,7 +402,10 @@ test_descendant_cleanup() {
   }
   run_fixture_workers 1 "$evidence" descendant >"$output" 2>&1 &
   scheduler_pid=$!
-  IFS= read -r _ <"$TEST_ROOT/descendant-start"
+  if ! timeout --foreground 5s cat "$TEST_ROOT/descendant-start" >/dev/null; then
+    echo "Timed out waiting for descendant cleanup test worker to start" >&2
+    return 1
+  fi
   read -r child_pid child_pgid <"$TEST_ROOT/child.identity"
   read -r worker_pid worker_pgid <"$TEST_ROOT/worker.identity"
   if [[ $child_pgid != "$worker_pgid" ]]; then

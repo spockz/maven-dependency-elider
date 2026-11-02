@@ -166,6 +166,7 @@ final class MavenElisionReportPayloadValidator {
       final BanishedDependency dependency = parseBanDependency(row.path("dependency").textValue());
       validateBanPolicyRetentionConflict(dependency, retainedPolicy);
       if (status == MavenBanPlan.Entry.Status.UNMATCHED) {
+        validateUnmatchedBan(payload, mediatedGraph, dependency);
         continue;
       }
       if (!mediatedGraph.available()) {
@@ -175,6 +176,16 @@ final class MavenElisionReportPayloadValidator {
         validateForcedAbsentOutput(row, dropped);
       }
       validateNoRetainedOrTrimmedOutput(status, payload, mediatedGraph, dependency);
+    }
+  }
+
+  private static void validateUnmatchedBan(
+      final JsonNode payload, final MediatedGraphReport graph, final BanishedDependency dependency)
+      throws IOException {
+    if (hasArtifactForDependency(payload.get("droppedArtifacts"), dependency)
+        || hasArtifactForDependency(payload.get("trimmedArtifacts"), dependency)
+        || graph.available() && hasGraphNodeForDependency(graph, dependency, false)) {
+      throw new IOException("Unmatched ban appears in the persisted artifact inventory");
     }
   }
 
@@ -201,7 +212,7 @@ final class MavenElisionReportPayloadValidator {
       final MediatedGraphReport mediatedGraph,
       final BanishedDependency dependency)
       throws IOException {
-    if (hasRetainedGraphNodeForDependency(mediatedGraph, dependency)
+    if (hasGraphNodeForDependency(mediatedGraph, dependency, true)
         || hasArtifactForDependency(payload.get("trimmedArtifacts"), dependency)) {
       final String reason =
           status == MavenBanPlan.Entry.Status.FORCED_ABSENT_AFTER_RESOLUTION
@@ -231,8 +242,10 @@ final class MavenElisionReportPayloadValidator {
 
   @SuppressWarnings("PMD.UseConcurrentHashMap")
   // This index is local to one validated report traversal.
-  private static boolean hasRetainedGraphNodeForDependency(
-      final MediatedGraphReport graph, final BanishedDependency dependency) {
+  private static boolean hasGraphNodeForDependency(
+      final MediatedGraphReport graph,
+      final BanishedDependency dependency,
+      final boolean retainedOnly) {
     final Map<String, String> dispositions = new HashMap<>();
     graph.nodeStatuses().forEach(status -> dispositions.put(status.nodeId(), status.disposition()));
     final ResolverArtifactGraphSnapshot snapshot = graph.snapshot();
@@ -240,7 +253,7 @@ final class MavenElisionReportPayloadValidator {
       final String nodeId = (String) node.get(ResolverArtifactGraphSnapshotSchema.NODE_ID);
       if (!Boolean.TRUE.equals(node.get(ResolverArtifactGraphSnapshotSchema.REACHABLE))
           || snapshot.rootNodeId().equals(nodeId)
-          || !RETAINED_GRAPH_DISPOSITIONS.contains(dispositions.get(nodeId))) {
+          || retainedOnly && !RETAINED_GRAPH_DISPOSITIONS.contains(dispositions.get(nodeId))) {
         continue;
       }
       final Map<?, ?> artifact = (Map<?, ?>) node.get(ResolverArtifactGraphSnapshotSchema.ARTIFACT);

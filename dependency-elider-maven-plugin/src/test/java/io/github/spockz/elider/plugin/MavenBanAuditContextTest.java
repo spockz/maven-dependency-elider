@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
@@ -62,9 +63,6 @@ final class MavenBanAuditContextTest {
 
   @TempDir private Path temporaryDirectory;
 
-  @SuppressWarnings(
-      "PMD.UnitTestContainsTooManyAsserts") // JUnit assertAll preserves independent evidence
-  // checks.
   @Test
   void excludesOriginalOnlyDescendantButPreservesAlternateEffectivePath() throws Exception {
     final Path leftJar = jar(LEFT);
@@ -170,35 +168,39 @@ final class MavenBanAuditContextTest {
                     effectivePair.after().graphFingerprint(), changedAuditContext))
             .operationFingerprint();
 
-    assertThat(auditContext.auditOnlyArtifacts())
-        .extracting(artifact -> artifact.coordinate().artifactId())
-        .containsExactly(EXCLUDED, LEFT);
-    assertThat(auditContext.auditOnlyArtifacts())
-        .extracting(artifact -> artifact.coordinate().artifactId())
-        .doesNotContain(SHARED, RIGHT);
-    assertThat(
-            MavenBanPlan.contextFingerprint(effectivePair.after().graphFingerprint(), auditContext))
-        .isNotEqualTo(
-            MavenBanPlan.contextFingerprint(
-                effectivePair.after().graphFingerprint(), changedAuditContext));
-    assertThat(operationFingerprint).isNotEqualTo(changedOperationFingerprint);
-    assertThat(operationWithAudit).isNotEqualTo(operationWithChangedAudit);
-    assertThatThrownBy(
-            () ->
-                verifyClasslessResourceClosure(
-                    effectiveContext,
-                    effectiveSnapshots,
-                    auditContext,
-                    rightJar,
-                    temporaryDirectory))
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("retained resource pattern")
-        .hasMessageContaining("original-only provider");
+    assertAll(
+        "original-only membership, freshness identity, and resource closure are independent",
+        () ->
+            assertThat(auditContext.auditOnlyArtifacts())
+                .extracting(artifact -> artifact.coordinate().artifactId())
+                .containsExactly(EXCLUDED, LEFT),
+        () ->
+            assertThat(auditContext.auditOnlyArtifacts())
+                .extracting(artifact -> artifact.coordinate().artifactId())
+                .doesNotContain(SHARED, RIGHT),
+        () ->
+            assertThat(
+                    MavenBanPlan.contextFingerprint(
+                        effectivePair.after().graphFingerprint(), auditContext))
+                .isNotEqualTo(
+                    MavenBanPlan.contextFingerprint(
+                        effectivePair.after().graphFingerprint(), changedAuditContext)),
+        () -> assertThat(operationFingerprint).isNotEqualTo(changedOperationFingerprint),
+        () -> assertThat(operationWithAudit).isNotEqualTo(operationWithChangedAudit),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        verifyClasslessResourceClosure(
+                            effectiveContext,
+                            effectiveSnapshots,
+                            auditContext,
+                            rightJar,
+                            temporaryDirectory))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("retained resource pattern")
+                .hasMessageContaining("original-only provider"));
   }
 
-  @SuppressWarnings(
-      "PMD.UnitTestContainsTooManyAsserts") // JUnit assertAll keeps plan and freshness evidence
-  // independent.
   @Test
   void classifiesExcludedBeforeResolutionFromOriginalAuditAndRejectsMutatedBytes()
       throws Exception {
@@ -271,23 +273,30 @@ final class MavenBanAuditContextTest {
 
     final MavenBanPlan plan = MavenBanPlan.create(effectiveContext, options, originalAudit);
 
-    assertThat(plan.entries())
-        .singleElement()
-        .satisfies(
-            entry ->
-                org.junit.jupiter.api.Assertions.assertAll(
-                    () ->
-                        assertThat(entry.status())
-                            .isEqualTo(MavenBanPlan.Entry.Status.EXCLUDED_BEFORE_RESOLUTION),
-                    () -> assertThat(entry.artifacts()).isEmpty(),
-                    () ->
-                        assertThat(entry.originalArtifacts())
-                            .containsExactly(
-                                MavenBanAuditTestSupport.coordinate(EXCLUDED_BEFORE_RESOLUTION))));
-    Files.writeString(excludedJar, "mutated after the original audit");
-    assertThatThrownBy(plan::verifyAuditBytesFresh)
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("bytes changed after audit");
+    assertAll(
+        "the plan classification and post-audit byte freshness check are independent",
+        () ->
+            assertThat(plan.entries())
+                .singleElement()
+                .satisfies(
+                    entry ->
+                        assertAll(
+                            () ->
+                                assertThat(entry.status())
+                                    .isEqualTo(
+                                        MavenBanPlan.Entry.Status.EXCLUDED_BEFORE_RESOLUTION),
+                            () -> assertThat(entry.artifacts()).isEmpty(),
+                            () ->
+                                assertThat(entry.originalArtifacts())
+                                    .containsExactly(
+                                        MavenBanAuditTestSupport.coordinate(
+                                            EXCLUDED_BEFORE_RESOLUTION)))),
+        () -> {
+          Files.writeString(excludedJar, "mutated after the original audit");
+          assertThatThrownBy(plan::verifyAuditBytesFresh)
+              .isInstanceOf(IOException.class)
+              .hasMessageContaining("bytes changed after audit");
+        });
   }
 
   @Test

@@ -201,11 +201,15 @@ record MavenAnalysisResolutionContext(
   }
 
   /* default */ void verify() throws IOException {
-    MavenElisionGraphBinding.verifyInventoryFingerprint(
-        artifacts.resolvedSnapshots(), resolvedFingerprint);
     if (artifacts.directArtifactsPresent()) {
+      ResolvedArtifactInventoryFingerprint.verifyFingerprints(
+          artifacts.resolvedSnapshots(),
+          resolvedFingerprint,
+          artifacts.directSnapshots(),
+          directFingerprint);
+    } else {
       MavenElisionGraphBinding.verifyInventoryFingerprint(
-          artifacts.directSnapshots(), directFingerprint);
+          artifacts.resolvedSnapshots(), resolvedFingerprint);
     }
     for (final ArtifactSnapshot snapshot : artifacts.resolvedSnapshots()) {
       if ("jar".equals(snapshot.coordinate().type())

@@ -268,7 +268,7 @@ public final class ExampleSupportContractTest {
     final ObjectNode capturedPlan = valid.deepCopy();
     ((ObjectNode) capturedPlan.path("dependencyPrediction"))
         .put("provenance", "CAPTURED_EFFECTIVE_RESOLVER");
-    rejects(capturedPlan, productionOutput, "ban plan requires detached provenance");
+    ExampleSupport.validateClassUsageReport(capturedPlan, productionOutput);
 
     final ObjectNode appliedPlan = valid.deepCopy();
     ((ObjectNode) appliedPlan.path("dependencyPrediction").path("banPlan").get(1))

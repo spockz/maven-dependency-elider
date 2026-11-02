@@ -7,4 +7,4 @@ import java.util.Set;
 
 /** Holds the resource and class inventory for one candidate archive. */
 /* package */ record NativeImageArchiveInventory(
-    Path path, Set<String> logicalClasses, Set<String> resources) {}
+    Path path, Set<String> logicalClasses, Set<String> resources, Set<String> duplicateResources) {}

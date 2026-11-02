@@ -156,23 +156,26 @@ final class NativeImageScanContext {
       final DescriptorReader reader,
       final Set<Path> providers)
       throws IOException {
-    boolean found = false;
-    final Enumeration<JarEntry> entries = archive.entries();
-    while (entries.hasMoreElements()) {
-      final JarEntry entry = entries.nextElement();
-      if (!entry.isDirectory() && resourcePath.equals(entry.getName())) {
-        found = true;
-        final Path provider = Path.of(archive.getName()).toRealPath();
-        if (!archivesByPath.containsKey(provider)) {
+    final Path provider = Path.of(archive.getName()).toRealPath();
+    final NativeImageArchiveInventory inventory = archivesByPath.get(provider);
+    if (inventory == null) {
+      final Enumeration<JarEntry> entries = archive.entries();
+      while (entries.hasMoreElements()) {
+        if (NativeImageArchiveCatalog.matchesResource(entries.nextElement(), resourcePath)) {
           throw new IOException(
               "Native-image archive is outside the invocation inventory: " + provider);
         }
-        providers.add(provider);
-        NativeImageInput.archiveEntry(archive, entry, kind)
-            .readDescriptor(reader, resourcePath, provider);
       }
+      return false;
     }
-    return found;
+    return NativeImageArchiveCatalog.readArchiveResource(
+        archive,
+        provider,
+        inventory.duplicateResources().contains(resourcePath),
+        resourcePath,
+        kind,
+        reader,
+        providers);
   }
 
   /* package */

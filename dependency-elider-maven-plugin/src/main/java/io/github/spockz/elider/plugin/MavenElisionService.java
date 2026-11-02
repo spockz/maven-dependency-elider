@@ -14,13 +14,12 @@ import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
 
 /** Coordinates shared trace analysis and a nonmutating Maven artifact plan. */
-final class MavenElisionService extends MavenElisionServiceDefaults {
+final class MavenElisionService {
   /** Declares the package-scoped constructor required for this stateless facade. */
   /* package */ MavenElisionService() {
     super();
   }
 
-  @Override
   /* default */ Analysis analyze(final MavenProject project, final AnalysisOptions options)
       throws IOException, MojoFailureException {
     return finish(prepare(project, options));

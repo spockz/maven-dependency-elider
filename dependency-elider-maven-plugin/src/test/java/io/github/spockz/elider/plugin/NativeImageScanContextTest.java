@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactFileRef;
 import java.io.File;
@@ -26,6 +27,16 @@ import org.junit.jupiter.api.io.TempDir;
   /** Shared resource name used to prove duplicate archive scanning. */
   private static final String SHARED_RESOURCE = "shared.payload";
 
+  /** Prefix for a native-image reflection-resource option. */
+  private static final String RESOURCE_OPTION_PREFIX =
+      "Args = -H:ReflectionConfigurationResources=";
+
+  /** First class name in duplicate-resource fixtures. */
+  private static final String FIRST_RESOURCE_CLASS = "org.example.First";
+
+  /** Second class name in duplicate-resource fixtures. */
+  private static final String SECOND_RESOURCE_CLASS = "org.example.Second";
+
   /** Class entry body is ignored by the logical inventory reader. */
   private static final String CLASS_ENTRY_CONTENT = "bytecode";
 
@@ -46,7 +57,7 @@ import org.junit.jupiter.api.io.TempDir;
             "declaring.jar",
             NativeImageScanContextTestSupport.entries(
                 NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
-                "Args = -H:ReflectionConfigurationResources=" + CUSTOM_RESOURCE + "\n"));
+                RESOURCE_OPTION_PREFIX + CUSTOM_RESOURCE + "\n"));
     final Path provider =
         NativeImageScanContextTestSupport.jar(
             tempDir,
@@ -88,21 +99,21 @@ import org.junit.jupiter.api.io.TempDir;
             "duplicate-declaring.jar",
             NativeImageScanContextTestSupport.entries(
                 NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
-                "Args = -H:ReflectionConfigurationResources=" + SHARED_RESOURCE + "\n"));
+                RESOURCE_OPTION_PREFIX + SHARED_RESOURCE + "\n"));
     final Path firstProvider =
         NativeImageScanContextTestSupport.jar(
             tempDir,
             "duplicate-a.jar",
             NativeImageScanContextTestSupport.entries(
                 SHARED_RESOURCE,
-                NativeImageScanContextTestSupport.reflection("org.example.First")));
+                NativeImageScanContextTestSupport.reflection(FIRST_RESOURCE_CLASS)));
     final Path secondProvider =
         NativeImageScanContextTestSupport.jar(
             tempDir,
             "duplicate-b.jar",
             NativeImageScanContextTestSupport.entries(
                 SHARED_RESOURCE,
-                NativeImageScanContextTestSupport.reflection("org.example.Second")));
+                NativeImageScanContextTestSupport.reflection(SECOND_RESOURCE_CLASS)));
     final NativeImageScanContext context =
         NativeImageScanContext.create(
             List.of(
@@ -115,8 +126,44 @@ import org.junit.jupiter.api.io.TempDir;
 
     assertThat(List.of(scan.roots(), scan.resourceProviders()))
         .containsExactly(
-            Set.of("org.example.First", "org.example.Second"),
+            Set.of(FIRST_RESOURCE_CLASS, SECOND_RESOURCE_CLASS),
             Set.of(firstProvider.toRealPath(), secondProvider.toRealPath()));
+  }
+
+  /* package */
+  @Test
+  void parsesEveryDuplicateResourceEntryWithinOneArchive() throws IOException {
+    final Path declaring =
+        NativeImageScanContextTestSupport.jar(
+            tempDir,
+            "same-archive-declaring.jar",
+            NativeImageScanContextTestSupport.entries(
+                NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
+                RESOURCE_OPTION_PREFIX + SHARED_RESOURCE + "\n"));
+    final Path provider =
+        NativeImageScanContextTestSupport.duplicateEntryJar(
+            tempDir,
+            "same-archive-provider.jar",
+            SHARED_RESOURCE,
+            NativeImageScanContextTestSupport.reflection(FIRST_RESOURCE_CLASS),
+            "second.payload",
+            NativeImageScanContextTestSupport.reflection(SECOND_RESOURCE_CLASS));
+    final NativeImageScanContext context =
+        NativeImageScanContext.create(
+            List.of(
+                NativeImageScanContextTestSupport.candidate(
+                    NativeImageScanContextTestSupport.DECLARING_ARTIFACT, declaring),
+                NativeImageScanContextTestSupport.candidate("same-archive", provider)),
+            null);
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(declaring, context);
+
+    assertAll(
+        () ->
+            assertThat(scan.roots()).isEqualTo(Set.of(FIRST_RESOURCE_CLASS, SECOND_RESOURCE_CLASS)),
+        () -> assertThat(scan.resourceProviders()).isEqualTo(Set.of(provider.toRealPath())),
+        () ->
+            assertThat(NativeImageArchiveCatalog.inventory(provider).duplicateResources())
+                .isEqualTo(Set.of(SHARED_RESOURCE)));
   }
 
   /* package */
@@ -128,7 +175,7 @@ import org.junit.jupiter.api.io.TempDir;
             "malformed-declaring.jar",
             NativeImageScanContextTestSupport.entries(
                 NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
-                "Args = -H:ReflectionConfigurationResources=" + SHARED_RESOURCE + "\n"));
+                RESOURCE_OPTION_PREFIX + SHARED_RESOURCE + "\n"));
     final Path malformed =
         NativeImageScanContextTestSupport.jar(
             tempDir,

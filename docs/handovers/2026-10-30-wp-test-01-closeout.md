@@ -3,9 +3,9 @@
 
 ## Outcome
 
-WP-Test01 is complete. The implementation was rebased onto the current local `main`, passed the full post-rebase `make check`, and was approved by the dedicated track reviewers and the whole-system architect. The checked integration branch is the tree to fast-forward to local `main` as the final wrap-up step.
+The WP-Test01 implementation tracks are complete and passed the configured checks. The initial handover's greater than 40% reduction target for overall `make check` time remains unverified, so the work package is not claimed as fully meeting its original acceptance criteria. The implementation was rebased onto local `main` and approved by the dedicated track reviewers and the whole-system architect.
 
-The package did not establish the handover's target of a greater than 40% reduction in overall `make check` time. We preserve measured per-track results and avoid attributing a speedup to overlapping or uncontrolled runs.
+The package did not establish the handover's target of a greater than 40% reduction in overall `make check` time. Available example timings overlap with other builds and cannot serve as a controlled baseline comparison. The target needs an isolated before-and-after measurement to close that acceptance gap.
 
 ## Implemented tracks
 
