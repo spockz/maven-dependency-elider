@@ -1,211 +1,274 @@
-/* WHY: Captures exact JDK platform identities once per analysis context so cache fingerprints
- * and deferred platform reads share release and source-selection evidence. */
+/* WHY: Captures the active runtime's standard system modules once per analysis context so cache
+ * identity and ProGuard platform classes share the same parsed class resources. */
 
 package io.github.spockz.elider.trimmer;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.io.UncheckedIOException;
+import java.lang.module.FindException;
+import java.lang.module.ModuleDescriptor;
+import java.lang.module.ModuleFinder;
+import java.lang.module.ModuleReader;
+import java.lang.module.ModuleReference;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Stream;
+import org.objectweb.asm.ClassReader;
+import proguard.classfile.ClassPool;
 
-/** Owns invocation-scoped identities for selected JDK API sources. */
-@SuppressWarnings({
-  "PMD.TooManyMethods",
-  "PMD.UseConcurrentHashMap",
-  "PMD.AvoidSynchronizedAtMethodLevel"
-})
+/** Owns one active-runtime platform snapshot for an analysis context. */
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CommentDefaultAccessModifier"})
 public final class JdkPlatformContext implements AutoCloseable {
-  /** Changes when platform source selection or class-pool interpretation changes. */
-  public static final String READER_POLICY_VERSION = "jdk-api-reader-v4";
+  /** Changes when system-module selection or runtime-class interpretation changes. */
+  public static final String READER_POLICY_VERSION = "jdk-runtime-module-reader-v1";
 
-  /** The first Java release with a supported public API signature set. */
-  private static final int MIN_SUPPORTED_RELEASE = 8;
+  /** Standard runtime module finder for this snapshot. */
+  private final ModuleFinder moduleFinder;
 
-  /** Normalized JDK installation location used by this context. */
-  private final Path jdkLocation;
+  /** Cached snapshot; cleared on close to release parsed class templates. */
+  private PlatformSnapshot capturedSnapshot;
 
-  /** Reuses source hashes across release snapshots. */
-  private final Map<Path, SourceIdentity> capturedSources = new LinkedHashMap<>();
-
-  /** Publishes each release only after selection and hashing complete. */
-  private final Map<Integer, PlatformSnapshot> snapshots = new LinkedHashMap<>();
-
-  /** Prevents snapshot use after an explicit owner releases its identities. */
+  /** Whether this owner has released its snapshot. */
   private boolean closed;
 
-  /** Creates an identity owner for the supplied JDK location. */
-  public JdkPlatformContext(final Path javaHome) {
-    this.jdkLocation = normalize(javaHome);
+  /** Serializes snapshot capture and close so one complete snapshot is published. */
+  private final Lock lifecycleLock = new ReentrantLock();
+
+  /** Creates an identity owner for the active JVM's system modules. */
+  public JdkPlatformContext() {
+    this(ModuleFinder.ofSystem());
   }
 
-  /** Captures or returns source identities for one effective API release. */
-  public synchronized PlatformSnapshot snapshot(final int effectiveRelease) throws IOException {
-    ensureOpen();
-    if (effectiveRelease < MIN_SUPPORTED_RELEASE) {
-      throw new IllegalArgumentException("Java release must be at least 8: " + effectiveRelease);
+  JdkPlatformContext(final ModuleFinder moduleFinder) {
+    this.moduleFinder = Objects.requireNonNull(moduleFinder, "moduleFinder");
+  }
+
+  /** Captures or returns the active runtime's standard platform modules. */
+  public PlatformSnapshot snapshot() throws IOException {
+    lifecycleLock.lock();
+    try {
+      ensureOpen();
+      if (capturedSnapshot == null) {
+        capturedSnapshot = captureRuntimePlatform();
+      }
+      return capturedSnapshot;
+    } finally {
+      lifecycleLock.unlock();
     }
-    final PlatformSnapshot previous = snapshots.get(effectiveRelease);
-    if (previous != null) {
-      return previous;
-    }
-    final Map<Path, SourceIdentity> pending = new LinkedHashMap<>();
-    final PlatformSnapshot captured = captureRelease(effectiveRelease, pending);
-    capturedSources.putAll(pending);
-    snapshots.put(effectiveRelease, captured);
-    return captured;
   }
 
-  /** Returns this context's normalized JDK location. */
-  public Path javaHome() {
-    return jdkLocation;
-  }
-
-  /** Releases identities for standalone owners. */
+  /** Releases the parsed templates owned by this context. */
   @Override
-  public synchronized void close() {
-    closed = true;
-    snapshots.clear();
-    capturedSources.clear();
+  @SuppressWarnings("PMD.NullAssignment")
+  public void close() {
+    lifecycleLock.lock();
+    try {
+      closed = true;
+      capturedSnapshot = null;
+    } finally {
+      lifecycleLock.unlock();
+    }
   }
 
-  private PlatformSnapshot captureRelease(
-      final int release, final Map<Path, SourceIdentity> pending) throws IOException {
-    final Path ctSym = jdkLocation.resolve("lib/ct.sym");
-    if (!Files.isRegularFile(ctSym)) {
-      throw new IOException("The selected JDK does not provide lib/ct.sym: " + ctSym);
-    }
-    final SourceIdentity ctSymSource = sourceIdentity(ctSym, pending);
-    final List<String> signatures = PlatformArchiveInspector.selectedSignatures(ctSym, release);
-    if (!signatures.isEmpty()) {
-      return new PlatformSnapshot(
-          jdkLocation,
-          release,
-          "ct.sym",
-          "signature-count=" + signatures.size() + ";release-code=" + releaseCode(release),
-          List.of(ctSymSource));
-    }
-
-    return captureJmods(release, ctSym, ctSymSource, pending);
-  }
-
-  private PlatformSnapshot captureJmods(
-      final int release,
-      final Path ctSym,
-      final SourceIdentity ctSymSource,
-      final Map<Path, SourceIdentity> pending)
-      throws IOException {
-    final SourceIdentity releaseMetadata = captureReleaseMetadata(release, ctSym, pending);
-    final List<Path> modules = selectedJmods(release);
-    final List<SourceIdentity> sources = moduleSources(modules, pending);
-    sources.addFirst(releaseMetadata);
-    sources.addFirst(ctSymSource);
-    return new PlatformSnapshot(
-        jdkLocation, release, "jmods", jmodSelection(release, modules), sources);
-  }
-
-  private SourceIdentity captureReleaseMetadata(
-      final int release, final Path ctSym, final Map<Path, SourceIdentity> pending)
-      throws IOException {
-    final Path releaseFile = jdkLocation.resolve("release");
-    if (!Files.isRegularFile(releaseFile)) {
-      throw new IOException("No JDK release metadata is available for fallback: " + releaseFile);
-    }
-    final SourceIdentity releaseMetadata = sourceIdentity(releaseFile, pending);
-    final int runtimeRelease = PlatformArchiveInspector.readJdkRelease(releaseFile);
-    if (runtimeRelease != release) {
-      throw new IOException(
-          "No JDK API signatures were found for --release "
-              + release
-              + " in "
-              + ctSym
-              + "; JMOD fallback is valid only for the running JDK release "
-              + runtimeRelease);
-    }
-    return releaseMetadata;
-  }
-
-  private List<Path> selectedJmods(final int release) throws IOException {
-    final Path jmods = jdkLocation.resolve("jmods");
-    if (!Files.isDirectory(jmods)) {
-      throw new IOException("The selected JDK has no jmods directory: " + jmods);
-    }
-    final List<Path> modules;
-    try (java.util.stream.Stream<Path> modulePaths = Files.list(jmods)) {
-      modules = modulePaths.filter(PlatformArchiveInspector::isJmod).sorted().toList();
-    }
+  private PlatformSnapshot captureRuntimePlatform() throws IOException {
+    final List<ModuleReference> modules = systemModules();
     if (modules.isEmpty()) {
-      throw new IOException("No JDK platform signatures found for release " + release);
+      throw new IOException("The active JDK exposes no standard system modules");
     }
-    return modules;
-  }
-
-  private List<SourceIdentity> moduleSources(
-      final List<Path> modules, final Map<Path, SourceIdentity> pending) throws IOException {
-    final List<SourceIdentity> moduleSources = new ArrayList<>(modules.size());
-    for (final Path module : modules) {
-      moduleSources.add(sourceIdentity(module, pending));
+    final ClassPool jdkClassTable = new ClassPool();
+    final List<ModuleIdentity> identities = new ArrayList<>(modules.size());
+    for (final ModuleReference module : modules) {
+      identities.add(captureModule(module, jdkClassTable));
     }
-    return moduleSources;
-  }
-
-  private static String jmodSelection(final int release, final List<Path> modules) {
-    return "runtime-release="
-        + release
-        + ";module-count="
-        + modules.size()
-        + ";modules="
-        + modules.stream()
-            .map(JdkPlatformContext::moduleName)
-            .collect(java.util.stream.Collectors.joining(","));
-  }
-
-  private static String moduleName(final Path module) {
-    return java.util.Objects.requireNonNull(module.getFileName(), "JMOD path has no filename")
-        .toString();
-  }
-
-  private SourceIdentity sourceIdentity(final Path source, final Map<Path, SourceIdentity> pending)
-      throws IOException {
-    final Path normalizedSource = normalize(source);
-    final SourceIdentity existing = capturedSources.get(normalizedSource);
-    if (existing != null) {
-      return existing;
+    if (jdkClassTable.getClass("java/lang/Object") == null) {
+      throw new IOException("The active runtime platform does not contain java/lang/Object");
     }
-    final SourceIdentity withinAttempt = pending.get(normalizedSource);
-    if (withinAttempt != null) {
-      return withinAttempt;
-    }
-    final SourceIdentity captured = digestSource(normalizedSource);
-    pending.put(normalizedSource, captured);
-    return captured;
+    return new PlatformSnapshot(Runtime.version().feature(), identities, jdkClassTable);
   }
 
-  private static SourceIdentity digestSource(final Path source) throws IOException {
-    final MessageDigest sha256 = digest();
-    long size = 0;
-    final byte[] buffer = new byte[64 * 1024];
-    try (InputStream input = Files.newInputStream(source)) {
-      while (true) {
-        final int read = input.read(buffer);
-        if (read < 0) {
-          break;
+  private List<ModuleReference> systemModules() throws IOException {
+    try {
+      return moduleFinder.findAll().stream()
+          .sorted(Comparator.comparing(reference -> reference.descriptor().name()))
+          .toList();
+    } catch (final FindException | SecurityException exception) {
+      throw new IOException("Could not locate the active runtime's standard modules", exception);
+    }
+  }
+
+  private static ModuleIdentity captureModule(
+      final ModuleReference module, final ClassPool jdkClassTable) throws IOException {
+    final ModuleDescriptor descriptor = module.descriptor();
+    final MessageDigest digest = sha256();
+    updateDescriptor(digest, descriptor);
+    long classBytes = 0;
+    long classCount = 0;
+    try (ModuleReader reader = module.open()) {
+      final List<String> resources = classResources(reader, descriptor.name());
+      for (final String resource : resources) {
+        final byte[] bytes = readResource(reader, resource, descriptor.name());
+        updateResource(digest, resource, bytes);
+        classBytes += bytes.length;
+        addClass(bytes, resource, descriptor.name(), jdkClassTable);
+        if (!moduleInfo(resource)) {
+          classCount++;
         }
-        sha256.update(buffer, 0, read);
-        size += read;
       }
     }
-    return new SourceIdentity(source, HexFormat.of().formatHex(sha256.digest()), size);
+    return new ModuleIdentity(
+        descriptor.name(), classCount, classBytes, HexFormat.of().formatHex(digest.digest()));
   }
 
-  private static Path normalize(final Path path) {
-    return java.util.Objects.requireNonNull(path, "javaHome").toAbsolutePath().normalize();
+  private static List<String> classResources(final ModuleReader reader, final String moduleName)
+      throws IOException {
+    try (Stream<String> resources = reader.list()) {
+      return resources.filter(name -> name.endsWith(".class")).sorted().toList();
+    } catch (final UncheckedIOException exception) {
+      throw new IOException("Could not list classes in runtime module " + moduleName, exception);
+    }
+  }
+
+  private static byte[] readResource(
+      final ModuleReader reader, final String resource, final String moduleName)
+      throws IOException {
+    final Optional<InputStream> opened = reader.open(resource);
+    if (opened.isEmpty()) {
+      throw new IOException(
+          "Runtime module listed but could not open class " + moduleName + "/" + resource);
+    }
+    try (InputStream input = opened.orElseThrow()) {
+      return input.readAllBytes();
+    }
+  }
+
+  private static void addClass(
+      final byte[] bytes,
+      final String resource,
+      final String moduleName,
+      final ClassPool jdkClassTable)
+      throws IOException {
+    final ClassReader reader;
+    try {
+      reader = new ClassReader(bytes);
+      if (moduleInfo(resource)) {
+        return;
+      }
+      final String expectedName = resource.substring(0, resource.length() - ".class".length());
+      final String actualName = reader.getClassName();
+      if (!expectedName.equals(actualName)) {
+        throw new IOException(
+            "Runtime module class path does not match name: " + moduleName + "/" + resource);
+      }
+      if (jdkClassTable.getClass(actualName) != null) {
+        throw new IOException("Duplicate active runtime class in system modules: " + actualName);
+      }
+      JdkApiClassTableReader.addLibraryClass(reader, jdkClassTable);
+    } catch (final IllegalArgumentException | IndexOutOfBoundsException exception) {
+      throw new IOException(
+          "Could not parse runtime module class: " + moduleName + "/" + resource, exception);
+    }
+  }
+
+  private static boolean moduleInfo(final String resource) {
+    return "module-info.class".equals(resource) || resource.endsWith("/module-info.class");
+  }
+
+  private static void updateDescriptor(
+      final MessageDigest digest, final ModuleDescriptor descriptor) {
+    updateString(digest, "module");
+    updateString(digest, descriptor.name());
+    updateString(digest, descriptor.rawVersion().orElse(""));
+    updateStrings(digest, "modifier", descriptor.modifiers().stream().map(Enum::name).toList());
+    updateStrings(digest, "package", descriptor.packages().stream().sorted().toList());
+    descriptor.requires().stream()
+        .sorted(Comparator.comparing(ModuleDescriptor.Requires::name))
+        .forEach(
+            requires -> {
+              updateString(digest, "requires");
+              updateString(digest, requires.name());
+              updateStrings(
+                  digest,
+                  "requires-modifier",
+                  requires.modifiers().stream().map(Enum::name).toList());
+              updateString(
+                  digest,
+                  requires.compiledVersion().map(ModuleDescriptor.Version::toString).orElse(""));
+            });
+    descriptor.exports().stream()
+        .sorted(Comparator.comparing(ModuleDescriptor.Exports::source))
+        .forEach(
+            exports -> {
+              updateString(digest, "exports");
+              updateString(digest, exports.source());
+              updateStrings(
+                  digest,
+                  "exports-modifier",
+                  exports.modifiers().stream().map(Enum::name).toList());
+              updateStrings(digest, "exports-target", exports.targets().stream().sorted().toList());
+            });
+    descriptor.opens().stream()
+        .sorted(Comparator.comparing(ModuleDescriptor.Opens::source))
+        .forEach(
+            opens -> {
+              updateString(digest, "opens");
+              updateString(digest, opens.source());
+              updateStrings(
+                  digest, "opens-modifier", opens.modifiers().stream().map(Enum::name).toList());
+              updateStrings(digest, "opens-target", opens.targets().stream().sorted().toList());
+            });
+    updateStrings(digest, "uses", descriptor.uses().stream().sorted().toList());
+    descriptor.provides().stream()
+        .sorted(Comparator.comparing(ModuleDescriptor.Provides::service))
+        .forEach(
+            provides -> {
+              updateString(digest, "provides");
+              updateString(digest, provides.service());
+              updateStrings(digest, "provider", provides.providers().stream().sorted().toList());
+            });
+  }
+
+  private static void updateResource(
+      final MessageDigest digest, final String resource, final byte[] bytes) {
+    updateString(digest, "class-resource");
+    updateString(digest, resource);
+    updateLong(digest, bytes.length);
+    digest.update(bytes);
+  }
+
+  private static void updateStrings(
+      final MessageDigest digest, final String label, final List<String> values) {
+    updateString(digest, label);
+    updateLong(digest, values.size());
+    values.stream().sorted().forEach(value -> updateString(digest, value));
+  }
+
+  private static void updateString(final MessageDigest digest, final String value) {
+    final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+    updateLong(digest, bytes.length);
+    digest.update(bytes);
+  }
+
+  private static void updateLong(final MessageDigest digest, final long value) {
+    digest.update(ByteBuffer.allocate(Long.BYTES).putLong(value).array());
+  }
+
+  private static MessageDigest sha256() {
+    try {
+      return MessageDigest.getInstance("SHA-256");
+    } catch (final NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("Required SHA-256 digest is unavailable", exception);
+    }
   }
 
   private void ensureOpen() {
@@ -214,102 +277,74 @@ public final class JdkPlatformContext implements AutoCloseable {
     }
   }
 
-  private static MessageDigest digest() {
-    try {
-      return MessageDigest.getInstance("SHA-256");
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("Required SHA-256 digest is unavailable", exception);
-    }
-  }
+  /** Compact content identity for one active runtime module. */
+  public record ModuleIdentity(String moduleName, long classCount, long byteCount, String sha256) {}
 
-  private static String releaseCode(final int release) {
-    return release <= 9
-        ? Integer.toString(release)
-        : Character.toString((char) ('A' + release - 10));
-  }
-
-  /** Exact content identity for one selected source, without retaining archive bytes. */
-  public record SourceIdentity(Path sourcePath, String sha256, long size) {}
-
-  /** Immutable release selection and source identities for one analysis context. */
+  /** Immutable active-runtime module selection and parsed class templates. */
   public static final class PlatformSnapshot {
-    /** Normalized JDK installation that supplied this release. */
-    private final Path jdkLocationValue;
+    /** Active runtime feature release. */
+    private final int activeRuntimeFeature;
 
-    /** Effective API release represented by the selected files. */
-    private final int releaseValue;
+    /** Module identity records in module-name order. */
+    private final List<ModuleIdentity> modules;
 
-    /** Selected source type used by the deferred reader. */
-    private final String sourceKindValue;
+    /** Parsed ProGuard declarations used as templates for independent class tables. */
+    private final ClassPool jdkClassTable;
 
-    /** Immutable content metadata for all selected source files. */
-    private final List<SourceIdentity> identities;
-
-    /** Deterministic cache identity for this exact source selection. */
-    private final String identityText;
+    /** Deterministic identity for this runtime and its system-module contents. */
+    private final String platformIdentity;
 
     private PlatformSnapshot(
-        final Path javaHome,
-        final int effectiveRelease,
-        final String sourceKind,
-        final String selectionEvidence,
-        final List<SourceIdentity> sources) {
-      this.jdkLocationValue = javaHome;
-      this.releaseValue = effectiveRelease;
-      this.sourceKindValue = sourceKind;
-      identities = List.copyOf(sources);
+        final int runtimeRelease,
+        final List<ModuleIdentity> modules,
+        final ClassPool jdkClassTable) {
+      this.activeRuntimeFeature = runtimeRelease;
+      this.modules = List.copyOf(modules);
+      this.jdkClassTable = jdkClassTable;
       final StringBuilder value =
           new StringBuilder(128)
-              .append("jdk-platform=")
-              .append(javaHome)
-              .append("\nreader=")
+              .append("platform-source=jrt\nreader=")
               .append(READER_POLICY_VERSION)
-              .append("\nrelease=")
-              .append(effectiveRelease)
-              .append("\nsource-kind=")
-              .append(sourceKind)
-              .append("\nselection=")
-              .append(selectionEvidence)
+              .append("\nruntime-release=")
+              .append(runtimeRelease)
               .append('\n');
-      for (int index = 0; index < identities.size(); index++) {
-        final SourceIdentity identity = identities.get(index);
+      for (final ModuleIdentity module : this.modules) {
         value
-            .append("source[")
-            .append(index)
-            .append("]=")
-            .append(identity.sourcePath())
+            .append("module=")
+            .append(module.moduleName())
             .append(':')
-            .append(identity.size())
+            .append(module.classCount())
             .append(':')
-            .append(identity.sha256())
+            .append(module.byteCount())
+            .append(':')
+            .append(module.sha256())
             .append('\n');
       }
-      identityText = value.toString();
+      platformIdentity = value.toString();
     }
 
-    /** Returns the JDK location and selected API release. */
-    public Path javaHome() {
-      return jdkLocationValue;
+    /** Returns the active runtime feature release. */
+    public int runtimeRelease() {
+      return activeRuntimeFeature;
     }
 
-    /** Returns the effective API release represented by this snapshot. */
-    public int effectiveRelease() {
-      return releaseValue;
-    }
-
-    /** Returns the selected platform source format. */
+    /** Returns the descriptive source kind for this active runtime platform. */
     public String sourceKind() {
-      return sourceKindValue;
+      return "jrt";
     }
 
-    /** Returns path-bound SHA-256 identities for selected archives and metadata. */
-    public List<SourceIdentity> sourceIdentities() {
-      return identities;
+    /** Returns deterministic module-level identities for all system modules. */
+    public List<ModuleIdentity> moduleIdentities() {
+      return modules;
     }
 
     /** Returns the deterministic content identity used by the trim fingerprint. */
     public String identity() {
-      return identityText;
+      return platformIdentity;
+    }
+
+    ClassPool classTableTemplate() {
+      return jdkClassTable;
     }
   }
 }

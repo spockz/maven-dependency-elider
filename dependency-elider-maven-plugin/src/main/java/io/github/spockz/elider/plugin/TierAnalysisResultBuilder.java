@@ -58,7 +58,7 @@ final class TierAnalysisResultBuilder {
         closure.analysisRuns(),
         operation.targetRelease(),
         operation.runtimeRelease(),
-        operation.javaHome(),
+        inventory.tiers(),
         inventory.platformSnapshots(),
         upperClasses);
   }

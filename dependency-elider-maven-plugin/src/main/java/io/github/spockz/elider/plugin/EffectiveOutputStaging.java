@@ -84,7 +84,7 @@ final class EffectiveOutputStaging implements AutoCloseable {
                 final MultiReleaseArchivePlan plan =
                     MultiReleaseArchivePlan.create(
                         candidate.archive().snapshot().filePath(),
-                        outputPlan.analysis().compilerRelease(),
+                        outputPlan.analysis().targetRelease(),
                         candidate.analysis().retainedClasses(),
                         removedProviders);
                 staged =

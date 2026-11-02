@@ -311,7 +311,7 @@ final class MavenElisionServiceEffectiveOutputTransactionTest
 
     assertThatThrownBy(() -> MavenDependencyTrimmer.trimEffectiveOutputs(effective))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("context changed after effective analysis");
+        .hasMessageContaining("Target or runtime release changed after effective analysis");
     assertThat(EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject())).doesNotExist();
     assertThat(EffectiveOutputCacheTestFiles.generationDirectory(fixture.mavenProject()))
         .doesNotExist();

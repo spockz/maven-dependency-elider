@@ -39,14 +39,14 @@ import proguard.classfile.kotlin.KotlinMetadata;
 })
 class ArchiveSnapshotTemplateTest {
   /** Platform declarations used to resolve generated fixture roots. */
-  private static ClassPool objectPool;
+  private static ClassPool objectClassTable;
 
   /** Isolates generated archive fixtures. */
   @TempDir Path temporaryDirectory;
 
   @BeforeAll
   static void readObjectClass() throws IOException {
-    objectPool = new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 21);
+    objectClassTable = new JdkApiClassTableReader().read();
   }
 
   @Test
@@ -112,8 +112,8 @@ class ArchiveSnapshotTemplateTest {
   @Test
   @DisplayName("ADR-0003: cached JDK declarations materialize isolated mutable models")
   void cachedJdkDeclarationsMaterializeFreshModels() throws IOException {
-    final ClassPool firstPool = SignaturePolymorphicTestSupport.java21ApiPool();
-    final ClassPool secondPool = SignaturePolymorphicTestSupport.java21ApiPool();
+    final ClassPool firstPool = SignaturePolymorphicTestSupport.activeRuntimeApiPool();
+    final ClassPool secondPool = SignaturePolymorphicTestSupport.activeRuntimeApiPool();
     final LibraryClass first = (LibraryClass) firstPool.getClass("java/lang/invoke/MethodHandle");
     final LibraryClass second = (LibraryClass) secondPool.getClass("java/lang/invoke/MethodHandle");
     final LibraryMethod firstMethod =
@@ -151,7 +151,7 @@ class ArchiveSnapshotTemplateTest {
         ReferenceGraphBuilder.prepare(
             candidatePath,
             List.of(siblingPath),
-            objectPool,
+            objectClassTable,
             false,
             Set.of(),
             (path, isCandidate) -> isCandidate ? candidate : sibling);

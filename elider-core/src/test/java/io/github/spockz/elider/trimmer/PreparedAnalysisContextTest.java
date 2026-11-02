@@ -40,11 +40,11 @@ class PreparedAnalysisContextTest {
   @TempDir Path temporaryDirectory;
 
   /** Supplies only the platform superclass required by generated fixtures. */
-  private static ClassPool objectPool;
+  private static ClassPool objectClassTable;
 
   @BeforeAll
   static void readObjectClass() throws IOException {
-    objectPool = new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 21);
+    objectClassTable = new JdkApiClassTableReader().read();
   }
 
   @Test
@@ -62,7 +62,7 @@ class PreparedAnalysisContextTest {
         assertThatThrownBy(
                 () ->
                     new DependencyJarTrimmer()
-                        .analyze(candidateJar, invalidLibrary, objectPool, retainedRoots))
+                        .analyze(candidateJar, invalidLibrary, objectClassTable, retainedRoots))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessage("Library classpath entry does not exist: " + invalidLibrary.get(0));
       }
@@ -80,21 +80,21 @@ class PreparedAnalysisContextTest {
     final Path platformJar =
         writeClassJar("platform-context-added.jar", Map.of("fixture/Added", platformMethodClass()));
     final ClassPool addedClasses = ArchiveSnapshot.read(platformJar, true).newClassPool(true);
-    final ClassPool mutablePlatformPool = new ClassPool(objectPool);
-    mutablePlatformPool.addClass(addedClasses.getClass("fixture/Added"));
+    final ClassPool mutableJdkClassTable = new ClassPool(objectClassTable);
+    mutableJdkClassTable.addClass(addedClasses.getClass("fixture/Added"));
     final DependencyJarTrimmer.PreparedAnalysis prepared =
         new DependencyJarTrimmer()
             .prepareInternal(
                 candidateJar,
                 List.of(),
-                mutablePlatformPool,
+                mutableJdkClassTable,
                 false,
                 Set.of(),
                 ArchiveSnapshot::read);
 
     assertThat(prepared.analyze(List.of()).retainedClasses()).contains("fixture/PlatformRoot");
     assertThat(prepared.referenceGraphBuilt()).isFalse();
-    ((LibraryClass) mutablePlatformPool.getClass("fixture/Added")).methods = new LibraryMethod[0];
+    ((LibraryClass) mutableJdkClassTable.getClass("fixture/Added")).methods = new LibraryMethod[0];
 
     assertThat(prepared.analyze(List.of("fixture.PlatformRoot")).retainedClasses())
         .containsExactly("fixture/PlatformRoot");
@@ -102,8 +102,9 @@ class PreparedAnalysisContextTest {
   }
 
   @Test
-  @DisplayName("ADR-0003: platform pools reject definitions outside the LibraryClass API contract")
-  void platformPoolRejectsProgramClassEntries() throws Exception {
+  @DisplayName(
+      "ADR-0003: JDK class tables reject definitions outside the LibraryClass API contract")
+  void jdkClassTableRejectsProgramClassEntries() throws Exception {
     final Path candidateJar =
         writeClassJar(
             "candidate-program-api.jar", Map.of("fixture/Root", simpleClass("fixture/Root", null)));
@@ -122,29 +123,28 @@ class PreparedAnalysisContextTest {
                         Set.of(),
                         ArchiveSnapshot::read))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Platform class pool entries must be LibraryClass instances");
+        .hasMessageContaining("JDK class table entries must be LibraryClass instances");
   }
 
   @Test
-  @DisplayName("ADR-0003: platform pools reject Kotlin metadata with an explicit diagnostic")
-  void platformPoolRejectsKotlinMetadataEntries() throws Exception {
+  @DisplayName("ADR-0003: JDK class tables reject Kotlin metadata with an explicit diagnostic")
+  void jdkClassTableRejectsKotlinMetadataEntries() throws Exception {
     final Path candidateJar =
         writeClassJar(
             "metadata-candidate.jar", Map.of("fixture/Root", simpleClass("fixture/Root", null)));
     final Path platformJar =
         writeClassJar("metadata-api.jar", Map.of("fixture/Api", simpleClass("fixture/Api", null)));
-    final ClassPool platformPool = ArchiveSnapshot.read(platformJar, true).newClassPool(true);
-    ((LibraryClass) platformPool.getClass("fixture/Api")).kotlinMetadata =
+    final ClassPool jdkClassTable = ArchiveSnapshot.read(platformJar, true).newClassPool(true);
+    ((LibraryClass) jdkClassTable.getClass("fixture/Api")).kotlinMetadata =
         new UnsupportedKotlinMetadata(1, new int[0], 0, null, null);
 
     assertThatThrownBy(
             () ->
                 new TrimAnalysisSession(new DependencyJarTrimmer())
                     .prepareWithUnchangedPassThroughLibraries(
-                        candidateJar, List.of(), platformPool, Set.of()))
+                        candidateJar, List.of(), jdkClassTable, Set.of()))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage(
-            "Platform class pool entries with Kotlin metadata are unsupported: fixture/Api");
+        .hasMessage("JDK class table entries with Kotlin metadata are unsupported: fixture/Api");
   }
 
   private Path writeClassJar(final String fileName, final Map<String, byte[]> classes)

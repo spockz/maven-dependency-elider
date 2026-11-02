@@ -44,7 +44,7 @@ final class ReferenceGraphBuilder {
   static PreparedAnalysisState prepare(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final boolean tolerateUnresolvedProgramReferences,
       final Set<String> toleratedUnresolvedLibraryClasses,
       final ArchiveProvider archiveProvider)
@@ -52,7 +52,7 @@ final class ReferenceGraphBuilder {
     requireInputs(
         candidateJar,
         libraryClassPath,
-        platformLibraryPool,
+        jdkClassTable,
         toleratedUnresolvedLibraryClasses,
         archiveProvider);
     if (!Files.isRegularFile(candidateJar)) {
@@ -65,7 +65,7 @@ final class ReferenceGraphBuilder {
     if (candidate.classNames().isEmpty()) {
       throw new IllegalArgumentException("Candidate JAR contains no classes: " + candidateJar);
     }
-    final List<Clazz> platformClasses = snapshotPlatformClasses(platformLibraryPool);
+    final List<Clazz> platformClasses = snapshotJdkClassTable(jdkClassTable);
     final ReferenceGraphBuilder builder =
         new ReferenceGraphBuilder(candidateJar, orderedLibraries, platformClasses, archiveProvider);
     return new PreparedAnalysisState(
@@ -88,19 +88,19 @@ final class ReferenceGraphBuilder {
     }
   }
 
-  private static List<Clazz> snapshotPlatformClasses(final ClassPool platformLibraryPool) {
-    return PlatformClassSnapshot.copyOf(platformLibraryPool);
+  private static List<Clazz> snapshotJdkClassTable(final ClassPool jdkClassTable) {
+    return PlatformClassSnapshot.copyOf(jdkClassTable);
   }
 
   private static void requireInputs(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Set<String> toleratedUnresolvedLibraryClasses,
       final ArchiveProvider archiveProvider) {
     java.util.Objects.requireNonNull(candidateJar, "candidateJar");
     java.util.Objects.requireNonNull(libraryClassPath, "libraryClassPath");
-    java.util.Objects.requireNonNull(platformLibraryPool, "platformLibraryPool");
+    java.util.Objects.requireNonNull(jdkClassTable, "jdkClassTable");
     java.util.Objects.requireNonNull(
         toleratedUnresolvedLibraryClasses, "toleratedUnresolvedLibraryClasses");
     java.util.Objects.requireNonNull(archiveProvider, "archiveProvider");

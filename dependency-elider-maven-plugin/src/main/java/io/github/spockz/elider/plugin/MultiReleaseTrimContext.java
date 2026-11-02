@@ -4,7 +4,6 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
 
@@ -14,8 +13,7 @@ record MultiReleaseTrimContext(
     Map<TrimArtifactRootKey, Set<String>> discoveredRoots,
     Set<ArtifactCoordinate> forcedUnchanged,
     int targetRelease,
-    int runtimeRelease,
-    Path javaHome) {
+    int runtimeRelease) {
   /** Preserves the default constructor's initial map capacity. */
   /* package */ static final int DEFAULT_EXPECTED_MAP_SIZE = 12;
 }

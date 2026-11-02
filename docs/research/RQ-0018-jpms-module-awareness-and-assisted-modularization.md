@@ -233,6 +233,8 @@ Current post-compile scanning reads module service declarations, but `PostCompil
 
 ### 5.3 JDK Module Suggestions
 
+JDK class resolution is a separate contract from `jdeps` target selection. WP-PLATFORM-01 uses standard system-module APIs to inspect the active Maven runtime and populate the analysis JDK class table. The configured target release remains available for multi-release dependency selection and `jdeps --multi-release`; it does not select a historical JDK API surface. The active class table is not claimed to be a universal historical superset. A type or member missing from the active runtime remains unresolved and must not be synthesized from assumptions about older releases.
+
 A classpath application can use a custom JDK image without linking its Spring dependency JARs as application modules. Analyze the final application classes, generated AOT classes, and retained dependencies with target-aware [`jdeps`](https://docs.oracle.com/en/java/javase/21/docs/specs/man/jdeps.html); it can produce module dependencies for [`jlink`](https://docs.oracle.com/en/java/javase/21/docs/specs/man/jlink.html).
 
 Treat the result as a static candidate set. Add requirements discovered through reflection, service providers, resource bundles, security/crypto providers, JDBC/JNDI, agents, and deployment configuration; validate representative workloads on the linked runtime. Never hide unresolved links with `--ignore-missing-deps` and call the result complete. Generate CDS/AOT caches with that final runtime.

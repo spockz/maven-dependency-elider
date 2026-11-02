@@ -62,10 +62,10 @@ final class TierRootPlanner {
     return new RootPlan(snapshots, candidates, roots, reachable);
   }
 
-  private Set<String> platformClassNames(final Iterable<ClassPool> platforms) {
+  private Set<String> platformClassNames(final Iterable<ClassPool> classTables) {
     final Set<String> names = new HashSet<>();
-    for (final ClassPool platform : platforms) {
-      platform.classNames().forEachRemaining(name -> names.add(name.replace('/', '.')));
+    for (final ClassPool jdkClassTable : classTables) {
+      jdkClassTable.classNames().forEachRemaining(name -> names.add(name.replace('/', '.')));
     }
     return names;
   }

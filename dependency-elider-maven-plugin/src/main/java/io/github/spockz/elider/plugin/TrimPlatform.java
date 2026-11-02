@@ -1,5 +1,5 @@
-/* WHY: Resolves the compiler release before analysis so platform selection
- * cannot silently use a different JDK view. */
+/* WHY: Resolves the configured target release for archive analysis while the
+ * JDK class table remains bound to the active runtime. */
 
 package io.github.spockz.elider.plugin;
 
@@ -8,9 +8,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-/** Selects the release-specific platform used for compiler analysis. */
+/** Resolves the target release used for multi-release archive analysis. */
 final class TrimPlatform {
-  /** Compiler option identifying the release-specific platform API. */
+  /** Compiler option identifying the target release. */
   private static final String RELEASE_OPTION = "--release";
 
   private TrimPlatform() {}

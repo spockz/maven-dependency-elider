@@ -5,7 +5,6 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
 
@@ -18,11 +17,10 @@ final class MultiReleaseTierAnalyzer {
       final Map<TrimArtifactRootKey, Set<String>> discoveredRoots,
       final Set<ArtifactCoordinate> forcedUnchanged,
       final int targetRelease,
-      final int runtimeRelease,
-      final Path javaHome)
+      final int runtimeRelease)
       throws IOException {
     return TierAnalysisPipeline.analyze(
         new MultiReleaseTrimContext(
-            request, discoveredRoots, forcedUnchanged, targetRelease, runtimeRelease, javaHome));
+            request, discoveredRoots, forcedUnchanged, targetRelease, runtimeRelease));
   }
 }

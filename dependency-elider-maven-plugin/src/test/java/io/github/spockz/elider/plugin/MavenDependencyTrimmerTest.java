@@ -12,13 +12,11 @@ import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import io.github.spockz.elider.scanner.JarIndexScanner;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarFile;
-import java.util.zip.ZipOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
@@ -27,10 +25,8 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.api.parallel.Isolated;
 
 /** Verifies retained-JAR trimming uses the supplied invocation evidence. */
-@Isolated("One malformed-JDK fixture temporarily overrides java.home")
 @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
 final class MavenDependencyTrimmerTest {
   /** Artifact identity shared by the test archive and Maven project. */
@@ -44,9 +40,6 @@ final class MavenDependencyTrimmerTest {
 
   /** JAR type shared by fixture coordinates. */
   private static final String JAR_TYPE = "jar";
-
-  /** WHY: Fake JDK path key used by this test. */
-  private static final String JAVA_HOME_PROPERTY = "java.home";
 
   /** Temporary workspace for compiled JAR fixtures. */
   @TempDir private Path tempDir;
@@ -85,51 +78,6 @@ final class MavenDependencyTrimmerTest {
     assertThatThrownBy(() -> trim(project, snapshot, new TrimScanInputs(classIndex, Map.of())))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Missing dynamic-root scan for retained artifact");
-  }
-
-  @Test
-  void malformedSelectedPlatformClassOnCacheMissPublishesNoSuccessOutput() throws Exception {
-    final Path jar = compileJar();
-    final Path javaHome = Files.createDirectories(tempDir.resolve("malformed-jdk/lib")).getParent();
-    try (ZipOutputStream ctSym =
-        new ZipOutputStream(Files.newOutputStream(javaHome.resolve("lib/ct.sym")))) {
-      ctSym.putNextEntry(new java.util.zip.ZipEntry("L/java.base/sample/Broken.sig"));
-      ctSym.write(new byte[] {1, 2, 3});
-      ctSym.closeEntry();
-    }
-    final ArtifactCoordinate coordinate =
-        new ArtifactCoordinate(GROUP_ID, ARTIFACT_ID, VERSION, JAR_TYPE, "", ARTIFACT_ID);
-    final Artifact artifact = runtimeArtifact(jar);
-    final MavenProject project = project(artifact);
-    final Path normalizedJar = jar.toAbsolutePath().normalize();
-    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
-        new ElisionAnalysisModel.ArtifactSnapshot(artifact, coordinate, normalizedJar);
-    final ArtifactFileRef artifactRef = ArtifactFileRef.fromPath(coordinate, normalizedJar);
-    final ArtifactClassIndex classIndex = new JarIndexScanner().scan(List.of(artifactRef));
-    final TrimScanInputs scanInputs =
-        new TrimScanInputs(
-            classIndex, Map.of(normalizedJar, new DependencyDynamicRoots.RootScan(Set.of(), true)));
-    final String previousJavaHome = System.getProperty(JAVA_HOME_PROPERTY);
-    final Path manifest = tempDir.resolve("build/elided-artifacts/.trim-analysis-cache.json");
-    final Path output =
-        tempDir.resolve("build/elided-artifacts/org.example-runtime-1.0-trimmed.jar");
-
-    System.setProperty(JAVA_HOME_PROPERTY, javaHome.toString());
-    try {
-      assertThatThrownBy(() -> trim(project, snapshot, scanInputs))
-          .isInstanceOf(IOException.class)
-          .hasMessageContaining("Could not read JDK API signature");
-    } finally {
-      if (previousJavaHome == null) {
-        System.clearProperty(JAVA_HOME_PROPERTY);
-      } else {
-        System.setProperty(JAVA_HOME_PROPERTY, previousJavaHome);
-      }
-    }
-
-    assertThat(manifest).doesNotExist();
-    assertThat(output).doesNotExist();
-    assertThat(jar).isRegularFile();
   }
 
   private TrimResult trim(

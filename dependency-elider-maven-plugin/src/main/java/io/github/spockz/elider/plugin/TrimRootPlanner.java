@@ -152,9 +152,9 @@ final class TrimRootPlanner {
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots,
       final Set<ArtifactCoordinate> reachableArtifacts,
       final int analysisRuns,
-      final int compilerRelease,
+      final int targetRelease,
       final int runtimeRelease,
-      final Path javaHome,
+      final List<Integer> analyzedTiers,
       final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots,
       final Map<ArtifactCoordinate, Set<String>> upperTierClasses) {
     final Map<ArtifactCoordinate, Set<String>> rootsByCoordinate = TrimCollections.orderedMap();
@@ -164,18 +164,10 @@ final class TrimRootPlanner {
         rootsByCoordinate,
         reachableArtifacts,
         analysisRuns,
-        compilerRelease,
+        targetRelease,
         runtimeRelease,
-        javaHome,
-        platformSnapshots.stream()
-            .sorted(Comparator.comparingInt(JdkPlatformContext.PlatformSnapshot::effectiveRelease))
-            .map(JdkPlatformContext.PlatformSnapshot::identity)
-            .toList(),
-        platformSnapshots.stream()
-            .map(JdkPlatformContext.PlatformSnapshot::effectiveRelease)
-            .distinct()
-            .sorted()
-            .toList(),
+        platformSnapshots.stream().map(JdkPlatformContext.PlatformSnapshot::identity).toList(),
+        analyzedTiers,
         upperTierClasses);
   }
 

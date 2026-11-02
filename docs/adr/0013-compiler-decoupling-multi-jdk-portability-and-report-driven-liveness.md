@@ -48,6 +48,8 @@ We establish **Mandatory Multi-JDK Portability (JDK 21+)**, **Compiler Decouplin
 * **No feature dependency on exact JDK versions**: No feature implemented in this project may ever depend on, require, or assume that users run our exact JDK version, patch release, or vendor build. All features and analysis capabilities must function on standard, compliant JDK 21+ installations.
 * No code may embed hardcoded compiler SHA-256 digests, runtime release-string equality checks, or vendor-specific JVM identity checks that cause execution to fail on other standard JDKs.
 * Platform module introspection must use standard Java Platform specifications and APIs (`java.lang.module.ModuleFinder.ofSystem()`), replacing legacy `ct.sym` release code parsing for modern JDKs.
+* The JDK class table describes the active Maven runtime's system modules. The configured target release remains separate for multi-release dependency selection and reporting; active-runtime inspection does not emulate a historical Java platform or prove that a referenced API existed in the target release. Unresolved JDK references remain explicit analysis failures.
+* A platform snapshot sorts system modules and class-resource names, hashes module descriptor identity and each class resource's name, length, and bytes, and ASM-parses each class from the same transient byte array. It retains compact module identities and parsed class templates, not raw runtime bytes or archive paths; each analysis receives an isolated JDK class table. This replaces ADR-0004's former archive-path and `ct.sym`/JMOD design. Accurate configured-target extraction and its report fields remain a separate P03/S1b requirement.
 
 ### 2.2 Abandonment of In-Process Source Reproduction for Unmapped CNAs
 

@@ -39,20 +39,20 @@ public final class TrimAnalysisSession {
   }
 
   /**
-   * Analyzes with platform API classes; Kotlin metadata is rejected.
+   * Analyzes with JDK class table declarations; Kotlin metadata is rejected.
    *
-   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
    */
   public DependencyJarTrimmer.TrimAnalysis analyze(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> retainedRoots)
       throws IOException {
     return trimmer.analyzeInternal(
         candidateJar,
         libraryClassPath,
-        platformLibraryPool,
+        jdkClassTable,
         retainedRoots,
         false,
         Set.of(),
@@ -62,19 +62,19 @@ public final class TrimAnalysisSession {
   /**
    * Prepares an unchanged candidate; Kotlin metadata is rejected.
    *
-   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
    */
   public DependencyJarTrimmer.PreparedAnalysis prepareUnchangedPassThrough(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
     // Copy API signatures now so later caller mutations cannot change this context.
     return trimmer.prepareInternal(
         candidateJar,
         libraryClassPath,
-        platformLibraryPool,
+        jdkClassTable,
         true,
         normalizeClassNames(unchangedPassThroughClassNames),
         this::archive);
@@ -83,19 +83,19 @@ public final class TrimAnalysisSession {
   /**
    * Prepares candidate closure; Kotlin metadata is rejected.
    *
-   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
    */
   public DependencyJarTrimmer.PreparedAnalysis prepareWithUnchangedPassThroughLibraries(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
     // Copy API signatures now so later caller mutations cannot change this context.
     return trimmer.prepareInternal(
         candidateJar,
         libraryClassPath,
-        platformLibraryPool,
+        jdkClassTable,
         false,
         normalizeClassNames(unchangedPassThroughClassNames),
         this::archive);
@@ -104,19 +104,19 @@ public final class TrimAnalysisSession {
   /**
    * Analyzes an unchanged candidate; Kotlin metadata is rejected.
    *
-   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
    */
   public DependencyJarTrimmer.TrimAnalysis analyzeUnchangedPassThrough(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> retainedRoots,
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
     return trimmer.analyzeInternal(
         candidateJar,
         libraryClassPath,
-        platformLibraryPool,
+        jdkClassTable,
         retainedRoots,
         true,
         normalizeClassNames(unchangedPassThroughClassNames),
@@ -126,19 +126,19 @@ public final class TrimAnalysisSession {
   /**
    * Tolerates unresolved sibling links; Kotlin metadata is rejected.
    *
-   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
    */
   public DependencyJarTrimmer.TrimAnalysis analyzeWithUnchangedPassThroughLibraries(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> retainedRoots,
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
     return trimmer.analyzeInternal(
         candidateJar,
         libraryClassPath,
-        platformLibraryPool,
+        jdkClassTable,
         retainedRoots,
         false,
         normalizeClassNames(unchangedPassThroughClassNames),

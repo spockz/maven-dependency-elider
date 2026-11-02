@@ -4,7 +4,7 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.plugin.DirectTrimPreparation.PreparedDirectTrim;
-import io.github.spockz.elider.plugin.SingleReleasePlatforms.PlatformPools;
+import io.github.spockz.elider.plugin.SingleReleasePlatforms.JdkClassTables;
 import java.io.IOException;
 
 /** Runs direct candidate closure only after cache validation misses. */
@@ -12,15 +12,14 @@ final class DirectTrimAnalysis {
   private DirectTrimAnalysis() {}
 
   /* package */ static int analyze(final PreparedDirectTrim plan) throws IOException {
-    final PlatformPools pools =
-        SingleReleasePlatforms.readPlatformPools(
-            plan.fingerprint().platformSnapshots(), plan.compilerRelease(), plan.runtimeRelease());
+    final JdkClassTables tables =
+        SingleReleasePlatforms.readJdkClassTables(plan.fingerprint().platformSnapshots());
     return ProGuardTrimEngine.analyze(
         plan.candidatePlan(),
         plan.passThrough(),
         TrimPaths.analysisLibraryDirectory(plan.request().project()),
         plan.runtimeRelease(),
-        pools,
+        tables,
         plan.request().policy().trimWorkers());
   }
 }

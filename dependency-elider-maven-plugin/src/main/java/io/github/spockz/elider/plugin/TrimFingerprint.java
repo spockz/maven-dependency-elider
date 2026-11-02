@@ -11,7 +11,6 @@ import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -73,15 +72,8 @@ final class TrimFingerprint {
       candidateIdentities.add("effective-output-context:" + options.outputContext());
     }
     candidateIdentities.add("runtime-release:" + options.runtimeRelease());
-    final Set<Integer> tiers = new TreeSet<>(options.analyzedTiers());
-    tiers.add(options.release());
-    tiers.add(options.runtimeRelease());
-    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots = new ArrayList<>();
-    for (final int tier : tiers) {
-      platformSnapshots.add(options.platformContext().snapshot(tier));
-    }
-    platformSnapshots.sort(
-        Comparator.comparingInt(JdkPlatformContext.PlatformSnapshot::effectiveRelease));
+    final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots =
+        List.of(options.platformContext().snapshot());
     final Map<Path, ArtifactDigests> inputDigests =
         TrimInputDigests.inputDigests(allRetainedInputs);
     final String value =

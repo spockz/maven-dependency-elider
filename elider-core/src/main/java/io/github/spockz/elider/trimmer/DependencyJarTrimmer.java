@@ -41,20 +41,20 @@ public final class DependencyJarTrimmer {
   }
 
   /**
-   * Adds compiler API signatures; Kotlin metadata is rejected.
+   * Adds active-runtime JDK class table declarations; Kotlin metadata is rejected.
    *
-   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
    */
   public TrimAnalysis analyze(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> retainedRoots)
       throws IOException {
     return analyzeInternal(
         candidateJar,
         libraryClassPath,
-        platformLibraryPool,
+        jdkClassTable,
         retainedRoots,
         false,
         Set.of(),
@@ -64,27 +64,27 @@ public final class DependencyJarTrimmer {
   /**
    * Computes pass-through closure; Kotlin metadata is rejected.
    *
-   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
    */
   public TrimAnalysis analyzeUnchangedPassThrough(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> retainedRoots)
       throws IOException {
     return analyzeUnchangedPassThrough(
-        candidateJar, libraryClassPath, platformLibraryPool, retainedRoots, Set.of());
+        candidateJar, libraryClassPath, jdkClassTable, retainedRoots, Set.of());
   }
 
   /**
    * Computes unchanged-archive closure; Kotlin metadata is rejected.
    *
-   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
    */
   public TrimAnalysis analyzeUnchangedPassThrough(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> retainedRoots,
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
@@ -93,7 +93,7 @@ public final class DependencyJarTrimmer {
     return analyzeInternal(
         candidateJar,
         libraryClassPath,
-        platformLibraryPool,
+        jdkClassTable,
         retainedRoots,
         true,
         toleratedNames,
@@ -103,12 +103,12 @@ public final class DependencyJarTrimmer {
   /**
    * Computes candidate closure; Kotlin metadata is rejected.
    *
-   * @param platformLibraryPool ProGuard {@code LibraryClass} API definitions
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
    */
   public TrimAnalysis analyzeWithUnchangedPassThroughLibraries(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> retainedRoots,
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
@@ -117,7 +117,7 @@ public final class DependencyJarTrimmer {
     return analyzeInternal(
         candidateJar,
         libraryClassPath,
-        platformLibraryPool,
+        jdkClassTable,
         retainedRoots,
         false,
         toleratedNames,
@@ -128,7 +128,7 @@ public final class DependencyJarTrimmer {
   TrimAnalysis analyzeInternal(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final Collection<String> retainedRoots,
       final boolean tolerateUnresolvedProgramReferences,
       final Set<String> toleratedUnresolvedLibraryClasses,
@@ -137,7 +137,7 @@ public final class DependencyJarTrimmer {
     return prepareInternal(
             candidateJar,
             libraryClassPath,
-            platformLibraryPool,
+            jdkClassTable,
             tolerateUnresolvedProgramReferences,
             toleratedUnresolvedLibraryClasses,
             archiveProvider)
@@ -148,7 +148,7 @@ public final class DependencyJarTrimmer {
   PreparedAnalysis prepareInternal(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final ClassPool platformLibraryPool,
+      final ClassPool jdkClassTable,
       final boolean tolerateUnresolvedProgramReferences,
       final Set<String> toleratedUnresolvedLibraryClasses,
       final ArchiveProvider archiveProvider)
@@ -157,7 +157,7 @@ public final class DependencyJarTrimmer {
         ReferenceGraphBuilder.prepare(
             candidateJar,
             libraryClassPath,
-            platformLibraryPool,
+            jdkClassTable,
             tolerateUnresolvedProgramReferences,
             toleratedUnresolvedLibraryClasses,
             archiveProvider));

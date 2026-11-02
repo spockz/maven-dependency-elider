@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -196,9 +197,14 @@ final class MavenElisionServiceEffectiveOutputCacheTest
         operation(fixture, trace, null, true, List.of(), "vertical-shading");
     final ElisionAnalysisModel.EffectiveAnalysis targetSeventeenEffective =
         targetSeventeen.service().finishAnalysis(targetSeventeen.prepared());
-    assertThat(targetSeventeenEffective.trimAnalysis().analyzedTiers()).containsExactly(17, 21);
-    assertThat(targetSeventeenEffective.trimAnalysis().platformIdentities())
-        .isNotEqualTo(firstPlatformIdentities);
+    assertAll(
+        "target release changes MR selection without changing the active JDK class table",
+        () ->
+            assertThat(targetSeventeenEffective.trimAnalysis().analyzedTiers())
+                .containsExactly(17, 21),
+        () ->
+            assertThat(targetSeventeenEffective.trimAnalysis().platformIdentities())
+                .isEqualTo(firstPlatformIdentities));
     assertThat(MavenDependencyTrimmer.trimEffectiveOutputs(targetSeventeenEffective).cacheHits())
         .isZero();
     final String targetFingerprint =

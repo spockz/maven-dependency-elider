@@ -22,7 +22,7 @@ final class TierAnalysisPipeline {
     final RootPlan roots =
         new TierRootPlanner(operation)
             .findRoots(
-                prepared.inventory(), prepared.projections(), prepared.platforms().byRelease());
+                prepared.inventory(), prepared.projections(), prepared.classTables().byRelease());
     final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> candidates =
         new TierCandidatePlanner(operation)
             .createCandidates(

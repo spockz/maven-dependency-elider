@@ -5,7 +5,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.plugin.TierInventoryReader.Inventory;
 import io.github.spockz.elider.plugin.TierInventoryReader.MultiReleaseCandidateInfo;
-import io.github.spockz.elider.plugin.TierPlatformReader.PlatformPlan;
+import io.github.spockz.elider.plugin.TierPlatformReader.JdkClassTablePlan;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -27,16 +27,17 @@ final class TierArchiveProjector {
   }
 
   /* package */ List<TierContext> projectInventory(
-      final Inventory inventory, final PlatformPlan platforms) throws IOException {
+      final Inventory inventory, final JdkClassTablePlan classTables) throws IOException {
     final List<TierContext> contexts = new ArrayList<>();
     for (final int tier : inventory.tiers()) {
-      contexts.add(projectTier(inventory, platforms.byRelease().get(tier), tier));
+      contexts.add(projectTier(inventory, classTables.byRelease().get(tier), tier));
     }
     return List.copyOf(contexts);
   }
 
   private TierContext projectTier(
-      final Inventory inventory, final ClassPool platform, final int release) throws IOException {
+      final Inventory inventory, final ClassPool jdkClassTable, final int release)
+      throws IOException {
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Path> paths =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> classes =
@@ -59,7 +60,7 @@ final class TierArchiveProjector {
         owners,
         Map.of(),
         Map.of(),
-        platform);
+        jdkClassTable);
   }
 
   private void addTierArtifact(
@@ -107,7 +108,7 @@ final class TierArchiveProjector {
           candidatePrepared,
       Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
           programPrepared,
-      ClassPool platformPool) {
+      ClassPool jdkClassTable) {
     /* package */ TierContext {
       multiReleaseCandidates = Map.copyOf(multiReleaseCandidates);
       paths = Map.copyOf(paths);
@@ -131,7 +132,7 @@ final class TierArchiveProjector {
           ownerByClass,
           candidates,
           programs,
-          platformPool);
+          jdkClassTable);
     }
 
     /* package */ int release() {
@@ -152,10 +153,6 @@ final class TierArchiveProjector {
 
     /* package */ ElisionAnalysisModel.ArtifactSnapshot ownerOf(final String name) {
       return ownerByClass.get(name);
-    }
-
-    /* package */ ClassPool platform() {
-      return platformPool;
     }
 
     /* package */ List<

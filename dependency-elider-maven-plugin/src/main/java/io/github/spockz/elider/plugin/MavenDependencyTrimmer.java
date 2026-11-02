@@ -150,13 +150,12 @@ final class MavenDependencyTrimmer {
                 project, request.environment());
     final Path javaHome =
         Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
-    final int release = TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
+    final int targetRelease = TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
     final int runtimeRelease = Runtime.version().feature();
-    verifyAnalysisPlatform(effective, release, runtimeRelease, javaHome);
-    try (JdkPlatformContext context = new JdkPlatformContext(javaHome)) {
-      return TrimOutputCoordinator.trimPrepared(
-          request, release, runtimeRelease, context, outputPlan);
-    }
+    verifyAnalysisPlatform(effective, targetRelease, runtimeRelease);
+    final JdkPlatformContext context = MavenPlatformContextHolder.forOperation(request.session());
+    return TrimOutputCoordinator.trimPrepared(
+        request, targetRelease, runtimeRelease, context, outputPlan);
   }
 
   /* package */ static TrimResult trim(final TrimRequest request)
@@ -167,24 +166,21 @@ final class MavenDependencyTrimmer {
         MavenCompilerSettings.platformReleaseOptions(project, session);
     final Path javaHome =
         Path.of(System.getProperty(JAVA_HOME_PROPERTY)).toAbsolutePath().normalize();
-    final int release = TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
+    final int targetRelease = TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
     final int runtimeRelease = Runtime.version().feature();
-    final JdkPlatformContext platformContext =
-        MavenPlatformContextHolder.forOperation(session, javaHome);
-    return TrimOutputCoordinator.trimPrepared(request, release, runtimeRelease, platformContext);
+    final JdkPlatformContext platformContext = MavenPlatformContextHolder.forOperation(session);
+    return TrimOutputCoordinator.trimPrepared(
+        request, targetRelease, runtimeRelease, platformContext);
   }
 
   private static void verifyAnalysisPlatform(
       final ElisionAnalysisModel.EffectiveAnalysis effective,
-      final int compilerRelease,
-      final int runtimeRelease,
-      final Path javaHome)
+      final int targetRelease,
+      final int runtimeRelease)
       throws IOException {
     final TrimAnalysisResult analysis = effective.trimAnalysis();
-    if (compilerRelease != analysis.compilerRelease()
-        || runtimeRelease != analysis.runtimeRelease()
-        || !javaHome.toAbsolutePath().normalize().equals(analysis.javaHome())) {
-      throw new IOException("Compiler or JDK context changed after effective analysis");
+    if (targetRelease != analysis.targetRelease() || runtimeRelease != analysis.runtimeRelease()) {
+      throw new IOException("Target or runtime release changed after effective analysis");
     }
   }
 

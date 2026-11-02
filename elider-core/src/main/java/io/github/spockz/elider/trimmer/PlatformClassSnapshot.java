@@ -19,20 +19,20 @@ import proguard.classfile.visitor.MemberVisitor;
 final class PlatformClassSnapshot {
   private PlatformClassSnapshot() {}
 
-  static List<Clazz> copyOf(final ClassPool platformLibraryPool) {
+  static List<Clazz> copyOf(final ClassPool jdkClassTable) {
     final List<Clazz> copies = new ArrayList<>();
-    platformLibraryPool.classes().forEach(clazz -> copies.add(copyLibraryClass(clazz)));
+    jdkClassTable.classes().forEach(clazz -> copies.add(copyLibraryClass(clazz)));
     return List.copyOf(copies);
   }
 
   private static LibraryClass copyLibraryClass(final Clazz source) {
     if (!(source instanceof LibraryClass libraryClass)) {
       throw new IllegalArgumentException(
-          "Platform class pool entries must be LibraryClass instances: " + source.getName());
+          "JDK class table entries must be LibraryClass instances: " + source.getName());
     }
     if (libraryClass.kotlinMetadata != null) {
       throw new IllegalArgumentException(
-          "Platform class pool entries with Kotlin metadata are unsupported: " + source.getName());
+          "JDK class table entries with Kotlin metadata are unsupported: " + source.getName());
     }
     final List<LibraryField> fields = new ArrayList<>();
     final List<LibraryMethod> methods = new ArrayList<>();
@@ -48,9 +48,9 @@ final class PlatformClassSnapshot {
         libraryClass.getName(),
         libraryClass.getSuperName(),
         interfaces,
-        null,
+        new Clazz[interfaces.length],
         0,
-        null,
+        new Clazz[0],
         fields.toArray(LibraryField[]::new),
         methods.toArray(LibraryMethod[]::new),
         null);

@@ -129,6 +129,6 @@ final class MultiReleaseJarTrimmer {
           request, discoveredRoots, forcedUnchanged);
     }
     return MultiReleaseTierAnalyzer.analyze(
-        request, discoveredRoots, forcedUnchanged, release, runtimeRelease, javaHome);
+        request, discoveredRoots, forcedUnchanged, release, runtimeRelease);
   }
 }

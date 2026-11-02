@@ -1,20 +1,22 @@
-/* WHY: Binds single-release analysis to frozen compiler and runtime platform
- * views. */
+/* WHY: Binds single-release analysis to isolated copies of the active runtime platform. */
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
+import io.github.spockz.elider.trimmer.JdkApiClassTableReader;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import proguard.classfile.ClassPool;
 
-/** Binds single-release analysis to frozen compiler and runtime platform views. */
+/** Binds single-release analysis to active-runtime platform views. */
 final class SingleReleasePlatforms {
+  /** One active-runtime snapshot supplies both single-release class tables. */
+  private static final int EXPECTED_PLATFORM_SNAPSHOT_COUNT = 1;
+
   private SingleReleasePlatforms() {}
 
-  /* package */ record PlatformPools(ClassPool compiler, ClassPool runtime) {}
+  /* package */ record JdkClassTables(ClassPool candidate, ClassPool passThrough) {}
 
   /* package */ static int analysisRelease(
       final TrimRequest request, final Path javaHome, final int runtimeRelease) throws IOException {
@@ -29,36 +31,22 @@ final class SingleReleasePlatforms {
     return TrimPlatform.releaseFromOptions(compilerOptions, javaHome);
   }
 
-  /* package */ static JdkPlatformContext.PlatformSnapshot platformSnapshot(
-      final List<JdkPlatformContext.PlatformSnapshot> snapshots, final int release) {
-    return snapshots.stream()
-        .filter(snapshot -> snapshot.effectiveRelease() == release)
-        .findFirst()
-        .orElseThrow(
-            () ->
-                new IllegalStateException("No captured platform snapshot for release " + release));
-  }
-
-  /* package */ static PlatformPools readPlatformPools(
-      final List<JdkPlatformContext.PlatformSnapshot> snapshots,
-      final int compilerRelease,
-      final int runtimeRelease)
-      throws IOException {
-    final JdkApiClassPoolReader reader = new JdkApiClassPoolReader();
-    final ClassPool compiler = reader.readFrozen(platformSnapshot(snapshots, compilerRelease));
-    final ClassPool runtime =
-        runtimeRelease == compilerRelease
-            ? compiler
-            : reader.readFrozen(platformSnapshot(snapshots, runtimeRelease));
-    return new PlatformPools(compiler, runtime);
+  /* package */ static JdkClassTables readJdkClassTables(
+      final List<JdkPlatformContext.PlatformSnapshot> snapshots) throws IOException {
+    if (snapshots.size() != EXPECTED_PLATFORM_SNAPSHOT_COUNT) {
+      throw new IOException("Expected one active runtime platform snapshot");
+    }
+    final JdkApiClassTableReader reader = new JdkApiClassTableReader();
+    final JdkPlatformContext.PlatformSnapshot snapshot = snapshots.getFirst();
+    return new JdkClassTables(reader.readFrozen(snapshot), reader.readFrozen(snapshot));
   }
 
   /* package */ record AnalysisPlatform(
       Path javaHome,
-      int compilerRelease,
+      int targetRelease,
       int runtimeRelease,
       List<JdkPlatformContext.PlatformSnapshot> snapshots,
-      PlatformPools pools) {}
+      JdkClassTables tables) {}
 
   /* package */ static AnalysisPlatform prepare(final TrimRequest request) throws IOException {
     final Path javaHome =
@@ -66,14 +54,10 @@ final class SingleReleasePlatforms {
             .toAbsolutePath()
             .normalize();
     final int runtimeRelease = Runtime.version().feature();
-    final int release = analysisRelease(request, javaHome, runtimeRelease);
+    final int targetRelease = analysisRelease(request, javaHome, runtimeRelease);
     final List<JdkPlatformContext.PlatformSnapshot> snapshots =
-        SingleReleaseTrimInventory.platformSnapshots(javaHome, release, runtimeRelease);
+        List.of(MavenPlatformContextHolder.forOperation(request.session()).snapshot());
     return new AnalysisPlatform(
-        javaHome,
-        release,
-        runtimeRelease,
-        snapshots,
-        readPlatformPools(snapshots, release, runtimeRelease));
+        javaHome, targetRelease, runtimeRelease, snapshots, readJdkClassTables(snapshots));
   }
 }

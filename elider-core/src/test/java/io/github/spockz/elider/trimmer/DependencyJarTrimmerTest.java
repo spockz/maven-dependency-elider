@@ -5,6 +5,7 @@ package io.github.spockz.elider.trimmer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.test.CompilationFixtureSupport;
 import java.io.IOException;
@@ -17,7 +18,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
-import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,51 +47,28 @@ class DependencyJarTrimmerTest {
   /** Isolates generated fixture files. */
   @TempDir Path temporaryDirectory;
 
-  /** The explicit Java 21 API used by test analysis. */
-  private static ClassPool jdkLibraryPool;
+  /** Active runtime API used by test analysis. */
+  private static ClassPool jdkClassTable;
 
   /** Compiler output used to assemble the sibling archive. */
   private Path fixtureOutputDirectory;
 
   @BeforeAll
-  static void readJdk21Api() throws IOException {
-    jdkLibraryPool = new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 21);
-    assertThat(jdkLibraryPool.getClass("java/lang/Object")).isNotNull();
+  static void readRuntimeApi() throws IOException {
+    jdkClassTable = new JdkApiClassTableReader().read();
+    assertThat(jdkClassTable.getClass("java/lang/Object")).isNotNull();
   }
 
   @Test
-  @DisplayName("ADR-0003: ct.sym reader uses the explicit compiler API release")
-  void ctSymReaderUsesExplicitReleaseAndRejectsUnavailableRelease() throws IOException {
-    assertThat(jdkLibraryPool.size()).isGreaterThan(1_000);
-    assertThat(jdkLibraryPool.getClass("java/util/List")).isNotNull();
-    final ClassPool runtimeApi =
-        new JdkApiClassPoolReader()
-            .read(Path.of(System.getProperty("java.home")), Runtime.version().feature());
-    assertThat(runtimeApi.size()).isGreaterThan(1_000);
-    assertThat(runtimeApi.getClass("java/lang/Object")).isNotNull();
-    assertThatThrownBy(
-            () -> new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 99))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("No JDK API signatures");
-  }
-
-  @Test
-  @DisplayName("ADR-0003: current JDK API falls back to unchanged jmods")
-  void currentReleaseUsesJmodsWhenCtSymHasNoClasses() throws IOException {
-    final Path javaHome = Path.of(System.getProperty("java.home"));
-    final Path testJavaHome = temporaryDirectory.resolve("current-jdk");
-    Files.createDirectories(testJavaHome.resolve("lib"));
-    Files.copy(javaHome.resolve("release"), testJavaHome.resolve("release"));
-    Files.createSymbolicLink(testJavaHome.resolve("jmods"), javaHome.resolve("jmods"));
-    try (ZipOutputStream ignored =
-        new ZipOutputStream(Files.newOutputStream(testJavaHome.resolve("lib/ct.sym")))) {
-      ignored.finish();
-    }
-
-    final ClassPool currentApi =
-        new JdkApiClassPoolReader().read(testJavaHome, Runtime.version().feature());
-    assertThat(currentApi.size()).isGreaterThan(1_000);
-    assertThat(currentApi.getClass("java/lang/Object")).isNotNull();
+  @DisplayName("P02: runtime JDK class table includes platform types and member declarations")
+  void runtimeReaderLoadsPlatformDeclarations() {
+    assertAll(
+        "active runtime library declarations",
+        () -> assertThat(jdkClassTable.size()).isGreaterThan(1_000),
+        () -> assertThat(jdkClassTable.getClass("java/util/List")).isNotNull(),
+        () ->
+            assertThat(jdkClassTable.getClass("java/lang/String"))
+                .isInstanceOf(proguard.classfile.LibraryClass.class));
   }
 
   @Test
@@ -132,11 +109,11 @@ class DependencyJarTrimmerTest {
     final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
 
     final DependencyJarTrimmer.TrimAnalysis first =
-        session.analyze(candidateJar, List.of(siblingJar), jdkLibraryPool, List.of("fixture.A"));
+        session.analyze(candidateJar, List.of(siblingJar), jdkClassTable, List.of("fixture.A"));
     Files.write(candidateJar, new byte[] {0, 1, 2});
     Files.write(siblingJar, new byte[] {0, 1, 2});
     final DependencyJarTrimmer.TrimAnalysis second =
-        session.analyze(candidateJar, List.of(siblingJar), jdkLibraryPool, List.of("fixture.C"));
+        session.analyze(candidateJar, List.of(siblingJar), jdkClassTable, List.of("fixture.C"));
 
     assertThat(first.retainedClasses()).contains("fixture/A").doesNotContain("fixture/C");
     assertThat(second.retainedClasses()).containsExactly("fixture/C");
@@ -156,7 +133,7 @@ class DependencyJarTrimmerTest {
     final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
     final DependencyJarTrimmer.PreparedAnalysis libraryContext =
         session.prepareWithUnchangedPassThroughLibraries(
-            candidateJar, List.of(libraryWithMissingBodyType), jdkLibraryPool, Set.of());
+            candidateJar, List.of(libraryWithMissingBodyType), jdkClassTable, Set.of());
 
     final DependencyJarTrimmer.TrimAnalysis asLibrary =
         libraryContext.analyze(List.of("fixture.LibraryBodyRoot"));
@@ -164,7 +141,7 @@ class DependencyJarTrimmerTest {
 
     final DependencyJarTrimmer.PreparedAnalysis candidateContext =
         session.prepareWithUnchangedPassThroughLibraries(
-            libraryWithMissingBodyType, List.of(), jdkLibraryPool, Set.of());
+            libraryWithMissingBodyType, List.of(), jdkClassTable, Set.of());
     assertThatThrownBy(() -> candidateContext.analyze(List.of("fixture.BodyOnly")))
         .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
         .hasMessageContaining("fixture/BodyOnly -> class fixture/Ghost");
@@ -180,7 +157,7 @@ class DependencyJarTrimmerTest {
     assertThatThrownBy(
             () ->
                 new DependencyJarTrimmer()
-                    .analyze(emptyCandidate, List.of(), jdkLibraryPool, List.of()))
+                    .analyze(emptyCandidate, List.of(), jdkClassTable, List.of()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("contains no classes");
 
@@ -191,7 +168,7 @@ class DependencyJarTrimmerTest {
                     .analyze(
                         candidateJar,
                         List.of(temporaryDirectory.resolve("missing-sibling.jar")),
-                        jdkLibraryPool,
+                        jdkClassTable,
                         List.of()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Library classpath entry does not exist");
@@ -205,7 +182,7 @@ class DependencyJarTrimmerTest {
     final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
     final DependencyJarTrimmer.PreparedAnalysis prepared =
         session.prepareWithUnchangedPassThroughLibraries(
-            candidateJar, siblings, jdkLibraryPool, Set.of());
+            candidateJar, siblings, jdkClassTable, Set.of());
     assertThat(prepared.referenceGraphBuilt()).isFalse();
     final DependencyJarTrimmer.TrimAnalysis rootlessBeforeGraph = prepared.analyze(List.of());
     assertThat(rootlessBeforeGraph.retainedClasses()).containsAll(rootlessBeforeGraph.roots());
@@ -225,7 +202,7 @@ class DependencyJarTrimmerTest {
         prepared.analyze(List.of("fixture.A", "fixture.C"));
     final DependencyJarTrimmer.TrimAnalysis fresh =
         new DependencyJarTrimmer()
-            .analyze(candidateJar, siblings, jdkLibraryPool, List.of("fixture.A", "fixture.C"));
+            .analyze(candidateJar, siblings, jdkClassTable, List.of("fixture.A", "fixture.C"));
     assertThat(afterFailure).isEqualTo(fresh);
     assertThat(afterFailure.retainedClasses()).containsAll(first.retainedClasses());
     final Set<String> newlyVisited = new java.util.HashSet<>(afterFailure.retainedClasses());
@@ -239,7 +216,7 @@ class DependencyJarTrimmerTest {
     final DependencyJarTrimmer.TrimAnalysis shrunk = prepared.analyze(List.of("fixture.C"));
     final DependencyJarTrimmer.TrimAnalysis freshShrunk =
         new DependencyJarTrimmer()
-            .analyze(candidateJar, siblings, jdkLibraryPool, List.of("fixture.C"));
+            .analyze(candidateJar, siblings, jdkClassTable, List.of("fixture.C"));
     assertThat(shrunk).isEqualTo(freshShrunk);
     final int expansionsAfterShrink = prepared.expandedNodeCount();
     final DependencyJarTrimmer.TrimAnalysis rootless = prepared.analyze(List.of());
@@ -729,8 +706,7 @@ class DependencyJarTrimmerTest {
   private static DependencyJarTrimmer.TrimAnalysis analyze(
       final Path candidateJar, final List<Path> siblingLibraries, final List<String> roots)
       throws IOException {
-    return new DependencyJarTrimmer()
-        .analyze(candidateJar, siblingLibraries, jdkLibraryPool, roots);
+    return new DependencyJarTrimmer().analyze(candidateJar, siblingLibraries, jdkClassTable, roots);
   }
 
   private static DependencyJarTrimmer.TrimAnalysis analyze(

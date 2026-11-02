@@ -5,7 +5,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.plugin.PassThroughAnalysisLibraries.AnalysisLibraries;
 import io.github.spockz.elider.plugin.PassThroughAnalysisLibraries.SkippedProgram;
-import io.github.spockz.elider.plugin.SingleReleasePlatforms.PlatformPools;
+import io.github.spockz.elider.plugin.SingleReleasePlatforms.JdkClassTables;
 import io.github.spockz.elider.plugin.TrimCandidatePlanner.CandidatePlan;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.TrimAnalysisSession;
@@ -28,7 +28,7 @@ final class ProGuardTrimEngine {
       final TrimPassThroughPlan passThroughPlan,
       final Path analysisLibraryDirectory,
       final int runtimeRelease,
-      final PlatformPools platformPools,
+      final JdkClassTables jdkClassTables,
       final int trimWorkers)
       throws IOException {
     final AnalysisLibraries libraries =
@@ -39,10 +39,10 @@ final class ProGuardTrimEngine {
     validateUniqueAnalysisClasses(candidatePlan, libraries.skippedPrograms());
     final int passThroughRuns =
         analyzePassThroughPrograms(
-            candidatePlan, libraries, session, platformPools.runtime(), trimWorkers);
+            candidatePlan, libraries, session, jdkClassTables.passThrough(), trimWorkers);
     return passThroughRuns
         + analyzeCandidateFixedPoint(
-            candidatePlan, libraries, session, platformPools.compiler(), trimWorkers);
+            candidatePlan, libraries, session, jdkClassTables.candidate(), trimWorkers);
   }
 
   private static void validateUniqueAnalysisClasses(
@@ -64,7 +64,7 @@ final class ProGuardTrimEngine {
       final CandidatePlan candidatePlan,
       final AnalysisLibraries libraries,
       final TrimAnalysisSession analysisSession,
-      final ClassPool runtimePlatform,
+      final ClassPool jdkClassTable,
       final int trimWorkers)
       throws IOException {
     final List<SkippedProgram> skipped = libraries.skippedPrograms();
@@ -84,7 +84,7 @@ final class ProGuardTrimEngine {
                   analysisSession.prepareUnchangedPassThrough(
                       skippedProgram.path(),
                       siblings,
-                      runtimePlatform,
+                      jdkClassTable,
                       libraries.passThroughClassNames());
               return prepared.analyze(skippedProgram.classNames());
             });
@@ -106,7 +106,7 @@ final class ProGuardTrimEngine {
       final CandidatePlan candidatePlan,
       final AnalysisLibraries libraries,
       final TrimAnalysisSession analysisSession,
-      final ClassPool platform,
+      final ClassPool jdkClassTable,
       final int trimWorkers)
       throws IOException {
     int analysisRuns = 0;
@@ -123,7 +123,7 @@ final class ProGuardTrimEngine {
               return analysisSession.prepareWithUnchangedPassThroughLibraries(
                   candidate.archive().snapshot().filePath(),
                   siblings,
-                  platform,
+                  jdkClassTable,
                   libraries.passThroughClassNames());
             });
     final Map<TrimCandidate, DependencyJarTrimmer.PreparedAnalysis> candidateAnalyses =

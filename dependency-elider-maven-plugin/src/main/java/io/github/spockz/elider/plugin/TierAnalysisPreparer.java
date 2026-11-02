@@ -139,7 +139,10 @@ final class TierAnalysisPreparer {
               final List<Path> siblings =
                   TierAnalysisViews.tierSiblings(inventory, projection, snapshot);
               return session.prepareWithUnchangedPassThroughLibraries(
-                  projection.pathFor(snapshot), siblings, projection.platform(), unchangedClasses);
+                  projection.pathFor(snapshot),
+                  siblings,
+                  projection.jdkClassTable(),
+                  unchangedClasses);
             });
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         prepared =
@@ -208,9 +211,9 @@ final class TierAnalysisPreparer {
     if (skippedIdentities.contains(
         TrimPassThroughPlanner.artifactIdentity(snapshot.coordinate()))) {
       return session.prepareUnchangedPassThrough(
-          programPath, siblings, projection.platform(), unchangedClasses);
+          programPath, siblings, projection.jdkClassTable(), unchangedClasses);
     }
     return session.prepareWithUnchangedPassThroughLibraries(
-        programPath, siblings, projection.platform(), unchangedClasses);
+        programPath, siblings, projection.jdkClassTable(), unchangedClasses);
   }
 }

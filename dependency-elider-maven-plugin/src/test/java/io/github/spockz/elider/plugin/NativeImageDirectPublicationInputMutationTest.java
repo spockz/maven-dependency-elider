@@ -73,8 +73,7 @@ import org.junit.jupiter.api.Test;
                 .collect(java.util.stream.Collectors.toSet()),
             prepared.pruningRequiredClasses());
     final int release = Runtime.version().feature();
-    try (JdkPlatformContext platform =
-        new JdkPlatformContext(Path.of(System.getProperty("java.home")))) {
+    try (JdkPlatformContext platform = new JdkPlatformContext()) {
       final DirectTrimPreparation.PreparedDirectTrim plan =
           DirectTrimPreparation.prepare(request, release, release, platform);
       DirectTrimAnalysis.analyze(plan);

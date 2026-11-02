@@ -192,7 +192,7 @@ final class ReferenceGraphIndexer {
     /** Candidate pool establishes ProgramClass identity precedence. */
     private final ClassPool programPool;
 
-    /** Library pool contains first sibling precedence followed by platform fallbacks. */
+    /** Library class table places siblings before active JDK fallbacks. */
     private final ClassPool libraryPool;
 
     /** Platform names are excluded from traversal and result accounting. */

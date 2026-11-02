@@ -402,7 +402,6 @@ final class MavenBanAuditContextTest {
             1,
             17,
             17,
-            Path.of(System.getProperty("java.home")),
             List.of(),
             List.of(17),
             Map.of(MavenBanAuditTestSupport.coordinate(RIGHT), Set.of("right/UpperOnly")));
@@ -550,16 +549,7 @@ final class MavenBanAuditContextTest {
             MavenBanPlan.empty());
     final TrimAnalysisResult trimAnalysis =
         new TrimAnalysisResult(
-            Map.of(),
-            Map.of(),
-            Set.of(),
-            0,
-            17,
-            17,
-            Path.of(System.getProperty("java.home")),
-            List.of(),
-            List.of(),
-            Map.of());
+            Map.of(), Map.of(), Set.of(), 0, 17, 17, List.of(), List.of(), Map.of());
 
     auditContext.verifyRetainedClosure(prepared, decision, trimAnalysis, Set.of(), Map.of());
   }

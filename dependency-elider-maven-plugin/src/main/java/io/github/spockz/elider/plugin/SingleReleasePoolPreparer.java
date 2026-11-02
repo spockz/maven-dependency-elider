@@ -3,7 +3,7 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.plugin.SingleReleasePlatforms.PlatformPools;
+import io.github.spockz.elider.plugin.SingleReleasePlatforms.JdkClassTables;
 import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseInventory;
 import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseLayout;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
@@ -22,7 +22,7 @@ final class SingleReleasePoolPreparer {
       prepareCandidates(
           final SingleReleaseLayout layout,
           final List<Path> fullClasspath,
-          final PlatformPools pools,
+          final JdkClassTables tables,
           final TrimAnalysisSession analysisSession,
           final int trimWorkers)
           throws IOException {
@@ -35,7 +35,7 @@ final class SingleReleasePoolPreparer {
               final List<Path> siblings =
                   fullClasspath.stream().filter(value -> !value.equals(path)).toList();
               return analysisSession.prepareWithUnchangedPassThroughLibraries(
-                  path, siblings, pools.compiler(), layout.unchangedPassThroughClasses());
+                  path, siblings, tables.candidate(), layout.unchangedPassThroughClasses());
             });
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         preparedCandidates = TrimCollections.orderedMap();
@@ -51,7 +51,7 @@ final class SingleReleasePoolPreparer {
           final SingleReleaseInventory inventory,
           final SingleReleaseLayout layout,
           final List<Path> fullClasspath,
-          final PlatformPools pools,
+          final JdkClassTables tables,
           final TrimAnalysisSession analysisSession,
           final int trimWorkers)
           throws IOException {
@@ -68,9 +68,9 @@ final class SingleReleasePoolPreparer {
                   fullClasspath.stream().filter(value -> !value.equals(path)).toList();
               return layout.skippedProgramCoordinates().contains(program.coordinate())
                   ? analysisSession.prepareUnchangedPassThrough(
-                      path, siblings, pools.runtime(), layout.unchangedPassThroughClasses())
+                      path, siblings, tables.passThrough(), layout.unchangedPassThroughClasses())
                   : analysisSession.prepareWithUnchangedPassThroughLibraries(
-                      path, siblings, pools.runtime(), layout.unchangedPassThroughClasses());
+                      path, siblings, tables.passThrough(), layout.unchangedPassThroughClasses());
             });
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         preparedPrograms = TrimCollections.orderedMap();
@@ -88,12 +88,12 @@ final class SingleReleasePoolPreparer {
       final SingleReleaseInventory inventory,
       final SingleReleaseLayout layout,
       final List<Path> classpath,
-      final PlatformPools pools,
+      final JdkClassTables tables,
       final int workers)
       throws IOException {
     final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
     return new PreparedPools(
-        prepareCandidates(layout, classpath, pools, session, workers),
-        preparePrograms(inventory, layout, classpath, pools, session, workers));
+        prepareCandidates(layout, classpath, tables, session, workers),
+        preparePrograms(inventory, layout, classpath, tables, session, workers));
   }
 }

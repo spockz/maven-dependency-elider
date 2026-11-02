@@ -1,5 +1,5 @@
-/* WHY: Computes candidate closure against frozen target and runtime
- * platforms while isolating candidate pools. */
+/* WHY: Computes candidate closure against isolated JDK class tables while
+ * keeping each candidate analysis independent. */
 
 package io.github.spockz.elider.plugin;
 
@@ -7,6 +7,7 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseInventory;
 import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseLayout;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.maven.plugin.MojoFailureException;
@@ -42,9 +43,9 @@ final class SingleReleaseTrimAnalyzer {
         roots.candidateRoots(),
         closure.reachableArtifacts(),
         closure.analysisRuns(),
-        platform.compilerRelease(),
+        platform.targetRelease(),
         platform.runtimeRelease(),
-        platform.javaHome(),
+        List.of(platform.targetRelease(), platform.runtimeRelease()),
         platform.snapshots(),
         Map.of());
   }

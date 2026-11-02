@@ -9,8 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.jar.JarEntry;
@@ -25,11 +24,11 @@ import proguard.classfile.LibraryClass;
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class SignaturePolymorphicTestSupport {
   /** WHY: Reuses immutable declarations; models are rematerialized per call. */
-  private static final ConcurrentMap<Path, List<LibraryClassTemplate>> JAVA_21_TEMPLATE_READS =
-      new ConcurrentHashMap<>();
+  private static final AtomicReference<List<LibraryClassTemplate>> ACTIVE_RUNTIME_TEMPLATES =
+      new AtomicReference<>();
 
   /** WHY: One read populates each immutable JDK template snapshot. */
-  private static final Lock JAVA_21_TEMPLATE_LOCK = new ReentrantLock();
+  private static final Lock ACTIVE_RUNTIME_TEMPLATE_LOCK = new ReentrantLock();
 
   /** Prevents utility instantiation. */
   private SignaturePolymorphicTestSupport() {}
@@ -37,12 +36,11 @@ final class SignaturePolymorphicTestSupport {
   /** Shares API-backed analysis with package-local tests. */
   static DependencyJarTrimmer.TrimAnalysis analyze(final Path jar, final List<String> roots)
       throws IOException {
-    return new DependencyJarTrimmer().analyze(jar, List.of(), java21ApiPool(), roots);
+    return new DependencyJarTrimmer().analyze(jar, List.of(), activeRuntimeApiPool(), roots);
   }
 
-  static ClassPool java21ApiPool() throws IOException {
-    final Path javaHome = Path.of(System.getProperty("java.home"));
-    final List<LibraryClassTemplate> templates = templatesFor(javaHome);
+  static ClassPool activeRuntimeApiPool() throws IOException {
+    final List<LibraryClassTemplate> templates = templatesForActiveRuntime();
     final ClassPool freshPool = new ClassPool();
     for (final LibraryClassTemplate template : templates) {
       freshPool.addClass(template.materialize());
@@ -50,26 +48,26 @@ final class SignaturePolymorphicTestSupport {
     return freshPool;
   }
 
-  private static List<LibraryClassTemplate> templatesFor(final Path javaHome) throws IOException {
-    JAVA_21_TEMPLATE_LOCK.lock();
+  private static List<LibraryClassTemplate> templatesForActiveRuntime() throws IOException {
+    ACTIVE_RUNTIME_TEMPLATE_LOCK.lock();
     try {
-      List<LibraryClassTemplate> templates = JAVA_21_TEMPLATE_READS.get(javaHome);
+      List<LibraryClassTemplate> templates = ACTIVE_RUNTIME_TEMPLATES.get();
       if (templates == null) {
-        templates = readTemplates(javaHome);
-        JAVA_21_TEMPLATE_READS.put(javaHome, templates);
+        templates = readTemplates();
+        ACTIVE_RUNTIME_TEMPLATES.set(templates);
       }
       return templates;
     } finally {
-      JAVA_21_TEMPLATE_LOCK.unlock();
+      ACTIVE_RUNTIME_TEMPLATE_LOCK.unlock();
     }
   }
 
-  private static List<LibraryClassTemplate> readTemplates(final Path javaHome) throws IOException {
-    final ClassPool parsedApi = new JdkApiClassPoolReader().read(javaHome, 21);
+  private static List<LibraryClassTemplate> readTemplates() throws IOException {
+    final ClassPool parsedApi = new JdkApiClassTableReader().read();
     final List<LibraryClassTemplate> capturedTemplates = new ArrayList<>();
     for (final Clazz clazz : parsedApi.classes()) {
       if (!(clazz instanceof LibraryClass libraryClass)) {
-        throw new IOException("JDK API test pool contains a non-library class");
+        throw new IOException("JDK class table contains a non-library class");
       }
       capturedTemplates.add(LibraryClassTemplate.from(libraryClass));
     }

@@ -62,11 +62,11 @@ class ArchiveSanitizerTest {
   @TempDir Path temporaryDirectory;
 
   /** Java 21 API pool used to validate the fixture class hierarchy. */
-  private static ClassPool platformPool;
+  private static ClassPool jdkClassTable;
 
   @BeforeAll
   static void loadPlatformClasses() throws IOException {
-    platformPool = new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 21);
+    jdkClassTable = new JdkApiClassTableReader().read();
   }
 
   @Test
@@ -76,7 +76,7 @@ class ArchiveSanitizerTest {
     final byte[] originalBytes = Files.readAllBytes(candidate);
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(candidate, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+            .analyze(candidate, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
     final Path trimmed = temporaryDirectory.resolve("result/fixture-1-trimmed.jar");
     final ArtifactCoordinate coordinate =
         ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1");
@@ -191,7 +191,7 @@ class ArchiveSanitizerTest {
     final String initialSha256 = digest(initialBytes, SHA_256);
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+            .analyze(original, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
     final Path replacement = createCandidateJar("replacement.jar", "Live");
     final byte[] replacementBytes = Files.readAllBytes(replacement);
     Files.write(original, replacementBytes);
@@ -222,7 +222,7 @@ class ArchiveSanitizerTest {
     final ArtifactDigests sourceDigests = ArtifactDigests.read(original);
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+            .analyze(original, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
     final Path output = temporaryDirectory.resolve("captured-provenance-trimmed.jar");
     final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
     final ArchiveSanitizer.PreparedOutput prepared =
@@ -249,7 +249,7 @@ class ArchiveSanitizerTest {
     final ArtifactDigests sourceDigests = ArtifactDigests.read(original);
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+            .analyze(original, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
     final byte[] originalBytes = Files.readAllBytes(original);
     Files.write(original, new byte[] {0}, java.nio.file.StandardOpenOption.APPEND);
     assertThat(Files.readAllBytes(original)).isNotEqualTo(originalBytes);
@@ -276,7 +276,7 @@ class ArchiveSanitizerTest {
     final ArtifactDigests sourceDigests = ArtifactDigests.read(original);
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(other, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+            .analyze(other, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
 
     assertThatThrownBy(
             () ->
@@ -296,7 +296,7 @@ class ArchiveSanitizerTest {
     final Path original = createCandidateJar();
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+            .analyze(original, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
     final Path output = temporaryDirectory.resolve("corrupt-staged-trimmed.jar");
     final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
     final ArchiveSanitizer.PreparedOutput prepared =
@@ -321,7 +321,7 @@ class ArchiveSanitizerTest {
     final Path original = createCandidateJar();
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(original, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+            .analyze(original, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
     final Path output = temporaryDirectory.resolve("non-empty-output-directory");
     Files.createDirectory(output);
     final Path sentinel = output.resolve("existing-output");
@@ -425,7 +425,7 @@ class ArchiveSanitizerTest {
     final Path candidate = createCandidateJar();
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(candidate, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+            .analyze(candidate, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
     final Path multiRelease = temporaryDirectory.resolve("multi-release.jar");
     copyWithMultiReleaseClass(candidate, multiRelease);
     final byte[] originalBytes = Files.readAllBytes(multiRelease);
@@ -461,7 +461,7 @@ class ArchiveSanitizerTest {
     copyWithVersionedModuleDescriptor(candidate, multiRelease);
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer()
-            .analyze(multiRelease, List.of(), platformPool, List.of(ROOT_CLASS_NAME));
+            .analyze(multiRelease, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
     final Path trimmed = temporaryDirectory.resolve("module-info-only-trimmed.jar");
 
     new ArchiveSanitizer()

@@ -49,7 +49,7 @@ The original dependency model is frozen before exclusion injection; original-inp
 
 ### What if a dependency JAR changes during or between Maven builds?
 
-The elider uses exact content digests to identify dependency and JDK platform inputs. The stable-input assumption covers dependency JARs, the selected JDK's `ct.sym` or JMODs, its `release` metadata, and the selected archive inventory. Concurrent edits to those files during a Maven invocation are unsupported and can make that invocation nondeterministic. A later invocation recalculates selection and content identity, so changed inputs are recognized. Maven's resolution-time checksum verification does not lock files for the rest of the build. See [ADR 0004](adr/0004-assume-resolved-inputs-stable-during-build.md).
+The elider uses exact content digests to identify dependency JARs and the active runtime's system-module descriptors and class resources. It does not inspect `ct.sym` or JMOD layouts. Concurrent edits to dependency or platform inputs during a Maven invocation are unsupported and can make that invocation nondeterministic. A later invocation recalculates content identity, so changed inputs are recognized. Maven's resolution-time checksum verification does not lock files for the rest of the build. See [ADR 0004](adr/0004-assume-resolved-inputs-stable-during-build.md).
 
 ### What happens if a dependency contains multi-release implementation classes?
 
@@ -61,7 +61,7 @@ A failure before the publication commit restores the previous reports, output ge
 
 ### What if my application runs on a different JDK than Maven?
 
-MRJAR linkage analysis covers implementation tiers from the configured compiler release through the JDK feature release running Maven. If the deployed application uses a newer JDK, higher-tier entries are preserved but their references to sibling JARs are not included in the analyzed closure. Run the build with the deployment JDK to verify those links. Pass-through preserves the MRJAR bytes but does not preserve sibling dependencies referenced only from unanalysed tiers.
+MRJAR linkage analysis uses the configured target release for the baseline and the active Maven runtime release as its upper analysis boundary. The JDK class table describes that active runtime; it does not validate API availability for an older target. If the deployed application uses a newer JDK, higher-tier entries are preserved but their references to sibling JARs are not included in the analyzed closure. Run the build with the deployment JDK to verify those links. Pass-through preserves the MRJAR bytes but does not preserve sibling dependencies referenced only from unanalysed tiers.
 
 ### What if generated sources are not available before `INITIALIZE`?
 
@@ -163,7 +163,7 @@ Kotlin support is limited to JVM class files and the Kotlin metadata ProGuard Co
 | Class references encoded only in Kotlin metadata | Not followed | The [reference visitor](../elider-core/src/main/java/io/github/spockz/elider/trimmer/ProGuardReferenceVisitors.java#L49) does not traverse metadata-only names, and trim candidates are read without initializing Kotlin metadata in [`ArchiveSnapshot`](../elider-core/src/main/java/io/github/spockz/elider/trimmer/ArchiveSnapshot.java#L142). Do not rely on Kotlin reflection or downstream Kotlin compilation metadata to keep otherwise unreferenced classes. |
 | Kotlin application source (`.kt`, `.kts`) | Not source-scanned | The [source scanner](../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/JavaSourceReferenceScanner.java#L105) reads `.java` files only. When `elide.sourceRootsComplete=true`, Kotlin files in those roots now fail closed with a diagnostic. Leave it `false` for Kotlin sources; the default conservatively retains compile-visible classes. |
 | Missing optional Kotlin/coroutine references in a library | Explicit pass-through only | A reachable missing reference in an archive being transformed fails closed. For a retained owner that must remain unchanged, use `elide.trimSkipArtifacts`; for an MRJAR, `elide.mrjarStrategy=pass-through` is also available. The unchanged owner still contributes resolved links to sibling trim candidates. Ensure an artifact you need is retained independently. |
-| Kotlin metadata in a supplied platform class pool | Unsupported | The internal platform snapshot rejects metadata-bearing platform classes. This is separate from parsing metadata on sibling library classes. |
+| Kotlin metadata in a supplied JDK class table | Unsupported | The internal runtime-module snapshot rejects metadata-bearing JDK classes. This is separate from parsing metadata on sibling library classes. |
 
 The Spring regression test uses synthetic Java bytecode that references an absent `kotlin.coroutines.Continuation`; it verifies pass-through policy, not Kotlin compiler output or Kotlin source scanning. Kotlin compiler and plugin-version combinations have not been independently verified.
 

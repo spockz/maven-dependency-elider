@@ -50,7 +50,7 @@ final class ServiceProviderTrimInventory {
                 source,
                 snapshot.coordinate(),
                 projectionDirectory,
-                outputPlan.analysis().compilerRelease());
+                outputPlan.analysis().targetRelease());
         retainedClasses.addAll(TrimPaths.classNames(projection));
       } else {
         retainedClasses.addAll(logicalClasses);

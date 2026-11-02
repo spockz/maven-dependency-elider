@@ -16,7 +16,7 @@ import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
-import io.github.spockz.elider.trimmer.JdkApiClassPoolReader;
+import io.github.spockz.elider.trimmer.JdkApiClassTableReader;
 import io.github.spockz.elider.trimmer.TrimAnalysisSession;
 import java.io.IOException;
 import java.io.InputStream;
@@ -659,13 +659,13 @@ final class ElideMojoTest {
         analysisSession.prepareUnchangedPassThrough(
             javaElevenProjection,
             List.of(fixture.candidatePath()),
-            new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 11),
+            new JdkApiClassTableReader().read(),
             Set.of());
     final DependencyJarTrimmer.PreparedAnalysis javaSeventeenContext =
         analysisSession.prepareUnchangedPassThrough(
             javaSeventeenProjection,
             List.of(fixture.candidatePath()),
-            new JdkApiClassPoolReader().read(Path.of(System.getProperty("java.home")), 17),
+            new JdkApiClassTableReader().read(),
             Set.of());
     final DependencyJarTrimmer.TrimAnalysis javaElevenAnalysis =
         javaElevenContext.analyze(Set.of("mrroot.Root"));

@@ -4,7 +4,7 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.plugin.SingleReleasePlatforms.PlatformPools;
+import io.github.spockz.elider.plugin.SingleReleasePlatforms.JdkClassTables;
 import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.DynamicRootPlan;
 import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseInventory;
 import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseLayout;
@@ -35,7 +35,7 @@ final class SingleReleaseRootPlanner {
       final SingleReleasePlatforms.AnalysisPlatform platform)
       throws IOException {
     final Set<String> commonRoots = TrimRootPlanner.commonRoots(request);
-    final Set<String> platformClasses = platformClasses(platform.pools());
+    final Set<String> platformClasses = platformClasses(platform.tables());
     final CommonRootOwners common =
         TrimRootPlanner.commonRootOwners(
             commonRoots,
@@ -53,17 +53,17 @@ final class SingleReleaseRootPlanner {
             inventory,
             layout,
             SingleReleaseTrimInventory.fullClasspath(inventory),
-            platform.pools(),
+            platform.tables(),
             request.policy().trimWorkers());
     final Set<ArtifactCoordinate> reachable = new LinkedHashSet<>(common.droppedArtifacts());
     reachable.addAll(dynamic.droppedArtifacts());
     return new SingleReleaseRootPlan(roots, prepared.candidates(), prepared.programs(), reachable);
   }
 
-  /* package */ static Set<String> platformClasses(final PlatformPools pools) {
+  /* package */ static Set<String> platformClasses(final JdkClassTables tables) {
     final Set<String> result = new HashSet<>();
-    pools.compiler().classNames().forEachRemaining(name -> result.add(name.replace('/', '.')));
-    pools.runtime().classNames().forEachRemaining(name -> result.add(name.replace('/', '.')));
+    tables.candidate().classNames().forEachRemaining(name -> result.add(name.replace('/', '.')));
+    tables.passThrough().classNames().forEachRemaining(name -> result.add(name.replace('/', '.')));
     return Set.copyOf(result);
   }
 }

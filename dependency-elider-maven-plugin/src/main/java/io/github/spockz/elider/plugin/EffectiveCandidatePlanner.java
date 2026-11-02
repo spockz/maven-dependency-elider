@@ -102,7 +102,7 @@ final class EffectiveCandidatePlanner {
       final Set<String> classes = TrimCandidatePlanner.classesFor(snapshot, inputs.classes());
       return new CandidateClasses(classes, false, classes.size());
     }
-    final int release = inputs.output().analysis().compilerRelease();
+    final int release = inputs.output().analysis().targetRelease();
     final Path projection =
         MultiReleaseLibraryProjection.create(
             snapshot.filePath(),

@@ -5,10 +5,8 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.TrimRootPlanner.CommonRootOwners;
-import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -197,18 +195,6 @@ final class SingleReleaseTrimInventory {
                     .analysisPaths()
                     .getOrDefault(snapshot, snapshot.filePath().toAbsolutePath().normalize()))
         .toList();
-  }
-
-  /* package */ static List<JdkPlatformContext.PlatformSnapshot> platformSnapshots(
-      final Path javaHome, final int release, final int runtimeRelease) throws IOException {
-    final List<JdkPlatformContext.PlatformSnapshot> snapshots = new ArrayList<>(2);
-    try (JdkPlatformContext platformContext = new JdkPlatformContext(javaHome)) {
-      snapshots.add(platformContext.snapshot(release));
-      if (runtimeRelease != release) {
-        snapshots.add(platformContext.snapshot(runtimeRelease));
-      }
-    }
-    return List.copyOf(snapshots);
   }
 
   /* package */ static DynamicRootPlan dynamicRootPlan(
