@@ -180,7 +180,7 @@ record ResolverArtifactGraphSnapshotStore(
       final String fingerprint,
       final long generation) {
     if (present != (fingerprint != null)
-        || (fingerprint != null && !fingerprint.matches("[0-9a-f]{64}"))
+        || (fingerprint != null && !HexDigest.isLowercaseHex(fingerprint, 64))
         || (present && generation == 0L)
         || !observation.keySet().equals(java.util.Set.of("present", "fingerprint", "generation"))) {
       throw new IllegalStateException("Inconsistent plan observation");

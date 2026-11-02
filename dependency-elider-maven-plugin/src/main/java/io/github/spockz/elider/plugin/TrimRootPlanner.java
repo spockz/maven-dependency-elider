@@ -233,7 +233,7 @@ final class TrimRootPlanner {
         final Map<Path, Set<String>> classesByPath)
         throws IOException {
       final TrimArtifactRootKey key = entry.getKey();
-      if (key.sha256() == null || !key.sha256().matches("[0-9a-f]{64}")) {
+      if (!HexDigest.isLowercaseHex(key.sha256(), 64)) {
         throw new IOException("Invalid discovered-root artifact digest: " + key.coordinate());
       }
       final ElisionAnalysisModel.ArtifactSnapshot snapshot =

@@ -76,7 +76,7 @@ final class TrimCacheValidator {
   }
 
   private static boolean validDigest(final String value, final int length) {
-    return value != null && value.matches("[0-9a-f]{" + length + "}");
+    return HexDigest.isLowercaseHex(value, length);
   }
 
   /* package */ static int physicalEntryCount(final Path archivePath) throws IOException {

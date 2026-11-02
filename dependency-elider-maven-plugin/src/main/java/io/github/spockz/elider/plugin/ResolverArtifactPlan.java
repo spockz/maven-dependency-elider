@@ -8,7 +8,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 /** Immutable JDK-only replacement plan for one Maven project. */
 @SuppressWarnings("PMD.UseConcurrentHashMap")
@@ -16,9 +15,6 @@ record ResolverArtifactPlan(
     ProjectIdentity project,
     Map<ArtifactIdentity, Replacement> replacements,
     ResolverArtifactGraphProjection graphProjection) {
-  /** Validates expected digests before they enter the detached plan. */
-  private static final Pattern SHA_256 = Pattern.compile("[0-9a-f]{64}");
-
   /** Keeps package-scope suppression consistent across internal value constructors. */
   private static final String PACKAGE_SCOPE_SUPPRESSION = "PMD.CommentDefaultAccessModifier";
 
@@ -82,7 +78,7 @@ record ResolverArtifactPlan(
   record Replacement(Path path, String sha256) {
     Replacement {
       path = Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
-      if (sha256 == null || !SHA_256.matcher(sha256).matches()) {
+      if (!HexDigest.isLowercaseHex(sha256, 64)) {
         throw new IllegalArgumentException("sha256 must be a lowercase SHA-256 digest");
       }
     }

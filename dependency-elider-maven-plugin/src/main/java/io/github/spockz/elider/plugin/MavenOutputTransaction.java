@@ -115,7 +115,7 @@ final class MavenOutputTransaction implements AutoCloseable {
     if (!stagedToFinal.containsValue(absolute)) {
       throw new IOException(OUTPUT_NOT_STAGED + absolute);
     }
-    if (expectedSha256 == null || !expectedSha256.matches("[0-9a-f]{64}")) {
+    if (!HexDigest.isLowercaseHex(expectedSha256, 64)) {
       throw new IOException("Output deletion requires a SHA-256 ownership digest: " + absolute);
     }
     skippedTargets.remove(absolute);
@@ -206,7 +206,7 @@ final class MavenOutputTransaction implements AutoCloseable {
     for (final Map.Entry<Path, String> entry : expectedDigests.entrySet()) {
       final Path target = entry.getKey().toAbsolutePath().normalize();
       final String digest = entry.getValue();
-      if (digest == null || !digest.matches("[0-9a-f]{64}")) {
+      if (!HexDigest.isLowercaseHex(digest, 64)) {
         throw new IOException("Output stage requires a SHA-256 digest: " + target);
       }
       if (!stagedToFinal.containsValue(target) || normalized.put(target, digest) != null) {

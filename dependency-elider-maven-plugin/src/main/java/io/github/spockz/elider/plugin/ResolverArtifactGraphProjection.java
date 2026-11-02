@@ -20,10 +20,10 @@ record ResolverArtifactGraphProjection(
     if (captureToken == null || captureToken.isBlank()) {
       throw new IllegalArgumentException("Graph projection capture token must not be blank");
     }
-    if (sourceFingerprint == null || !sourceFingerprint.matches("[0-9a-f]{64}")) {
+    if (!HexDigest.isLowercaseHex(sourceFingerprint, 64)) {
       throw new IllegalArgumentException("Graph projection source fingerprint is invalid");
     }
-    if (projectedFingerprint == null || !projectedFingerprint.matches("[0-9a-f]{64}")) {
+    if (!HexDigest.isLowercaseHex(projectedFingerprint, 64)) {
       throw new IllegalArgumentException("Graph projection result fingerprint is invalid");
     }
     removedNodeIds = List.copyOf(removedNodeIds);

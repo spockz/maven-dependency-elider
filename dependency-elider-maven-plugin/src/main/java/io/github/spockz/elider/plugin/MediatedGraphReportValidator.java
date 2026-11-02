@@ -61,6 +61,6 @@ final class MediatedGraphReportValidator {
   }
 
   private static boolean hasBeforeFingerprint(final String fingerprint) {
-    return fingerprint != null && fingerprint.matches("[0-9a-f]{64}");
+    return HexDigest.isLowercaseHex(fingerprint, 64);
   }
 }

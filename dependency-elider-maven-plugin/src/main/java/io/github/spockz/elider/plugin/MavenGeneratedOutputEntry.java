@@ -58,7 +58,9 @@ final class MavenGeneratedOutputEntry {
 
   static String outputDigest(final JsonNode output, final Path manifest) throws IOException {
     final JsonNode digest = output.get("sha256");
-    if (digest == null || !digest.isTextual() || !digest.textValue().matches("[0-9a-f]{64}")) {
+    if (digest == null
+        || !digest.isTextual()
+        || !HexDigest.isLowercaseHex(digest.textValue(), 64)) {
       throw new IOException("Malformed generated output digest in " + manifest);
     }
     return digest.textValue();

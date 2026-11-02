@@ -3,14 +3,9 @@
 
 package io.github.spockz.elider.plugin;
 
-import java.util.regex.Pattern;
-
 /** Validates scalar values in detached graph payloads. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class ResolverArtifactGraphScalarChecks {
-  /** Restricts digest fields to the fixed-length SHA-256 representation. */
-  private static final Pattern HASH_PATTERN = Pattern.compile("[0-9a-f]{64}");
-
   private ResolverArtifactGraphScalarChecks() {
     throw new AssertionError("No instances");
   }
@@ -63,7 +58,7 @@ final class ResolverArtifactGraphScalarChecks {
   }
 
   static void requireHash(final String value, final String field) {
-    if (!HASH_PATTERN.matcher(value).matches()) {
+    if (!HexDigest.isLowercaseHex(value, 64)) {
       throw ResolverArtifactGraphPayloadChecks.invalid(field + " must be a SHA-256 hex digest");
     }
   }
