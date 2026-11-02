@@ -10,8 +10,6 @@
   * [RQ-0005: Spring bean request evidence and autoconfiguration recommendations](../research/RQ-0005-spring-bean-request-evidence-and-autoconfiguration-recommendations.md)
   * [RQ-0006: Maven artifact-view consistency and early resolution hooks](../research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md)
   * [RQ-0017: Source generation lifecycle integration](../research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md)
-  * [RQ-0018: JPMS module awareness and assisted modularization](../research/RQ-0018-jpms-module-awareness-and-assisted-modularization.md)
-  * [Spring metadata work package](2026-10-31-wp-spring-01-spring-autoconfigure-condition-evaluation-and-descriptor-trimming.md)
 
 ---
 
