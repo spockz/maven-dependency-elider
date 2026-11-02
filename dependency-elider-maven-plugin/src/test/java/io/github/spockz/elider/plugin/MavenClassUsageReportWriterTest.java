@@ -22,10 +22,7 @@ import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Tests Analyze prediction fields without trim publication records. JUnit supplies the implicit
- * constructor.
- */
+/** Tests prediction fields. JUnit uses its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class MavenClassUsageReportWriterTest {
   /** JSON mapper used to inspect serialized report fixtures. */
@@ -159,8 +156,8 @@ final class MavenClassUsageReportWriterTest {
         () -> assertThat(dependencyPrediction.path("environmentFingerprint").asText()).hasSize(64),
         () -> assertThat(dependencyPrediction.path("inventoryFingerprint").asText()).hasSize(64),
         () -> assertThat(dependencyPrediction.path("operationFingerprint").asText()).hasSize(64),
-        () -> assertFalse(publishesTrimmedArtifacts),
-        () -> assertFalse(publishesOutputPath),
-        () -> assertFalse(publishesOutputSha256));
+        () -> assertFalse(publishesTrimmedArtifacts, "prediction has no published trim records"),
+        () -> assertFalse(publishesOutputPath, "prediction has no published output path"),
+        () -> assertFalse(publishesOutputSha256, "prediction has no published output checksum"));
   }
 }

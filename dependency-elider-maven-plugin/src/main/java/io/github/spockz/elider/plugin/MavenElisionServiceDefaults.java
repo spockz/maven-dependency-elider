@@ -15,8 +15,9 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
 /**
- * Builds supported Analyze option presets and delegates them to the service. Its implicit
- * constructor allows {@link MavenElisionService} to extend this preset base.
+ * Builds Analyze option presets.
+ *
+ * <p>{@link MavenElisionService} uses the implicit constructor.
  */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 abstract class MavenElisionServiceDefaults {

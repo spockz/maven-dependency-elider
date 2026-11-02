@@ -26,10 +26,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Verifies conservative artifact adaptation and explicit trace requirements. JUnit supplies the
- * implicit constructor.
- */
+/** Tests Analyze inputs. JUnit uses its implicit constructor. */
 @SuppressWarnings({
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",

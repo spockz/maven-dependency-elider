@@ -24,9 +24,7 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Tests native-image handling without archive mutation. JUnit supplies the implicit constructor.
- */
+/** Tests native-image handling. JUnit supplies its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalyzeMojoNativeImageTest {
   /** JAR packaging type used by generated Maven artifacts. */

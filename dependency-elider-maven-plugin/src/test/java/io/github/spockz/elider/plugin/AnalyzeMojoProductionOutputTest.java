@@ -22,10 +22,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
-/**
- * Tests Analyze's configured output and complete-bytecode evidence. Report fields use Jackson's
- * path API. JUnit supplies the implicit constructor.
- */
+/** Tests production output. JUnit supplies its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalyzeMojoProductionOutputTest {
   /** Class name used for the unused artifact fixture. */

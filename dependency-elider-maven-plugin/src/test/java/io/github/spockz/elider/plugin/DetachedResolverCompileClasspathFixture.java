@@ -30,7 +30,7 @@ import org.eclipse.aether.graph.DefaultDependencyNode;
 import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.DependencyNode;
 
-/** Builds one Resolver and Maven graph fixture. Their APIs form a single integration boundary. */
+/** Builds a Resolver and Maven graph fixture. */
 @SuppressWarnings("PMD.CouplingBetweenObjects")
 final class DetachedResolverCompileClasspathFixture {
   /** Group identifier shared by the fixture's direct and resolver artifacts. */

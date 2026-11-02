@@ -22,7 +22,7 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests detached Maven compile attribution. JUnit supplies the implicit constructor. */
+/** Tests detached attribution. JUnit supplies its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class DetachedAnalyzeCompileClasspathTest {
   /** Maven group for the generated compile artifact. */

@@ -13,7 +13,7 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests Resolver-restored compile artifacts. JUnit supplies the implicit constructor. */
+/** Tests Resolver artifacts. JUnit supplies its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class DetachedResolverCompileClasspathTest {
   /** Holds the generated project and archive fixtures. */

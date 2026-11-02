@@ -8,34 +8,15 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
-import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
-import io.github.spockz.elider.plugin.ElisionAnalysisModel.TrimOptions;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
-import java.util.List;
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.DefaultArtifact;
-import org.apache.maven.artifact.handler.DefaultArtifactHandler;
-import org.apache.maven.execution.DefaultMavenExecutionRequest;
-import org.apache.maven.execution.MavenSession;
-import org.apache.maven.model.Build;
-import org.apache.maven.plugin.descriptor.PluginDescriptor;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.toolchain.DefaultToolchainManager;
-import org.codehaus.plexus.PlexusContainer;
 import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.eclipse.aether.SessionData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Opcodes;
 
-/**
- * Tests captured prediction, output resolution, and publication boundaries. JUnit supplies the
- * implicit constructor.
- */
+/** Tests prediction boundaries. JUnit uses its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class MavenElisionServicePredictionTest {
   /** Contains project inputs and output files for each prediction scenario. */
@@ -43,9 +24,10 @@ final class MavenElisionServicePredictionTest {
 
   @Test
   void predictsCapturedEffectiveMrjarWithoutPublishingTrimState() throws Exception {
-    final Fixture fixture = fixture(true);
+    final MavenElisionServicePredictionFixtures.Fixture fixture =
+        MavenElisionServicePredictionFixtures.create(temporaryDirectory, true);
     final DefaultRepositorySystemSession repositorySession = fixture.repositorySession();
-    final SessionData sessionDataBefore = sessionData(repositorySession);
+    final SessionData sessionDataBefore = repositorySession.getData();
     final Object captureBefore =
         sessionDataBefore.get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
     final Object planBefore = sessionDataBefore.get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
@@ -60,7 +42,7 @@ final class MavenElisionServicePredictionTest {
 
     final AnalyzePrediction prediction =
         new MavenElisionService().predict(fixture.project(), fixture.options(), null);
-    final SessionData sessionDataAfter = sessionData(repositorySession);
+    final SessionData sessionDataAfter = repositorySession.getData();
 
     assertAll(
         "captured-effective Analyze predicts without publishing trim state",
@@ -96,7 +78,8 @@ final class MavenElisionServicePredictionTest {
 
   @Test
   void refusesCapturedEffectivePredictionWhenThePairIsMissing() throws Exception {
-    final Fixture fixture = fixture(false);
+    final MavenElisionServicePredictionFixtures.Fixture fixture =
+        MavenElisionServicePredictionFixtures.create(temporaryDirectory, false);
     final Path reportSentinel = temporaryDirectory.resolve("unchanged-report.json");
     Files.writeString(reportSentinel, "report sentinel");
 
@@ -114,9 +97,11 @@ final class MavenElisionServicePredictionTest {
 
   @Test
   void derivesProductionOutputFromBuildForCompleteBytecodePrediction() throws Exception {
-    final Fixture fixture = fixture(true);
+    final MavenElisionServicePredictionFixtures.Fixture fixture =
+        MavenElisionServicePredictionFixtures.create(temporaryDirectory, true);
     final Path output = Path.of(fixture.project().getBuild().getOutputDirectory());
-    final Path applicationClass = createProductionOutputClass(output);
+    final Path applicationClass =
+        MavenElisionServicePredictionFixtures.createProductionOutputClass(output);
     final AnalysisOptions options =
         withCompleteness(fixture.options(), new CompletenessOptions(false, true, false, true));
 
@@ -139,13 +124,15 @@ final class MavenElisionServicePredictionTest {
   @Test
   void resolvesRelativeProductionOutputAgainstProjectWhenProcessDirectoryDiffers()
       throws Exception {
-    final Fixture fixture = fixture(true);
+    final MavenElisionServicePredictionFixtures.Fixture fixture =
+        MavenElisionServicePredictionFixtures.create(temporaryDirectory, true);
     final Path projectBase = fixture.projectBase();
     final Path processDirectory =
         Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
     fixture.project().getBuild().setOutputDirectory("target/classes");
     final Path expectedOutput = projectBase.resolve("target/classes");
-    final Path applicationClass = createProductionOutputClass(expectedOutput);
+    final Path applicationClass =
+        MavenElisionServicePredictionFixtures.createProductionOutputClass(expectedOutput);
     final AnalysisOptions options =
         withCompleteness(fixture.options(), new CompletenessOptions(false, true, false, true));
 
@@ -166,7 +153,8 @@ final class MavenElisionServicePredictionTest {
 
   @Test
   void rejectsBlankProjectProductionOutputForCompleteBytecodePrediction() throws Exception {
-    final Fixture fixture = fixture(true);
+    final MavenElisionServicePredictionFixtures.Fixture fixture =
+        MavenElisionServicePredictionFixtures.create(temporaryDirectory, true);
     fixture.project().getBuild().setOutputDirectory("  ");
     final AnalysisOptions options =
         withCompleteness(fixture.options(), new CompletenessOptions(false, true, false, true));
@@ -188,139 +176,4 @@ final class MavenElisionServicePredictionTest {
         options.trim(),
         options.dynamicRoots());
   }
-
-  // WHY: The test checks identity of Resolver's session data.
-  @SuppressWarnings("PMD.LawOfDemeter")
-  private static SessionData sessionData(final DefaultRepositorySystemSession session) {
-    return session.getData();
-  }
-
-  private static Path createProductionOutputClass(final Path output) throws IOException {
-    final Path applicationClass = output.resolve("consumer/App.class");
-    Files.createDirectories(applicationClass.getParent());
-    final ClassWriter writer = new ClassWriter(0);
-    writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "consumer/App", null, "java/lang/Object", null);
-    writer.visitField(Opcodes.ACC_PRIVATE, "api", "Lprojection/Api;", null, null).visitEnd();
-    writer.visitEnd();
-    Files.write(applicationClass, writer.toByteArray());
-    return applicationClass;
-  }
-
-  private Fixture fixture(final boolean capturePair) throws IOException {
-    final Path fixtureDirectory = Files.createTempDirectory(temporaryDirectory, "prediction-");
-    final MavenProject project = new MavenProject();
-    project.setGroupId("fixture");
-    project.setArtifactId("consumer");
-    project.setVersion("1.0");
-    project.setPackaging("jar");
-    project.setFile(Files.createFile(fixtureDirectory.resolve("pom.xml")).toFile());
-    project.getProperties().setProperty("maven.compiler.release", "17");
-    final Build build = new Build();
-    build.setDirectory(fixtureDirectory.resolve("target").toString());
-    build.setOutputDirectory(fixtureDirectory.resolve("classes").toString());
-    project.setBuild(build);
-    final Path archive = multiReleaseArchive(fixtureDirectory);
-    final DefaultArtifactHandler handler = new DefaultArtifactHandler("jar");
-    handler.setAddedToClasspath(true);
-    final Artifact artifact =
-        new DefaultArtifact("fixture", "library", "1.0", "compile", "jar", null, handler);
-    artifact.setFile(archive.toFile());
-    project.setArtifacts(new LinkedHashSet<>(List.of(artifact)));
-    project.setDependencyArtifacts(new LinkedHashSet<>(List.of(artifact)));
-    final Path sourceRoot = Files.createDirectories(fixtureDirectory.resolve("prediction-source"));
-    Files.writeString(
-        sourceRoot.resolve("App.java"),
-        "package consumer; public class App { private projection.Api api; }\n");
-    project.addCompileSourceRoot(sourceRoot.toString());
-    final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
-    if (capturePair) {
-      MavenElisionGraphBindingTestSupport.appendPair(
-          repositorySession, MavenElisionGraphBindingTestSupport.projectKey(project), "capture-1");
-    }
-    final MavenSession session = session(project, repositorySession);
-    MavenOriginalInputAudit.markHookPresent(session);
-    final Path trace = fixtureDirectory.resolve("captured-mrjar.lst");
-    Files.writeString(trace, "consumer.App\nprojection.Api\n");
-    final AnalysisOptions options =
-        new AnalysisOptions(
-            List.of(trace.toFile()),
-            List.of(),
-            List.of(),
-            null,
-            session,
-            new CompletenessOptions(true, false, false, true),
-            new TrimOptions(
-                true,
-                List.of(),
-                false,
-                List.of(),
-                false,
-                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
-            new DynamicRootOptions(false));
-    return new Fixture(project, fixtureDirectory, artifact, archive, repositorySession, options);
-  }
-
-  private MavenSession session(
-      final MavenProject project, final DefaultRepositorySystemSession repositorySession) {
-    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
-    request.setBaseDirectory(project.getBasedir());
-    final PlexusContainer container =
-        (PlexusContainer)
-            java.lang.reflect.Proxy.newProxyInstance(
-                Thread.currentThread().getContextClassLoader(),
-                new Class<?>[] {PlexusContainer.class},
-                (proxy, method, arguments) ->
-                    "lookup".equals(method.getName()) ? new DefaultToolchainManager() : null);
-    final MavenSession session = new MavenSession(container, repositorySession, request, null);
-    session.setCurrentProject(project);
-    final PluginDescriptor descriptor = new PluginDescriptor();
-    descriptor.setGroupId(PluginDescriptor.getDefaultPluginGroupId());
-    descriptor.setArtifactId(PluginDescriptor.getDefaultPluginArtifactId("toolchains"));
-    session.getPluginContext(descriptor, project);
-    return session;
-  }
-
-  private Path multiReleaseArchive(final Path fixtureDirectory) throws IOException {
-    final Path base =
-        MultiReleaseProjectionFixtures.compile(
-            fixtureDirectory,
-            "captured-base",
-            8,
-            "package projection; public class Api { public static String value() { "
-                + "return \"base\"; } }");
-    final Path versioned =
-        MultiReleaseProjectionFixtures.compile(
-            fixtureDirectory,
-            "captured-v21",
-            21,
-            "package projection; public class Api { public static String value() { "
-                + "return \"upper\"; } }");
-    final Path versionNine =
-        MultiReleaseProjectionFixtures.compile(
-            fixtureDirectory,
-            "captured-v9",
-            9,
-            "package projection; public class Api { public static String value() { "
-                + "return \"nine\"; } }");
-    final Path versionNineOnly =
-        MultiReleaseProjectionFixtures.compile(
-            fixtureDirectory, "captured-v9-only", 9, "package projection; class NineOnly {}");
-    final Path versionTwentyOneOnly =
-        MultiReleaseProjectionFixtures.compile(
-            fixtureDirectory,
-            "captured-v21-only",
-            21,
-            "package projection; class TwentyOneOnly {}");
-    return MultiReleaseProjectionFixtures.createMultiReleaseJar(
-        fixtureDirectory, base, versionNine, versionNineOnly, versioned, versionTwentyOneOnly);
-  }
-
-  private record Fixture(
-      MavenProject project,
-      Path projectBase,
-      Artifact artifact,
-      Path archive,
-      DefaultRepositorySystemSession repositorySession,
-      AnalysisOptions options) {}
 }

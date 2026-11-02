@@ -21,7 +21,7 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests MRJAR projection isolation and cleanup. JUnit supplies the implicit constructor. */
+/** Tests MRJAR cleanup. JUnit supplies its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalysisProjectionWorkspaceTest {
   /** Provides a base for project outputs and isolated projection workspaces. */

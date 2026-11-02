@@ -18,7 +18,7 @@ import org.codehaus.plexus.PlexusContainer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Tests Analyze's verified no-toolchain path. JUnit supplies the implicit constructor. */
+/** Tests Maven toolchain capture. JUnit supplies its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalysisEnvironmentToolchainTest {
   /** Holds the base directory used by the toolchain session fixture. */

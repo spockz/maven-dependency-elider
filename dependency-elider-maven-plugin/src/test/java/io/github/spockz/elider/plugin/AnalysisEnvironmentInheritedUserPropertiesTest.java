@@ -17,10 +17,7 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Tests inherited user properties on live sessions and captured Analyze paths. JUnit supplies the
- * implicit constructor.
- */
+/** Tests inherited properties. JUnit uses its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalysisEnvironmentInheritedUserPropertiesTest {
   /** Maven property that selects the Java language release. */

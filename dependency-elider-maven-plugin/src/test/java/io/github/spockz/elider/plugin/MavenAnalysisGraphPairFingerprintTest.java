@@ -16,10 +16,7 @@ import java.util.Set;
 import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
-/**
- * Tests request-local graph topology in operation fingerprints. JUnit supplies the implicit
- * constructor.
- */
+/** Tests graph fingerprints. JUnit uses its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class MavenAnalysisGraphPairFingerprintTest extends MavenElisionGraphBindingTestSupport {
   @Test

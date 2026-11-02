@@ -17,10 +17,7 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Tests Maven compiler property precedence and inherited user properties. JUnit supplies the
- * implicit constructor.
- */
+/** Tests compiler settings. JUnit supplies its implicit constructor. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class AnalysisEnvironmentCompilerSettingsTest {
   /** Maven compiler property that selects the Java language release. */
