@@ -10,7 +10,7 @@
 - **Implementation branch:** `codex/wp-policy-01`.
 - **Verified candidate:** `335f1f8aef20ac2567198df0b658c09af299cd9e`, tree `5d4a16e6d364f349f259232e45ae20aebe26347a`.
 - **Delivery target:** local `main`; remote publication was not requested. Final fast-forward and dirty-path preservation are recorded after integration.
-- **Current state:** implementation and full `make check` pass. Fresh exact-tree reviews and local `main` integration are pending.
+- **Current state:** implementation and full `make check` pass. Independent contract and architecture reviews approved exact branch tree `33a30c70`; the fast-forward to local `main` and integrated-main review are pending.
 
 ## Requirement-to-evidence matrix
 
@@ -24,7 +24,7 @@
 | R6 | Report repeated effective-POM exclusions with provenance, separate management-only entries, and keep recommendations advisory. | `ExclusionProvenanceCaptureTest`, `ExclusionReviewReportTest`, strict report reader/writer validation. | Complete. |
 | R7 | Update usage, FAQ, contributor decisions, ADRs, research, examples, and generated transcripts. | README, Maven site usage, FAQ/contributor docs, ADR-0012, RQ-0004/0005/0006/0017, `make check-transcripts`. | Complete. |
 | R8 | Preserve output, Maven-view, and resolver-plan rollback; verify absence and freshness before commit. | `MavenOutputTransactionTest`, `MavenElisionServiceEffectiveOutputTransactionTest`, and lifecycle failure/no-publication fixtures. | Complete. |
-| R9 | Review the full source-derived scope, run the full repository gate, review integration, and preserve closeout evidence. | Java 21 `make check` passed on `335f1f8a` / `5d4a16e6`; fresh source and architecture receipts plus the final integrated-main receipt are pending. | Gate complete; reviews and integration pending. |
+| R9 | Review the full source-derived scope, run the full repository gate, review integration, and preserve closeout evidence. | Java 21 `make check` passed on `335f1f8a` / `5d4a16e6`; exact-tree contract and architecture receipts are approved at `33a30c70`; integrated-main receipt remains pending. | Gate and branch reviews complete; integration pending. |
 
 ## Verification
 
@@ -49,10 +49,12 @@ to keep the reader method below its threshold.
 
 The historical receipts for the pre-rebase tree remain available at
 `.scratch/reviews/wp-policy-01-final-da76d2c.md` and
-`.scratch/reviews/wp-policy-01-architecture-da76d2c.md`. They do not approve the
-rebased tree. Fresh exact-tree source/architecture reviews and a post-fast-forward
-integration review are pending and will be linked here before the package is
-declared complete.
+`.scratch/reviews/wp-policy-01-architecture-da76d2c.md`; they do not approve the
+rebased tree. Exact-tree reviews approved commit `33a30c70` / tree
+`f70edffc`. The policy contract receipt is
+`.scratch/reviews/wp-policy-01-final-33a30c7.md`; the architecture receipt is
+`.scratch/reviews/wp-policy-01-architecture-33a30c7.md`. A post-fast-forward
+integration receipt remains pending.
 
 The Gemini review bridge was unavailable in this environment. No Gemini review
 is claimed; the skill's documented fail-open path uses the independent policy
@@ -83,9 +85,10 @@ is reported. Detailed work-package tool notes remain in `.scratch/orchestration-
 
 ## Cumulative change and commit record
 
-From progressed base `024b092b` to candidate `335f1f8a`, the cumulative change
-was 207 files, 23,093 insertions, and 1,423 deletions. The WP-POLICY-01 commit
+From progressed base `024b092b` to code/test candidate `335f1f8a`, the cumulative
+change was 207 files, 23,093 insertions, and 1,423 deletions. The implementation
 sequence is preserved by `git log --oneline --reverse
-024b092b93b05fe77de3215f92198da9e74fa80f..335f1f8aef20ac2567198df0b658c09af299cd9e`.
-The final main delivery hash and post-integration diff will be added after the
-fast-forward and integrated review.
+024b092b93b05fe77de3215f92198da9e74fa80f..335f1f8aef20ac2567198df0b658c09af299cd9e`;
+documentation-only review successors follow that candidate. The final main
+delivery hash and post-integration diff will be added after the fast-forward and
+integrated review.

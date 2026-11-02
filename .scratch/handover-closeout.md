@@ -54,8 +54,9 @@ Track evidence is bundled in `.scratch/reviews/*-wrapup.md` and
 `.scratch/manual-edits/`. The Elide-ban implementer recorded focused-test,
 lint, and plugin-check runtimes. Other retained track sources did not have
 comparable timing data; their assessments say unknown rather than estimate.
-The package remains incomplete until exact-tree reviews and the fast-forward to
-local `main` are recorded in the versioned closeout and orchestration ledger.
+The package remains incomplete until the fast-forward to local `main` and the
+integrated-main review are recorded in the versioned closeout and orchestration
+ledger.
 
 The user then requested a rebase onto progressed `main` at
 `024b092b93b05fe77de3215f92198da9e74fa80f`. The original dirty-snapshot commit
@@ -65,7 +66,10 @@ WP-POLICY-01 commits because progressed main carries the snapshot's tracked
 state. Candidate `335f1f8aef20ac2567198df0b658c09af299cd9e` / tree
 `5d4a16e6d364f349f259232e45ae20aebe26347a` passes Java 21 `make check`, with
 767 plugin tests (one skipped) and 27 lifecycle integration tests. A packaged
-mixed Analyze/Elide test passed in both direct goal orders. Fresh exact-tree
-reviews and delivery to local `main` remain pending; preserve main's current
-dirty worktree during that fast-forward, replacing only the older WP-POLICY
-handover with the final committed version.
+mixed Analyze/Elide test passed in both direct goal orders. Contract and
+architecture reviews approved exact branch tree `33a30c70` /
+`f70edffc`; receipts are `.scratch/reviews/wp-policy-01-final-33a30c7.md` and
+`.scratch/reviews/wp-policy-01-architecture-33a30c7.md`. Delivery and the
+integrated-main review remain pending; preserve main's current dirty worktree
+during that fast-forward, replacing only the older WP-POLICY handover with the
+final committed version.

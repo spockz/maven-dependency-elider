@@ -232,9 +232,11 @@ coverage, Markdown lint, scheduler and SBOM checks, and configured transcript
 drift. The plugin unit suite reported 767 tests with one skipped. The transcript
 tool reported “Configured command transcripts are up to date.” The packaged
 mixed-goal integration test passed with both Analyze/Elide goal orders; `make
-lint-java` and `git diff --check` passed. Fresh exact-tree reviews and local-main
-integration are pending. The final source and integration reviews and delivery
-state will be recorded in the versioned sibling
+lint-java` and `git diff --check` passed. Exact-tree contract and architecture
+reviews approved commit `33a30c70` / tree `f70edffc`; receipts are linked from
+the versioned closeout. The fast-forward to local `main` and integrated-main
+review remain pending. The final delivery state will be recorded in the
+versioned sibling
 [`2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip-closeout.md`](2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip-closeout.md).
 
 The verified boundary is the current project's supported Maven views and
