@@ -38,3 +38,21 @@ The integrated Java gate passed 195 core tests, 267 plugin tests, and 15 lifecyc
 * Manual source-edit record: `.scratch/manual-edits/track-reactor-fixture.md`.
 * Tool friction: `.scratch/suboptimal-tools/track-reactor-fixture.md`.
 * Integrated command logs: `.scratch/verification/wp-reactor-01-integrated-focused.log`, `.scratch/verification/wp-reactor-01-integrated-java-check.log`, and `.scratch/verification/wp-reactor-01-integrated-examples.log`.
+
+## WP-POLICY-01 closeout bundle (2026-11-02)
+
+The source handover and package closeout are
+[`2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip.md`](../docs/handovers/2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip.md)
+and its `-closeout` sibling. The package was rebased onto current `main`
+`f45cf4752c0f9940f35050163fa7d89064a43165`, with the user-authorized full dirty
+snapshot in `d152ead148f98e8c20982baba37c6419a602c8f8`. Java 21 `make check`
+passed on candidate `f0ef03b67ff0e359311639fbae5579c90fda35b6`; the versioned
+closeout records the gate, requirement matrix, limits, and current review and
+integration state.
+
+Track evidence is bundled in `.scratch/reviews/*-wrapup.md` and
+`.scratch/manual-edits/`. The Elide-ban implementer recorded focused-test,
+lint, and plugin-check runtimes. Other retained track sources did not have
+comparable timing data; their assessments say unknown rather than estimate.
+The package remains incomplete until exact-tree reviews and the fast-forward to
+local `main` are recorded in the versioned closeout and orchestration ledger.

@@ -207,32 +207,28 @@ For counts of two or more active declaration paths, report the excluded G:A, cou
 * No claim is made that this post-resolution policy changes Maven's resolver
   graph globally or rewrites consumer metadata. Such behavior requires a later
   resolver integration and consumer contract, documented in an ADR.
-* All Java, static-analysis, and transcript gates pass; the aggregate `make check` gate was not run because its Markdown lint invokes prohibited Node/npm tooling.
+* The repository-defined `make check` gate passes on the rebased implementation tree, including Java/static analysis, Markdown lint, scheduler/SBOM checks, and transcript verification.
 
 ## 7. Final Implementation and Verification
 
-The work package is implemented on `codex/wp-policy-01` from the user-selected
-52-path dirty snapshot (`96398e9`), with the reviewed implementation commit
-`da76d2c45a22b151be23e3312e9b009b10cb6e24`. The main worktree was not changed.
+The work package was rebased onto `main` commit
+`f45cf4752c0f9940f35050163fa7d89064a43165`. The user-selected 52-path dirty
+snapshot remains included as baseline commit
+`d152ead148f98e8c20982baba37c6419a602c8f8` (tree
+`767ec799e111e6b99087bf9f427f4d43d0ed9a00`). The implementation candidate is
+`f0ef03b67ff0e359311639fbae5579c90fda35b6` (tree
+`8fcb10a2c7e3c829c1b9001d46f1fac33e89eb02`). Rebase corrections preserve
+mainline source-correspondence results, report proof/policy/exclusion/ban fields,
+and execution-configuration publication APIs. README list spacing was corrected
+for Markdown lint.
 
-The final source review is approved by the independent policy-contract reviewer
-and policy architect. Their receipts are
-[`wp-policy-01-final-da76d2c.md`](../../.scratch/reviews/wp-policy-01-final-da76d2c.md)
-and
-[`wp-policy-01-architecture-da76d2c.md`](../../.scratch/reviews/wp-policy-01-architecture-da76d2c.md).
-
-Verification on the reviewed implementation tree passed:
-
-* Focused report and detached-type regressions: 40 tests, 0 failures.
-* `make lint-java`: Checkstyle 0, PMD 0, SpotBugs 0.
-* `make test-plugin`: 289 core tests; 727 plugin unit tests (1 existing skip);
-  26 lifecycle integration tests; coverage gates passed.
-* `make check-transcripts`: configured transcripts are up to date.
-* `git diff --check` passed.
-
-The full `make check` target was not run because it invokes the repository's
-Node.js Markdown-lint workflow, which the project instructions prohibit. The
-no-Node Java and transcript gates above were run instead.
+The full Java 21 `make check` passed on that candidate: formatting; Checkstyle,
+PMD, and SpotBugs; core/plugin tests and lifecycle integration tests; Markdown
+lint; scheduler and SBOM checks; coverage; and configured transcript drift. The
+final transcript result was “Configured command transcripts are up to date.”
+`git diff --check` also passed. The final source and integration reviews and
+delivery state are recorded in the versioned sibling
+[`2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip-closeout.md`](2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip-closeout.md).
 
 The verified boundary is the current project's supported Maven views and
 generated outputs. This work does not rewrite consumer POMs or promise changes
