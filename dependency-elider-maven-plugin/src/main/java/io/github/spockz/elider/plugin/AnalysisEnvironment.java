@@ -2,14 +2,15 @@
 
 package io.github.spockz.elider.plugin;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
@@ -29,6 +30,9 @@ record AnalysisEnvironment(
     Objects.requireNonNull(jdkToolchainState, "jdkToolchainState");
   }
 
+  /* default */
+  @SuppressWarnings(
+      "PMD.LawOfDemeter") // MavenSession owns the request and current-project accessors.
   static AnalysisEnvironment capture(final MavenProject project, final MavenSession session)
       throws IOException {
     if (session == null) {
@@ -50,15 +54,15 @@ record AnalysisEnvironment(
         null);
   }
 
-  Properties systemPropertiesAsProperties() {
+  /* default */ Properties systemPropertiesAsProperties() {
     return toProperties(systemProperties);
   }
 
-  Properties userPropertiesAsProperties() {
+  /* default */ Properties userPropertiesAsProperties() {
     return toProperties(userProperties);
   }
 
-  String fingerprint() {
+  /* default */ String fingerprint() {
     final java.util.List<String> fields = new ArrayList<>();
     fields.add("analysis-environment-v1");
     fields.add("toolchain-state=" + jdkToolchainState.name());
@@ -71,7 +75,7 @@ record AnalysisEnvironment(
     return MavenElisionGraphBinding.sha256(fields);
   }
 
-  AnalysisEnvironment withProjectionDirectory(final Path value) {
+  /* default */ AnalysisEnvironment withProjectionDirectory(final Path value) {
     return new AnalysisEnvironment(
         systemProperties, userProperties, invocationBase, jdkToolchainState, value);
   }
@@ -97,38 +101,24 @@ record AnalysisEnvironment(
     return requestedBase != null && requestedBase.equals(sessionBase);
   }
 
+  @SuppressWarnings(
+      "PMD.LawOfDemeter") // MavenProject exposes its base directory through this accessor.
   private static Path baseDirectory(final MavenProject project) {
-    return project.getBasedir() == null
-        ? null
-        : project.getBasedir().toPath().toAbsolutePath().normalize();
+    final File baseDirectory = project.getBasedir();
+    if (baseDirectory == null) {
+      return null;
+    }
+    final Path basePath = baseDirectory.toPath();
+    return basePath.toAbsolutePath().normalize();
   }
 
   private static void verifyNoSelectedJdkToolchain(final MavenSession session) throws IOException {
-    final Object manager;
-    try {
-      manager = session.lookup(ToolchainManager.class.getName());
-    } catch (
-        final org.codehaus.plexus.component.repository.exception.ComponentLookupException
-            exception) {
-      throw new IOException("Cannot verify the selected Maven JDK toolchain", exception);
-    }
+    final Object manager = toolchainManager(session);
     if (manager == null || manager.getClass() != DefaultToolchainManager.class) {
       throw new IOException(
           "Analyze cannot verify JDK toolchain selection with this Maven ToolchainManager");
     }
-    final Map<String, Object> pluginContext;
-    try {
-      final org.apache.maven.plugin.descriptor.PluginDescriptor descriptor =
-          new org.apache.maven.plugin.descriptor.PluginDescriptor();
-      descriptor.setGroupId(
-          org.apache.maven.plugin.descriptor.PluginDescriptor.getDefaultPluginGroupId());
-      descriptor.setArtifactId(
-          org.apache.maven.plugin.descriptor.PluginDescriptor.getDefaultPluginArtifactId(
-              "toolchains"));
-      pluginContext = session.getPluginContext(descriptor, session.getCurrentProject());
-    } catch (final RuntimeException exception) {
-      throw new IOException("Cannot inspect Maven's selected JDK toolchain context", exception);
-    }
+    final Map<String, Object> pluginContext = jdkToolchainPluginContext(session);
     if (pluginContext == null) {
       throw new IOException("Maven did not expose its JDK toolchain plugin context");
     }
@@ -138,11 +128,39 @@ record AnalysisEnvironment(
     }
   }
 
+  private static Object toolchainManager(final MavenSession session) throws IOException {
+    try {
+      return session.lookup(ToolchainManager.class.getName());
+    } catch (
+        final org.codehaus.plexus.component.repository.exception.ComponentLookupException
+            exception) {
+      throw new IOException("Cannot verify the selected Maven JDK toolchain", exception);
+    }
+  }
+
+  @SuppressWarnings("PMD.AvoidCatchingGenericException")
+  // Runtime failures while reading Maven's plugin context must abort Analyze.
+  private static Map<String, Object> jdkToolchainPluginContext(final MavenSession session)
+      throws IOException {
+    try {
+      final org.apache.maven.plugin.descriptor.PluginDescriptor descriptor =
+          new org.apache.maven.plugin.descriptor.PluginDescriptor();
+      descriptor.setGroupId(
+          org.apache.maven.plugin.descriptor.PluginDescriptor.getDefaultPluginGroupId());
+      descriptor.setArtifactId(
+          org.apache.maven.plugin.descriptor.PluginDescriptor.getDefaultPluginArtifactId(
+              "toolchains"));
+      return session.getPluginContext(descriptor, session.getCurrentProject());
+    } catch (final RuntimeException exception) {
+      throw new IOException("Cannot inspect Maven's selected JDK toolchain context", exception);
+    }
+  }
+
   private static Map<String, String> properties(final Properties properties) {
     if (properties == null) {
       return Map.of();
     }
-    final Map<String, String> values = new LinkedHashMap<>();
+    final Map<String, String> values = new ConcurrentHashMap<>();
     properties.stringPropertyNames().stream()
         .sorted()
         .forEach(key -> values.put(key, properties.getProperty(key)));
@@ -150,7 +168,7 @@ record AnalysisEnvironment(
   }
 
   private static Map<String, String> immutableProperties(final Map<String, String> values) {
-    final Map<String, String> copy = new LinkedHashMap<>();
+    final Map<String, String> copy = new ConcurrentHashMap<>();
     values.forEach(
         (key, value) -> {
           Objects.requireNonNull(key, "property key");
@@ -181,7 +199,8 @@ record AnalysisEnvironment(
     return properties;
   }
 
-  enum JdkToolchainState {
+  /** Toolchain state accepted by Analyze source attribution. */
+  /* default */ enum JdkToolchainState {
     UNSELECTED
   }
 }

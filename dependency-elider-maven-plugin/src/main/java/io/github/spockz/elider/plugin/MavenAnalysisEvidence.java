@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.execution.MavenExecutionRequest;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 
 /** Collects the independent evidence inputs used by artifact pruning. */
@@ -75,26 +76,20 @@ final class MavenAnalysisEvidence {
 
   private static Path invocationBaseForProject(
       final MavenProject project, final AnalysisOptions options) {
+    final File projectBase = project.getBasedir();
     if (options.environment() != null) {
       return options.environment().invocationBase() == null
-          ? projectBasePath(project.getBasedir())
+          ? projectBasePath(projectBase)
           : options.environment().invocationBase();
     }
-    return invocationBase(options.request(), project.getBasedir());
+    return invocationBaseFromRequestBase(requestBase(options.session()), projectBase);
   }
 
   private static File productionOutput(final MavenProject project, final AnalysisOptions options)
       throws IOException {
     final boolean productionClassesComplete = options.completeness().productionClassesComplete();
-    final File configuredOutput = options.productionOutput();
-    final String selectedOutput;
-    if (configuredOutput != null) {
-      selectedOutput = configuredOutput.getPath();
-    } else if (productionClassesComplete && project.getBuild() != null) {
-      selectedOutput = project.getBuild().getOutputDirectory();
-    } else {
-      selectedOutput = null;
-    }
+    final String selectedOutput =
+        selectedOutput(project, options.productionOutput(), productionClassesComplete);
     if (selectedOutput == null || selectedOutput.isBlank()) {
       if (productionClassesComplete) {
         throw new IOException(
@@ -107,23 +102,58 @@ final class MavenAnalysisEvidence {
     if (output.isAbsolute()) {
       return output.normalize().toFile();
     }
-    if (project.getBasedir() == null) {
+    return relativeProductionOutput(project, output);
+  }
+
+  private static String selectedOutput(
+      final MavenProject project,
+      final File configuredOutput,
+      final boolean productionClassesComplete) {
+    if (configuredOutput != null) {
+      return configuredOutput.getPath();
+    }
+    if (!productionClassesComplete || project.getBuild() == null) {
+      return null;
+    }
+    return project.getBuild().getOutputDirectory();
+  }
+
+  @SuppressWarnings("PMD.LawOfDemeter") // MavenProject supplies the base for relative output paths.
+  private static File relativeProductionOutput(final MavenProject project, final Path output)
+      throws IOException {
+    final File projectBase = project.getBasedir();
+    if (projectBase == null) {
       throw new IOException(
           "Cannot resolve relative production output without a Maven project base");
     }
-    return project.getBasedir().toPath().resolve(output).toAbsolutePath().normalize().toFile();
+    final Path projectBasePath = projectBase.toPath();
+    final Path resolvedOutput = projectBasePath.resolve(output);
+    return resolvedOutput.toAbsolutePath().normalize().toFile();
   }
 
-  /* package */ static Path invocationBase(
-      final MavenExecutionRequest request, final File projectBase) {
-    final String requestBase = requestBase(request);
+  private static Path invocationBaseFromRequestBase(
+      final String requestBase, final File projectBase) {
     if (requestBase != null && !requestBase.isBlank()) {
       return Path.of(requestBase).toAbsolutePath().normalize();
     }
     return projectBasePath(projectBase);
   }
 
+  /* package */ static Path invocationBase(
+      final MavenExecutionRequest request, final File projectBase) {
+    return invocationBaseFromRequestBase(requestBase(request), projectBase);
+  }
+
   private static String requestBase(final MavenExecutionRequest request) {
+    return request == null ? null : request.getBaseDirectory();
+  }
+
+  @SuppressWarnings("PMD.LawOfDemeter") // MavenSession exposes the invocation request here.
+  private static String requestBase(final MavenSession session) {
+    if (session == null) {
+      return null;
+    }
+    final MavenExecutionRequest request = session.getRequest();
     return request == null ? null : request.getBaseDirectory();
   }
 

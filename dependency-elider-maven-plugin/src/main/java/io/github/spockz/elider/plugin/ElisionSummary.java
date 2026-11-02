@@ -68,7 +68,7 @@ final class ElisionSummary {
     if (includeCacheStatus) {
       log.info("  JAR trim cache: unavailable (trim stage not run)");
     }
-    reportCves(log, vulnerabilityAssessment, false);
+    ElisionSummaryCveReporter.report(log, vulnerabilityAssessment, false);
   }
 
   /** Reports artifacts this nonmutating analysis predicts would be elided. */
@@ -117,7 +117,7 @@ final class ElisionSummary {
                 droppedArtifacts.uncompressedProgramClassBytesRemoved())
             + "; excludes module descriptors and archive sanitation metadata)");
     reportTrimCache(log, analysis, trimJars);
-    reportCves(log, vulnerabilityAssessment, true);
+    ElisionSummaryCveReporter.report(log, vulnerabilityAssessment, true);
   }
 
   static void reportPrediction(
@@ -168,7 +168,7 @@ final class ElisionSummary {
         trimJars
             ? "  JAR trim cache: unavailable (Analyze reports an in-memory prediction only)"
             : "  JAR trim cache: unavailable (trim stage not run)");
-    reportCves(log, vulnerabilityAssessment, true);
+    ElisionSummaryCveReporter.report(log, vulnerabilityAssessment, true);
   }
 
   /** Prints measured class payload metrics when retained JAR trimming ran. */
@@ -193,7 +193,7 @@ final class ElisionSummary {
     log.info("  Methods removed: 0 / N/A (N/A; stage not run)");
     log.info("  Fields removed: 0 / N/A (N/A; stage not run)");
     reportTrimCache(log, analysis, true);
-    reportCves(log, vulnerabilityAssessment, false);
+    ElisionSummaryCveReporter.report(log, vulnerabilityAssessment, false);
   }
 
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -252,91 +252,6 @@ final class ElisionSummary {
               + "artifacts and indexed classes were retained: "
               + fallback);
     }
-  }
-
-  private static void reportCves(
-      final Log log,
-      final MavenVulnerabilityAssessment.Result assessment,
-      final boolean predicted) {
-    if (assessment == null) {
-      return;
-    }
-    final String removedHeading =
-        predicted
-            ? "  Advisories associated with components that would be removed: "
-            : "  Advisories associated with removed components: ";
-    final String provenHeading =
-        predicted
-            ? "  Mitigated CVEs (vulnerable code that would be pruned by trimming): "
-            : "  Mitigated CVEs (vulnerable code pruned by trimming): ";
-    final String inactiveHeading =
-        predicted
-            ? "  CVEs that would be inactive due to unmet prerequisite dependencies: "
-            : "  CVEs inactive due to unmet prerequisite dependencies: ";
-    final String noVerifiedEvidence = predicted ? "none verified by published trim evidence" : null;
-    final String noOmissionProof = predicted ? "no published omission proof" : null;
-    final String noPreconditionProof = predicted ? "no precondition proof available" : null;
-    reportFindings(log, removedHeading, assessment.removedComponents(), noVerifiedEvidence);
-    reportFindings(log, provenHeading, assessment.provenVulnerableCodeAbsent(), noOmissionProof);
-    reportFindings(
-        log, inactiveHeading, assessment.inactiveDueToMissingPrerequisites(), noPreconditionProof);
-    reportConservativeDrops(log, assessment.potentiallyConservativeCves(), predicted);
-  }
-
-  private static void reportConservativeDrops(
-      final Log log,
-      final java.util.List<MavenVulnerabilityAssessment.ConservativeFinding> findings,
-      final boolean predicted) {
-    if (!log.isInfoEnabled()) {
-      return;
-    }
-    final String heading =
-        predicted
-            ? "  Vulnerability mappings that remain unverified by the in-memory Analyze prediction:"
-            : "  CVEs excluded due to conservative multi-symbol checks:";
-    if (findings.isEmpty()) {
-      log.info(heading + " none detected");
-      return;
-    }
-    log.info(heading);
-    for (final MavenVulnerabilityAssessment.ConservativeFinding finding : findings) {
-      log.info("    " + finding.cveId() + " " + finding.coordinate().toId());
-      log.info("      Reason: " + finding.reason());
-      log.info(
-          "      Actionable POM override to certify if absent classes do not apply to your"
-              + " version:");
-      for (final String line : finding.pomOverrideSnippet().split("\n")) {
-        log.info("        " + line);
-      }
-    }
-  }
-
-  private static void reportFindings(
-      final Log log,
-      final String heading,
-      final java.util.List<MavenVulnerabilityAssessment.Finding> findings) {
-    reportFindings(log, heading, findings, null);
-  }
-
-  private static void reportFindings(
-      final Log log,
-      final String heading,
-      final java.util.List<MavenVulnerabilityAssessment.Finding> findings,
-      final String predictedEmptyMessage) {
-    if (!log.isInfoEnabled()) {
-      return;
-    }
-    if (findings.isEmpty()) {
-      log.info(
-          heading
-              + (predictedEmptyMessage == null
-                  ? "none matched the available vulnerability mappings"
-                  : predictedEmptyMessage));
-      return;
-    }
-    log.info(heading);
-    findings.forEach(
-        finding -> log.info("    " + finding.cveId() + " " + finding.coordinate().toId()));
   }
 
   private static void reportHeader(

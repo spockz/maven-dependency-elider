@@ -11,24 +11,25 @@ import java.util.stream.Stream;
 
 /** Owns temporary archive projections for one prediction operation. */
 final class AnalysisProjectionWorkspace implements AutoCloseable {
-  private final Path directory;
+  /** Temporary root that scopes all projections for one prediction. */
+  private final Path rootDirectory;
 
   private AnalysisProjectionWorkspace(final Path directory) {
-    this.directory = Objects.requireNonNull(directory, "directory");
+    this.rootDirectory = Objects.requireNonNull(directory, "directory");
   }
 
-  static AnalysisProjectionWorkspace create() throws IOException {
+  /* default */ static AnalysisProjectionWorkspace create() throws IOException {
     return new AnalysisProjectionWorkspace(
         Files.createTempDirectory("dependency-elider-analysis-projections-"));
   }
 
-  Path directory() {
-    return directory;
+  /* default */ Path directory() {
+    return rootDirectory;
   }
 
   @Override
   public void close() throws IOException {
-    try (Stream<Path> paths = Files.walk(directory)) {
+    try (Stream<Path> paths = Files.walk(rootDirectory)) {
       for (final Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
         Files.deleteIfExists(path);
       }

@@ -21,6 +21,9 @@ import org.eclipse.aether.RepositorySystemSession;
 /** Binds a unique graph pair to local inventory and operation evidence. */
 @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 final class MavenElisionGraphBinding {
+  /** One graph identity must uniquely satisfy a complete captured inventory. */
+  private static final int SINGLE_GRAPH_IDENTITY = 1;
+
   private MavenElisionGraphBinding() {
     throw new AssertionError("No instances");
   }
@@ -201,13 +204,7 @@ final class MavenElisionGraphBinding {
       final MavenSession session,
       final List<ElisionAnalysisModel.ArtifactSnapshot> inventory)
       throws IOException {
-    final Object payload =
-        session == null || session.getRepositorySession() == null
-            ? null
-            : session
-                .getRepositorySession()
-                .getData()
-                .get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
+    final Object payload = capturedPairPayload(session);
     if (payload == null) {
       throw new IOException("Active Resolver capture is missing for Analyze");
     }
@@ -235,10 +232,24 @@ final class MavenElisionGraphBinding {
                         + ":"
                         + pair.captureToken())
             .collect(java.util.stream.Collectors.toSet());
-    if (graphIdentities.size() != 1) {
+    if (graphIdentities.size() != SINGLE_GRAPH_IDENTITY) {
       throw new IOException("Analyze inventory matches multiple captured Resolver graph pairs");
     }
     return compatible.get(0);
+  }
+
+  @SuppressWarnings(
+      "PMD.LawOfDemeter") // MavenSession exposes the Resolver session at this boundary.
+  private static Object capturedPairPayload(final MavenSession session) {
+    if (session == null) {
+      return null;
+    }
+    final RepositorySystemSession repositorySession = session.getRepositorySession();
+    if (repositorySession == null) {
+      return null;
+    }
+    final org.eclipse.aether.SessionData sessionData = repositorySession.getData();
+    return sessionData.get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
   }
 
   static void verifyInventoryFingerprint(

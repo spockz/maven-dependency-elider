@@ -8,8 +8,10 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
 
+/** Narrow prediction seam used to verify Analyze guard ordering. */
 @FunctionalInterface
 interface AnalyzePredictionService {
+  /** Computes one nonpublishing prediction for the requested Maven project. */
   AnalyzePrediction predict(
       MavenProject project, AnalysisOptions options, ProjectDependenciesResolver resolver)
       throws IOException, MojoFailureException;

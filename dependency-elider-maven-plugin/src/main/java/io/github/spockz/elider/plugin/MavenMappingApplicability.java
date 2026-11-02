@@ -37,7 +37,7 @@ final class MavenMappingApplicability {
         mapping.requiresClass());
   }
 
-  private static boolean appliesTo(
+  /* default */ static boolean appliesTo(
       final VulnerabilitySymbolMapping mapping, final ArtifactCoordinate candidate) {
     return sameArtifact(mapping.affectedCoordinate(), candidate)
         && MavenVersionRangeMatcher.includes(mapping.versionRangeSpec(), candidate.version());

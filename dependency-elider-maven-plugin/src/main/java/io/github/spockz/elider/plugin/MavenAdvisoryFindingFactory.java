@@ -22,11 +22,11 @@ final class MavenAdvisoryFindingFactory {
 
   private MavenAdvisoryFindingFactory() {}
 
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static Optional<MavenVulnerabilityAssessment.HeuristicAdvisoryFinding> heuristicFinding(
-      final MavenVulnerabilityAssessment.MatchedAdvisoryEvidence matched,
-      final MavenVulnerabilityAssessment.InventoryDisposition disposition,
-      final List<OsvAdvisoryRecord> records) {
+  /* default */ static Optional<MavenVulnerabilityAssessment.HeuristicAdvisoryFinding>
+      heuristicFinding(
+          final MavenVulnerabilityAssessment.MatchedAdvisoryEvidence matched,
+          final MavenVulnerabilityAssessment.InventoryDisposition disposition,
+          final List<OsvAdvisoryRecord> records) {
     if (!(matched.evidence() instanceof HeuristicCandidateEvidence evidence)) {
       return Optional.empty();
     }
@@ -55,8 +55,7 @@ final class MavenAdvisoryFindingFactory {
             evidence.candidateDependencies()));
   }
 
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static MavenVulnerabilityAssessment.InventoryDisposition inventoryDisposition(
+  /* default */ static MavenVulnerabilityAssessment.InventoryDisposition inventoryDisposition(
       final ArtifactCoordinate candidate,
       final Collection<ArtifactCoordinate> removedArtifacts,
       final Collection<ArtifactCoordinate> retainedArtifacts,
@@ -65,8 +64,7 @@ final class MavenAdvisoryFindingFactory {
         candidate, removedArtifacts, retainedArtifacts, trimRecords, java.util.Set.of());
   }
 
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static MavenVulnerabilityAssessment.InventoryDisposition inventoryDisposition(
+  /* default */ static MavenVulnerabilityAssessment.InventoryDisposition inventoryDisposition(
       final ArtifactCoordinate candidate,
       final Collection<ArtifactCoordinate> removedArtifacts,
       final Collection<ArtifactCoordinate> retainedArtifacts,
@@ -88,8 +86,7 @@ final class MavenAdvisoryFindingFactory {
         "Matched advisory candidate is absent from the analyzed inventory: " + candidate);
   }
 
-  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static String packageSourceDigest(
+  /* default */ static String packageSourceDigest(
       final OsvAdvisoryRecord record, final OsvAffectedPackage affectedPackage) {
     return record.evidence().stream()
         .filter(PackageAdvisoryEvidence.class::isInstance)

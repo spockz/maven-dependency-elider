@@ -783,25 +783,7 @@ record MavenElisionReportSnapshot(
       throws IOException {
     final List<DroppedArtifact> dropped = new ArrayList<>();
     for (final ArtifactCoordinate coordinate : prediction.wouldElideArtifacts()) {
-      final ElisionAnalysisModel.ArtifactSnapshot artifact =
-          prediction.inputArtifacts().stream()
-              .filter(snapshot -> snapshot.coordinate().equals(coordinate))
-              .findFirst()
-              .orElseThrow(
-                  () ->
-                      new IOException(
-                          "Predicted artifact is absent from its input inventory: " + coordinate));
-      final Path path = artifact.filePath();
-      if (path == null || !Files.isRegularFile(path)) {
-        throw new IOException("Predicted artifact has no regular input JAR: " + coordinate);
-      }
-      final ProgramClassEntryMetrics classMetrics = ProgramClassEntryMetrics.scan(path);
-      dropped.add(
-          new DroppedArtifact(
-              coordinate.toString(),
-              Files.size(path),
-              classMetrics.entries(),
-              classMetrics.uncompressedBytes()));
+      dropped.add(droppedArtifact(prediction, coordinate));
     }
     dropped.sort(Comparator.comparing(DroppedArtifact::coordinate));
     return new DroppedArtifactSummary(
@@ -809,6 +791,28 @@ record MavenElisionReportSnapshot(
         sumDroppedArtifactBytes(dropped),
         sumDroppedArtifactClassCounts(dropped),
         sumDroppedArtifactClassBytes(dropped));
+  }
+
+  private static DroppedArtifact droppedArtifact(
+      final AnalyzePrediction prediction, final ArtifactCoordinate coordinate) throws IOException {
+    final ElisionAnalysisModel.ArtifactSnapshot artifact =
+        prediction.inputArtifacts().stream()
+            .filter(snapshot -> snapshot.coordinate().equals(coordinate))
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    new IOException(
+                        "Predicted artifact is absent from its input inventory: " + coordinate));
+    final Path path = artifact.filePath();
+    if (path == null || !Files.isRegularFile(path)) {
+      throw new IOException("Predicted artifact has no regular input JAR: " + coordinate);
+    }
+    final ProgramClassEntryMetrics classMetrics = ProgramClassEntryMetrics.scan(path);
+    return new DroppedArtifact(
+        coordinate.toString(),
+        Files.size(path),
+        classMetrics.entries(),
+        classMetrics.uncompressedBytes());
   }
 
   private static DroppedArtifactSummary droppedArtifactSummary(

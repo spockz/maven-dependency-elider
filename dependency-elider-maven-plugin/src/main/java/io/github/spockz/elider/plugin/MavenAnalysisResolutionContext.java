@@ -24,7 +24,6 @@ import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.DependencyNode;
 
 /** Holds a validated graph pair and its exact Maven artifact views. */
-@SuppressWarnings("PMD.CouplingBetweenObjects")
 record MavenAnalysisResolutionContext(
     MavenProject project,
     MavenProject liveProject,
@@ -43,7 +42,7 @@ record MavenAnalysisResolutionContext(
     Objects.requireNonNull(resolvedFingerprint, "resolvedFingerprint");
     Objects.requireNonNull(directFingerprint, "directFingerprint");
     Objects.requireNonNull(pair, "pair");
-    if (project == liveProject) {
+    if (sameInstance(project, liveProject)) {
       throw new IllegalArgumentException("Analyze resolution context must own a project clone");
     }
     if (!MavenElisionGraphInventory.matchesGraph(pair.after(), artifacts.resolvedSnapshots())) {
@@ -52,7 +51,7 @@ record MavenAnalysisResolutionContext(
     }
   }
 
-  static MavenAnalysisResolutionContext capturedEffective(
+  /* default */ static MavenAnalysisResolutionContext capturedEffective(
       final MavenProject project,
       final MavenProject liveProject,
       final MavenSession session,
@@ -81,11 +80,11 @@ record MavenAnalysisResolutionContext(
         pair);
   }
 
-  static MavenProject currentModel(final MavenProject project) {
+  /* default */ static MavenProject currentModel(final MavenProject project) {
     return new MavenProject(project);
   }
 
-  static MavenAnalysisResolutionContext forAnalyze(
+  /* default */ static MavenAnalysisResolutionContext forAnalyze(
       final MavenProject project,
       final MavenProject liveProject,
       final MavenSession session,
@@ -102,7 +101,7 @@ record MavenAnalysisResolutionContext(
         : detachedCurrentModel(project, liveProject, session, resolver, environment);
   }
 
-  static MavenAnalysisResolutionContext detachedCurrentModel(
+  /* default */ static MavenAnalysisResolutionContext detachedCurrentModel(
       final MavenProject project,
       final MavenProject liveProject,
       final MavenSession session,
@@ -110,19 +109,57 @@ record MavenAnalysisResolutionContext(
       final AnalysisEnvironment environment)
       throws IOException {
     Objects.requireNonNull(resolver, "resolver");
-    final RepositorySystemSession baseSession =
-        session == null ? null : session.getRepositorySession();
+    final RepositorySystemSession baseSession = repositorySession(session);
     if (baseSession == null) {
       throw new IOException("Detached Analyze resolution requires a Maven Resolver session");
     }
+    final MavenProject detachedProject = detachedProject(project);
+    final String projectKey = MavenElisionGraphBinding.projectKey(project);
+    final RequestLocalResolverGraphCapture.Request request =
+        RequestLocalResolverGraphCapture.create(baseSession, projectKey);
+    final MavenOriginalInputResolution.Validated validated =
+        resolveDetachedModel(projectKey, detachedProject, resolver, request);
+    final DetachedInventories inventories = inventories(validated);
+    MavenArtifactPathValidation.validateIdentityPaths(inventories.resolved());
+    MavenArtifactPathValidation.validateIdentityPaths(inventories.direct());
+    detachedProject.setResolvedArtifacts(mavenArtifactsFromDependencies(validated.dependencies()));
+    detachedProject.setArtifacts(mavenArtifactsFromDependencies(validated.dependencies()));
+    detachedProject.setDependencyArtifacts(
+        mavenArtifactsFromNodes(validated.graph().getChildren()));
+    return create(
+        detachedProject,
+        liveProject,
+        Provenance.DETACHED_CURRENT_MODEL,
+        environment,
+        inventories.resolved(),
+        true,
+        inventories.direct(),
+        inventories.pair());
+  }
+
+  @SuppressWarnings(
+      "PMD.LawOfDemeter") // MavenSession exposes the Resolver session at this boundary.
+  private static RepositorySystemSession repositorySession(final MavenSession session) {
+    return session == null ? null : session.getRepositorySession();
+  }
+
+  private static MavenProject detachedProject(final MavenProject project) {
     final MavenProject detachedProject = new MavenProject(project);
     detachedProject.setDependencyArtifacts(null);
     detachedProject.setResolvedArtifacts(Set.of());
     detachedProject.setArtifactFilter(null);
     detachedProject.setManagedVersionMap(null);
-    final String projectKey = MavenElisionGraphBinding.projectKey(project);
-    final RequestLocalResolverGraphCapture.Request request =
-        RequestLocalResolverGraphCapture.create(baseSession, projectKey);
+    return detachedProject;
+  }
+
+  @SuppressWarnings("PMD.AvoidCatchingGenericException")
+  // Resolver runtime failures must stop prediction at this external boundary.
+  private static MavenOriginalInputResolution.Validated resolveDetachedModel(
+      final String projectKey,
+      final MavenProject detachedProject,
+      final ProjectDependenciesResolver resolver,
+      final RequestLocalResolverGraphCapture.Request request)
+      throws IOException {
     final DependencyResolutionResult result;
     try {
       result =
@@ -134,8 +171,11 @@ record MavenAnalysisResolutionContext(
       throw new IOException(
           "Resolver failed while resolving the detached current Maven model", exception);
     }
-    final MavenOriginalInputResolution.Validated validated =
-        MavenOriginalInputResolution.validate(projectKey, result, request.graphCapture().pair());
+    return MavenOriginalInputResolution.validate(projectKey, result, request.graphCapture().pair());
+  }
+
+  private static DetachedInventories inventories(
+      final MavenOriginalInputResolution.Validated validated) throws IOException {
     final List<ArtifactSnapshot> resolved = snapshotsFromDependencies(validated.dependencies());
     final List<ArtifactSnapshot> direct = snapshotsFromNodes(validated.graph().getChildren());
     final ResolverArtifactGraphCapturePair pair = validated.graphPair();
@@ -150,24 +190,10 @@ record MavenAnalysisResolutionContext(
         || !MavenElisionGraphInventory.matchesDirectGraph(pair.after(), direct)) {
       throw new IOException("Detached Analyze direct inventory does not match its graph");
     }
-    MavenArtifactPathValidation.validateIdentityPaths(resolved);
-    MavenArtifactPathValidation.validateIdentityPaths(direct);
-    detachedProject.setResolvedArtifacts(mavenArtifactsFromDependencies(validated.dependencies()));
-    detachedProject.setArtifacts(mavenArtifactsFromDependencies(validated.dependencies()));
-    detachedProject.setDependencyArtifacts(
-        mavenArtifactsFromNodes(validated.graph().getChildren()));
-    return create(
-        detachedProject,
-        liveProject,
-        Provenance.DETACHED_CURRENT_MODEL,
-        environment,
-        resolved,
-        true,
-        direct,
-        pair);
+    return new DetachedInventories(resolved, direct, pair);
   }
 
-  void verify() throws IOException {
+  /* default */ void verify() throws IOException {
     MavenElisionGraphBinding.verifyInventoryFingerprint(
         artifacts.resolvedSnapshots(), resolvedFingerprint);
     if (artifacts.directArtifactsPresent()) {
@@ -184,11 +210,11 @@ record MavenAnalysisResolutionContext(
     }
   }
 
-  String graphPairFingerprint() {
+  /* default */ String graphPairFingerprint() {
     return graphPairFingerprint(pair);
   }
 
-  static String graphPairFingerprint(final ResolverArtifactGraphCapturePair pair) {
+  /* default */ static String graphPairFingerprint(final ResolverArtifactGraphCapturePair pair) {
     return MavenElisionGraphBinding.sha256(
         List.of(
             "request-local-graph-pair-v1",
@@ -230,7 +256,7 @@ record MavenAnalysisResolutionContext(
 
   private static List<ArtifactSnapshot> snapshotsFromNodes(final List<DependencyNode> nodes) {
     return nodes.stream()
-        .map(DependencyNode::getDependency)
+        .map(MavenAnalysisResolutionContext::dependency)
         .filter(Objects::nonNull)
         .map(MavenAnalysisResolutionContext::snapshot)
         .sorted(Comparator.comparing(ArtifactSnapshot::coordinate))
@@ -254,19 +280,32 @@ record MavenAnalysisResolutionContext(
   private static Set<Artifact> mavenArtifactsFromNodes(final List<DependencyNode> nodes) {
     final Set<Artifact> artifacts = new java.util.LinkedHashSet<>();
     for (final DependencyNode node : nodes) {
-      if (node == null
-          || node.getDependency() == null
-          || node.getDependency().getArtifact() == null) {
+      if (node == null) {
         throw new IllegalArgumentException(
             "Detached Analyze resolver returned a null direct dependency");
       }
-      final Dependency dependency = node.getDependency();
+      final Dependency dependency = dependency(node);
+      if (dependency == null || dependency.getArtifact() == null) {
+        throw new IllegalArgumentException(
+            "Detached Analyze resolver returned a null direct dependency");
+      }
       final Artifact artifact =
           org.apache.maven.RepositoryUtils.toArtifact(dependency.getArtifact());
       artifact.setScope(dependency.getScope());
       artifacts.add(artifact);
     }
     return artifacts;
+  }
+
+  @SuppressWarnings("PMD.LawOfDemeter") // Resolver dependency nodes own the edge payload.
+  private static Dependency dependency(final DependencyNode node) {
+    return node.getDependency();
+  }
+
+  @SuppressWarnings("PMD.CompareObjectsWithEquals")
+  // This invariant must distinguish the live project from a clone by object identity.
+  private static boolean sameInstance(final Object left, final Object right) {
+    return left == right;
   }
 
   private static ArtifactSnapshot snapshot(final Dependency dependency) {
@@ -282,4 +321,9 @@ record MavenAnalysisResolutionContext(
     mavenArtifact.setScope(scope);
     return ArtifactSnapshot.from(mavenArtifact);
   }
+
+  private record DetachedInventories(
+      List<ArtifactSnapshot> resolved,
+      List<ArtifactSnapshot> direct,
+      ResolverArtifactGraphCapturePair pair) {}
 }

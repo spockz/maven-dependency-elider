@@ -21,7 +21,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.artifact.Artifact;
-import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 
@@ -92,10 +91,6 @@ final class ElisionAnalysisModel {
         throw new IllegalArgumentException(
             "elide.mrjarStrategy must be vertical-shading or pass-through");
       }
-    }
-
-    /* default */ MavenExecutionRequest request() {
-      return session == null ? null : session.getRequest();
     }
 
     /* default */ AnalysisOptions withEnvironment(final AnalysisEnvironment value) {

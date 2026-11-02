@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Matches graph nodes to the separate Maven artifact inventory. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -59,45 +60,55 @@ final class MavenElisionGraphInventory {
     if (expected.size() != inventory.size()) {
       return false;
     }
-    final Map<String, Map<String, Object>> nodes = new java.util.HashMap<>();
-    graph
-        .nodes()
-        .forEach(
-            node -> {
-              final Object id = node.get(ResolverArtifactGraphSnapshotSchema.NODE_ID);
-              if (id instanceof String nodeId) {
-                nodes.put(nodeId, node);
-              }
-            });
+    final Map<String, Map<String, Object>> nodes = nodesById(graph);
     final Set<String> actual = new HashSet<>();
+    long directEdgeCount = 0;
     for (final Map<String, Object> edge : graph.edges()) {
-      if (!java.util.Objects.equals(
-          graph.rootNodeId(), edge.get(ResolverArtifactGraphSnapshotSchema.PARENT_NODE_ID))) {
+      if (!isDirectEdge(graph, edge)) {
         continue;
       }
+      directEdgeCount++;
       final Object childId = edge.get(ResolverArtifactGraphSnapshotSchema.CHILD_NODE_ID);
       if (!(childId instanceof String nodeId)) {
         return false;
       }
-      final Map<String, Object> node = nodes.get(nodeId);
-      final EffectiveGraphDecisionIndex.Gavce identity =
-          node == null ? null : EffectiveGraphDecisionIndex.gavce(node);
-      final Object scope =
-          node == null ? null : node.get(ResolverArtifactGraphSnapshotSchema.EFFECTIVE_SCOPE);
-      if (identity == null || !(scope instanceof String value) || value.isBlank()) {
+      final String identityKey = directIdentityKey(nodes.get(nodeId));
+      if (identityKey == null) {
         return false;
       }
-      actual.add(inventoryKey(identity, value));
+      actual.add(identityKey);
     }
-    return actual.equals(expected)
-        && actual.size()
-            == graph.edges().stream()
-                .filter(
-                    edge ->
-                        java.util.Objects.equals(
-                            graph.rootNodeId(),
-                            edge.get(ResolverArtifactGraphSnapshotSchema.PARENT_NODE_ID)))
-                .count();
+    return actual.equals(expected) && actual.size() == directEdgeCount;
+  }
+
+  private static Map<String, Map<String, Object>> nodesById(
+      final ResolverArtifactGraphSnapshot graph) {
+    final Map<String, Map<String, Object>> nodes = new ConcurrentHashMap<>();
+    for (final Map<String, Object> node : graph.nodes()) {
+      final Object nodeIdValue = node.get(ResolverArtifactGraphSnapshotSchema.NODE_ID);
+      if (nodeIdValue instanceof String nodeId) {
+        nodes.put(nodeId, node);
+      }
+    }
+    return nodes;
+  }
+
+  private static boolean isDirectEdge(
+      final ResolverArtifactGraphSnapshot graph, final Map<String, Object> edge) {
+    return java.util.Objects.equals(
+        graph.rootNodeId(), edge.get(ResolverArtifactGraphSnapshotSchema.PARENT_NODE_ID));
+  }
+
+  private static String directIdentityKey(final Map<String, Object> node) {
+    if (node == null) {
+      return null;
+    }
+    final EffectiveGraphDecisionIndex.Gavce identity = EffectiveGraphDecisionIndex.gavce(node);
+    final Object rawScope = node.get(ResolverArtifactGraphSnapshotSchema.EFFECTIVE_SCOPE);
+    if (identity == null || !(rawScope instanceof String scope) || scope.isBlank()) {
+      return null;
+    }
+    return inventoryKey(identity, scope);
   }
 
   private static boolean matchesGraphKeys(

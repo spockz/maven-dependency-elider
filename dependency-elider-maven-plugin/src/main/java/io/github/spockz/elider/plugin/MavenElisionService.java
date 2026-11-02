@@ -5,95 +5,24 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.Analysis;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
-import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
-import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootScanner;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.EffectiveAnalysis;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.PreparedAnalysis;
-import io.github.spockz.elider.plugin.ElisionAnalysisModel.TrimOptions;
-import java.io.File;
 import java.io.IOException;
 import java.util.List;
-import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
 
 /** Coordinates shared trace analysis and a nonmutating Maven artifact plan. */
-final class MavenElisionService {
+final class MavenElisionService extends MavenElisionServiceDefaults {
   /** Declares the package-scoped constructor required for this stateless facade. */
   /* package */ MavenElisionService() {
     super();
   }
 
-  /* package */ Analysis analyze(
-      final MavenProject project,
-      final List<File> traceFiles,
-      final List<String> retainedArtifacts,
-      final File productionOutput)
-      throws IOException, MojoFailureException {
-    return analyze(project, traceFiles, retainedArtifacts, productionOutput, null, false);
-  }
-
-  /* package */ Analysis analyze(
-      final MavenProject project,
-      final List<File> traceFiles,
-      final List<String> retainedArtifacts,
-      final File productionOutput,
-      final MavenSession session)
-      throws IOException, MojoFailureException {
-    return analyze(project, traceFiles, retainedArtifacts, productionOutput, session, false);
-  }
-
-  /* package */ Analysis analyze(
-      final MavenProject project,
-      final List<File> traceFiles,
-      final List<String> retainedArtifacts,
-      final File productionOutput,
-      final MavenSession session,
-      final boolean sourceRootsComplete)
-      throws IOException, MojoFailureException {
-    return analyze(
-        project,
-        traceFiles,
-        retainedArtifacts,
-        productionOutput,
-        session,
-        sourceRootsComplete,
-        false,
-        List.of());
-  }
-
-  /* package */ Analysis analyze(
-      final MavenProject project,
-      final List<File> traceFiles,
-      final List<String> retainedArtifacts,
-      final File productionOutput,
-      final MavenSession session,
-      final boolean sourceRootsComplete,
-      final boolean trimJars,
-      final List<String> explicitTrimRoots)
-      throws IOException, MojoFailureException {
-    return analyze(
-        project,
-        new AnalysisOptions(
-            traceFiles,
-            retainedArtifacts,
-            productionOutput,
-            session,
-            new CompletenessOptions(sourceRootsComplete, false, false, false),
-            new TrimOptions(
-                trimJars,
-                explicitTrimRoots,
-                false,
-                List.of(),
-                false,
-                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
-            new DynamicRootOptions(true)));
-  }
-
-  /* package */ Analysis analyze(final MavenProject project, final AnalysisOptions options)
+  @Override
+  /* default */ Analysis analyze(final MavenProject project, final AnalysisOptions options)
       throws IOException, MojoFailureException {
     return finish(prepare(project, options));
   }
