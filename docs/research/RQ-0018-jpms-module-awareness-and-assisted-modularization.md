@@ -24,7 +24,7 @@ Bytecode Slicing, Framework AOT/CDS Integration & Modular Packaging
 * [RQ-0016: Native Image Metadata Ingestion](RQ-0016-graalvm-native-image-metadata-ingestion-and-permissive-argument-taxonomy.md)
 * [RQ-0017: Source-Generation Lifecycle Integration](RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md)
 * [WP-POLICY-01: `banishedDependencies` and `retainedArtifacts`](../handovers/2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip.md) *(Required for executing the proposed ban policy, not for AOT ingestion or advisory reporting)*
-* [WP-SPRING-01: Spring Condition Evaluation and Descriptor Trimming](../handovers/2026-10-31-wp-spring-01-spring-autoconfigure-condition-evaluation-and-descriptor-trimming.md)
+* [WP-PLATFORM-01: Multi-JDK Decoupling, Spring AOT Coherence, and Live Proof Pivot](../handovers/2026-11-02-wp-platform-01-compiler-decoupling-and-live-proof-pivot.md) *(Subsumes WP-SPRING-01)*
 
 ## 1. Review Findings and Evidence Boundary
 
@@ -68,7 +68,7 @@ In Boot 3.3.5, [`ProcessAotMojo`](https://github.com/spring-projects/spring-boot
 
 Proposed integration:
 
-1. Scan **all generated class files**, including proxies and initializers, through the existing bytecode scanner. Do not depend on `*__BeanDefinitions` naming conventions. Merge their references with ordinary production bytecode and the source-attribution supplement required by ADR-0010.
+1. Scan **all generated class files**, including proxies and initializers, through the existing bytecode scanner. Do not depend on `*__BeanDefinitions` naming conventions. Merge their references with ordinary production bytecode (with post-compile analysis narrowed to emitted bytecode and declared evidence under ADR-0013/WP-PLATFORM-01; compile-only inlined constant dependencies are protected via `<retainedArtifacts>`).
 2. Feed generated `META-INF/native-image/**` descriptors through the parsers established by RQ-0016. Include reflection, proxies, serialization, resources/bundles, and other supported descriptors, not just `reflect-config.json`. Preserve conditional-hint semantics: the current parser conservatively roots condition types; it does not implement GraalVM's reachability evaluator.
 3. Extend resource resolution to production/generated directories as well as dependency archives. A resource hint may retain a resource-only dependency or a provider in another JAR. Preserve generated runtime resources and validate discovery of the generated application initializer in the final AOT launch. Separately, `META-INF/spring/aot.factories` registers build-time AOT processors and hint registrars; preserve what regeneration requires without confusing those registrations with runtime initializer discovery. See [Spring's AOT contribution interfaces](https://docs.spring.io/spring-framework/reference/core/aot.html) and [Boot's initializer loading](https://github.com/spring-projects/spring-boot/blob/v3.3.5/spring-boot-project/spring-boot/src/main/java/org/springframework/boot/SpringApplication.java).
 4. Retain origin and reason for each contribution: production bytecode, AOT-generated reference, runtime hint, resource provider, startup trace, or workload trace. Deduplicate overlapping copies without losing provenance. Detect conflicting duplicate classes/resources according to the effective classpath, rather than silently unioning incompatible contents.

@@ -1,9 +1,12 @@
-<!-- WHY: Defines staged Spring AOT evidence integration and scoped registration-root replacement without duplicating Spring condition evaluation. -->
+<!-- WHY: Defines staged Spring AOT evidence integration and scoped registration-root replacement without duplicating Spring condition evaluation (Subsumed by WP-PLATFORM-01). -->
 # Work Package Handover: WP-SPRING-01 Spring AOT Evidence and Descriptor Coherence
 
-* **Status**: Proposed, revised 2026-11-01. Additive ingestion and reporting are implementation candidates; subtractive AOT roots require an ADR and a bounded feasibility fixture.
+> [!NOTE]
+> **Subsumed**: This work package has been unified with compiler decoupling, multi-JDK portability, JPMS module awareness, and post-packaging acceleration into a single all-encompassing work package: **[WP-PLATFORM-01: Multi-JDK Decoupling, Spring AOT Coherence, and Live Proof Pivot](2026-11-02-wp-platform-01-compiler-decoupling-and-live-proof-pivot.md)**. All technical specifications, findings, and slices from this document are fully preserved and coordinated under WP-PLATFORM-01.
+
+* **Status**: Subsumed by [WP-PLATFORM-01](2026-11-02-wp-platform-01-compiler-decoupling-and-live-proof-pivot.md)
 * **Date**: 2026-10-31
-* **Last Reviewed**: 2026-11-01
+* **Last Reviewed**: 2026-11-02
 * **Scope**: Production/generated input handling, Spring root provenance, report guidance, and descriptor coherence.
 * **Related Work Packages**:
   * [WP-POLICY-01: Dependency Banishment and Explicit Retention](2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip.md)
