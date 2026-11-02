@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -169,6 +170,13 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     final List<String> firstPlatformIdentities = firstEffective.trimAnalysis().platformIdentities();
     final TrimResult first = MavenDependencyTrimmer.trimEffectiveOutputs(firstEffective);
     final ArtifactTrimRecord firstRecord = outputRecord(first, fixture);
+    final JsonNode firstEnvironment = effectiveReportEnvironment(firstEffective, first, fixture);
+    assertAll(
+        "effective trim outputs carry the resolved target and active runtime",
+        () -> assertThat(firstEnvironment.path("targetRelease").asInt()).isEqualTo(11),
+        () ->
+            assertThat(firstEnvironment.path("runtimeRelease").asInt())
+                .isEqualTo(Runtime.version().feature()));
     assertThat(firstRecord.mrjarStatus()).isEqualTo("elevated_and_trimmed");
     assertThat(firstRecord.totalClasses()).isEqualTo(3);
     assertThat(firstRecord.originalPhysicalEntries()).hasValue(6);
@@ -178,7 +186,21 @@ final class MavenElisionServiceEffectiveOutputCacheTest
     assertThat(firstManifest.path(SCHEMA_VERSION_PROPERTY).asInt())
         .isEqualTo(MavenDependencyTrimmer.CACHE_SCHEMA_VERSION);
     final String firstFingerprint = firstManifest.path(FINGERPRINT_PROPERTY).asText();
-    assertThat(trimEffective(targetEleven).cacheHits()).isPositive();
+    final TrimResult cachedTargetEleven =
+        MavenDependencyTrimmer.trimEffectiveOutputs(firstEffective);
+    final int cachedTargetElevenCacheHits = cachedTargetEleven.cacheHits();
+    final JsonNode cachedEnvironment =
+        effectiveReportEnvironment(firstEffective, cachedTargetEleven, fixture);
+    assertAll(
+        "a validated cache hit retains the current execution environment",
+        () ->
+            assertTrue(
+                cachedTargetElevenCacheHits > 0,
+                "a validated cache hit should retain its lookup result"),
+        () -> assertThat(cachedEnvironment.path("targetRelease").asInt()).isEqualTo(11),
+        () ->
+            assertThat(cachedEnvironment.path("runtimeRelease").asInt())
+                .isEqualTo(Runtime.version().feature()));
 
     EffectiveOutputCacheTestFiles.mutateCacheEntry(
         manifest, entry -> entry.put("retainedClasses", 1));
@@ -310,5 +332,17 @@ final class MavenElisionServiceEffectiveOutputCacheTest
   private void assertCacheMiss(final ElisionAnalysisModel.EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
     assertThat(MavenDependencyTrimmer.trimEffectiveOutputs(effective).cacheHits()).isZero();
+  }
+
+  private JsonNode effectiveReportEnvironment(
+      final ElisionAnalysisModel.EffectiveAnalysis effective,
+      final TrimResult trimResult,
+      final Fixture fixture)
+      throws IOException {
+    final ElisionAnalysisModel.Analysis analysis =
+        MavenEffectiveAnalysisReport.create(effective, trimResult);
+    return new ObjectMapper()
+        .valueToTree(MavenElisionReportSnapshot.from(fixture.mavenProject(), analysis))
+        .path("executionEnvironment");
   }
 }

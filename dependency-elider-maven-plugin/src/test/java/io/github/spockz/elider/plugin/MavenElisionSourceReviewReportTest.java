@@ -179,6 +179,7 @@ final class MavenElisionSourceReviewReportTest {
         "1.0",
         "/tmp/report-project",
         GENERATED_AT,
+        new TrimExecutionEnvironment(21, Runtime.version().feature()),
         0,
         0L,
         0,

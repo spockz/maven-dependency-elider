@@ -17,19 +17,6 @@ final class SingleReleasePlatforms {
 
   /* package */ record JdkClassTables(ClassPool candidate, ClassPool passThrough) {}
 
-  /* package */ static int analysisRelease(final TrimRequest request, final int runtimeRelease)
-      throws IOException {
-    if (!request.policy().trimEnabled()) {
-      return runtimeRelease;
-    }
-    final List<String> compilerOptions =
-        request.environment() == null
-            ? MavenCompilerSettings.platformReleaseOptions(request.project(), request.session())
-            : MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
-                request.project(), request.environment());
-    return TrimPlatform.targetReleaseFromOptions(compilerOptions);
-  }
-
   /* package */ static JdkClassTables readJdkClassTables(
       final List<JdkPlatformContext.PlatformSnapshot> snapshots) throws IOException {
     if (snapshots.size() != EXPECTED_PLATFORM_SNAPSHOT_COUNT) {
@@ -47,11 +34,14 @@ final class SingleReleasePlatforms {
       JdkClassTables tables) {}
 
   /* package */ static AnalysisPlatform prepare(final TrimRequest request) throws IOException {
-    final int runtimeRelease = Runtime.version().feature();
-    final int targetRelease = analysisRelease(request, runtimeRelease);
+    final TrimExecutionEnvironment executionEnvironment =
+        MavenDependencyTrimmer.executionEnvironment(request);
     final List<JdkPlatformContext.PlatformSnapshot> snapshots =
         List.of(MavenPlatformContextHolder.forOperation(request.session()).snapshot());
     return new AnalysisPlatform(
-        targetRelease, runtimeRelease, snapshots, readJdkClassTables(snapshots));
+        executionEnvironment.targetRelease(),
+        executionEnvironment.runtimeRelease(),
+        snapshots,
+        readJdkClassTables(snapshots));
   }
 }

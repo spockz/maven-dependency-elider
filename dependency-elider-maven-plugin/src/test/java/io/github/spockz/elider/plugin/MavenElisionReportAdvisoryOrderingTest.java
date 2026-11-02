@@ -236,6 +236,7 @@ final class MavenElisionReportAdvisoryOrderingTest {
         VERSION,
         temporaryDirectory.toString(),
         "2026-10-26T16:00:00Z",
+        new TrimExecutionEnvironment(21, Runtime.version().feature()),
         1,
         2048,
         2,

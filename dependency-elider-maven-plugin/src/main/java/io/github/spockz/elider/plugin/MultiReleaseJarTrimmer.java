@@ -6,11 +6,9 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.project.MavenProject;
 
 /** Selects tier-aware analysis when versioned implementations can affect closure. */
 final class MultiReleaseJarTrimmer {
@@ -108,14 +106,10 @@ final class MultiReleaseJarTrimmer {
       final Set<ArtifactCoordinate> forcedUnchanged,
       final TieringDecision decision)
       throws IOException, MojoFailureException {
-    final MavenProject project = request.project();
-    final List<String> compilerOptions =
-        request.environment() == null
-            ? MavenCompilerSettings.platformReleaseOptions(project, request.session())
-            : MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
-                project, request.environment());
-    final int release = TrimPlatform.targetReleaseFromOptions(compilerOptions);
-    final int runtimeRelease = Runtime.version().feature();
+    final TrimExecutionEnvironment executionEnvironment =
+        MavenDependencyTrimmer.executionEnvironment(request);
+    final int release = executionEnvironment.targetRelease();
+    final int runtimeRelease = executionEnvironment.runtimeRelease();
     if (release > runtimeRelease && decision.hasVerticalShadingCandidate()) {
       throw new IOException(
           "Compiler release " + release + " exceeds Maven runtime release " + runtimeRelease);

@@ -445,6 +445,7 @@ final class MavenElisionReportAdvisoryWriterTest {
         VERSION,
         temporaryDirectory.toString(),
         GENERATED_AT,
+        new TrimExecutionEnvironment(21, Runtime.version().feature()),
         1,
         2048,
         2,

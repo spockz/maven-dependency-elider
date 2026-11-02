@@ -132,6 +132,7 @@ final class ExclusionReviewReportTest {
                 "1",
                 directory.toString(),
                 "2026-10-26T16:00:00Z",
+                new TrimExecutionEnvironment(21, Runtime.version().feature()),
                 0,
                 0,
                 List.of(),

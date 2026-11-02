@@ -17,35 +17,19 @@ record TrimResult(
     int cacheHits,
     long maximumCacheHitNanos,
     int analysisRuns,
+    TrimExecutionEnvironment executionEnvironment,
     TrimOutputGenerationCommitHandle generationCommit) {
-  /* package */ TrimResult(
-      final List<ArtifactTrimRecord> records,
-      final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
-      final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
-      final List<ArtifactCoordinate> configuredPassThroughArtifacts,
-      final int cacheHits,
-      final long maximumCacheHitNanos,
-      final int analysisRuns) {
-    this(
-        records,
-        multiReleasePassthroughArtifacts,
-        moduleInfoPassthroughArtifacts,
-        configuredPassThroughArtifacts,
-        cacheHits,
-        maximumCacheHitNanos,
-        analysisRuns,
-        null);
-  }
-
   TrimResult {
     records =
         records.stream().sorted(Comparator.comparing(ArtifactTrimRecord::coordinate)).toList();
     multiReleasePassthroughArtifacts = multiReleasePassthroughArtifacts.stream().sorted().toList();
     moduleInfoPassthroughArtifacts = moduleInfoPassthroughArtifacts.stream().sorted().toList();
     configuredPassThroughArtifacts = configuredPassThroughArtifacts.stream().sorted().toList();
+    java.util.Objects.requireNonNull(executionEnvironment, "executionEnvironment");
   }
 
-  /* package */ static TrimResult empty() {
-    return new TrimResult(List.of(), List.of(), List.of(), List.of(), 0, 0L, 0);
+  /* package */ static TrimResult empty(final TrimExecutionEnvironment executionEnvironment) {
+    return new TrimResult(
+        List.of(), List.of(), List.of(), List.of(), 0, 0L, 0, executionEnvironment, null);
   }
 }

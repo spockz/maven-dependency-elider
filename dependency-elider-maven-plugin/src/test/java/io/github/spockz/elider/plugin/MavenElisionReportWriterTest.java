@@ -92,7 +92,16 @@ final class MavenElisionReportWriterTest {
             decision,
             new ElisionAnalysisModel.AnalysisEvidence(
                 new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null),
-            new TrimResult(List.of(trimRecord), List.of(), List.of(), List.of(), 0, 0L, 0, null),
+            new TrimResult(
+                List.of(trimRecord),
+                List.of(),
+                List.of(),
+                List.of(),
+                0,
+                0L,
+                0,
+                new TrimExecutionEnvironment(21, Runtime.version().feature()),
+                null),
             null,
             MediatedGraphReportTestSupport.reportForOutputs(
                 removedCoordinate, trimmedCoordinate, GROUP_ID + ":consumer:" + PROJECT_VERSION),
@@ -208,6 +217,7 @@ final class MavenElisionReportWriterTest {
             populated.projectVersion(),
             populated.projectBaseDirectory(),
             populated.generatedAt(),
+            populated.executionEnvironment(),
             0,
             0,
             List.of(),
@@ -258,6 +268,7 @@ final class MavenElisionReportWriterTest {
                 base.projectVersion(),
                 base.projectBaseDirectory(),
                 base.generatedAt(),
+                base.executionEnvironment(),
                 base.wholeArtifactsDropped(),
                 base.originalJarBytesDropped(),
                 base.droppedProgramClassEntries(),
@@ -353,6 +364,7 @@ final class MavenElisionReportWriterTest {
             PROJECT_VERSION,
             temporaryDirectory.toRealPath().toString(),
             GENERATED_AT,
+            new TrimExecutionEnvironment(21, Runtime.version().feature()),
             1,
             2048,
             List.of(

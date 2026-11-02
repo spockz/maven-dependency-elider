@@ -179,6 +179,14 @@ review findings, not POM edits or proof that a global ban is equivalent: Maven e
 dependency collection and mediation, while a post-resolution ban affects current project output and
 may remove content needed by consumers. The `report` goal replays the saved findings.
 
+The elision report requires `executionEnvironment.targetRelease` and
+`executionEnvironment.runtimeRelease`. The target is Elider's selected analysis baseline; a
+uniquely resolved release takes precedence, then a configured target, then the active runtime
+feature as Elider's analysis default. The runtime field records the JDK running Maven. Full Maven
+plugin/execution override semantics remain part of compiler-settings decoupling. The `report` goal
+validates and replays both saved values without substituting the current runtime, and neither value
+makes the active JDK class table a historical API model.
+
 Internal persisted report and cache formats use independent schema version 1. Their unreleased schemas remain at version 1 and incompatible payloads fail fast. CycloneDX declares `specVersion` 1.6, and OpenVEX uses the 0.2.0 context URL; neither is an internal schema version. Each generated security document's top-level `version` is a document revision counter.
 
 For detailed configuration parameters, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md), the [User FAQ](docs/faq.md), and [Contributor Decisions and FAQ](docs/contributor-decisions-and-faq.md).
@@ -430,6 +438,8 @@ Process exit status: 0
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Analysis target JDK release: 21
+[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
 [INFO] Policy: retained=[commons-io:commons-io::jar:, org.apache.commons:commons-lang3::jar:], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -523,6 +533,8 @@ Process exit status: 0
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Analysis target JDK release: 21
+[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -604,6 +616,8 @@ Process exit status: 0
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Analysis target JDK release: 21
+[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
@@ -676,6 +690,8 @@ Process exit status: 0
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
+[INFO] Analysis target JDK release: 21
+[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true

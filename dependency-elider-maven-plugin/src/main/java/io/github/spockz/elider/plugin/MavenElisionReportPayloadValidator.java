@@ -35,6 +35,7 @@ final class MavenElisionReportPayloadValidator {
           "projectVersion",
           "projectBaseDirectory",
           "generatedAt",
+          "executionEnvironment",
           "wholeArtifactsDropped",
           "originalJarBytesDropped",
           "droppedProgramClassEntries",
@@ -56,6 +57,10 @@ final class MavenElisionReportPayloadValidator {
           "policy",
           "exclusionReview",
           "appliedBans");
+
+  /** Exact target and active runtime releases saved for report replay. */
+  private static final Set<String> EXECUTION_ENVIRONMENT_FIELDS =
+      Set.of("targetRelease", "runtimeRelease");
 
   /** Exact fields persisted for each applied ban outcome. */
   private static final Set<String> APPLIED_BAN_FIELDS =
@@ -137,6 +142,7 @@ final class MavenElisionReportPayloadValidator {
   static void validate(final JsonNode payload) throws IOException {
     validateSchemaVersion(payload);
     validateSnapshotShape(payload);
+    validateExecutionEnvironment(payload.get("executionEnvironment"));
     validateMetrics(payload, SNAPSHOT_METRICS, "Elision report metric");
     validateRows(payload.get("droppedArtifacts"), DROPPED_FIELDS, DROPPED_METRICS);
     validateRows(payload.get("trimmedArtifacts"), TRIMMED_FIELDS, TRIMMED_METRICS);
@@ -590,6 +596,33 @@ final class MavenElisionReportPayloadValidator {
           "Unsupported elision report schema version "
               + actual
               + "; run dependency-elider:elide to write a current report before using this goal");
+    }
+  }
+
+  private static void validateExecutionEnvironment(final JsonNode environment) throws IOException {
+    if (environment == null || !environment.isObject()) {
+      throw new IOException("Elision report executionEnvironment must be an object");
+    }
+    if (!fieldNames(environment).equals(EXECUTION_ENVIRONMENT_FIELDS)) {
+      throw new IOException(
+          "Elision report executionEnvironment fields do not match schema version "
+              + MavenElisionReportSnapshot.SCHEMA_VERSION);
+    }
+    validateRelease(environment.get("targetRelease"), "targetRelease", 8);
+    validateRelease(environment.get("runtimeRelease"), "runtimeRelease", 21);
+  }
+
+  private static void validateRelease(final JsonNode release, final String name, final int minimum)
+      throws IOException {
+    if (release == null
+        || !release.isIntegralNumber()
+        || !release.canConvertToInt()
+        || release.intValue() < minimum) {
+      throw new IOException(
+          "Elision report executionEnvironment "
+              + name
+              + " must be an integer greater than or equal to "
+              + minimum);
     }
   }
 

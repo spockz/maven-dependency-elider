@@ -79,14 +79,15 @@ final class MavenElisionService {
       return analysis;
     }
     final AnalysisOptions options = prepared.options();
+    final TrimRequest trimRequest =
+        TrimRequestFactory.fromPreparedAnalysis(
+            prepared,
+            prepared.rawDecision().retainedArtifacts(),
+            prepared.pruningRequiredClasses());
     final TrimResult trimResult =
         options.trim().enabled()
-            ? MavenDependencyTrimmer.trim(
-                TrimRequestFactory.fromPreparedAnalysis(
-                    prepared,
-                    prepared.rawDecision().retainedArtifacts(),
-                    prepared.pruningRequiredClasses()))
-            : TrimResult.empty();
+            ? MavenDependencyTrimmer.trim(trimRequest)
+            : TrimResult.empty(MavenDependencyTrimmer.executionEnvironment(trimRequest));
     return new Analysis(
         ElisionAnalysisModel.artifactViews(prepared),
         prepared.rawDecision(),

@@ -13,7 +13,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
@@ -79,7 +78,9 @@ final class MavenDependencyTrimmer {
     MavenArtifactInventory.verifyPreparedInventory(prepared);
     final ElisionAnalysisModel.AnalysisOptions options = prepared.options();
     if (!options.trim().enabled()) {
-      return TrimResult.empty();
+      return TrimResult.empty(
+          new TrimExecutionEnvironment(
+              effective.trimAnalysis().targetRelease(), effective.trimAnalysis().runtimeRelease()));
     }
     final TrimRequest request =
         new TrimRequest(
@@ -139,40 +140,57 @@ final class MavenDependencyTrimmer {
             options.trim().mrjarStrategy(),
             options.trim().failOnUnsupportedModuleInfo(),
             move);
-    final MavenProject project = request.project();
-    final List<String> compilerOptions =
-        request.environment() == null
-            ? MavenCompilerSettings.platformReleaseOptions(project, request.session())
-            : MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
-                project, request.environment());
-    final int targetRelease = TrimPlatform.targetReleaseFromOptions(compilerOptions);
-    final int runtimeRelease = Runtime.version().feature();
-    verifyAnalysisPlatform(effective, targetRelease, runtimeRelease);
+    final TrimExecutionEnvironment executionEnvironment = executionEnvironment(request);
+    verifyAnalysisPlatform(effective, executionEnvironment);
     final JdkPlatformContext context = MavenPlatformContextHolder.forOperation(request.session());
     return TrimOutputCoordinator.trimPrepared(
-        request, targetRelease, runtimeRelease, context, outputPlan);
+        request,
+        executionEnvironment.targetRelease(),
+        executionEnvironment.runtimeRelease(),
+        context,
+        outputPlan);
   }
 
   /* package */ static TrimResult trim(final TrimRequest request)
       throws IOException, MojoFailureException {
-    final MavenProject project = request.project();
-    final MavenSession session = request.session();
-    final List<String> compilerOptions =
-        MavenCompilerSettings.platformReleaseOptions(project, session);
-    final int targetRelease = TrimPlatform.targetReleaseFromOptions(compilerOptions);
-    final int runtimeRelease = Runtime.version().feature();
-    final JdkPlatformContext platformContext = MavenPlatformContextHolder.forOperation(session);
+    final TrimExecutionEnvironment executionEnvironment = executionEnvironment(request);
+    final JdkPlatformContext platformContext =
+        MavenPlatformContextHolder.forOperation(request.session());
     return TrimOutputCoordinator.trimPrepared(
-        request, targetRelease, runtimeRelease, platformContext);
+        request,
+        executionEnvironment.targetRelease(),
+        executionEnvironment.runtimeRelease(),
+        platformContext);
+  }
+
+  /* package */ static TrimExecutionEnvironment executionEnvironment(final TrimRequest request)
+      throws IOException {
+    final MavenProject project = request.project();
+    final boolean trimmingEnabled = request.policy().trimEnabled();
+    final List<String> compilerOptions;
+    if (request.environment() == null) {
+      compilerOptions =
+          trimmingEnabled
+              ? MavenCompilerSettings.platformReleaseOptions(project, request.session())
+              : MavenCompilerSettings.analysisTargetOptions(project, request.session());
+    } else {
+      compilerOptions =
+          trimmingEnabled
+              ? MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
+                  project, request.environment())
+              : MavenCompilerSettings.analysisTargetOptions(project, request.environment());
+    }
+    return new TrimExecutionEnvironment(
+        TrimPlatform.targetReleaseFromOptions(compilerOptions), Runtime.version().feature());
   }
 
   private static void verifyAnalysisPlatform(
       final ElisionAnalysisModel.EffectiveAnalysis effective,
-      final int targetRelease,
-      final int runtimeRelease)
+      final TrimExecutionEnvironment executionEnvironment)
       throws IOException {
     final TrimAnalysisResult analysis = effective.trimAnalysis();
-    if (targetRelease != analysis.targetRelease() || runtimeRelease != analysis.runtimeRelease()) {
+    if (executionEnvironment.targetRelease() != analysis.targetRelease()
+        || executionEnvironment.runtimeRelease() != analysis.runtimeRelease()) {
       throw new IOException("Target or runtime release changed after effective analysis");
     }
   }

@@ -265,7 +265,16 @@ final class MavenStructuredProofReportAndVexTest {
                 false,
                 false,
                 null),
-            new TrimResult(List.of(trimRecord), List.of(), List.of(), List.of(), 0, 0L, 0, null),
+            new TrimResult(
+                List.of(trimRecord),
+                List.of(),
+                List.of(),
+                List.of(),
+                0,
+                0L,
+                0,
+                new TrimExecutionEnvironment(21, Runtime.version().feature()),
+                null),
             null,
             MediatedGraphReportTestSupport.reportForTrimmedOutputAndRetainedComponent(
                 prepared.coordinate(), unresolvedCoordinate, GROUP_ID + ":consumer:1.0"),

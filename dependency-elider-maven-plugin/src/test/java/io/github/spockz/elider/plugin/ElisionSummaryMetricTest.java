@@ -53,6 +53,7 @@ final class ElisionSummaryMetricTest {
             VERSION,
             Path.of(".").toAbsolutePath().normalize().toString(),
             "2026-10-28T00:00:00Z",
+            new TrimExecutionEnvironment(21, Runtime.version().feature()),
             1,
             2048,
             List.of(
@@ -97,6 +98,7 @@ final class ElisionSummaryMetricTest {
                     VERSION,
                     projectDirectory,
                     "2026-10-28T00:00:00Z",
+                    new TrimExecutionEnvironment(21, Runtime.version().feature()),
                     1,
                     2048,
                     List.of(

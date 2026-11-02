@@ -177,6 +177,7 @@ final class MediatedGraphReportTest {
             "1.0",
             Files.createDirectories(temporaryDirectory).toRealPath().toString(),
             "2026-10-28T00:00:00Z",
+            new TrimExecutionEnvironment(21, Runtime.version().feature()),
             1,
             2048,
             List.of(new MavenElisionReportSnapshot.DroppedArtifact(dropped.toString(), 2048)),

@@ -35,6 +35,8 @@ final class DirectTrimOutput {
         plan.passThrough().configuredCoordinates(),
         0,
         0L,
-        analysisRuns);
+        analysisRuns,
+        new TrimExecutionEnvironment(plan.compilerRelease(), plan.runtimeRelease()),
+        null);
   }
 }

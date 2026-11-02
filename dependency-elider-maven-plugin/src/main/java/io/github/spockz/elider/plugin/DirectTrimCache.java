@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.plugin.DirectTrimPreparation.PreparedDirectTrim;
 import io.github.spockz.elider.plugin.JarTrimCache.CacheEntry;
+import io.github.spockz.elider.plugin.JarTrimCache.CacheLoadContext;
 import io.github.spockz.elider.plugin.JarTrimCache.CacheManifest;
 import java.io.IOException;
 import java.util.List;
@@ -29,7 +30,9 @@ final class DirectTrimCache {
             plan.passThrough().moduleInfoCoordinates(),
             plan.passThrough().configuredCoordinates(),
             plan.request().cacheProducerIdentity().orElseThrow(),
-            plan.cacheStarted());
+            new CacheLoadContext(
+                new TrimExecutionEnvironment(plan.compilerRelease(), plan.runtimeRelease()),
+                plan.cacheStarted()));
     NativeImageConsumedInput.verifyAll(plan.request().scanInputs().consumedInputs());
     return result;
   }

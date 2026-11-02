@@ -29,6 +29,18 @@ func TestInvocationUsesPreparedMavenRepositoryWithoutRenderingItsPath(t *testing
 	}
 }
 
+func TestNormalizeOutputDoesNotPinTheEliderRuntimeRelease(t *testing.T) {
+	output := "[INFO] Analysis target JDK release: 11\n[INFO] Elider runtime JDK release: 27\n"
+	got := normalizeOutput(output, "/repo", "/repo/.scratch/evidence")
+	want := []string{
+		"[INFO] Analysis target JDK release: 11",
+		"[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalized release lines = %#v, want %#v", got, want)
+	}
+}
+
 func TestInvocationFixturePathUsesMavenFileArgument(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "examples", "first"), 0o700); err != nil {

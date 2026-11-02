@@ -23,6 +23,13 @@ final class JarTrimCache {
   /** Serializes cache manifests and canonical identity bytes. */
   private static final ObjectMapper JSON = new ObjectMapper();
 
+  /** Metadata retained from the analysis that requested a cache lookup. */
+  /* package */ record CacheLoadContext(
+      /* Target and active runtime releases of the analyzed request. */
+      TrimExecutionEnvironment executionEnvironment,
+      /* Monotonic timestamp captured before cache lookup began. */
+      long started) {}
+
   private JarTrimCache() {}
 
   /* package */ record CacheManifest(
@@ -129,7 +136,7 @@ final class JarTrimCache {
       final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
       final List<ArtifactCoordinate> configuredPassThroughArtifacts,
       final CacheProducerIdentity expectedProducer,
-      final long started)
+      final CacheLoadContext context)
       throws IOException {
     if (expectedProducer == null || !Files.isRegularFile(manifestPath)) {
       return null;
@@ -155,8 +162,10 @@ final class JarTrimCache {
         moduleInfoPassthroughArtifacts,
         configuredPassThroughArtifacts,
         records.size(),
-        System.nanoTime() - started,
-        0);
+        System.nanoTime() - context.started(),
+        0,
+        context.executionEnvironment(),
+        null);
   }
 
   private static boolean validManifest(

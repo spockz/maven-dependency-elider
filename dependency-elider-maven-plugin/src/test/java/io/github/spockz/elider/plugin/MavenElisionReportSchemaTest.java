@@ -6,11 +6,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -40,6 +42,9 @@ final class MavenElisionReportSchemaTest {
   /** JSON builder for adversarial report drafts. */
   private static final ObjectMapper JSON = new ObjectMapper();
 
+  /** First release greater than the largest Java int. */
+  private static final long FIRST_INT_OVERFLOW_RELEASE = 2_147_483_648L;
+
   /** Temporary report directory. */
   @TempDir Path temporaryDirectory;
 
@@ -52,6 +57,151 @@ final class MavenElisionReportSchemaTest {
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Unsupported elision report schema version 4")
         .hasMessageContaining("run dependency-elider:elide");
+  }
+
+  @Test
+  void readsAndReplaysSavedExecutionEnvironmentWithoutUsingCurrentRuntime() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("wholeArtifactsDropped", 0);
+    payload.put("originalJarBytesDropped", 0);
+    payload.put("droppedProgramClassEntries", 0);
+    payload.put("droppedProgramClassBytes", 0);
+    payload.putArray(DROPPED_ROWS);
+    payload.set(
+        "mediatedGraph",
+        JSON.valueToTree(MediatedGraphReportTestSupport.emptyGraph("fixture:consumer:1.0")));
+    final int savedRuntimeRelease = Runtime.version().feature() == 21 ? 25 : 21;
+    executionEnvironment(payload).put("targetRelease", 11);
+    executionEnvironment(payload).put("runtimeRelease", savedRuntimeRelease);
+    final Path report = writeReport("saved-execution-environment.json", payload);
+
+    final MavenElisionReportSnapshot snapshot = MavenElisionReportWriter.read(report);
+    final JsonNode replayed = JSON.valueToTree(snapshot);
+
+    assertAll(
+        "report replay uses the saved execution environment",
+        () -> assertThat(replayed.path("schemaVersion").asInt()).isEqualTo(1),
+        () ->
+            assertThat(replayed.path("executionEnvironment").path("targetRelease").asInt())
+                .isEqualTo(11),
+        () ->
+            assertThat(replayed.path("executionEnvironment").path("runtimeRelease").asInt())
+                .isEqualTo(savedRuntimeRelease),
+        () -> assertThat(savedRuntimeRelease).isNotEqualTo(Runtime.version().feature()),
+        () -> {
+          final List<String> rendered = MavenElisionReportWriter.render(snapshot);
+          assertAll(
+              "rendered report retains both saved release values",
+              () -> assertThat(rendered).contains("Analysis target JDK release: 11"),
+              () ->
+                  assertThat(rendered)
+                      .contains("Elider runtime JDK release: " + savedRuntimeRelease));
+        });
+  }
+
+  @Test
+  void rejectsMissingOrMalformedExecutionEnvironmentFields() {
+    final ObjectNode missingEnvironment = currentReportShapeWithDroppedRow();
+    missingEnvironment.remove("executionEnvironment");
+    final ObjectNode nullEnvironment = currentReportShapeWithDroppedRow();
+    nullEnvironment.putNull("executionEnvironment");
+    final ObjectNode missingTarget = currentReportShapeWithDroppedRow();
+    executionEnvironment(missingTarget).remove("targetRelease");
+    final ObjectNode nullTarget = currentReportShapeWithDroppedRow();
+    executionEnvironment(nullTarget).putNull("targetRelease");
+    final ObjectNode textualTarget = currentReportShapeWithDroppedRow();
+    executionEnvironment(textualTarget).put("targetRelease", "11");
+    final ObjectNode invalidTarget = currentReportShapeWithDroppedRow();
+    executionEnvironment(invalidTarget).put("targetRelease", 7);
+    final ObjectNode oversizedTarget = currentReportShapeWithDroppedRow();
+    executionEnvironment(oversizedTarget).put("targetRelease", FIRST_INT_OVERFLOW_RELEASE);
+    final ObjectNode missingRuntime = currentReportShapeWithDroppedRow();
+    executionEnvironment(missingRuntime).remove("runtimeRelease");
+    final ObjectNode nullRuntime = currentReportShapeWithDroppedRow();
+    executionEnvironment(nullRuntime).putNull("runtimeRelease");
+    final ObjectNode textualRuntime = currentReportShapeWithDroppedRow();
+    executionEnvironment(textualRuntime).put("runtimeRelease", "25");
+    final ObjectNode oversizedRuntime = currentReportShapeWithDroppedRow();
+    executionEnvironment(oversizedRuntime).put("runtimeRelease", FIRST_INT_OVERFLOW_RELEASE);
+    final ObjectNode invalidRuntime = currentReportShapeWithDroppedRow();
+    executionEnvironment(invalidRuntime).put("runtimeRelease", 20);
+    final ObjectNode fractionalRuntime = currentReportShapeWithDroppedRow();
+    executionEnvironment(fractionalRuntime).put("runtimeRelease", 21.5);
+    final ObjectNode unknownEnvironmentField = currentReportShapeWithDroppedRow();
+    executionEnvironment(unknownEnvironmentField).put("vendor", "example");
+
+    assertAll(
+        "schema-one execution environment is required and strictly typed",
+        () ->
+            assertInvalidEnvironment(
+                "missing-execution-environment.json",
+                missingEnvironment,
+                "Elision report fields do not match schema version 1"),
+        () ->
+            assertInvalidEnvironment(
+                "null-execution-environment.json",
+                nullEnvironment,
+                "executionEnvironment must be an object"),
+        () ->
+            assertInvalidEnvironment(
+                "missing-target-release.json",
+                missingTarget,
+                "executionEnvironment fields do not match schema version 1"),
+        () ->
+            assertInvalidEnvironment(
+                "null-target-release.json",
+                nullTarget,
+                "targetRelease must be an integer greater than or equal to 8"),
+        () ->
+            assertInvalidEnvironment(
+                "textual-target-release.json",
+                textualTarget,
+                "targetRelease must be an integer greater than or equal to 8"),
+        () ->
+            assertInvalidEnvironment(
+                "invalid-target-release.json",
+                invalidTarget,
+                "targetRelease must be an integer greater than or equal to 8"),
+        () ->
+            assertInvalidEnvironment(
+                "oversized-target-release.json",
+                oversizedTarget,
+                "targetRelease must be an integer greater than or equal to 8"),
+        () ->
+            assertInvalidEnvironment(
+                "missing-runtime-release.json",
+                missingRuntime,
+                "executionEnvironment fields do not match schema version 1"),
+        () ->
+            assertInvalidEnvironment(
+                "null-runtime-release.json",
+                nullRuntime,
+                "runtimeRelease must be an integer greater than or equal to 21"),
+        () ->
+            assertInvalidEnvironment(
+                "textual-runtime-release.json",
+                textualRuntime,
+                "runtimeRelease must be an integer greater than or equal to 21"),
+        () ->
+            assertInvalidEnvironment(
+                "oversized-runtime-release.json",
+                oversizedRuntime,
+                "runtimeRelease must be an integer greater than or equal to 21"),
+        () ->
+            assertInvalidEnvironment(
+                "invalid-runtime-release.json",
+                invalidRuntime,
+                "runtimeRelease must be an integer greater than or equal to 21"),
+        () ->
+            assertInvalidEnvironment(
+                "fractional-runtime-release.json",
+                fractionalRuntime,
+                "runtimeRelease must be an integer greater than or equal to 21"),
+        () ->
+            assertInvalidEnvironment(
+                "unknown-execution-environment-field.json",
+                unknownEnvironmentField,
+                "executionEnvironment fields do not match schema version 1"));
   }
 
   @Test
@@ -915,6 +1065,18 @@ final class MavenElisionReportSchemaTest {
     return payload;
   }
 
+  private static ObjectNode executionEnvironment(final ObjectNode payload) {
+    return (ObjectNode) payload.get("executionEnvironment");
+  }
+
+  private void assertInvalidEnvironment(
+      final String name, final ObjectNode payload, final String diagnostic) throws IOException {
+    final Path report = writeReport(name, payload);
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(report))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(diagnostic);
+  }
+
   static ObjectNode currentReportShapeWithDroppedRow() {
     final ObjectNode payload = JSON.createObjectNode();
     payload.put("schemaVersion", 1);
@@ -937,6 +1099,7 @@ final class MavenElisionReportSchemaTest {
     payload.putArray("rawDroppedCoordinates");
     payload.put("programClassesPruned", 0);
     payload.put("uncompressedProgramClassBytesPruned", 0);
+    payload.putObject("executionEnvironment").put("targetRelease", 11).put("runtimeRelease", 25);
     payload.putArray("trimmedArtifacts");
     payload.putArray("removedCveComponents");
     payload.putArray("provenAbsentCves");
@@ -948,7 +1111,7 @@ final class MavenElisionReportSchemaTest {
     final ObjectNode policy = payload.putObject("policy");
     policy.putArray("retainedArtifacts");
     policy.putArray("banishedDependencies");
-    policy.put("operationFingerprint", MavenElisionGraphBinding.sha256(java.util.List.of()));
+    policy.put("operationFingerprint", MavenElisionGraphBinding.sha256(List.of()));
     payload.putObject("advisoryReview").putArray("packageAdvisories");
     ((ObjectNode) payload.get("advisoryReview")).putArray("heuristicAdvisories");
     payload.set(

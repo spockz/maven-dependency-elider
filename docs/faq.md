@@ -97,6 +97,17 @@ The report also retains package-only and heuristic advisory candidates as review
 
 The saved report's `policy` section records canonical `retainedArtifacts`, `banishedDependencies`, and the SHA-256 identity of the operation that produced the snapshot. `appliedBans` records each request as `FORCED_ABSENT_AFTER_RESOLUTION`, `EXCLUDED_BEFORE_RESOLUTION`, or `UNMATCHED`, with the original and effective artifact matches. `rawDroppedCoordinates` excludes artifacts removed because of an explicit ban; whole-artifact drop metrics still describe every artifact absent from the final Maven view.
 
+### How does the report distinguish the analysis target from the Maven runtime?
+
+The schema-v1 elision report requires `executionEnvironment.targetRelease` and
+`executionEnvironment.runtimeRelease`. The target records Elider's analysis baseline: a uniquely
+resolved compiler release, then configured target, then the active runtime feature when neither is
+set. Full Maven plugin/execution override semantics remain part of compiler-settings decoupling.
+That last case is Elider's analysis default, not a claim about Maven compiler's emitted bytecode
+default. The runtime records the JDK that ran Maven. `dependency-elider:report` validates and
+displays the saved values without replacing them with settings from the current Maven run. The
+active JDK class table still does not emulate a historical target API.
+
 ### What happens if an advisory maps multiple vulnerable classes that do not exist in an older version?
 
 The verification engine currently fails closed: `OmittedCodeProof` requires all mapped vulnerable classes to be present in the original dependency JAR before certifying that trimming removed them. In cases like Jackson Core (`CVE-2026-68494`), a vulnerability fix across a broad version range touches classes that were only introduced in later minor versions (such as `StreamConstraintsException` added in Jackson 2.15), meaning older affected versions (like Jackson 2.14) do not contain all mapped symbols. In such cases, the elider conservatively omits the CVE from being considered "avoided" or emitting a VEX statement.

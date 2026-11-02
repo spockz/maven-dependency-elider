@@ -88,7 +88,11 @@ final class EffectiveTrimOutput {
                 passThrough.moduleInfoCoordinates(),
                 passThrough.configuredCoordinates(),
                 request.cacheProducerIdentity().orElseThrow(),
-                cacheStart)
+                new JarTrimCache.CacheLoadContext(
+                    new TrimExecutionEnvironment(
+                        effectiveOutput.analysis().targetRelease(),
+                        effectiveOutput.analysis().runtimeRelease()),
+                    cacheStart))
             : null;
     if (cached != null) {
       TrimGenerationPublisher.verifyEffectiveInputs(effectiveOutput, fingerprint);

@@ -28,6 +28,8 @@ final class MavenElisionReportRenderer {
     lines.add("Dependency Elider report");
     lines.add("Project: " + snapshot.projectGav());
     lines.add("Snapshot: last successful elide run at " + snapshot.generatedAt());
+    lines.add("Analysis target JDK release: " + snapshot.executionEnvironment().targetRelease());
+    lines.add("Elider runtime JDK release: " + snapshot.executionEnvironment().runtimeRelease());
     lines.add(
         "Policy: retained="
             + snapshot.policy().retainedArtifacts()

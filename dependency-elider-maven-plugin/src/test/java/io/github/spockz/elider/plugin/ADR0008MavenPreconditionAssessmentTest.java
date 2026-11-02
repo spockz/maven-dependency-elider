@@ -750,7 +750,16 @@ final class ADR0008MavenPreconditionAssessmentTest {
         decision,
         new ElisionAnalysisModel.AnalysisEvidence(
             new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null),
-        new TrimResult(trimRecords, List.of(), List.of(), List.of(), 0, 0L, 0, null),
+        new TrimResult(
+            trimRecords,
+            List.of(),
+            List.of(),
+            List.of(),
+            0,
+            0L,
+            0,
+            new TrimExecutionEnvironment(21, Runtime.version().feature()),
+            null),
         null,
         null,
         MavenElisionPolicyIdentityTestSupport.emptyPolicy());

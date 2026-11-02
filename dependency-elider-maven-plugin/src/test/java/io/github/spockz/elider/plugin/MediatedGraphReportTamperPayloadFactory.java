@@ -70,6 +70,7 @@ final class MediatedGraphReportTamperPayloadFactory {
             PROJECT_VERSION,
             Files.createDirectories(directory).toRealPath().toString(),
             GENERATED_AT,
+            new TrimExecutionEnvironment(21, Runtime.version().feature()),
             1,
             12,
             List.of(
@@ -92,6 +93,7 @@ final class MediatedGraphReportTamperPayloadFactory {
             PROJECT_VERSION,
             Files.createDirectories(directory).toRealPath().toString(),
             GENERATED_AT,
+            new TrimExecutionEnvironment(21, Runtime.version().feature()),
             0,
             0,
             List.of(),
@@ -113,6 +115,7 @@ final class MediatedGraphReportTamperPayloadFactory {
             PROJECT_VERSION,
             Files.createDirectories(directory).toRealPath().toString(),
             GENERATED_AT,
+            new TrimExecutionEnvironment(21, Runtime.version().feature()),
             0,
             0,
             List.of(),

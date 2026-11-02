@@ -92,6 +92,7 @@ final class ReportMojoTest {
         "1.0",
         temporaryDirectory.toRealPath().toString(),
         "2026-10-25T12:00:00Z",
+        new TrimExecutionEnvironment(21, Runtime.version().feature()),
         1,
         2048,
         0,

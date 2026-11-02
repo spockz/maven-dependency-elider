@@ -179,22 +179,58 @@ final class MavenCompilerSettings {
       final MavenProject project, final Properties userProperties) throws IOException {
     final List<Xpp3Dom> configurations = compilerConfigurations(project);
     rejectUnsupportedPlatformSettings(configurations, project.getProperties(), userProperties);
-    final String release =
-        value("release", "maven.compiler.release", project, userProperties, configurations);
-    if (release != null) {
-      return List.of("--release", release);
+    final TargetSelection selection = targetSelection(project, userProperties, configurations);
+    if (selection.release() != null) {
+      return List.of("--release", selection.release());
     }
     final String source =
         value("source", "maven.compiler.source", project, userProperties, configurations);
-    final String target =
-        value("target", "maven.compiler.target", project, userProperties, configurations);
-    if (target == null) {
+    if (selection.target() == null) {
       return List.of();
     }
     return source == null
-        ? List.of("-target", target)
-        : List.of("-source", source, "-target", target);
+        ? List.of("-target", selection.target())
+        : List.of("-source", source, "-target", selection.target());
   }
+
+  /** Resolves the analysis target without validating compiler execution mode. */
+  static List<String> analysisTargetOptions(final MavenProject project, final MavenSession session)
+      throws IOException {
+    return analysisTargetOptions(project, userProperties(session));
+  }
+
+  /** Resolves the analysis target from the captured Maven user properties. */
+  static List<String> analysisTargetOptions(
+      final MavenProject project, final AnalysisEnvironment environment) throws IOException {
+    return analysisTargetOptions(project, environment.userPropertiesAsProperties());
+  }
+
+  private static List<String> analysisTargetOptions(
+      final MavenProject project, final Properties userProperties) throws IOException {
+    final TargetSelection selection =
+        targetSelection(project, userProperties, compilerConfigurations(project));
+    if (selection.release() != null) {
+      return List.of("--release", selection.release());
+    }
+    return selection.target() == null ? List.of() : List.of("-target", selection.target());
+  }
+
+  private static TargetSelection targetSelection(
+      final MavenProject project,
+      final Properties userProperties,
+      final List<Xpp3Dom> configurations)
+      throws IOException {
+    final String release =
+        value("release", "maven.compiler.release", project, userProperties, configurations);
+    if (release != null) {
+      return new TargetSelection(release, null);
+    }
+    final String target =
+        value("target", "maven.compiler.target", project, userProperties, configurations);
+    return new TargetSelection(null, target);
+  }
+
+  private record TargetSelection(String release, String target) {}
 
   static List<String> platformReleaseOptionsWithEnvironment(
       final MavenProject project, final AnalysisEnvironment environment) throws IOException {

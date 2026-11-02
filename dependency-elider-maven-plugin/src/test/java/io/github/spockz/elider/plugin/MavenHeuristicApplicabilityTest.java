@@ -88,6 +88,7 @@ final class MavenHeuristicApplicabilityTest {
                 "1.0",
                 temporaryDirectory.toString(),
                 "2026-11-01T00:00:00Z",
+                new TrimExecutionEnvironment(21, Runtime.version().feature()),
                 0,
                 0,
                 List.of(),

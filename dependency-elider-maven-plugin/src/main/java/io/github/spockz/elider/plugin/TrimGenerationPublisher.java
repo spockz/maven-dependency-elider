@@ -124,6 +124,8 @@ final class TrimGenerationPublisher {
             0,
             0L,
             publication.analysisRuns(),
+            new TrimExecutionEnvironment(
+                output.analysis().targetRelease(), output.analysis().runtimeRelease()),
             generationCommit);
       }
     } catch (final IOException | RuntimeException failure) {

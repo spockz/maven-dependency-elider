@@ -21,7 +21,16 @@ final class ElisionAnalysisTestFixtures {
 
   /** No trimming or staged generation is needed for artifact-view fixtures. */
   private static final TrimResult EMPTY_TRIM =
-      new TrimResult(List.of(), List.of(), List.of(), List.of(), 0, 0L, 0, null);
+      new TrimResult(
+          List.of(),
+          List.of(),
+          List.of(),
+          List.of(),
+          0,
+          0L,
+          0,
+          new TrimExecutionEnvironment(21, Runtime.version().feature()),
+          null);
 
   private ElisionAnalysisTestFixtures() {}
 

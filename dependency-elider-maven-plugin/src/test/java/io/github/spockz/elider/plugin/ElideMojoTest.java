@@ -3073,6 +3073,7 @@ final class ElideMojoTest {
         "1.0",
         tempDir.toRealPath().toString(),
         "2026-10-25T12:00:00Z",
+        new TrimExecutionEnvironment(21, Runtime.version().feature()),
         0,
         0,
         List.of(),
