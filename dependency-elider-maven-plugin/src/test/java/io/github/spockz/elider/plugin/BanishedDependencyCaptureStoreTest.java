@@ -18,7 +18,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Covers capture provenance, immutability, and payload validation. */
-@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.CommentDefaultAccessModifier"})
+@SuppressWarnings({
+  "PMD.AtLeastOneConstructor",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.TooManyMethods",
+  "PMD.AvoidDuplicateLiterals"
+})
 final class BanishedDependencyCaptureStoreTest {
   /** Group shared by the Maven model fixtures. */
   private static final String GROUP_ID = "org.example";
@@ -159,6 +164,26 @@ final class BanishedDependencyCaptureStoreTest {
   }
 
   @Test
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  void rejectsTamperedCaptureFingerprint() {
+    final BanishedDependencyOriginalModel capture =
+        BanishedDependencyOriginalModel.capture(project(), List.of(), List.of());
+    final Map<String, Object> payload =
+        BanishedDependencyCaptureStore.empty().withModel(capture).toPayload();
+    final Map<?, ?> projects = (Map<?, ?>) payload.get("projects");
+    final String key = BanishedDependencyCaptureStore.projectKey(capture.project());
+    final Map<?, ?> row = (Map<?, ?>) projects.get(key);
+    final Map<Object, Object> tampered = new HashMap<>(row);
+    tampered.put("sourceFingerprint", "0".repeat(64));
+    assertThatThrownBy(
+            () ->
+                BanishedDependencyCaptureStore.fromPayload(
+                    Map.of("schemaVersion", 1, "projects", Map.of(key, tampered))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("fingerprint");
+  }
+
+  @Test
   @SuppressWarnings("PMD.LawOfDemeter")
   void expectedInjectionPreservesUserExclusionsAndRejectsChangedSources() {
     final Dependency dependency = dependency(LIBRARY_ARTIFACT, DEFAULT_VERSION, DEFAULT_SCOPE);
@@ -181,6 +206,7 @@ final class BanishedDependencyCaptureStoreTest {
             original.originalDependencies(),
             original.effectiveManagement(),
             original.originalManagement(),
+            original.exclusionProvenance(),
             original.sourceFingerprint());
     final BanishedDependencyOriginalModel.DependencyEntry originalEntry =
         original.effectiveDependencies().getFirst();
@@ -206,6 +232,7 @@ final class BanishedDependencyCaptureStoreTest {
             original.originalDependencies(),
             original.effectiveManagement(),
             original.originalManagement(),
+            original.exclusionProvenance(),
             original.sourceFingerprint());
     final BanishedDependencyOriginalModel changedPolicy =
         new BanishedDependencyOriginalModel(
@@ -216,11 +243,26 @@ final class BanishedDependencyCaptureStoreTest {
             original.originalDependencies(),
             original.effectiveManagement(),
             original.originalManagement(),
+            original.exclusionProvenance(),
             original.sourceFingerprint());
+    dependency.addExclusion(exclusion(GROUP_ID, "banned"));
+    final BanishedDependencyOriginalModel liveAfterInjection =
+        BanishedDependencyOriginalModel.capture(project, executions, bans);
+    dependency
+        .getExclusions()
+        .getFirst()
+        .setLocation("", new org.apache.maven.model.InputLocation(1, 2));
+    final BanishedDependencyOriginalModel changedOrigin =
+        BanishedDependencyOriginalModel.capture(project, executions, bans);
 
     assertAll(
         "identical captures reapply idempotently and changed source or policy is rejected",
         () -> assertThat(original.matchesCurrentModel(current)).isTrue(),
+        () -> assertThat(original.matchesCurrentModel(liveAfterInjection)).isTrue(),
+        () -> assertThat(original.matchesCurrentModel(changedOrigin)).isFalse(),
+        () ->
+            assertThat(original.withExpectedInjections().sourceFingerprint())
+                .isEqualTo(original.sourceFingerprint()),
         () ->
             assertThat(changedDependencies.getFirst().exclusions())
                 .containsExactly(

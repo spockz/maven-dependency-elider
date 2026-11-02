@@ -259,3 +259,7 @@ Do not implement the earlier hook solely to make the state look consistent. Firs
 ## 6. Implementation Work Package
 
 This investigation is decomposed into executable implementation tracks in work package [WP-RESOLVE-01](../handovers/2026-10-27-wp-resolve-01-maven-lifecycle-and-graph-consistency.md).
+
+### Frozen exclusion provenance experiment
+
+A Maven 3.9.9 ModelBuilder fixture with location tracking demonstrated that an inherited effective dependency can retain its parent declaration location while an exclusion on that same effective row retains the location of a parent dependency-management entry. A second effective row and its exclusion retained their active parent-profile locations. Model-builder profile activation is keyed by the source model's G:A:V identifier; `MavenProject.getId()` includes packaging and is not that key. A local child declaration retained the child source location. The fixture counts the two effective rows once each and keeps a separate management-only exclusion observation. A separate offline imported-BOM fixture retains the BOM source ID, path, line, and column on exclusions applied to two effective rows. Without the raw BOM in the project snapshot, their authored origin remains unknown and the capture reports incomplete provenance. Programmatic models without locations likewise report incomplete provenance. The snapshot and collector are internal prerequisites and do not yet add report output or establish equivalent POM edits.

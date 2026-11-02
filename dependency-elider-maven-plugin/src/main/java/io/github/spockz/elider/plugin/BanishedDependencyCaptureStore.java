@@ -32,6 +32,7 @@ record BanishedDependencyCaptureStore(
   private static final String EFFECTIVE_MANAGEMENT_FIELD = "effectiveManagement";
   private static final String ORIGINAL_MANAGEMENT_FIELD = "originalManagement";
   private static final String SOURCE_FINGERPRINT_FIELD = "sourceFingerprint";
+  private static final String EXCLUSION_PROVENANCE_FIELD = "exclusionProvenance";
   private static final String EXECUTION_ID_FIELD = "id";
   private static final String PHASE_FIELD = "phase";
   private static final String SHORT_BANS_FIELD = "bans";
@@ -57,6 +58,7 @@ record BanishedDependencyCaptureStore(
           ORIGINAL_DEPENDENCIES_FIELD,
           EFFECTIVE_MANAGEMENT_FIELD,
           ORIGINAL_MANAGEMENT_FIELD,
+          EXCLUSION_PROVENANCE_FIELD,
           SOURCE_FINGERPRINT_FIELD);
   private static final String GOAL_FIELD = "goal";
   private static final String PLUGIN_VERSION_FIELD = "pluginVersion";
@@ -182,6 +184,8 @@ record BanishedDependencyCaptureStore(
     encoded.put(ORIGINAL_DEPENDENCIES_FIELD, encodeDependencies(model.originalDependencies()));
     encoded.put(EFFECTIVE_MANAGEMENT_FIELD, encodeDependencies(model.effectiveManagement()));
     encoded.put(ORIGINAL_MANAGEMENT_FIELD, encodeDependencies(model.originalManagement()));
+    encoded.put(
+        EXCLUSION_PROVENANCE_FIELD, ExclusionProvenancePayload.encode(model.exclusionProvenance()));
     encoded.put(SOURCE_FINGERPRINT_FIELD, model.sourceFingerprint());
     return Collections.unmodifiableMap(encoded);
   }
@@ -236,15 +240,54 @@ record BanishedDependencyCaptureStore(
     final List<BanishedDependencyOriginalModel.ExecutionPolicy> executions =
         decodeExecutions(encoded.get(EXECUTIONS_FIELD));
     final List<String> bans = decodeStrings(encoded.get(BANS_FIELD), BANS_FIELD);
-    return new BanishedDependencyOriginalModel(
-        project,
-        executions,
-        bans,
-        decodeDependencies(encoded.get(EFFECTIVE_DEPENDENCIES_FIELD)),
-        decodeDependencies(encoded.get(ORIGINAL_DEPENDENCIES_FIELD)),
-        decodeDependencies(encoded.get(EFFECTIVE_MANAGEMENT_FIELD)),
-        decodeDependencies(encoded.get(ORIGINAL_MANAGEMENT_FIELD)),
-        requireString(encoded.get(SOURCE_FINGERPRINT_FIELD), SOURCE_FINGERPRINT_FIELD));
+    final BanishedDependencyOriginalModel model =
+        new BanishedDependencyOriginalModel(
+            project,
+            executions,
+            bans,
+            decodeDependencies(encoded.get(EFFECTIVE_DEPENDENCIES_FIELD)),
+            decodeDependencies(encoded.get(ORIGINAL_DEPENDENCIES_FIELD)),
+            decodeDependencies(encoded.get(EFFECTIVE_MANAGEMENT_FIELD)),
+            decodeDependencies(encoded.get(ORIGINAL_MANAGEMENT_FIELD)),
+            ExclusionProvenancePayload.decode(encoded.get(EXCLUSION_PROVENANCE_FIELD)),
+            requireString(encoded.get(SOURCE_FINGERPRINT_FIELD), SOURCE_FINGERPRINT_FIELD));
+    validateProvenanceRows(
+        model.effectiveDependencies(), model.exclusionProvenance().dependencies());
+    validateProvenanceRows(model.effectiveManagement(), model.exclusionProvenance().management());
+    if (!model.hasValidSourceFingerprint()) {
+      throw invalid("captured source fingerprint does not match its values");
+    }
+    return model;
+  }
+
+  @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.UseExplicitTypes"})
+  private static void validateProvenanceRows(
+      final List<BanishedDependencyOriginalModel.DependencyEntry> entries,
+      final List<ExclusionRecommendations.Declaration> declarations) {
+    if (entries.size() != declarations.size()) {
+      throw invalid("provenance row count does not match declarations");
+    }
+    for (int index = 0; index < entries.size(); index++) {
+      final var entry = entries.get(index);
+      final var declaration = declarations.get(index);
+      final var reference = declaration.reference();
+      if (reference.ordinal() != index
+          || !reference.groupId().equals(entry.groupId())
+          || !reference.artifactId().equals(entry.artifactId())
+          || !reference.type().equals(entry.type())
+          || !reference.classifier().equals(entry.classifier())
+          || declaration.exclusions().size() != entry.exclusions().size()) {
+        throw invalid("provenance row does not match declaration");
+      }
+      for (int exclusionIndex = 0; exclusionIndex < entry.exclusions().size(); exclusionIndex++) {
+        final var expected = entry.exclusions().get(exclusionIndex);
+        final var actual = declaration.exclusions().get(exclusionIndex).coordinate();
+        if (!actual.groupId().equals(expected.groupId())
+            || !actual.artifactId().equals(expected.artifactId())) {
+          throw invalid("provenance exclusion does not match declaration");
+        }
+      }
+    }
   }
 
   private static List<BanishedDependencyOriginalModel.ExecutionPolicy> decodeExecutions(

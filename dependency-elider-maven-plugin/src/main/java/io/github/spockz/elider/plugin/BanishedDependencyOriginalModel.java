@@ -22,6 +22,7 @@ record BanishedDependencyOriginalModel(
     List<DependencyEntry> originalDependencies,
     List<DependencyEntry> effectiveManagement,
     List<DependencyEntry> originalManagement,
+    ExclusionRecommendations.Snapshot exclusionProvenance,
     String sourceFingerprint) {
   BanishedDependencyOriginalModel {
     Objects.requireNonNull(project, "project");
@@ -34,6 +35,7 @@ record BanishedDependencyOriginalModel(
     effectiveManagement = List.copyOf(Objects.requireNonNull(effectiveManagement, "management"));
     originalManagement =
         List.copyOf(Objects.requireNonNull(originalManagement, "originalManagement"));
+    Objects.requireNonNull(exclusionProvenance, "exclusionProvenance");
     Objects.requireNonNull(sourceFingerprint, "sourceFingerprint");
     if (!sourceFingerprint.matches("[0-9a-f]{64}")) {
       throw new IllegalArgumentException("sourceFingerprint must be a lowercase SHA-256 value");
@@ -81,6 +83,9 @@ record BanishedDependencyOriginalModel(
     addFingerprintEntries(fingerprintFields, "original-dependencies", originalDependencies);
     addFingerprintEntries(fingerprintFields, "effective-management", effectiveManagement);
     addFingerprintEntries(fingerprintFields, "original-management", originalManagement);
+    final ExclusionRecommendations.Snapshot exclusionProvenance =
+        ExclusionProvenanceCapture.capture(project);
+    addProvenanceFingerprint(fingerprintFields, exclusionProvenance);
     return new BanishedDependencyOriginalModel(
         identity,
         executions,
@@ -89,7 +94,47 @@ record BanishedDependencyOriginalModel(
         originalDependencies,
         effectiveManagement,
         originalManagement,
+        exclusionProvenance,
         MavenElisionGraphBinding.sha256(fingerprintFields));
+  }
+
+  private static void addProvenanceFingerprint(
+      final List<String> fields, final ExclusionRecommendations.Snapshot snapshot) {
+    for (final List<ExclusionRecommendations.Declaration> declarations :
+        List.of(snapshot.dependencies(), snapshot.management())) {
+      fields.add(Integer.toString(declarations.size()));
+      for (final ExclusionRecommendations.Declaration declaration : declarations) {
+        final ExclusionRecommendations.Reference ref = declaration.reference();
+        fields.addAll(
+            List.of(
+                Integer.toString(ref.ordinal()),
+                ref.groupId(),
+                ref.artifactId(),
+                ref.type(),
+                ref.classifier()));
+        addOriginFingerprint(fields, ref.origin());
+        fields.add(Integer.toString(declaration.exclusions().size()));
+        for (final ExclusionRecommendations.Exclusion exclusion : declaration.exclusions()) {
+          fields.add(exclusion.coordinate().groupId());
+          fields.add(exclusion.coordinate().artifactId());
+          addOriginFingerprint(fields, exclusion.origin());
+        }
+      }
+    }
+    fields.add(Integer.toString(snapshot.diagnostics().size()));
+    fields.addAll(snapshot.diagnostics());
+  }
+
+  private static void addOriginFingerprint(
+      final List<String> fields, final ExclusionRecommendations.Origin origin) {
+    fields.addAll(
+        List.of(
+            origin.kind(),
+            origin.modelId(),
+            origin.source(),
+            Integer.toString(origin.line()),
+            Integer.toString(origin.column()),
+            origin.profileId()));
   }
 
   /* package */ BanishedDependencyOriginalModel withExpectedInjections() {
@@ -105,6 +150,7 @@ record BanishedDependencyOriginalModel(
         originalDependencies,
         effectiveManagement,
         originalManagement,
+        exclusionProvenance,
         sourceFingerprint);
   }
 
@@ -119,6 +165,16 @@ record BanishedDependencyOriginalModel(
         && sourceFingerprint.equals(other.sourceFingerprint);
   }
 
+  /* package */ boolean hasValidSourceFingerprint() {
+    final List<String> fields = new ArrayList<>();
+    addFingerprintEntries(fields, "effective-dependencies", effectiveDependencies);
+    addFingerprintEntries(fields, "original-dependencies", originalDependencies);
+    addFingerprintEntries(fields, "effective-management", effectiveManagement);
+    addFingerprintEntries(fields, "original-management", originalManagement);
+    addProvenanceFingerprint(fields, exclusionProvenance);
+    return sourceFingerprint.equals(MavenElisionGraphBinding.sha256(fields));
+  }
+
   /* package */ boolean matchesCurrentModel(final BanishedDependencyOriginalModel current) {
     return current != null
         && project.equals(current.project)
@@ -127,7 +183,28 @@ record BanishedDependencyOriginalModel(
         && withExpectedInjections().effectiveDependencies.equals(current.effectiveDependencies)
         && originalDependencies.equals(current.originalDependencies)
         && effectiveManagement.equals(current.effectiveManagement)
-        && originalManagement.equals(current.originalManagement);
+        && originalManagement.equals(current.originalManagement)
+        && sameOriginalProvenance(current.exclusionProvenance);
+  }
+
+  private boolean sameOriginalProvenance(final ExclusionRecommendations.Snapshot current) {
+    if (!exclusionProvenance.management().equals(current.management())
+        || exclusionProvenance.dependencies().size() != current.dependencies().size()) {
+      return false;
+    }
+    for (int index = 0; index < exclusionProvenance.dependencies().size(); index++) {
+      final ExclusionRecommendations.Declaration original =
+          exclusionProvenance.dependencies().get(index);
+      final ExclusionRecommendations.Declaration actual = current.dependencies().get(index);
+      if (!original.reference().equals(actual.reference())
+          || actual.exclusions().size() < original.exclusions().size()
+          || !original
+              .exclusions()
+              .equals(actual.exclusions().subList(0, original.exclusions().size()))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @SuppressWarnings("PMD.LawOfDemeter")
