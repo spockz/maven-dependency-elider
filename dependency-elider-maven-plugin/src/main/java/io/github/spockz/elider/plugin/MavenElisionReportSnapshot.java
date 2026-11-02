@@ -54,7 +54,8 @@ record MavenElisionReportSnapshot(
     List<SourceReviewFinding> sourceReviewFindings,
     AdvisoryReview advisoryReview,
     List<VerifiedStructuredProofFinding> verifiedStructuredProofs,
-    MavenElisionPolicyIdentity policy) {
+    MavenElisionPolicyIdentity policy,
+    ExclusionReview exclusionReview) {
   /** Current persisted JSON format version. */
   static final int SCHEMA_VERSION = 1;
 
@@ -116,6 +117,7 @@ record MavenElisionReportSnapshot(
     validateSourceReviewProofSeparation(sourceReviewFindings, verifiedStructuredProofs);
     Objects.requireNonNull(mediatedGraph, "mediatedGraph");
     Objects.requireNonNull(policy, "policy");
+    Objects.requireNonNull(exclusionReview, "exclusionReview");
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
     require(droppedProgramClassEntries >= 0, "droppedProgramClassEntries must not be negative");
@@ -200,7 +202,8 @@ record MavenElisionReportSnapshot(
         sourceReviewFindings,
         AdvisoryReview.empty(),
         List.of(),
-        policy);
+        policy,
+        ExclusionReview.unavailable("No pre-injection declaration capture is available"));
   }
 
   MavenElisionReportSnapshot(
@@ -253,7 +256,8 @@ record MavenElisionReportSnapshot(
         sourceReviewFindings,
         advisoryReview,
         List.of(),
-        policy);
+        policy,
+        ExclusionReview.unavailable("No pre-injection declaration capture is available"));
   }
 
   MavenElisionReportSnapshot(
@@ -478,7 +482,8 @@ record MavenElisionReportSnapshot(
         sourceReviewFindings(vulnerabilityAssessment, verifiedProofs),
         advisoryReview(vulnerabilityAssessment),
         verifiedProofs,
-        analysis.policyIdentity());
+        analysis.policyIdentity(),
+        ExclusionReview.unavailable("No pre-injection declaration capture is available"));
   }
 
   private static List<VerifiedStructuredProofFinding> verifiedStructuredProofs(
@@ -554,7 +559,38 @@ record MavenElisionReportSnapshot(
         sourceReviewFindings,
         review,
         verifiedStructuredProofs,
-        policy);
+        policy,
+        exclusionReview);
+  }
+
+  MavenElisionReportSnapshot withExclusionReview(final ExclusionReview review) {
+    return new MavenElisionReportSnapshot(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        removedCveComponents,
+        provenAbsentCves,
+        inactivePreconditionCves,
+        potentiallyConservativeCves,
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        sourceReviewFindings,
+        advisoryReview,
+        verifiedStructuredProofs,
+        policy,
+        review);
   }
 
   static AdvisoryReview advisoryReview(final MavenVulnerabilityAssessment.Result assessment) {

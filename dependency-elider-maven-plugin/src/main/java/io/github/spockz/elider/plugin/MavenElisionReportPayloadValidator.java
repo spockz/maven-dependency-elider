@@ -51,7 +51,8 @@ final class MavenElisionReportPayloadValidator {
           "sourceReviewFindings",
           "advisoryReview",
           "verifiedStructuredProofs",
-          "policy");
+          "policy",
+          "exclusionReview");
 
   /** Exact fields for the producing policy and operation identity. */
   private static final Set<String> POLICY_FIELDS =
@@ -130,6 +131,7 @@ final class MavenElisionReportPayloadValidator {
     MavenElisionReportStructuredProofPayloadValidator.validate(
         payload.get("verifiedStructuredProofs"),
         payload.get("assumeConventionalJavaSourceLayout").booleanValue());
+    ExclusionReviewPayloadValidator.validate(payload.get("exclusionReview"));
     MavenElisionReportGraphPayloadValidator.validate(payload.get("mediatedGraph"));
   }
 

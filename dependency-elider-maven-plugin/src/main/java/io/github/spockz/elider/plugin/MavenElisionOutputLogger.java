@@ -14,10 +14,12 @@ final class MavenElisionOutputLogger {
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static void completion(
       final MavenElisionOutputPublisher.Request request,
-      final MavenVulnerabilityAssessment.Result assessment)
+      final MavenVulnerabilityAssessment.Result assessment,
+      final ExclusionReview exclusionReview)
       throws IOException {
     final MavenElisionReportSnapshot reportSnapshot =
-        MavenElisionReportSnapshot.from(request.project(), request.analysis(), assessment);
+        MavenElisionReportSnapshot.from(request.project(), request.analysis(), assessment)
+            .withExclusionReview(exclusionReview);
     final ElisionAnalysisModel.Analysis analysis = request.analysis();
     final Log log = request.log();
     if (log.isInfoEnabled()
@@ -42,6 +44,7 @@ final class MavenElisionOutputLogger {
           assessment);
     }
     if (log.isInfoEnabled()) {
+      ExclusionReviewRenderer.render(reportSnapshot.exclusionReview()).forEach(log::info);
       log.info(
           "  Class usage report: "
               + request.files().classUsage().toPath().toAbsolutePath().normalize());

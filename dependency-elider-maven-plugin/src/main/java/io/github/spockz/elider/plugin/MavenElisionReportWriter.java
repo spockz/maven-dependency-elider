@@ -218,6 +218,7 @@ final class MavenElisionReportWriter {
     renderSourceReviewFindings(snapshot.sourceReviewFindings(), lines);
     lines.addAll(MavenElisionReportAdvisoryRenderer.render(snapshot.advisoryReview()));
     lines.addAll(MavenElisionReportStructuredProofRenderer.render(snapshot));
+    lines.addAll(ExclusionReviewRenderer.render(snapshot.exclusionReview()));
     lines.addAll(
         MediatedGraphReportRenderer.render(snapshot.mediatedGraph(), snapshot.projectGav()));
     return List.copyOf(lines);

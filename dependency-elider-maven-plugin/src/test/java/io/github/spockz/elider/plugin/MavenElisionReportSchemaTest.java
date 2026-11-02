@@ -662,6 +662,10 @@ final class MavenElisionReportSchemaTest {
     policy.put("operationFingerprint", MavenElisionGraphBinding.sha256(java.util.List.of()));
     payload.putObject("advisoryReview").putArray("packageAdvisories");
     ((ObjectNode) payload.get("advisoryReview")).putArray("heuristicAdvisories");
+    payload.set(
+        "exclusionReview",
+        JSON.valueToTree(
+            ExclusionReview.unavailable("No pre-injection declaration capture is available")));
     final ObjectNode graph = payload.putObject("mediatedGraph");
     graph.put("available", false);
     graph.put("unavailableReason", "No graph was provided");

@@ -178,7 +178,8 @@ final class MavenStructuredProofReportAssertions {
         snapshot.sourceReviewFindings(),
         snapshot.advisoryReview(),
         proofs,
-        snapshot.policy());
+        snapshot.policy(),
+        snapshot.exclusionReview());
   }
 
   private static MavenElisionReportSnapshot snapshotWithSourceReviewFindings(
@@ -209,6 +210,7 @@ final class MavenStructuredProofReportAssertions {
         findings,
         snapshot.advisoryReview(),
         snapshot.verifiedStructuredProofs(),
-        snapshot.policy());
+        snapshot.policy(),
+        snapshot.exclusionReview());
   }
 }

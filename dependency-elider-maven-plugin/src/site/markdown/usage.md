@@ -108,6 +108,12 @@ Process exit status: 0
 [INFO]             </vulnerabilityMapping>
 [INFO]           </vulnerabilityMappings>
 [INFO]         </configuration>
+[INFO]   Repeated POM exclusions (advisory only):
+[INFO]   Exclusion provenance incomplete: 1534 issue(s); full details are saved in the report
+[INFO]     Incomplete or ambiguous provenance at :-1:-1
+[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:224:19
+[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:229:22
+[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
@@ -247,6 +253,14 @@ mvn dependency:tree
 ## 5. Viewing Elision Reports (`report`)
 
 The `report` goal displays the summary and mediated dependency graph from the last successful `elide` run without re-executing dependency analysis:
+
+`exclusionReview` saves repeated exact exclusions observed on frozen pre-injection effective
+dependency rows, including separate declaration and exclusion origins. Findings are advisory and
+exclude wildcard coordinates; noncontributing management exclusions and incomplete provenance are
+reported separately. An unavailable capture is explicit. Maven path exclusions affect collection
+and mediation, while a global post-resolution ban affects project output and can remove content
+needed by consumers. No POM edits or behavioral equivalence are implied. The Analyze class-usage
+report contains the same review, and the `report` goal replays the saved elision review.
 
 ```sh
 mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report

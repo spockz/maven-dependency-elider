@@ -30,7 +30,8 @@ import org.junit.jupiter.api.io.TempDir;
 @SuppressWarnings({
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
-  "PMD.AtLeastOneConstructor"
+  "PMD.AtLeastOneConstructor",
+  "PMD.TooManyMethods"
 })
 final class AnalyzeMojoTest {
   /** CVE fixtures share one vulnerable symbol. */
@@ -119,6 +120,58 @@ final class AnalyzeMojoTest {
     assertThat(json.path("groups").path("neitherReferencedNorObserved").isNull()).isTrue();
     assertThat(json.path("runtimeObservedClasses").toString()).contains("used.Sample");
     assertThat(json.path("classes").toString()).contains("UNKNOWN_STATIC_EVIDENCE");
+    assertThat(json.path("exclusionReview").path("available").booleanValue()).isFalse();
+    assertThat(json.path("exclusionReview").path("unavailableReason").textValue())
+        .contains("pre-injection");
+  }
+
+  @Test
+  void writesFrozenRepeatedExclusionsToAnalyzeReport() throws Exception {
+    final AnalyzeMojoTestArtifactSupport.Fixture fixture =
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
+    final MavenProject project = fixture.project();
+    project.setFile(tempDir.resolve("pom.xml").toFile());
+    project.setGroupId("example");
+    project.setArtifactId("consumer");
+    project.setVersion("1");
+    final org.apache.maven.model.Dependency first = new org.apache.maven.model.Dependency();
+    first.setGroupId("libs");
+    first.setArtifactId("first");
+    first.setVersion("1");
+    final org.apache.maven.model.Dependency second = first.clone();
+    second.setArtifactId("second");
+    final org.apache.maven.model.Exclusion exclusion = new org.apache.maven.model.Exclusion();
+    exclusion.setGroupId("excluded");
+    exclusion.setArtifactId("library");
+    first.addExclusion(exclusion);
+    second.addExclusion(exclusion.clone());
+    project.setDependencies(List.of(first, second));
+    AnalyzeMojoTestFieldSupport.seedSelectedBanCapture(fixture.mojo(), project, List.of());
+    fixture.mojo().execute();
+    final com.fasterxml.jackson.databind.JsonNode report =
+        new com.fasterxml.jackson.databind.ObjectMapper()
+            .readTree(tempDir.resolve("fixture-report.json").toFile());
+    assertAll(
+        () -> assertThat(report.path("exclusionReview").path("available").booleanValue()).isTrue(),
+        () ->
+            assertThat(
+                    report
+                        .path("exclusionReview")
+                        .path("candidates")
+                        .get(0)
+                        .path("count")
+                        .intValue())
+                .isEqualTo(2),
+        () ->
+            assertThat(
+                    report
+                        .path("exclusionReview")
+                        .path("candidates")
+                        .get(0)
+                        .path("coordinate")
+                        .path("groupId")
+                        .textValue())
+                .isEqualTo("excluded"));
   }
 
   @Test

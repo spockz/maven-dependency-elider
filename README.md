@@ -167,6 +167,15 @@ The `elide` goal writes two structured JSON records:
 * `target/dependency-elider-report.json` (`-Delide.summaryFile`): Persisted snapshot consumed by `dependency-elider:report`.
 * `target/dependency-elider-class-usage.json` (`-Delide.reportFile`): Detailed class-usage evidence.
 
+The saved elision report and Analyze class-usage report include `exclusionReview`, with an explicit
+unavailable reason when the pre-resolution lifecycle capture is absent. Repeated exact exclusions
+count effective dependency paths once each and retain declaration and exclusion origins
+independently; incomplete provenance is stated explicitly. Dependency-management-only exclusions
+are separate observations. These are
+review findings, not POM edits or proof that a global ban is equivalent: Maven exclusions affect
+dependency collection and mediation, while a post-resolution ban affects current project output and
+may remove content needed by consumers. The `report` goal replays the saved findings.
+
 Internal persisted report and cache formats use independent schema version 1. Their unreleased schemas remain at version 1 and incompatible payloads fail fast. CycloneDX declares `specVersion` 1.6, and OpenVEX uses the 0.2.0 context URL; neither is an internal schema version. Each generated security document's top-level `version` is a document revision counter.
 
 For detailed configuration parameters, see [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md), the [User FAQ](docs/faq.md), and [Contributor Decisions and FAQ](docs/contributor-decisions-and-faq.md).
@@ -441,6 +450,10 @@ Process exit status: 0
 [INFO]     Candidate classes: [org.apache.http.conn.ssl.AbstractVerifier]
 [INFO]     Candidate dependencies: [org.apache.httpcomponents:httpclient]
 [INFO]     Verify the source claim and exact original artifact before adding an exact POM mapping; candidates do not establish a complete class set.
+[INFO]   Repeated POM exclusions (advisory only):
+[INFO]   Exclusion provenance incomplete: 12 issue(s); full details are saved in the report
+[INFO]     Incomplete or ambiguous provenance at :-1:-1
+[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
@@ -509,6 +522,12 @@ Process exit status: 0
 [INFO]       <configuration>
 [INFO]         <conservativeServiceLoaderRoots>false</conservativeServiceLoaderRoots>
 [INFO]       </configuration>
+[INFO]   Repeated POM exclusions (advisory only):
+[INFO]   Exclusion provenance incomplete: 1529 issue(s); full details are saved in the report
+[INFO]     Incomplete or ambiguous provenance at :-1:-1
+[INFO]     Incomplete or ambiguous provenance at com.fasterxml.jackson:jackson-bom:2.18.2:83:19
+[INFO]     Incomplete or ambiguous provenance at com.fasterxml.jackson:jackson-bom:2.18.2:88:19
+[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n7} [RETAINED, CLASS_TRIMMED]
@@ -568,6 +587,12 @@ Process exit status: 0
 [INFO]     Aliases: [CVE-2022-42889]
 [INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
 [INFO]     OSV ranges: [AffectedRange[type=ECOSYSTEM, repo=null, events=[{introduced=1.5}, {fixed=1.10.0}]]]
+[INFO]   Repeated POM exclusions (advisory only):
+[INFO]   Exclusion provenance incomplete: 1534 issue(s); full details are saved in the report
+[INFO]     Incomplete or ambiguous provenance at :-1:-1
+[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:224:19
+[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:229:22
+[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n3} [RETAINED]
@@ -616,6 +641,12 @@ Process exit status: 0
 [INFO] CVEs inactive due to unmet prerequisite dependencies:
 [INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18
 [INFO] Potentially conservative CVE exclusions: none detected
+[INFO]   Repeated POM exclusions (advisory only):
+[INFO]   Exclusion provenance incomplete: 1534 issue(s); full details are saved in the report
+[INFO]     Incomplete or ambiguous provenance at :-1:-1
+[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:224:19
+[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:229:22
+[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n1} [RETAINED]
@@ -672,6 +703,10 @@ Process exit status: 0
 [INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming): no published omission proof
 [INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: no precondition proof available
 [INFO]   Vulnerability mappings that remain unverified by the in-memory Analyze prediction: none detected
+[INFO]   Repeated POM exclusions (advisory only):
+[INFO]   Exclusion provenance incomplete: 12 issue(s); full details are saved in the report
+[INFO]     Incomplete or ambiguous provenance at :-1:-1
+[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-basic-app-class-usage.json
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------

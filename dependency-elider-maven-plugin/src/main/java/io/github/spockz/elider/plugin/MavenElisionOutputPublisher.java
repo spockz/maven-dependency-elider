@@ -38,14 +38,20 @@ final class MavenElisionOutputPublisher {
 
   static void publish(final Request request) throws IOException, MojoFailureException {
     MavenElisionOutputLogger.passThroughWarnings(request.log(), request.analysis());
+    final ExclusionReview exclusionReview =
+        ExclusionReview.capture(request.project(), request.session());
     final ElisionAnalysisModel.ApplyPlan plan =
         MavenArtifactInventory.plan(request.project(), request.analysis());
-    final MavenVulnerabilityAssessment.Result assessment = publishReportsAndViews(request, plan);
-    MavenElisionOutputLogger.completion(request, assessment);
+    final MavenVulnerabilityAssessment.Result assessment =
+        publishReportsAndViews(request, plan, exclusionReview);
+    MavenElisionOutputLogger.completion(request, assessment, exclusionReview);
   }
 
   private static MavenVulnerabilityAssessment.Result publishReportsAndViews(
-      final Request request, final ElisionAnalysisModel.ApplyPlan plan) throws IOException {
+      final Request request,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final ExclusionReview exclusionReview)
+      throws IOException {
     final Path summary =
         MavenElisionReportWriter.outputPath(request.files().summary(), request.project());
     final List<Path> outputTargets = outputTargets(request, summary);
@@ -56,7 +62,8 @@ final class MavenElisionOutputPublisher {
       final MavenVulnerabilityAssessment.Result assessment = assess(request, inventory);
       final Optional<String> staleVexDigest = staleVexDigest(request, assessment);
       final MavenElisionReportSnapshot reportSnapshot =
-          MavenElisionReportSnapshot.from(request.project(), request.analysis(), assessment);
+          MavenElisionReportSnapshot.from(request.project(), request.analysis(), assessment)
+              .withExclusionReview(exclusionReview);
       writeStagedReports(
           outputs,
           request,

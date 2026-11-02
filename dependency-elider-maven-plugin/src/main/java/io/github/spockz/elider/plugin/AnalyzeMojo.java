@@ -177,14 +177,19 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
                   new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots)),
               projectDependenciesResolver);
       verifyBanPrediction(prediction);
-      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
-          assessVulnerabilities(prediction);
-      ElisionSummary.reportPrediction(getLog(), prediction, vulnerabilityAssessment, trimJars);
+      final ExclusionReview exclusionReview = ExclusionReview.capture(project, session);
       MavenClassUsageReportWriter.write(
           reportFile.toPath(),
           prediction.evidence().classUsageReport(),
           prediction.evidence().bytecodeScan(),
-          prediction);
+          prediction,
+          exclusionReview);
+      final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
+          assessVulnerabilities(prediction);
+      ElisionSummary.reportPrediction(getLog(), prediction, vulnerabilityAssessment, trimJars);
+      if (getLog().isInfoEnabled()) {
+        ExclusionReviewRenderer.render(exclusionReview).forEach(getLog()::info);
+      }
       if (getLog().isInfoEnabled()) {
         getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
       }

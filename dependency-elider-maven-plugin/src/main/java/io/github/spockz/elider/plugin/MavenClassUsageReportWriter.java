@@ -40,6 +40,16 @@ final class MavenClassUsageReportWriter {
       final Optional<BytecodeReferenceScan> bytecodeScan,
       final AnalyzePrediction prediction)
       throws IOException {
+    write(output, report, bytecodeScan, prediction, null);
+  }
+
+  static void write(
+      final Path output,
+      final ClassUsageReport report,
+      final Optional<BytecodeReferenceScan> bytecodeScan,
+      final AnalyzePrediction prediction,
+      final ExclusionReview exclusionReview)
+      throws IOException {
     final Path normalized = output.toAbsolutePath().normalize();
     final Path parent = normalized.getParent();
     if (parent == null) {
@@ -48,7 +58,8 @@ final class MavenClassUsageReportWriter {
     Files.createDirectories(parent);
     final Path temporary = Files.createTempFile(parent, ".class-usage-", ".json");
     try {
-      JSON.writeValue(temporary.toFile(), document(report, bytecodeScan, prediction));
+      JSON.writeValue(
+          temporary.toFile(), document(report, bytecodeScan, prediction, exclusionReview));
       Files.move(
           temporary,
           normalized,
@@ -62,7 +73,8 @@ final class MavenClassUsageReportWriter {
   private static Map<String, Object> document(
       final ClassUsageReport report,
       final Optional<BytecodeReferenceScan> bytecodeScan,
-      final AnalyzePrediction prediction) {
+      final AnalyzePrediction prediction,
+      final ExclusionReview exclusionReview) {
     final boolean staticAvailable =
         bytecodeScan.filter(BytecodeReferenceScan::complete).isPresent();
     final Map<String, Object> document = new LinkedHashMap<>();
@@ -94,6 +106,9 @@ final class MavenClassUsageReportWriter {
         "classes", report.classes().stream().map(MavenClassUsageReportWriter::classRow).toList());
     if (prediction != null) {
       document.put("dependencyPrediction", predictionDocument(prediction));
+    }
+    if (exclusionReview != null) {
+      document.put("exclusionReview", exclusionReview);
     }
     return document;
   }
