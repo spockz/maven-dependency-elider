@@ -13,7 +13,6 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootScanner;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.scanner.JarIndexScanner;
-import io.github.spockz.elider.scanner.ServiceLoaderCallScanner;
 import io.github.spockz.elider.trace.CompositeTraceReader;
 import java.io.File;
 import java.io.IOException;
@@ -49,7 +48,8 @@ final class MavenAnalysisEvidence {
             index,
             completeness.sourceRootsComplete(),
             completeness.productionClassesComplete(),
-            production.scan());
+            production.scan(),
+            production.outputClassNames());
     final NativeImageScanContext scanContext =
         NativeImageScanContext.create(candidates, invocationBaseForProject(project, options));
     final DynamicRootInputs dynamicRoots =
@@ -57,7 +57,7 @@ final class MavenAnalysisEvidence {
             candidates,
             scanner,
             scanContext,
-            provenServices(options.productionOutput()),
+            production.provenServiceInterfaces(),
             options.dynamicRoots().conservativeServiceLoaderRoots());
     return new RootEvidence(
         trace,
@@ -67,6 +67,7 @@ final class MavenAnalysisEvidence {
         compiler.declaredClasses(),
         compiler.requiredClasses(),
         compiler.compileVisibleCoordinates(),
+        production.outputClassNames(),
         production.fingerprint(),
         compiler.sourceAttributionFallback());
   }
@@ -101,20 +102,10 @@ final class MavenAnalysisEvidence {
     return files == null ? List.of() : files.stream().map(File::toPath).toList();
   }
 
-  private static Set<String> provenServices(final File productionOutput) throws IOException {
-    if (productionOutput == null || !productionOutput.isDirectory()) {
-      return Set.of();
-    }
-    return new ServiceLoaderCallScanner().scan(productionOutput.toPath()).provenServiceInterfaces();
-  }
-
   /* default */ static Set<String> projectOutputClasses(
-      final Set<String> declaredClasses, final Optional<BytecodeReferenceScan> scan)
-      throws IOException {
+      final Set<String> declaredClasses, final Set<String> productionOutputClasses) {
     final Set<String> classes = new HashSet<>(declaredClasses);
-    if (scan.isPresent()) {
-      classes.addAll(ProductionAnalysisInputs.classNamesInOutput(scan.orElseThrow().scope()));
-    }
+    classes.addAll(productionOutputClasses);
     return classes;
   }
 
@@ -126,6 +117,7 @@ final class MavenAnalysisEvidence {
       Set<String> declaredClasses,
       Set<String> sourceRequiredClasses,
       Set<ArtifactCoordinate> compileVisibleCoordinates,
+      Set<String> productionOutputClasses,
       String productionOutputFingerprint,
       String sourceAttributionFallback) {}
 }

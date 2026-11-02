@@ -49,7 +49,6 @@ public final class ProductionBytecodeReferenceScanner {
     return new BytecodeReferenceScan(scope, references, count, true);
   }
 
-  @SuppressWarnings("PMD.AvoidCatchingGenericException")
   private static int scanPath(final Path path, final Set<String> references) throws IOException {
     final BasicFileAttributes attributes =
         Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
@@ -62,8 +61,15 @@ public final class ProductionBytecodeReferenceScanner {
         || !fileName.toString().endsWith(".class")) {
       return 0;
     }
+    return scanClassFile(path, Files.readAllBytes(path), references);
+  }
+
+  /* package */
+  @SuppressWarnings("PMD.AvoidCatchingGenericException")
+  static int scanClassFile(final Path path, final byte[] content, final Set<String> references)
+      throws IOException {
     try {
-      new ClassReader(Files.readAllBytes(path)).accept(new ReferencesVisitor(references), 0);
+      new ClassReader(content).accept(new ReferencesVisitor(references), 0);
     } catch (final RuntimeException exception) {
       throw new IOException("Could not scan production class file: " + path, exception);
     }

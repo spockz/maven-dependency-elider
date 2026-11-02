@@ -29,7 +29,8 @@ final class PostCompileSourceAttribution {
       final List<ArtifactFileRef> candidates,
       final Set<ArtifactFileRef> compileVisibleArtifacts,
       final Map<ArtifactFileRef, Set<String>> indexedClasses,
-      final Optional<BytecodeReferenceScan> bytecodeScan)
+      final Optional<BytecodeReferenceScan> bytecodeScan,
+      final Set<String> outputClassNames)
       throws IOException {
     final BytecodeReferenceScan scan =
         bytecodeScan.orElseThrow(
@@ -70,10 +71,7 @@ final class PostCompileSourceAttribution {
           compileVisibleArtifacts, indexedClasses, requiredClasses, exception.getMessage());
     }
     return ProductionAnalysisInputs.inputsForRequiredClasses(
-        compileVisibleArtifacts,
-        indexedClasses,
-        requiredClasses,
-        ProductionAnalysisInputs.classNamesInOutput(scan.scope()));
+        compileVisibleArtifacts, indexedClasses, requiredClasses, outputClassNames);
   }
 
   private static List<Path> postCompileSourceFiles(final MavenProject project) throws IOException {

@@ -103,6 +103,42 @@ public final class ServiceLoaderCallScanner {
     return new ScanResult(proven);
   }
 
+  static ScanResult scanCaptured(final List<ProductionBytecodeAnalysis.ClassFile> classFiles)
+      throws IOException {
+    final Set<String> proven = new HashSet<>();
+    final Map<String, Object> staticConstants = new HashMap<>();
+    for (final ProductionBytecodeAnalysis.ClassFile classFile : classFiles) {
+      scanCapturedConstants(classFile, staticConstants);
+    }
+    for (final ProductionBytecodeAnalysis.ClassFile classFile : classFiles) {
+      scanCapturedMethods(classFile, staticConstants, proven);
+    }
+    return new ScanResult(proven);
+  }
+
+  private static void scanCapturedConstants(
+      final ProductionBytecodeAnalysis.ClassFile classFile, final Map<String, Object> constants)
+      throws IOException {
+    try {
+      new ClassReader(classFile.content()).accept(new ConstantCollectorVisitor(constants), 0);
+    } catch (final RuntimeException exception) {
+      throw new IOException("Could not scan class constants: " + classFile.path(), exception);
+    }
+  }
+
+  private static void scanCapturedMethods(
+      final ProductionBytecodeAnalysis.ClassFile classFile,
+      final Map<String, Object> constants,
+      final Set<String> proven)
+      throws IOException {
+    try {
+      new ClassReader(classFile.content())
+          .accept(new ServiceLoaderCallVisitor(constants, proven), 0);
+    } catch (final RuntimeException exception) {
+      throw new IOException("Could not scan ServiceLoader calls: " + classFile.path(), exception);
+    }
+  }
+
   private static void scanConstants(final Path path, final Map<String, Object> constants)
       throws IOException {
     final BasicFileAttributes attributes =

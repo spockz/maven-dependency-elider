@@ -45,7 +45,7 @@ final class MavenAnalysisPreparation {
     final Set<ArtifactCoordinate> keep = keepArtifacts(options, inventory, evidence);
     final Set<String> projectOutputClasses =
         MavenAnalysisEvidence.projectOutputClasses(
-            evidence.declaredClasses(), evidence.bytecodeScan());
+            evidence.declaredClasses(), evidence.productionOutputClasses());
     final ClassUsageReport classUsageReport =
         ClassUsageReport.classify(evidence.index(), evidence.trace(), evidence.bytecodeScan());
     NativeImageConsumedInput.verifyAll(evidence.dynamicRoots().consumedInputs());
