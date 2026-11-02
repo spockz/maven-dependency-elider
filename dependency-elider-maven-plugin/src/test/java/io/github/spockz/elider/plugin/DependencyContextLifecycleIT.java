@@ -122,6 +122,41 @@ final class DependencyContextLifecycleIT {
   private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(180);
 
   @Test
+  void settingsMirrorUsesConfiguredMavenCacheAndFallsBackToUserHome() throws Exception {
+    final Path userHome = temporaryDirectory.resolve("user-home");
+    final Path configuredRepository = temporaryDirectory.resolve("outer-maven-cache");
+    final String configuredRepositoryUri =
+        cachedRepositoryUri(configuredRepository.toString(), userHome.toString());
+    final String fallbackRepositoryUri = cachedRepositoryUri(" ", userHome.toString());
+    final Path configuredSettingsDirectory =
+        Files.createDirectories(temporaryDirectory.resolve("configured-settings"));
+    final Path fallbackSettingsDirectory =
+        Files.createDirectories(temporaryDirectory.resolve("fallback-settings"));
+    final String configuredSettings =
+        Files.readString(writeSettings(configuredSettingsDirectory, configuredRepositoryUri));
+    final String fallbackSettings =
+        Files.readString(writeSettings(fallbackSettingsDirectory, fallbackRepositoryUri));
+
+    assertAll(
+        "Lifecycle mirrors use the selected local cache and block remote repositories",
+        () ->
+            assertThat(configuredSettings)
+                .contains(
+                    "<id>cached-local-mirror</id>",
+                    "<mirrorOf>*</mirrorOf>",
+                    "<url>" + configuredRepositoryUri + "</url>"),
+        () ->
+            assertThat(fallbackRepositoryUri)
+                .isEqualTo(Path.of(userHome.toString(), ".m2/repository").toUri().toASCIIString()),
+        () ->
+            assertThat(fallbackSettings)
+                .contains(
+                    "<id>cached-local-mirror</id>",
+                    "<mirrorOf>*</mirrorOf>",
+                    "<url>" + fallbackRepositoryUri + "</url>"));
+  }
+
+  @Test
   void analyzeWithoutCoreExtensionReportsDetachedPredictionWithoutPublishingTrimOutputs()
       throws Exception {
     final Path repositoryRoot = repositoryRoot();
@@ -2565,8 +2600,11 @@ final class DependencyContextLifecycleIT {
 
   private static Path writeSettings(final Path evidenceDirectory)
       throws IOException, XMLStreamException {
-    final String repositoryUri =
-        Path.of(System.getProperty("user.home"), ".m2/repository").toUri().toASCIIString();
+    return writeSettings(evidenceDirectory, cachedRepositoryUri());
+  }
+
+  private static Path writeSettings(final Path evidenceDirectory, final String repositoryUri)
+      throws IOException, XMLStreamException {
     final Path settings = evidenceDirectory.resolve("settings.xml");
     try (OutputStream output = Files.newOutputStream(settings)) {
       final XMLStreamWriter xml =
@@ -2590,6 +2628,20 @@ final class DependencyContextLifecycleIT {
       }
     }
     return settings;
+  }
+
+  private static String cachedRepositoryUri() {
+    return cachedRepositoryUri(
+        System.getProperty("maven.repo.local"), System.getProperty("user.home"));
+  }
+
+  private static String cachedRepositoryUri(
+      final String configuredRepository, final String userHome) {
+    final Path repository =
+        configuredRepository == null || configuredRepository.isBlank()
+            ? Path.of(userHome, ".m2/repository")
+            : Path.of(configuredRepository);
+    return repository.toUri().toASCIIString();
   }
 
   private static void writeCachedRepositoryMirror(
