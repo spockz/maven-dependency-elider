@@ -39,7 +39,7 @@ import java.util.regex.Pattern;
         final Set<String> targets =
             NativeImageClassRootParsing.parseClassNames(
                 argument.substring(prefix.length()), propertiesEntry);
-        return Optional.of(NativeImageClassRootParsing.addTargets(targets, roots, context, true));
+        return Optional.of(NativeImageClassRootParsing.addTargets(targets, roots, context));
       }
     }
     for (final String prefix : PATH_OPTIONS) {

@@ -89,17 +89,7 @@ final class NativeImageConfigurationPointers {
   private NativeImageConfigurationPointers() {}
 
   /* package */
-  static boolean isPointer(final String argument) {
-    return NativeImageConfigurationDirectories.isOption(argument)
-        || POINTERS.stream()
-            .anyMatch(
-                pointer ->
-                    argument.equals(pointer.option())
-                        || argument.startsWith(pointer.option() + "="));
-  }
-
-  /* package */
-  static Optional<Boolean> read(
+  static Optional<NativeImageDynamicRoots.ArgumentResult> read(
       final String argument,
       final JarFile archive,
       final JarEntry propertiesEntry,
@@ -111,14 +101,16 @@ final class NativeImageConfigurationPointers {
       throws IOException {
     if (NativeImageConfigurationDirectories.isOption(argument)) {
       return Optional.of(
-          NativeImageConfigurationDirectories.read(
-              argument,
-              propertiesEntry,
-              roots,
-              scanContext,
-              resourceProviders,
-              consumedInputs,
-              selections));
+          new NativeImageDynamicRoots.ArgumentResult(
+              NativeImageConfigurationDirectories.read(
+                  argument,
+                  propertiesEntry,
+                  roots,
+                  scanContext,
+                  resourceProviders,
+                  consumedInputs,
+                  selections),
+              true));
     }
     for (final Pointer pointer : POINTERS) {
       if (argument.equals(pointer.option())) {
@@ -142,10 +134,14 @@ final class NativeImageConfigurationPointers {
           readFiles(
               values, pointer, propertiesEntry, roots, scanContext, consumedInputs, selections);
         }
-        return Optional.of(pointer.declaresClassRoots());
+        return Optional.of(pointerResult(pointer));
       }
     }
     return Optional.empty();
+  }
+
+  private static NativeImageDynamicRoots.ArgumentResult pointerResult(final Pointer pointer) {
+    return new NativeImageDynamicRoots.ArgumentResult(pointer.declaresClassRoots(), true);
   }
 
   private static void readResources(

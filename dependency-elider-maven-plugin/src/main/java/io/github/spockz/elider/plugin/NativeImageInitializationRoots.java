@@ -78,7 +78,7 @@ final class NativeImageInitializationRoots {
     }
     final Set<String> targets =
         NativeImageClassRootParsing.parseClassNames(values, propertiesEntry);
-    return NativeImageClassRootParsing.addTargets(targets, roots, scanContext, true);
+    return NativeImageClassRootParsing.addTargets(targets, roots, scanContext);
   }
 
   private static boolean readClassInitialization(
@@ -107,8 +107,7 @@ final class NativeImageInitializationRoots {
     if (wholeInventory) {
       NativeImageClassRootParsing.addWholeInventory(scanContext, roots);
     }
-    return NativeImageClassRootParsing.addTargets(targets, roots, scanContext, true)
-        || wholeInventory;
+    return NativeImageClassRootParsing.addTargets(targets, roots, scanContext) || wholeInventory;
   }
 
   private static ParsedInitializationTarget parseInitializationTarget(

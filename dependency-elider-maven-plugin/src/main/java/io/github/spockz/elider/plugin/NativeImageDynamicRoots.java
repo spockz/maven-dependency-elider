@@ -16,6 +16,9 @@ import java.util.jar.JarFile;
 /** Parses supported native-image metadata without accepting unknown root formats. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class NativeImageDynamicRoots {
+  /** WHY: Separates package separators from Java identifier code points. */
+  private static final char PACKAGE_SEPARATOR = '.';
+
   /** Root of the native-image metadata namespace in dependency archives. */
   static final String PREFIX = "META-INF/native-image/";
 
@@ -36,10 +39,10 @@ final class NativeImageDynamicRoots {
   record PropertiesResult(
       boolean declaresClassRoots,
       boolean requiresArtifactRetention,
-      Set<Path> resourceProviders,
-      Set<NativeImageConsumedInput> consumedInputs,
       NativeImagePolicyRoots.ResourcePatternSelection resourcePatterns,
       NativeImageServiceLoaderPolicy.Selection serviceLoaderPolicy) {}
+
+  record ArgumentResult(boolean declaresClassRoots, boolean requiresArtifactRetention) {}
 
   static PropertiesResult readNativeImagePropertiesDetailed(
       final JarFile archive,
@@ -72,7 +75,7 @@ final class NativeImageDynamicRoots {
         requiresArtifactRetention = true;
         continue;
       }
-      declaresClassRoots |=
+      final ArgumentResult result =
           readNativeImageArgument(
               argument,
               archive,
@@ -82,21 +85,14 @@ final class NativeImageDynamicRoots {
               resourceProviders,
               consumedInputs,
               resourcePatterns);
-      requiresArtifactRetention |= isConfigurationResourceArgument(argument);
-      requiresArtifactRetention |= NativeImagePolicyRoots.requiresArtifactRetention(argument);
+      declaresClassRoots |= result.declaresClassRoots();
+      requiresArtifactRetention |= result.requiresArtifactRetention();
     }
     return new PropertiesResult(
         declaresClassRoots,
         requiresArtifactRetention,
-        Set.copyOf(resourceProviders),
-        Set.copyOf(consumedInputs),
         resourcePatterns.snapshot(),
         serviceLoaderPolicy.snapshot());
-  }
-
-  private static boolean isConfigurationResourceArgument(final String argument) {
-    return NativeImageConfigurationPointers.isPointer(argument)
-        || argument.startsWith("-H:IncludeResourceBundles=");
   }
 
   /** Scans quote-delimited tokens while preserving non-syntactic characters verbatim. */
@@ -144,7 +140,7 @@ final class NativeImageDynamicRoots {
     }
   }
 
-  private static boolean readNativeImageArgument(
+  private static ArgumentResult readNativeImageArgument(
       final String argument,
       final JarFile archive,
       final JarEntry propertiesEntry,
@@ -154,7 +150,7 @@ final class NativeImageDynamicRoots {
       final Set<NativeImageConsumedInput> consumedInputs,
       final NativeImagePolicyRoots.ResourcePatterns descriptorSelections)
       throws IOException {
-    final java.util.Optional<Boolean> pointer =
+    final java.util.Optional<ArgumentResult> pointer =
         NativeImageConfigurationPointers.read(
             argument,
             archive,
@@ -167,7 +163,7 @@ final class NativeImageDynamicRoots {
     if (pointer.isPresent()) {
       return pointer.orElseThrow();
     }
-    final java.util.Optional<Boolean> directRoot =
+    final java.util.Optional<ArgumentResult> directRoot =
         NativeImageDirectRoots.read(
             argument,
             propertiesEntry,
@@ -177,9 +173,9 @@ final class NativeImageDynamicRoots {
             consumedInputs,
             descriptorSelections);
     if (directRoot.isPresent()) {
-      return directRoot.get();
+      return directRoot.orElseThrow();
     }
-    return false;
+    return new ArgumentResult(false, false);
   }
 
   static String resolveNativeImageConfigPath(
@@ -204,17 +200,25 @@ final class NativeImageDynamicRoots {
     if (name == null || name.isEmpty()) {
       return false;
     }
-    for (final String segment : name.split("\\.", -1)) {
-      if (!isJavaIdentifierSegment(segment)) {
+    boolean atSegmentStart = true;
+    int offset = 0;
+    while (offset < name.length()) {
+      final int codePoint = name.codePointAt(offset);
+      if (codePoint == PACKAGE_SEPARATOR) {
+        if (atSegmentStart) {
+          return false;
+        }
+        atSegmentStart = true;
+      } else if (atSegmentStart) {
+        if (!Character.isJavaIdentifierStart(codePoint)) {
+          return false;
+        }
+        atSegmentStart = false;
+      } else if (!Character.isJavaIdentifierPart(codePoint)) {
         return false;
       }
+      offset += Character.charCount(codePoint);
     }
-    return true;
-  }
-
-  private static boolean isJavaIdentifierSegment(final String segment) {
-    return !segment.isEmpty()
-        && Character.isJavaIdentifierStart(segment.codePointAt(0))
-        && segment.codePoints().skip(1).allMatch(Character::isJavaIdentifierPart);
+    return !atSegmentStart;
   }
 }

@@ -49,12 +49,12 @@ final class NativeImagePolicyRoots {
 
     /* package */
     void include(final Pattern pattern) {
-      includes.add(new NativeImageResourcePatternMatcher.Selector(pattern, null, null, "cli"));
+      includes.add(new NativeImageResourcePatternMatcher.Selector(pattern, null, "cli"));
     }
 
     /* package */
     void exclude(final Pattern pattern) {
-      excludes.add(new NativeImageResourcePatternMatcher.Selector(pattern, null, null, "cli"));
+      excludes.add(new NativeImageResourcePatternMatcher.Selector(pattern, null, "cli"));
     }
 
     /* package */ void merge(final ResourcePatternSelection selection) {
@@ -148,7 +148,7 @@ final class NativeImagePolicyRoots {
   }
 
   /* package */
-  static Optional<Boolean> read(
+  static Optional<NativeImageDynamicRoots.ArgumentResult> read(
       final String argument,
       final JarEntry propertiesEntry,
       final Set<String> roots,
@@ -162,11 +162,12 @@ final class NativeImagePolicyRoots {
               + ": "
               + argument);
     }
-    final Optional<Boolean> broadPolicy = readBroadPolicy(argument, roots, scanContext);
+    final Optional<NativeImageDynamicRoots.ArgumentResult> broadPolicy =
+        readBroadPolicy(argument, roots, scanContext);
     if (broadPolicy.isPresent()) {
       return broadPolicy;
     }
-    final Optional<Boolean> urlPolicy =
+    final Optional<NativeImageDynamicRoots.ArgumentResult> urlPolicy =
         readUrlPolicy(argument, propertiesEntry, roots, scanContext);
     if (urlPolicy.isPresent()) {
       return urlPolicy;
@@ -174,20 +175,20 @@ final class NativeImagePolicyRoots {
     return readResourcePattern(argument, propertiesEntry, resourcePatterns);
   }
 
-  private static Optional<Boolean> readBroadPolicy(
+  private static Optional<NativeImageDynamicRoots.ArgumentResult> readBroadPolicy(
       final String argument, final Set<String> roots, final NativeImageScanContext scanContext)
       throws IOException {
     if (ENABLED_BROAD_POLICIES.contains(argument)) {
       roots.addAll(scanContext.logicalClasses(Optional.empty()));
-      return Optional.of(true);
+      return Optional.of(new NativeImageDynamicRoots.ArgumentResult(true, true));
     }
     return DISABLED_BROAD_POLICIES.contains(argument)
             || SECURITY_FEATURE_POLICIES.contains(argument)
-        ? Optional.of(false)
+        ? Optional.of(new NativeImageDynamicRoots.ArgumentResult(false, true))
         : Optional.empty();
   }
 
-  private static Optional<Boolean> readUrlPolicy(
+  private static Optional<NativeImageDynamicRoots.ArgumentResult> readUrlPolicy(
       final String argument,
       final JarEntry propertiesEntry,
       final Set<String> roots,
@@ -197,16 +198,16 @@ final class NativeImagePolicyRoots {
         || argument.startsWith("--enable-url-protocols=")) {
       validateProtocols(value(argument), propertiesEntry);
       roots.addAll(scanContext.logicalClasses(Optional.empty()));
-      return Optional.of(true);
+      return Optional.of(new NativeImageDynamicRoots.ArgumentResult(true, true));
     }
     if (argument.startsWith("-H:DisableURLProtocols=")) {
       validateProtocols(value(argument), propertiesEntry);
-      return Optional.of(false);
+      return Optional.of(new NativeImageDynamicRoots.ArgumentResult(false, true));
     }
     return Optional.empty();
   }
 
-  private static Optional<Boolean> readResourcePattern(
+  private static Optional<NativeImageDynamicRoots.ArgumentResult> readResourcePattern(
       final String argument,
       final JarEntry propertiesEntry,
       final ResourcePatterns resourcePatterns)
@@ -214,26 +215,14 @@ final class NativeImagePolicyRoots {
     if (argument.startsWith("-H:IncludeResources=")) {
       compilePattern(value(argument), argument, propertiesEntry)
           .ifPresent(resourcePatterns::include);
-      return Optional.of(false);
+      return Optional.of(new NativeImageDynamicRoots.ArgumentResult(false, true));
     }
     if (argument.startsWith("-H:ExcludeResources=")) {
       compilePattern(value(argument), argument, propertiesEntry)
           .ifPresent(resourcePatterns::exclude);
-      return Optional.of(false);
+      return Optional.of(new NativeImageDynamicRoots.ArgumentResult(false, true));
     }
     return Optional.empty();
-  }
-
-  /* package */
-  static boolean requiresArtifactRetention(final String argument) {
-    return ENABLED_BROAD_POLICIES.contains(argument)
-        || DISABLED_BROAD_POLICIES.contains(argument)
-        || SECURITY_FEATURE_POLICIES.contains(argument)
-        || argument.startsWith("-H:EnableURLProtocols=")
-        || argument.startsWith("-H:DisableURLProtocols=")
-        || argument.startsWith("--enable-url-protocols=")
-        || argument.startsWith("-H:IncludeResources=")
-        || argument.startsWith("-H:ExcludeResources=");
   }
 
   private static boolean isBareRecognizedOption(final String argument) {

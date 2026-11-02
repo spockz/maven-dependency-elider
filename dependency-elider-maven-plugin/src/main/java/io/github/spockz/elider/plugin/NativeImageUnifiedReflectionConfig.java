@@ -5,9 +5,16 @@ package io.github.spockz.elider.plugin;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.io.IOException;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** Reads unified reflection entries and class type descriptors. */
 final class NativeImageUnifiedReflectionConfig {
+  /** WHY: These characters cannot occur in a standalone reflection field name. */
+  private static final String FORBIDDEN_FIELD_CHARACTERS = ".;[/";
+
+  /** WHY: Type names permit dotted names followed by zero or more array suffixes. */
+  private static final Pattern TYPE_NAME = Pattern.compile("[^.;\\[/]+(\\.[^.;\\[/]+)*(\\[\\])*");
+
   /** WHY: Unified method descriptors share this property name. */
   private static final String METHOD_NAME = "name";
 
@@ -126,14 +133,18 @@ final class NativeImageUnifiedReflectionConfig {
       NativeImageJsonSupport.validateFields(
           field, Set.of(METHOD_NAME), "reachability field descriptor", name);
       NativeImageJsonSupport.requireText(field.get(METHOD_NAME), "reachability field name", name);
-      if (field.get(METHOD_NAME).textValue().matches(".*[.;\\[/].*")) {
+      if (containsForbiddenFieldCharacter(field.get(METHOD_NAME).textValue())) {
         throw new IOException("Malformed reachability field name: " + name);
       }
     }
   }
 
+  private static boolean containsForbiddenFieldCharacter(final String value) {
+    return value.chars().anyMatch(character -> FORBIDDEN_FIELD_CHARACTERS.indexOf(character) >= 0);
+  }
+
   private static boolean isTypeName(final String value) {
-    return value.matches("[^.;\\[/]+(\\.[^.;\\[/]+)*(\\[\\])*");
+    return TYPE_NAME.matcher(value).matches();
   }
 
   /* package */

@@ -438,6 +438,20 @@ final class DependencyDynamicRootsTest {
   }
 
   @Test
+  void rejectsForbiddenUnifiedReflectionFieldCharactersAfterJsonUnescaping() throws IOException {
+    final Path jar =
+        nativeImageJar(
+            "Args = --initialize-at-build-time\n",
+            "META-INF/native-image/test/reachability-metadata.json",
+            "{\"reflection\":[{\"type\":\"org.example.Type\","
+                + "\"fields\":[{\"name\":\"invalid\\n[\"}]}]}");
+
+    assertThatThrownBy(() -> DependencyDynamicRoots.scan(jar))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Malformed reachability field name");
+  }
+
+  @Test
   void readsStandaloneSerializationAndReflectionSecondaryTypes() throws IOException {
     final Path jar = tempDir.resolve("native-image-descriptors-" + System.nanoTime() + ".jar");
     try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {

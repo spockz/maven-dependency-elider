@@ -73,14 +73,8 @@ final class NativeImageClassRootParsing {
 
   /* package */
   static boolean addTargets(
-      final Set<String> targets,
-      final Set<String> roots,
-      final NativeImageScanContext scanContext,
-      final boolean packageSelectors)
+      final Set<String> targets, final Set<String> roots, final NativeImageScanContext scanContext)
       throws IOException {
-    if (!packageSelectors) {
-      return roots.addAll(targets);
-    }
     for (final String target : targets) {
       for (final String className : scanContext.logicalClasses(Optional.empty())) {
         if (className.equals(target) || className.startsWith(target + ".")) {
