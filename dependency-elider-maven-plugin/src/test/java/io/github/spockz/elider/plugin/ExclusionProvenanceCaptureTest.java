@@ -37,6 +37,50 @@ final class ExclusionProvenanceCaptureTest {
   @TempDir Path directory;
 
   @Test
+  void interpolatedProjectVersionPreservesLocalOrigins() throws Exception {
+    final Path pom = directory.resolve("pom.xml");
+    Files.writeString(
+        pom,
+        """
+        <project xmlns="http://maven.apache.org/POM/4.0.0">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>example</groupId><artifactId>consumer</artifactId><version>${revision}</version>
+          <properties><revision>1</revision></properties>
+          <dependencyManagement><dependencies><dependency>
+            <groupId>libs</groupId><artifactId>managed</artifactId><version>1</version>
+            <exclusions><exclusion><groupId>excluded</groupId><artifactId>managed</artifactId></exclusion></exclusions>
+          </dependency></dependencies></dependencyManagement>
+          <dependencies><dependency><groupId>libs</groupId><artifactId>direct</artifactId><version>1</version>
+            <exclusions><exclusion><groupId>excluded</groupId><artifactId>direct</artifactId></exclusion></exclusions>
+          </dependency><dependency><groupId>libs</groupId><artifactId>managed</artifactId></dependency></dependencies>
+        </project>
+        """);
+    final DefaultModelBuildingRequest request = new DefaultModelBuildingRequest();
+    request
+        .setPomFile(pom.toFile())
+        .setLocationTracking(true)
+        .setSystemProperties(System.getProperties());
+    final var result = new DefaultModelBuilderFactory().newInstance().build(request);
+    final MavenProject project = new MavenProject(result.getEffectiveModel());
+    project.setOriginalModel(result.getRawModel(result.getModelIds().getFirst()));
+    final var snapshot = ExclusionProvenanceCapture.capture(project);
+    final var direct = snapshot.dependencies().getFirst();
+    final var managed = snapshot.dependencies().get(1);
+    assertAll(
+        () -> assertThat(project.getVersion()).isEqualTo("1"),
+        () -> assertThat(snapshot.diagnostics()).isEmpty(),
+        () ->
+            assertThat(direct.reference().origin().modelId())
+                .isEqualTo("example:consumer:${revision}"),
+        () -> assertThat(direct.reference().origin().kind()).isEqualTo("LOCAL"),
+        () -> assertThat(direct.exclusions().getFirst().origin().kind()).isEqualTo("LOCAL"),
+        () -> assertThat(managed.reference().origin().kind()).isEqualTo("LOCAL"),
+        () ->
+            assertThat(managed.exclusions().getFirst().origin().kind())
+                .isEqualTo("LOCAL_MANAGEMENT"));
+  }
+
+  @Test
   void countsEffectiveRowsOnceAndExcludesWildcards() {
     final var origin = new ExclusionRecommendations.Origin("LOCAL", "g:a:1", "pom.xml", 1, 2, "");
     final var exact =
@@ -55,7 +99,8 @@ final class ExclusionProvenanceCaptureTest {
             List.of(exact, wildcard));
     final var result =
         ExclusionRecommendations.collect(
-            new ExclusionRecommendations.Snapshot(List.of(first, second), List.of(), List.of()));
+            new ExclusionRecommendations.Snapshot(
+                List.of(first, second), List.of(), Map.of(), List.of()));
     assertAll(
         () -> assertThat(result.candidates()).hasSize(1),
         () -> assertThat(result.candidates().getFirst().count()).isEqualTo(2),
@@ -120,6 +165,99 @@ final class ExclusionProvenanceCaptureTest {
                                 "diagnostics",
                                 List.of())))
                 .isInstanceOf(IllegalStateException.class));
+  }
+
+  @Test
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  void rejectsImpossibleOriginsAndUnverifiedProfiles() {
+    final Map<String, Object> known =
+        Map.of(
+            "kind",
+            "LOCAL",
+            "modelId",
+            "g:a:1",
+            "source",
+            "pom.xml",
+            "line",
+            1,
+            "column",
+            2,
+            "profileId",
+            "");
+    final Map<String, Object> blankModel = new java.util.HashMap<>(known);
+    blankModel.put("modelId", "");
+    final Map<String, Object> badLine = new java.util.HashMap<>(known);
+    badLine.put("line", 0);
+    final Map<String, Object> forgedProfile = new java.util.HashMap<>(known);
+    forgedProfile.put("kind", "LOCAL_PROFILE");
+    forgedProfile.put("profileId", "not-active");
+    final Map<String, Object> nonProfile = new java.util.HashMap<>(known);
+    nonProfile.put("profileId", "active");
+    final Map<String, Object> unknown = new java.util.HashMap<>(known);
+    unknown.put("kind", "UNKNOWN");
+    assertAll(
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        ExclusionProvenancePayload.decode(
+                            payloadWithOrigin(blankModel, Map.of(), List.of())))
+                .isInstanceOf(IllegalStateException.class),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        ExclusionProvenancePayload.decode(
+                            payloadWithOrigin(badLine, Map.of(), List.of())))
+                .isInstanceOf(IllegalStateException.class),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        ExclusionProvenancePayload.decode(
+                            payloadWithOrigin(
+                                forgedProfile, Map.of("g:a:1", List.of("active")), List.of())))
+                .isInstanceOf(IllegalStateException.class),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        ExclusionProvenancePayload.decode(
+                            payloadWithOrigin(
+                                nonProfile, Map.of("g:a:1", List.of("active")), List.of())))
+                .isInstanceOf(IllegalStateException.class),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        ExclusionProvenancePayload.decode(
+                            payloadWithOrigin(unknown, Map.of(), List.of())))
+                .isInstanceOf(IllegalStateException.class));
+  }
+
+  private static Map<String, Object> payloadWithOrigin(
+      final Map<String, Object> origin,
+      final Map<String, List<String>> profiles,
+      final List<String> diagnostics) {
+    return Map.of(
+        "dependencies",
+        List.of(
+            Map.of(
+                "ordinal",
+                0,
+                "groupId",
+                "g",
+                "artifactId",
+                "a",
+                "type",
+                "jar",
+                "classifier",
+                "",
+                "origin",
+                origin,
+                "exclusions",
+                List.of())),
+        "management",
+        List.of(),
+        "activeProfiles",
+        profiles,
+        "diagnostics",
+        diagnostics);
   }
 
   @Test

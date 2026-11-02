@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -181,6 +182,67 @@ final class BanishedDependencyCaptureStoreTest {
                     Map.of("schemaVersion", 1, "projects", Map.of(key, tampered))))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("fingerprint");
+  }
+
+  @Test
+  void rejectsImpossibleOriginWithRecomputedFingerprint() {
+    final MavenProject project = project();
+    project.setDependencies(List.of(dependency(LIBRARY_ARTIFACT, DEFAULT_VERSION, DEFAULT_SCOPE)));
+    final BanishedDependencyOriginalModel capture =
+        BanishedDependencyOriginalModel.capture(project, List.of(), List.of());
+    assertRejectsOrigin(capture, "UNKNOWN", "LOCAL", "");
+  }
+
+  @Test
+  void rejectsInactiveProfileWithRecomputedFingerprint() {
+    final MavenProject project = project();
+    final Dependency dependency = dependency(LIBRARY_ARTIFACT, DEFAULT_VERSION, DEFAULT_SCOPE);
+    final org.apache.maven.model.InputSource source = new org.apache.maven.model.InputSource();
+    source.setModelId("source-model");
+    source.setLocation("pom.xml");
+    dependency.setLocation("", new org.apache.maven.model.InputLocation(1, 2, source));
+    project.setDependencies(List.of(dependency));
+    final Model raw = new Model();
+    raw.setDependencies(List.of(dependency));
+    project.setOriginalModel(raw);
+    project.setInjectedProfileIds("source-model", List.of("active"));
+    final BanishedDependencyOriginalModel capture =
+        BanishedDependencyOriginalModel.capture(project, List.of(), List.of());
+    assertRejectsOrigin(capture, "LOCAL", "LOCAL_PROFILE", "inactive");
+  }
+
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  private static void assertRejectsOrigin(
+      final BanishedDependencyOriginalModel capture,
+      final String oldKind,
+      final String newKind,
+      final String profileId) {
+    final Map<String, Object> payload =
+        BanishedDependencyCaptureStore.empty().withModel(capture).toPayload();
+    final String key = BanishedDependencyCaptureStore.projectKey(capture.project());
+    final Map<?, ?> projects = (Map<?, ?>) payload.get("projects");
+    final Map<Object, Object> row = new HashMap<>((Map<?, ?>) projects.get(key));
+    final Map<Object, Object> provenance =
+        new HashMap<>((Map<?, ?>) row.get("exclusionProvenance"));
+    final List<?> declarations = (List<?>) provenance.get("dependencies");
+    final Map<Object, Object> declaration = new HashMap<>((Map<?, ?>) declarations.getFirst());
+    final Map<Object, Object> origin = new HashMap<>((Map<?, ?>) declaration.get("origin"));
+    origin.put("kind", newKind);
+    origin.put("profileId", profileId);
+    declaration.put("origin", origin);
+    provenance.put("dependencies", List.of(declaration));
+    row.put("exclusionProvenance", provenance);
+    final List<String> fields = new ArrayList<>(capture.sourceFingerprintFields());
+    final int kindIndex = fields.indexOf(oldKind);
+    fields.set(kindIndex, newKind);
+    fields.set(kindIndex + 5, profileId);
+    row.put("sourceFingerprint", MavenElisionGraphBinding.sha256(fields));
+    assertThatThrownBy(
+            () ->
+                BanishedDependencyCaptureStore.fromPayload(
+                    Map.of("schemaVersion", 1, "projects", Map.of(key, row))))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("provenance");
   }
 
   @Test

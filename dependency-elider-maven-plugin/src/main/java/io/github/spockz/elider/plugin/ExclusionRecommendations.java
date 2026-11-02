@@ -3,17 +3,20 @@
 package io.github.spockz.elider.plugin;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 
 /** Deterministic advisory findings from a detached declaration snapshot. */
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
   "PMD.UseConcurrentHashMap",
-  "PMD.AvoidInstantiatingObjectsInLoops"
+  "PMD.AvoidInstantiatingObjectsInLoops",
+  "PMD.AvoidDuplicateLiterals"
 })
 final class ExclusionRecommendations {
   private ExclusionRecommendations() {}
@@ -93,6 +96,25 @@ final class ExclusionRecommendations {
       Objects.requireNonNull(modelId, "modelId");
       Objects.requireNonNull(source, "source");
       Objects.requireNonNull(profileId, "profileId");
+      final boolean unknown = "UNKNOWN".equals(kind);
+      final boolean profile = kind.contains("_PROFILE");
+      if (!Set.of(
+                  "UNKNOWN",
+                  "LOCAL",
+                  "INHERITED",
+                  "LOCAL_MANAGEMENT",
+                  "INHERITED_MANAGEMENT",
+                  "LOCAL_PROFILE",
+                  "INHERITED_PROFILE",
+                  "LOCAL_PROFILE_MANAGEMENT",
+                  "INHERITED_PROFILE_MANAGEMENT")
+              .contains(kind)
+          || (!unknown && (modelId.isBlank() || line < 1 || column < 1))
+          || (profile != !profileId.isBlank())
+          || !profileId.equals(profileId.trim())
+          || (unknown && !profileId.isEmpty())) {
+        throw new IllegalArgumentException("Invalid exclusion origin");
+      }
     }
   }
 
@@ -127,11 +149,59 @@ final class ExclusionRecommendations {
   }
 
   record Snapshot(
-      List<Declaration> dependencies, List<Declaration> management, List<String> diagnostics) {
+      List<Declaration> dependencies,
+      List<Declaration> management,
+      Map<String, List<String>> activeProfiles,
+      List<String> diagnostics) {
     Snapshot {
       dependencies = List.copyOf(dependencies);
       management = List.copyOf(management);
-      diagnostics = List.copyOf(diagnostics);
+      final Map<String, List<String>> copiedProfiles = new TreeMap<>();
+      activeProfiles.forEach(
+          (model, ids) -> {
+            if (model == null
+                || model.isBlank()
+                || ids == null
+                || ids.isEmpty()
+                || ids.stream().anyMatch(id -> id == null || id.isBlank() || !id.equals(id.trim()))
+                || ids.stream().distinct().count() != ids.size()) {
+              throw new IllegalArgumentException("Invalid active profiles");
+            }
+            copiedProfiles.put(model, List.copyOf(ids));
+          });
+      activeProfiles = Collections.unmodifiableMap(copiedProfiles);
+      final List<String> copiedDiagnostics = List.copyOf(diagnostics);
+      diagnostics = copiedDiagnostics;
+      for (final List<Declaration> declarations : List.of(dependencies, management)) {
+        for (final Declaration declaration : declarations) {
+          validateOrigin(declaration.reference().origin(), copiedProfiles, copiedDiagnostics);
+          declaration
+              .exclusions()
+              .forEach(
+                  exclusion ->
+                      validateOrigin(exclusion.origin(), copiedProfiles, copiedDiagnostics));
+        }
+      }
+    }
+  }
+
+  private static void validateOrigin(
+      final Origin origin,
+      final Map<String, List<String>> profiles,
+      final List<String> diagnostics) {
+    if (!origin.profileId().isEmpty()
+        && !profiles.getOrDefault(origin.modelId(), List.of()).contains(origin.profileId())) {
+      throw new IllegalArgumentException("Origin profile is not active for its source model");
+    }
+    if ("UNKNOWN".equals(origin.kind())
+        && !diagnostics.contains(
+            "Incomplete or ambiguous provenance at "
+                + origin.modelId()
+                + ":"
+                + origin.line()
+                + ":"
+                + origin.column())) {
+      throw new IllegalArgumentException("Unknown origin requires a provenance diagnostic");
     }
   }
 

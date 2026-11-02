@@ -5,13 +5,15 @@ package io.github.spockz.elider.plugin;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /** Strict JDK-only encoding for exclusion provenance. */
 @SuppressWarnings({
   "PMD.TooManyMethods",
   "PMD.CommentDefaultAccessModifier",
   "PMD.AvoidDuplicateLiterals",
-  "PMD.UseExplicitTypes"
+  "PMD.UseExplicitTypes",
+  "PMD.UseConcurrentHashMap"
 })
 final class ExclusionProvenancePayload {
   private ExclusionProvenancePayload() {}
@@ -24,6 +26,8 @@ final class ExclusionProvenancePayload {
             .toList(),
         "management",
         snapshot.management().stream().map(ExclusionProvenancePayload::encodeDeclaration).toList(),
+        "activeProfiles",
+        snapshot.activeProfiles(),
         "diagnostics",
         snapshot.diagnostics());
   }
@@ -75,11 +79,26 @@ final class ExclusionProvenancePayload {
   }
 
   static ExclusionRecommendations.Snapshot decode(final Object value) {
-    final Map<?, ?> map = fields(value, Set.of("dependencies", "management", "diagnostics"));
-    return new ExclusionRecommendations.Snapshot(
-        declarations(map.get("dependencies")),
-        declarations(map.get("management")),
-        list(map.get("diagnostics")).stream().map(ExclusionProvenancePayload::string).toList());
+    final Map<?, ?> map =
+        fields(value, Set.of("dependencies", "management", "activeProfiles", "diagnostics"));
+    final Object profileValue = map.get("activeProfiles");
+    if (!(profileValue instanceof Map<?, ?> profileMap)) {
+      throw invalid();
+    }
+    final Map<String, List<String>> profiles = new TreeMap<>();
+    profileMap.forEach(
+        (key, ids) ->
+            profiles.put(
+                string(key), list(ids).stream().map(ExclusionProvenancePayload::string).toList()));
+    try {
+      return new ExclusionRecommendations.Snapshot(
+          declarations(map.get("dependencies")),
+          declarations(map.get("management")),
+          profiles,
+          list(map.get("diagnostics")).stream().map(ExclusionProvenancePayload::string).toList());
+    } catch (final IllegalArgumentException exception) {
+      throw new IllegalStateException("Invalid exclusion provenance payload", exception);
+    }
   }
 
   private static List<ExclusionRecommendations.Declaration> declarations(final Object value) {
@@ -123,10 +142,6 @@ final class ExclusionProvenancePayload {
     final Map<?, ?> map =
         fields(value, Set.of("kind", "modelId", "source", "line", "column", "profileId"));
     final String kind = string(map.get("kind"));
-    if (!Set.of("UNKNOWN", "LOCAL", "INHERITED", "LOCAL_MANAGEMENT", "INHERITED_MANAGEMENT")
-        .contains(kind)) {
-      throw invalid();
-    }
     return new ExclusionRecommendations.Origin(
         kind,
         string(map.get("modelId")),

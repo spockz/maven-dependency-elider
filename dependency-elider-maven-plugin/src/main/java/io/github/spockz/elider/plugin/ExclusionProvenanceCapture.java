@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Exclusion;
 import org.apache.maven.model.InputLocation;
@@ -26,6 +27,7 @@ final class ExclusionProvenanceCapture {
   static ExclusionRecommendations.Snapshot capture(final MavenProject project) {
     final List<String> diagnostics = new ArrayList<>();
     final Map<LocationKey, List<Match>> index = sourceIndex(project);
+    final Map<String, List<String>> activeProfiles = activeProfiles(project, diagnostics);
     for (MavenProject current = project; current != null; current = current.getParent()) {
       if (current.getOriginalModel() == null
           || current.getOriginalModel().getLocation("") == null) {
@@ -38,18 +40,41 @@ final class ExclusionProvenanceCapture {
       }
     }
     final List<ExclusionRecommendations.Declaration> dependencies =
-        declarations(project, project.getDependencies(), index, diagnostics);
+        declarations(activeProfiles, project.getDependencies(), index, diagnostics);
     final List<Dependency> managed =
         project.getDependencyManagement() == null
             ? List.of()
             : project.getDependencyManagement().getDependencies();
     final List<ExclusionRecommendations.Declaration> management =
-        declarations(project, managed, index, diagnostics);
-    return new ExclusionRecommendations.Snapshot(dependencies, management, diagnostics);
+        declarations(activeProfiles, managed, index, diagnostics);
+    return new ExclusionRecommendations.Snapshot(
+        dependencies, management, activeProfiles, diagnostics);
+  }
+
+  private static Map<String, List<String>> activeProfiles(
+      final MavenProject project, final List<String> diagnostics) {
+    final Map<String, List<String>> result = new TreeMap<>();
+    project
+        .getInjectedProfileIds()
+        .forEach(
+            (model, profiles) -> {
+              if (profiles == null || profiles.isEmpty()) {
+                return;
+              }
+              if (model == null
+                  || model.isBlank()
+                  || profiles.stream()
+                      .anyMatch(id -> id == null || id.isBlank() || !id.equals(id.trim()))) {
+                diagnostics.add("Active profile identities are unavailable");
+                return;
+              }
+              result.put(model, profiles.stream().distinct().sorted().toList());
+            });
+    return result;
   }
 
   private static List<ExclusionRecommendations.Declaration> declarations(
-      final MavenProject project,
+      final Map<String, List<String>> activeProfiles,
       final List<Dependency> dependencies,
       final Map<LocationKey, List<Match>> index,
       final List<String> diagnostics) {
@@ -57,7 +82,7 @@ final class ExclusionProvenanceCapture {
     for (int ordinal = 0; ordinal < dependencies.size(); ordinal++) {
       final Dependency dependency = dependencies.get(ordinal);
       final ExclusionRecommendations.Origin origin =
-          origin(project, dependency.getLocation(""), index, diagnostics);
+          origin(activeProfiles, dependency.getLocation(""), index, diagnostics);
       final ExclusionRecommendations.Reference reference =
           new ExclusionRecommendations.Reference(
               ordinal,
@@ -72,16 +97,16 @@ final class ExclusionProvenanceCapture {
             new ExclusionRecommendations.Exclusion(
                 new ExclusionRecommendations.Coordinate(
                     value(exclusion.getGroupId()), value(exclusion.getArtifactId())),
-                origin(project, exclusion.getLocation(""), index, diagnostics)));
+                origin(activeProfiles, exclusion.getLocation(""), index, diagnostics)));
       }
       result.add(new ExclusionRecommendations.Declaration(reference, exclusions));
     }
     return List.copyOf(result);
   }
 
-  @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.NPathComplexity"})
+  @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.NPathComplexity", "PMD.CognitiveComplexity"})
   private static ExclusionRecommendations.Origin origin(
-      final MavenProject project,
+      final Map<String, List<String>> activeProfiles,
       final InputLocation location,
       final Map<LocationKey, List<Match>> index,
       final List<String> diagnostics) {
@@ -95,8 +120,7 @@ final class ExclusionProvenanceCapture {
             .filter(
                 match ->
                     match.profile().isEmpty()
-                        || project
-                            .getInjectedProfileIds()
+                        || activeProfiles
                             .getOrDefault(modelId, List.of())
                             .contains(match.profile()))
             .toList();
@@ -109,15 +133,17 @@ final class ExclusionProvenanceCapture {
           "Incomplete or ambiguous provenance at " + modelId + ":" + line + ":" + column);
     } else {
       final Match match = matches.getFirst();
-      final boolean local =
-          modelId.equals(
-              project.getGroupId() + ":" + project.getArtifactId() + ":" + project.getVersion());
-      kind = (local ? "LOCAL" : "INHERITED") + (match.management() ? "_MANAGEMENT" : "");
+      kind =
+          (match.local() ? "LOCAL" : "INHERITED")
+              + (match.profile().isEmpty() ? "" : "_PROFILE")
+              + (match.management() ? "_MANAGEMENT" : "");
       profile = match.profile();
     }
     return new ExclusionRecommendations.Origin(kind, modelId, path, line, column, profile);
   }
 
+  // WHY: Locality depends on project identity, not coordinate equality.
+  @SuppressWarnings("PMD.CompareObjectsWithEquals")
   private static Map<LocationKey, List<Match>> sourceIndex(final MavenProject project) {
     final Map<LocationKey, List<Match>> result = new HashMap<>();
     for (MavenProject current = project; current != null; current = current.getParent()) {
@@ -125,15 +151,23 @@ final class ExclusionProvenanceCapture {
       if (original == null) {
         continue;
       }
-      addMatches(result, original.getDependencies(), false, "");
+      final boolean local = current == project;
+      addMatches(result, original.getDependencies(), local, false, "");
       if (original.getDependencyManagement() != null) {
-        addMatches(result, original.getDependencyManagement().getDependencies(), true, "");
+        addMatches(result, original.getDependencyManagement().getDependencies(), local, true, "");
       }
       for (final Profile profile : original.getProfiles()) {
-        addMatches(result, profile.getDependencies(), false, profile.getId());
+        if (profile.getId() == null || profile.getId().isBlank()) {
+          continue;
+        }
+        addMatches(result, profile.getDependencies(), local, false, profile.getId());
         if (profile.getDependencyManagement() != null) {
           addMatches(
-              result, profile.getDependencyManagement().getDependencies(), true, profile.getId());
+              result,
+              profile.getDependencyManagement().getDependencies(),
+              local,
+              true,
+              profile.getId());
         }
       }
     }
@@ -143,23 +177,25 @@ final class ExclusionProvenanceCapture {
   private static void addMatches(
       final Map<LocationKey, List<Match>> result,
       final List<Dependency> dependencies,
+      final boolean local,
       final boolean management,
       final String profile) {
     for (final Dependency dependency : dependencies) {
-      addMatch(result, dependency.getLocation(""), management, profile);
+      addMatch(result, dependency.getLocation(""), local, management, profile);
       for (final Exclusion exclusion : dependency.getExclusions()) {
-        addMatch(result, exclusion.getLocation(""), management, profile);
+        addMatch(result, exclusion.getLocation(""), local, management, profile);
       }
     }
   }
 
-  private record Match(boolean management, String profile) {}
+  private record Match(boolean local, boolean management, String profile) {}
 
   private record LocationKey(String modelId, String path, int line, int column) {}
 
   private static void addMatch(
       final Map<LocationKey, List<Match>> index,
       final InputLocation location,
+      final boolean local,
       final boolean management,
       final String profile) {
     if (location != null && location.getSource() != null) {
@@ -169,7 +205,9 @@ final class ExclusionProvenanceCapture {
               value(location.getSource().getLocation()),
               location.getLineNumber(),
               location.getColumnNumber());
-      index.computeIfAbsent(key, ignored -> new ArrayList<>()).add(new Match(management, profile));
+      index
+          .computeIfAbsent(key, ignored -> new ArrayList<>())
+          .add(new Match(local, management, profile));
     }
   }
 

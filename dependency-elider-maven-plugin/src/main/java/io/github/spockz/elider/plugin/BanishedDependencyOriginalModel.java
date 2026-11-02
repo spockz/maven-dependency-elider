@@ -121,6 +121,15 @@ record BanishedDependencyOriginalModel(
         }
       }
     }
+    fields.add(Integer.toString(snapshot.activeProfiles().size()));
+    snapshot
+        .activeProfiles()
+        .forEach(
+            (model, profiles) -> {
+              fields.add(model);
+              fields.add(Integer.toString(profiles.size()));
+              fields.addAll(profiles);
+            });
     fields.add(Integer.toString(snapshot.diagnostics().size()));
     fields.addAll(snapshot.diagnostics());
   }
@@ -166,13 +175,17 @@ record BanishedDependencyOriginalModel(
   }
 
   /* package */ boolean hasValidSourceFingerprint() {
+    return sourceFingerprint.equals(MavenElisionGraphBinding.sha256(sourceFingerprintFields()));
+  }
+
+  /* package */ List<String> sourceFingerprintFields() {
     final List<String> fields = new ArrayList<>();
     addFingerprintEntries(fields, "effective-dependencies", effectiveDependencies);
     addFingerprintEntries(fields, "original-dependencies", originalDependencies);
     addFingerprintEntries(fields, "effective-management", effectiveManagement);
     addFingerprintEntries(fields, "original-management", originalManagement);
     addProvenanceFingerprint(fields, exclusionProvenance);
-    return sourceFingerprint.equals(MavenElisionGraphBinding.sha256(fields));
+    return fields;
   }
 
   /* package */ boolean matchesCurrentModel(final BanishedDependencyOriginalModel current) {
@@ -188,7 +201,8 @@ record BanishedDependencyOriginalModel(
   }
 
   private boolean sameOriginalProvenance(final ExclusionRecommendations.Snapshot current) {
-    if (!exclusionProvenance.management().equals(current.management())
+    if (!exclusionProvenance.activeProfiles().equals(current.activeProfiles())
+        || !exclusionProvenance.management().equals(current.management())
         || exclusionProvenance.dependencies().size() != current.dependencies().size()) {
       return false;
     }
