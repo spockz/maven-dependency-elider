@@ -22,9 +22,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -233,6 +235,7 @@ public final class ExampleSupport {
     if (!Path.of(reportProductionOutput.textValue()).toRealPath().equals(productionOutput)) {
       throw new IOException("Report does not identify the copied baseline production output");
     }
+    validateExclusionReview(report.get("exclusionReview"));
     final JsonNode groups = report.path("groups");
     validateDependencyPrediction(report.get("dependencyPrediction"));
     final Set<String> neither = names(groups.path("neitherReferencedNorObserved"));
@@ -253,6 +256,276 @@ public final class ExampleSupport {
     if (!neither.contains("org.apache.commons.codec.binary.Hex")) {
       throw new IOException(
           "Unused Commons Codec Hex was not classified as neither observed nor referenced");
+    }
+  }
+
+  private static void validateExclusionReview(final JsonNode review) throws IOException {
+    requireReviewFields(
+        review, Set.of("available", "unavailableReason", "snapshot", "candidates", "management"));
+    final JsonNode available = review.path("available");
+    final JsonNode reason = review.path("unavailableReason");
+    final JsonNode candidates = review.path("candidates");
+    final JsonNode management = review.path("management");
+    if (!available.isBoolean()
+        || !reason.isTextual()
+        || !candidates.isArray()
+        || !management.isArray()) {
+      throw invalidExclusionReview();
+    }
+    final JsonNode snapshot = review.path("snapshot");
+    if (!available.booleanValue()) {
+      if (reason.textValue().isBlank()
+          || !snapshot.isNull()
+          || !candidates.isEmpty()
+          || !management.isEmpty()) {
+        throw invalidExclusionReview();
+      }
+      return;
+    }
+    if (!reason.textValue().isEmpty()) {
+      throw invalidExclusionReview();
+    }
+    requireReviewFields(
+        snapshot, Set.of("dependencies", "management", "activeProfiles", "diagnostics"));
+    final JsonNode dependencies = snapshot.path("dependencies");
+    final JsonNode managed = snapshot.path("management");
+    final JsonNode profiles = snapshot.path("activeProfiles");
+    final JsonNode diagnostics = snapshot.path("diagnostics");
+    validateReviewProfiles(profiles);
+    validateReviewStrings(diagnostics);
+    validateReviewDeclarations(dependencies, profiles, diagnostics);
+    validateReviewDeclarations(managed, profiles, diagnostics);
+    if (!candidates.equals(expectedReviewCandidates(dependencies))
+        || !management.equals(expectedReviewManagement(dependencies, managed))) {
+      throw new IOException("exclusionReview findings do not match their frozen snapshot");
+    }
+  }
+
+  private static void validateReviewProfiles(final JsonNode profiles) throws IOException {
+    if (!profiles.isObject()) {
+      throw invalidExclusionReview();
+    }
+    final var fields = profiles.fields();
+    while (fields.hasNext()) {
+      final var profile = fields.next();
+      if (profile.getKey().isBlank()) {
+        throw invalidExclusionReview();
+      }
+      validateReviewStrings(profile.getValue());
+      final Set<String> unique = new HashSet<>();
+      if (profile.getValue().isEmpty()) {
+        throw invalidExclusionReview();
+      }
+      for (final JsonNode id : profile.getValue()) {
+        if (id.textValue().isBlank()
+            || !id.textValue().equals(id.textValue().trim())
+            || !unique.add(id.textValue())) {
+          throw invalidExclusionReview();
+        }
+      }
+    }
+  }
+
+  private static void validateReviewStrings(final JsonNode values) throws IOException {
+    if (!values.isArray()) {
+      throw invalidExclusionReview();
+    }
+    for (final JsonNode value : values) {
+      if (!value.isTextual()) {
+        throw invalidExclusionReview();
+      }
+    }
+  }
+
+  private static void validateReviewDeclarations(
+      final JsonNode declarations, final JsonNode profiles, final JsonNode diagnostics)
+      throws IOException {
+    if (!declarations.isArray()) {
+      throw invalidExclusionReview();
+    }
+    for (int ordinal = 0; ordinal < declarations.size(); ordinal++) {
+      final JsonNode declaration = declarations.get(ordinal);
+      requireReviewFields(
+          declaration,
+          Set.of("ordinal", "groupId", "artifactId", "type", "classifier", "origin", "exclusions"));
+      if (!declaration.path("ordinal").isInt()
+          || declaration.path("ordinal").intValue() != ordinal) {
+        throw new IOException("exclusionReview declaration ordinals are not canonical");
+      }
+      for (final String field : List.of("groupId", "artifactId", "type", "classifier")) {
+        if (!declaration.path(field).isTextual()) {
+          throw invalidExclusionReview();
+        }
+      }
+      validateReviewOrigin(declaration.path("origin"), profiles, diagnostics);
+      final JsonNode exclusions = declaration.path("exclusions");
+      if (!exclusions.isArray()) {
+        throw invalidExclusionReview();
+      }
+      for (final JsonNode exclusion : exclusions) {
+        requireReviewFields(exclusion, Set.of("groupId", "artifactId", "origin"));
+        if (!exclusion.path("groupId").isTextual()
+            || !exclusion.path("artifactId").isTextual()) {
+          throw invalidExclusionReview();
+        }
+        validateReviewOrigin(exclusion.path("origin"), profiles, diagnostics);
+      }
+    }
+  }
+
+  private static void validateReviewOrigin(
+      final JsonNode origin, final JsonNode profiles, final JsonNode diagnostics)
+      throws IOException {
+    requireReviewFields(
+        origin, Set.of("kind", "modelId", "source", "line", "column", "profileId"));
+    final JsonNode kind = origin.path("kind");
+    final JsonNode model = origin.path("modelId");
+    final JsonNode profile = origin.path("profileId");
+    final JsonNode line = origin.path("line");
+    final JsonNode column = origin.path("column");
+    if (!kind.isTextual()
+        || !model.isTextual()
+        || !origin.path("source").isTextual()
+        || !profile.isTextual()
+        || !line.isInt()
+        || !column.isInt()
+        || !Set.of(
+                "UNKNOWN", "LOCAL", "INHERITED", "LOCAL_MANAGEMENT", "INHERITED_MANAGEMENT",
+                "LOCAL_PROFILE", "INHERITED_PROFILE", "LOCAL_PROFILE_MANAGEMENT",
+                "INHERITED_PROFILE_MANAGEMENT")
+            .contains(kind.textValue())) {
+      throw invalidExclusionReview();
+    }
+    final boolean unknown = kind.textValue().equals("UNKNOWN");
+    if ((!unknown && (model.textValue().isBlank() || line.intValue() < 1 || column.intValue() < 1))
+        || (kind.textValue().contains("_PROFILE") != !profile.textValue().isBlank())
+        || !profile.textValue().equals(profile.textValue().trim())
+        || (unknown && !profile.textValue().isEmpty())) {
+      throw invalidExclusionReview();
+    }
+    if (!profile.textValue().isEmpty()) {
+      final JsonNode active = profiles.path(model.textValue());
+      if (!active.isArray() || !containsText(active, profile.textValue())) {
+        throw invalidExclusionReview();
+      }
+    }
+    if (unknown
+        && !containsText(
+            diagnostics,
+            "Incomplete or ambiguous provenance at "
+                + model.textValue()
+                + ":"
+                + line.intValue()
+                + ":"
+                + column.intValue())) {
+      throw invalidExclusionReview();
+    }
+  }
+
+  private static ArrayNode expectedReviewCandidates(final JsonNode dependencies) {
+    final Map<ReviewCoordinate, List<JsonNode>> paths = new TreeMap<>();
+    for (final JsonNode declaration : dependencies) {
+      final Map<ReviewCoordinate, List<JsonNode>> local = new LinkedHashMap<>();
+      for (final JsonNode exclusion : declaration.path("exclusions")) {
+        final ReviewCoordinate coordinate =
+            new ReviewCoordinate(
+                exclusion.path("groupId").textValue(), exclusion.path("artifactId").textValue());
+        if (coordinate.exact()) {
+          final List<JsonNode> origins = local.computeIfAbsent(coordinate, ignored -> new ArrayList<>());
+          if (!origins.contains(exclusion.path("origin"))) {
+            origins.add(exclusion.path("origin"));
+          }
+        }
+      }
+      local.forEach(
+          (coordinate, origins) -> {
+            final ObjectNode observation = JSON.createObjectNode();
+            observation.set("declaration", reviewReference(declaration));
+            observation.set("exclusionOrigins", JSON.valueToTree(origins));
+            paths.computeIfAbsent(coordinate, ignored -> new ArrayList<>()).add(observation);
+          });
+    }
+    final ArrayNode expected = JSON.createArrayNode();
+    paths.forEach(
+        (coordinate, observations) -> {
+          if (observations.size() >= 2) {
+            final ObjectNode candidate = expected.addObject();
+            final ObjectNode identity = candidate.putObject("coordinate");
+            identity.put("groupId", coordinate.groupId());
+            identity.put("artifactId", coordinate.artifactId());
+            candidate.put("count", observations.size());
+            candidate.set("declarations", JSON.valueToTree(observations));
+          }
+        });
+    return expected;
+  }
+
+  private static ArrayNode expectedReviewManagement(
+      final JsonNode dependencies, final JsonNode managed) {
+    final Set<JsonNode> contributing = new HashSet<>();
+    for (final JsonNode declaration : dependencies) {
+      for (final JsonNode exclusion : declaration.path("exclusions")) {
+        final JsonNode origin = exclusion.path("origin");
+        if (!"UNKNOWN".equals(origin.path("kind").textValue())) {
+          contributing.add(origin);
+        }
+      }
+    }
+    final ArrayNode expected = JSON.createArrayNode();
+    for (final JsonNode declaration : managed) {
+      final ArrayNode exclusions = JSON.createArrayNode();
+      for (final JsonNode exclusion : declaration.path("exclusions")) {
+        final JsonNode origin = exclusion.path("origin");
+        if (!"UNKNOWN".equals(origin.path("kind").textValue())
+            && !contributing.contains(origin)) {
+          final ObjectNode nested = exclusions.addObject();
+          final ObjectNode coordinate = nested.putObject("coordinate");
+          coordinate.put("groupId", exclusion.path("groupId").textValue());
+          coordinate.put("artifactId", exclusion.path("artifactId").textValue());
+          nested.set("origin", origin.deepCopy());
+        }
+      }
+      if (!exclusions.isEmpty()) {
+        final ObjectNode row = expected.addObject();
+        row.set("reference", reviewReference(declaration));
+        row.set("exclusions", exclusions);
+      }
+    }
+    return expected;
+  }
+
+  private static ObjectNode reviewReference(final JsonNode declaration) {
+    final ObjectNode reference = JSON.createObjectNode();
+    for (final String field : List.of("ordinal", "groupId", "artifactId", "type", "classifier", "origin")) {
+      reference.set(field, declaration.path(field).deepCopy());
+    }
+    return reference;
+  }
+
+  private static void requireReviewFields(final JsonNode node, final Set<String> expected)
+      throws IOException {
+    if (node == null || !node.isObject() || !fieldNames(node).equals(expected)) {
+      throw invalidExclusionReview();
+    }
+  }
+
+  private static IOException invalidExclusionReview() {
+    return new IOException("Invalid exclusionReview payload");
+  }
+
+  private record ReviewCoordinate(String groupId, String artifactId)
+      implements Comparable<ReviewCoordinate> {
+    private boolean exact() {
+      return !groupId.isBlank()
+          && !artifactId.isBlank()
+          && !groupId.contains("*")
+          && !artifactId.contains("*");
+    }
+
+    @Override
+    public int compareTo(final ReviewCoordinate other) {
+      final int group = groupId.compareTo(other.groupId);
+      return group == 0 ? artifactId.compareTo(other.artifactId) : group;
     }
   }
 

@@ -98,9 +98,130 @@ public final class ExampleSupportContractTest {
 
       ExampleSupport.validateClassUsageReport(reportWithValidPrediction(productionOutput), productionOutput);
       verifiesBanPlanValidation(productionOutput);
+      verifiesExclusionReviewValidation(productionOutput);
     } finally {
       Files.deleteIfExists(productionOutput);
     }
+  }
+
+  private static void verifiesExclusionReviewValidation(final Path productionOutput)
+      throws IOException {
+    final ObjectNode unavailable = reportWithValidPrediction(productionOutput);
+    ExampleSupport.validateClassUsageReport(unavailable, productionOutput);
+
+    final ObjectNode missing = unavailable.deepCopy();
+    missing.remove("exclusionReview");
+    rejects(missing, productionOutput, "Invalid exclusionReview payload");
+
+    final ObjectNode malformed = unavailable.deepCopy();
+    ((ObjectNode) malformed.path("exclusionReview")).put("available", "false");
+    rejects(malformed, productionOutput, "Invalid exclusionReview payload");
+
+    final ObjectNode extraField = unavailable.deepCopy();
+    ((ObjectNode) extraField.path("exclusionReview")).put("unexpected", true);
+    rejects(extraField, productionOutput, "Invalid exclusionReview payload");
+
+    final ObjectNode missingReason = unavailable.deepCopy();
+    ((ObjectNode) missingReason.path("exclusionReview")).put("unavailableReason", "");
+    rejects(missingReason, productionOutput, "Invalid exclusionReview payload");
+
+    final ObjectNode available = reportWithValidPrediction(productionOutput);
+    available.set("exclusionReview", availableReview());
+    ExampleSupport.validateClassUsageReport(available, productionOutput);
+
+    final ObjectNode tamperedCount = available.deepCopy();
+    ((ObjectNode) tamperedCount.path("exclusionReview").path("candidates").get(0))
+        .put("count", 3);
+    rejects(tamperedCount, productionOutput, "findings do not match their frozen snapshot");
+
+    final ObjectNode repeatedOrdinal = available.deepCopy();
+    ((ObjectNode)
+            repeatedOrdinal.path("exclusionReview").path("snapshot").path("dependencies").get(1))
+        .put("ordinal", 0);
+    ((ObjectNode)
+            repeatedOrdinal
+                .path("exclusionReview")
+                .path("candidates")
+                .get(0)
+                .path("declarations")
+                .get(1)
+                .path("declaration"))
+        .put("ordinal", 0);
+    rejects(repeatedOrdinal, productionOutput, "declaration ordinals are not canonical");
+  }
+
+  private static ObjectNode availableReview() {
+    final ObjectNode review = JSON.createObjectNode();
+    review.put("available", true);
+    review.put("unavailableReason", "");
+    final ObjectNode snapshot = review.putObject("snapshot");
+    final ArrayNode dependencies = snapshot.putArray("dependencies");
+    final ObjectNode origin = JSON.createObjectNode();
+    origin.put("kind", "LOCAL");
+    origin.put("modelId", "example:consumer:1");
+    origin.put("source", "pom.xml");
+    origin.put("line", 5);
+    origin.put("column", 3);
+    origin.put("profileId", "");
+    final ArrayNode observations = JSON.createArrayNode();
+    for (int ordinal = 0; ordinal < 2; ordinal++) {
+      final ObjectNode declaration = dependencies.addObject();
+      declaration.put("ordinal", ordinal);
+      declaration.put("groupId", "example");
+      declaration.put("artifactId", "source-" + ordinal);
+      declaration.put("type", "jar");
+      declaration.put("classifier", "");
+      declaration.set("origin", origin.deepCopy());
+      final ObjectNode exclusion = declaration.putArray("exclusions").addObject();
+      exclusion.put("groupId", "unused");
+      exclusion.put("artifactId", "library");
+      exclusion.set("origin", origin.deepCopy());
+
+      final ObjectNode observation = observations.addObject();
+      final ObjectNode reference = observation.putObject("declaration");
+      reference.put("ordinal", ordinal);
+      reference.put("groupId", "example");
+      reference.put("artifactId", "source-" + ordinal);
+      reference.put("type", "jar");
+      reference.put("classifier", "");
+      reference.set("origin", origin.deepCopy());
+      observation.putArray("exclusionOrigins").add(origin.deepCopy());
+    }
+    final ObjectNode managementOrigin = origin.deepCopy();
+    managementOrigin.put("line", 8);
+    final ObjectNode managed = snapshot.putArray("management").addObject();
+    managed.put("ordinal", 0);
+    managed.put("groupId", "example");
+    managed.put("artifactId", "managed");
+    managed.put("type", "jar");
+    managed.put("classifier", "");
+    managed.set("origin", managementOrigin.deepCopy());
+    final ObjectNode managedExclusion = managed.putArray("exclusions").addObject();
+    managedExclusion.put("groupId", "other");
+    managedExclusion.put("artifactId", "library");
+    managedExclusion.set("origin", managementOrigin.deepCopy());
+    snapshot.putObject("activeProfiles");
+    snapshot.putArray("diagnostics");
+    final ObjectNode candidate = review.putArray("candidates").addObject();
+    final ObjectNode coordinate = candidate.putObject("coordinate");
+    coordinate.put("groupId", "unused");
+    coordinate.put("artifactId", "library");
+    candidate.put("count", 2);
+    candidate.set("declarations", observations);
+    final ObjectNode managementRow = review.putArray("management").addObject();
+    final ObjectNode managementReference = managementRow.putObject("reference");
+    managementReference.put("ordinal", 0);
+    managementReference.put("groupId", "example");
+    managementReference.put("artifactId", "managed");
+    managementReference.put("type", "jar");
+    managementReference.put("classifier", "");
+    managementReference.set("origin", managementOrigin.deepCopy());
+    final ObjectNode managementExclusion = managementRow.putArray("exclusions").addObject();
+    final ObjectNode managementCoordinate = managementExclusion.putObject("coordinate");
+    managementCoordinate.put("groupId", "other");
+    managementCoordinate.put("artifactId", "library");
+    managementExclusion.set("origin", managementOrigin.deepCopy());
+    return review;
   }
 
   private static void verifiesBanPlanValidation(final Path productionOutput) throws IOException {
@@ -309,6 +430,12 @@ public final class ExampleSupportContractTest {
     groups.putArray("runtimeObservedWithoutApplicationReference");
     groups.putArray("applicationReferenced");
     report.putArray("runtimeObservedClasses");
+    final ObjectNode review = report.putObject("exclusionReview");
+    review.put("available", false);
+    review.put("unavailableReason", "No pre-injection declaration capture is available");
+    review.putNull("snapshot");
+    review.putArray("candidates");
+    review.putArray("management");
     return report;
   }
 
