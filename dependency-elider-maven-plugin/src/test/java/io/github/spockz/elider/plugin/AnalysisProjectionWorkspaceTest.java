@@ -7,19 +7,32 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** Tests that temporary MRJAR projections stay isolated and are cleaned on every exit. */
 final class AnalysisProjectionWorkspaceTest {
+  /** Provides a base for project outputs and isolated projection workspaces. */
   @TempDir private Path temporaryDirectory;
 
+  /* package */ AnalysisProjectionWorkspaceTest() {
+    // JUnit creates each test instance through the package-visible no-argument constructor.
+  }
+
   @Test
+  // WHY: This one expensive archive fixture covers both success and failure cleanup paths.
+  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void predictionProjectionDirectoryIsIsolatedAndRemovedAfterSuccessAndFailure() throws Exception {
     final MavenProject project = project();
     final Path existingProjectOutput =
@@ -63,14 +76,18 @@ final class AnalysisProjectionWorkspaceTest {
   }
 
   @Test
+  // WHY: The test needs two overlapping predictions to prove their workspaces are isolated.
+  @SuppressWarnings("PMD.DoNotUseThreads")
   void concurrentPredictionWorkspacesDoNotShareProjectionFiles() throws Exception {
     final Path archive = archive();
     final ArtifactCoordinate coordinate =
         new ArtifactCoordinate("org.example", "projection", "1", "jar", "", "compile");
     final CyclicBarrier bothProjected = new CyclicBarrier(2);
-    try (var executor = Executors.newFixedThreadPool(2)) {
-      final var first = executor.submit(() -> projectAndAwait(archive, coordinate, bothProjected));
-      final var second = executor.submit(() -> projectAndAwait(archive, coordinate, bothProjected));
+    try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+      final Future<Path> first =
+          executor.submit(() -> projectAndAwait(archive, coordinate, bothProjected));
+      final Future<Path> second =
+          executor.submit(() -> projectAndAwait(archive, coordinate, bothProjected));
       assertAll(
           "parallel predictions use distinct scratch paths with the same semantic identity",
           () -> assertThat(first.get()).isNotEqualTo(second.get()),
@@ -84,7 +101,7 @@ final class AnalysisProjectionWorkspaceTest {
 
   private Path projectAndAwait(
       final Path archive, final ArtifactCoordinate coordinate, final CyclicBarrier bothProjected)
-      throws Exception {
+      throws IOException, InterruptedException, BrokenBarrierException, TimeoutException {
     try (AnalysisProjectionWorkspace workspace = AnalysisProjectionWorkspace.create()) {
       final Path projection =
           MultiReleaseLibraryProjection.create(archive, coordinate, workspace.directory(), 21);
@@ -114,7 +131,7 @@ final class AnalysisProjectionWorkspaceTest {
     return project;
   }
 
-  private Path archive() throws Exception {
+  private Path archive() throws IOException {
     final Path base =
         MultiReleaseProjectionFixtures.compile(
             temporaryDirectory,

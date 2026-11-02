@@ -7,7 +7,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
+/** Tests prediction-only removal reporting for classes retained by upper-tier inputs. */
 final class AnalyzePredictionTest {
+  /* package */ AnalyzePredictionTest() {
+    // JUnit creates each test instance through the package-visible no-argument constructor.
+  }
+
   @Test
   void upperTierOnlyClassIsNotReportedAsPlannedRemoval() {
     final Set<String> removed =

@@ -18,8 +18,14 @@ import org.codehaus.plexus.PlexusContainer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** Tests that Analyze accepts only Maven's verified absence of a selected JDK toolchain. */
 final class AnalysisEnvironmentToolchainTest {
+  /** Holds the base directory used by the toolchain session fixture. */
   @TempDir private Path temporaryDirectory;
+
+  /* package */ AnalysisEnvironmentToolchainTest() {
+    // JUnit creates each test instance through the package-visible no-argument constructor.
+  }
 
   @Test
   void capturesOnlyAbsentDefaultToolchainContextAndRejectsAnySelectedEntry() throws Exception {
@@ -56,7 +62,7 @@ final class AnalysisEnvironmentToolchainTest {
     final PlexusContainer container =
         (PlexusContainer)
             Proxy.newProxyInstance(
-                PlexusContainer.class.getClassLoader(),
+                Thread.currentThread().getContextClassLoader(),
                 new Class<?>[] {PlexusContainer.class},
                 (proxy, method, arguments) ->
                     "lookup".equals(method.getName()) ? new DefaultToolchainManager() : null);

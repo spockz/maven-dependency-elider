@@ -10,6 +10,7 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.TrimOptions;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,24 +27,29 @@ import org.apache.maven.project.MavenProject;
 import org.apache.maven.toolchain.DefaultToolchainManager;
 import org.codehaus.plexus.PlexusContainer;
 import org.eclipse.aether.DefaultRepositorySystemSession;
+import org.eclipse.aether.SessionData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
+/** Tests captured-effective prediction, output resolution, and publication boundaries. */
 final class MavenElisionServicePredictionTest {
+  /** Contains project inputs and output files for each prediction scenario. */
   @TempDir private Path temporaryDirectory;
+
+  /* package */ MavenElisionServicePredictionTest() {
+    // JUnit creates each test instance through the package-visible no-argument constructor.
+  }
 
   @Test
   void predictsCapturedEffectiveMrjarWithoutPublishingTrimState() throws Exception {
     final Fixture fixture = fixture(true);
+    final DefaultRepositorySystemSession repositorySession = fixture.repositorySession();
+    final SessionData sessionDataBefore = repositorySession.getData();
     final Object captureBefore =
-        fixture
-            .repositorySession()
-            .getData()
-            .get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
-    final Object planBefore =
-        fixture.repositorySession().getData().get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
+        sessionDataBefore.get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
+    final Object planBefore = sessionDataBefore.get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
     final Path generation = TrimPaths.generationPath(fixture.project(), "prediction-only");
     final Path output = MavenGeneratedOutputs.manifestPath(fixture.project());
     Files.createDirectories(output.getParent());
@@ -55,6 +61,7 @@ final class MavenElisionServicePredictionTest {
 
     final AnalyzePrediction prediction =
         new MavenElisionService().predict(fixture.project(), fixture.options(), null);
+    final SessionData sessionDataAfter = repositorySession.getData();
 
     assertAll(
         "captured-effective Analyze predicts without publishing trim state",
@@ -78,18 +85,10 @@ final class MavenElisionServicePredictionTest {
                                     .doesNotContain("projection.TwentyOneOnly"))),
         () -> assertThat(fixture.artifact().getFile()).isEqualTo(fixture.archive().toFile()),
         () ->
-            assertThat(
-                    fixture
-                        .repositorySession()
-                        .getData()
-                        .get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY))
+            assertThat(sessionDataAfter.get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY))
                 .isEqualTo(captureBefore),
         () ->
-            assertThat(
-                    fixture
-                        .repositorySession()
-                        .getData()
-                        .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
+            assertThat(sessionDataAfter.get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
                 .isEqualTo(planBefore),
         () -> assertThat(generation).doesNotExist(),
         () -> assertThat(output).hasContent("existing-output-manifest"),
@@ -109,7 +108,7 @@ final class MavenElisionServicePredictionTest {
                     () ->
                         new MavenElisionService()
                             .predict(fixture.project(), fixture.options(), null))
-                .isInstanceOf(java.io.IOException.class)
+                .isInstanceOf(IOException.class)
                 .hasMessageContaining("missing for Analyze"),
         () -> assertThat(reportSentinel).hasContent("report sentinel"));
   }
@@ -142,7 +141,10 @@ final class MavenElisionServicePredictionTest {
   void resolvesRelativeProductionOutputAgainstProjectWhenProcessDirectoryDiffers()
       throws Exception {
     final Fixture fixture = fixture(true);
-    final Path projectBase = fixture.project().getBasedir().toPath().toAbsolutePath().normalize();
+    final MavenProject project = fixture.project();
+    final File projectBaseFile = project.getBasedir();
+    final Path projectBasePath = projectBaseFile.toPath();
+    final Path projectBase = projectBasePath.toAbsolutePath().normalize();
     final Path processDirectory =
         Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
     fixture.project().getBuild().setOutputDirectory("target/classes");
@@ -202,7 +204,7 @@ final class MavenElisionServicePredictionTest {
     return applicationClass;
   }
 
-  private Fixture fixture(final boolean capturePair) throws Exception {
+  private Fixture fixture(final boolean capturePair) throws IOException {
     final Path fixtureDirectory = Files.createTempDirectory(temporaryDirectory, "prediction-");
     final MavenProject project = new MavenProject();
     project.setGroupId("fixture");
@@ -264,7 +266,7 @@ final class MavenElisionServicePredictionTest {
     final PlexusContainer container =
         (PlexusContainer)
             java.lang.reflect.Proxy.newProxyInstance(
-                PlexusContainer.class.getClassLoader(),
+                Thread.currentThread().getContextClassLoader(),
                 new Class<?>[] {PlexusContainer.class},
                 (proxy, method, arguments) ->
                     "lookup".equals(method.getName()) ? new DefaultToolchainManager() : null);
@@ -277,7 +279,7 @@ final class MavenElisionServicePredictionTest {
     return session;
   }
 
-  private Path multiReleaseArchive(final Path fixtureDirectory) throws Exception {
+  private Path multiReleaseArchive(final Path fixtureDirectory) throws IOException {
     final Path base =
         MultiReleaseProjectionFixtures.compile(
             fixtureDirectory,

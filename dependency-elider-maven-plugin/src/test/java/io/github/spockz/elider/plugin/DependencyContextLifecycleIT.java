@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
 import java.io.IOException;
 import java.io.InputStream;
@@ -67,6 +68,8 @@ final class DependencyContextLifecycleIT {
   private static final String EXTENSIONS_XML = "extensions.xml";
   private static final String BUILD_SUCCESS = "BUILD SUCCESS";
   private static final String CONSUMER_ELIDE_POM = "consumer-elide/pom.xml";
+
+  private static final String CONSUMER_DIRECTORY = "consumer";
   private static final String TRACE_FILE = "trace.txt";
   private static final String KEEP_ENTRY_ROOT = "io.github.spockz.elider.fixture.keep.KeepEntry\n";
   private static final String SEED_PLAN_DISABLED = "-Dlifecycle.seedPlan=false";
@@ -128,7 +131,7 @@ final class DependencyContextLifecycleIT {
     installMediationConflict(localRepository);
     final Path settings = writeSettings(evidenceDirectory);
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path consumer = Files.createDirectories(evidenceDirectory.resolve("consumer"));
+    final Path consumer = Files.createDirectories(evidenceDirectory.resolve(CONSUMER_DIRECTORY));
     final Path target = consumer.resolve("target");
     Files.createDirectories(target);
     final Path report = target.resolve("class-usage.json");
@@ -204,8 +207,8 @@ final class DependencyContextLifecycleIT {
                 .isEqualTo(
                     "[\"io.github.spockz.elider.test:drop-library:jar:2.0.0 (compile)\","
                         + "\"io.github.spockz.elider.test:keep-library:jar:1.0.0 (compile)\"]"),
-        () -> assertThat(prediction.path("wouldElideArtifacts").isArray()).isTrue(),
-        () -> assertThat(prediction.path("plannedClassRemovals").isArray()).isTrue(),
+        () -> assertThat(prediction.path("wouldElideArtifacts")).isInstanceOf(ArrayNode.class),
+        () -> assertThat(prediction.path("plannedClassRemovals")).isInstanceOf(ArrayNode.class),
         () ->
             assertThat(prediction.path("plannedClassRemovals").toString())
                 .contains("PLANNED_UNVERIFIED", "UnusedEntry"),
@@ -784,7 +787,7 @@ final class DependencyContextLifecycleIT {
     final Path localRepository = copySeedRepository(evidenceDirectory);
     final Path settings = writeSettings(evidenceDirectory);
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path consumer = fixtureRoot.resolve("consumer");
+    final Path consumer = fixtureRoot.resolve(CONSUMER_DIRECTORY);
     final Path consumerPom = consumer.resolve(POM_XML);
 
     assertResolverExtensionDescriptor(
@@ -1334,7 +1337,7 @@ final class DependencyContextLifecycleIT {
     final Path localRepository = copySeedRepository(evidenceDirectory);
     final Path settings = writeSettings(evidenceDirectory);
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path consumer = Files.createDirectories(evidenceDirectory.resolve("consumer"));
+    final Path consumer = Files.createDirectories(evidenceDirectory.resolve(CONSUMER_DIRECTORY));
     final Path trace = consumer.resolve(TRACE_FILE);
     Files.writeString(trace, "io.github.spockz.elider.fixture.drop.DropEntry\n");
     writeUnusedLibrary(localRepository);
@@ -1677,7 +1680,7 @@ final class DependencyContextLifecycleIT {
     final Path settings = writeSettings(evidenceDirectory);
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
     final Path reactor = evidenceDirectory.resolve("multi-project");
-    final Path consumer = reactor.resolve("consumer");
+    final Path consumer = reactor.resolve(CONSUMER_DIRECTORY);
     Files.createDirectories(consumer);
     Files.writeString(
         reactor.resolve(POM_XML),
@@ -2578,6 +2581,7 @@ final class DependencyContextLifecycleIT {
             XMLConstants.W3C_XML_SCHEMA_INSTANCE_NS_URI,
             "schemaLocation",
             "http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd");
+        writeCachedRepositoryMirror(xml, repositoryUri);
         writeRepositoryProfile(xml, repositoryUri);
         xml.writeEndElement();
         xml.writeEndDocument();
@@ -2586,6 +2590,17 @@ final class DependencyContextLifecycleIT {
       }
     }
     return settings;
+  }
+
+  private static void writeCachedRepositoryMirror(
+      final XMLStreamWriter xml, final String repositoryUri) throws XMLStreamException {
+    xml.writeStartElement("mirrors");
+    xml.writeStartElement("mirror");
+    writeTextElement(xml, "id", "cached-local-mirror");
+    writeTextElement(xml, "mirrorOf", "*");
+    writeTextElement(xml, "url", repositoryUri);
+    xml.writeEndElement();
+    xml.writeEndElement();
   }
 
   private static void writeRepositoryProfile(final XMLStreamWriter xml, final String repositoryUri)
@@ -2676,6 +2691,8 @@ final class DependencyContextLifecycleIT {
             .redirectErrorStream(true)
             .redirectOutput(logFile.toFile());
     final Map<String, String> environment = processBuilder.environment();
+    // Nested invocations use the explicit local-only mirror and their own command arguments.
+    environment.remove("MAVEN_ARGS");
     environment.put("JAVA_HOME", System.getProperty("java.home"));
     environment.put("HOME", isolatedHome.toString());
     final String configuredMavenUserHome = environment.get("MAVEN_USER_HOME");

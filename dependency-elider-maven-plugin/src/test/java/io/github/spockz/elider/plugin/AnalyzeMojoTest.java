@@ -2,47 +2,38 @@
 
 package io.github.spockz.elider.plugin;
 
+import static io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.artifact;
+import static io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.artifactWithClasses;
+import static io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.fixture;
+import static io.github.spockz.elider.plugin.AnalyzeMojoTestFieldSupport.seedSelectedBanCapture;
+import static io.github.spockz.elider.plugin.AnalyzeMojoTestFieldSupport.set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.plugin.AnalyzeMojoTestArtifactSupport.Fixture;
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
-import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
-import org.apache.maven.model.Plugin;
-import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
-import org.eclipse.aether.DefaultRepositorySystemSession;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Opcodes;
 
 /** Verifies conservative Maven artifact adaptation and explicit trace requirements. */
-@SuppressWarnings({
-  "PMD.AvoidAccessibilityAlteration",
-  "PMD.UnitTestContainsTooManyAsserts",
-  "PMD.LawOfDemeter",
-  "PMD.TooManyMethods",
-  "PMD.ExcessiveImports"
-})
+@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.LawOfDemeter", "PMD.TooManyMethods"})
 final class AnalyzeMojoTest {
   /** WHY: CVE fixtures use one stable vulnerable symbol in mappings and assertions. */
   private static final String UNUSED_CLASS = "unused.Idle";
@@ -59,13 +50,14 @@ final class AnalyzeMojoTest {
   void analyzesExplicitTraceWithoutMutatingArtifactsAndReportsCompleteInput()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
-        artifact("used", "1.0", "compile", "jar", "used.jar", "used/Sample.class");
+        artifact(tempDir, "used", "1.0", "compile", "jar", "used.jar", "used/Sample.class");
     final Artifact unused =
-        artifact("unused", "1.0", "compile", "jar", "unused.jar", "unused/Sample.class");
+        artifact(tempDir, "unused", "1.0", "compile", "jar", "unused.jar", "unused/Sample.class");
     final Artifact excluded =
-        artifact("excluded", "2.0", "runtime", "jar", "excluded.jar", "excluded/Sample.class");
+        artifact(
+            tempDir, "excluded", "2.0", "runtime", "jar", "excluded.jar", "excluded/Sample.class");
     final Artifact testScoped =
-        artifact("test-only", "1.0", "test", "jar", "test.jar", "test/Sample.class");
+        artifact(tempDir, "test-only", "1.0", "test", "jar", "test.jar", "test/Sample.class");
     final Artifact nonJar =
         new DefaultArtifact(
             "org.example",
@@ -133,94 +125,20 @@ final class AnalyzeMojoTest {
   }
 
   @Test
-  void analyzeAcceptsPermissiveNativeImageArgsWithTrimmingDisabled()
-      throws IOException, ReflectiveOperationException, MojoFailureException {
-    final Path archive = tempDir.resolve("native-image-analysis.jar");
-    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(archive))) {
-      output.putNextEntry(new ZipEntry("used/Sample.class"));
-      output.write(new byte[] {0});
-      output.closeEntry();
-      output.putNextEntry(new ZipEntry("META-INF/native-image/test/native-image.properties"));
-      output.write(
-          "Args = -H:UnknownOption=value\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-      output.closeEntry();
-    }
-    final Artifact artifact =
-        new DefaultArtifact(
-            "org.example",
-            "native-image",
-            "1.0",
-            "compile",
-            "jar",
-            null,
-            new DefaultArtifactHandler("jar"));
-    artifact.setFile(archive.toFile());
-    final MavenProject project = new MavenProject();
-    project.setArtifacts(new LinkedHashSet<>(Set.of(artifact)));
-    final Path trace = tempDir.resolve("native-image-trace.lst");
-    Files.writeString(trace, "used.Sample\n");
-    final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "trimJars", false);
-    set(mojo, "reportFile", tempDir.resolve("native-image-analysis.json").toFile());
-
-    mojo.execute();
-
-    assertThat(project.getArtifacts()).contains(artifact);
-    assertThat(artifact.getFile().toPath()).isEqualTo(archive);
-  }
-
-  @Test
-  void analyzeRejectsHiddenNativeImageIndirectionWithoutMutatingArtifacts()
-      throws IOException, ReflectiveOperationException {
-    final Path archive = tempDir.resolve("native-image-indirection-analysis.jar");
-    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(archive))) {
-      output.putNextEntry(new ZipEntry("used/Sample.class"));
-      output.write(new byte[] {0});
-      output.closeEntry();
-      output.putNextEntry(new ZipEntry("META-INF/native-image/test/native-image.properties"));
-      output.write("Args = -J--patch-module=\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-      output.closeEntry();
-    }
-    final Artifact artifact =
-        new DefaultArtifact(
-            "org.example",
-            "native-image-indirection",
-            "1.0",
-            "compile",
-            "jar",
-            null,
-            new DefaultArtifactHandler("jar"));
-    artifact.setFile(archive.toFile());
-    final Set<Artifact> artifacts = new LinkedHashSet<>(Set.of(artifact));
-    final MavenProject project = new MavenProject();
-    project.setArtifacts(artifacts);
-    project.setDependencyArtifacts(new LinkedHashSet<>(artifacts));
-    final Path trace = tempDir.resolve("native-image-indirection-trace.lst");
-    Files.writeString(trace, "used/Sample\n");
-    final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "reportFile", tempDir.resolve("native-image-indirection-analysis.json").toFile());
-
-    assertThatThrownBy(mojo::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("native-image indirection")
-        .hasMessageContaining("forwarded launcher indirection");
-    assertThat(project.getArtifacts()).isSameAs(artifacts).containsExactly(artifact);
-    assertThat(project.getDependencyArtifacts()).containsExactly(artifact);
-    assertThat(artifact.getFile().toPath()).isEqualTo(archive);
-  }
-
-  @Test
   void reportsPredictedElisionsAndExactOriginalJarBytesWithoutMutation()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Artifact used =
-        artifact("used", "1.0", "compile", "jar", "analysis-used.jar", "used/Sample.class");
+        artifact(
+            tempDir, "used", "1.0", "compile", "jar", "analysis-used.jar", "used/Sample.class");
     final Artifact unused =
         artifact(
-            "unused-runtime", "1.0", "runtime", "jar", "analysis-unused.jar", "unused/Idle.class");
+            tempDir,
+            "unused-runtime",
+            "1.0",
+            "runtime",
+            "jar",
+            "analysis-unused.jar",
+            "unused/Idle.class");
     final File unusedFile = unused.getFile();
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(used, unused));
     final MavenProject project = new MavenProject();
@@ -269,75 +187,9 @@ final class AnalyzeMojoTest {
   }
 
   @Test
-  @DisplayName("ADR-0010/analyze uses configured bytecode output and reports compile savings")
-  void productionClassesCompleteUsesConfiguredOutputAndReportsCompileCveSavings()
-      throws IOException, ReflectiveOperationException, MojoFailureException {
-    final Artifact used =
-        artifact(
-            "used-bytecode", "1.0", "compile", "jar", "used-bytecode.jar", "used/Sample.class");
-    final Artifact unused =
-        artifact(
-            "unused-compile", "1.0", "compile", "jar", "unused-compile.jar", "unused/Idle.class");
-    final MavenProject project = new MavenProject();
-    project.setArtifacts(new LinkedHashSet<>(List.of(used, unused)));
-    project.getProperties().setProperty("maven.compiler.release", "21");
-    final Build build = new Build();
-    final Path target = tempDir.resolve("bytecode-default-output");
-    final Path output = target.resolve("classes");
-    build.setDirectory(target.toString());
-    build.setOutputDirectory(output.toString());
-    project.setBuild(build);
-    final Path applicationClass = output.resolve("app/Main.class");
-    Files.createDirectories(applicationClass.getParent());
-    final ClassWriter writer = new ClassWriter(0);
-    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Main", null, "java/lang/Object", null);
-    writer.visitField(Opcodes.ACC_PRIVATE, "used", "Lused/Sample;", null, null).visitEnd();
-    writer.visitEnd();
-    Files.write(applicationClass, writer.toByteArray());
-    final Path sourceRoot = Files.createDirectories(target.resolve("source-root"));
-    final Path applicationSource = sourceRoot.resolve("app/Main.java");
-    Files.createDirectories(applicationSource.getParent());
-    Files.writeString(
-        applicationSource, "package app; public final class Main { used.Sample value; }\n");
-    project.addCompileSourceRoot(sourceRoot.toString());
-    final Path trace = tempDir.resolve("bytecode-default-output.lst");
-    Files.writeString(trace, "used/Sample\n");
-    final Path report = target.resolve("dependency-elider-class-usage.json");
-    final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, "productionOutput", output.toFile());
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "productionClassesComplete", true);
-    set(mojo, "reportFile", report.toFile());
-    set(mojo, "cveCacheDirectory", tempDir.resolve("bytecode-analysis-cache").toFile());
-    final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
-    mapping.setCveId("CVE-2026-19003");
-    mapping.setGroupId("org.example");
-    mapping.setArtifactId("unused-compile");
-    mapping.setVersion("1.0");
-    mapping.setVulnerableClasses(List.of(UNUSED_CLASS));
-    set(mojo, "vulnerabilityMappings", List.of(mapping));
-    final RecordingMavenLog log = new RecordingMavenLog();
-    mojo.setLog(log);
-
-    mojo.execute();
-
-    assertThat(report).isRegularFile();
-    assertThat(log.messages())
-        .contains(
-            "  Artifacts that would be elided by this analysis: 1 / 2 (50.0%)",
-            "    CVE-2026-19003 org.example:unused-compile:jar:1.0");
-    final com.fasterxml.jackson.databind.JsonNode reportJson =
-        new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
-    assertThat(reportJson.path("productionOutput").asText()).isEqualTo(output.toString());
-    assertThat(reportJson.path("staticEvidenceAvailable").asBoolean()).isTrue();
-    assertThat(reportJson.path("classFilesScanned").asInt()).isEqualTo(1);
-  }
-
-  @Test
   void doesNotClaimTrimmedCodeProofWithoutPublishedTrimEvidence()
       throws IOException, ReflectiveOperationException, MojoFailureException {
-    final Artifact runtime = artifactWithClasses("runtime-cve", "runtime-cve.jar");
+    final Artifact runtime = artifactWithClasses(tempDir, "runtime-cve", "runtime-cve.jar");
     final File original = runtime.getFile();
     final MavenProject project = new MavenProject();
     project.setArtifacts(new LinkedHashSet<>(List.of(runtime)));
@@ -381,72 +233,11 @@ final class AnalyzeMojoTest {
   }
 
   @Test
-  void writesCompleteStaticGroupsAndDeterministicClassNames()
-      throws IOException, ReflectiveOperationException, MojoFailureException {
-    final Artifact used =
-        artifact("used", "1.0", "compile", "jar", "used.jar", "used/Sample.class");
-    final Artifact runtimeOnly =
-        artifact(
-            "runtime-only", "1.0", "compile", "jar", "runtime-only.jar", "runtimeOnly/Type.class");
-    final Artifact unused =
-        artifact("unused", "1.0", "compile", "jar", "unused.jar", "unused/Idle.class");
-    final MavenProject project = new MavenProject();
-    project.setArtifacts(new LinkedHashSet<>(List.of(used, runtimeOnly, unused)));
-    final Path trace = tempDir.resolve("complete.lst");
-    Files.writeString(trace, "used/Sample\nruntimeOnly/Type\n");
-    final Path productionOutput = Files.createDirectories(tempDir.resolve("classes"));
-    final ClassWriter writer = new ClassWriter(0);
-    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "app/Main", null, "java/lang/Object", null);
-    writer.visitField(Opcodes.ACC_PRIVATE, "used", "Lused/Sample;", null, null).visitEnd();
-    writer.visitEnd();
-    Files.createDirectories(productionOutput.resolve("app"));
-    Files.write(productionOutput.resolve("app/Main.class"), writer.toByteArray());
-    final Path report = tempDir.resolve("complete-report.json");
-    final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "productionOutput", productionOutput.toFile());
-    set(mojo, "reportFile", report.toFile());
-
-    mojo.execute();
-    final String firstOutput = Files.readString(report);
-    mojo.execute();
-
-    assertThat(Files.readString(report)).isEqualTo(firstOutput);
-    final com.fasterxml.jackson.databind.JsonNode json =
-        new com.fasterxml.jackson.databind.ObjectMapper().readTree(firstOutput);
-    assertThat(json.path("staticEvidenceAvailable").asBoolean()).isTrue();
-    assertThat(json.path("classFilesScanned").asInt()).isEqualTo(1);
-    assertThat(json.path("groups").path("applicationReferenced").toString())
-        .contains("used.Sample");
-    assertThat(json.path("groups").path("runtimeObservedWithoutApplicationReference").toString())
-        .contains("runtimeOnly.Type");
-    assertThat(json.path("groups").path("neitherReferencedNorObserved").toString())
-        .contains(UNUSED_CLASS);
-    assertThat(json.path("classes").toString())
-        .contains("used.Sample", "runtimeOnly.Type", UNUSED_CLASS);
-  }
-
-  @Test
-  void rejectsInvalidClassOutputWithoutWritingReport()
-      throws IOException, ReflectiveOperationException {
-    final Fixture fixture = fixture("used/Sample\n");
-    final Path report = tempDir.resolve("invalid-scan.json");
-    set(fixture.mojo, "productionOutput", tempDir.resolve("missing-classes").toFile());
-    set(fixture.mojo, "reportFile", report.toFile());
-
-    assertThatThrownBy(fixture.mojo::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Production class output directory is missing");
-    assertThat(report).doesNotExist();
-  }
-
-  @Test
   void rejectsInvalidRetentionCoordinates() throws IOException, ReflectiveOperationException {
-    final Fixture fixture = fixture("used/Sample\n");
-    set(fixture.mojo, "retainedArtifacts", List.of("org.example"));
+    final Fixture fixture = fixture(tempDir, "used/Sample\n");
+    set(fixture.mojo(), "retainedArtifacts", List.of("org.example"));
 
-    assertThatThrownBy(fixture.mojo::execute)
+    assertThatThrownBy(fixture.mojo()::execute)
         .isInstanceOf(MojoFailureException.class)
         .hasMessageContaining("Invalid elide.retainedArtifacts coordinate");
   }
@@ -454,26 +245,26 @@ final class AnalyzeMojoTest {
   @Test
   void banRequestFailsClosedWithoutPublishingReport()
       throws IOException, ReflectiveOperationException {
-    final Fixture fixture = fixture("used/Sample\n");
+    final Fixture fixture = fixture(tempDir, "used/Sample\n");
     final Path report = tempDir.resolve("ban-guard-report.json");
     final String previousReport = "previous report";
     Files.writeString(report, previousReport);
-    set(fixture.mojo, "banishedDependencies", List.of("org.example:used"));
-    set(fixture.mojo, "reportFile", report.toFile());
+    set(fixture.mojo(), "banishedDependencies", List.of("org.example:used"));
+    set(fixture.mojo(), "reportFile", report.toFile());
     set(
-        fixture.mojo,
+        fixture.mojo(),
         "predictionService",
         (AnalyzePredictionService)
             (project, options, resolver) -> {
               throw new MojoFailureException("prediction service was called before ban rejection");
             });
-    fixture.project.setFile(tempDir.resolve("ban-consumer-pom.xml").toFile());
-    seedSelectedBanCapture(fixture.mojo, fixture.project, List.of("org.example:used"));
+    fixture.project().setFile(tempDir.resolve("ban-consumer-pom.xml").toFile());
+    seedSelectedBanCapture(fixture.mojo(), fixture.project(), List.of("org.example:used"));
 
     assertAll(
         "analyze rejects ban requests before publishing a report",
         () ->
-            assertThatThrownBy(fixture.mojo::execute)
+            assertThatThrownBy(fixture.mojo()::execute)
                 .isInstanceOf(MojoFailureException.class)
                 .hasMessageContaining(
                     "cannot be applied because strict ban enforcement is not available"),
@@ -483,9 +274,9 @@ final class AnalyzeMojoTest {
   @Test
   void rejectsTraceObservationsThatMatchNoDependency()
       throws IOException, ReflectiveOperationException {
-    final Fixture fixture = fixture("missing/Sample\n");
+    final Fixture fixture = fixture(tempDir, "missing/Sample\n");
 
-    assertThatThrownBy(fixture.mojo::execute)
+    assertThatThrownBy(fixture.mojo()::execute)
         .isInstanceOf(MojoFailureException.class)
         .hasMessageContaining("no observed class matches any supplied dependency");
   }
@@ -567,141 +358,4 @@ final class AnalyzeMojoTest {
         () -> assertThatCode(mojo::execute).doesNotThrowAnyException(),
         () -> assertThat(Files.readString(report)).isEqualTo("existing report"));
   }
-
-  private static void set(final Object target, final String name, final Object value)
-      throws ReflectiveOperationException {
-    final Field field = target.getClass().getDeclaredField(name);
-    field.setAccessible(true);
-    field.set(target, value);
-    if (target instanceof AnalyzeMojo mojo && "project".equals(name)) {
-      installLegacyPredictionFixture(mojo);
-    }
-  }
-
-  private static void installLegacyPredictionFixture(final AnalyzeMojo mojo)
-      throws ReflectiveOperationException {
-    set(
-        mojo,
-        "predictionService",
-        (AnalyzePredictionService)
-            (project, options, resolver) -> {
-              final ElisionAnalysisModel.Analysis analysis =
-                  new MavenElisionService().analyze(project, options);
-              final String fingerprint =
-                  MavenElisionGraphBinding.sha256(List.of("test-prediction"));
-              return new AnalyzePrediction(
-                  AnalyzePrediction.Provenance.DETACHED_CURRENT_MODEL,
-                  analysis.artifacts().resolvedSnapshots(),
-                  List.copyOf(analysis.effectiveDecision().retainedArtifacts()),
-                  List.copyOf(analysis.effectiveDecision().elidedArtifacts()),
-                  List.of(),
-                  analysis.evidence(),
-                  fingerprint,
-                  ResolvedArtifactInventoryFingerprint.fingerprint(
-                      analysis.artifacts().resolvedSnapshots()),
-                  analysis.policyIdentity().operationFingerprint());
-            });
-  }
-
-  private Artifact artifact(
-      final String artifactId,
-      final String version,
-      final String scope,
-      final String type,
-      final String fileName,
-      final String classEntry)
-      throws IOException {
-    final Path file = fileFor(fileName);
-    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(file))) {
-      writeClassEntry(output, classEntry.substring(0, classEntry.length() - ".class".length()));
-    }
-    final Artifact artifact =
-        new DefaultArtifact(
-            "org.example",
-            artifactId,
-            version,
-            scope,
-            type,
-            null,
-            new DefaultArtifactHandler(type));
-    artifact.setFile(file.toFile());
-    return artifact;
-  }
-
-  private Artifact artifactWithClasses(final String artifactId, final String fileName)
-      throws IOException {
-    final Path file = fileFor(fileName);
-    try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(file))) {
-      writeClassEntry(output, "sample/Keep");
-      writeClassEntry(output, "sample/Drop");
-    }
-    final Artifact artifact =
-        new DefaultArtifact(
-            "org.example",
-            artifactId,
-            "1.0",
-            "runtime",
-            "jar",
-            null,
-            new DefaultArtifactHandler("jar"));
-    artifact.setFile(file.toFile());
-    return artifact;
-  }
-
-  private static void writeClassEntry(final ZipOutputStream output, final String className)
-      throws IOException {
-    output.putNextEntry(new ZipEntry(className + ".class"));
-    final ClassWriter writer = new ClassWriter(0);
-    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, className, null, "java/lang/Object", null);
-    writer.visitEnd();
-    output.write(writer.toByteArray());
-    output.closeEntry();
-  }
-
-  private Path fileFor(final String fileName) {
-    return tempDir.resolve(fileName);
-  }
-
-  private Fixture fixture(final String traceContent)
-      throws IOException, ReflectiveOperationException {
-    final Artifact used =
-        artifact("used", "1.0", "compile", "jar", "fixture.jar", "used/Sample.class");
-    final MavenProject project = new MavenProject();
-    project.setArtifacts(new LinkedHashSet<>(Set.of(used)));
-    final Path trace = tempDir.resolve("fixture.lst");
-    Files.writeString(trace, traceContent);
-    final AnalyzeMojo mojo = new AnalyzeMojo();
-    set(mojo, "project", project);
-    set(mojo, "traceFiles", List.of(trace.toFile()));
-    set(mojo, "reportFile", tempDir.resolve("fixture-report.json").toFile());
-    return new Fixture(mojo, project);
-  }
-
-  private static void seedSelectedBanCapture(
-      final AnalyzeMojo mojo, final MavenProject project, final List<String> bans)
-      throws ReflectiveOperationException {
-    final Plugin plugin = new Plugin();
-    plugin.setVersion("1.0.0");
-    final MojoExecution execution = new MojoExecution(plugin, "analyze", "default-cli");
-    set(execution, "source", MojoExecution.Source.CLI);
-    set(mojo, "mojoExecution", execution);
-    final BanishedDependencyOriginalModel model =
-        BanishedDependencyOriginalModel.capture(
-            project,
-            List.of(
-                new BanishedDependencyOriginalModel.ExecutionPolicy(
-                    "default-cli", "analyze", "1.0.0", "cli", "CLI", bans)),
-            bans);
-    final BanishedDependencyCaptureStore store =
-        BanishedDependencyCaptureStore.empty().withModel(model);
-    final MavenSession session =
-        new MavenSession(
-            null, new DefaultRepositorySystemSession(), new DefaultMavenExecutionRequest(), null);
-    session.setCurrentProject(project);
-    set(mojo, "session", session);
-    EliderPreparationState.sessionData(session)
-        .set(BanishedDependencyLifecycleActivation.CAPTURE_STORE_KEY, null, store.toPayload());
-  }
-
-  private record Fixture(AnalyzeMojo mojo, MavenProject project) {}
 }

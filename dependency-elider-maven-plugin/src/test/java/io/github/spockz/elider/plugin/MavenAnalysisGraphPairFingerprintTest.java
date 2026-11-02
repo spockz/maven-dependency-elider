@@ -16,7 +16,12 @@ import java.util.Set;
 import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
+/** Tests that request-local graph topology is included in operation fingerprints. */
 final class MavenAnalysisGraphPairFingerprintTest extends MavenElisionGraphBindingTestSupport {
+  /* package */ MavenAnalysisGraphPairFingerprintTest() {
+    // JUnit creates each test instance through the package-visible no-argument constructor.
+  }
+
   @Test
   void edgeTopologyChangesRequestLocalPairFingerprint() {
     final ResolverArtifactGraphCapturePair noEdge = pair(List.of());
