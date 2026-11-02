@@ -1194,3 +1194,93 @@ Java 21 `make check` passed on the verified candidate: Spotless, Checkstyle, PMD
 WP-POLICY-01 was fast-forwarded to local `main` at `d3fad3a3b601ec01389ca74507b5b127d0e114a1`; integrated Java 21 `make check` passed with 767 plugin tests (one skipped), 27 lifecycle integration tests, coverage, static analysis, Markdown lint, scheduler/SBOM, and transcript checks. The post-fast-forward architecture review approved with no findings; receipt: `.scratch/reviews/wp-policy-01-integrated-main-d3fad3a.md`. Main's 12 modified tracked paths and four unrelated untracked paths were restored from the retained recovery stash, while the obsolete WP-POLICY handover was replaced by the final committed version. No remote push was requested.
 
 Review scope remains bounded to supported current-project Maven views and generated outputs. No universal future Resolver, consumer-POM, plugin/processor realm, Spring AOT replacement, arbitrary-concurrency, or exhaustive test-bytecode claim is made.
+
+## WP-PLATFORM-01: Multi-JDK, Spring AOT, and Live Proof
+
+- Owning session: current Codex chat in `/home/node/.codex/worktrees/1f2a/maven-dependency-elider`.
+- Assignment: `.scratch/handover.md`; authoritative PLATFORM and fully subsumed SPRING handovers at starting revision `fdcd24435222f3a95b107329cdf0532cef069294`.
+- Sources: `docs/handovers/2026-11-02-wp-platform-01-compiler-decoupling-and-live-proof-pivot.md` (PLATFORM), `docs/handovers/2026-10-31-wp-spring-01-spring-autoconfigure-condition-evaluation-and-descriptor-trimming.md` (SPRING), ADR-0013, amended ADR-0010, adopted RQ-0018 contracts, and AGENTS.md.
+- User model amendment: Luna Max implementer, Sol 6.1 track reviewer, Astra 6 work-package architecture/integration reviewer.
+- Delivery target: this chat's `codex/wp-platform-01` integration branch (to be created after baseline); local main delivery is a later wrap-up action requiring the skill's final sign-off. No remote publication requested.
+- Work package status: INCOMPLETE. One sequential `platform-01` track, preserving the full scope with a persistent implementer/reviewer pair under the four-agent concurrency limit.
+- Scope boundary: a general trace Mojo, native-image execution support, a descriptor-preserving modular sanitizer, and factorial performance benchmarks remain conditional or optional research proposals. T02 still requires real bounded recording evidence. T05 requires cache-use verification for demonstrated compatibility claims, not a new binary archive builder.
+- Initial baseline: source tree initially pristine. First `make check` failed four preexisting core PMD violations. Minimal test repair exposed ten preexisting plugin PMD violations. Reviewed behavior-preserving prerequisite repairs cleared all findings. Full JDK 21 make check passed: 336 core tests, 772 plugin unit tests (one opt-in transcript-cache preparation skip), 27 lifecycle integration tests, coverage, lint and transcript checks. Clean commit verification precedes track creation.
+- Baseline evidence: initial failure `.scratch/platform-01/baseline-jdk21.log`; full successful repair gate `.scratch/platform-01/make-check-jdk21.log`; focused before/after 21-test and lint logs in the same directory.
+- Toolchains: main clone's existing JDK 21 and 25; official OpenJDK 27 downloaded and checksum-verified to this checkout's ignored `.scratch/toolchains/jdk-27.0.1.0.3`. Tool identities describe verification environments, never required product pins.
+- Architecture receipt: `.scratch/reviews/platform-architecture.md`; matrix cross-check APPROVED after five clarifications. Clean committed baseline remains the last dispatch condition.
+- External review: Gemini MCP bridge unavailable; fail-open applies to optional peer review, not to dedicated review or completion evidence.
+- Tool constraints: shell sandbox cannot start (`bwrap: Unexpected capabilities but not setuid`); approved escalated shell calls work. Semantic editor and cloud environment status tools unavailable; managed network snapshot absent. Standard repository commands, `rg`, and patch editing used.
+
+### WP-PLATFORM-01 track and slice ledger
+
+| Slice group | Scope and requirement ownership | State |
+| :--- | :--- | :--- |
+| B0 | Minimal existing baseline lint repair; no feature behavior change | VERIFIED; FINAL REVIEW/COMMIT PENDING |
+| S1 | Standard platform context and effective release/report semantics (P02-P03) | GATED |
+| S2 | Compiler/scanner removal, conventional source mapping, provider/VEX safety (P01, P04-P06) | PENDING |
+| S3 | Classpath-only derivative and bounded JPMS signals (M01-M03) | PENDING |
+| S4 | Additive AOT inputs, full evidence freshness, resources, production isolation, lifecycle order (A01-A08) | PENDING |
+| S5 | Complete retention provenance and coherent Spring descriptors (A09-A10, A16) | PENDING |
+| S6 | Real final-classpath AOT/feature/ban experiment and example (A11-A15, A17) | PENDING |
+| S7 | Extended CDS/bounded recorder evidence, advisory jdeps, downstream packaging (T01-T05) | PENDING |
+| S8 | Portability, example/transcript matrix, decommissioning sweep and completion review (Q01-Q04, all boundaries) | PENDING |
+
+Groups may be divided into smaller compiling, reviewed commits; every matrix row remains assigned to the persistent platform-01 implementer, with coordinator ownership of integration and Astra completion review. No slice approval implies full package completion.
+
+### WP-PLATFORM-01 requirement-to-evidence matrix
+
+All rows have owner `platform-01` and integration owner `coordinator`; the group column names the primary implementing slice. Existing behavior must be inspected and verified before a row can become VERIFIED. No requirement is deferred.
+
+| ID / source | Required behavior and refusal boundary | Group | Implementation/wiring evidence | Verification evidence | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| P01 / PLATFORM 3,6,8; ADR-0013 | Remove correspondence compiler/reproduction/download and AST scanners, exact compiler pins and transitional abstentions. | S2 | Pending | Pending | UNVERIFIED |
+| P02 / PLATFORM 2.2-2.3 | Standard module platform loading and reusable single-pass identity; no private ct.sym/JMOD layouts or vendor checks; valid cache invalidation. | S1 | Pending | Pending | UNVERIFIED |
+| P03 / PLATFORM 2.3 | Effective release/target precedence, conflicts/defaults; target-aware MR; separate target/runtime report fields; explicit unresolved platform handling, no historical equivalence guarantee. | S1 | Pending | Pending | UNVERIFIED |
+| P04 / PLATFORM 2.2,3.2; ADR-0010 amendment | Emitted bytecode and declared evidence; retainedArtifacts protects inlined constants; preserve provider completeness and direct-goal boundaries after scanner removal. | S2 | Pending | Pending | UNVERIFIED |
+| P05 / PLATFORM 3.3; ADR-0013 | Default explicit conventional public/nested mapping without SourceFile; disabled flag, siblings, routines, ambiguous ownership/path/provider and conflicting metadata remain review leads; explicit typed mappings remain functional. | S2 | Pending | Pending | UNVERIFIED |
+| P06 / PLATFORM 3.3; ADR-0008 | Actual final/all-provider omission and raw applicability guard VEX; telemetry is workload-scoped; report reader/writer/validator/fixtures evolve together at schema 1. | S2 | Pending | Pending | UNVERIFIED |
+| A01 / PLATFORM 4.2; SPRING slice 1 | Union normal production and all generated classes/proxies/initializers with no naming filter or AOT-only replacement. | S4 | Pending | Pending | UNVERIFIED |
+| A02 / PLATFORM 4.2; SPRING slice 1 | Existing native-image parsers accept directory reflection/proxy/serialization/resources/bundles/JNI; conditional roots conservative; unsupported/malformed/unreadable configured sources fail. | S4 | Pending | Pending | UNVERIFIED |
+| A03 / PLATFORM 4.2; SPRING slice 1 | Cross-directory/archive resource ownership including classless dependencies; real resource/reflection/proxy consumers. | S4 | Pending | Pending | UNVERIFIED |
+| A04 / SPRING slice 1 | Copied assets deduplicate by identity with declaring/target/provider/category/runtime-generation provenance; conflicts explicit. | S4 | Pending | Pending | UNVERIFIED |
+| A05 / SPRING slice 1 | Schema-1 evidence bundle writer/reader/validator/docs capture application/compiled-production identity, sources/resources/dependency order+hashes/generated outputs/main/versions/profiles/config identity/context; no secrets; unknown inputs explicit. | S4 | Pending | Pending | UNVERIFIED |
+| A06 / SPRING slice 1; PLATFORM 2.4 | Reject missing/unusable configured evidence bundles, stale/renamed/deleted outputs, mixed generations and cache mismatches; absent configuration distinct from explicitly empty bundles; preserve valid empty supported descriptors/property values; external evidence survives consuming clean. | S4 | Pending | Pending | UNVERIFIED |
+| A07 / PLATFORM 4.2; SPRING slice 1 | Strict test-AOT isolation, including copied evidence identity; no slice/mocked test model in production. | S4 | Pending | Pending | UNVERIFIED |
+| A08 / PLATFORM 4.6; SPRING 2 | Actual clean/incremental tail execution and capture guards; priority+tail ordering, final writers captured; unsupported/later writers and direct CLI do not gain trust. | S4 | Pending | Pending | UNVERIFIED |
+| A09 / PLATFORM 4.4; SPRING slice 2 | Four overlapping evidence labels and complete transitive blockers including generated/resource/graph/policy; non-observation is not deadness. | S5 | Pending | Pending | UNVERIFIED |
+| A10 / PLATFORM 4.5; SPRING slice 2 | Explicit feature exclusion then regeneration/workloads then ban; lazy/unrequested beans retained; baseline/variant evidence distinct; no automatic POM/policy mutation. | S5 | Pending | Pending | UNVERIFIED |
+| A11 / SPRING acceptance | Combined existing ban fixture proves removal or explicit generated/resource/graph blocker; no silent retention, erased evidence or original restoration. | S6 | Pending | Pending | UNVERIFIED |
+| A12 / PLATFORM 4.8; SPRING slice 3 | Replace only validated superseded discovery contributions; retain listeners/initializers/environment processors/SPI/resources/hints/application roots; unknown context conservative; generation services distinct. | S6 | Pending | Pending | UNVERIFIED |
+| A13 / PLATFORM 4.8; SPRING slice 3 | Clean final-classpath regeneration with bounded instability; failure preserves prior output; explicit generation tools; final packaged AOT runtime and incompatible ordinary-launch handling. | S6 | Pending | Pending | UNVERIFIED |
+| A14 / PLATFORM 4.8; SPRING acceptance | Shared real fixture removes separate inactive config, tests false condition/independent nested config/late lazy bean/reflective DTO/resource-only dependency; infrastructure is instantiated during generation and AOT processor omitted from runtime registrations; explains surviving method hard link. | S6 | Pending | Pending | UNVERIFIED |
+| A15 / PLATFORM 4.1; SPRING acceptance | Spring evaluates positive/missing-class conditions and fallback over selected feature/classpath changes; no custom condition or prefix evaluator. | S6 | Pending | Pending | UNVERIFIED |
+| A16 / PLATFORM 4.7; SPRING slice 4 | Final-inventory descriptor filtering preserves archive ownership/external entries/order metadata/Java properties semantics/key-sensitive factories/input-order independence across SingleReleaseArchiveWriter and MultiReleaseArchiveWriter. | S5 | Pending | Pending | UNVERIFIED |
+| A17 / PLATFORM 4.8; SPRING slice 4 | Reevaluate real Boot example/workarounds only with closure/runtime evidence; accurately report remaining constraints without arbitrary savings target. | S6 | Pending | Pending | UNVERIFIED |
+| M01 / PLATFORM 5.1 | Opt-in classpath derivative strips root/effective versioned descriptors; original immutable; services/resources; target-only output; cache/pedigree classpath-only identity; unsupported modular consumers refused. | S3 | Pending | Pending | UNVERIFIED |
+| M02 / PLATFORM 5.2 | JPMS uses/provides with ServiceLoader/direct providers yields bounded active/dormant signals; unnamed/dynamic layers conservative, no closed-world inference. | S3 | Pending | Pending | UNVERIFIED |
+| M03 / PLATFORM 5.2 | Qualified exports/requires static explanatory signals, never proof of deadness/runtime safety or authority to remove requires. | S3 | Pending | Pending | UNVERIFIED |
+| T01 / PLATFORM 5.3 | Real extended CDS IDs/loaders/source syntax; malformed/truncated input rejected; class ingestion does not promise rewritten CDS validity. | S7 | Pending | Pending | UNVERIFIED |
+| T02 / PLATFORM 5.3 | Bounded onRefresh training verifies timeout/nonzero exits/output/flush and coverage limits; halt success is not full startup or shutdown. | S7 | Pending | Pending | UNVERIFIED |
+| T03 / PLATFORM 5.4 | Advisory jdeps output from actual final classes/generated/retained derivatives; target MR option; checked failures/no stale success/no ignore-missing-deps. | S7 | Pending | Pending | UNVERIFIED |
+| T04 / PLATFORM 5.4 | Dynamic module supplements from hints/SPI/security providers/JDBC/JNDI/agents/deployment; valid module names and representative linked runtime. | S7 | Pending | Pending | UNVERIFIED |
+| T05 / PLATFORM 5.3; RQ-0018 | Separate build-time traces from final-package CDS training; final identity and demonstrated cache use; no pretrim archive reuse or invented gains. | S7 | Pending | Pending | UNVERIFIED |
+| Q01 / PLATFORM 2.4; AGENTS | Simple standard NIO and writes; remove relevant symlink guards/double hashes/concurrency machinery without losing legitimate input validation. | All | Pending | Pending | UNVERIFIED |
+| Q02 / PLATFORM 8-9 | Complete retained tests and examples on standard JDK21/25/27, no exact vendor/patch dependency or transitional skips. | S8 | Toolchains present | Full matrix pending | UNVERIFIED |
+| Q03 / PLATFORM 7; AGENTS | TDD red-before-code, meaningful refusal tests, shared immutable fixture work, independent assertAll diagnostics, formatter/full checks. | All | Baseline repairs ongoing | Pending | UNVERIFIED |
+| Q04 / PLATFORM 9; skill | Same-slice docs/help/site, distinct user/contributor FAQ, relevant ADR/RQ evidence, generated transcript refresh/check. | All | Pending | Pending | UNVERIFIED |
+
+### WP-PLATFORM-01 specification deviations and decisions
+
+1. Minimal reviewed baseline lint repairs precede track creation; no failing baseline is accepted. Existing formatting changes came from the required make check formatter.
+2. One sequential track under the four-agent limit preserves all capability groups and dedicated role continuity.
+3. JRT represents the active runtime, not a universal historical API superset; target and runtime remain distinct, and unresolved platform obligations cannot be hidden.
+4. Conventional source layout is an explicit assumption, not proof of whole-source completeness. Refuse uncertain sibling/owner/routine mappings and retain review leads.
+5. Lifecycle ordering needs production Maven execution evidence and tie/mixed-goal handling, not a priority-only assertion.
+6. Removing source scanners preserves raw inventory/provider completeness; precompile unknown declarations remain incomplete.
+7. Single-writer requirements supersede adversarial within-run rehashing, while cross-run freshness and cache identity remain mandatory.
+8. AOT ingestion is additive by default. Discovery subtraction requires validated final-classpath generation and real runtime evidence, including incompatible ordinary-launch handling.
+9. Retention labels may overlap; workload non-observation is evidence context, not a pruning cause.
+10. Classpath derivative remains opt-in and mode-bound; JPMS signals cannot authorize absence claims by themselves.
+11. jdeps release 8 uses `base`; its MR flag does not select a historical platform. Dynamic module names derive from valid module inventory; java.security is a package.
+
+Baseline prerequisite committed as `cf70e00049cd9ac0ab6d169874fcc8e0690103f8`; dedicated review `.scratch/reviews/platform-baseline.md` approves the verified diff. Git status was pristine before integration branch creation. No implementation behavior has been marked complete. The source tree at that commit is the source tree that passed the full gate; this ledger addition has no build inputs.
