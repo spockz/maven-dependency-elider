@@ -55,6 +55,10 @@ final class SourceJdkIdentity {
 
   private SourceJdkIdentity() {}
 
+  /* default */ static boolean isSupported() {
+    return current().identity().isPresent();
+  }
+
   @SuppressWarnings("PMD.ExceptionAsFlowControl") // Unsupported JDK images become explicit refusal.
   /* default */ static Resolution current() {
     try {

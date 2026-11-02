@@ -33,6 +33,11 @@ public final class SourceReproductionEngine {
     return new SourceReproductionEngine(SourceJdkIdentity.current());
   }
 
+  /** Checks whether the running runtime matches the pinned JDK compiler image. */
+  public static boolean isSupportedJdk() {
+    return SourceJdkIdentity.isSupported();
+  }
+
   /** Reproduces or returns a diagnosed non-authoritative abstention. */
   public SourceReproductionResult reproduce(final SourceReproductionRequest request) {
     if (compilerIdentity.identity().isEmpty()) {

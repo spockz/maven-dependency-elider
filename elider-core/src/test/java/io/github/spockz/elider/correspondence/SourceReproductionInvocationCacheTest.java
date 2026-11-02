@@ -35,6 +35,13 @@ final class SourceReproductionInvocationCacheTest {
   /** Isolates generated JARs and replacement files for each test. */
   @TempDir private Path temporaryDirectory;
 
+  @org.junit.jupiter.api.BeforeEach
+  void verifySupportedJdk() {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        SourceJdkIdentity.isSupported(),
+        "Skipping source reproduction tests on non-pinned JDK");
+  }
+
   @Test
   void differentClaimsShareOneSuccessfulClaimIndependentReproduction() throws IOException {
     final SourceReproductionTestArchives.Archives archives = fixture("shared-claims");

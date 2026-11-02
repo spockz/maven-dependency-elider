@@ -37,6 +37,13 @@ final class SourceReproductionEngineTest {
   /** Isolates source and binary fixture archives for each test. */
   @TempDir private Path temporaryDirectory;
 
+  @org.junit.jupiter.api.BeforeEach
+  void verifySupportedJdk() {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        SourceJdkIdentity.isSupported(),
+        "Skipping source reproduction tests on non-pinned JDK");
+  }
+
   @Test
   // One result covers independent inventory and provenance contracts.
   @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")

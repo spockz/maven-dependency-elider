@@ -40,6 +40,13 @@ final class JavacPluginServiceIsolationTest {
   /** Isolated archives and child JVM fixtures. */
   @TempDir private Path temporaryDirectory;
 
+  @org.junit.jupiter.api.BeforeEach
+  void verifySupportedJdk() {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        SourceJdkIdentity.isSupported(),
+        "Skipping source reproduction tests on non-pinned JDK");
+  }
+
   @Test
   void artifactServiceProviderCannotExecuteDuringProductionReproduction() throws IOException {
     final String pluginSource = artifactPluginSource();

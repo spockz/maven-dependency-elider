@@ -56,6 +56,12 @@ final class SourceJdkIdentityTest {
   @SuppressWarnings("PMD.LawOfDemeter") // AssertJ chains retain independent assertion context.
   void currentJdkIdentityIncludesLoadedJavacAndPlatformDigests() {
     final SourceJdkIdentity.Resolution result = SourceJdkIdentity.current();
+    if (!SourceJdkIdentity.isSupported()) {
+      org.junit.jupiter.api.Assertions.assertAll(
+          () -> assertThat(result.identity()).isEmpty(),
+          () -> assertThat(result.refusal()).isNotEmpty());
+      return;
+    }
     final SourceJdkIdentity.Identity identity = result.identity().orElseThrow();
 
     assertAll(
@@ -70,6 +76,8 @@ final class SourceJdkIdentityTest {
 
   @Test
   void delimiterBearingRuntimeMetadataCannotInjectPinnedDigestFields() {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        SourceJdkIdentity.isSupported(), "Skipping pinned delimiter check on non-pinned JDK");
     final SourceJdkIdentity.Identity pinned = SourceJdkIdentity.current().identity().orElseThrow();
     final SourceJdkIdentity.Identity injected =
         new SourceJdkIdentity.Identity(
