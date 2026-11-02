@@ -47,7 +47,17 @@ final class ExclusionReviewReportTest {
     final Dependency second = dependency("second", "old");
     project.setDependencies(List.of(first, second));
     final BanishedDependencyOriginalModel captured =
-        BanishedDependencyOriginalModel.capture(project, List.of(), List.of("banned:library"));
+        BanishedDependencyOriginalModel.capture(
+            project,
+            List.of(
+                new BanishedDependencyOriginalModel.ExecutionPolicy(
+                    "run-elide",
+                    "elide",
+                    "1.0.0",
+                    "initialize",
+                    "LIFECYCLE",
+                    List.of("banned:library"))),
+            List.of("banned:library"));
     final DefaultRepositorySystemSession repository = new DefaultRepositorySystemSession();
     repository
         .getData()

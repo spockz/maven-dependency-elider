@@ -77,6 +77,8 @@ final class DependencyContextLifecycleIT {
   private static final String SEED_PLAN_DISABLED = "-Dlifecycle.seedPlan=false";
   private static final String ELIDER_SUMMARY = "Dependency Elider summary";
   private static final String LIFECYCLE_ELIDE_SUMMARY = "target/lifecycle-elide-summary.json";
+  private static final String POST_ELIDE_PROBE_GOAL = "lifecycle-probe:post-elide-probe";
+  private static final String RESOLVED_ARTIFACT_ROW_PREFIX = "artifact\tRESOLVED\t";
 
   /** Builds fixtures once and retains evidence after failures. */
   @TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -626,16 +628,19 @@ final class DependencyContextLifecycleIT {
             wrapper,
             settings,
             localRepository,
-            evidenceDirectory.resolve("active-extension-excluded-ban-analyze.log"),
+            evidenceDirectory.resolve("active-extension-ban-analyze-prediction.log"),
             PROCESS_TIMEOUT,
             BAN_PROPERTY + GROUP_ID + ":" + DROP_ARTIFACT_ID,
             "-f",
             consumerPom.toString(),
-            "dependency-elider:analyze@run-elider");
+            "dependency-elider:analyze@run-elider",
+            POST_ELIDE_PROBE_GOAL);
     final JsonNode analyzeReport =
         JSON.readTree(consumer.resolve("target/dependency-elider-class-usage.json").toFile());
     final JsonNode analyzeBan = analyzeReport.path("dependencyPrediction").path("banPlan").get(0);
     final boolean analyzeBanApplied = analyzeBan.path("applied").asBoolean();
+    final List<String> postAnalyzeViews =
+        Files.readAllLines(consumer.resolve("target/lifecycle-elide/post-elide.tsv"));
 
     final String output =
         runFromDirectory(
@@ -649,7 +654,7 @@ final class DependencyContextLifecycleIT {
             "-f",
             consumerPom.toString(),
             "dependency-elider:elide@run-elider",
-            "lifecycle-probe:post-elide-probe");
+            POST_ELIDE_PROBE_GOAL);
     final Path summaryPath = consumer.resolve(LIFECYCLE_ELIDE_SUMMARY);
     final JsonNode summary = JSON.readTree(summaryPath.toFile());
     final JsonNode ban = summary.path("appliedBans").get(0);
@@ -660,15 +665,22 @@ final class DependencyContextLifecycleIT {
         JSON.readTree(consumer.resolve("target/dependency-elider-sbom.cdx.json").toFile());
 
     assertAll(
-        "active Analyze predicts without application and Elide publishes its audited exclusion",
+        "active Analyze predicts without applying exclusions and Elide publishes its audited ban",
         () -> assertThat(analyzeOutput).contains(BUILD_SUCCESS),
         () ->
-            assertThat(analyzeBan.path("status").asText()).isEqualTo("EXCLUDED_BEFORE_RESOLUTION"),
-        () -> assertThat(analyzeBan.path("matchedArtifacts")).hasSize(0),
+            assertThat(analyzeBan.path("status").asText())
+                .isEqualTo("FORCED_ABSENT_AFTER_RESOLUTION"),
+        () -> assertThat(analyzeBan.path("matchedArtifacts")).hasSize(1),
         () -> assertThat(analyzeBan.path("originalArtifacts")).hasSize(1),
         () ->
             org.junit.jupiter.api.Assertions.assertFalse(
                 analyzeBanApplied, "Analyze must predict the ban without applying it"),
+        () ->
+            assertThat(postAnalyzeViews)
+                .anyMatch(
+                    row ->
+                        row.startsWith(RESOLVED_ARTIFACT_ROW_PREFIX)
+                            && row.contains("drop-library")),
         () -> assertThat(output).contains(BUILD_SUCCESS),
         () ->
             assertThat(ban.path("dependency").asText())
@@ -680,7 +692,9 @@ final class DependencyContextLifecycleIT {
         () ->
             assertThat(postElideViews)
                 .noneMatch(
-                    row -> row.startsWith("artifact\tRESOLVED\t") && row.contains("drop-library")),
+                    row ->
+                        row.startsWith(RESOLVED_ARTIFACT_ROW_PREFIX)
+                            && row.contains("drop-library")),
         () ->
             assertThat(
                     StreamSupport.stream(sbom.path("components").spliterator(), false)
@@ -701,8 +715,7 @@ final class DependencyContextLifecycleIT {
         "package app; public final class App { "
             + "private io.github.spockz.elider.fixture.keep.KeepEntry keep; }\n");
 
-    final String output =
-        runBanLifecycleFixture(fixture, "initialize", "lifecycle-probe:post-elide-probe");
+    final String output = runBanLifecycleFixture(fixture, "initialize", POST_ELIDE_PROBE_GOAL);
     final JsonNode summary = lifecycleBanSummary(fixture.consumer());
     final List<String> views = lifecycleBanViews(fixture.consumer());
 
@@ -731,7 +744,7 @@ final class DependencyContextLifecycleIT {
             fixture,
             PROCESS_CLASSES_PHASE,
             "org.apache.maven.plugins:maven-jar-plugin:3.4.1:jar",
-            "lifecycle-probe:post-elide-probe");
+            POST_ELIDE_PROBE_GOAL);
     final JsonNode summary = lifecycleBanSummary(fixture.consumer());
     final List<String> views = lifecycleBanViews(fixture.consumer());
     final Path compiledClass = fixture.consumer().resolve("target/classes/app/App.class");
@@ -1080,11 +1093,15 @@ final class DependencyContextLifecycleIT {
         () ->
             assertThat(rows)
                 .anyMatch(
-                    row -> row.startsWith("artifact\tRESOLVED\t") && row.contains("keep-library")),
+                    row ->
+                        row.startsWith(RESOLVED_ARTIFACT_ROW_PREFIX)
+                            && row.contains("keep-library")),
         () ->
             assertThat(rows)
                 .noneMatch(
-                    row -> row.startsWith("artifact\tRESOLVED\t") && row.contains("drop-library")));
+                    row ->
+                        row.startsWith(RESOLVED_ARTIFACT_ROW_PREFIX)
+                            && row.contains("drop-library")));
   }
 
   @Test

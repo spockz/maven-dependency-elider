@@ -82,7 +82,12 @@ final class MavenOriginalInputAuditTest {
     project.setDependencies(new ArrayList<>(List.of(dependency(LIBRARY))));
     final List<String> bans = List.of(GROUP + ":" + BANNED);
     final BanishedDependencyOriginalModel captured =
-        BanishedDependencyOriginalModel.capture(project, List.of(), bans);
+        BanishedDependencyOriginalModel.capture(
+            project,
+            List.of(
+                new BanishedDependencyOriginalModel.ExecutionPolicy(
+                    "run-elide", "elide", "1.0.0", "initialize", "LIFECYCLE", bans)),
+            bans);
     final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
     repositorySession
         .getData()

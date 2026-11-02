@@ -230,7 +230,9 @@ final class BanishedDependencyLifecycleActivationTest {
   void skipSuppressesElideOnlyAndLeafOrAggregatorFiltersRemainIndependent() {
     assertAll(
         "Analyze remains selected when elide.skip is true",
-        () -> assertThat(BanishedDependencyLifecycleActivation.skipApplies("elide", true)).isTrue(),
+        () ->
+            assertThat(BanishedDependencyLifecycleActivation.skipApplies(ELIDE_GOAL, true))
+                .isTrue(),
         () ->
             assertThat(BanishedDependencyLifecycleActivation.skipApplies("analyze", true))
                 .isFalse(),
@@ -367,6 +369,79 @@ final class BanishedDependencyLifecycleActivationTest {
         () ->
             assertThat(capturedSourceFingerprint(replayPayload, project))
                 .isEqualTo(capturedSourceFingerprint(firstPayload, project)));
+  }
+
+  @Test
+  void analyzeOnlyCapturesBanPolicyWithoutInjectingProjectExclusions() throws Exception {
+    final MavenProject project = project();
+    project.setFile(Path.of("/tmp", "policy-capture-analyze", "pom.xml").toFile());
+    final Dependency original = dependency("direct", "org.example");
+    project.setDependencies(List.of(original));
+    final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
+    final MavenSession session =
+        new MavenSession(
+            null,
+            repositorySession,
+            new DefaultMavenExecutionRequest(),
+            new DefaultMavenExecutionResult());
+    session.setCurrentProject(project);
+
+    BanishedDependencyLifecycleActivation.preflightAndInject(
+        session,
+        Map.of(
+            project,
+            List.of(
+                selectedExecution(
+                    project, ANALYZE_GOAL, "analyze-only", List.of("org.banned:library")))));
+
+    final Object capture =
+        repositorySession.getData().get(BanishedDependencyLifecycleActivation.CAPTURE_STORE_KEY);
+    assertAll(
+        "Analyze captures original input for prediction without changing the live Maven model",
+        () -> assertThat(project.getDependencies()).containsExactly(original),
+        () -> assertThat(original.getExclusions()).isEmpty(),
+        () -> assertThat(capture).isNotNull(),
+        () ->
+            assertThat(
+                    BanishedDependencyCaptureStore.fromPayload(capture)
+                        .find(BanishedDependencyOriginalModel.projectIdentity(project)))
+                .isNotNull());
+  }
+
+  @Test
+  void analyzeSelectedWithElideUsesTheEnforcedModelForTheSharedInvocation() throws Exception {
+    final MavenProject project = project();
+    project.setFile(Path.of("/tmp", "policy-capture-mixed", "pom.xml").toFile());
+    project.setDependencies(List.of(dependency("direct", "org.example")));
+    final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
+    final MavenSession session =
+        new MavenSession(
+            null,
+            repositorySession,
+            new DefaultMavenExecutionRequest(),
+            new DefaultMavenExecutionResult());
+    session.setCurrentProject(project);
+    final List<BanishedDependencyLifecycleActivation.SelectedExecution> executions =
+        List.of(
+            selectedExecution(project, ANALYZE_GOAL, "analyze", List.of("org.banned:library")),
+            selectedExecution(project, ELIDE_GOAL, ELIDE_GOAL, List.of("org.banned:library")));
+
+    BanishedDependencyLifecycleActivation.preflightAndInject(session, Map.of(project, executions));
+
+    final BanishedDependencyOriginalModel capture =
+        BanishedDependencyCaptureStore.fromPayload(
+                repositorySession
+                    .getData()
+                    .get(BanishedDependencyLifecycleActivation.CAPTURE_STORE_KEY))
+            .find(BanishedDependencyOriginalModel.projectIdentity(project));
+    final BanishedDependencyOriginalModel current =
+        BanishedDependencyOriginalModel.capture(
+            project, capture.executions(), capture.banishedDependencies());
+    assertAll(
+        "The shared invocation injects exclusions because Elide is selected",
+        () -> assertBanExclusionCount(project.getDependencies().getFirst(), 1),
+        () -> assertThat(capture.matchesInjectedModel(current)).isTrue(),
+        () -> assertThat(capture.matchesCurrentModel(current)).isTrue());
   }
 
   private static String capturedSourceFingerprint(
@@ -511,7 +586,7 @@ final class BanishedDependencyLifecycleActivationTest {
     final PluginExecution execution = new PluginExecution();
     execution.setId("selected-elide");
     execution.setPhase(phase);
-    execution.addGoal("elide");
+    execution.addGoal(ELIDE_GOAL);
     plugin.addExecution(execution);
     project.getBuild().addPlugin(plugin);
     return project;

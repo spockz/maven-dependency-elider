@@ -189,15 +189,35 @@ record BanishedDependencyOriginalModel(
   }
 
   /* package */ boolean matchesCurrentModel(final BanishedDependencyOriginalModel current) {
+    return matchesCurrentModel(current, false);
+  }
+
+  private boolean matchesCurrentModel(
+      final BanishedDependencyOriginalModel current, final boolean requireInjections) {
+    final List<DependencyEntry> expectedInjections = withExpectedInjections().effectiveDependencies;
+    final boolean injectionsExpected =
+        requireInjections
+            || (!banishedDependencies.isEmpty()
+                && executions.stream()
+                    .anyMatch(
+                        execution ->
+                            BanishedDependencyLifecycleActivation.ELIDE_GOAL.equals(
+                                execution.goal())));
     return current != null
         && project.equals(current.project)
         && executions.equals(current.executions)
         && banishedDependencies.equals(current.banishedDependencies)
-        && withExpectedInjections().effectiveDependencies.equals(current.effectiveDependencies)
+        && (injectionsExpected
+            ? expectedInjections.equals(current.effectiveDependencies)
+            : effectiveDependencies.equals(current.effectiveDependencies))
         && originalDependencies.equals(current.originalDependencies)
         && effectiveManagement.equals(current.effectiveManagement)
         && originalManagement.equals(current.originalManagement)
         && sameOriginalProvenance(current.exclusionProvenance);
+  }
+
+  /* package */ boolean matchesInjectedModel(final BanishedDependencyOriginalModel current) {
+    return matchesCurrentModel(current, true);
   }
 
   private boolean sameOriginalProvenance(final ExclusionRecommendations.Snapshot current) {

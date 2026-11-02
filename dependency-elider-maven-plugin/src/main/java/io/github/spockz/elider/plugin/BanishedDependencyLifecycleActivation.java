@@ -51,7 +51,7 @@ final class BanishedDependencyLifecycleActivation {
   private static final String ELIDER_GROUP_ID = "io.github.spockz";
   private static final String ELIDER_ARTIFACT_ID = "dependency-elider-maven-plugin";
   private static final String ELIDER_PREFIX = "dependency-elider";
-  private static final String ELIDE_GOAL = "elide";
+  static final String ELIDE_GOAL = "elide";
   private static final String ANALYZE_GOAL = "analyze";
   private static final String LEAF_ONLY_PARAMETER = "leafOnly";
   private static final String SKIP_PARAMETER = "skip";
@@ -160,6 +160,14 @@ final class BanishedDependencyLifecycleActivation {
     if (matching.isEmpty() || matching.stream().anyMatch(policy -> !policy.bans().equals(actual))) {
       throw new MojoFailureException(
           "Maven injected a ban policy that does not match the frozen selected execution policy");
+    }
+    if (ELIDE_GOAL.equals(goal) && !actual.isEmpty()) {
+      final BanishedDependencyOriginalModel current =
+          BanishedDependencyOriginalModel.capture(project, model.executions(), actual);
+      if (!model.matchesInjectedModel(current)) {
+        throw new MojoFailureException(
+            "Elide ban exclusions were not injected into the selected first-level dependencies");
+      }
     }
   }
 
@@ -402,7 +410,7 @@ final class BanishedDependencyLifecycleActivation {
       }
       final BanishedDependencyOriginalModel source = previous == null ? model : previous;
       captures.put(entry.getKey(), source);
-      if (previous == null && !normalizedBans.isEmpty()) {
+      if (previous == null && !normalizedBans.isEmpty() && hasEnforcingExecution(executions)) {
         injected.put(entry.getKey(), injectExclusions(entry.getKey(), normalizedBans));
       }
     }
@@ -441,6 +449,15 @@ final class BanishedDependencyLifecycleActivation {
       throw new MavenExecutionException(
           "Ban exclusion capture state changed during preflight", session.getRequest().getPom());
     }
+    applyInjections(injected);
+  }
+
+  private static boolean hasEnforcingExecution(final List<SelectedExecution> executions) {
+    return executions.stream().anyMatch(execution -> ELIDE_GOAL.equals(execution.goal()));
+  }
+
+  private static void applyInjections(
+      final Map<MavenProject, List<org.apache.maven.model.Dependency>> injected) {
     for (final Map.Entry<MavenProject, List<org.apache.maven.model.Dependency>> mutation :
         injected.entrySet()) {
       mutation.getKey().setDependencies(mutation.getValue());
