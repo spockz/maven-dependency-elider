@@ -3,7 +3,9 @@
 
 ## Status and delivery
 
-WP-VEX-02 is complete. The reviewed implementation is commit `90f9c48b86f76be1bb2c8294d3df3eccff8fdd6c`. Local `main` was fast-forwarded to that reviewed commit, and `git merge-base --is-ancestor` verified it is an ancestor of the current delivery target. The whole-scope review and track-completion review both returned GO for the exact SHA:
+WP-VEX-02 is complete. The original reviewed implementation was commit `90f9c48b86f76be1bb2c8294d3df3eccff8fdd6c`; after a follow-up PMD test-fixture correction and final closeout reconciliation, local `main` contains the final reviewed candidate `74c9ca5439bed743dd9a006f1a263cdef0f21c25`.
+
+The original whole-scope review and track-completion review returned GO for `90f9c48b86f76be1bb2c8294d3df3eccff8fdd6c`:
 
 - `.scratch/reviews/wp-vex-02-final-completion-90f9c48.md`
 - `.scratch/reviews/wp-vex-02-track-completion-90f9c48.md`
@@ -12,9 +14,9 @@ No WP-VEX-02 implementation requirement remains open. No remote push was request
 
 ### Post-closeout PMD correction
 
-The `90f9c48b86f76be1bb2c8294d3df3eccff8fdd6c` review and local-main delivery above are the historical closeout. A later clean check from that delivered main head found two PMD LawOfDemeter violations in the test fixture `MavenStructuredProofCacheFixtures`, where it read group and artifact constants directly from another fixture class. Commit `3715439be8895e0657fe45d4443ac2418b0b2511` corrects this by deriving the coordinate from the prepared scenario. This new candidate is awaiting final review and integration; it does not change the historical review receipt for `90f9`.
+The `90f9c48b86f76be1bb2c8294d3df3eccff8fdd6c` review and local-main delivery above remain the historical initial closeout. A later clean check from that delivered main head found two PMD LawOfDemeter violations in `MavenStructuredProofCacheFixtures`, where it read group and artifact constants directly from another fixture class. Commit `3715439be8895e0657fe45d4443ac2418b0b2511` corrects this by deriving the coordinate from the prepared scenario. The corrected candidate, including closeout updates, is `74c9ca5439bed743dd9a006f1a263cdef0f21c25`; it received both GO reviews and was fast-forwarded to local `main`. The review receipts are `.scratch/reviews/wp-vex-02-final-completion-74c9ca5.md` and `.scratch/reviews/wp-vex-02-track-completion-74c9ca5.md`. `git merge-base --is-ancestor` verified the candidate remains in the delivery target. This follow-up preserves the original `90f9` review record.
 
-On `3715439be8895e0657fe45d4443ac2418b0b2511`, focused tests, formatting, and Java lint passed. The first full-check attempt exposed stale JaCoCo data from a previous focused run; after cleaning generated targets, a fresh `make check` exited 0 with 334 core tests, 631 plugin tests (630 passed, 1 skipped), 16 lifecycle tests, coverage, and transcript checks passing. `make test-examples` also exited 0 for five standalone fixtures and the multi-module reactor. Logs: `/tmp/wp-vex02-pmd-fix-make-check.log` and `/tmp/wp-vex02-pmd-fix-test-examples.log`.
+On `3715439be8895e0657fe45d4443ac2418b0b2511`, focused tests, formatting, and Java lint passed. The first full-check attempt exposed stale JaCoCo data from a previous focused run; after cleaning generated targets, the fresh docs-inclusive `make check` on the integrated candidate exited 0 with 334 core tests, 631 plugin tests (630 passed, 1 skipped), 16 lifecycle tests, coverage, and transcript checks passing. `make test-examples` also exited 0 for five standalone fixtures and the multi-module reactor. Logs: `/tmp/wp-vex02-pmd-fix-docs-make-check.log` and `/tmp/wp-vex02-pmd-fix-test-examples.log`. Both review gates are complete. The 52 unrelated dirty/untracked paths and recovery stash remain preserved; the separate post-closeout worktree was removed after copying its review receipts to main.
 
 Before integration, local `main` contained 52 unrelated dirty or untracked paths. These were preserved through the fast-forward and restored from stash `1e5aaf91ba6cb869796c968996ac6c7bea4369dc`; the stash backup remains available. The only path overlap involved `scripts/update-transcripts.go` and `scripts/update-transcripts_test.go`. The integrated versions preserve the feature's isolated Maven-repository argument and regression coverage together with main's `-f` path normalization and tests.
 

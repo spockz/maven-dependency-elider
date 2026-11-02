@@ -3,7 +3,7 @@
 
 ## Delivery
 
-WP-VEX-02 is complete. The reviewed implementation commit is `90f9c48b86f76be1bb2c8294d3df3eccff8fdd6c`; local `main` was fast-forwarded to that commit, and `git merge-base --is-ancestor` verified it is an ancestor of the current delivery target. The exact-SHA whole-scope and track-completion reviews returned GO. Their receipts are `.scratch/reviews/wp-vex-02-final-completion-90f9c48.md` and `.scratch/reviews/wp-vex-02-track-completion-90f9c48.md` in the track worktree.
+WP-VEX-02 is complete. The original reviewed implementation commit is `90f9c48b86f76be1bb2c8294d3df3eccff8fdd6c`. A clean check from that delivery found two PMD LawOfDemeter findings in `MavenStructuredProofCacheFixtures`; correction commit `3715439be8895e0657fe45d4443ac2418b0b2511` derives its coordinate from the prepared scenario. The exact corrected candidate with closeout updates, `74c9ca5439bed743dd9a006f1a263cdef0f21c25`, received both GO reviews and was fast-forwarded to local `main`. `git merge-base --is-ancestor` verified that it remains in the delivery target. The final receipts are `.scratch/reviews/wp-vex-02-final-completion-74c9ca5.md` and `.scratch/reviews/wp-vex-02-track-completion-74c9ca5.md`; the original `90f9` receipts remain preserved too.
 
 The main checkout had 52 pre-existing dirty or untracked paths. They were preserved across integration and restored from stash `1e5aaf91ba6cb869796c968996ac6c7bea4369dc`. The two overlapping transcript scripts retain both feature-branch private Maven-repository wiring and main's `-f` path normalization and tests. The stash backup remains available. No remote push was requested.
 
@@ -15,7 +15,7 @@ The automatic path is limited to ordinary non-MRJAR Java builds under GraalVM JD
 
 ## Verification
 
-On the exact reviewed candidate, `make check` passed with core 334/334, plugin 631 total (630 passed, 1 skipped), and lifecycle 16/16. Coverage and transcript checks also passed. Log: `/tmp/wp-vex02-final-candidate-make-check.log`. After the closeout document was added, `timeout 600s make lint-markdown` passed for 72 files with 0 reported issues; log: `/tmp/wp-vex02-closeout-lint-markdown.log`.
+On the corrected integrated candidate, the docs-inclusive `make check` passed with core 334/334, plugin 631 total (630 passed, 1 skipped), and lifecycle 16/16. Coverage and transcript checks also passed. Log: `/tmp/wp-vex02-pmd-fix-docs-make-check.log`. The separate `make test-examples` passed five standalone fixtures and the multi-module reactor, including sequential and `-T 4` checks; log: `/tmp/wp-vex02-pmd-fix-test-examples.log`. The post-closeout `timeout 600s make lint-markdown` passed for 72 files with 0 reported issues; log: `/tmp/wp-vex02-closeout-lint-markdown.log`.
 
 Standalone `make test-examples` passed for five standalone fixtures and the multi-module reactor, including sequential and `-T 4` checks. Log: `/tmp/wp-vex02-final-candidate-test-examples.log`.
 
@@ -23,7 +23,7 @@ The production publisher fixture is explicitly synthetic and test-only. It is va
 
 ## Limits and remaining research
 
-No WP-VEX-02 implementation requirement remains open. The proof is bounded to the CNA-declared claims and does not independently establish vulnerability truth or CNA declaration completeness. The configured producer-compatible typed OSV index is the selected OSV evidence source; it is not an independent authentication of upstream OSV bytes. Unsupported compiler/build configurations, including modules, MRJAR source reproduction, generated or transformed builds, and incomplete mappings, remain review-only. Broader CNA range semantics, retention/notification thresholds, and external scanner-revision research remain outside this work package. WP-VEX-03 has separate eventual-consistency and no-shared-watermark limitations documented in its handover.
+No WP-VEX-02 implementation requirement remains open. The PMD correction review and integration are complete, and the separate post-closeout worktree was removed after its review receipts were copied to main. The proof is bounded to the CNA-declared claims and does not independently establish vulnerability truth or CNA declaration completeness. The configured producer-compatible typed OSV index is the selected OSV evidence source; it is not an independent authentication of upstream OSV bytes. Unsupported compiler/build configurations, including modules, MRJAR source reproduction, generated or transformed builds, and incomplete mappings, remain review-only. Broader CNA range semantics, retention/notification thresholds, and external scanner-revision research remain outside this work package. WP-VEX-03 has separate eventual-consistency and no-shared-watermark limitations documented in its handover.
 
 ## Preserved WP-REACTOR-01 Delivery Closeout
 
