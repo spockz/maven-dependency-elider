@@ -167,6 +167,7 @@ The `elide` goal writes two structured JSON records:
 * `target/dependency-elider-report.json` (`-Delide.summaryFile`): Persisted snapshot consumed by `dependency-elider:report`.
 
 The persisted Elide summary records ban outcomes in `appliedBans`. Its `rawDroppedCoordinates` metric excludes policy-forced absences, while total absent-artifact metrics include them.
+
 * `target/dependency-elider-class-usage.json` (`-Delide.reportFile`): Detailed class-usage evidence.
 
 The saved elision report and Analyze class-usage report include `exclusionReview`, with an explicit
