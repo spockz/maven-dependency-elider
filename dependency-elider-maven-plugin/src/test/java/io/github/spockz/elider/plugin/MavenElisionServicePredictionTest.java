@@ -27,7 +27,7 @@ final class MavenElisionServicePredictionTest {
     final MavenElisionServicePredictionFixtures.Fixture fixture =
         MavenElisionServicePredictionFixtures.create(temporaryDirectory, true);
     final DefaultRepositorySystemSession repositorySession = fixture.repositorySession();
-    final SessionData sessionDataBefore = repositorySession.getData();
+    final SessionData sessionDataBefore = sessionData(repositorySession);
     final Object captureBefore =
         sessionDataBefore.get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
     final Object planBefore = sessionDataBefore.get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY);
@@ -42,7 +42,7 @@ final class MavenElisionServicePredictionTest {
 
     final AnalyzePrediction prediction =
         new MavenElisionService().predict(fixture.project(), fixture.options(), null);
-    final SessionData sessionDataAfter = repositorySession.getData();
+    final SessionData sessionDataAfter = sessionData(repositorySession);
 
     assertAll(
         "captured-effective Analyze predicts without publishing trim state",
@@ -162,6 +162,11 @@ final class MavenElisionServicePredictionTest {
     assertThatThrownBy(() -> new MavenElisionService().predict(fixture.project(), options, null))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("requires a nonblank production class output directory");
+  }
+
+  // WHY: The test compares Resolver session data before and after prediction.
+  private static SessionData sessionData(final DefaultRepositorySystemSession session) {
+    return session.getData();
   }
 
   private static AnalysisOptions withCompleteness(
