@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -78,14 +79,18 @@ public final class ReportMojo extends AbstractMojo {
 
   private void renderSnapshot(final MavenElisionReportSnapshot snapshot)
       throws MojoFailureException {
+    final List<String> rendered;
     try {
-      getLog()
-          .info(
-              "Elision report JSON snapshot: " + summaryFile.toPath().toAbsolutePath().normalize());
-      MavenElisionReportWriter.render(snapshot).forEach(getLog()::info);
+      rendered = MavenElisionReportWriter.render(snapshot);
     } catch (final IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Could not display dependency elision report: " + exception.getMessage(), exception);
+    }
+    if (getLog().isInfoEnabled()) {
+      getLog()
+          .info(
+              "Elision report JSON snapshot: " + summaryFile.toPath().toAbsolutePath().normalize());
+      rendered.forEach(getLog()::info);
     }
   }
 }

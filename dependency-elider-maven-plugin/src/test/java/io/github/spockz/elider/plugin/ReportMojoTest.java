@@ -20,6 +20,9 @@ import org.junit.jupiter.api.io.TempDir;
 /** Verifies the report Mojo reads saved data and validates project identity. */
 @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
 final class ReportMojoTest {
+  /** Logger API method name that enables report output. */
+  private static final String INFO_ENABLED_METHOD = "isInfoEnabled";
+
   /** Temporary root for report snapshots and checkout identities. */
   @TempDir private Path temporaryDirectory;
 
@@ -139,6 +142,9 @@ final class ReportMojoTest {
             Log.class.getClassLoader(),
             new Class<?>[] {Log.class},
             (proxy, method, arguments) -> {
+              if (INFO_ENABLED_METHOD.equals(method.getName())) {
+                return true;
+              }
               if ("info".equals(method.getName())
                   && arguments != null
                   && arguments.length > 0

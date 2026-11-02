@@ -20,6 +20,9 @@ import org.junit.jupiter.api.io.TempDir;
 /** Verifies the report Mojo renders only the graph saved by the elide goal. */
 @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
 final class ReportMojoGraphRenderingTest {
+  /** Logger API method name that enables report output. */
+  private static final String INFO_ENABLED_METHOD = "isInfoEnabled";
+
   /** Maven group used by the report fixture. */
   private static final String GROUP_ID = "org.example";
 
@@ -226,6 +229,9 @@ final class ReportMojoGraphRenderingTest {
             Log.class.getClassLoader(),
             new Class<?>[] {Log.class},
             (proxy, method, arguments) -> {
+              if (INFO_ENABLED_METHOD.equals(method.getName())) {
+                return true;
+              }
               if ("info".equals(method.getName())
                   && arguments != null
                   && arguments.length > 0

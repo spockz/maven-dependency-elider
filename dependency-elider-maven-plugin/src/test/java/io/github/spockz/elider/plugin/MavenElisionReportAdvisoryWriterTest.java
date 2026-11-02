@@ -120,7 +120,7 @@ final class MavenElisionReportAdvisoryWriterTest {
         () ->
             assertThat(
                     rendered.stream()
-                        .filter(line -> line.equals("    POM mapping template for this candidate:"))
+                        .filter("    POM mapping template for this candidate:"::equals)
                         .count())
                 .isEqualTo(2L),
         () ->

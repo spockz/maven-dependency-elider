@@ -53,11 +53,12 @@ final class SourceJdkIdentityTest {
   }
 
   @Test
-  @SuppressWarnings("PMD.LawOfDemeter") // AssertJ chains retain independent assertion context.
+  @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UnitTestContainsTooManyAsserts"})
+  // Independent digest checks prove which runtime images contribute to the identity.
   void currentJdkIdentityIncludesLoadedJavacAndPlatformDigests() {
     final SourceJdkIdentity.Resolution result = SourceJdkIdentity.current();
     if (!SourceJdkIdentity.isSupported()) {
-      org.junit.jupiter.api.Assertions.assertAll(
+      assertAll(
           () -> assertThat(result.identity()).isEmpty(),
           () -> assertThat(result.refusal()).isNotEmpty());
       return;

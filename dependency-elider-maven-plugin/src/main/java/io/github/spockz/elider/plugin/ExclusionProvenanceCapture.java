@@ -19,9 +19,14 @@ import org.apache.maven.project.MavenProject;
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
   "PMD.AvoidInstantiatingObjectsInLoops",
-  "PMD.UseConcurrentHashMap"
+  "PMD.UseConcurrentHashMap",
+  "PMD.GodClass"
 })
+// Maven model traversal inflates this cohesive provenance-mapping metric.
 final class ExclusionProvenanceCapture {
+  /** A source location is trusted only when exactly one original POM row matches it. */
+  private static final int SINGLE_ORIGIN_MATCH_COUNT = 1;
+
   private ExclusionProvenanceCapture() {}
 
   static ExclusionRecommendations.Snapshot capture(final MavenProject project) {
@@ -136,15 +141,20 @@ final class ExclusionProvenanceCapture {
                             .getOrDefault(modelId, List.of())
                             .contains(match.profile()))
             .toList();
-    final String kind;
-    final String profile;
     if (location == null || source == null || modelId.isEmpty() || line < 1 || column < 1) {
-      kind = "UNKNOWN";
-      profile = "";
       diagnostics.add(incompleteLocationDiagnostic(rowDescription, modelId, line, column));
-    } else if (matches.size() != 1) {
-      kind = "UNKNOWN";
-      profile = "";
+      return new ExclusionRecommendations.Origin("UNKNOWN", modelId, path, line, column, "");
+    }
+    if (matches.size() == SINGLE_ORIGIN_MATCH_COUNT) {
+      final Match match = matches.getFirst();
+      final String kind =
+          (match.local() ? "LOCAL" : "INHERITED")
+              + (match.profile().isEmpty() ? "" : "_PROFILE")
+              + (match.management() ? "_MANAGEMENT" : "");
+      return new ExclusionRecommendations.Origin(
+          kind, modelId, path, line, column, match.profile());
+    }
+    if (matches.isEmpty()) {
       diagnostics.add(
           "Incomplete or ambiguous provenance at "
               + modelId
@@ -152,19 +162,23 @@ final class ExclusionProvenanceCapture {
               + line
               + ":"
               + column
-              + ": "
-              + (matches.isEmpty() ? "no original POM row matches " : "multiple POM rows match ")
-              + rowDescription
-              + (matches.size() > 1 ? " (" + matches.size() + " matches)" : ""));
+              + ": no original POM row matches "
+              + rowDescription);
     } else {
-      final Match match = matches.getFirst();
-      kind =
-          (match.local() ? "LOCAL" : "INHERITED")
-              + (match.profile().isEmpty() ? "" : "_PROFILE")
-              + (match.management() ? "_MANAGEMENT" : "");
-      profile = match.profile();
+      diagnostics.add(
+          "Incomplete or ambiguous provenance at "
+              + modelId
+              + ":"
+              + line
+              + ":"
+              + column
+              + ": multiple POM rows match "
+              + rowDescription
+              + " ("
+              + matches.size()
+              + " matches)");
     }
-    return new ExclusionRecommendations.Origin(kind, modelId, path, line, column, profile);
+    return new ExclusionRecommendations.Origin("UNKNOWN", modelId, path, line, column, "");
   }
 
   private static String incompleteLocationDiagnostic(

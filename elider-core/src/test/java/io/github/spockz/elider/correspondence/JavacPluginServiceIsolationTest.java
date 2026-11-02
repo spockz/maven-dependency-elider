@@ -43,8 +43,7 @@ final class JavacPluginServiceIsolationTest {
   @org.junit.jupiter.api.BeforeEach
   void verifySupportedJdk() {
     org.junit.jupiter.api.Assumptions.assumeTrue(
-        SourceJdkIdentity.isSupported(),
-        "Skipping source reproduction tests on non-pinned JDK");
+        SourceJdkIdentity.isSupported(), "Skipping source reproduction tests on non-pinned JDK");
   }
 
   @Test

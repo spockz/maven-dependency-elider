@@ -14,7 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Checks positive reproduction and fail-closed public engine outcomes. */
-@SuppressWarnings("PMD.AtLeastOneConstructor") // JUnit supplies the test instance lifecycle.
+@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.TooManyMethods"})
+// Focused engine cases share one archive and request fixture API.
 final class SourceReproductionEngineTest {
   /** Exact Java source archive entry used by the ordinary-layout fixture. */
   private static final String SOURCE_ENTRY = "src/main/java/org/example/Outer.java";
@@ -40,8 +41,7 @@ final class SourceReproductionEngineTest {
   @org.junit.jupiter.api.BeforeEach
   void verifySupportedJdk() {
     org.junit.jupiter.api.Assumptions.assumeTrue(
-        SourceJdkIdentity.isSupported(),
-        "Skipping source reproduction tests on non-pinned JDK");
+        SourceJdkIdentity.isSupported(), "Skipping source reproduction tests on non-pinned JDK");
   }
 
   @Test
