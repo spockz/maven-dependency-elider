@@ -212,23 +212,31 @@ For counts of two or more active declaration paths, report the excluded G:A, cou
 
 ## 7. Final Implementation and Verification
 
-The work package was rebased onto `main` commit
-`f45cf4752c0f9940f35050163fa7d89064a43165`. The user-selected 52-path dirty
-snapshot remains included as baseline commit
+The work package is rebased onto progressed `main` commit
+`024b092b93b05fe77de3215f92198da9e74fa80f`. The user-selected full dirty
+snapshot was captured before main progressed as commit
 `d152ead148f98e8c20982baba37c6419a602c8f8` (tree
-`767ec799e111e6b99087bf9f427f4d43d0ed9a00`). The implementation candidate is
-`f0ef03b67ff0e359311639fbae5579c90fda35b6` (tree
-`8fcb10a2c7e3c829c1b9001d46f1fac33e89eb02`). Rebase corrections preserve
+`767ec799e111e6b99087bf9f427f4d43d0ed9a00`) and remains on the
+`codex/wp-policy-01-pre-progressed-main-rebase` recovery branch. The requested
+rebase excludes replaying that snapshot commit because progressed main already
+carries the snapshot's tracked state; the current main worktree's 12 modified
+tracked paths and 5 untracked paths remain to be restored after fast-forward.
+The old untracked WP-POLICY handover is intentionally replaced by this final
+version. The verified implementation candidate is `335f1f8aef20ac2567198df0b658c09af299cd9e`
+(tree `5d4a16e6d364f349f259232e45ae20aebe26347a`). Rebase corrections preserve
 mainline source-correspondence results, report proof/policy/exclusion/ban fields,
 and execution-configuration publication APIs. README list spacing was corrected
 for Markdown lint.
 
-The full Java 21 `make check` passed on that candidate: formatting; Checkstyle,
-PMD, and SpotBugs; core/plugin tests and lifecycle integration tests; Markdown
-lint; scheduler and SBOM checks; coverage; and configured transcript drift. The
-final transcript result was “Configured command transcripts are up to date.”
-`git diff --check` also passed. The final source and integration reviews and
-delivery state are recorded in the versioned sibling
+The full Java 21 `make check` passed on the verified candidate: Spotless,
+Checkstyle, PMD, SpotBugs, core/plugin tests, 27 lifecycle integration tests,
+coverage, Markdown lint, scheduler and SBOM checks, and configured transcript
+drift. The plugin unit suite reported 767 tests with one skipped. The transcript
+tool reported “Configured command transcripts are up to date.” The packaged
+mixed-goal integration test passed with both Analyze/Elide goal orders; `make
+lint-java` and `git diff --check` passed. Fresh exact-tree reviews and local-main
+integration are pending. The final source and integration reviews and delivery
+state will be recorded in the versioned sibling
 [`2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip-closeout.md`](2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip-closeout.md).
 
 The verified boundary is the current project's supported Maven views and

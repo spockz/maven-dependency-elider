@@ -56,3 +56,16 @@ lint, and plugin-check runtimes. Other retained track sources did not have
 comparable timing data; their assessments say unknown rather than estimate.
 The package remains incomplete until exact-tree reviews and the fast-forward to
 local `main` are recorded in the versioned closeout and orchestration ledger.
+
+The user then requested a rebase onto progressed `main` at
+`024b092b93b05fe77de3215f92198da9e74fa80f`. The original dirty-snapshot commit
+`d152ead148f98e8c20982baba37c6419a602c8f8` remains on recovery branch
+`codex/wp-policy-01-pre-progressed-main-rebase`; the active branch replays only
+WP-POLICY-01 commits because progressed main carries the snapshot's tracked
+state. Candidate `335f1f8aef20ac2567198df0b658c09af299cd9e` / tree
+`5d4a16e6d364f349f259232e45ae20aebe26347a` passes Java 21 `make check`, with
+767 plugin tests (one skipped) and 27 lifecycle integration tests. A packaged
+mixed Analyze/Elide test passed in both direct goal orders. Fresh exact-tree
+reviews and delivery to local `main` remain pending; preserve main's current
+dirty worktree during that fast-forward, replacing only the older WP-POLICY
+handover with the final committed version.

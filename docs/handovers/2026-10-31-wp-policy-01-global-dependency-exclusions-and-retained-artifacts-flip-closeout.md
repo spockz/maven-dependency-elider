@@ -5,10 +5,10 @@
 
 - **Package:** `WP-POLICY-01`, global dependency bans and retained-artifact policy.
 - **Source handover:** [WP-POLICY-01](2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip.md).
-- **Requested base:** local `main` at `f45cf4752c0f9940f35050163fa7d89064a43165`.
-- **User amendment:** include the full dirty main snapshot. It is retained in baseline commit `d152ead148f98e8c20982baba37c6419a602c8f8`, tree `767ec799e111e6b99087bf9f427f4d43d0ed9a00`.
+- **Requested base:** progressed local `main` at `024b092b93b05fe77de3215f92198da9e74fa80f`.
+- **User amendment:** include the full dirty main snapshot. It was captured as `d152ead148f98e8c20982baba37c6419a602c8f8` before main progressed. That snapshot commit is retained on recovery branch `codex/wp-policy-01-pre-progressed-main-rebase`; the rebased work replays only WP-POLICY-01 commits because current main already carries the snapshot's tracked state. The current main worktree has 12 modified tracked paths and 5 untracked paths; after fast-forward I will restore all current changes except the older WP-POLICY handover, which this branch supersedes.
 - **Implementation branch:** `codex/wp-policy-01`.
-- **Verified candidate:** `f0ef03b67ff0e359311639fbae5579c90fda35b6`, tree `8fcb10a2c7e3c829c1b9001d46f1fac33e89eb02`.
+- **Verified candidate:** `335f1f8aef20ac2567198df0b658c09af299cd9e`, tree `5d4a16e6d364f349f259232e45ae20aebe26347a`.
 - **Delivery target:** local `main`; remote publication was not requested. Final fast-forward and dirty-path preservation are recorded after integration.
 - **Current state:** implementation and full `make check` pass. Fresh exact-tree reviews and local `main` integration are pending.
 
@@ -24,18 +24,18 @@
 | R6 | Report repeated effective-POM exclusions with provenance, separate management-only entries, and keep recommendations advisory. | `ExclusionProvenanceCaptureTest`, `ExclusionReviewReportTest`, strict report reader/writer validation. | Complete. |
 | R7 | Update usage, FAQ, contributor decisions, ADRs, research, examples, and generated transcripts. | README, Maven site usage, FAQ/contributor docs, ADR-0012, RQ-0004/0005/0006/0017/0018, `make check-transcripts`. | Complete. |
 | R8 | Preserve output, Maven-view, and resolver-plan rollback; verify absence and freshness before commit. | `MavenOutputTransactionTest`, `MavenElisionServiceEffectiveOutputTransactionTest`, and lifecycle failure/no-publication fixtures. | Complete. |
-| R9 | Review the full source-derived scope, run the full repository gate, review integration, and preserve closeout evidence. | Independent source and architecture receipts plus a final integrated-main receipt are listed below when issued. | Pending final review and integration. |
+| R9 | Review the full source-derived scope, run the full repository gate, review integration, and preserve closeout evidence. | Java 21 `make check` passed on `335f1f8a` / `5d4a16e6`; fresh source and architecture receipts plus the final integrated-main receipt are pending. | Gate complete; reviews and integration pending. |
 
 ## Verification
 
-Java 21 `make check` passed on candidate `f0ef03b6` / tree
-`8fcb10a2c7e3c829c1b9001d46f1fac33e89eb02`. It ran formatting, Checkstyle,
-PMD, SpotBugs, core and plugin tests, lifecycle integration tests, coverage,
-Markdown lint, scheduler and SBOM checks, and transcript drift. The transcript
-tool reported that configured command transcripts are up to date. The check
-also confirmed the candidate's report/snapshot copy paths compile with the newer
-mainline structured-proof and source-correspondence fields. `git diff --check`
-passed.
+Java 21 `make check` passed on candidate `335f1f8a` / tree
+`5d4a16e6d364f349f259232e45ae20aebe26347a`. It ran Spotless, Checkstyle, PMD,
+SpotBugs, core and plugin tests, 27 lifecycle integration tests, coverage,
+Markdown lint, scheduler and SBOM checks, and transcript drift. The plugin suite
+reported 767 tests with one skipped; the lifecycle suite reported 27 tests with
+no failures or skips. The transcript tool reported that configured command
+transcripts are up to date. A targeted packaged test also passed both direct
+Analyze/Elide goal orders, and `make lint-java` plus `git diff --check` passed.
 
 The repository-pinned Markdown tool was installed with `make tools`. The first
 check exposed stale report-snapshot constructor arguments and a README blank-line
@@ -73,7 +73,7 @@ is reported. Detailed work-package tool notes remain in `.scratch/orchestration-
 
 ## Specification deviations and architectural choices
 
-- The full 52-path dirty snapshot was included because the user explicitly chose it. The snapshot is a committed baseline on the isolated branch; it was not silently reduced to WP-only files.
+- The user-authorized full 52-path dirty snapshot was captured before main progressed. The rebase excludes replaying its snapshot commit because current main carries its tracked state; the current main worktree's dirty paths are backed up and restored during delivery. The older WP-POLICY handover is replaced by the final source handover.
 - The rebased integration preserved current-main structured-proof reporting, source-correspondence results, source-classifier resolution threading, ordered JSON serialization, and deserialization error handling while adding policy fields and renderers.
 - Bans use collection-time first-level exclusions when the core extension is active and strict post-resolution checks in supported goal paths. A successful operation must establish absence; ambiguous graph, closure, or audit evidence fails closed.
 - The policy applies to supported current-project Maven views and generated outputs. It does not rewrite consumer POMs or claim universal future Resolver, plugin-realm, annotation-processor, Spring AOT, or exhaustive test-bytecode behavior.
@@ -83,10 +83,9 @@ is reported. Detailed work-package tool notes remain in `.scratch/orchestration-
 
 ## Cumulative change and commit record
 
-From base `f45cf475` to the verified implementation candidate, the cumulative
-change was 240 files, 24,365 insertions, and 1,916 deletions. The full commit
+From progressed base `024b092b` to candidate `335f1f8a`, the cumulative change
+was 207 files, 23,093 insertions, and 1,423 deletions. The WP-POLICY-01 commit
 sequence is preserved by `git log --oneline --reverse
-f45cf4752c0f9940f35050163fa7d89064a43165..f0ef03b67ff0e359311639fbae5579c90fda35b6`.
-This includes the user-authorized dirty-snapshot baseline and all integrated
-WP-POLICY-01 work. The final main delivery hash and post-integration diff are
-added after the fast-forward.
+024b092b93b05fe77de3215f92198da9e74fa80f..335f1f8aef20ac2567198df0b658c09af299cd9e`.
+The final main delivery hash and post-integration diff will be added after the
+fast-forward and integrated review.
