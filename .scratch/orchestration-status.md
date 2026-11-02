@@ -1207,7 +1207,7 @@ Review scope remains bounded to supported current-project Maven views and genera
 - Initial baseline: source tree initially pristine. First `make check` failed four preexisting core PMD violations. Minimal test repair exposed ten preexisting plugin PMD violations. Reviewed behavior-preserving prerequisite repairs cleared all findings. Full JDK 21 make check passed: 336 core tests, 772 plugin unit tests (one opt-in transcript-cache preparation skip), 27 lifecycle integration tests, coverage, lint and transcript checks. Clean commit verification precedes track creation.
 - Baseline evidence: initial failure `.scratch/platform-01/baseline-jdk21.log`; full successful repair gate `.scratch/platform-01/make-check-jdk21.log`; focused before/after 21-test and lint logs in the same directory.
 - Toolchains: main clone's existing JDK 21 and 25; official OpenJDK 27 downloaded and checksum-verified to this checkout's ignored `.scratch/toolchains/jdk-27.0.1.0.3`. Tool identities describe verification environments, never required product pins.
-- Architecture receipt: `.scratch/reviews/platform-architecture.md`; matrix cross-check APPROVED after five clarifications. Clean committed baseline remains the last dispatch condition.
+- Architecture receipt: `.scratch/reviews/platform-architecture.md`; matrix cross-check APPROVED after five clarifications. Clean committed baseline verified; implementation dispatched in `.scratch/worktrees/track-platform-01`, branch `track/platform-01`, from `c3a86fdef0c352847658724bf13fe80ad3d5287f`.
 - External review: Gemini MCP bridge unavailable; fail-open applies to optional peer review, not to dedicated review or completion evidence.
 - Tool constraints: shell sandbox cannot start (`bwrap: Unexpected capabilities but not setuid`); approved escalated shell calls work. Semantic editor and cloud environment status tools unavailable; managed network snapshot absent. Standard repository commands, `rg`, and patch editing used.
 
@@ -1215,8 +1215,8 @@ Review scope remains bounded to supported current-project Maven views and genera
 
 | Slice group | Scope and requirement ownership | State |
 | :--- | :--- | :--- |
-| B0 | Minimal existing baseline lint repair; no feature behavior change | VERIFIED; FINAL REVIEW/COMMIT PENDING |
-| S1 | Standard platform context and effective release/report semantics (P02-P03) | GATED |
+| B0 | Minimal existing baseline lint repair; no feature behavior change | APPROVED, VERIFIED, COMMITTED cf70e000 |
+| S1 | Standard platform context and effective release/report semantics (P02-P03); S1a JRT loading, S1b target/report contract | IN PROGRESS |
 | S2 | Compiler/scanner removal, conventional source mapping, provider/VEX safety (P01, P04-P06) | PENDING |
 | S3 | Classpath-only derivative and bounded JPMS signals (M01-M03) | PENDING |
 | S4 | Additive AOT inputs, full evidence freshness, resources, production isolation, lifecycle order (A01-A08) | PENDING |
