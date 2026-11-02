@@ -76,6 +76,154 @@ final class MavenOriginalInputAuditTest {
   private static final String COMPILE = "compile";
 
   @Test
+  void rejectsUnsupportedOriginalMatchesEvenWhenInjectionHidesThemOrSupportedMatchesExist()
+      throws IOException {
+    final MavenProject project = project(temporaryDirectory);
+    project.setDependencies(new ArrayList<>(List.of(dependency(LIBRARY))));
+    final List<String> bans = List.of(GROUP + ":" + BANNED);
+    final BanishedDependencyOriginalModel captured =
+        BanishedDependencyOriginalModel.capture(project, List.of(), bans);
+    final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
+    repositorySession
+        .getData()
+        .set(
+            BanishedDependencyLifecycleActivation.CAPTURE_STORE_KEY,
+            BanishedDependencyCaptureStore.empty().withModel(captured).toPayload());
+    project.setDependencies(BanishedDependencyLifecycleActivation.injectExclusions(project, bans));
+    project.setArtifacts(Set.of());
+    final MavenSession session = session(project, repositorySession);
+    MavenOriginalInputAudit.markHookPresent(session);
+    final Path provider = temporaryDirectory.resolve("original-provider.jar");
+    Files.writeString(provider, "original provider");
+    final org.eclipse.aether.graph.Dependency library = resolvedLibrary(temporaryDirectory);
+    final List<UnsupportedOriginal> cases =
+        List.of(
+            new UnsupportedOriginal("test", JAR, JAR),
+            new UnsupportedOriginal("provided", JAR, JAR),
+            new UnsupportedOriginal("system", JAR, JAR),
+            new UnsupportedOriginal("runtime", "zip", "zip"),
+            new UnsupportedOriginal("runtime", JAR, "zip"),
+            new UnsupportedOriginal("compile", "test-jar", JAR));
+
+    assertAll(
+        "unsupported original TEST-context matches cannot disappear behind injected exclusions",
+        cases.stream()
+            .map(
+                scenario ->
+                    () -> {
+                      final org.eclipse.aether.graph.Dependency unsupported =
+                          new org.eclipse.aether.graph.Dependency(
+                              new DefaultArtifact(
+                                      GROUP, BANNED, "unsupported", scenario.extension(), VERSION)
+                                  .setProperties(Map.of("type", scenario.mavenType()))
+                                  .setFile(provider.toFile()),
+                              scenario.scope());
+                      final org.eclipse.aether.graph.Dependency supported =
+                          new org.eclipse.aether.graph.Dependency(
+                              new DefaultArtifact(GROUP, BANNED, "supported", JAR, VERSION)
+                                  .setFile(provider.toFile()),
+                              "compile");
+                      assertAll(
+                          scenario.toString(),
+                          List.of(
+                                  List.of(library, unsupported),
+                                  List.of(library, supported, unsupported))
+                              .stream()
+                              .map(
+                                  original ->
+                                      () -> {
+                                        final DependencyNode originalGraph = graph();
+                                        for (final org.eclipse.aether.graph.Dependency dependency :
+                                            original.subList(1, original.size())) {
+                                          originalGraph
+                                              .getChildren()
+                                              .getFirst()
+                                              .getChildren()
+                                              .add(new DefaultDependencyNode(dependency));
+                                        }
+                                        final RecordingResolver resolver =
+                                            new RecordingResolver(
+                                                result(
+                                                    originalGraph,
+                                                    original,
+                                                    List.of(),
+                                                    List.of(),
+                                                    Map.of()));
+                                        final Throwable failure =
+                                            org.assertj.core.api.Assertions.catchThrowable(
+                                                () ->
+                                                    MavenOriginalInputAudit.audit(
+                                                        project, session, resolver));
+                                        assertAll(
+                                            () ->
+                                                assertThat(failure)
+                                                    .isInstanceOf(IOException.class)
+                                                    .hasMessageContaining(
+                                                        "unsupported resolved artifact")
+                                                    .hasMessageContaining(
+                                                        "Maven type: " + scenario.mavenType())
+                                                    .hasMessageContaining(
+                                                        "(" + scenario.scope() + ")"),
+                                            () ->
+                                                assertThat(resolver.request.getResolutionFilter())
+                                                    .isNull(),
+                                            () ->
+                                                assertThat(
+                                                        resolver
+                                                            .request
+                                                            .getMavenProject()
+                                                            .getDependencies()
+                                                            .getFirst()
+                                                            .getExclusions())
+                                                    .isEmpty(),
+                                            () -> assertThat(project.getArtifacts()).isEmpty());
+                                      }));
+                    }));
+  }
+
+  @Test
+  void preservesSupportedAuditMatchesAndUnmatchedRequestsWithoutClaimingRemoval() throws Exception {
+    final MavenProject project = project(temporaryDirectory);
+    project.setDependencies(new ArrayList<>(List.of(dependency(LIBRARY))));
+    final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
+    final MavenSession session = sessionWithCapture(project, repositorySession);
+    final MavenOriginalInputAudit.Inventory inventory =
+        MavenOriginalInputAudit.audit(
+            project,
+            session,
+            new RecordingResolver(
+                result(
+                    graph(),
+                    List.of(resolvedLibrary(temporaryDirectory)),
+                    List.of(),
+                    List.of(),
+                    Map.of())));
+    final BanishedDependencyOriginalAuditPolicy.Resolution resolution =
+        BanishedDependencyOriginalAuditPolicy.resolve(
+            List.of(GROUP + ":" + LIBRARY, GROUP + ":missing"), inventory.resolvedArtifacts());
+    final MavenOriginalInputAudit.AuditArtifact artifact = inventory.resolvedArtifacts().getFirst();
+    final MavenOriginalInputAudit.Inventory changedType =
+        new MavenOriginalInputAudit.Inventory(
+            inventory.project(),
+            inventory.sourceFingerprint(),
+            inventory.graphPair(),
+            List.of(
+                new MavenOriginalInputAudit.AuditArtifact(
+                    artifact.coordinate(), "test-jar", artifact.filePath(), artifact.sha256())),
+            inventory.directArtifacts(),
+            null);
+    assertAll(
+        () ->
+            assertThat(resolution.unmatched())
+                .containsExactly(new BanishedDependency(GROUP, "missing")),
+        () -> assertThat(resolution.matches().getFirst().artifacts()).containsExactly(artifact),
+        () -> assertThat(artifact.mavenType()).isEqualTo(JAR),
+        () -> assertThat(changedType.fingerprint()).isNotEqualTo(inventory.fingerprint()));
+  }
+
+  private record UnsupportedOriginal(String scope, String mavenType, String extension) {}
+
+  @Test
   void resolvesFrozenPreInjectionModelOnDetachedProjectAndSession() throws Exception {
     final MavenProject liveProject = project(temporaryDirectory);
     final Dependency sourceDependency = dependency(LIBRARY);

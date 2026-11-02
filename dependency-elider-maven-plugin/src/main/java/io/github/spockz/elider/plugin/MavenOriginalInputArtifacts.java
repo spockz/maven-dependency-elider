@@ -9,7 +9,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import org.eclipse.aether.graph.DependencyNode;
 
 /** Extracts artifact evidence from the exact graph and result used by the audit. */
@@ -31,13 +30,16 @@ final class MavenOriginalInputArtifacts {
     return artifacts;
   }
 
-  static List<ArtifactCoordinate> direct(final DependencyNode graph) {
-    return graph.getChildren().stream()
-        .map(DependencyNode::getDependency)
-        .filter(Objects::nonNull)
-        .map(dependency -> coordinate(dependency.getArtifact(), dependency.getScope()))
-        .sorted()
-        .toList();
+  static List<ArtifactCoordinate> direct(final DependencyNode graph) throws IOException {
+    final List<ArtifactCoordinate> coordinates = new ArrayList<>();
+    for (final DependencyNode node : graph.getChildren()) {
+      final org.eclipse.aether.graph.Dependency dependency = node.getDependency();
+      if (dependency != null) {
+        coordinates.add(coordinate(dependency.getArtifact(), dependency.getScope()));
+      }
+    }
+    coordinates.sort(Comparator.naturalOrder());
+    return List.copyOf(coordinates);
   }
 
   private static MavenOriginalInputAudit.AuditArtifact auditArtifact(
@@ -47,18 +49,26 @@ final class MavenOriginalInputArtifacts {
     }
     final ArtifactCoordinate coordinate =
         coordinate(dependency.getArtifact(), dependency.getScope());
-    final Path file = artifactFile(coordinate, dependency.getArtifact().getFile());
+    final String mavenType =
+        dependency.getArtifact().getProperty("type", dependency.getArtifact().getExtension());
+    if (mavenType == null || mavenType.isBlank()) {
+      throw new IOException(
+          "Resolved original dependency has no Maven artifact type: " + coordinate);
+    }
+    final Path file = artifactFile(coordinate, mavenType, dependency.getArtifact().getFile());
     if (file == null) {
-      return new MavenOriginalInputAudit.AuditArtifact(coordinate, null, null);
+      return new MavenOriginalInputAudit.AuditArtifact(coordinate, mavenType, null, null);
     }
     return new MavenOriginalInputAudit.AuditArtifact(
-        coordinate, file.toString(), ArtifactFileDigest.sha256(file));
+        coordinate, mavenType, file.toString(), ArtifactFileDigest.sha256(file));
   }
 
-  private static Path artifactFile(final ArtifactCoordinate coordinate, final java.io.File file)
+  private static Path artifactFile(
+      final ArtifactCoordinate coordinate, final String mavenType, final java.io.File file)
       throws IOException {
     final boolean supportedProvider =
-        "jar".equals(coordinate.type())
+        "jar".equals(mavenType)
+            && "jar".equals(coordinate.type())
             && ("compile".equals(coordinate.scope()) || "runtime".equals(coordinate.scope()));
     if (file == null) {
       requireProviderFile(
@@ -82,9 +92,15 @@ final class MavenOriginalInputArtifacts {
   }
 
   private static ArtifactCoordinate coordinate(
-      final org.eclipse.aether.artifact.Artifact artifact, final String scope) {
+      final org.eclipse.aether.artifact.Artifact artifact, final String scope) throws IOException {
     if (artifact == null) {
-      throw new IllegalStateException("Resolver dependency has no artifact");
+      throw new IOException("Resolver dependency has no artifact");
+    }
+    if (scope == null || scope.isBlank()) {
+      throw new IOException("Resolved original dependency has no effective Maven scope");
+    }
+    if (artifact.getExtension() == null || artifact.getExtension().isBlank()) {
+      throw new IOException("Resolved original dependency has no Resolver extension");
     }
     return new ArtifactCoordinate(
         artifact.getGroupId(),

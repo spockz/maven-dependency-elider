@@ -78,14 +78,27 @@ final class BanishedDependencyPolicy {
       final BanishedDependency request, final ArtifactSnapshot snapshot)
       throws MojoFailureException {
     final ArtifactCoordinate coordinate = snapshot.coordinate();
+    validateSupportedMatch(request, coordinate, coordinate.type(), snapshot.filePath() != null);
+  }
+
+  /* package */ static void validateSupportedMatch(
+      final BanishedDependency request,
+      final ArtifactCoordinate coordinate,
+      final String mavenType,
+      final boolean filePresent)
+      throws MojoFailureException {
     if (!SUPPORTED_SCOPES.contains(coordinate.scope())
+        || !SUPPORTED_TYPE.equals(mavenType)
         || !SUPPORTED_TYPE.equals(coordinate.type())
-        || snapshot.filePath() == null) {
+        || !filePresent) {
       throw new MojoFailureException(
           "elide.banishedDependencies matches an unsupported resolved artifact for "
               + request
               + ": "
               + coordinate
+              + " (Maven type: "
+              + mavenType
+              + ")"
               + " (supported scope/type: compile/runtime JAR)");
     }
   }

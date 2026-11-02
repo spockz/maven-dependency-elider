@@ -44,8 +44,17 @@ final class MavenOriginalInputAudit {
     final BanishedDependencyOriginalModel captured = requireCapture(liveProject, session);
     final MavenProject auditProject = MavenOriginalInputProject.reconstruct(liveProject, captured);
     final Resolution resolution = resolve(captured, auditProject, session, resolver);
-    return MavenOriginalInputInventory.create(
-        captured, resolution.projectKey(), resolution.result(), resolution.graphPair());
+    final Inventory inventory =
+        MavenOriginalInputInventory.create(
+            captured, resolution.projectKey(), resolution.result(), resolution.graphPair());
+    try {
+      BanishedDependencyOriginalAuditPolicy.resolve(
+          captured.banishedDependencies(), inventory.resolvedArtifacts());
+    } catch (final org.apache.maven.plugin.MojoFailureException exception) {
+      throw new IOException(
+          "Original-input ban policy is unsupported: " + exception.getMessage(), exception);
+    }
+    return inventory;
   }
 
   private static BanishedDependencyOriginalModel requireCapture(
@@ -183,6 +192,7 @@ final class MavenOriginalInputAudit {
       values.forEach(
           artifact -> {
             appendCoordinates(fields, "resolved-coordinate", List.of(artifact.coordinate()));
+            fields.add(artifact.mavenType());
             fields.add(artifact.filePath() == null ? "file-absent" : "file-present");
             if (artifact.filePath() != null) {
               fields.add(artifact.filePath());
@@ -200,11 +210,15 @@ final class MavenOriginalInputAudit {
       DependencyResolutionResult result,
       ResolverArtifactGraphCapturePair graphPair) {}
 
-  /** Detached coordinate and byte identity for one resolved artifact. */
+  /** Resolver-extension coordinate, Maven type, and bytes for one resolved artifact. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  record AuditArtifact(ArtifactCoordinate coordinate, String filePath, String sha256) {
+  record AuditArtifact(
+      ArtifactCoordinate coordinate, String mavenType, String filePath, String sha256) {
     AuditArtifact {
       Objects.requireNonNull(coordinate, "coordinate");
+      if (mavenType == null || mavenType.isBlank()) {
+        throw new IllegalArgumentException("mavenType must not be blank");
+      }
       if (filePath != null && filePath.isBlank()) {
         throw new IllegalArgumentException("filePath must not be blank when present");
       }
