@@ -165,6 +165,24 @@ public final class ExampleSupportContractTest {
         .add("org.example:library:jar:1.0 (compile)");
     rejects(retainedMatch, productionOutput, "matched artifact has another identity");
 
+    final ObjectNode unsupportedType = valid.deepCopy();
+    ((ObjectNode) unsupportedType.path("dependencyPrediction"))
+        .putArray("wouldElideArtifacts")
+        .add("org.example:unused:pom:2.0 (runtime)");
+    ((ObjectNode) unsupportedType.path("dependencyPrediction").path("banPlan").get(1))
+        .putArray("matchedArtifacts")
+        .add("org.example:unused:pom:2.0 (runtime)");
+    rejects(unsupportedType, productionOutput, "must be a compile/runtime JAR");
+
+    final ObjectNode unsupportedScope = valid.deepCopy();
+    ((ObjectNode) unsupportedScope.path("dependencyPrediction"))
+        .putArray("wouldElideArtifacts")
+        .add("org.example:unused:jar:2.0 (test)");
+    ((ObjectNode) unsupportedScope.path("dependencyPrediction").path("banPlan").get(1))
+        .putArray("matchedArtifacts")
+        .add("org.example:unused:jar:2.0 (test)");
+    rejects(unsupportedScope, productionOutput, "must be a compile/runtime JAR");
+
     final ObjectNode unlistedMatch = valid.deepCopy();
     ((ObjectNode) unlistedMatch.path("dependencyPrediction").path("banPlan").get(1))
         .putArray("matchedArtifacts");

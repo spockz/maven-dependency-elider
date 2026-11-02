@@ -446,6 +446,11 @@ public final class ExampleSupport {
       } catch (final IllegalArgumentException exception) {
         throw new IOException("dependencyPrediction ban matched artifact is not canonical", exception);
       }
+      if (!"jar".equals(coordinate.type())
+          || !Set.of("compile", "runtime").contains(coordinate.scope())) {
+        throw new IOException(
+            "dependencyPrediction ban matched artifact must be a compile/runtime JAR");
+      }
       if (previous != null && previous.compareTo(coordinate) >= 0) {
         throw new IOException("dependencyPrediction ban matchedArtifacts are not canonical");
       }
