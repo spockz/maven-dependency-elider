@@ -43,6 +43,8 @@ For each supported plugin/version combination, verify the intended outcomes:
 
 ## Consequences
 
+The consumer verification contract here does not imply that a ban rewrites a consumer POM or changes every Resolver request. Those boundaries for `banishedDependencies` are defined in [ADR-0012](0012-dual-layer-ban-policy-and-retention-naming.md).
+
 Avoiding bespoke downstream adapters is a design goal, conditional on lifecycle integration evidence. If a consumer re-resolves originals, record the limitation and resolve the integration boundary rather than claim transparent support. Broader reactor topologies, independent-module concurrency, IDE/direct goal invocations, and publication of specialized artifacts need explicit investigation in RQ-0012 and RQ-0004.
 
 A second JAR cannot supplement individual fields of an existing class: classpath selection chooses a class definition and does not merge members. Source-driven constant retention should preserve the required fields in their owning transformed classes. Any future compilation-only artifacts need explicit execution and packaging policy. Maven scope alone is insufficient: [Boot includes `provided` dependencies by default](https://docs.spring.io/spring-boot/maven-plugin/packaging.html), and they are available to tests.

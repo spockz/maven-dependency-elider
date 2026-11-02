@@ -41,6 +41,12 @@ Set `elide.trimSkipArtifacts` to the exact resolved coordinate, such as `groupId
 
 Set `elide.retainedArtifacts` to its `groupId:artifactId`, for example `-Delide.retainedArtifacts=org.example:library`. This retains a matching artifact in the current graph; it does not promise that the original JAR bytes remain unchanged. Use `elide.trimSkipArtifacts` when byte-identical preservation is required. The former `elide.excludedArtifacts` property and `<excludedArtifacts>` element are rejected because this setting controls retention rather than Maven dependency exclusions.
 
+### How can I request that a dependency be removed?
+
+Set `elide.banishedDependencies` to exact `groupId:artifactId` identities. With the core extension active, Maven first receives matching exclusions on each first-level dependency so transitive matches can be pruned during collection. The goal then verifies the resolved inventory and bytecode, resource, and provider closure. A direct dependency match, an unsupported or unmatched identity, a remaining protected match, or a reference obligation fails the operation. The ban is enforced only for the supported current-project dependency views and generated outputs; it does not rewrite the consumer POM, Maven plugin realms, or annotation-processor paths.
+
+Resolver evidence captured before exclusion injection describes the original dependency model for audit. It is not a promise that every resolver request is intercepted or that all consumers see the ban. Any validation failure occurs before reports, generated outputs, Maven artifact views, or the resolver plan are published. See [ADR-0012](adr/0012-dual-layer-ban-policy-and-retention-naming.md).
+
 ### What if a dependency JAR changes during or between Maven builds?
 
 The elider uses exact content digests to identify dependency and JDK platform inputs. The stable-input assumption covers dependency JARs, the selected JDK's `ct.sym` or JMODs, its `release` metadata, and the selected archive inventory. Concurrent edits to those files during a Maven invocation are unsupported and can make that invocation nondeterministic. A later invocation recalculates selection and content identity, so changed inputs are recognized. Maven's resolution-time checksum verification does not lock files for the rest of the build. See [ADR 0004](adr/0004-assume-resolved-inputs-stable-during-build.md).

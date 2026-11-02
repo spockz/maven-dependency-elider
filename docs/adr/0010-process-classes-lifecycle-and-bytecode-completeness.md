@@ -9,6 +9,7 @@
 * **Related**:
   * [ADR-0001: Runtime Telemetry-Driven Dependency Elision at Maven INITIALIZE Phase](0001-runtime-telemetry-driven-dependency-elision-at-maven-initialize-phase.md)
   * [ADR-0008: Evidence-Bounded Precondition-Gated VEX Attestations](0008-precondition-gated-vex-attestations.md)
+  * [ADR-0012: Dual-Layer Ban Policy and Retention Naming](0012-dual-layer-ban-policy-and-retention-naming.md)
   * [RQ-0017: Source-Generation Lifecycle Integration and Post-Compile Bytecode Completeness](../research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md)
 
 ---

@@ -42,6 +42,8 @@ Bind the core `elide` Mojo to the Maven `INITIALIZE` lifecycle phase, declaring 
 
 ## Consequences
 
+Strict dependency-removal requests have a separate collection, verification, and publication contract; see [ADR-0012](0012-dual-layer-ban-policy-and-retention-naming.md). Runtime evidence and artifact-elision evidence remain distinct from an explicit ban policy.
+
 Executing at `INITIALIZE` with dependency resolution requires evidence generated before the elided build. Record the application/dependency versions, environment, workload, and instrumentation coverage to detect stale or mismatched evidence. Source-aware analysis adds its own inputs and ordering constraints.
 
 Early transformation has prior art in [Gradle artifact transforms](https://docs.gradle.org/current/userguide/artifact_transforms.html) and [DepTrim](https://github.com/ASSERT-KTH/deptrim). The product value is oracle integration, dependable Maven orchestration, and explainable validation. A distribution-only shrinker may be sufficient when users do not need reduced dependencies in their normal compile/test lifecycle.
