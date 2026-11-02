@@ -1216,7 +1216,7 @@ Review scope remains bounded to supported current-project Maven views and genera
 | Slice group | Scope and requirement ownership | State |
 | :--- | :--- | :--- |
 | B0 | Minimal existing baseline lint repair; no feature behavior change | APPROVED, VERIFIED, COMMITTED cf70e000 |
-| S1 | Standard platform context and effective release/report semantics (P02-P03); S1a JRT loading, S1b target/report contract | IN PROGRESS |
+| S1 | Standard JDK class table and effective release/report semantics (P02-P03); S1a table, S1b target, S1c report | S1a APPROVED/VERIFIED/INTEGRATED de4b812; S1b IN PROGRESS; S1c PENDING |
 | S2 | Compiler/scanner removal, conventional source mapping, provider/VEX safety (P01, P04-P06) | PENDING |
 | S3 | Classpath-only derivative and bounded JPMS signals (M01-M03) | PENDING |
 | S4 | Additive AOT inputs, full evidence freshness, resources, production isolation, lifecycle order (A01-A08) | PENDING |
@@ -1234,8 +1234,8 @@ All rows have owner `platform-01` and integration owner `coordinator`; the group
 | ID / source | Required behavior and refusal boundary | Group | Implementation/wiring evidence | Verification evidence | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | P01 / PLATFORM 3,6,8; ADR-0013 | Remove correspondence compiler/reproduction/download and AST scanners, exact compiler pins and transitional abstentions. | S2 | Pending | Pending | UNVERIFIED |
-| P02 / PLATFORM 2.2-2.3 | Standard module platform loading and reusable single-pass identity; no private ct.sym/JMOD layouts or vendor checks; valid cache invalidation. | S1 | Pending | Pending | UNVERIFIED |
-| P03 / PLATFORM 2.3 | Effective release/target precedence, conflicts/defaults; target-aware MR; separate target/runtime report fields; explicit unresolved platform handling, no historical equivalence guarantee. | S1 | Pending | Pending | UNVERIFIED |
+| P02 / PLATFORM 2.2-2.3 | Standard module platform loading and reusable single-pass identity; no private ct.sym/JMOD layouts or vendor checks; valid cache invalidation. | S1a | JdkPlatformContext, JdkApiClassTableReader, MavenPlatformContextHolder, direct/effective/single/MR trim wiring; de4b8125929095e047d81f5c00f6218bbcd10772 | RED/focused/module mutation and copy tests; full track and integrated JDK21 make check PASS; Sol and Astra approval receipts | VERIFIED |
+| P03 / PLATFORM 2.3 | Effective release/target precedence, conflicts/defaults; target-aware MR; separate target/runtime report fields; explicit unresolved platform handling, no historical equivalence guarantee. | S1b/S1c | Target parser/default fix in progress; persisted execution metadata pending | Intended target/default/conflict RED captured in track .scratch/platform-01/s1b-target-red-jdk21.log | PARTIAL |
 | P04 / PLATFORM 2.2,3.2; ADR-0010 amendment | Emitted bytecode and declared evidence; retainedArtifacts protects inlined constants; preserve provider completeness and direct-goal boundaries after scanner removal. | S2 | Pending | Pending | UNVERIFIED |
 | P05 / PLATFORM 3.3; ADR-0013 | Default explicit conventional public/nested mapping without SourceFile; disabled flag, siblings, routines, ambiguous ownership/path/provider and conflicting metadata remain review leads; explicit typed mappings remain functional. | S2 | Pending | Pending | UNVERIFIED |
 | P06 / PLATFORM 3.3; ADR-0008 | Actual final/all-provider omission and raw applicability guard VEX; telemetry is workload-scoped; report reader/writer/validator/fixtures evolve together at schema 1. | S2 | Pending | Pending | UNVERIFIED |
@@ -1284,3 +1284,13 @@ All rows have owner `platform-01` and integration owner `coordinator`; the group
 11. jdeps release 8 uses `base`; its MR flag does not select a historical platform. Dynamic module names derive from valid module inventory; java.security is a package.
 
 Baseline prerequisite committed as `cf70e00049cd9ac0ab6d169874fcc8e0690103f8`; dedicated review `.scratch/reviews/platform-baseline.md` approves the verified diff. Git status was pristine before integration branch creation. No implementation behavior has been marked complete. The source tree at that commit is the source tree that passed the full gate; this ledger addition has no build inputs.
+
+### WP-PLATFORM-01 S1a progressive integration receipt
+
+- Reviewed/integrated commit: `de4b8125929095e047d81f5c00f6218bbcd10772`; tree `7057c20491c12b724fdcf290f9e21965435cef8a`; source diff SHA-256 `785953d2dc74a0ef939b92a42c775d8c3f2f95cfb49b5e1c4f6477e082814072`. Source/docs unchanged by conflict-free rebase onto coordinator ledger updates.
+- Dedicated approval: track `.scratch/reviews/platform-01-slice-S1a.md`. Astra progressive integration approval: parent `.scratch/reviews/platform-integration-s1a.md`.
+- Full track gate: track `.scratch/reviews/platform-s1a-make-check-jdk21-final-v2.log`. Full post-merge gate: parent `.scratch/platform-01/integration-s1a-jdk21.log`, exit 0 and pristine source tree. Core 333 tests; plugin 770 tests with one opt-in transcript-cache-preparation skip; 27 lifecycle integration tests; coverage, Java/Markdown lint, example scheduler, SBOM comparison and transcript checks pass.
+- Developmental focused JDK25/27 probes pass but are not final full-matrix evidence. Full `make test-examples` and clean JDK21/25/27 package verification remain Q02/S8.
+- Gemini bridge remains unavailable after tool discovery; optional peer review failed open. Dedicated and package-level reviews were performed.
+- User terminology amendment: use **JDK class table** in explanations, touched documentation and project-owned terminology; required ProGuard `ClassPool` API names remain. User confirmed the public-name/source-file mapping limitation is already covered; no separate investigation or additional scope is introduced.
+- Package remains INCOMPLETE. P02 is verified; target selection (S1b), persisted target/runtime metadata (S1c), compiler removal, all Spring work, modular derivatives/signals, CDS/jdeps, examples and final matrix/review remain pending or in progress.
