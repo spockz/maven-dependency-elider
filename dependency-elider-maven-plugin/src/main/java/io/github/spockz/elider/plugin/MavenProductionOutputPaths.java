@@ -14,7 +14,7 @@ final class MavenProductionOutputPaths {
     throw new AssertionError("No instances");
   }
 
-  static File resolve(final MavenProject project, final AnalysisOptions options)
+  /* default */ static File resolve(final MavenProject project, final AnalysisOptions options)
       throws IOException {
     final boolean productionClassesComplete = options.completeness().productionClassesComplete();
     final String selectedOutput =

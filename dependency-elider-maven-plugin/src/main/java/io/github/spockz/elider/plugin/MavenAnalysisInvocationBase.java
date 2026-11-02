@@ -15,7 +15,7 @@ final class MavenAnalysisInvocationBase {
     throw new AssertionError("No instances");
   }
 
-  static Path forProject(final MavenProject project, final AnalysisOptions options) {
+  /* default */ static Path forProject(final MavenProject project, final AnalysisOptions options) {
     final File projectBase = project.getBasedir();
     if (options.environment() != null) {
       return options.environment().invocationBase() == null
@@ -25,7 +25,8 @@ final class MavenAnalysisInvocationBase {
     return fromRequestBase(requestBase(options.session()), projectBase);
   }
 
-  static Path fromRequest(final MavenExecutionRequest request, final File projectBase) {
+  /* default */ static Path fromRequest(
+      final MavenExecutionRequest request, final File projectBase) {
     return fromRequestBase(requestBase(request), projectBase);
   }
 

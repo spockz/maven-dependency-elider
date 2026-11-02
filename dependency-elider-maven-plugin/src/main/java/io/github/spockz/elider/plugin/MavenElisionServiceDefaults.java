@@ -16,7 +16,7 @@ import org.apache.maven.project.MavenProject;
 
 /**
  * Builds supported Analyze option presets and delegates them to the service. Its implicit
- * constructor supports Maven mojo subclasses.
+ * constructor allows {@link MavenElisionService} to extend this preset base.
  */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 abstract class MavenElisionServiceDefaults {
