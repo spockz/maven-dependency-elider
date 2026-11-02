@@ -1,4 +1,4 @@
-// WHY: Resolves references against retained providers before blaming removed artifacts.
+// WHY: Rejects references to classes from removed providers because same-name classes may differ.
 
 package io.github.spockz.elider.plugin;
 
@@ -33,11 +33,15 @@ final class MavenBanClassProviderClosure {
             .toList();
     final int effectiveProviderCount =
         retained.size() + (effectiveProjectClasses.contains(className) ? 1 : 0);
-    if (effectiveProviderCount == ONE_PROVIDER) {
-      return;
-    }
     final String reason;
-    if (effectiveProviderCount > ONE_PROVIDER || absent.size() > ONE_PROVIDER) {
+    if (effectiveProviderCount == ONE_PROVIDER) {
+      reason =
+          location
+              + " references class "
+              + className
+              + " also supplied by a forced-absent artifact; same-name providers are not proven "
+              + "equivalent";
+    } else if (effectiveProviderCount > ONE_PROVIDER || absent.size() > ONE_PROVIDER) {
       reason =
           "class " + className + " has ambiguous retained and removed providers during " + location;
     } else {

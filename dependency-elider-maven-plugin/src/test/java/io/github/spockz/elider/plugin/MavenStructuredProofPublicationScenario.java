@@ -175,7 +175,7 @@ final class MavenStructuredProofPublicationScenario {
     set(
         mojo,
         "planPublication",
-        (ElideMojo.PlanPublication)
+        (MavenElideExecutionConfiguration.PlanPublication)
             (ignoredSession, ignoredProject, ignoredRecords, ignoredProjection) -> {});
   }
 

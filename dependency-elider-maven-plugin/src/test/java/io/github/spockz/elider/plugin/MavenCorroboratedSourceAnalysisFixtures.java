@@ -62,7 +62,8 @@ final class MavenCorroboratedSourceAnalysisFixtures {
             new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null),
         new TrimResult(trimRecords, List.of(), List.of(), List.of(), 0, 0L, 0),
         null,
-        null);
+        null,
+        MavenElisionPolicyIdentityTestSupport.emptyPolicy());
   }
 
   private static List<ElisionAnalysisModel.ArtifactSnapshot> snapshots(

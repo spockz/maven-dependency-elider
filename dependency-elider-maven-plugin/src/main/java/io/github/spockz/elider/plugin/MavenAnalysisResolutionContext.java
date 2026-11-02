@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactViews;
 import java.io.IOException;
@@ -253,20 +254,26 @@ record MavenAnalysisResolutionContext(
   }
 
   private static List<ArtifactSnapshot> snapshotsFromDependencies(
-      final List<Dependency> dependencies) {
-    return dependencies.stream()
-        .map(MavenAnalysisResolutionContext::snapshot)
-        .sorted(Comparator.comparing(ArtifactSnapshot::coordinate))
-        .toList();
+      final List<Dependency> dependencies) throws IOException {
+    final List<ArtifactSnapshot> snapshots = new ArrayList<>(dependencies.size());
+    for (final Dependency dependency : dependencies) {
+      snapshots.add(snapshot(dependency));
+    }
+    snapshots.sort(Comparator.comparing(ArtifactSnapshot::coordinate));
+    return List.copyOf(snapshots);
   }
 
-  private static List<ArtifactSnapshot> snapshotsFromNodes(final List<DependencyNode> nodes) {
-    return nodes.stream()
-        .map(MavenAnalysisResolutionContext::dependency)
-        .filter(Objects::nonNull)
-        .map(MavenAnalysisResolutionContext::snapshot)
-        .sorted(Comparator.comparing(ArtifactSnapshot::coordinate))
-        .toList();
+  private static List<ArtifactSnapshot> snapshotsFromNodes(final List<DependencyNode> nodes)
+      throws IOException {
+    final List<ArtifactSnapshot> snapshots = new ArrayList<>(nodes.size());
+    for (final DependencyNode node : nodes) {
+      final Dependency dependency = dependency(node);
+      if (dependency != null) {
+        snapshots.add(snapshot(dependency));
+      }
+    }
+    snapshots.sort(Comparator.comparing(ArtifactSnapshot::coordinate));
+    return List.copyOf(snapshots);
   }
 
   private static Set<Artifact> mavenArtifactsFromDependencies(final List<Dependency> dependencies) {
@@ -313,7 +320,7 @@ record MavenAnalysisResolutionContext(
     return left == right;
   }
 
-  private static ArtifactSnapshot snapshot(final Dependency dependency) {
+  private static ArtifactSnapshot snapshot(final Dependency dependency) throws IOException {
     if (dependency == null || dependency.getArtifact() == null) {
       throw new IllegalArgumentException("Detached Maven resolver returned a null dependency");
     }
@@ -321,7 +328,9 @@ record MavenAnalysisResolutionContext(
   }
 
   private static ArtifactSnapshot snapshot(
-      final org.eclipse.aether.artifact.Artifact artifact, final String scope) {
+      final org.eclipse.aether.artifact.Artifact artifact, final String scope) throws IOException {
+    final ArtifactCoordinate coordinate = MavenOriginalInputArtifacts.coordinate(artifact, scope);
+    MavenOriginalInputArtifacts.mavenType(artifact, coordinate);
     final Artifact mavenArtifact = org.apache.maven.RepositoryUtils.toArtifact(artifact);
     mavenArtifact.setScope(scope);
     return ArtifactSnapshot.from(mavenArtifact);

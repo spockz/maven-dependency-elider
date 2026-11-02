@@ -58,6 +58,7 @@ final class MavenBanAuditContextTest {
   private static final String EXCLUDED = "excluded";
   private static final String EXCLUDED_BEFORE_RESOLUTION = "excluded-before-resolution";
   private static final String EFFECTIVE = "effective";
+  private static final String OBJECT_INTERNAL_NAME = "java/lang/Object";
 
   @TempDir private Path temporaryDirectory;
 
@@ -441,7 +442,7 @@ final class MavenBanAuditContextTest {
     manifest.getMainAttributes().putValue("Multi-Release", "true");
     final ClassWriter writer = new ClassWriter(0);
     writer.visit(
-        Opcodes.V17, Opcodes.ACC_PUBLIC, "right/UpperOnly", null, "java/lang/Object", null);
+        Opcodes.V17, Opcodes.ACC_PUBLIC, "right/UpperOnly", null, OBJECT_INTERNAL_NAME, null);
     writer.visitField(Opcodes.ACC_PRIVATE, "dependency", "Lbanned/Idle;", null, null).visitEnd();
     writer.visitEnd();
     try (JarOutputStream zip = new JarOutputStream(Files.newOutputStream(path), manifest)) {

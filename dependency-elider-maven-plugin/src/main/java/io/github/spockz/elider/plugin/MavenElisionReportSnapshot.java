@@ -28,7 +28,8 @@ import java.util.TreeSet;
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
   "PMD.ExcessiveParameterList",
-  "PMD.AvoidDuplicateLiterals"
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.CyclomaticComplexity"
 })
 record MavenElisionReportSnapshot(
     int schemaVersion,
@@ -206,7 +207,8 @@ record MavenElisionReportSnapshot(
         AdvisoryReview.empty(),
         List.of(),
         policy,
-        ExclusionReview.unavailable("No pre-injection declaration capture is available"));
+        ExclusionReview.unavailable("No pre-injection declaration capture is available"),
+        List.of());
   }
 
   MavenElisionReportSnapshot(
@@ -310,6 +312,7 @@ record MavenElisionReportSnapshot(
         false,
         List.of(),
         AdvisoryReview.empty(),
+        List.of(),
         policy,
         ExclusionReview.unavailable("No pre-injection declaration capture is available"),
         List.of());

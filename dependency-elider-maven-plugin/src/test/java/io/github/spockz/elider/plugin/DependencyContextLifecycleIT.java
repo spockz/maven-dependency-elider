@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -89,14 +90,20 @@ final class DependencyContextLifecycleIT {
 
   private static final String NAME_FIELD = "name";
   private static final String GROUP_ID = "io.github.spockz.elider.test";
+  private static final String BAN_PROPERTY = "-Delide.banishedDependencies=";
+  private static final String PROCESS_CLASSES_PHASE = "process-classes";
+  private static final String TARGET_DIRECTORY = "target";
 
   private static final String VERSION = "1.0.0";
 
   private static final String DROP = GROUP_ID + ":drop-library:" + VERSION + ":jar:";
+  private static final String DROP_ARTIFACT_ID =
+      DROP.substring(GROUP_ID.length() + 1, DROP.indexOf(':', GROUP_ID.length() + 1));
 
   private static final String KEEP = GROUP_ID + ":keep-library:" + VERSION + ":jar:";
 
-  private static final String DROP_AETHER = GROUP_ID + ":drop-library:jar:" + VERSION;
+  private static final String DROP_AETHER =
+      DROP.substring(0, DROP.indexOf(':', GROUP_ID.length() + 1)) + ":jar:" + VERSION;
 
   private static final String KEEP_AETHER = GROUP_ID + ":keep-library:jar:" + VERSION;
 
@@ -173,7 +180,7 @@ final class DependencyContextLifecycleIT {
     final Path settings = writeSettings(evidenceDirectory);
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
     final Path consumer = Files.createDirectories(evidenceDirectory.resolve(CONSUMER_DIRECTORY));
-    final Path target = consumer.resolve("target");
+    final Path target = consumer.resolve(TARGET_DIRECTORY);
     Files.createDirectories(target);
     final Path report = target.resolve("class-usage.json");
     Files.writeString(
@@ -417,7 +424,7 @@ final class DependencyContextLifecycleIT {
         "initialize",
         TREE_GOAL);
     final String treeOutput = Files.readString(evidenceDirectory.resolve("dependency-tree.log"));
-    assertThat(treeOutput).contains(GROUP_ID + ":drop-library:jar:" + VERSION);
+    assertThat(treeOutput).contains(DROP_AETHER);
     assertThat(treeOutput).contains(GROUP_ID + ":keep-library:jar:" + VERSION);
     for (final Map.Entry<Path, String> snapshot : retainedResolvedOnlySnapshots.entrySet()) {
       assertThat(Files.readString(snapshot.getKey())).isEqualTo(snapshot.getValue());
@@ -502,7 +509,7 @@ final class DependencyContextLifecycleIT {
             ban,
             consumerPom,
             "-Delide.productionClassesComplete=true",
-            "process-classes");
+            PROCESS_CLASSES_PHASE);
     final String treePromotionOutput =
         runBanGoal(
             fixtureRoot,
@@ -570,7 +577,7 @@ final class DependencyContextLifecycleIT {
                 "analyze",
                 "default-cli",
                 "initialize",
-                "process-classes",
+                PROCESS_CLASSES_PHASE,
                 "tree-promotion",
                 "plugin-management-cli"));
   }
@@ -621,7 +628,7 @@ final class DependencyContextLifecycleIT {
             localRepository,
             evidenceDirectory.resolve("active-extension-excluded-ban-analyze.log"),
             PROCESS_TIMEOUT,
-            "-Delide.banishedDependencies=" + GROUP_ID + ":drop-library",
+            BAN_PROPERTY + GROUP_ID + ":" + DROP_ARTIFACT_ID,
             "-f",
             consumerPom.toString(),
             "dependency-elider:analyze@run-elider");
@@ -638,7 +645,7 @@ final class DependencyContextLifecycleIT {
             localRepository,
             evidenceDirectory.resolve("active-extension-excluded-ban.log"),
             PROCESS_TIMEOUT,
-            "-Delide.banishedDependencies=" + GROUP_ID + ":drop-library",
+            BAN_PROPERTY + GROUP_ID + ":" + DROP_ARTIFACT_ID,
             "-f",
             consumerPom.toString(),
             "dependency-elider:elide@run-elider",
@@ -663,15 +670,13 @@ final class DependencyContextLifecycleIT {
             org.junit.jupiter.api.Assertions.assertFalse(
                 analyzeBanApplied, "Analyze must predict the ban without applying it"),
         () -> assertThat(output).contains(BUILD_SUCCESS),
-        () -> assertThat(ban.path("dependency").asText()).isEqualTo(GROUP_ID + ":drop-library"),
+        () ->
+            assertThat(ban.path("dependency").asText())
+                .isEqualTo(GROUP_ID + ":" + DROP_ARTIFACT_ID),
         () -> assertThat(ban.path("status").asText()).isEqualTo("EXCLUDED_BEFORE_RESOLUTION"),
         () -> assertThat(ban.path("matchedArtifacts")).hasSize(0),
-        () ->
-            assertThat(ban.path("originalArtifacts").get(0).asText())
-                .contains(GROUP_ID + ":drop-library:jar:" + VERSION),
-        () ->
-            org.junit.jupiter.api.Assertions.assertTrue(
-                banApplied, "Elide must record that the audited ban was applied"),
+        () -> assertThat(ban.path("originalArtifacts").get(0).asText()).contains(DROP_AETHER),
+        () -> assertTrue(banApplied, "Elide must record that the audited ban was applied"),
         () ->
             assertThat(postElideViews)
                 .noneMatch(
@@ -682,6 +687,330 @@ final class DependencyContextLifecycleIT {
                         .map(component -> component.path("name").asText())
                         .toList())
                 .doesNotContain("drop-library"));
+  }
+
+  @Test
+  void activeExtensionAppliesTransitiveBanAtInitializeWithCompleteSources() throws Exception {
+    final BanLifecycleFixture fixture =
+        banLifecycleFixture("ban-initialize", "keep-library", "initialize", true);
+    addDropAsKeepLibraryDependency(fixture.localRepository());
+    Files.writeString(fixture.consumer().resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    Files.writeString(
+        Files.createDirectories(fixture.consumer().resolve("src/main/java/app"))
+            .resolve("App.java"),
+        "package app; public final class App { "
+            + "private io.github.spockz.elider.fixture.keep.KeepEntry keep; }\n");
+
+    final String output =
+        runBanLifecycleFixture(fixture, "initialize", "lifecycle-probe:post-elide-probe");
+    final JsonNode summary = lifecycleBanSummary(fixture.consumer());
+    final List<String> views = lifecycleBanViews(fixture.consumer());
+
+    assertAll(
+        "initialize applies a collection-excluded transitive ban with complete source evidence",
+        () -> assertThat(output).contains(BUILD_SUCCESS),
+        () -> assertExcludedBan(summary),
+        () -> assertThat(views).noneMatch(row -> row.contains("drop-library")),
+        () -> assertThat(views).anyMatch(row -> row.contains("keep-library")));
+  }
+
+  @Test
+  void activeExtensionAppliesTransitiveBanAtTrustedProcessClasses() throws Exception {
+    final BanLifecycleFixture fixture =
+        banLifecycleFixture("ban-process-classes", "keep-library", PROCESS_CLASSES_PHASE, false);
+    addDropAsKeepLibraryDependency(fixture.localRepository());
+    Files.writeString(fixture.consumer().resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    Files.writeString(
+        Files.createDirectories(fixture.consumer().resolve("src/main/java/app"))
+            .resolve("App.java"),
+        "package app; public final class App { "
+            + "private io.github.spockz.elider.fixture.keep.KeepEntry keep; }\n");
+
+    final String output =
+        runBanLifecycleFixture(
+            fixture,
+            PROCESS_CLASSES_PHASE,
+            "org.apache.maven.plugins:maven-jar-plugin:3.4.1:jar",
+            "lifecycle-probe:post-elide-probe");
+    final JsonNode summary = lifecycleBanSummary(fixture.consumer());
+    final List<String> views = lifecycleBanViews(fixture.consumer());
+    final Path compiledClass = fixture.consumer().resolve("target/classes/app/App.class");
+
+    assertAll(
+        "trusted process-classes runs compiler before Elide and proves fresh production references",
+        () -> assertThat(output).contains(BUILD_SUCCESS),
+        () ->
+            assertThat(output.indexOf("compiler:3.13.0:compile"))
+                .isGreaterThanOrEqualTo(0)
+                .isLessThan(output.indexOf("dependency-elider:0.1.0-SNAPSHOT:elide (run-elider)")),
+        () -> assertTrue(Files.isRegularFile(compiledClass), "compiler must emit the app class"),
+        () ->
+            assertThat(new ProductionBytecodeReferenceScanner().scan(compiledClass.getParent()))
+                .satisfies(
+                    scan ->
+                        assertThat(scan.referencedClasses())
+                            .contains("io.github.spockz.elider.fixture.keep.KeepEntry")),
+        () -> assertExcludedBan(summary),
+        () -> assertThat(views).noneMatch(row -> row.contains("drop-library")));
+  }
+
+  @Test
+  void retainedLibraryLinkToTransitiveBanFailsAfterCompileWithoutPublication() throws Exception {
+    final BanLifecycleFixture fixture =
+        banLifecycleFixture("ban-retained-link", "linking-api", PROCESS_CLASSES_PHASE, false);
+    writeLinkingApiLibrary(fixture.localRepository());
+    Files.writeString(fixture.consumer().resolve(TRACE_FILE), "fixture.link.Link\n");
+    Files.writeString(
+        Files.createDirectories(fixture.consumer().resolve("src/main/java/app"))
+            .resolve("App.java"),
+        "package app; public final class App { "
+            + "public static void use() { fixture.link.Link.touch(); } }\n");
+    final Map<Path, String> priorOutputs = seedBanFailureOutputs(fixture.consumer());
+
+    final String output = runBanLifecycleFixtureExpectingFailure(fixture, PROCESS_CLASSES_PHASE);
+
+    assertAll(
+        "the application compiles, then retained library closure blocks all Elide publication",
+        () -> assertThat(output).contains("BUILD FAILURE"),
+        () ->
+            assertThat(output.indexOf("compiler:3.13.0:compile"))
+                .isGreaterThanOrEqualTo(0)
+                .isLessThan(output.indexOf("dependency-elider:0.1.0-SNAPSHOT:elide (run-elider)")),
+        () ->
+            assertThat(output)
+                .contains(
+                    "elide.banishedDependencies conflicts with "
+                        + "io.github.spockz.elider.test:drop-library:jar:1.0.0 (runtime)")
+                .contains("retained archive io.github.spockz.elider.test:linking-api")
+                .contains(
+                    "no retained provider for class "
+                        + "io.github.spockz.elider.fixture.drop.DropEntry"),
+        () ->
+            assertTrue(
+                Files.isRegularFile(fixture.consumer().resolve("target/classes/app/App.class")),
+                "the application class must exist after compiler completion"),
+        () -> assertBanFailureOutputsUnchanged(priorOutputs));
+  }
+
+  private BanLifecycleFixture banLifecycleFixture(
+      final String name,
+      final String dependencyArtifact,
+      final String elidePhase,
+      final boolean sourceRootsComplete)
+      throws IOException, XMLStreamException {
+    final Path repositoryRoot = repositoryRoot();
+    final Path evidenceDirectory = Files.createDirectories(temporaryDirectory.resolve(name));
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = Files.createDirectories(evidenceDirectory.resolve("consumer"));
+    final Path pom = consumer.resolve(POM_XML);
+    Files.writeString(
+        pom, banLifecyclePom(name, dependencyArtifact, elidePhase, sourceRootsComplete));
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+    return new BanLifecycleFixture(
+        repositoryRoot.resolve(MAVEN_WRAPPER), settings, localRepository, consumer, pom);
+  }
+
+  private String runBanLifecycleFixture(final BanLifecycleFixture fixture, final String... goals)
+      throws IOException, InterruptedException {
+    return runFromDirectory(
+        fixture.consumer(),
+        fixture.wrapper(),
+        fixture.settings(),
+        fixture.localRepository(),
+        fixture.consumer().resolve("target/ban-lifecycle.log"),
+        PROCESS_TIMEOUT,
+        banLifecycleArguments(fixture, goals));
+  }
+
+  private String runBanLifecycleFixtureExpectingFailure(
+      final BanLifecycleFixture fixture, final String... goals)
+      throws IOException, InterruptedException {
+    return runExpectingFailure(
+        fixture.consumer(),
+        fixture.wrapper(),
+        fixture.settings(),
+        fixture.localRepository(),
+        fixture.consumer().resolve("target/ban-lifecycle.log"),
+        PROCESS_TIMEOUT,
+        banLifecycleArguments(fixture, goals));
+  }
+
+  private String[] banLifecycleArguments(final BanLifecycleFixture fixture, final String... goals) {
+    final List<String> arguments =
+        new ArrayList<>(
+            List.of(
+                BAN_PROPERTY + GROUP_ID + ":" + DROP_ARTIFACT_ID, "-f", fixture.pom().toString()));
+    arguments.addAll(List.of(goals));
+    return arguments.toArray(String[]::new);
+  }
+
+  private static JsonNode lifecycleBanSummary(final Path consumer) throws IOException {
+    return JSON.readTree(consumer.resolve("target/dependency-elider-report.json").toFile());
+  }
+
+  private static List<String> lifecycleBanViews(final Path consumer) throws IOException {
+    return Files.readAllLines(consumer.resolve("target/lifecycle-elide/post-elide.tsv"));
+  }
+
+  private static void assertExcludedBan(final JsonNode summary) {
+    final JsonNode ban = summary.path("appliedBans").get(0);
+    assertAll(
+        "transitive ban is present only in the original audit after collection exclusion",
+        () -> assertThat(ban.path("status").asText()).isEqualTo("EXCLUDED_BEFORE_RESOLUTION"),
+        () -> assertThat(ban.path("matchedArtifacts")).hasSize(0),
+        () -> assertThat(ban.path("originalArtifacts").get(0).asText()).contains(DROP_AETHER));
+  }
+
+  private static Map<Path, String> seedBanFailureOutputs(final Path consumer) throws IOException {
+    final Path target = Files.createDirectories(consumer.resolve(TARGET_DIRECTORY));
+    final Map<Path, String> outputs = new HashMap<>();
+    for (final String name :
+        List.of(
+            "dependency-elider-class-usage.json",
+            "dependency-elider-report.json",
+            "dependency-elider-sbom.cdx.json",
+            "baseline-sbom.cdx.json",
+            "dependency-elider.openvex.json",
+            "dependency-elider-generated-outputs.json")) {
+      final Path path = target.resolve(name);
+      final String contents = "prior " + name + "\n";
+      Files.writeString(path, contents);
+      outputs.put(path, contents);
+    }
+    return Map.copyOf(outputs);
+  }
+
+  private static void assertBanFailureOutputsUnchanged(final Map<Path, String> priorOutputs)
+      throws IOException {
+    for (final Map.Entry<Path, String> output : priorOutputs.entrySet()) {
+      assertThat(Files.readString(output.getKey())).isEqualTo(output.getValue());
+    }
+  }
+
+  private static String banLifecyclePom(
+      final String artifactId,
+      final String dependencyArtifact,
+      final String elidePhase,
+      final boolean sourceRootsComplete) {
+    final String completeness =
+        sourceRootsComplete ? "<sourceRootsComplete>true</sourceRootsComplete>" : "";
+    final String template =
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Exercises strict dependency bans at the selected lifecycle phase. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId>
+          <artifactId>%s</artifactId>
+          <version>1.0.0</version>
+          <packaging>jar</packaging>
+          <properties>
+            <maven.compiler.release>21</maven.compiler.release>
+            <maven.compiler.proc>none</maven.compiler.proc>
+            <elide.traceFiles>${project.basedir}/trace.txt</elide.traceFiles>
+            <elide.reportFile>${project.build.directory}/dependency-elider-class-usage.json</elide.reportFile>
+            <elide.summaryFile>${project.build.directory}/dependency-elider-report.json</elide.summaryFile>
+            <lifecycle.reportDirectory>${project.build.directory}/lifecycle-elide</lifecycle.reportDirectory>
+          </properties>
+          <dependencies>
+            <dependency>
+              <groupId>io.github.spockz.elider.test</groupId>
+              <artifactId>%s</artifactId>
+              <version>1.0.0</version>
+            </dependency>
+          </dependencies>
+          <build>
+            <plugins>
+              <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration><release>21</release><proc>none</proc></configuration>
+              </plugin>
+              <plugin>
+                <groupId>io.github.spockz.elider.test</groupId>
+                <artifactId>lifecycle-probe-maven-plugin</artifactId>
+                <version>1.0.0</version>
+                <configuration><reportDirectory>${lifecycle.reportDirectory}</reportDirectory></configuration>
+              </plugin>
+              <plugin>
+                <groupId>io.github.spockz</groupId>
+                <artifactId>dependency-elider-maven-plugin</artifactId>
+                <version>0.1.0-SNAPSHOT</version>
+                <executions>
+                  <execution>
+                    <id>run-elider</id>
+                    <phase>%s</phase>
+                    <goals><goal>elide</goal></goals>
+                    <configuration>
+                      <banishedDependencies>${elide.banishedDependencies}</banishedDependencies>
+                      <traceFiles><traceFile>${elide.traceFiles}</traceFile></traceFiles>
+                      %s
+                    </configuration>
+                  </execution>
+                </executions>
+              </plugin>
+            </plugins>
+          </build>
+        </project>
+        """;
+    return template.formatted(artifactId, dependencyArtifact, elidePhase, completeness);
+  }
+
+  private static void writeLinkingApiLibrary(final Path localRepository) throws IOException {
+    final Path artifactDirectory =
+        localRepository.resolve(GROUP_ID.replace('.', '/')).resolve("linking-api").resolve(VERSION);
+    Files.createDirectories(artifactDirectory);
+    Files.writeString(
+        artifactDirectory.resolve("linking-api-" + VERSION + ".pom"),
+        """
+        <project>
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId>
+          <artifactId>linking-api</artifactId>
+          <version>1.0.0</version>
+          <dependencies>
+            <dependency>
+              <groupId>io.github.spockz.elider.test</groupId>
+              <artifactId>drop-library</artifactId>
+              <version>1.0.0</version>
+              <scope>runtime</scope>
+            </dependency>
+          </dependencies>
+        </project>
+        """);
+    try (JarOutputStream archive =
+        new JarOutputStream(
+            Files.newOutputStream(artifactDirectory.resolve("linking-api-" + VERSION + ".jar")))) {
+      archive.putNextEntry(new JarEntry("fixture/link/Link.class"));
+      archive.write(linkingApiClassBytes());
+      archive.closeEntry();
+    }
+  }
+
+  private static byte[] linkingApiClassBytes() {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(
+        Opcodes.V21, Opcodes.ACC_PUBLIC, "fixture/link/Link", null, "java/lang/Object", null);
+    final org.objectweb.asm.MethodVisitor method =
+        writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "touch", "()V", null, null);
+    method.visitCode();
+    method.visitMethodInsn(
+        Opcodes.INVOKESTATIC,
+        "io/github/spockz/elider/fixture/drop/DropEntry",
+        "value",
+        "()Ljava/lang/String;",
+        false);
+    method.visitInsn(Opcodes.POP);
+    method.visitInsn(Opcodes.RETURN);
+    method.visitMaxs(1, 0);
+    method.visitEnd();
+    writer.visitEnd();
+    return writer.toByteArray();
   }
 
   private static void writeProductionClassOutput(final Path outputDirectory) throws IOException {
@@ -809,7 +1138,7 @@ final class DependencyContextLifecycleIT {
             "-Daudit.inventory.reportFile=" + auditReport,
             "-f",
             consumerPom.toString(),
-            "process-classes");
+            PROCESS_CLASSES_PHASE);
     final List<String> lines = Files.readAllLines(auditReport);
     final List<String> resolvedRows = rowsWithPrefix(lines, "audit-resolved\t");
     final List<String> directRows = rowsWithPrefix(lines, "audit-direct\t");
@@ -843,7 +1172,7 @@ final class DependencyContextLifecycleIT {
         Files.createDirectories(invocationDirectory.resolve(MVN_DIRECTORY));
     writeConsumerExtensions(extensionsDirectory.resolve(EXTENSIONS_XML), true);
     final List<String> arguments = new ArrayList<>();
-    arguments.add("-Delide.banishedDependencies=" + ban);
+    arguments.add(BAN_PROPERTY + ban);
     arguments.add("-f");
     arguments.add(invocationPom.toString());
     arguments.addAll(List.of(goals));
@@ -1096,7 +1425,7 @@ final class DependencyContextLifecycleIT {
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
     final Path fixtureDirectory =
         Files.createDirectories(evidenceDirectory.resolve("legacy-consumer"));
-    final Path target = Files.createDirectories(fixtureDirectory.resolve("target"));
+    final Path target = Files.createDirectories(fixtureDirectory.resolve(TARGET_DIRECTORY));
     final Path report = target.resolve("class-usage.json");
     final Path summary = target.resolve("dependency-elider-report.json");
     final String reportContents = "previous class report";
@@ -1291,6 +1620,9 @@ final class DependencyContextLifecycleIT {
         () ->
             assertThat(Files.readString(scenario.summary())).isEqualTo(scenario.summaryContents()));
   }
+
+  private record BanLifecycleFixture(
+      Path wrapper, Path settings, Path localRepository, Path consumer, Path pom) {}
 
   private record LegacyPomGoal(
       Path workingDirectory,
@@ -2212,7 +2544,7 @@ final class DependencyContextLifecycleIT {
       final String originalKeepHash,
       final boolean extensionEnabled)
       throws IOException {
-    final Path target = consumer.resolve("target");
+    final Path target = consumer.resolve(TARGET_DIRECTORY);
     final Path classUsageReport = target.resolve("dependency-elider-class-usage.json");
     final Path summary = target.resolve("lifecycle-elide-summary.json");
     final Path sbom = target.resolve("dependency-elider-sbom.cdx.json");

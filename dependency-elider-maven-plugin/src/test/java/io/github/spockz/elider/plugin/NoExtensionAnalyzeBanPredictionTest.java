@@ -40,6 +40,7 @@ import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.collection.DependencyGraphTransformationContext;
 import org.eclipse.aether.graph.DefaultDependencyNode;
 import org.eclipse.aether.graph.DependencyNode;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
@@ -60,8 +61,10 @@ final class NoExtensionAnalyzeBanPredictionTest {
   private static final String GROUP_ID = "fixture";
   private static final String JAR_TYPE = "jar";
   private static final String VERSION = "1.0";
+  private static final String RUNTIME_SCOPE = "runtime";
   private static final String BANNED_ARTIFACT_ID = "banned";
   private static final String USED_ARTIFACT_ID = "used";
+  private static final String UNUSED_ARTIFACT_ID = "unused";
   private static final String SUMMARY_FILENAME = "elide-summary.json";
   private static final String CLASS_USAGE_FILENAME = "elide-class-usage.json";
   private static final String BANNED_PROVIDER_FAILURE =
@@ -236,6 +239,107 @@ final class NoExtensionAnalyzeBanPredictionTest {
         () -> assertAppliedBan(withTrim, withTrimPlan, withTrimUsed, withTrimDirect));
   }
 
+  @Nested
+  /* default */ final class UnrelatedTraceDropTest {
+    @Test
+    void detachedBanOperationMayApplyValidatedUnrelatedTraceDrop() throws Exception {
+      final Fixture fixture = fixtureWithUnrelatedTraceDrop(USED_TRACE);
+      final ElideMojo mojo = elideMojo(fixture, false);
+
+      mojo.execute();
+
+      final MavenElisionReportSnapshot summary =
+          MavenElisionReportWriter.read(fixture.trace().getParent().resolve(SUMMARY_FILENAME));
+      assertAll(
+          "detached ban planning validates both forced absence and ordinary trace-based drops",
+          () ->
+              assertThat(fixture.project().getArtifacts())
+                  .extracting(org.apache.maven.artifact.Artifact::getArtifactId)
+                  .containsExactly(USED_ARTIFACT_ID),
+          () ->
+              assertThat(summary.appliedBans())
+                  .singleElement()
+                  .satisfies(
+                      ban -> assertThat(ban.status()).isEqualTo("FORCED_ABSENT_AFTER_RESOLUTION")),
+          () ->
+              assertThat(summary.droppedArtifacts())
+                  .extracting(MavenElisionReportSnapshot.DroppedArtifact::coordinate)
+                  .containsExactlyInAnyOrder(
+                      "fixture:banned:jar:1.0 (runtime)", "fixture:unused:jar:1.0 (runtime)"),
+          () ->
+              assertThat(summary.rawDroppedCoordinates())
+                  .containsExactly("fixture:unused:jar:1.0 (runtime)")
+                  .doesNotContain("fixture:banned:jar:1.0 (runtime)"));
+    }
+  }
+
+  @Nested
+  /* default */ final class BlankTypeBanTest {
+    @Test
+    void rejectsExplicitBlankTypeForRequestedBan() throws Exception {
+      final Fixture fixture = blankTypeFixture();
+
+      assertThatThrownBy(
+              () ->
+                  new MavenElisionService()
+                      .predict(
+                          fixture.project(), fixture.options(List.of(BAN)), fixture.resolver()))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("no Maven artifact type")
+          .hasMessageContaining(BAN);
+    }
+
+    private Fixture blankTypeFixture() throws IOException {
+      final Fixture fixture = basicFixture(USED_TRACE);
+      final DependencyNode usedNode = fixture.root().getChildren().getFirst();
+      final org.eclipse.aether.graph.Dependency originalBan =
+          usedNode.getChildren().getFirst().getDependency();
+      final org.eclipse.aether.artifact.Artifact originalArtifact = originalBan.getArtifact();
+      final org.eclipse.aether.artifact.Artifact blankTypeArtifact =
+          new org.eclipse.aether.artifact.DefaultArtifact(
+              originalArtifact.getGroupId(),
+              originalArtifact.getArtifactId(),
+              originalArtifact.getClassifier(),
+              originalArtifact.getExtension(),
+              originalArtifact.getVersion(),
+              Map.of("type", "", "constitutesBuildPath", "true"),
+              originalArtifact.getFile());
+      final org.eclipse.aether.graph.Dependency blankTypeDependency =
+          new org.eclipse.aether.graph.Dependency(blankTypeArtifact, originalBan.getScope());
+      ((DefaultDependencyNode) usedNode)
+          .setChildren(List.of(new DefaultDependencyNode(blankTypeDependency)));
+      replaceResolvedMavenArtifact(fixture, blankTypeArtifact);
+      return withBlankTypeResolver(fixture, blankTypeDependency);
+    }
+
+    private void replaceResolvedMavenArtifact(
+        final Fixture fixture, final org.eclipse.aether.artifact.Artifact resolverArtifact) {
+      final Set<org.apache.maven.artifact.Artifact> resolved = new LinkedHashSet<>();
+      for (final org.apache.maven.artifact.Artifact artifact : fixture.project().getArtifacts()) {
+        if (!resolverArtifact.getArtifactId().equals(artifact.getArtifactId())) {
+          resolved.add(artifact);
+        }
+      }
+      final org.apache.maven.artifact.Artifact replacement =
+          org.apache.maven.RepositoryUtils.toArtifact(resolverArtifact);
+      replacement.setScope(RUNTIME_SCOPE);
+      resolved.add(replacement);
+      fixture.project().setArtifacts(resolved);
+    }
+
+    private Fixture withBlankTypeResolver(
+        final Fixture fixture, final org.eclipse.aether.graph.Dependency blankTypeDependency) {
+      return new Fixture(
+          fixture.project(),
+          fixture.session(),
+          fixture.repositorySession(),
+          fixtureResolver(fixture.root(), List.of(fixture.usedDependency(), blankTypeDependency)),
+          fixture.trace(),
+          fixture.root(),
+          fixture.usedDependency());
+    }
+  }
+
   @Test
   void elideAppliesMatchedClasslessJarBan() throws Exception {
     final Fixture fixture = basicFixture(USED_TRACE);
@@ -304,7 +408,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         new org.eclipse.aether.graph.Dependency(
             new org.eclipse.aether.artifact.DefaultArtifact(
                 GROUP_ID, BANNED_ARTIFACT_ID, "", JAR_TYPE, "2.0"),
-            "runtime");
+            RUNTIME_SCOPE);
     direct.setChildren(List.of(winner, new DefaultDependencyNode(otherVersion)));
     competing
         .repositorySession()
@@ -706,6 +810,41 @@ final class NoExtensionAnalyzeBanPredictionTest {
     return fixture(traceContents, false);
   }
 
+  private Fixture fixtureWithUnrelatedTraceDrop(final String traceContents) throws IOException {
+    final Fixture fixture = fixture(traceContents, false, false, false);
+    final Path unusedJar =
+        jar(fixture.trace().getParent().resolve("unused.jar"), "unused/Leaf", false, null);
+    final org.eclipse.aether.artifact.Artifact unused =
+        resolverArtifact(UNUSED_ARTIFACT_ID, unusedJar);
+    final org.eclipse.aether.graph.Dependency unusedDependency =
+        new org.eclipse.aether.graph.Dependency(unused, RUNTIME_SCOPE);
+    final DefaultDependencyNode usedNode =
+        (DefaultDependencyNode) fixture.root().getChildren().getFirst();
+    final List<DependencyNode> children = new ArrayList<>(usedNode.getChildren());
+    children.add(new DefaultDependencyNode(unusedDependency));
+    usedNode.setChildren(children);
+    final org.apache.maven.artifact.Artifact liveUnused =
+        org.apache.maven.RepositoryUtils.toArtifact(unused);
+    liveUnused.setScope(RUNTIME_SCOPE);
+    final Set<org.apache.maven.artifact.Artifact> artifacts =
+        new LinkedHashSet<>(fixture.project().getArtifacts());
+    artifacts.add(liveUnused);
+    fixture.project().setArtifacts(artifacts);
+    final org.eclipse.aether.graph.Dependency bannedDependency =
+        usedNode.getChildren().getFirst().getDependency();
+    final ProjectDependenciesResolver resolver =
+        fixtureResolver(
+            fixture.root(), List.of(fixture.usedDependency(), bannedDependency, unusedDependency));
+    return new Fixture(
+        fixture.project(),
+        fixture.session(),
+        fixture.repositorySession(),
+        resolver,
+        fixture.trace(),
+        fixture.root(),
+        fixture.usedDependency());
+  }
+
   private Fixture activeExcludedFixture(final String traceContents) throws IOException {
     final Fixture fixture = basicFixture(traceContents);
     final DependencyNode originalRoot = fixture.root();
@@ -838,13 +977,13 @@ final class NoExtensionAnalyzeBanPredictionTest {
     final org.eclipse.aether.graph.Dependency usedDependency =
         new org.eclipse.aether.graph.Dependency(used, "compile");
     final org.eclipse.aether.graph.Dependency bannedDependency =
-        new org.eclipse.aether.graph.Dependency(banned, "runtime");
+        new org.eclipse.aether.graph.Dependency(banned, RUNTIME_SCOPE);
     final org.apache.maven.artifact.Artifact liveUsed =
         org.apache.maven.RepositoryUtils.toArtifact(used);
     liveUsed.setScope("compile");
     final org.apache.maven.artifact.Artifact liveBanned =
         org.apache.maven.RepositoryUtils.toArtifact(banned);
-    liveBanned.setScope("runtime");
+    liveBanned.setScope(RUNTIME_SCOPE);
     project.setArtifacts(new LinkedHashSet<>(List.of(liveUsed, liveBanned)));
     project.setDependencyArtifacts(new LinkedHashSet<>(List.of(liveUsed)));
     final DefaultRepositorySystemSession repositorySession = new DefaultRepositorySystemSession();
@@ -867,19 +1006,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
     direct.setChildren(List.of(new DefaultDependencyNode(bannedDependency)));
     root.setChildren(List.of(direct));
     final ProjectDependenciesResolver resolver =
-        resolutionRequest -> {
-          final RepositorySystemSession detachedSession = resolutionRequest.getRepositorySession();
-          final DependencyNode transformed;
-          try {
-            transformed =
-                detachedSession
-                    .getDependencyGraphTransformer()
-                    .transformGraph(root, context(detachedSession));
-          } catch (final org.eclipse.aether.RepositoryException exception) {
-            throw new IllegalStateException("Cannot transform detached fixture", exception);
-          }
-          return result(List.of(usedDependency, bannedDependency), transformed);
-        };
+        fixtureResolver(root, List.of(usedDependency, bannedDependency));
     final Path trace = directory.resolve("trace.lst");
     Files.writeString(trace, traceContents);
     return new Fixture(project, session, repositorySession, resolver, trace, root, usedDependency);
@@ -976,6 +1103,23 @@ final class NoExtensionAnalyzeBanPredictionTest {
                   case "getDependencyGraph" -> graph;
                   default -> null;
                 });
+  }
+
+  private static ProjectDependenciesResolver fixtureResolver(
+      final DependencyNode root, final List<org.eclipse.aether.graph.Dependency> dependencies) {
+    return resolutionRequest -> {
+      final RepositorySystemSession detachedSession = resolutionRequest.getRepositorySession();
+      final DependencyNode transformed;
+      try {
+        transformed =
+            detachedSession
+                .getDependencyGraphTransformer()
+                .transformGraph(root, context(detachedSession));
+      } catch (final org.eclipse.aether.RepositoryException exception) {
+        throw new IllegalStateException("Cannot transform detached fixture", exception);
+      }
+      return result(dependencies, transformed);
+    };
   }
 
   private record Fixture(

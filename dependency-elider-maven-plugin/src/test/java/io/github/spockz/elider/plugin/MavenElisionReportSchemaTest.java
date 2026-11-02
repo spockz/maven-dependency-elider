@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -179,20 +180,161 @@ final class MavenElisionReportSchemaTest {
 
     assertAll(
         "applied ban outcomes correspond exactly to normalized policy and supported GAVCE values",
-        () -> assertThat(MavenElisionReportWriter.read(validPath).appliedBans()).hasSize(1),
+        () -> MavenElisionReportPayloadValidator.validate(valid),
+        () -> assertThat(valid.path("appliedBans")).hasSize(1),
         () -> assertInvalidAppliedBan(wrongFamilyPath, "G:A does not match its dependency"),
         () -> assertInvalidAppliedBan(unsupportedTypePath, "must be a compile/runtime JAR"),
         () -> assertInvalidAppliedBan(unsupportedScopePath, "must be a compile/runtime JAR"),
         () -> assertInvalidAppliedBan(policyMismatchPath, "do not match policy"));
   }
 
-  private ObjectNode appliedBanReport(final String dependency, final String coordinate) {
-    final ObjectNode payload = currentReportShapeWithDroppedRow();
+  @Test
+  void rejectsAppliedBanThatDoesNotMatchWholeArtifactOutputDisposition() throws IOException {
+    final ObjectNode missingDrop =
+        appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    missingDrop.withArray(DROPPED_ROWS).removeAll();
+    final Path missingDropPath = temporaryDirectory.resolve("ban-without-drop.json");
+    JSON.writeValue(missingDropPath.toFile(), missingDrop);
+
+    final ObjectNode missingGraph =
+        appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    setGraph(missingGraph, MediatedGraphReport.unavailable("No graph was provided"));
+    final Path missingGraphPath = temporaryDirectory.resolve("ban-without-graph.json");
+    JSON.writeValue(missingGraphPath.toFile(), missingGraph);
+
+    final ObjectNode retained = appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    setGraph(
+        retained,
+        MediatedGraphBanReportTestSupport.droppedAndRetained(
+            banArtifact("1.0", ""), banArtifact("1.0", ""), "example:consumer:1.0"));
+    final Path retainedPath = temporaryDirectory.resolve("ban-also-retained.json");
+    JSON.writeValue(retainedPath.toFile(), retained);
+
+    final ObjectNode retainedPolicyOtherVersion =
+        appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    retainedPolicyOtherVersion
+        .with("policy")
+        .putArray("retainedArtifacts")
+        .add("example:drop:2.0:jar:tests");
+    final Path retainedPolicyPath =
+        temporaryDirectory.resolve("ban-conflicts-with-retention-policy.json");
+    JSON.writeValue(retainedPolicyPath.toFile(), retainedPolicyOtherVersion);
+
+    final ObjectNode trimmed = appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    trimmed
+        .withArray("trimmedArtifacts")
+        .addObject()
+        .put("coordinate", "example:drop:jar:1.0 (runtime)")
+        .put(TRIMMED_CLASSES, 0)
+        .put(TRIMMED_CLASS_BYTES, 0);
+    final Path trimmedPath = temporaryDirectory.resolve("ban-also-trimmed.json");
+    JSON.writeValue(trimmedPath.toFile(), trimmed);
+
+    assertAll(
+        "forced absence agrees with every persisted artifact disposition",
+        () -> assertInvalidAppliedBan(missingDropPath, "missing from droppedArtifacts"),
+        () -> assertInvalidAppliedBan(missingGraphPath, "require an available mediated graph"),
+        () ->
+            assertInvalidAppliedBan(retainedPolicyPath, "conflicts with retained-artifact policy"),
+        () -> assertInvalidAppliedBan(retainedPath, "also appears in retained or trimmed"),
+        () -> assertInvalidAppliedBan(trimmedPath, "also appears in retained or trimmed"));
+  }
+
+  @Test
+  void rejectsBanIdentityFamilyPresentInAnyPersistedOutputDisposition() throws IOException {
+    final ObjectNode excludedWithOriginalAuditOnly = excludedBanReport("example:drop");
+    final Path validExcludedPath =
+        writeReport("valid-excluded-ban-original-audit.json", excludedWithOriginalAuditOnly);
+
+    final ObjectNode forcedRetainedOtherVersion =
+        appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    setGraph(
+        forcedRetainedOtherVersion,
+        MediatedGraphBanReportTestSupport.droppedAndRetained(
+            banArtifact("1.0", ""), banArtifact("2.0", "tests"), "example:consumer:1.0"));
+    final Path forcedRetainedPath =
+        writeReport("forced-ban-retained-other-version.json", forcedRetainedOtherVersion);
+
+    final ObjectNode forcedTrimmedOtherVersion =
+        appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
+    addTrimmedArtifact(forcedTrimmedOtherVersion, "example:drop:jar:2.0:tests (runtime)");
+    setGraph(
+        forcedTrimmedOtherVersion,
+        MediatedGraphBanReportTestSupport.droppedAndTrimmed(
+            banArtifact("1.0", ""), banArtifact("2.0", "tests"), "example:consumer:1.0"));
+    final Path forcedTrimmedPath =
+        writeReport("forced-ban-trimmed-other-version.json", forcedTrimmedOtherVersion);
+
+    final ObjectNode excludedRetained = excludedBanReport("example:drop");
+    setGraph(
+        excludedRetained,
+        MediatedGraphBanReportTestSupport.retained(
+            banArtifact("2.0", "tests"), "example:consumer:1.0"));
+    final Path excludedRetainedPath =
+        writeReport("excluded-ban-retained-output.json", excludedRetained);
+
+    final ObjectNode excludedTrimmed = excludedBanReport("example:drop");
+    addTrimmedArtifact(excludedTrimmed, "example:drop:jar:2.0:tests (runtime)");
+    setGraph(
+        excludedTrimmed,
+        MediatedGraphBanReportTestSupport.trimmed(
+            banArtifact("2.0", "tests"), "example:consumer:1.0"));
+    final Path excludedTrimmedPath =
+        writeReport("excluded-ban-trimmed-output.json", excludedTrimmed);
+
+    assertAll(
+        "ban status is consistent with the complete G:A output disposition",
+        () -> MavenElisionReportWriter.read(validExcludedPath),
+        () -> assertInvalidAppliedBan(forcedRetainedPath, "also appears in retained or trimmed"),
+        () -> assertInvalidAppliedBan(forcedTrimmedPath, "also appears in retained or trimmed"),
+        () ->
+            assertInvalidAppliedBan(
+                excludedRetainedPath,
+                "Excluded-before-resolution ban appears in retained or trimmed"),
+        () ->
+            assertInvalidAppliedBan(
+                excludedTrimmedPath,
+                "Excluded-before-resolution ban appears in retained or trimmed"));
+  }
+
+  private ObjectNode excludedBanReport(final String dependency) throws IOException {
+    final ObjectNode payload = appliedBanReport(dependency, dependency + ":jar:1.0 (runtime)");
+    payload.withArray(DROPPED_ROWS).removeAll();
     payload.put("wholeArtifactsDropped", 0);
     payload.put("originalJarBytesDropped", 0);
     payload.put("droppedProgramClassEntries", 0);
     payload.put("droppedProgramClassBytes", 0);
-    payload.putArray(DROPPED_ROWS).removeAll();
+    final ObjectNode ban = (ObjectNode) payload.withArray("appliedBans").get(0);
+    ban.put("status", "EXCLUDED_BEFORE_RESOLUTION");
+    ban.withArray("matchedArtifacts").removeAll();
+    setGraph(payload, MediatedGraphBanReportTestSupport.empty("example:consumer:1.0"));
+    return payload;
+  }
+
+  private static void addTrimmedArtifact(final ObjectNode payload, final String coordinate) {
+    payload
+        .withArray("trimmedArtifacts")
+        .addObject()
+        .put("coordinate", coordinate)
+        .put(TRIMMED_CLASSES, 0)
+        .put(TRIMMED_CLASS_BYTES, 0);
+  }
+
+  private ObjectNode appliedBanReport(final String dependency, final String coordinate)
+      throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("wholeArtifactsDropped", 1);
+    payload.put("originalJarBytesDropped", 0);
+    payload.put("droppedProgramClassEntries", 0);
+    payload.put("droppedProgramClassBytes", 0);
+    payload
+        .putArray(DROPPED_ROWS)
+        .removeAll()
+        .addObject()
+        .put("coordinate", coordinate)
+        .put("originalJarBytes", 0)
+        .put(DROPPED_CLASSES, 0)
+        .put(DROPPED_CLASS_BYTES, 0);
     payload.with("policy").putArray("banishedDependencies").add(dependency);
     final ObjectNode ban = payload.putArray("appliedBans").addObject();
     ban.put("dependency", dependency);
@@ -200,7 +342,18 @@ final class MavenElisionReportSchemaTest {
     ban.putArray("matchedArtifacts").add(coordinate);
     ban.putArray("originalArtifacts").add(coordinate);
     ban.put("applied", true);
+    setGraph(
+        payload,
+        MediatedGraphBanReportTestSupport.dropped(banArtifact("1.0", ""), "example:consumer:1.0"));
     return payload;
+  }
+
+  private static void setGraph(final ObjectNode payload, final MediatedGraphReport graph) {
+    payload.set("mediatedGraph", JSON.valueToTree(graph));
+  }
+
+  private static ArtifactCoordinate banArtifact(final String version, final String classifier) {
+    return new ArtifactCoordinate("example", "drop", version, "jar", classifier, "runtime");
   }
 
   private void assertInvalidAppliedBan(final Path path, final String message) {

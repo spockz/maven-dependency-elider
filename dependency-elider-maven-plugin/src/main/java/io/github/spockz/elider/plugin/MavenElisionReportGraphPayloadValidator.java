@@ -2,7 +2,9 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
@@ -10,6 +12,8 @@ import java.util.Set;
 /** Validates the persisted mediated graph envelope and primitive snapshot fields. */
 @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.CommentRequired"})
 final class MavenElisionReportGraphPayloadValidator {
+  private static final ObjectMapper JSON =
+      new ObjectMapper().enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
   private static final String AVAILABLE = "available";
   private static final String UNAVAILABLE_REASON = "unavailableReason";
   private static final String CAPTURE_TOKEN = "captureToken";
@@ -44,7 +48,16 @@ final class MavenElisionReportGraphPayloadValidator {
 
   private MavenElisionReportGraphPayloadValidator() {}
 
-  static void validate(final JsonNode graph) throws IOException {
+  static MediatedGraphReport validateAndRead(final JsonNode graph) throws IOException {
+    validateEnvelope(graph);
+    try {
+      return JSON.treeToValue(graph, MediatedGraphReport.class);
+    } catch (final IllegalArgumentException | IllegalStateException exception) {
+      throw new IOException("Elision report mediated graph is malformed", exception);
+    }
+  }
+
+  private static void validateEnvelope(final JsonNode graph) throws IOException {
     requireExactObject(graph, ENVELOPE_FIELDS, "mediated graph");
     requireBoolean(graph, AVAILABLE, "availability");
     for (final String field :

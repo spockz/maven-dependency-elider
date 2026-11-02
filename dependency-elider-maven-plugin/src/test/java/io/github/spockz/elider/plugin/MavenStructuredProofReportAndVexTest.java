@@ -84,7 +84,8 @@ final class MavenStructuredProofReportAndVexTest {
             baseAnalysis.trimResult(),
             null,
             MediatedGraphReportTestSupport.reportForOutputs(
-                droppedCoordinate, prepared.coordinate(), GROUP_ID + ":consumer:1.0"));
+                droppedCoordinate, prepared.coordinate(), GROUP_ID + ":consumer:1.0"),
+            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
     final MavenProject project = reportProject(run);
     final MavenElisionReportSnapshot snapshot =
         MavenElisionReportSnapshot.from(project, analysis, assessment);
@@ -267,7 +268,8 @@ final class MavenStructuredProofReportAndVexTest {
             new TrimResult(List.of(trimRecord), List.of(), List.of(), List.of(), 0, 0L, 0, null),
             null,
             MediatedGraphReportTestSupport.reportForTrimmedOutputAndRetainedComponent(
-                prepared.coordinate(), unresolvedCoordinate, GROUP_ID + ":consumer:1.0"));
+                prepared.coordinate(), unresolvedCoordinate, GROUP_ID + ":consumer:1.0"),
+            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
     final MavenVulnerabilityAssessment.Result assessment =
         MavenStructuredProofScenario.assess(prepared, archives, analysis, true);
     final MavenElisionReportSnapshot snapshot =

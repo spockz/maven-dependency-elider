@@ -3,7 +3,9 @@
 package io.github.spockz.elider.plugin;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +99,13 @@ final class MavenElisionReportPayloadValidator {
   private static final Set<String> TRIMMED_FIELDS =
       Set.of("coordinate", PROGRAM_CLASSES_PRUNED, UNCOMPRESSED_PROGRAM_CLASS_BYTES_PRUNED);
 
+  /** Reachable dispositions that leave an artifact in the effective output. */
+  private static final Set<String> RETAINED_GRAPH_DISPOSITIONS =
+      Set.of(
+          EffectiveGraphPolicy.NodeDisposition.RETAINED.name(),
+          EffectiveGraphPolicy.NodeDisposition.PROTECTED.name(),
+          EffectiveGraphPolicy.NodeDisposition.ANCESTOR_PROMOTED.name());
+
   /** Nonnegative ranges for count and byte fields. */
   private static final Map<String, Long> SNAPSHOT_METRICS =
       Map.of(
@@ -139,7 +148,135 @@ final class MavenElisionReportPayloadValidator {
     ExclusionReviewPayloadValidator.validate(payload.get("exclusionReview"));
     validateAppliedBans(
         payload.get("appliedBans"), textValues(payload.path("policy").get("banishedDependencies")));
-    MavenElisionReportGraphPayloadValidator.validate(payload.get("mediatedGraph"));
+    final Set<ArtifactCoordinate> retainedPolicy =
+        retentionCoordinates(payload.path("policy").get("retainedArtifacts"));
+    final MediatedGraphReport mediatedGraph =
+        MavenElisionReportGraphPayloadValidator.validateAndRead(payload.get("mediatedGraph"));
+    validateAppliedBanCrossSections(payload, mediatedGraph, retainedPolicy);
+  }
+
+  private static void validateAppliedBanCrossSections(
+      final JsonNode payload,
+      final MediatedGraphReport mediatedGraph,
+      final Set<ArtifactCoordinate> retainedPolicy)
+      throws IOException {
+    final Set<String> dropped = artifactCoordinates(payload.get("droppedArtifacts"));
+    for (final JsonNode row : payload.path("appliedBans")) {
+      final MavenBanPlan.Entry.Status status = parseBanStatus(row.path("status").textValue());
+      final BanishedDependency dependency = parseBanDependency(row.path("dependency").textValue());
+      validateBanPolicyRetentionConflict(dependency, retainedPolicy);
+      if (status == MavenBanPlan.Entry.Status.UNMATCHED) {
+        continue;
+      }
+      if (!mediatedGraph.available()) {
+        throw new IOException("Applied ban outcomes require an available mediated graph");
+      }
+      if (status == MavenBanPlan.Entry.Status.FORCED_ABSENT_AFTER_RESOLUTION) {
+        validateForcedAbsentOutput(row, dropped);
+      }
+      validateNoRetainedOrTrimmedOutput(status, payload, mediatedGraph, dependency);
+    }
+  }
+
+  private static void validateBanPolicyRetentionConflict(
+      final BanishedDependency dependency, final Set<ArtifactCoordinate> retainedPolicy)
+      throws IOException {
+    if (matchesRetainedDependency(dependency, retainedPolicy)) {
+      throw new IOException("Elision report ban conflicts with retained-artifact policy");
+    }
+  }
+
+  private static void validateForcedAbsentOutput(final JsonNode row, final Set<String> dropped)
+      throws IOException {
+    for (final String coordinate : textValues(row.path("matchedArtifacts"))) {
+      if (!dropped.contains(coordinate)) {
+        throw new IOException("Forced-absent matched artifact is missing from droppedArtifacts");
+      }
+    }
+  }
+
+  private static void validateNoRetainedOrTrimmedOutput(
+      final MavenBanPlan.Entry.Status status,
+      final JsonNode payload,
+      final MediatedGraphReport mediatedGraph,
+      final BanishedDependency dependency)
+      throws IOException {
+    if (hasRetainedGraphNodeForDependency(mediatedGraph, dependency)
+        || hasArtifactForDependency(payload.get("trimmedArtifacts"), dependency)) {
+      final String reason =
+          status == MavenBanPlan.Entry.Status.FORCED_ABSENT_AFTER_RESOLUTION
+              ? "Forced-absent matched artifact also appears in retained or trimmed artifacts"
+              : "Excluded-before-resolution ban appears in retained or trimmed artifacts";
+      throw new IOException(reason);
+    }
+  }
+
+  private static Set<ArtifactCoordinate> retentionCoordinates(final JsonNode retained)
+      throws IOException {
+    try {
+      return ElisionArtifactPolicy.parseRetentionCoordinates(textValues(retained));
+    } catch (final org.apache.maven.plugin.MojoFailureException exception) {
+      throw new IOException("Elision report retained-artifact policy is invalid", exception);
+    }
+  }
+
+  private static boolean matchesRetainedDependency(
+      final BanishedDependency dependency, final Set<ArtifactCoordinate> retained) {
+    return retained.stream()
+        .anyMatch(
+            coordinate ->
+                dependency.groupId().equals(coordinate.groupId())
+                    && dependency.artifactId().equals(coordinate.artifactId()));
+  }
+
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  // This index is local to one validated report traversal.
+  private static boolean hasRetainedGraphNodeForDependency(
+      final MediatedGraphReport graph, final BanishedDependency dependency) {
+    final Map<String, String> dispositions = new HashMap<>();
+    graph.nodeStatuses().forEach(status -> dispositions.put(status.nodeId(), status.disposition()));
+    final ResolverArtifactGraphSnapshot snapshot = graph.snapshot();
+    for (final Map<String, Object> node : snapshot.nodes()) {
+      final String nodeId = (String) node.get(ResolverArtifactGraphSnapshotSchema.NODE_ID);
+      if (!Boolean.TRUE.equals(node.get(ResolverArtifactGraphSnapshotSchema.REACHABLE))
+          || snapshot.rootNodeId().equals(nodeId)
+          || !RETAINED_GRAPH_DISPOSITIONS.contains(dispositions.get(nodeId))) {
+        continue;
+      }
+      final Map<?, ?> artifact = (Map<?, ?>) node.get(ResolverArtifactGraphSnapshotSchema.ARTIFACT);
+      if (dependency.groupId().equals(artifact.get(ResolverArtifactGraphSnapshotSchema.GROUP_ID))
+          && dependency
+              .artifactId()
+              .equals(artifact.get(ResolverArtifactGraphSnapshotSchema.ARTIFACT_ID))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasArtifactForDependency(
+      final JsonNode rows, final BanishedDependency dependency) throws IOException {
+    for (final JsonNode row : rows) {
+      final ArtifactCoordinate coordinate;
+      try {
+        coordinate =
+            MavenElisionReportSourceCoordinateValidator.parseCanonical(
+                row.path("coordinate").textValue());
+      } catch (final IllegalArgumentException exception) {
+        throw new IOException("Elision report artifact coordinate is not canonical", exception);
+      }
+      if (dependency.groupId().equals(coordinate.groupId())
+          && dependency.artifactId().equals(coordinate.artifactId())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static Set<String> artifactCoordinates(final JsonNode rows) {
+    final Set<String> coordinates = new HashSet<>();
+    rows.forEach(row -> coordinates.add(row.path("coordinate").textValue()));
+    return Set.copyOf(coordinates);
   }
 
   private static void validateAppliedBans(
@@ -237,7 +374,7 @@ final class MavenElisionReportPayloadValidator {
   private static void validateBanArtifactCoordinates(
       final List<String> coordinates, final BanishedDependency dependency) throws IOException {
     for (final String text : coordinates) {
-      final io.github.spockz.elider.model.ArtifactCoordinate coordinate;
+      final ArtifactCoordinate coordinate;
       try {
         coordinate = MavenElisionReportSourceCoordinateValidator.parseCanonical(text);
       } catch (final IllegalArgumentException exception) {

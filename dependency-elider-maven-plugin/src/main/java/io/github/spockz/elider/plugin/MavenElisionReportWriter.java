@@ -82,6 +82,11 @@ final class MavenElisionReportWriter {
         throw new IOException("Trailing data in elision report: " + absolute);
       }
     }
+    return decodeSnapshot(payload, absolute);
+  }
+
+  private static MavenElisionReportSnapshot decodeSnapshot(
+      final JsonNode payload, final Path absolute) throws IOException {
     MavenElisionReportPayloadValidator.validate(payload);
     final MavenElisionReportSnapshot snapshot;
     try {
