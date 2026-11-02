@@ -86,7 +86,8 @@ final class MavenAnalysisInventory {
     }
   }
 
-  private static List<ArtifactFileRef> jarCandidates(final List<ArtifactSnapshot> resolved) {
+  private static List<ArtifactFileRef> jarCandidates(final List<ArtifactSnapshot> resolved)
+      throws IOException {
     final List<ArtifactFileRef> candidates = new ArrayList<>();
     for (final ArtifactSnapshot snapshot : resolved) {
       if (MavenArtifactInventory.isJarCandidate(snapshot)) {
