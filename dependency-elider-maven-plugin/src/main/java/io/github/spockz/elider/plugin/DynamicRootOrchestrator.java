@@ -16,7 +16,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** Aggregates dependency roots once per archive with artifact policy context. */
 final class DynamicRootOrchestrator {
@@ -211,30 +210,30 @@ final class DynamicRootOrchestrator {
       final DynamicRootInputs dynamicRoots,
       final ArtifactClassIndex index,
       final List<ArtifactFileRef> inventory) {
-    final Map<String, Set<ArtifactCoordinate>> ownersByClass = new ConcurrentHashMap<>();
-    index
-        .classesByArtifact()
-        .forEach(
-            (artifact, classes) ->
-                classes.forEach(
-                    className ->
-                        ownersByClass
-                            .computeIfAbsent(
-                                className.replace('/', '.'),
-                                ignored -> ConcurrentHashMap.newKeySet())
-                            .add(artifact.coordinate())));
+    final Set<String> roots =
+        dynamicRoots.classNames().stream()
+            .map(className -> className.replace('/', '.'))
+            .collect(java.util.stream.Collectors.toSet());
+    if (roots.isEmpty()) {
+      return Set.of();
+    }
     final Set<ArtifactCoordinate> result = new HashSet<>();
-    boolean unresolvedOwner = false;
-    for (final String rawRoot : dynamicRoots.classNames()) {
-      final Set<ArtifactCoordinate> owners =
-          ownersByClass.getOrDefault(rawRoot.replace('/', '.'), Set.of());
-      if (owners.isEmpty()) {
-        unresolvedOwner = true;
-      } else {
-        result.addAll(owners);
+    final Set<String> unresolvedRoots = new HashSet<>(roots);
+    for (final Map.Entry<ArtifactFileRef, Set<String>> artifact :
+        index.classesByArtifact().entrySet()) {
+      boolean ownsRoot = false;
+      for (final String className : artifact.getValue()) {
+        final String normalizedName = className.replace('/', '.');
+        if (roots.contains(normalizedName)) {
+          ownsRoot = true;
+          unresolvedRoots.remove(normalizedName);
+        }
+      }
+      if (ownsRoot) {
+        result.add(artifact.getKey().coordinate());
       }
     }
-    if (unresolvedOwner) {
+    if (!unresolvedRoots.isEmpty()) {
       inventory.stream().map(ArtifactFileRef::coordinate).forEach(result::add);
     }
     return Set.copyOf(result);

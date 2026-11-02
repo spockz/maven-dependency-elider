@@ -123,7 +123,7 @@ final class MavenSourceDeclarationScanner {
         throw new InvalidSourceDeclaration("local classes have compiler-assigned names: " + name);
       }
       final String binaryName = owner.isEmpty() ? packagePrefix + name : owner + "$" + name;
-      if (!binaryName.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+")) {
+      if (!AsciiBinaryClassName.isFullyQualified(binaryName)) {
         throw new InvalidSourceDeclaration(binaryName);
       }
       discoveredNames.add(binaryName);

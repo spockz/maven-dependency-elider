@@ -8,7 +8,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
@@ -189,10 +188,6 @@ final class MavenPreconditionGenerationGuard {
   /** WHY: Custom transformer code can add classes during shading. */
   private static final String MANIFEST_TRANSFORMER =
       "org.apache.maven.plugins.shade.resource.ManifestResourceTransformer";
-
-  /** WHY: Manifest transformer main classes require fully qualified Java names. */
-  private static final Pattern FULLY_QUALIFIED_CLASS =
-      Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+");
 
   /** WHY: The inherited fixture Shade filter removes signature metadata only. */
   private static final List<String> SHADE_SIGNATURE_EXCLUDES =
@@ -1051,7 +1046,7 @@ final class MavenPreconditionGenerationGuard {
     if (mainClass == null
         || mainClass.getChildCount() != NO_ITEMS
         || mainClass.getValue() == null
-        || !FULLY_QUALIFIED_CLASS.matcher(mainClass.getValue()).matches()) {
+        || !AsciiBinaryClassName.isFullyQualified(mainClass.getValue())) {
       throw unsupported("Maven Shade Plugin manifest mainClass must be a resolved class name");
     }
     requireAttributes(mainClass, Set.of(), "Maven Shade Plugin mainClass");
