@@ -1216,8 +1216,8 @@ Review scope remains bounded to supported current-project Maven views and genera
 | Slice group | Scope and requirement ownership | State |
 | :--- | :--- | :--- |
 | B0 | Minimal existing baseline lint repair; no feature behavior change | APPROVED, VERIFIED, COMMITTED cf70e000 |
-| S1 | Standard JDK class table and effective release/report semantics (P02-P03); S1a table, S1b target values, S1c report | S1a VERIFIED/INTEGRATED de4b812; S1b VERIFIED/INTEGRATED 3a1c01f; S1c IN PROGRESS; effective-model ordering remains pending |
-| S2 | Compiler/scanner removal, conventional source mapping, provider/VEX safety (P01, P04-P06) | PENDING |
+| S1 | Standard JDK class table and effective release/report semantics (P02-P03); S1a table, S1b target values, S1c report | S1a VERIFIED/INTEGRATED de4b812; S1b VERIFIED/INTEGRATED 3a1c01f; S1c VERIFIED/INTEGRATED 6b0d23a; effective-model ordering remains in S2a |
+| S2 | Effective compiler settings, compiler/scanner removal, conventional source mapping, provider/VEX safety (P01, P03-P06) | S2a IN PROGRESS; remaining slices PENDING |
 | S3 | Classpath-only derivative and bounded JPMS signals (M01-M03) | PENDING |
 | S4 | Additive AOT inputs, full evidence freshness, resources, production isolation, lifecycle order (A01-A08) | PENDING |
 | S5 | Complete retention provenance and coherent Spring descriptors (A09-A10, A16) | PENDING |
@@ -1225,7 +1225,7 @@ Review scope remains bounded to supported current-project Maven views and genera
 | S7 | Extended CDS/bounded recorder evidence, advisory jdeps, downstream packaging (T01-T05) | PENDING |
 | S8 | Portability, example/transcript matrix, decommissioning sweep and completion review (Q01-Q04, all boundaries) | PENDING |
 
-Groups may be divided into smaller compiling, reviewed commits; every matrix row remains assigned to the persistent platform-01 implementer, with coordinator ownership of integration and Astra completion review. No slice approval implies full package completion.
+Groups may be divided into smaller compiling, reviewed commits; every matrix row remains assigned to the persistent platform-01 implementer, with coordinator ownership of integration and Sol 6.1 completion review. No slice approval implies full package completion.
 
 ### WP-PLATFORM-01 requirement-to-evidence matrix
 
@@ -1235,7 +1235,7 @@ All rows have owner `platform-01` and integration owner `coordinator`; the group
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | P01 / PLATFORM 3,6,8; ADR-0013 | Remove correspondence compiler/reproduction/download and AST scanners, exact compiler pins and transitional abstentions. | S2 | Pending | Pending | UNVERIFIED |
 | P02 / PLATFORM 2.2-2.3 | Standard module platform loading and reusable single-pass identity; no private ct.sym/JMOD layouts or vendor checks; valid cache invalidation. | S1a | JdkPlatformContext, JdkApiClassTableReader, MavenPlatformContextHolder, direct/effective/single/MR trim wiring; de4b8125929095e047d81f5c00f6218bbcd10772 | RED/focused/module mutation and copy tests; full track and integrated JDK21 make check PASS; Sol and Astra approval receipts | VERIFIED |
-| P03 / PLATFORM 2.3 | Effective release/target precedence, conflicts/defaults; target-aware MR; separate target/runtime report fields; explicit unresolved platform handling, no historical equivalence guarantee. | S1b/S1c; S2 settings decoupling | Target-value selection integrated 3a1c01f; metadata implementation in progress. Full global/execution/pluginManagement override ordering still pending in compiler-settings decoupling | Target/default/conflict and release-precedence RED→GREEN; actual target11 MR/cache fixture; track and parent full JDK21 checks PASS. S1c report/schema RED recorded | PARTIAL |
+| P03 / PLATFORM 2.3 | Effective release/target precedence, conflicts/defaults; target-aware MR; separate target/runtime report fields; explicit unresolved platform handling, no historical equivalence guarantee. | S1b/S1c; S2a settings decoupling | Target-value selection integrated 3a1c01f; captured target/runtime metadata integrated 6b0d23a across direct/effective/cache/report paths. Effective global/execution/pluginManagement override ordering remains in S2a | Target/default/conflict and release-precedence RED→GREEN; actual target11 MR/cache fixture; report capture/replay/schema refusal tests; track and parent full JDK21 checks PASS. S2a real ModelBuilder precedence RED recorded | PARTIAL |
 | P04 / PLATFORM 2.2,3.2; ADR-0010 amendment | Emitted bytecode and declared evidence; retainedArtifacts protects inlined constants; preserve provider completeness and direct-goal boundaries after scanner removal. | S2 | Pending | Pending | UNVERIFIED |
 | P05 / PLATFORM 3.3; ADR-0013 | Default explicit conventional public/nested mapping without SourceFile; disabled flag, siblings, routines, ambiguous ownership/path/provider and conflicting metadata remain review leads; explicit typed mappings remain functional. | S2 | Pending | Pending | UNVERIFIED |
 | P06 / PLATFORM 3.3; ADR-0008 | Actual final/all-provider omission and raw applicability guard VEX; telemetry is workload-scoped; report reader/writer/validator/fixtures evolve together at schema 1. | S2 | Pending | Pending | UNVERIFIED |
@@ -1303,3 +1303,13 @@ Baseline prerequisite committed as `cf70e00049cd9ac0ab6d169874fcc8e0690103f8`; d
 - Existing effective-model flattening does not yet establish valid global/execution/pluginManagement override precedence. This remains assigned to compiler-settings decoupling; P03 cannot be marked complete merely after report metadata lands.
 - S1c report/schema tests are intentionally red in track `.scratch/platform-01/s1c-report-red-jdk21-v4.log`; they exercise actual analysis/trim-result/snapshot paths and saved values. Production environment wiring is in progress. No compatibility defaults or substituted current-runtime values are authorized for saved payloads.
 - Worktree tool setup fixed durably: ignored parent/track `.scratch/tools` link to the existing main-clone installation. No root build configuration or per-worktree tool cache was introduced.
+
+### WP-PLATFORM-01 S1c progressive integration receipt
+
+- Reviewed/integrated commit: `6b0d23a5089a04e6992db100a9ebf2b55f35f2b3`; tree `ebcc076ad95b49878f0acc5d3169fbe44391f22d`. Conflict-free rebase preserved the reviewed source patch. Pre-merge base is recorded in `.scratch/platform-01/pre-merge-s1c.txt`.
+- Sol 6.1 dedicated approval: track `.scratch/reviews/platform-01-slice-S1c.md`; consolidated package/integration receipt: parent `.scratch/reviews/platform-integration-s1c.md`. The retired Astra agent is not used for new work.
+- Full track gate: track `.scratch/platform-01/s1c-make-check-jdk21-final.log`. Full parent gate: `.scratch/platform-01/integration-s1c-jdk21.log`, exit 0 and pristine checkout. Core 333 tests; plugin 779 tests with one expected opt-in transcript-preparation skip; all 27 lifecycle integration tests; coverage, Java/Markdown lint, scheduler, SBOM comparison and transcript checks pass.
+- Required schema-1 execution environment captures target and runtime releases through direct/effective trimming, cache reuse and disabled trimming. Saved report replay retains captured values; missing, null, unknown, malformed and out-of-range fields fail explicitly. Target configuration changes after analysis do not rewrite captured evidence.
+- Human reports show both releases. Generated transcripts normalize only the runtime-release display line, with Go tests proving portability; actual report values and the target-release display remain unchanged. README, FAQ, ADR-0013 and the source handover reflect the behavior.
+- S2 plan approved as four ordered compiling slices: effective Maven target precedence, bytecode-first production analysis, provider inventory without source declarations, and conventional claim mapping with typed VEX/report safety. S2a has a real Maven ModelBuilder RED and a compiled lifecycle oracle comparing emitted classfile version with reported target.
+- P03 remains PARTIAL pending S2a. Full compiler removal, Spring/AOT, modular derivatives/signals, CDS/jdeps, final examples and JDK matrix remain pending. The package is INCOMPLETE; optional Gemini bridge remains unavailable with fail-open recorded.
