@@ -100,7 +100,7 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.retainedArtifacts")
   private List<String> retainedArtifacts;
 
-  /** Trimmed groupId:artifactId only; bans currently fail closed pre-analysis. */
+  /** Exact groupId:artifactId bans planned only without the core extension. */
   @Parameter(property = "elide.banishedDependencies")
   private List<String> banishedDependencies;
 

@@ -256,6 +256,41 @@ final class NoExtensionAnalyzeBanPredictionTest {
   }
 
   @Test
+  void rejectsRetainedResourceIncludeMaskedByBannedArchiveExclude() throws Exception {
+    final Fixture fixture = fixture(USED_TRACE);
+    final Path directory = fixture.trace().getParent();
+    jar(
+        directory.resolve("used.jar"),
+        "used/Api",
+        false,
+        null,
+        "-H:IncludeResources=required[.]txt",
+        false);
+    jar(
+        directory.resolve("banned.jar"),
+        "banned/Idle",
+        false,
+        null,
+        "-H:ExcludeResources=required[.]txt",
+        true);
+
+    assertAll(
+        "a banned archive's disappearing exclusion cannot erase a retained resource obligation",
+        () ->
+            assertThatThrownBy(() -> predict(fixture))
+                .hasMessageContaining("resource or provider metadata requires the artifact"),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        new MavenElisionService()
+                            .predict(
+                                fixture.project(),
+                                fixture.options(List.of(BAN), true),
+                                fixture.resolver()))
+                .hasMessageContaining("resource or provider metadata requires the artifact"));
+  }
+
+  @Test
   void rejectsRetainedServiceProviderMetadata() throws Exception {
     final Fixture fixture = fixture(USED_TRACE, false, true, true);
 
@@ -386,6 +421,17 @@ final class NoExtensionAnalyzeBanPredictionTest {
       final boolean referencesBanned,
       final String serviceInterface)
       throws IOException {
+    return jar(path, className, referencesBanned, serviceInterface, null, false);
+  }
+
+  private static Path jar(
+      final Path path,
+      final String className,
+      final boolean referencesBanned,
+      final String serviceInterface,
+      final String nativeImageArguments,
+      final boolean resource)
+      throws IOException {
     final ClassWriter writer = new ClassWriter(0);
     writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, "java/lang/Object", null);
     if (referencesBanned) {
@@ -399,6 +445,18 @@ final class NoExtensionAnalyzeBanPredictionTest {
       if (serviceInterface != null) {
         zip.putNextEntry(new ZipEntry("META-INF/services/" + serviceInterface));
         zip.write("banned.Idle\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        zip.closeEntry();
+      }
+      if (nativeImageArguments != null) {
+        zip.putNextEntry(new ZipEntry("META-INF/native-image/test/native-image.properties"));
+        zip.write(
+            ("Args = " + nativeImageArguments + "\n")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        zip.closeEntry();
+      }
+      if (resource) {
+        zip.putNextEntry(new ZipEntry("required.txt"));
+        zip.write(new byte[] {42});
         zip.closeEntry();
       }
     }

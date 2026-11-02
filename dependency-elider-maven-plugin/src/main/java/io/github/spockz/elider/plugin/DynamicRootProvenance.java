@@ -22,7 +22,6 @@ import java.util.Set;
       final List<ArtifactFileRef> candidates,
       final Map<Path, DependencyDynamicRoots.RootScan> scansByPath,
       final Map<Path, DependencyDynamicRoots.EffectiveRoots> effectiveRootsByPath,
-      final List<NativeImagePolicyRoots.ResourcePatternSelection> resourcePatterns,
       final NativeImageScanContext context)
       throws IOException {
     final Map<ArtifactCoordinate, Set<String>> classRoots = new LinkedHashMap<>();
@@ -37,21 +36,17 @@ import java.util.Set;
           candidate.coordinate(),
           scansByPath.get(candidate.filePath()).resourceProviders());
     }
-    attributeResourcePatterns(
-        candidates, scansByPath, resourcePatterns, context, classRoots, providerPaths);
+    attributeResourcePatterns(candidates, scansByPath, context, classRoots, providerPaths);
     return new DynamicRootProvenance(classRoots, providerCoordinates(providerPaths, candidates));
   }
 
   private static void attributeResourcePatterns(
       final List<ArtifactFileRef> candidates,
       final Map<Path, DependencyDynamicRoots.RootScan> scansByPath,
-      final List<NativeImagePolicyRoots.ResourcePatternSelection> resourcePatterns,
       final NativeImageScanContext context,
       final Map<ArtifactCoordinate, Set<String>> classRoots,
       final Map<ArtifactCoordinate, Set<Path>> providerPaths)
       throws IOException {
-    final List<NativeImageResourcePatternMatcher.Selector> allExcludes =
-        resourcePatterns.stream().flatMap(selection -> selection.excludes().stream()).toList();
     for (final ArtifactFileRef candidate : candidates) {
       final NativeImagePolicyRoots.ResourcePatternSelection selection =
           scansByPath.get(candidate.filePath()).resourcePatterns();
@@ -60,10 +55,11 @@ import java.util.Set;
       }
       final Set<String> sourceRoots = new HashSet<>();
       final Set<Path> sourceProviders = new HashSet<>();
+      // WHY: An exclusion declared by a banned archive disappears with that archive.
       NativeImagePolicyRoots.applyResourcePatterns(
           List.of(
               new NativeImagePolicyRoots.ResourcePatternSelection(
-                  selection.includes(), allExcludes, selection.bundles())),
+                  selection.includes(), selection.excludes(), selection.bundles())),
           context,
           sourceRoots,
           sourceProviders);

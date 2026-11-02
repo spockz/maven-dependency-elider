@@ -47,6 +47,8 @@ Elision requires evidence of classes loaded during execution. Capture runtime te
 
 Run `analyze` to inspect potential dependency drops and byte savings without altering Maven artifact views, resolver plans, or packaged outputs. The goal writes class-usage evidence to `elide.reportFile` (default `target/dependency-elider-class-usage.json`). Its schema-1 JSON includes a `dependencyPrediction` section with retained and predicted-elided coordinates, planned class removals marked `PLANNED_UNVERIFIED`, environment/inventory/operation fingerprints, and provenance (`CAPTURED_EFFECTIVE_RESOLVER` or `DETACHED_CURRENT_MODEL`). Detached provenance describes only that request-local resolution. Configured vulnerability mappings remain unresolved unless a published trim archive supports an omission proof. Prediction does not stage or commit trim archives or publish output-manifest/generation state. MRJAR analysis may create temporary classpath projections in an operation-owned directory; that directory is removed when prediction completes or fails. Choose a path under `.scratch` if the report should not be kept with build artifacts:
 
+Without the core extension, `analyze` can plan exact `groupId:artifactId` bans against a detached current-model Resolver graph. Schema-1 `dependencyPrediction.banPlan` records matched and unmatched requests, marks matched artifacts `FORCED_ABSENT_AFTER_RESOLUTION`, and sets `applied=false`; `banContextFingerprint` binds the plan to that detached graph. Analysis fails if trace, source, bytecode, resource/provider metadata from a retained artifact, or graph closure requires a banned artifact. An unmatched request is not an absence proof. Active-extension Analyze bans remain fail-closed; `elide` still rejects all nonempty bans.
+
 ```sh
 mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
   -Delide.traceFiles=target/classes.log
@@ -124,7 +126,7 @@ Process exit status: 0
 | `-Delide.trimJars` | `false` | When `true`, simulates intra-JAR trimming and evaluates CVE absence proofs without modifying files. |
 | `-Delide.trimWorkers` | `4` | Maximum worker threads for JAR preparation, closure analysis, and archive sanitization. Actual concurrency is also capped by available processors and pending work; `1` runs sequentially. |
 | `-Delide.retainedArtifacts` | *(empty)* | Comma-separated coordinates (`groupId:artifactId[:version[:type[:classifier]]]`) to retain regardless of trace evidence. |
-| `-Delide.banishedDependencies` | *(empty)* | Comma-separated exact, trimmed `groupId:artifactId` requests; wildcards and version/type/classifier fields are unsupported. Every non-empty request currently fails closed before analysis because strict enforcement is not available yet. |
+| `-Delide.banishedDependencies` | *(empty)* | Comma-separated exact, trimmed `groupId:artifactId` requests; wildcards and version/type/classifier fields are unsupported. Without the extension, Analyze plans supported bans but never applies them. Active-extension Analyze bans fail closed. |
 | `-Delide.productionOutput` | *(empty)* | Path to compiled classes (e.g. `target/classes`) to enable static code reference scanning. |
 | `-Delide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader SPI roots; when `false`, prunes unproven SPI roots. |
 | `-Delide.reportFile` | `target/dependency-elider-class-usage.json` | Path for the class-usage analysis report. |

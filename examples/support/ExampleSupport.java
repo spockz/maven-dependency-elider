@@ -310,6 +310,7 @@ public final class ExampleSupport {
     if (!overlap.isEmpty()) {
       throw new IOException("dependencyPrediction retained and would-elide coordinates overlap");
     }
+    validateBanPlan(prediction, provenance.textValue(), retained, wouldElide);
     final JsonNode plannedRemovals = prediction.path("plannedClassRemovals");
     if (!plannedRemovals.isArray()) {
       throw new IOException("dependencyPrediction plannedClassRemovals must be an array");
@@ -358,6 +359,127 @@ public final class ExampleSupport {
     }
   }
 
+  private static void validateBanPlan(
+      final JsonNode prediction,
+      final String provenance,
+      final Set<String> retained,
+      final Set<String> wouldElide)
+      throws IOException {
+    final JsonNode context = prediction.get("banContextFingerprint");
+    final JsonNode plan = prediction.get("banPlan");
+    if (context == null && plan == null) {
+      return;
+    }
+    if (context == null || plan == null) {
+      throw new IOException("dependencyPrediction ban context and plan must appear together");
+    }
+    if (!"DETACHED_CURRENT_MODEL".equals(provenance)) {
+      throw new IOException("dependencyPrediction ban plan requires detached provenance");
+    }
+    if (!context.isTextual() || !context.textValue().matches("[0-9a-f]{64}")) {
+      throw new IOException("dependencyPrediction banContextFingerprint must be a SHA-256 string");
+    }
+    if (!plan.isArray() || plan.isEmpty()) {
+      throw new IOException("dependencyPrediction banPlan must be a non-empty array");
+    }
+    final Set<String> input = new HashSet<>(retained);
+    input.addAll(wouldElide);
+    ReportBanIdentity previous = null;
+    for (final JsonNode row : plan) {
+      if (!row.isObject()
+          || !fieldNames(row)
+              .equals(Set.of("dependency", "status", "matchedArtifacts", "applied"))) {
+        throw new IOException("dependencyPrediction ban plan row has unsupported fields");
+      }
+      final ReportBanIdentity dependency = parseBanIdentity(row.path("dependency"));
+      if (previous != null && previous.compareTo(dependency) >= 0) {
+        throw new IOException("dependencyPrediction ban plan rows are not canonical");
+      }
+      previous = dependency;
+      final JsonNode applied = row.path("applied");
+      if (!applied.isBoolean() || applied.booleanValue()) {
+        throw new IOException("dependencyPrediction ban plan applied must be false");
+      }
+      final JsonNode status = row.path("status");
+      if (!status.isTextual()
+          || !Set.of("FORCED_ABSENT_AFTER_RESOLUTION", "NO_CURRENT_INVENTORY_MATCH")
+              .contains(status.textValue())) {
+        throw new IOException("dependencyPrediction ban plan status is unsupported");
+      }
+      final Set<String> matched = validateBanMatches(row.path("matchedArtifacts"), dependency, wouldElide);
+      if (status.textValue().equals("FORCED_ABSENT_AFTER_RESOLUTION") != !matched.isEmpty()) {
+        throw new IOException("dependencyPrediction ban plan status disagrees with matches");
+      }
+      final Set<String> expected = new HashSet<>();
+      for (final String coordinate : input) {
+        if (dependency.matches(parseCanonicalCoordinate(coordinate))) {
+          expected.add(coordinate);
+        }
+      }
+      if (!matched.equals(expected)) {
+        throw new IOException("dependencyPrediction ban plan matches disagree with artifact inventory");
+      }
+    }
+  }
+
+  private static Set<String> fieldNames(final JsonNode row) {
+    final Set<String> names = new HashSet<>();
+    row.fieldNames().forEachRemaining(names::add);
+    return names;
+  }
+
+  private static Set<String> validateBanMatches(
+      final JsonNode matches, final ReportBanIdentity dependency, final Set<String> wouldElide)
+      throws IOException {
+    if (!matches.isArray()) {
+      throw new IOException("dependencyPrediction ban matchedArtifacts must be an array");
+    }
+    final Set<String> coordinates = new HashSet<>();
+    ReportCoordinate previous = null;
+    for (final JsonNode match : matches) {
+      if (!match.isTextual()) {
+        throw new IOException("dependencyPrediction ban matchedArtifacts must be coordinate strings");
+      }
+      final ReportCoordinate coordinate;
+      try {
+        coordinate = parseCanonicalCoordinate(match.textValue());
+      } catch (final IllegalArgumentException exception) {
+        throw new IOException("dependencyPrediction ban matched artifact is not canonical", exception);
+      }
+      if (previous != null && previous.compareTo(coordinate) >= 0) {
+        throw new IOException("dependencyPrediction ban matchedArtifacts are not canonical");
+      }
+      if (!dependency.matches(coordinate)) {
+        throw new IOException("dependencyPrediction ban matched artifact has another identity");
+      }
+      if (!wouldElide.contains(match.textValue())) {
+        throw new IOException("dependencyPrediction ban matched artifact must be in wouldElideArtifacts");
+      }
+      coordinates.add(match.textValue());
+      previous = coordinate;
+    }
+    return coordinates;
+  }
+
+  private static ReportBanIdentity parseBanIdentity(final JsonNode node) throws IOException {
+    if (!node.isTextual()) {
+      throw new IOException("dependencyPrediction ban dependency must be a G:A string");
+    }
+    final String[] parts = node.textValue().split(":", -1);
+    if (parts.length != 2) {
+      throw new IOException("dependencyPrediction ban dependency must be a G:A string");
+    }
+    for (final String part : parts) {
+      if (part.isBlank()
+          || part.indexOf('*') >= 0
+          || part.indexOf('?') >= 0
+          || part.chars().anyMatch(Character::isWhitespace)) {
+        throw new IOException("dependencyPrediction ban dependency is not normalized");
+      }
+    }
+    return new ReportBanIdentity(parts[0], parts[1]);
+  }
+
   private static Set<String> coordinateTexts(final JsonNode node) throws IOException {
     if (!node.isArray()) {
       throw new IOException("dependencyPrediction artifact coordinates must be arrays");
@@ -397,6 +519,20 @@ public final class ExampleSupport {
       throw new IllegalArgumentException("coordinate is not canonical");
     }
     return coordinate;
+  }
+
+  private record ReportBanIdentity(String groupId, String artifactId)
+      implements Comparable<ReportBanIdentity> {
+    private boolean matches(final ReportCoordinate coordinate) {
+      return groupId.equals(coordinate.groupId())
+          && artifactId.equals(coordinate.artifactId());
+    }
+
+    @Override
+    public int compareTo(final ReportBanIdentity other) {
+      final int groupComparison = groupId.compareTo(other.groupId);
+      return groupComparison == 0 ? artifactId.compareTo(other.artifactId()) : groupComparison;
+    }
   }
 
   private record ReportCoordinate(

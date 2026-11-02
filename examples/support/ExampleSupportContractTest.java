@@ -97,9 +97,101 @@ public final class ExampleSupportContractTest {
           "must reference a retained artifact");
 
       ExampleSupport.validateClassUsageReport(reportWithValidPrediction(productionOutput), productionOutput);
+      verifiesBanPlanValidation(productionOutput);
     } finally {
       Files.deleteIfExists(productionOutput);
     }
+  }
+
+  private static void verifiesBanPlanValidation(final Path productionOutput) throws IOException {
+    final ObjectNode valid = reportWithValidPrediction(productionOutput);
+    final ObjectNode prediction = (ObjectNode) valid.path("dependencyPrediction");
+    prediction.put("banContextFingerprint", "d".repeat(64));
+    final ArrayNode rows = prediction.putArray("banPlan");
+    final ObjectNode unmatched = rows.addObject();
+    unmatched.put("dependency", "org.example:missing");
+    unmatched.put("status", "NO_CURRENT_INVENTORY_MATCH");
+    unmatched.putArray("matchedArtifacts");
+    unmatched.put("applied", false);
+    final ObjectNode matched = rows.addObject();
+    matched.put("dependency", "org.example:unused");
+    matched.put("status", "FORCED_ABSENT_AFTER_RESOLUTION");
+    matched.putArray("matchedArtifacts").add("org.example:unused:jar:2.0 (runtime)");
+    matched.put("applied", false);
+    ExampleSupport.validateClassUsageReport(valid, productionOutput);
+
+    final ObjectNode missingPlan = valid.deepCopy();
+    ((ObjectNode) missingPlan.path("dependencyPrediction")).remove("banPlan");
+    rejects(missingPlan, productionOutput, "ban context and plan must appear together");
+
+    final ObjectNode missingContext = valid.deepCopy();
+    ((ObjectNode) missingContext.path("dependencyPrediction")).remove("banContextFingerprint");
+    rejects(missingContext, productionOutput, "ban context and plan must appear together");
+
+    final ObjectNode malformedContext = valid.deepCopy();
+    ((ObjectNode) malformedContext.path("dependencyPrediction"))
+        .put("banContextFingerprint", "bad");
+    rejects(malformedContext, productionOutput, "banContextFingerprint must be a SHA-256");
+
+    final ObjectNode capturedPlan = valid.deepCopy();
+    ((ObjectNode) capturedPlan.path("dependencyPrediction"))
+        .put("provenance", "CAPTURED_EFFECTIVE_RESOLVER");
+    rejects(capturedPlan, productionOutput, "ban plan requires detached provenance");
+
+    final ObjectNode appliedPlan = valid.deepCopy();
+    ((ObjectNode) appliedPlan.path("dependencyPrediction").path("banPlan").get(1))
+        .put("applied", true);
+    rejects(appliedPlan, productionOutput, "ban plan applied must be false");
+
+    final ObjectNode coercedApplied = valid.deepCopy();
+    ((ObjectNode) coercedApplied.path("dependencyPrediction").path("banPlan").get(1))
+        .put("applied", "false");
+    rejects(coercedApplied, productionOutput, "ban plan applied must be false");
+
+    final ObjectNode unsupportedStatus = valid.deepCopy();
+    ((ObjectNode) unsupportedStatus.path("dependencyPrediction").path("banPlan").get(1))
+        .put("status", "APPLIED");
+    rejects(unsupportedStatus, productionOutput, "ban plan status is unsupported");
+
+    final ObjectNode unmatchedWithArtifacts = valid.deepCopy();
+    ((ObjectNode) unmatchedWithArtifacts.path("dependencyPrediction").path("banPlan").get(0))
+        .putArray("matchedArtifacts")
+        .add("org.example:unused:jar:2.0 (runtime)");
+    rejects(unmatchedWithArtifacts, productionOutput, "matched artifact has another identity");
+
+    final ObjectNode retainedMatch = valid.deepCopy();
+    ((ObjectNode) retainedMatch.path("dependencyPrediction").path("banPlan").get(1))
+        .putArray("matchedArtifacts")
+        .add("org.example:library:jar:1.0 (compile)");
+    rejects(retainedMatch, productionOutput, "matched artifact has another identity");
+
+    final ObjectNode unlistedMatch = valid.deepCopy();
+    ((ObjectNode) unlistedMatch.path("dependencyPrediction").path("banPlan").get(1))
+        .putArray("matchedArtifacts");
+    rejects(unlistedMatch, productionOutput, "ban plan status disagrees with matches");
+
+    final ObjectNode incompleteMatches = valid.deepCopy();
+    ((ObjectNode) incompleteMatches.path("dependencyPrediction"))
+        .withArray("wouldElideArtifacts")
+        .add("org.example:unused:jar:3.0 (runtime)");
+    rejects(incompleteMatches, productionOutput, "matches disagree with artifact inventory");
+
+    final ObjectNode falseStatus = valid.deepCopy();
+    ((ObjectNode) falseStatus.path("dependencyPrediction").path("banPlan").get(1))
+        .put("status", "NO_CURRENT_INVENTORY_MATCH");
+    rejects(falseStatus, productionOutput, "ban plan status disagrees with matches");
+
+    final ObjectNode wrongDisposition = valid.deepCopy();
+    ((ObjectNode) wrongDisposition.path("dependencyPrediction"))
+        .putArray("wouldElideArtifacts");
+    rejects(wrongDisposition, productionOutput, "must be in wouldElideArtifacts");
+
+    final ObjectNode reversedRows = valid.deepCopy();
+    final ArrayNode reversed =
+        ((ObjectNode) reversedRows.path("dependencyPrediction")).putArray("banPlan");
+    reversed.add(matched.deepCopy());
+    reversed.add(unmatched.deepCopy());
+    rejects(reversedRows, productionOutput, "ban plan rows are not canonical");
   }
 
   private static void verifiesReactorReportMetricComparison() throws Exception {
