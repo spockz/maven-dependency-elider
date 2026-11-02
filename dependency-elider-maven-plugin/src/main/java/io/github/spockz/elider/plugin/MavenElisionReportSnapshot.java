@@ -779,6 +779,34 @@ record MavenElisionReportSnapshot(
     return droppedArtifactSummary(analysis, analysis.effectiveDecision());
   }
 
+  private static DroppedArtifactSummary droppedArtifactSummary(
+      final ElisionAnalysisModel.Analysis analysis,
+      final io.github.spockz.elider.model.ElisionDecision decision)
+      throws IOException {
+    final List<DroppedArtifact> dropped = new ArrayList<>();
+    for (final ArtifactCoordinate coordinate : decision.elidedArtifacts()) {
+      final ElisionAnalysisModel.ArtifactSnapshot artifact =
+          snapshotForCoordinate(analysis, coordinate);
+      final Path path = artifact.filePath();
+      if (path == null || !Files.isRegularFile(path)) {
+        throw new IOException("Elided artifact has no regular input JAR: " + coordinate);
+      }
+      final ProgramClassEntryMetrics classMetrics = ProgramClassEntryMetrics.scan(path);
+      dropped.add(
+          new DroppedArtifact(
+              coordinate.toString(),
+              Files.size(path),
+              classMetrics.entries(),
+              classMetrics.uncompressedBytes()));
+    }
+    dropped.sort(Comparator.comparing(DroppedArtifact::coordinate));
+    return new DroppedArtifactSummary(
+        dropped,
+        sumDroppedArtifactBytes(dropped),
+        sumDroppedArtifactClassCounts(dropped),
+        sumDroppedArtifactClassBytes(dropped));
+  }
+
   static DroppedArtifactSummary droppedArtifactSummary(final AnalyzePrediction prediction)
       throws IOException {
     final List<DroppedArtifact> dropped = new ArrayList<>();
@@ -813,34 +841,6 @@ record MavenElisionReportSnapshot(
         Files.size(path),
         classMetrics.entries(),
         classMetrics.uncompressedBytes());
-  }
-
-  private static DroppedArtifactSummary droppedArtifactSummary(
-      final ElisionAnalysisModel.Analysis analysis,
-      final io.github.spockz.elider.model.ElisionDecision decision)
-      throws IOException {
-    final List<DroppedArtifact> dropped = new ArrayList<>();
-    for (final ArtifactCoordinate coordinate : decision.elidedArtifacts()) {
-      final ElisionAnalysisModel.ArtifactSnapshot artifact =
-          snapshotForCoordinate(analysis, coordinate);
-      final Path path = artifact.filePath();
-      if (path == null || !Files.isRegularFile(path)) {
-        throw new IOException("Elided artifact has no regular input JAR: " + coordinate);
-      }
-      final ProgramClassEntryMetrics classMetrics = ProgramClassEntryMetrics.scan(path);
-      dropped.add(
-          new DroppedArtifact(
-              coordinate.toString(),
-              Files.size(path),
-              classMetrics.entries(),
-              classMetrics.uncompressedBytes()));
-    }
-    dropped.sort(Comparator.comparing(DroppedArtifact::coordinate));
-    return new DroppedArtifactSummary(
-        dropped,
-        sumDroppedArtifactBytes(dropped),
-        sumDroppedArtifactClassCounts(dropped),
-        sumDroppedArtifactClassBytes(dropped));
   }
 
   @SuppressWarnings("PMD.LawOfDemeter")

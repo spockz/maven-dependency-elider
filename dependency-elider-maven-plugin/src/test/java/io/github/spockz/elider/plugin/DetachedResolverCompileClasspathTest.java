@@ -1,4 +1,7 @@
-/* WHY: Proves Resolver-restored compile classpaths preserve source attribution without mutating Maven's live model. */
+/*
+ * WHY: Proves Resolver-restored compile classpaths preserve source attribution without mutating
+ * Maven's live model.
+ */
 
 package io.github.spockz.elider.plugin;
 
