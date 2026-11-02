@@ -1,4 +1,4 @@
-<!-- WHY: Defines repository-wide requirements for persisted formats, tooling, test efficiency, and generated examples. -->
+<!-- WHY: Defines repository-wide requirements for persisted formats, tooling, test efficiency, generated examples, and JDK portability. -->
 # Repository Agent Instructions
 
 ## Persisted formats and protocols
@@ -15,6 +15,20 @@
 - Tooling should stick to shell when simple and orchestrating commands, be implemented as part of Java unit/integration tests, or be built as a Go program.
 - Tooling such as applicable Java versions can be found in `.scratch/toolchains` of the main clone/worktree.
 
+## JDK portability and runtime decoupling
+
+- No feature implemented in this project may ever depend on, require, or assume that users run our exact JDK version, patch release, or vendor build.
+- Never embed assumptions, hardcoded checksums, build-string equality checks, or runtime identity requirements that tie project execution, analysis, or test suites to an exact, proprietary, or vendor-specific JDK build (such as an exact GraalVM or OpenJDK patch/build release).
+- The project and every feature it offers must compile, pass tests, and function on standard, compliant JDK 21+ installations. Platform inspection must rely exclusively on standard Java Platform specifications and modular APIs (`java.lang.module`) or graceful feature detection, never proprietary internal digests or fixed vendor versions.
+
+## Execution model and anti-overengineering
+
+- Follow KISS (Keep It Simple, Stupid): prefer the simplest design, standard APIs, and straightforward code paths that satisfy requirements. Avoid speculative abstractions, unnecessary configurability, and defensive over-engineering.
+- Assume a single-writer execution model on a developer workstation or standard CI runner. Do not add defensive mechanisms for concurrent filesystem modifications, TOCTOU race conditions, or external processes mutating build outputs during plugin analysis.
+- Do not over-engineer symlink traversal or rejection. Standard compiler output directories (`target/classes`), generated sources, and Maven caches are assumed not to contain adversarial symlinks. Use standard Java NIO operations (`Files.walk`, `Files.copy`, `Files.readAllBytes`, `Files.newInputStream`) directly without `LinkOption.NOFOLLOW_LINKS` guards or symlink-escape verifications.
+- Do not double-hash files before and after reading them. Read or hash once in a single pass.
+- Keep file writing simple: use standard sequential streaming or basic temporary file replacement without distributed locking, transaction managers, or multi-tenant atomic coordinators.
+
 ## Test efficiency and assertion coverage
 
 - Minimize test runtime while preserving every distinct scenario, behavioral coverage, assertion strength, and useful failure diagnostics.
@@ -24,6 +38,14 @@
 - Scope prerequisite checks and potentially failing result extraction to their dependent assertion group. A failed prerequisite must be reported and may stop dependent checks, while unrelated groups continue. Check for setup or argument evaluation outside assertion aggregation that could prevent otherwise independent observations from running.
 - Keep shared fixtures immutable or give each mutating scenario an isolated copy. Preserve valid resource lifetimes, cleanup, repeatability, and independence from test order and concurrent execution.
 - Evaluate test optimizations with comparable timings and preserved scenario/assertion coverage, accounting for their effect on parallel execution. Fewer test methods or a shared setup helper alone do not establish less runtime work.
+
+## Test-driven development (TDD) workflow
+
+- Follow test-driven development (TDD) for every slice and behavioral change:
+  1. Write tests first before modifying or writing implementation code.
+  2. Check whether the tests cover the required acceptance criteria and verify that the tests fail for the intended reasons.
+  3. Write the minimal production code necessary to satisfy the tests.
+  4. Verify that all tests pass, preserving aggregate assertion diagnostics and test efficiency.
 
 ## Generated command examples
 

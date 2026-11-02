@@ -7,7 +7,7 @@ Contributions are welcome. Before opening a pull request, run `make check` and i
 
 To build the project locally, run linters, and execute the full test verification suite, you need:
 
-- **JDK 21 or newer**. The project compiles with Java 21 language and API compatibility.
+- **JDK 21 or newer**. The project compiles with Java 21 language and API compatibility. No feature or test may depend on users running our exact JDK version, patch, or vendor build; all capabilities must build, test, and function on standard, compliant JDK 21+ installations.
 - **A POSIX shell and `make`** for the documented developer commands.
 - **Node.js and `npm`** to install the Markdown linter (`markdownlint-cli2`) used by `make check`.
 - **Bash and the `timeout` utility** for `make test-examples` and the fixture scheduler checks. The example helpers use shell and the JDK `jar` command.
