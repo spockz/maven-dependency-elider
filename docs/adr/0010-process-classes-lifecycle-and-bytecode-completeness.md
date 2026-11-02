@@ -73,3 +73,9 @@ We introduce **Post-Compile Production Bytecode Completeness (`elide.productionC
   * When `elide` runs at `process-classes`, `compile` executes against the un-elided compile classpath; elision and trimming take effect immediately after `compile` for `test-compile`, `test`, `package`, SBOM/VEX generation, and `dependency:tree`.
   * The trusted capture behavior depends on the Maven extension and its lifecycle source metadata; direct CLI goal invocations cannot claim a post-compile provider inventory.
   * The source supplement can retain dependencies referenced only by source and not by emitted bytecode. If semantic attribution fails (including sources that rely on compiler-generated members such as Lombok accessors), the post-compile fallback retains all compile-visible artifacts and their indexed classes. Test-only references are outside this production-root guarantee.
+
+---
+
+## 4. Dated Amendment: 2026-11-02 Narrowing to Emitted Bytecode (ADR-0013 / WP-PLATFORM-01)
+
+Under [ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md) and [WP-PLATFORM-01](../handovers/2026-11-02-wp-platform-01-compiler-decoupling-and-live-proof-pivot.md), in-process AST source scanning (`PostCompileSourceAttribution`) is decommissioned. Post-compile analysis is intentionally narrowed to emitted production bytecode (`target/classes`), Spring AOT generated assets, and declared runtime evidence sources. Dependencies referenced exclusively through compile-time inlined primitive or `String` constants (with zero remaining bytecode references in `target/classes`) are retained explicitly via `<retainedArtifacts><retainedArtifact>groupId:artifactId</retainedArtifact></retainedArtifacts>` rather than through redundant in-process `javac` source passes.
