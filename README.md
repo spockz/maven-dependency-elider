@@ -181,11 +181,13 @@ may remove content needed by consumers. The `report` goal replays the saved find
 
 The elision report requires `executionEnvironment.targetRelease` and
 `executionEnvironment.runtimeRelease`. The target is Elider's selected analysis baseline; a
-uniquely resolved release takes precedence, then a configured target, then the active runtime
-feature as Elider's analysis default. The runtime field records the JDK running Maven. Full Maven
-plugin/execution override semantics remain part of compiler-settings decoupling. The `report` goal
-validates and replays both saved values without substituting the current runtime, and neither value
-makes the active JDK class table a historical API model.
+release from the effective compile configuration takes precedence, then its configured target,
+then the active runtime feature as Elider's analysis default. Target-only configuration is valid;
+source-only configuration does not select a target. The default `compile` execution is considered
+even when its POM entry has no explicit goals, while `testCompile` does not select the production
+target. The runtime field records the JDK running Maven. The `report` goal validates and replays both
+saved values without substituting the current runtime, and neither value makes the active JDK class
+table a historical API model.
 
 Internal persisted report and cache formats use independent schema version 1. Their unreleased schemas remain at version 1 and incompatible payloads fail fast. CycloneDX declares `specVersion` 1.6, and OpenVEX uses the 0.2.0 context URL; neither is an internal schema version. Each generated security document's top-level `version` is a document revision counter.
 
@@ -284,7 +286,7 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 | Resolver extension and mediated artifact graph | Required; fixture verified | Graph-aware decisions require `.mvn/extensions.xml`. Without it, original repository artifacts remain visible. |
 | Bare production `dependency:tree` | Example and fixture verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1 | With `.mvn/extensions.xml` and an active initialize-bound execution, `dependency:tree` automatically runs elision first. See [production lifecycle tests](dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIT.java#L583) and [tree assertions](examples/run-elision-cycle.sh#L808). |
 | Class reachability and safe dependency removal | Unit tested; fixture verified | Covers explicit roots, source references, framework metadata, and graph leaves with retention across ancestors, cycles, and diamonds. |
-| Multi-release dependency JARs | Supported; vertical shading by default | With `elide.trimJars=true`, the configured compiler target is elevated and trimmed; upper tiers are preserved, with sibling closure analyzed through the Maven runtime release. `elide.mrjarStrategy=pass-through` preserves MRJAR bytes. |
+| Multi-release dependency JARs | Supported; vertical shading by default | With `elide.trimJars=true`, the selected analysis target is elevated and trimmed; upper tiers are preserved, with sibling closure analyzed through the Maven runtime release. `elide.mrjarStrategy=pass-through` preserves MRJAR bytes. |
 | JDK platform resolution | Active-runtime modules; target API availability is not emulated | Standard module APIs load hierarchy and member declarations from the JVM running Maven. Missing active-runtime references remain unresolved; the compiler target is separate. |
 | Kotlin/JVM libraries and source roots | Partial; JVM bytecode only | Kotlin-compiled dependency bytecode is analyzed through ordinary JVM references. Kotlin metadata is parsed for sibling class isolation but metadata-only references are not closure roots; Kotlin sources are not scanned. See the [Kotlin support matrix](docs/faq.md#what-kotlin-features-are-supported). |
 | JARs with root `module-info.class` | Conservative pass-through on classpath | Retained JARs with root module descriptors are not trimmed. JPMS module-path linkage is unsupported. |

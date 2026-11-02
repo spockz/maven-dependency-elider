@@ -53,7 +53,7 @@ The elider uses exact content digests to identify dependency JARs and the active
 
 ### What happens if a dependency contains multi-release implementation classes?
 
-When `elide.trimJars=true`, the plugin uses the Maven compiler release as the baseline target, elevates its effective classes to the JAR root, and trims the target view. Higher-tier entries remain unchanged, while class bodies at tier breakpoints through the Maven runtime release contribute to sibling dependency closure. This analysis also uses an MRJAR configured for `pass-through` as an unchanged program input when another dependency is trimmed. Tiers above that runtime are preserved without linkage analysis. SPI descriptors stay at the root and provider names for removed classes are filtered. Set `-Delide.mrjarStrategy=pass-through` to keep the original MRJAR byte-identical; references from tiers above the Maven runtime remain outside the sibling-closure proof. Root module descriptors follow the existing classpath pass-through policy; versioned module descriptors are removed from trimmed output.
+When `elide.trimJars=true`, the plugin selects the effective compiler release first, then target, and elevates that analysis target's classes to the JAR root. If neither is configured, Elider uses the active runtime feature as its analysis default; this does not claim Maven's emitted-bytecode default. Higher-tier entries remain unchanged, while class bodies at tier breakpoints through the Maven runtime release contribute to sibling dependency closure. This analysis also uses an MRJAR configured for `pass-through` as an unchanged program input when another dependency is trimmed. Tiers above that runtime are preserved without linkage analysis. SPI descriptors stay at the root and provider names for removed classes are filtered. Set `-Delide.mrjarStrategy=pass-through` to keep the original MRJAR byte-identical; references from tiers above the Maven runtime remain outside the sibling-closure proof. Root module descriptors follow the existing classpath pass-through policy; versioned module descriptors are removed from trimmed output.
 
 ### What happens to reports and outputs if publication fails?
 
@@ -61,7 +61,7 @@ A failure before the publication commit restores the previous reports, output ge
 
 ### What if my application runs on a different JDK than Maven?
 
-MRJAR linkage analysis uses the configured release first, then the configured target (the target value of a source/target pair), and the active Maven runtime release as its upper analysis boundary. A source-only setting does not establish Elider's analysis target; when neither release nor target is configured, Elider uses the active runtime feature version. This fallback is an analysis policy, not a claim about Maven compiler's emitted bytecode default. The JDK class table describes the active runtime; it does not validate API availability for an older target. If the deployed application uses a newer JDK, higher-tier entries are preserved but their references to sibling JARs are not included in the analyzed closure. Run the build with the deployment JDK to verify those links. Pass-through preserves the MRJAR bytes but does not preserve sibling dependencies referenced only from unanalysed tiers.
+MRJAR linkage analysis selects the release from Maven's effective compiler configuration, then target; target-only configuration is supported, while source-only configuration does not establish Elider's target. Captured user properties take precedence over captured system and project properties when no explicit plugin value supplies the setting. If neither release nor target is configured, Elider uses the active runtime feature as its analysis default. This fallback is an analysis policy, not a claim about Maven compiler's emitted bytecode default. The JDK class table describes the active runtime; it does not validate API availability for an older target. If the deployed application uses a newer JDK, higher-tier entries are preserved but their references to sibling JARs are not included in the analyzed closure. Run the build with the deployment JDK to verify those links. Pass-through preserves the MRJAR bytes but does not preserve sibling dependencies referenced only from unanalysed tiers.
 
 ### What if generated sources are not available before `INITIALIZE`?
 
@@ -100,13 +100,14 @@ The saved report's `policy` section records canonical `retainedArtifacts`, `bani
 ### How does the report distinguish the analysis target from the Maven runtime?
 
 The schema-v1 elision report requires `executionEnvironment.targetRelease` and
-`executionEnvironment.runtimeRelease`. The target records Elider's analysis baseline: a uniquely
-resolved compiler release, then configured target, then the active runtime feature when neither is
-set. Full Maven plugin/execution override semantics remain part of compiler-settings decoupling.
-That last case is Elider's analysis default, not a claim about Maven compiler's emitted bytecode
-default. The runtime records the JDK that ran Maven. `dependency-elider:report` validates and
-displays the saved values without replacing them with settings from the current Maven run. The
-active JDK class table still does not emulate a historical target API.
+`executionEnvironment.runtimeRelease`. The target records Elider's analysis baseline from the
+effective compile configuration: release first, then target, then the active runtime feature when
+neither is set. The effective `default-compile` execution is considered even when its POM entry has
+no explicit goals; `testCompile` does not select the production target. That last case is Elider's
+analysis default, not a claim about Maven compiler's emitted bytecode default. The runtime records
+the JDK that ran Maven. `dependency-elider:report` validates and displays the saved values without
+replacing them with settings from the current Maven run. The active JDK class table still does not
+emulate a historical target API.
 
 ### What happens if an advisory maps multiple vulnerable classes that do not exist in an older version?
 

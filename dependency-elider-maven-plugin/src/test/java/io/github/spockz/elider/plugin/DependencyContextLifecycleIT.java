@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -1732,6 +1733,108 @@ final class DependencyContextLifecycleIT {
         () -> assertThat(Files.readString(scenario.report())).isEqualTo(scenario.reportContents()),
         () ->
             assertThat(Files.readString(scenario.summary())).isEqualTo(scenario.summaryContents()));
+  }
+
+  @Test
+  void implicitDefaultCompileConfigurationMatchesEliderTargetAndEmittedBytecode() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path evidenceDirectory =
+        Files.createDirectories(temporaryDirectory.resolve("compiler-target-precedence"));
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path consumer = Files.createDirectories(evidenceDirectory.resolve(CONSUMER_DIRECTORY));
+    final Path source = consumer.resolve("src/main/java/targetselection/TargetProbe.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, "package targetselection; public final class TargetProbe {}\n");
+    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    final Path pom = consumer.resolve(POM_XML);
+    Files.writeString(
+        pom,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Verifies Maven's implicit compiler execution target reaches bytecode and Elider. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId><artifactId>compiler-target-consumer</artifactId><version>1.0.0</version>
+          <properties>
+            <maven.compiler.proc>none</maven.compiler.proc>
+            <target.release.override>17</target.release.override>
+            <elide.traceFiles>${project.basedir}/trace.txt</elide.traceFiles>
+            <elide.summaryFile>${project.build.directory}/dependency-elider-report.json</elide.summaryFile>
+          </properties>
+          <dependencies>
+            <dependency>
+              <groupId>io.github.spockz.elider.test</groupId>
+              <artifactId>keep-library</artifactId>
+              <version>1.0.0</version>
+            </dependency>
+          </dependencies>
+          <build><pluginManagement><plugins><plugin>
+            <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
+            <version>3.13.0</version><configuration><source>8</source><target>8</target><proc>none</proc></configuration>
+          </plugin></plugins></pluginManagement><plugins>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
+              <version>3.13.0</version><configuration><source>8</source><target>11</target><proc>none</proc></configuration>
+              <executions>
+                <execution><id>default-compile</id><configuration><source>8</source><target>${target.release.override}</target></configuration></execution>
+                <execution><id>test-only</id><goals><goal>testCompile</goal></goals>
+                  <configuration><target>8</target></configuration>
+                </execution>
+              </executions>
+            </plugin>
+            <plugin>
+              <groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId>
+              <version>0.1.0-SNAPSHOT</version><configuration><trimJars>false</trimJars></configuration>
+            </plugin>
+          </plugins></build>
+        </project>
+        """);
+
+    final Path log = evidenceDirectory.resolve("effective-compiler-target.log");
+    final String compilationOutput =
+        runFromDirectory(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            log,
+            PROCESS_TIMEOUT,
+            "-f",
+            pom.toString(),
+            "-Dmaven.compiler.target=9",
+            "clean",
+            "process-classes");
+
+    final Path classFile = consumer.resolve("target/classes/targetselection/TargetProbe.class");
+    final byte[] classBytes = Files.readAllBytes(classFile);
+    final int classFileMajorVersion = ByteBuffer.wrap(classBytes).getShort(6) & 0xffff;
+    final SubprocessExecution eliderExecution =
+        executeSubprocess(
+            consumer,
+            wrapper,
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("elider-target-report.log"),
+            PROCESS_TIMEOUT,
+            "-f",
+            pom.toString(),
+            "-Dmaven.compiler.target=9",
+            "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:elide");
+    final Path reportPath = consumer.resolve("target/dependency-elider-report.json");
+    assertAll(
+        "Maven's matching implicit compile execution controls both emitted classes "
+            + "and report target",
+        () -> assertThat(compilationOutput).contains(BUILD_SUCCESS),
+        () -> assertThat(classFileMajorVersion).isEqualTo(61),
+        () -> assertThat(eliderExecution.exitCode()).as(eliderExecution.output()).isZero(),
+        () -> {
+          assertThat(Files.exists(reportPath)).isTrue();
+          final JsonNode report = JSON.readTree(reportPath.toFile());
+          assertThat(report.path("executionEnvironment").path("targetRelease").asInt())
+              .isEqualTo(17);
+        });
   }
 
   private record BanLifecycleFixture(

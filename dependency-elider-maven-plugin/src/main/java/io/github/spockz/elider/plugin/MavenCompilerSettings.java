@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import org.apache.maven.execution.MavenSession;
@@ -138,7 +139,8 @@ final class MavenCompilerSettings {
 
   static List<String> releaseIdentity(final MavenProject project, final MavenSession session)
       throws IOException {
-    return releaseIdentity(project, userProperties(session));
+    return releaseIdentity(
+        project, targetProperties(systemProperties(session), userProperties(session)));
   }
 
   private static List<String> releaseIdentity(
@@ -165,26 +167,33 @@ final class MavenCompilerSettings {
   static List<String> releaseIdentityWithEnvironment(
       final MavenProject project, final AnalysisEnvironment environment) throws IOException {
     requireUnselectedToolchain(environment);
-    return releaseIdentity(project, environment.userPropertiesAsProperties());
+    return releaseIdentity(
+        project,
+        targetProperties(
+            environment.systemPropertiesAsProperties(), environment.userPropertiesAsProperties()));
   }
 
   /** Resolves only release or target settings used by bytecode trimming after compilation. */
   static List<String> platformReleaseOptions(final MavenProject project, final MavenSession session)
       throws IOException {
     rejectSelectedToolchain(session);
-    return platformReleaseOptions(project, userProperties(session));
+    return platformReleaseOptions(project, systemProperties(session), userProperties(session));
   }
 
   private static List<String> platformReleaseOptions(
-      final MavenProject project, final Properties userProperties) throws IOException {
+      final MavenProject project,
+      final Properties systemProperties,
+      final Properties userProperties)
+      throws IOException {
     final List<Xpp3Dom> configurations = compilerConfigurations(project);
     rejectUnsupportedPlatformSettings(configurations, project.getProperties(), userProperties);
-    final TargetSelection selection = targetSelection(project, userProperties, configurations);
+    final Properties capturedProperties = targetProperties(systemProperties, userProperties);
+    final TargetSelection selection = targetSelection(project, capturedProperties, configurations);
     if (selection.release() != null) {
       return List.of("--release", selection.release());
     }
     final String source =
-        value("source", "maven.compiler.source", project, userProperties, configurations);
+        value("source", "maven.compiler.source", project, capturedProperties, configurations);
     if (selection.target() == null) {
       return List.of();
     }
@@ -196,19 +205,26 @@ final class MavenCompilerSettings {
   /** Resolves the analysis target without validating compiler execution mode. */
   static List<String> analysisTargetOptions(final MavenProject project, final MavenSession session)
       throws IOException {
-    return analysisTargetOptions(project, userProperties(session));
+    return analysisTargetOptions(project, systemProperties(session), userProperties(session));
   }
 
-  /** Resolves the analysis target from the captured Maven user properties. */
+  /** Resolves the analysis target from captured Maven properties. */
   static List<String> analysisTargetOptions(
       final MavenProject project, final AnalysisEnvironment environment) throws IOException {
-    return analysisTargetOptions(project, environment.userPropertiesAsProperties());
+    return analysisTargetOptions(
+        project,
+        environment.systemPropertiesAsProperties(),
+        environment.userPropertiesAsProperties());
   }
 
   private static List<String> analysisTargetOptions(
-      final MavenProject project, final Properties userProperties) throws IOException {
+      final MavenProject project,
+      final Properties systemProperties,
+      final Properties userProperties)
+      throws IOException {
+    final Properties capturedProperties = targetProperties(systemProperties, userProperties);
     final TargetSelection selection =
-        targetSelection(project, userProperties, compilerConfigurations(project));
+        targetSelection(project, capturedProperties, compilerConfigurations(project));
     if (selection.release() != null) {
       return List.of("--release", selection.release());
     }
@@ -217,17 +233,48 @@ final class MavenCompilerSettings {
 
   private static TargetSelection targetSelection(
       final MavenProject project,
-      final Properties userProperties,
+      final Properties capturedProperties,
       final List<Xpp3Dom> configurations)
       throws IOException {
+    TargetSelection selected = null;
+    int selectedTargetRelease = 0;
+    boolean first = true;
+    for (final Xpp3Dom configuration : configurations) {
+      final TargetSelection executionSelection =
+          targetSelection(project, capturedProperties, configuration);
+      final int executionTargetRelease = targetRelease(executionSelection);
+      if (!first && selectedTargetRelease != executionTargetRelease) {
+        throw new IOException("Maven compiler executions select different target releases");
+      }
+      selected = executionSelection;
+      selectedTargetRelease = executionTargetRelease;
+      first = false;
+    }
+    return selected;
+  }
+
+  private static TargetSelection targetSelection(
+      final MavenProject project, final Properties capturedProperties, final Xpp3Dom configuration)
+      throws IOException {
+    final List<Xpp3Dom> configurations = List.of(configuration);
     final String release =
-        value("release", "maven.compiler.release", project, userProperties, configurations);
+        value("release", "maven.compiler.release", project, capturedProperties, configurations);
     if (release != null) {
       return new TargetSelection(release, null);
     }
     final String target =
-        value("target", "maven.compiler.target", project, userProperties, configurations);
+        value("target", "maven.compiler.target", project, capturedProperties, configurations);
     return new TargetSelection(null, target);
+  }
+
+  private static int targetRelease(final TargetSelection selection) throws IOException {
+    if (selection.release() != null) {
+      return TrimPlatform.targetReleaseFromOptions(List.of("--release", selection.release()));
+    }
+    if (selection.target() != null) {
+      return TrimPlatform.targetReleaseFromOptions(List.of("-target", selection.target()));
+    }
+    return Runtime.version().feature();
   }
 
   private record TargetSelection(String release, String target) {}
@@ -235,7 +282,10 @@ final class MavenCompilerSettings {
   static List<String> platformReleaseOptionsWithEnvironment(
       final MavenProject project, final AnalysisEnvironment environment) throws IOException {
     requireUnselectedToolchain(environment);
-    return platformReleaseOptions(project, environment.userPropertiesAsProperties());
+    return platformReleaseOptions(
+        project,
+        environment.systemPropertiesAsProperties(),
+        environment.userPropertiesAsProperties());
   }
 
   /** Resolves post-compile source attribution options without invoking configured processors. */
@@ -544,33 +594,89 @@ final class MavenCompilerSettings {
   private static List<Xpp3Dom> compilerConfigurations(final MavenProject project) {
     final Build build = project.getBuild();
     if (build == null) {
-      return List.of();
+      return List.of(new Xpp3Dom("configuration"));
     }
-    final List<Plugin> compilers = new ArrayList<>();
-    final Plugin configuredCompiler = build.getPluginsAsMap().get(COMPILER_PLUGIN);
-    if (configuredCompiler != null) {
-      compilers.add(configuredCompiler);
-    }
+    final Plugin activeCompiler = build.getPluginsAsMap().get(COMPILER_PLUGIN);
     final PluginManagement management = build.getPluginManagement();
-    if (management != null) {
-      final Plugin managedCompiler = management.getPluginsAsMap().get(COMPILER_PLUGIN);
-      if (managedCompiler != null) {
-        compilers.add(managedCompiler);
+    final Plugin managedCompiler =
+        management == null ? null : management.getPluginsAsMap().get(COMPILER_PLUGIN);
+    final List<Xpp3Dom> configurations = new ArrayList<>();
+    if (activeCompiler == null) {
+      if (managedCompiler == null) {
+        return List.of(new Xpp3Dom("configuration"));
+      }
+      final Xpp3Dom managedExecution = configuration(execution(managedCompiler, "default-compile"));
+      final Xpp3Dom effectiveConfiguration =
+          mergeConfigurations(managedExecution, configuration(managedCompiler));
+      return List.of(copyConfiguration(effectiveConfiguration));
+    }
+    final Xpp3Dom pluginConfiguration = configuration(activeCompiler);
+    boolean hasDefaultCompile = false;
+    for (final PluginExecution execution : activeCompiler.getExecutions()) {
+      if (isCompileExecution(execution)) {
+        hasDefaultCompile |= "default-compile".equals(execution.getId());
+        final Xpp3Dom executionConfiguration = configuration(execution);
+        configurations.add(
+            copyConfiguration(
+                executionConfiguration == null ? pluginConfiguration : executionConfiguration));
       }
     }
-    final List<Xpp3Dom> configurations = new ArrayList<>();
-    for (final Plugin compiler : compilers) {
-      if (compiler.getConfiguration() instanceof Xpp3Dom root) {
-        configurations.add(root);
-      }
-      for (final PluginExecution execution : compiler.getExecutions()) {
-        if (execution.getGoals().contains("compile")
-            && execution.getConfiguration() instanceof Xpp3Dom configuration) {
-          configurations.add(configuration);
-        }
-      }
+    if (!hasDefaultCompile) {
+      configurations.add(copyConfiguration(pluginConfiguration));
     }
     return List.copyOf(configurations);
+  }
+
+  private static boolean isCompileExecution(final PluginExecution execution) {
+    return execution.getGoals().contains("compile")
+        || (execution.getGoals().isEmpty() && "default-compile".equals(execution.getId()));
+  }
+
+  private static PluginExecution execution(final Plugin plugin, final String executionId) {
+    if (plugin == null) {
+      return null;
+    }
+    for (final PluginExecution execution : plugin.getExecutions()) {
+      if (Objects.equals(executionId, execution.getId())) {
+        return execution;
+      }
+    }
+    return null;
+  }
+
+  private static Xpp3Dom configuration(final Plugin plugin) {
+    return plugin != null && plugin.getConfiguration() instanceof Xpp3Dom configuration
+        ? configuration
+        : null;
+  }
+
+  private static Xpp3Dom configuration(final PluginExecution execution) {
+    return execution != null && execution.getConfiguration() instanceof Xpp3Dom configuration
+        ? configuration
+        : null;
+  }
+
+  private static Xpp3Dom mergeConfigurations(final Xpp3Dom dominant, final Xpp3Dom recessive) {
+    if (dominant == null) {
+      return recessive == null ? null : new Xpp3Dom(recessive);
+    }
+    if (recessive == null) {
+      return new Xpp3Dom(dominant);
+    }
+    return Xpp3Dom.mergeXpp3Dom(new Xpp3Dom(dominant), new Xpp3Dom(recessive));
+  }
+
+  private static Xpp3Dom copyConfiguration(final Xpp3Dom configuration) {
+    return configuration == null ? new Xpp3Dom("configuration") : new Xpp3Dom(configuration);
+  }
+
+  private static Properties targetProperties(
+      final Properties systemProperties, final Properties userProperties) {
+    final Properties captured = copyProperties(systemProperties);
+    copyProperties(userProperties)
+        .stringPropertyNames()
+        .forEach(name -> captured.setProperty(name, userProperties.getProperty(name)));
+    return captured;
   }
 
   static void rejectUnsupportedSettings(
