@@ -96,11 +96,16 @@ final class ADR0008MavenPreconditionPublicationTest {
     assertThat(subcomponent.path("identifiers").path("purl").asText())
         .contains("org.example/affected@1.0");
     assertThat(subcomponent.path("hashes").path("sha-256").asText()).isEqualTo(sha256);
-    assertThat(MavenElisionReportWriter.read(fixture.summary()).inactivePreconditionCves())
+    final MavenElisionReportSnapshot report = MavenElisionReportWriter.read(fixture.summary());
+    assertThat(report.inactivePreconditionCves())
         .containsExactly(
             new MavenElisionReportSnapshot.CveFinding(
-                "CVE-2026-12345", "org.example:affected:jar:1.0"));
-    assertThat(MavenElisionReportWriter.read(fixture.summary()).trimmedArtifacts()).isEmpty();
+                "CVE-2026-12345",
+                "org.example:affected:jar:1.0",
+                List.of(
+                    new MavenMissingPrerequisite(
+                        "org.example:prerequisite", "org.example.prerequisite.EntryPoint"))));
+    assertThat(report.trimmedArtifacts()).isEmpty();
   }
 
   @Test

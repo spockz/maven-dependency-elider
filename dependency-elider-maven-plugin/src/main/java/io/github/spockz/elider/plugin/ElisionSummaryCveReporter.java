@@ -35,8 +35,8 @@ final class ElisionSummaryCveReporter {
     final String noPreconditionProof = predicted ? "no precondition proof available" : null;
     reportFindings(log, removedHeading, assessment.removedComponents(), noVerifiedEvidence);
     reportFindings(log, provenHeading, assessment.provenVulnerableCodeAbsent(), noOmissionProof);
-    reportFindings(
-        log, inactiveHeading, assessment.inactiveDueToMissingPrerequisites(), noPreconditionProof);
+    reportInactivePreconditions(
+        log, inactiveHeading, assessment.inactivePreconditionFindings(), noPreconditionProof);
     reportConservativeDrops(log, assessment.potentiallyConservativeCves(), predicted);
   }
 
@@ -77,15 +77,39 @@ final class ElisionSummaryCveReporter {
       return;
     }
     if (findings.isEmpty()) {
-      log.info(
-          heading
-              + (predictedEmptyMessage == null
-                  ? "none matched the available vulnerability mappings"
-                  : predictedEmptyMessage));
+      log.info(heading + (predictedEmptyMessage == null ? "none" : predictedEmptyMessage));
       return;
     }
     log.info(heading);
     findings.forEach(
         finding -> log.info("    " + finding.cveId() + " " + finding.coordinate().toId()));
+  }
+
+  private static void reportInactivePreconditions(
+      final Log log,
+      final String heading,
+      final List<MavenVulnerabilityAssessment.InactivePreconditionFinding> findings,
+      final String predictedEmptyMessage) {
+    if (!log.isInfoEnabled()) {
+      return;
+    }
+    if (findings.isEmpty()) {
+      log.info(heading + (predictedEmptyMessage == null ? "none" : predictedEmptyMessage));
+      return;
+    }
+    log.info(heading);
+    for (final MavenVulnerabilityAssessment.InactivePreconditionFinding inactive : findings) {
+      final String causes =
+          inactive.missingPrerequisites().stream()
+              .map(MavenMissingPrerequisite::displayText)
+              .collect(java.util.stream.Collectors.joining(", "));
+      log.info(
+          "    "
+              + inactive.finding().cveId()
+              + " "
+              + inactive.finding().coordinate().toId()
+              + "; inactive because missing prerequisite dependencies: "
+              + causes);
+    }
   }
 }

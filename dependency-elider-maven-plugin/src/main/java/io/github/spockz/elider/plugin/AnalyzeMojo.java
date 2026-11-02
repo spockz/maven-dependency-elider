@@ -31,6 +31,9 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   /** Maven annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
 
+  /** Maven representation for enabled boolean options. */
+  private static final String DEFAULT_TRUE = "true";
+
   /** Maven project whose resolved artifacts are analyzed. */
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
@@ -90,7 +93,7 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   private boolean conservativeServiceLoaderRoots = true;
 
   /** Allows source-root translation only; it does not waive attribution. */
-  @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_FALSE)
+  @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_TRUE)
   private boolean assumeConventionalJavaSourceLayout;
 
   /** Explicit trace files that supply runtime observations. */

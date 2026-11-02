@@ -79,6 +79,9 @@ public final class ReportMojo extends AbstractMojo {
   private void renderSnapshot(final MavenElisionReportSnapshot snapshot)
       throws MojoFailureException {
     try {
+      getLog()
+          .info(
+              "Elision report JSON snapshot: " + summaryFile.toPath().toAbsolutePath().normalize());
       MavenElisionReportWriter.render(snapshot).forEach(getLog()::info);
     } catch (final IllegalArgumentException exception) {
       throw new MojoFailureException(

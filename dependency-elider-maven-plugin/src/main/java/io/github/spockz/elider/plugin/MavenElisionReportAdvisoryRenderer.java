@@ -4,6 +4,8 @@ package io.github.spockz.elider.plugin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /** Formats report-only package and heuristic advisory rows. */
 final class MavenElisionReportAdvisoryRenderer {
@@ -22,6 +24,22 @@ final class MavenElisionReportAdvisoryRenderer {
     }
     final List<String> lines = new ArrayList<>();
     lines.add("Advisory associations (review only; inventory disposition is not impact proof):");
+    if (!review.heuristicAdvisories().isEmpty()) {
+      lines.add(
+          "    Heuristic candidates are review leads; they do not establish a complete affected"
+              + " class set.");
+      lines.add(
+          "    Add a POM mapping with HIGH only after verifying the source applies to the exact"
+              + " artifact version and the listed classes form the complete affected set.");
+      lines.add(
+          "    The elider still checks the original and trimmed artifacts before publishing VEX."
+              + " Keep unverified candidates review-only.");
+    }
+    if (hasRemovedAdvisory(review)) {
+      lines.add(
+          "    REMOVED means excluded from this project's subsequent classpaths; the cached JAR "
+              + "is not deleted.");
+    }
     review.packageAdvisories().forEach(finding -> renderPackage(finding, lines));
     review.heuristicAdvisories().forEach(finding -> renderHeuristic(finding, lines));
     return List.copyOf(lines);
@@ -49,8 +67,55 @@ final class MavenElisionReportAdvisoryRenderer {
       lines.add("    OSV versions: " + finding.affectedVersions());
     }
     if (!finding.ranges().isEmpty()) {
-      lines.add("    OSV ranges: " + finding.ranges());
+      lines.add(
+          "    OSV ranges: "
+              + finding.ranges().stream()
+                  .map(MavenElisionReportAdvisoryRenderer::renderRange)
+                  .collect(Collectors.joining(" | ")));
     }
+  }
+
+  private static boolean hasRemovedAdvisory(
+      final MavenElisionReportSnapshot.AdvisoryReview review) {
+    return review.packageAdvisories().stream()
+            .anyMatch(
+                finding ->
+                    finding.inventoryDisposition()
+                        == MavenVulnerabilityAssessment.InventoryDisposition.REMOVED)
+        || review.heuristicAdvisories().stream()
+            .anyMatch(
+                finding ->
+                    finding.inventoryDisposition()
+                        == MavenVulnerabilityAssessment.InventoryDisposition.REMOVED);
+  }
+
+  private static String renderRange(final MavenElisionReportSnapshot.AffectedRange range) {
+    final String repository = range.repo() == null ? "" : " for " + range.repo();
+    final String events =
+        range.events().stream()
+            .map(MavenElisionReportAdvisoryRenderer::renderEvents)
+            .collect(Collectors.joining("; "));
+    return range.type()
+        + " range"
+        + repository
+        + ": "
+        + (events.isEmpty() ? "no boundary events" : events);
+  }
+
+  private static String renderEvents(final Map<String, String> event) {
+    return event.entrySet().stream()
+        .map(MavenElisionReportAdvisoryRenderer::renderEvent)
+        .collect(Collectors.joining(", "));
+  }
+
+  private static String renderEvent(final Map.Entry<String, String> event) {
+    return switch (event.getKey()) {
+      case "introduced" -> "introduced at " + event.getValue();
+      case "fixed" -> "fixed at " + event.getValue();
+      case "last_affected" -> "last affected at " + event.getValue();
+      case "limit" -> "limit at " + event.getValue();
+      default -> event.getKey() + " = " + event.getValue();
+    };
   }
 
   private static void renderHeuristic(
@@ -85,8 +150,12 @@ final class MavenElisionReportAdvisoryRenderer {
     lines.add("    Source URL: " + (finding.sourceUrl() == null ? NONE : finding.sourceUrl()));
     lines.add("    Candidate classes: " + finding.candidateClasses());
     lines.add("    Candidate dependencies: " + finding.candidateDependencies());
-    lines.add(
-        "    Verify the source claim and exact original artifact before adding an exact POM"
-            + " mapping; candidates do not establish a complete class set.");
+    final List<String> mappingSnippet = MavenHeuristicPomMappingSnippet.render(finding);
+    if (!mappingSnippet.isEmpty()) {
+      lines.add("    POM mapping template for this candidate:");
+      for (final String snippetLine : mappingSnippet) {
+        lines.add("      " + snippetLine);
+      }
+    }
   }
 }

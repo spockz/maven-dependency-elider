@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ConfidenceLevel;
 import io.github.spockz.elider.model.EvidenceOrigin;
@@ -82,6 +83,10 @@ record MavenElisionReportSnapshot(
     provenAbsentCves = List.copyOf(Objects.requireNonNull(provenAbsentCves, "provenAbsentCves"));
     inactivePreconditionCves =
         List.copyOf(Objects.requireNonNull(inactivePreconditionCves, "inactivePreconditionCves"));
+    require(
+        inactivePreconditionCves.stream()
+            .allMatch(finding -> !finding.missingPrerequisites().isEmpty()),
+        "Inactive precondition report rows must include missing prerequisite details");
     potentiallyConservativeCves =
         List.copyOf(
             Objects.requireNonNull(potentiallyConservativeCves, "potentiallyConservativeCves"));
@@ -669,7 +674,7 @@ record MavenElisionReportSnapshot(
       return new CveFindingGroups(
           cveFindings(assessment.removedComponents()),
           cveFindings(assessment.provenVulnerableCodeAbsent()),
-          cveFindings(assessment.inactiveDueToMissingPrerequisites()),
+          inactiveCveFindings(assessment.inactivePreconditionFindings()),
           assessment.potentiallyConservativeCves().stream()
               .map(
                   finding ->
@@ -688,6 +693,19 @@ record MavenElisionReportSnapshot(
         final List<MavenVulnerabilityAssessment.Finding> findings) {
       return findings.stream()
           .map(finding -> new CveFinding(finding.cveId(), finding.coordinate().toId()))
+          .sorted(Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
+          .toList();
+    }
+
+    private static List<CveFinding> inactiveCveFindings(
+        final List<MavenVulnerabilityAssessment.InactivePreconditionFinding> findings) {
+      return findings.stream()
+          .map(
+              finding ->
+                  new CveFinding(
+                      finding.finding().cveId(),
+                      finding.finding().coordinate().toId(),
+                      finding.missingPrerequisites()))
           .sorted(Comparator.comparing(CveFinding::cveId).thenComparing(CveFinding::coordinate))
           .toList();
     }
@@ -1147,11 +1165,21 @@ record MavenElisionReportSnapshot(
   }
 
   /** Vulnerability finding associated with a dependency coordinate. */
-  record CveFinding(String cveId, String coordinate) {
+  record CveFinding(
+      String cveId,
+      String coordinate,
+      @JsonInclude(JsonInclude.Include.NON_EMPTY)
+          List<MavenMissingPrerequisite> missingPrerequisites) {
     CveFinding {
       requireNonBlank(cveId, "cveId");
       require(cveId.matches("CVE-[0-9]{4}-[0-9]{4,}"), "Invalid CVE format: " + cveId);
       requireNonBlank(coordinate, "coordinate");
+      missingPrerequisites =
+          missingPrerequisites == null ? List.of() : List.copyOf(missingPrerequisites);
+    }
+
+    CveFinding(final String cveId, final String coordinate) {
+      this(cveId, coordinate, List.of());
     }
   }
 

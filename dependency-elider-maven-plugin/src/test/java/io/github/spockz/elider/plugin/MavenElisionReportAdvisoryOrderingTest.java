@@ -105,8 +105,8 @@ final class MavenElisionReportAdvisoryOrderingTest {
         () ->
             assertThat(MavenElisionReportWriter.render(firstSnapshot))
                 .contains(
-                    "    OSV ranges: [AffectedRange[type=GIT, repo=https://example.test/repo,"
-                        + " events=[{aField=first, zField=last}, {introduced=1.0}]]]"),
+                    "    OSV ranges: GIT range for https://example.test/repo: "
+                        + "aField = first, zField = last; introduced at 1.0"),
         () ->
             assertThat(firstSnapshot.advisoryReview().packageAdvisories())
                 .extracting(MavenElisionReportSnapshot.PackageAdvisoryFinding::affectedVersions)
@@ -135,6 +135,34 @@ final class MavenElisionReportAdvisoryOrderingTest {
                     List.of(CANDIDATE_CLASS),
                     List.of(CANDIDATE_CLASS),
                     List.of(CANDIDATE_CLASS)));
+  }
+
+  @Test
+  void rendersEcosystemRangeEventsAsReadableVersionBoundaries() throws IOException {
+    final MavenElisionReportSnapshot.PackageAdvisoryFinding packageFinding =
+        new MavenElisionReportSnapshot.PackageAdvisoryFinding(
+            "GHSA-transcript-httpclient",
+            List.of("CVE-2014-3577"),
+            ArtifactCoordinate.of("org.apache.httpcomponents", "httpclient", "4.3.4").toString(),
+            MAVEN_ECOSYSTEM,
+            "org.apache.httpcomponents:httpclient",
+            List.of(),
+            List.of(
+                new MavenElisionReportSnapshot.AffectedRange(
+                    "ECOSYSTEM",
+                    null,
+                    List.of(Map.of("introduced", "0"), Map.of("fixed", "4.3.5")))),
+            OsvPackageApplicability.Status.APPLICABLE,
+            "Candidate is inside a supported raw OSV range",
+            MavenVulnerabilityAssessment.InventoryDisposition.REMOVED,
+            null);
+    final MavenElisionReportSnapshot populated =
+        snapshot()
+            .withAdvisoryReview(
+                new MavenElisionReportSnapshot.AdvisoryReview(List.of(packageFinding), List.of()));
+
+    assertThat(MavenElisionReportWriter.render(populated))
+        .contains("    OSV ranges: ECOSYSTEM range: introduced at 0; fixed at 4.3.5");
   }
 
   private MavenElisionReportSnapshot.PackageAdvisoryFinding orderedPackageFinding(

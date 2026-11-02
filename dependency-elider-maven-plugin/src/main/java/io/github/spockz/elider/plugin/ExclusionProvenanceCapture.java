@@ -40,13 +40,13 @@ final class ExclusionProvenanceCapture {
       }
     }
     final List<ExclusionRecommendations.Declaration> dependencies =
-        declarations(activeProfiles, project.getDependencies(), index, diagnostics);
+        declarations(activeProfiles, project.getDependencies(), index, diagnostics, "dependency");
     final List<Dependency> managed =
         project.getDependencyManagement() == null
             ? List.of()
             : project.getDependencyManagement().getDependencies();
     final List<ExclusionRecommendations.Declaration> management =
-        declarations(activeProfiles, managed, index, diagnostics);
+        declarations(activeProfiles, managed, index, diagnostics, "dependency-management");
     return new ExclusionRecommendations.Snapshot(
         dependencies, management, activeProfiles, diagnostics);
   }
@@ -77,12 +77,16 @@ final class ExclusionProvenanceCapture {
       final Map<String, List<String>> activeProfiles,
       final List<Dependency> dependencies,
       final Map<LocationKey, List<Match>> index,
-      final List<String> diagnostics) {
+      final List<String> diagnostics,
+      final String section) {
     final List<ExclusionRecommendations.Declaration> result = new ArrayList<>();
     for (int ordinal = 0; ordinal < dependencies.size(); ordinal++) {
       final Dependency dependency = dependencies.get(ordinal);
+      final String dependencyIdentity =
+          value(dependency.getGroupId()) + ":" + value(dependency.getArtifactId());
+      final String rowDescription = section + " row " + ordinal + " (" + dependencyIdentity + ")";
       final ExclusionRecommendations.Origin origin =
-          origin(activeProfiles, dependency.getLocation(""), index, diagnostics);
+          origin(activeProfiles, dependency.getLocation(""), index, diagnostics, rowDescription);
       final ExclusionRecommendations.Reference reference =
           new ExclusionRecommendations.Reference(
               ordinal,
@@ -93,11 +97,18 @@ final class ExclusionProvenanceCapture {
               origin);
       final List<ExclusionRecommendations.Exclusion> exclusions = new ArrayList<>();
       for (final Exclusion exclusion : dependency.getExclusions()) {
+        final String exclusionIdentity =
+            value(exclusion.getGroupId()) + ":" + value(exclusion.getArtifactId());
         exclusions.add(
             new ExclusionRecommendations.Exclusion(
                 new ExclusionRecommendations.Coordinate(
                     value(exclusion.getGroupId()), value(exclusion.getArtifactId())),
-                origin(activeProfiles, exclusion.getLocation(""), index, diagnostics)));
+                origin(
+                    activeProfiles,
+                    exclusion.getLocation(""),
+                    index,
+                    diagnostics,
+                    "exclusion " + exclusionIdentity + " on " + rowDescription)));
       }
       result.add(new ExclusionRecommendations.Declaration(reference, exclusions));
     }
@@ -109,7 +120,8 @@ final class ExclusionProvenanceCapture {
       final Map<String, List<String>> activeProfiles,
       final InputLocation location,
       final Map<LocationKey, List<Match>> index,
-      final List<String> diagnostics) {
+      final List<String> diagnostics,
+      final String rowDescription) {
     final InputSource source = location == null ? null : location.getSource();
     final String modelId = source == null ? "" : value(source.getModelId());
     final String path = source == null ? "" : value(source.getLocation());
@@ -126,11 +138,24 @@ final class ExclusionProvenanceCapture {
             .toList();
     final String kind;
     final String profile;
-    if (matches.size() != 1 || modelId.isEmpty() || line < 1 || column < 1) {
+    if (location == null || source == null || modelId.isEmpty() || line < 1 || column < 1) {
+      kind = "UNKNOWN";
+      profile = "";
+      diagnostics.add(incompleteLocationDiagnostic(rowDescription, modelId, line, column));
+    } else if (matches.size() != 1) {
       kind = "UNKNOWN";
       profile = "";
       diagnostics.add(
-          "Incomplete or ambiguous provenance at " + modelId + ":" + line + ":" + column);
+          "Incomplete or ambiguous provenance at "
+              + modelId
+              + ":"
+              + line
+              + ":"
+              + column
+              + ": "
+              + (matches.isEmpty() ? "no original POM row matches " : "multiple POM rows match ")
+              + rowDescription
+              + (matches.size() > 1 ? " (" + matches.size() + " matches)" : ""));
     } else {
       final Match match = matches.getFirst();
       kind =
@@ -140,6 +165,21 @@ final class ExclusionProvenanceCapture {
       profile = match.profile();
     }
     return new ExclusionRecommendations.Origin(kind, modelId, path, line, column, profile);
+  }
+
+  private static String incompleteLocationDiagnostic(
+      final String rowDescription, final String modelId, final int line, final int column) {
+    if (line < 1 || column < 1) {
+      return "Incomplete or ambiguous provenance: Maven did not provide a source location for "
+          + rowDescription
+          + (modelId.isBlank() ? "" : " in model " + modelId);
+    }
+    return "Incomplete or ambiguous provenance: Maven did not provide a source identity for "
+        + rowDescription
+        + " at line "
+        + line
+        + ", column "
+        + column;
   }
 
   // WHY: Locality depends on project identity, not coordinate equality.

@@ -109,11 +109,13 @@ Process exit status: 0
 [INFO]           </vulnerabilityMappings>
 [INFO]         </configuration>
 [INFO]   Repeated POM exclusions (advisory only):
-[INFO]   Exclusion provenance incomplete: 1534 issue(s); full details are saved in the report
-[INFO]     Incomplete or ambiguous provenance at :-1:-1
-[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:224:19
-[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:229:22
-[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
+[INFO]     none found across effective dependency paths
+[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
@@ -215,7 +217,7 @@ Or configure the execution permanently in `pom.xml`:
 Packaging is modeled only for maven-shade-plugin 3.6.0 with one `package`/`shade` execution and one built-in manifest transformer whose `mainClass` is resolved. The inherited signature-only resource exclusions in the examples are allowed. Other Shade filters, transformers, inputs, dependencies, source-JAR properties, or custom maven-jar-plugin configuration suppress proof.
 If the requested lifecycle reaches `test`, the guard also requires the standard Maven Surefire Plugin 3.5.2 `default-test` execution and explicit `-DskipTests=true`. Test source compilation remains enabled and its classes stay in the inventory; baseline fixture runs do not skip their tests.
 | `elide.sourceRootsComplete` | `false` | Set `true` only if all production and generated sources exist before `INITIALIZE` with no downstream generation. When `false`, all compile-classpath JARs and classes are conservatively retained. |
-| `elide.assumeConventionalJavaSourceLayout` | `false` | Allows only the documented conventional Java source-root translation when exact-path lookup does not locate a structured source claim. It never waives complete attribution or byte-for-byte artifact reproduction. The assumption is saved in proof/report provenance; `report` uses the value from the last successful elision snapshot. |
+| `elide.assumeConventionalJavaSourceLayout` | `true` | Allows the documented conventional Java source-root translation when exact-path lookup does not locate a structured source claim. Set `false` to require an exact archive path. It never waives complete attribution or byte-for-byte artifact reproduction. The assumption is saved in proof/report provenance; `report` uses the value from the last successful elision snapshot. |
 | `elide.productionClassesComplete` | `false` | Asserts that production output contains all compiled production classes. With the Maven extension enabled, this rebinds the default `elide` execution from `initialize` to `process-classes`; the output directory defaults to `${project.build.outputDirectory}` and must contain at least one `.class` file. This assertion is separate from trusted precondition capture: direct CLI goals and missing/other phases keep conservative provider-generation guards. It cannot be combined with `elide.sourceRootsComplete=true`. After compile, bytecode references are unioned with attributed references from compile source roots to retain dependencies used only through inlined constants. |
 | `elide.trimRoots` | *(none)* | Comma-separated additional root classes (e.g. `com.example.AppRoot`). |
 | `elide.trimSkipArtifacts` | *(none)* | Comma-separated coordinates of retained JARs to keep byte-identical. Their classes serve as roots for sibling closure. |

@@ -225,7 +225,7 @@ For complete academic citations and analysis, see the [Project Rationale](depend
 Removing an artifact or class removes package bloat, but a formal VEX statement requires precise symbol-to-CVE mapping and proof tied to the resulting artifacts:
 
 * Validated effective-POM `HIGH` assertions and a separate live-verified structured CNA capability can enter omitted-code proof. POM `LOW`/`MEDIUM`, cached or heuristic `HIGH`, and unresolved structured candidates remain review evidence and cannot produce VEX or a proven-absent/inactive classification. Automatic structured proof requires one exact CNA product entry and concrete Maven version for which current OSV and CNA claims both say affected; the exact Maven `sources` classifier must then reproduce the complete class inventory of the exact ordinary JAR byte-for-byte using the supported pinned Oracle GraalVM JDK 21.0.12+7.1 compiler image. Unsupported languages/compiler configurations, ambiguous routines, missing source, or incomplete mappings remain review-only. The tool trusts the CNA's declared affected files/routines; it does not independently verify the vulnerability or that the CNA declaration is complete. A project owner can verify an unresolved candidate and declare an exact POM mapping, which still must pass physical proof. Exact-class precondition evidence uses the separate complete-inventory proof. See [ADR-0006](docs/adr/0006-dual-source-vulnerability-advisory-ingestion-from-cvelist-v5-and-osv-maven.md), [ADR-0008](docs/adr/0008-precondition-gated-vex-attestations.md), and [RQ-0013](docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
-* `-Delide.assumeConventionalJavaSourceLayout=true` adds the documented `src/main/java/` path-root translation and records that assumption in proof provenance and the historical report. With the option disabled, only an exact path in the sources archive is accepted. Either setting still requires unique, complete source-to-class reproduction; the flag does not establish completeness or bypass physical omission checks. `dependency-elider:report` replays the saved assumption and verified provenance without revalidating current artifacts. A basename or `SourceFile` match alone is not a complete class mapping.
+* `elide.assumeConventionalJavaSourceLayout` defaults to `true`, adding the documented `src/main/java/` path-root translation and recording that assumption in proof provenance and the historical report. Set it to `false` to require an exact path in the sources archive. Either setting still requires unique, complete source-to-class reproduction; the flag does not establish completeness or bypass physical omission checks. `dependency-elider:report` replays the saved assumption and verified provenance without revalidating current artifacts. A basename or `SourceFile` match alone is not a complete class mapping.
 * The saved report also retains package-only and heuristic advisory rows separately from proof classifications. Rows identify the exact assessed Maven coordinate, preserve OSV ownership and raw claim data, and state whether the version is applicable, not applicable, or unresolved. Removed/trimmed/unchanged are inventory facts, not mitigation claims; no synthetic CVE is created for an OSV record without a CVE alias.
 * Precondition VEX requires an exact prerequisite class as well as its coordinate, plus explicit `-Delide.preconditionClassPathComplete=true` confirmation that the declared Maven build inventory is complete. The opt-in cannot override detected downstream generators: both `compile` and `testCompile` must explicitly resolve `maven.compiler.proc=none` under a known Maven Compiler Plugin version from 3.13 through 3.x, with Java release or source/target at least 11. Processor paths, processor lists, compiler arguments other than the exact diagnostic-only `-Xlint:all`, custom compiler/executable modes, compiler plugin dependencies, and missing, unresolved, or conflicting settings leave proof incomplete. Unmodeled plugin executions before or after `INITIALIZE`, configured clean/site executions with unmodeled ordering, Enforcer executions at or after inventory capture or with unknown phases, filtered resources, resource plugin dependencies, unsupported packaging/extensions, and custom compiler/resource roots also suppress proof. Proof supports `jar` and `pom` packaging; `war` and `maven-plugin` packaging remain incomplete because their provider-generation paths are not modeled. The inventory includes `<build.directory>/generated-sources/annotations` and `<build.directory>/generated-test-sources/test-annotations`; custom generated-source directories suppress proof. Pre-capture Enforcer rules are limited to verified built-ins, without custom implementation attributes or plugin dependencies. Interface assertions are also rejected because javac can emit an additional helper class for them. The Maven request must contain one default-lifecycle goal, optionally preceded by `clean`; direct plugin goals and multiple lifecycle segments suppress proof. The publisher revalidates provider membership and digests before commit; serializers recheck the affected component path and digest. Unchanged plugin-owned OpenVEX is removed when no qualifying evidence remains. Modified or unowned output is preserved. With `elide.trimJars=false`, SBOM/VEX publication and stale VEX cleanup do not run. The claim does not cover providers added by later packaging or deployment runtime mechanisms. See [RQ-0013](docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
 The guard models packaging only for maven-shade-plugin 3.6.0 with one `package`/`shade` execution and a built-in manifest transformer with a resolved main class. Any request that reaches a modeled JAR package execution must include `clean` first so the standard JAR plugin cannot reuse an older archive; Shade packaging is covered as an additional package path. Clean skip/exclusion/failure overrides and deferred clean modes suppress proof. It accepts only the inherited signature-resource exclusions shown in the examples; custom Shade filters, transformers, inputs, dependencies, source-JAR properties, and custom JAR plugin configuration suppress proof.
@@ -402,9 +402,12 @@ The transcripts below come from configured Maven invocations. Run `make update-t
 
 The pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md) supplies two package-advisory contexts and a commit-derived class candidate for stable examples. These package and heuristic rows remain review-only; only a validated effective-POM `HIGH` assertion or the separate live-verified structured CNA capability can enter physical proof.
 
-The excerpts below show the expected report categories for the checked-in fixtures. The safe-class fixture uses the explicit complete-inventory opt-in and exact-class mapping required for its precondition finding.
+Read each report from the elision totals through its CVE findings and advisory review. The examples show different evidence outcomes: review-only candidates do not establish impact, omitted-code proof can support mitigation, and a complete-inventory precondition proof can show why a retained library is inactive for a CVE.
 
-example-basic-app
+#### example-basic-app
+
+Look at the dropped-artifact and trimmed-class totals, then the advisory association for HttpClient. This example shows that cached package and source candidates remain review-only: they do not create a CVE classification or VEX. The dependency graph is abbreviated, with the digest identifying omitted rows.
+
 <!-- BEGIN:transcript:report-basic-app -->
 
 ```text
@@ -422,12 +425,13 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-basic-app ---
+[INFO] Elision report JSON snapshot: <PROJECT_ROOT>/examples/example-basic-app/target/dependency-elider-report.json
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Policy: retained=[commons-io:commons-io::jar:, org.apache.commons:commons-lang3::jar:], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
-[INFO] Conventional Java source layout assumption saved for this run: false
+[INFO] Conventional Java source layout assumption saved for this run: true
 [INFO] Whole artifacts dropped: 2 (original JAR file bytes: 942.11 KiB)
 [INFO] Program classes removed with dropped JARs: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 2
@@ -436,16 +440,20 @@ Process exit status: 0
 [INFO]   - org.apache.httpcomponents:httpclient:jar:4.3.4 (compile): 576.18 KiB original JAR, 420 class entries, 1.11 MiB
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
 [INFO]   - org.apache.commons:commons-compress:jar:1.28.0 (compile): 535 classes, 1.93 MiB
-[INFO] Advisories associated with removed components: none matched the available vulnerability mappings
-[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
-[INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
+[INFO] Advisories associated with removed components: none
+[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none
+[INFO] CVEs inactive due to unmet prerequisite dependencies: none
 [INFO] Potentially conservative CVE exclusions: none detected
 [INFO] Advisory associations (review only; inventory disposition is not impact proof):
+[INFO]     Heuristic candidates are review leads; they do not establish a complete affected class set.
+[INFO]     Add a POM mapping with HIGH only after verifying the source applies to the exact artifact version and the listed classes form the complete affected set.
+[INFO]     The elider still checks the original and trimmed artifacts before publishing VEX. Keep unverified candidates review-only.
+[INFO]     REMOVED means excluded from this project's subsequent classpaths; the cached JAR is not deleted.
 [INFO]   - GHSA-transcript-httpclient org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
 [INFO]     Origin: OSV Maven / org.apache.httpcomponents:httpclient
 [INFO]     Aliases: [CVE-2014-3577]
 [INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
-[INFO]     OSV ranges: [AffectedRange[type=ECOSYSTEM, repo=null, events=[{introduced=0}, {fixed=4.3.5}]]]
+[INFO]     OSV ranges: ECOSYSTEM range: introduced at 0; fixed at 4.3.5
 [INFO]   - GHSA-transcript-httpclient / CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
 [INFO]     Heuristic origin: REFERENCE_URL / GHSA-transcript-httpclient#reference:0 (MEDIUM)
 [INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
@@ -453,11 +461,28 @@ Process exit status: 0
 [INFO]     Source URL: https://github.com/apache/httpcomponents-client/commit/51cc67567765d67f878f0dcef61b5ded454d3122
 [INFO]     Candidate classes: [org.apache.http.conn.ssl.AbstractVerifier]
 [INFO]     Candidate dependencies: [org.apache.httpcomponents:httpclient]
-[INFO]     Verify the source claim and exact original artifact before adding an exact POM mapping; candidates do not establish a complete class set.
+[INFO]     POM mapping template for this candidate:
+[INFO]       <vulnerabilityMappings>
+[INFO]         <vulnerabilityMapping>
+[INFO]           <cveId>CVE-2014-3577</cveId>
+[INFO]           <groupId>org.apache.httpcomponents</groupId>
+[INFO]           <artifactId>httpclient</artifactId>
+[INFO]           <versionRangeSpec>[4.3.4]</versionRangeSpec>
+[INFO]           <vulnerableClasses>
+[INFO]             <vulnerableClass>org.apache.http.conn.ssl.AbstractVerifier</vulnerableClass>
+[INFO]           </vulnerableClasses>
+[INFO]           <sourceAdvisoryUrl>https://github.com/apache/httpcomponents-client/commit/51cc67567765d67f878f0dcef61b5ded454d3122</sourceAdvisoryUrl>
+[INFO]           <confidenceLevel>HIGH</confidenceLevel>
+[INFO]         </vulnerabilityMapping>
+[INFO]       </vulnerabilityMappings>
 [INFO]   Repeated POM exclusions (advisory only):
-[INFO]   Exclusion provenance incomplete: 12 issue(s); full details are saved in the report
-[INFO]     Incomplete or ambiguous provenance at :-1:-1
-[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
+[INFO]     none found across effective dependency paths
+[INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
@@ -472,7 +497,10 @@ Process exit status: 0
 
 <!-- END:transcript:report-basic-app -->
 
-example-spring-boot-app
+#### example-spring-boot-app
+
+Look at the `Potentially conservative CVE exclusions` finding for Jackson Databind. A ServiceLoader root prevents a safe omission proof, so the report explains what remained and gives a POM override for users who can certify that the root does not apply. This demonstrates fail-closed retention in a larger Spring Boot dependency graph.
+
 <!-- BEGIN:transcript:report-spring-boot-app -->
 
 ```text
@@ -490,12 +518,13 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-spring-boot-app ---
+[INFO] Elision report JSON snapshot: <PROJECT_ROOT>/examples/example-spring-boot-app/target/dependency-elider-report.json
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
-[INFO] Conventional Java source layout assumption saved for this run: false
+[INFO] Conventional Java source layout assumption saved for this run: true
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
@@ -517,9 +546,9 @@ Process exit status: 0
 [INFO]   - org.springframework:spring-webmvc:jar:6.1.14 (compile): 146 classes, 524.46 KiB
 [INFO]   - org.webjars:webjars-locator-core:jar:0.58 (runtime): 1 classes, 10.66 KiB
 [INFO]   - org.yaml:snakeyaml:jar:2.2 (compile): 0 classes, 2.65 KiB
-[INFO] Advisories associated with removed components: none matched the available vulnerability mappings
-[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
-[INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
+[INFO] Advisories associated with removed components: none
+[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none
+[INFO] CVEs inactive due to unmet prerequisite dependencies: none
 [INFO] Potentially conservative CVE exclusions:
 [INFO]   - CVE-2026-68494 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2
 [INFO]     Reason: Vulnerable code was retained due to conservative ServiceLoader SPI root com.fasterxml.jackson.core.ObjectCodec, com.fasterxml.jackson.databind.ObjectMapper without positive proof of use in application bytecode.
@@ -528,11 +557,13 @@ Process exit status: 0
 [INFO]         <conservativeServiceLoaderRoots>false</conservativeServiceLoaderRoots>
 [INFO]       </configuration>
 [INFO]   Repeated POM exclusions (advisory only):
-[INFO]   Exclusion provenance incomplete: 1529 issue(s); full details are saved in the report
-[INFO]     Incomplete or ambiguous provenance at :-1:-1
-[INFO]     Incomplete or ambiguous provenance at com.fasterxml.jackson:jackson-bom:2.18.2:83:19
-[INFO]     Incomplete or ambiguous provenance at com.fasterxml.jackson:jackson-bom:2.18.2:88:19
-[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
+[INFO]     none found across effective dependency paths
+[INFO]   Exclusion provenance incomplete for 1529 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n7} [RETAINED, CLASS_TRIMMED]
@@ -547,7 +578,10 @@ Process exit status: 0
 
 <!-- END:transcript:report-spring-boot-app -->
 
-example-cve-unused-app
+#### example-cve-unused-app
+
+Look at the `Mitigated CVEs` row for `CVE-2022-42889`. An explicit `HIGH` POM mapping identifies `StringLookup`; trimming removes that class from Commons Text, allowing the elider to prove the mapped code absent and publish VEX. The cached advisory context remains review information and is not the source of proof authority.
+
 <!-- BEGIN:transcript:report-cve-unused-app -->
 
 ```text
@@ -565,12 +599,13 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-cve-unused-app ---
+[INFO] Elision report JSON snapshot: <PROJECT_ROOT>/examples/example-cve-unused-app/target/dependency-elider-report.json
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
-[INFO] Conventional Java source layout assumption saved for this run: false
+[INFO] Conventional Java source layout assumption saved for this run: true
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
@@ -582,23 +617,25 @@ Process exit status: 0
 [INFO]   - org.codehaus.janino:commons-compiler:jar:3.1.12 (compile): 51 classes, 96.78 KiB
 [INFO]   - org.codehaus.janino:janino:jar:3.1.12 (compile): 52 classes, 330.49 KiB
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
-[INFO] Advisories associated with removed components: none matched the available vulnerability mappings
+[INFO] Advisories associated with removed components: none
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming):
 [INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
-[INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available vulnerability mappings
+[INFO] CVEs inactive due to unmet prerequisite dependencies: none
 [INFO] Potentially conservative CVE exclusions: none detected
 [INFO] Advisory associations (review only; inventory disposition is not impact proof):
 [INFO]   - GHSA-transcript-commons-text org.apache.commons:commons-text:jar:1.9 (compile) [RETAINED_AND_TRIMMED]
 [INFO]     Origin: OSV Maven / org.apache.commons:commons-text
 [INFO]     Aliases: [CVE-2022-42889]
 [INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
-[INFO]     OSV ranges: [AffectedRange[type=ECOSYSTEM, repo=null, events=[{introduced=1.5}, {fixed=1.10.0}]]]
+[INFO]     OSV ranges: ECOSYSTEM range: introduced at 1.5; fixed at 1.10.0
 [INFO]   Repeated POM exclusions (advisory only):
-[INFO]   Exclusion provenance incomplete: 1534 issue(s); full details are saved in the report
-[INFO]     Incomplete or ambiguous provenance at :-1:-1
-[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:224:19
-[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:229:22
-[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
+[INFO]     none found across effective dependency paths
+[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n3} [RETAINED]
@@ -613,7 +650,10 @@ Process exit status: 0
 
 <!-- END:transcript:report-cve-unused-app -->
 
-example-cve-safe-class-app
+#### example-cve-safe-class-app
+
+Look at the inactive precondition row for `CVE-2025-11226`. Logback remains in the application, but the opted-in complete inventory proves that its required Janino dependency and `ClassBodyEvaluator` class are absent. This is a precondition VEX result, distinct from proving vulnerable code was trimmed out of the affected artifact.
+
 <!-- BEGIN:transcript:report-cve-safe-class-app -->
 
 ```text
@@ -631,29 +671,32 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-cve-safe-class-app ---
+[INFO] Elision report JSON snapshot: <PROJECT_ROOT>/examples/example-cve-safe-class-app/target/dependency-elider-report.json
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
-[INFO] Conventional Java source layout assumption saved for this run: false
+[INFO] Conventional Java source layout assumption saved for this run: true
 [INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
 [INFO] Applied bans: none
 [INFO] Program classes pruned from retained JARs: 5 (uncompressed omitted .class payload bytes: 6.38 KiB; excludes module descriptors and archive metadata)
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
-[INFO] Advisories associated with removed components: none matched the available vulnerability mappings
-[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available vulnerability mappings
+[INFO] Advisories associated with removed components: none
+[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none
 [INFO] CVEs inactive due to unmet prerequisite dependencies:
-[INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18
+[INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18; inactive because missing prerequisite dependencies: org.codehaus.janino:janino (class org.codehaus.janino.ClassBodyEvaluator)
 [INFO] Potentially conservative CVE exclusions: none detected
 [INFO]   Repeated POM exclusions (advisory only):
-[INFO]   Exclusion provenance incomplete: 1534 issue(s); full details are saved in the report
-[INFO]     Incomplete or ambiguous provenance at :-1:-1
-[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:224:19
-[INFO]     Incomplete or ambiguous provenance at org.springframework.boot:spring-boot-dependencies:3.5.0:229:22
-[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
+[INFO]     none found across effective dependency paths
+[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n1} [RETAINED]
@@ -713,9 +756,13 @@ Process exit status: 0
 [INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: no precondition proof available
 [INFO]   Vulnerability mappings that remain unverified by the in-memory Analyze prediction: none detected
 [INFO]   Repeated POM exclusions (advisory only):
-[INFO]   Exclusion provenance incomplete: 12 issue(s); full details are saved in the report
-[INFO]     Incomplete or ambiguous provenance at :-1:-1
-[INFO]   Review only: Maven path exclusions affect dependency collection and mediation; a global post-resolution ban affects project output and may remove content needed by consumers.
+[INFO]     none found across effective dependency paths
+[INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-basic-app-class-usage.json
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------

@@ -68,6 +68,14 @@ final class MavenElisionReportPayloadValidator {
   /** Exact fields for CVE finding rows. */
   private static final Set<String> CVE_FIELDS = Set.of("cveId", "coordinate");
 
+  /** Inactive precondition rows also retain their proof-backed missing requirements. */
+  private static final Set<String> INACTIVE_CVE_FIELDS =
+      Set.of("cveId", "coordinate", "missingPrerequisites");
+
+  /** Exact fields retained for each missing precondition. */
+  private static final Set<String> MISSING_PREREQUISITE_FIELDS =
+      Set.of("dependency", "requiredClass");
+
   /** Exact fields for conservative CVE finding rows. */
   private static final Set<String> CONSERVATIVE_CVE_FIELDS =
       Set.of("cveId", "coordinate", "reason", "pomOverrideSnippet");
@@ -134,7 +142,7 @@ final class MavenElisionReportPayloadValidator {
     validateRows(payload.get("trimmedArtifacts"), TRIMMED_FIELDS, TRIMMED_METRICS);
     validateCveRows(payload.get("removedCveComponents"));
     validateCveRows(payload.get("provenAbsentCves"));
-    validateCveRows(payload.get("inactivePreconditionCves"));
+    validateInactiveCveRows(payload.get("inactivePreconditionCves"));
     validateConservativeCveRows(payload.get("potentiallyConservativeCves"));
     validateLayoutFlag(payload.get("assumeConventionalJavaSourceLayout"));
     validatePolicy(payload.get("policy"));
@@ -468,15 +476,33 @@ final class MavenElisionReportPayloadValidator {
       throw new IOException("Elision report CVE rows must be arrays");
     }
     for (final JsonNode row : rows) {
-      validateCveRow(row);
+      validateCveRow(row, CVE_FIELDS);
     }
   }
 
-  private static void validateCveRow(final JsonNode row) throws IOException {
+  private static void validateInactiveCveRows(final JsonNode rows) throws IOException {
+    if (rows == null || !rows.isArray()) {
+      throw new IOException("Elision report inactivePreconditionCves rows must be arrays");
+    }
+    for (final JsonNode row : rows) {
+      validateCveRow(row, INACTIVE_CVE_FIELDS);
+      final JsonNode prerequisites = row.get("missingPrerequisites");
+      if (prerequisites == null || !prerequisites.isArray() || prerequisites.isEmpty()) {
+        throw new IOException(
+            "Elision report inactive CVE rows must include missing prerequisite details");
+      }
+      for (final JsonNode prerequisite : prerequisites) {
+        validateMissingPrerequisite(prerequisite);
+      }
+    }
+  }
+
+  private static void validateCveRow(final JsonNode row, final Set<String> expectedFields)
+      throws IOException {
     if (!row.isObject()) {
       throw new IOException("Elision report CVE rows must be objects");
     }
-    if (!fieldNames(row).equals(CVE_FIELDS)) {
+    if (!fieldNames(row).equals(expectedFields)) {
       throw new IOException(
           "Elision report CVE row fields do not match schema version "
               + MavenElisionReportSnapshot.SCHEMA_VERSION
@@ -484,6 +510,27 @@ final class MavenElisionReportPayloadValidator {
     }
     validateCveId(row.get("cveId"));
     validateCoordinateField(row.get("coordinate"));
+  }
+
+  private static void validateMissingPrerequisite(final JsonNode prerequisite) throws IOException {
+    if (!prerequisite.isObject() || !fieldNames(prerequisite).equals(MISSING_PREREQUISITE_FIELDS)) {
+      throw new IOException("Elision report missing prerequisite fields do not match schema");
+    }
+    final JsonNode dependency = prerequisite.get("dependency");
+    final JsonNode requiredClass = prerequisite.get("requiredClass");
+    if (dependency == null || !dependency.isTextual() || dependency.textValue().isBlank()) {
+      throw new IOException("Elision report missing prerequisite dependency must be nonblank text");
+    }
+    if (requiredClass == null
+        || !requiredClass.isTextual()
+        || requiredClass.textValue().isBlank()) {
+      throw new IOException("Elision report missing prerequisite class must be nonblank text");
+    }
+    try {
+      new MavenMissingPrerequisite(dependency.textValue(), requiredClass.textValue());
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException("Elision report missing prerequisite is invalid", exception);
+    }
   }
 
   private static void validateCveId(final JsonNode cveId) throws IOException {

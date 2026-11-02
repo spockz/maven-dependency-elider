@@ -34,6 +34,9 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   /** Maven's annotation representation for disabled boolean options. */
   private static final String DEFAULT_FALSE = "false";
 
+  /** Maven representation for enabled boolean options. */
+  private static final String DEFAULT_TRUE = "true";
+
   /** Maven project whose artifact views are pruned. */
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
@@ -90,7 +93,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   private boolean conservativeServiceLoaderRoots = true;
 
   /** Allows source-root translation only; it does not waive attribution. */
-  @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_FALSE)
+  @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_TRUE)
   private boolean assumeConventionalJavaSourceLayout;
 
   /** Explicit runtime evidence used when the goal is active. */

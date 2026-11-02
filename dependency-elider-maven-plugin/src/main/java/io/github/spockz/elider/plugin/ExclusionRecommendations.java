@@ -193,16 +193,42 @@ final class ExclusionRecommendations {
         && !profiles.getOrDefault(origin.modelId(), List.of()).contains(origin.profileId())) {
       throw new IllegalArgumentException("Origin profile is not active for its source model");
     }
-    if ("UNKNOWN".equals(origin.kind())
-        && !diagnostics.contains(
-            "Incomplete or ambiguous provenance at "
-                + origin.modelId()
-                + ":"
-                + origin.line()
-                + ":"
-                + origin.column())) {
+    if ("UNKNOWN".equals(origin.kind()) && !hasUnknownOriginDiagnostic(origin, diagnostics)) {
       throw new IllegalArgumentException("Unknown origin requires a provenance diagnostic");
     }
+  }
+
+  private static boolean hasUnknownOriginDiagnostic(
+      final Origin origin, final List<String> diagnostics) {
+    final String legacyLocation =
+        "Incomplete or ambiguous provenance at "
+            + origin.modelId()
+            + ":"
+            + origin.line()
+            + ":"
+            + origin.column();
+    if (origin.line() < 1 || origin.column() < 1) {
+      return diagnostics.stream()
+          .anyMatch(
+              diagnostic ->
+                  diagnostic.startsWith(
+                          "Incomplete or ambiguous provenance: Maven did not provide a source"
+                              + " location for ")
+                      || diagnostic.equals(legacyLocation));
+    }
+    if (origin.modelId().isBlank()) {
+      return diagnostics.stream()
+          .anyMatch(
+              diagnostic ->
+                  diagnostic.startsWith(
+                          "Incomplete or ambiguous provenance: Maven did not provide a source"
+                              + " identity for ")
+                      || diagnostic.equals(legacyLocation));
+    }
+    return diagnostics.stream()
+        .anyMatch(
+            diagnostic ->
+                diagnostic.startsWith(legacyLocation + ":") || diagnostic.equals(legacyLocation));
   }
 
   record Observation(Reference declaration, List<Origin> exclusionOrigins) {

@@ -160,10 +160,9 @@ final class MavenElisionReportWriterTest {
                           "Program classes pruned from retained JARs: 4 (uncompressed omitted"
                               + " .class payload bytes: "
                               + "3.02 KiB; excludes module descriptors and archive metadata)",
-                          "Advisories associated with removed components: "
-                              + "none matched the available vulnerability mappings",
-                          "Mitigated CVEs (vulnerable code pruned by trimming): none matched the"
-                              + " available vulnerability mappings",
+                          "Advisories associated with removed components: none",
+                          "Mitigated CVEs (vulnerable code pruned by trimming): none",
+                          "CVEs inactive due to unmet prerequisite dependencies: none",
                           "Mediated TEST dependency graph (captured and saved by the elide goal):"),
               () ->
                   assertThat(rendered)
@@ -228,10 +227,9 @@ final class MavenElisionReportWriterTest {
             "Program classes pruned from retained JARs: 0 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "0 B; excludes module descriptors and archive metadata)",
-            "Advisories associated with removed components: "
-                + "none matched the available vulnerability mappings",
-            "Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
-                + " vulnerability mappings");
+            "Advisories associated with removed components: none",
+            "Mitigated CVEs (vulnerable code pruned by trimming): none",
+            "CVEs inactive due to unmet prerequisite dependencies: none");
   }
 
   @Test
@@ -277,7 +275,12 @@ final class MavenElisionReportWriterTest {
                         "CVE-2025-11226", "org.example:trimmed:jar:2.0")),
                 List.of(
                     new MavenElisionReportSnapshot.CveFinding(
-                        "CVE-2025-11227", "ch.qos.logback:logback-core:jar:1.5.15")),
+                        "CVE-2025-11227",
+                        "ch.qos.logback:logback-core:jar:1.5.15",
+                        List.of(
+                            new MavenMissingPrerequisite(
+                                "org.codehaus.janino:janino",
+                                "org.codehaus.janino.ClassBodyEvaluator")))),
                 List.of(conservative),
                 base.mediatedGraph(),
                 base.policy())
@@ -299,7 +302,11 @@ final class MavenElisionReportWriterTest {
     assertThat(reread.inactivePreconditionCves())
         .containsExactly(
             new MavenElisionReportSnapshot.CveFinding(
-                "CVE-2025-11227", "ch.qos.logback:logback-core:jar:1.5.15"));
+                "CVE-2025-11227",
+                "ch.qos.logback:logback-core:jar:1.5.15",
+                List.of(
+                    new MavenMissingPrerequisite(
+                        "org.codehaus.janino:janino", "org.codehaus.janino.ClassBodyEvaluator"))));
     assertThat(reread.potentiallyConservativeCves()).containsExactly(conservative);
     assertThat(MavenElisionReportWriter.render(reread))
         .contains(
@@ -308,7 +315,9 @@ final class MavenElisionReportWriterTest {
             "Mitigated CVEs (vulnerable code pruned by trimming):",
             "  - CVE-2025-11226 org.example:trimmed:jar:2.0",
             "CVEs inactive due to unmet prerequisite dependencies:",
-            "  - CVE-2025-11227 ch.qos.logback:logback-core:jar:1.5.15",
+            "  - CVE-2025-11227 ch.qos.logback:logback-core:jar:1.5.15; inactive because"
+                + " missing prerequisite dependencies: org.codehaus.janino:janino (class"
+                + " org.codehaus.janino.ClassBodyEvaluator)",
             "Potentially conservative CVE exclusions:",
             "  - CVE-2026-68494 com.fasterxml.jackson.core:jackson-core:jar:2.14.3",
             "    Reason: Advisory mapping requires multiple symbols, but class(es)"

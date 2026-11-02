@@ -82,4 +82,4 @@ Rows marked VERIFIED describe the reviewed and integrated implementation. Broade
 3. Extend the publication transaction and failure/offline regressions, then update applicable user documentation with implementation evidence.
 4. Review every matrix row against the actual integrated state. Link a versioned closeout containing implemented, missing, unverified and explicitly user-deferred requirements.
 
-This package does not complete typed WP-VEX-02's automatic complete source-attribution matrix or its unrun standalone example acceptance. The default-false conventional-layout assumption, shared descriptive confidence enum, effective-POM proof authority and ADR-0008 inventory remain unchanged.
+This package does not complete typed WP-VEX-02's automatic complete source-attribution matrix or its unrun standalone example acceptance. The default-true conventional-layout assumption, shared descriptive confidence enum, effective-POM proof authority and ADR-0008 inventory remain unchanged. The default supplies only the documented source-root translation and does not waive complete attribution or physical proof.

@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 /** Renders persisted elision summary rows as review text. */
 @SuppressWarnings({
@@ -90,9 +91,7 @@ final class MavenElisionReportRenderer {
               + formatBytes(artifact.uncompressedProgramClassBytesPruned()));
     }
     if (snapshot.removedCveComponents().isEmpty()) {
-      lines.add(
-          "Advisories associated with removed components: "
-              + "none matched the available vulnerability mappings");
+      lines.add("Advisories associated with removed components: none");
     } else {
       lines.add("Advisories associated with removed components:");
       for (final MavenElisionReportSnapshot.CveFinding finding : snapshot.removedCveComponents()) {
@@ -100,9 +99,7 @@ final class MavenElisionReportRenderer {
       }
     }
     if (snapshot.provenAbsentCves().isEmpty()) {
-      lines.add(
-          "Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
-              + " vulnerability mappings");
+      lines.add("Mitigated CVEs (vulnerable code pruned by trimming): none");
     } else {
       lines.add("Mitigated CVEs (vulnerable code pruned by trimming):");
       for (final MavenElisionReportSnapshot.CveFinding finding : snapshot.provenAbsentCves()) {
@@ -110,14 +107,22 @@ final class MavenElisionReportRenderer {
       }
     }
     if (snapshot.inactivePreconditionCves().isEmpty()) {
-      lines.add(
-          "CVEs inactive due to unmet prerequisite dependencies: "
-              + "none matched the available vulnerability mappings");
+      lines.add("CVEs inactive due to unmet prerequisite dependencies: none");
     } else {
       lines.add("CVEs inactive due to unmet prerequisite dependencies:");
       for (final MavenElisionReportSnapshot.CveFinding finding :
           snapshot.inactivePreconditionCves()) {
-        lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
+        final String causes =
+            finding.missingPrerequisites().stream()
+                .map(MavenMissingPrerequisite::displayText)
+                .collect(Collectors.joining(", "));
+        lines.add(
+            BULLET
+                + finding.cveId()
+                + " "
+                + finding.coordinate()
+                + "; inactive because missing prerequisite dependencies: "
+                + causes);
       }
     }
     if (snapshot.potentiallyConservativeCves().isEmpty()) {

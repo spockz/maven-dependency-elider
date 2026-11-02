@@ -512,6 +512,23 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
+  void rejectsInactiveCveRowsWithoutMissingPrerequisiteDetails() throws IOException {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload
+        .withArray("inactivePreconditionCves")
+        .addObject()
+        .put("cveId", "CVE-2026-10001")
+        .put("coordinate", "example:affected:jar:1.0")
+        .putArray("missingPrerequisites");
+    final Path previous = temporaryDirectory.resolve("missing-inactive-cause.json");
+    JSON.writeValue(previous.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(previous))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("must include missing prerequisite details");
+  }
+
+  @Test
   void rejectsMalformedCveId() throws IOException {
     final ObjectNode payload = currentReportShapeWithDroppedRow();
     payload

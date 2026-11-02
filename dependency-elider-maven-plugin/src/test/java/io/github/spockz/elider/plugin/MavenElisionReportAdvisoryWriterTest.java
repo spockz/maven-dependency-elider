@@ -73,12 +73,20 @@ final class MavenElisionReportAdvisoryWriterTest {
                 .contains(
                     "Advisory associations (review only; inventory disposition is not impact"
                         + " proof):",
+                    "    Heuristic candidates are review leads; they do not establish a complete"
+                        + " affected class set.",
+                    "    Add a POM mapping with HIGH only after verifying the source applies to"
+                        + " the exact artifact version and the listed classes form the complete"
+                        + " affected set.",
+                    "    The elider still checks the original and trimmed artifacts before"
+                        + " publishing VEX. Keep unverified candidates review-only.",
+                    "    REMOVED means excluded from this project's subsequent classpaths; the"
+                        + " cached JAR is not deleted.",
                     "  - GHSA-package-only org.example:removed:jar:1.0 (compile) [REMOVED]",
                     "    Aliases: none",
                     "    Affected-version applicability: UNRESOLVED"
                         + " (GIT ranges are not evaluated by this report)",
-                    "    OSV ranges: [AffectedRange[type=GIT, repo=https://example.test/repo,"
-                        + " events=[{aField=a, zField=z}]]]",
+                    "    OSV ranges: GIT range for https://example.test/repo: aField = a, zField = z",
                     "  - GHSA-heuristic / CVE-2026-12345 org.example:trimmed:jar:2.0 (compile)"
                         + " [RETAINED_AND_TRIMMED]",
                     "    Heuristic origin: REFERENCE_URL / GHSA-heuristic#reference:0"
@@ -87,8 +95,40 @@ final class MavenElisionReportAdvisoryWriterTest {
                         + " (Exact OSV version claim applies)",
                     "    Heuristic candidate scope: [2.0,3.0)"
                         + " (not used as raw OSV applicability)",
-                    "    Verify the source claim and exact original artifact before adding an"
-                        + " exact POM mapping; candidates do not establish a complete class set."));
+                    "    Source URL: https://example.test/commit/abc123?diff=split&w=1",
+                    "    POM mapping template for this candidate:",
+                    "      <vulnerabilityMappings>",
+                    "        <vulnerabilityMapping>",
+                    "          <cveId>CVE-2026-12345</cveId>",
+                    "          <groupId>org.example</groupId>",
+                    "          <artifactId>trimmed</artifactId>",
+                    "          <versionRangeSpec>[2.0]</versionRangeSpec>",
+                    "          <vulnerableClasses>",
+                    "            <vulnerableClass>org.example.TrimmedCandidate</vulnerableClass>",
+                    "          </vulnerableClasses>",
+                    "          <sourceAdvisoryUrl>https://example.test/commit/abc123?diff=split&amp;w=1</sourceAdvisoryUrl>",
+                    "          <confidenceLevel>HIGH</confidenceLevel>",
+                    "        </vulnerabilityMapping>",
+                    "      </vulnerabilityMappings>"),
+        () ->
+            assertThat(
+                    rendered.stream()
+                        .filter(
+                            line -> line.startsWith("    Heuristic candidates are review leads;"))
+                        .count())
+                .isEqualTo(1L),
+        () ->
+            assertThat(
+                    rendered.stream()
+                        .filter(line -> line.equals("    POM mapping template for this candidate:"))
+                        .count())
+                .isEqualTo(2L),
+        () ->
+            assertThat(rendered)
+                .noneMatch(
+                    line ->
+                        line.contains("Verify the source claim and exact original artifact")
+                            || line.startsWith("    If you verify this is the complete")));
   }
 
   @Test
@@ -298,10 +338,29 @@ final class MavenElisionReportAdvisoryWriterTest {
             MavenVulnerabilityAssessment.InventoryDisposition.RETAINED_AND_TRIMMED,
             EvidenceOrigin.REFERENCE_URL,
             "GHSA-heuristic#reference:0",
-            "https://example.test/commit/abc123",
+            "https://example.test/commit/abc123?diff=split&w=1",
             "a".repeat(64),
             ConfidenceLevel.MEDIUM,
             List.of("org.example.TrimmedCandidate"),
+            List.of(GROUP_ID + ":" + TRIMMED_ARTIFACT));
+    final MavenElisionReportSnapshot.HeuristicAdvisoryFinding secondHeuristicFinding =
+        new MavenElisionReportSnapshot.HeuristicAdvisoryFinding(
+            "GHSA-heuristic",
+            List.of(CVE_ALIAS),
+            CVE_ALIAS,
+            coordinate(TRIMMED_ARTIFACT, SECOND_VERSION).toString(),
+            MAVEN_ECOSYSTEM,
+            GROUP_ID + ":" + TRIMMED_ARTIFACT,
+            "[2.0,3.0)",
+            OsvPackageApplicability.Status.APPLICABLE,
+            "Exact OSV version claim applies",
+            MavenVulnerabilityAssessment.InventoryDisposition.RETAINED_AND_TRIMMED,
+            EvidenceOrigin.DESCRIPTION,
+            "GHSA-heuristic#description:0",
+            "https://example.test/description",
+            "c".repeat(64),
+            ConfidenceLevel.MEDIUM,
+            List.of("org.example.SecondTrimmedCandidate"),
             List.of(GROUP_ID + ":" + TRIMMED_ARTIFACT));
     final MavenElisionReportSnapshot.PackageAdvisoryFinding heuristicOwner =
         new MavenElisionReportSnapshot.PackageAdvisoryFinding(
@@ -317,7 +376,7 @@ final class MavenElisionReportAdvisoryWriterTest {
             MavenVulnerabilityAssessment.InventoryDisposition.RETAINED_AND_TRIMMED,
             "b".repeat(64));
     return new MavenElisionReportSnapshot.AdvisoryReview(
-        List.of(packageFinding, heuristicOwner), List.of(heuristicFinding));
+        List.of(packageFinding, heuristicOwner), List.of(heuristicFinding, secondHeuristicFinding));
   }
 
   private MavenElisionReportSnapshot.PackageAdvisoryFinding packageFinding(

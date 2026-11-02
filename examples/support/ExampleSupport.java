@@ -1238,6 +1238,32 @@ public final class ExampleSupport {
       if (!cvePattern.matcher(cveId).matches() || coordinate.isBlank()) {
         throw new IOException("[" + fixture + "] Malformed inactivePreconditionCves entry: " + item);
       }
+      final JsonNode missingPrerequisites = item.path("missingPrerequisites");
+      if (!missingPrerequisites.isArray() || missingPrerequisites.isEmpty()) {
+        throw new IOException(
+            "[" + fixture + "] Inactive precondition finding has no missing prerequisite details");
+      }
+      final List<String> prerequisiteDetails = new ArrayList<>();
+      for (final JsonNode prerequisite : missingPrerequisites) {
+        final String dependency = prerequisite.path("dependency").asText("");
+        final String requiredClass = prerequisite.path("requiredClass").asText("");
+        if (dependency.isBlank() || requiredClass.isBlank()) {
+          throw new IOException(
+              "[" + fixture + "] Malformed inactive prerequisite details: " + prerequisite);
+        }
+        prerequisiteDetails.add(dependency + " (class " + requiredClass + ")");
+      }
+      final String expectedLine =
+          "[INFO]   - "
+              + cveId
+              + " "
+              + coordinate
+              + "; inactive because missing prerequisite dependencies: "
+              + String.join(", ", prerequisiteDetails);
+      if (!output.contains(expectedLine)) {
+        throw new IOException(
+            "[" + fixture + "] Missing inactive prerequisite cause in report output: " + expectedLine);
+      }
       inactiveIds.add(cveId);
     }
 
@@ -1277,13 +1303,9 @@ public final class ExampleSupport {
     }
 
     if (removedCves.isEmpty()) {
-      if (!output.contains(
-          "[INFO] Advisories associated with removed components: none matched the available"
-              + " vulnerability mappings")) {
+      if (!output.contains("[INFO] Advisories associated with removed components: none")) {
         throw new IOException(
-            "[" + fixture
-                + "] Expected 'none matched the available vulnerability mappings' for removed"
-                + " CVEs");
+            "[" + fixture + "] Expected no removed-component advisory findings");
       }
     } else {
       for (final JsonNode item : removedCves) {
@@ -1297,13 +1319,9 @@ public final class ExampleSupport {
     }
 
     if (provenCves.isEmpty()) {
-      if (!output.contains(
-          "[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none matched the available"
-              + " vulnerability mappings")) {
+      if (!output.contains("[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none")) {
         throw new IOException(
-            "[" + fixture
-                + "] Expected 'none matched the available vulnerability mappings' for proven"
-                + " absent CVEs");
+            "[" + fixture + "] Expected no mitigated CVE findings");
       }
     } else {
       for (final JsonNode item : provenCves) {
@@ -1317,13 +1335,9 @@ public final class ExampleSupport {
     }
 
     if (inactiveCves.isEmpty()) {
-      if (!output.contains(
-          "[INFO] CVEs inactive due to unmet prerequisite dependencies: none matched the available"
-              + " vulnerability mappings")) {
+      if (!output.contains("[INFO] CVEs inactive due to unmet prerequisite dependencies: none")) {
         throw new IOException(
-            "[" + fixture
-                + "] Expected 'none matched the available vulnerability mappings' for inactive"
-                + " prerequisite CVEs");
+            "[" + fixture + "] Expected no inactive prerequisite CVE findings");
       }
     } else {
       for (final JsonNode item : inactiveCves) {

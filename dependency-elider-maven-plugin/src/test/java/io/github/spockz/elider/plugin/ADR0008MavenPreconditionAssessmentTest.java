@@ -127,6 +127,9 @@ final class ADR0008MavenPreconditionAssessmentTest {
             .assess(
                 emptyCache("positive-cache"), configured(List.of(mapping)), analysis, inventory);
 
+    final RecordingMavenLog summaryLog = new RecordingMavenLog();
+    ElisionSummaryCveReporter.report(summaryLog, result, false);
+
     assertThat(result.attestations()).hasSize(1);
     assertThat(result.attestations().getFirst().coordinate()).isEqualTo(affectedOne);
     assertThat(result.attestations().getFirst().justification()).isEqualTo("requires_dependency");
@@ -136,13 +139,29 @@ final class ADR0008MavenPreconditionAssessmentTest {
     assertThat(result.attestations().getFirst().evidenceSymbols()).isEmpty();
     assertThat(result.inactiveDueToMissingPrerequisites())
         .containsExactly(new MavenVulnerabilityAssessment.Finding(CVE_ID, affectedOne));
+    assertThat(mapping.vulnerableClasses()).isEmpty();
+    assertThat(summaryLog.messages())
+        .contains(
+            "    "
+                + CVE_ID
+                + " "
+                + affectedOne.toId()
+                + "; inactive because missing prerequisite dependencies: "
+                + REQUIRED_DEPENDENCY
+                + " (class "
+                + REQUIRED_CLASS
+                + ")");
     assertThat(result.provenVulnerableCodeAbsent()).isEmpty();
     assertThat(result.removedComponents()).isEmpty();
 
     final MavenElisionReportSnapshot report = reportSnapshot(analysis, result);
     assertThat(report.schemaVersion()).isEqualTo(MavenElisionReportSnapshot.SCHEMA_VERSION);
     assertThat(report.inactivePreconditionCves())
-        .containsExactly(new MavenElisionReportSnapshot.CveFinding(CVE_ID, affectedOne.toId()));
+        .containsExactly(
+            new MavenElisionReportSnapshot.CveFinding(
+                CVE_ID,
+                affectedOne.toId(),
+                List.of(new MavenMissingPrerequisite(REQUIRED_DEPENDENCY, REQUIRED_CLASS))));
     assertThat(report.provenAbsentCves()).isEmpty();
     assertThat(report.removedCveComponents()).isEmpty();
   }
