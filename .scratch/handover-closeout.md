@@ -69,7 +69,11 @@ state. Candidate `335f1f8aef20ac2567198df0b658c09af299cd9e` / tree
 mixed Analyze/Elide test passed in both direct goal orders. Contract and
 architecture reviews approved exact branch tree `33a30c70` /
 `f70edffc`; receipts are `.scratch/reviews/wp-policy-01-final-33a30c7.md` and
-`.scratch/reviews/wp-policy-01-architecture-33a30c7.md`. Delivery and the
-integrated-main review remain pending; preserve main's current dirty worktree
-during that fast-forward, replacing only the older WP-POLICY handover with the
+`.scratch/reviews/wp-policy-01-architecture-33a30c7.md`. WP-POLICY-01 was
+fast-forwarded to local `main` at `d3fad3a3b601ec01389ca74507b5b127d0e114a1`.
+The full Java 21 `make check` passed on that integrated commit, and the
+post-fast-forward review approved with no findings; receipt:
+`.scratch/reviews/wp-policy-01-integrated-main-d3fad3a.md`. The main worktree's
+12 tracked modifications and four unrelated untracked paths were restored from
+the retained recovery stash; the older WP-POLICY handover was replaced by the
 final committed version.

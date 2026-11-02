@@ -6,11 +6,11 @@
 - **Package:** `WP-POLICY-01`, global dependency bans and retained-artifact policy.
 - **Source handover:** [WP-POLICY-01](2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip.md).
 - **Requested base:** progressed local `main` at `024b092b93b05fe77de3215f92198da9e74fa80f`.
-- **User amendment:** include the full dirty main snapshot. It was captured as `d152ead148f98e8c20982baba37c6419a602c8f8` before main progressed. That snapshot commit is retained on recovery branch `codex/wp-policy-01-pre-progressed-main-rebase`; the rebased work replays only WP-POLICY-01 commits because current main already carries the snapshot's tracked state. The current main worktree has 12 modified tracked paths and 5 untracked paths; after fast-forward I will restore all current changes except the older WP-POLICY handover, which this branch supersedes.
+- **User amendment:** include the full dirty main snapshot. It was captured as `d152ead148f98e8c20982baba37c6419a602c8f8` before main progressed. That snapshot commit is retained on recovery branch `codex/wp-policy-01-pre-progressed-main-rebase`; the rebased work replays only WP-POLICY-01 commits because progressed main carried the snapshot's tracked state. The main worktree snapshot was stashed before fast-forward; 12 tracked modifications and 4 unrelated untracked paths were restored after delivery. The older untracked WP-POLICY handover was replaced by this committed final version. The recovery stash remains available.
 - **Implementation branch:** `codex/wp-policy-01`.
 - **Verified candidate:** `335f1f8aef20ac2567198df0b658c09af299cd9e`, tree `5d4a16e6d364f349f259232e45ae20aebe26347a`.
-- **Delivery target:** local `main`; remote publication was not requested. Final fast-forward and dirty-path preservation are recorded after integration.
-- **Current state:** implementation and full `make check` pass. Independent contract and architecture reviews approved exact branch tree `33a30c70`; the fast-forward to local `main` and integrated-main review are pending.
+- **Delivery target:** local `main`; remote publication was not requested. WP-POLICY-01 was fast-forwarded at `d3fad3a3b601ec01389ca74507b5b127d0e114a1`; a docs-only successor records final verification and review.
+- **Current state:** implementation, integrated Java 21 `make check`, and independent contract, architecture, and post-fast-forward integration reviews pass. Main's saved dirty paths were restored after delivery.
 
 ## Requirement-to-evidence matrix
 
@@ -24,7 +24,7 @@
 | R6 | Report repeated effective-POM exclusions with provenance, separate management-only entries, and keep recommendations advisory. | `ExclusionProvenanceCaptureTest`, `ExclusionReviewReportTest`, strict report reader/writer validation. | Complete. |
 | R7 | Update usage, FAQ, contributor decisions, ADRs, research, examples, and generated transcripts. | README, Maven site usage, FAQ/contributor docs, ADR-0012, RQ-0004/0005/0006/0017, `make check-transcripts`. | Complete. |
 | R8 | Preserve output, Maven-view, and resolver-plan rollback; verify absence and freshness before commit. | `MavenOutputTransactionTest`, `MavenElisionServiceEffectiveOutputTransactionTest`, and lifecycle failure/no-publication fixtures. | Complete. |
-| R9 | Review the full source-derived scope, run the full repository gate, review integration, and preserve closeout evidence. | Java 21 `make check` passed on `335f1f8a` / `5d4a16e6`; exact-tree contract and architecture receipts are approved at `33a30c70`; integrated-main receipt remains pending. | Gate and branch reviews complete; integration pending. |
+| R9 | Review the full source-derived scope, run the full repository gate, review integration, and preserve closeout evidence. | Java 21 `make check` passed on integrated commit `d3fad3a`; exact-tree contract and architecture reviews approved `33a30c70`; post-fast-forward review approved `d3fad3a`. | Complete. |
 
 ## Verification
 
@@ -53,8 +53,9 @@ The historical receipts for the pre-rebase tree remain available at
 rebased tree. Exact-tree reviews approved commit `33a30c70` / tree
 `f70edffc`. The policy contract receipt is
 `.scratch/reviews/wp-policy-01-final-33a30c7.md`; the architecture receipt is
-`.scratch/reviews/wp-policy-01-architecture-33a30c7.md`. A post-fast-forward
-integration receipt remains pending.
+`.scratch/reviews/wp-policy-01-architecture-33a30c7.md`. The post-fast-forward
+integration review approved `d3fad3a3b601ec01389ca74507b5b127d0e114a1`; its
+receipt is `.scratch/reviews/wp-policy-01-integrated-main-d3fad3a.md`.
 
 The Gemini review bridge was unavailable in this environment. No Gemini review
 is claimed; the skill's documented fail-open path uses the independent policy
@@ -75,7 +76,7 @@ is reported. Detailed work-package tool notes remain in `.scratch/orchestration-
 
 ## Specification deviations and architectural choices
 
-- The user-authorized full 52-path dirty snapshot was captured before main progressed. The rebase excludes replaying its snapshot commit because current main carries its tracked state; the current main worktree's dirty paths are backed up and restored during delivery. The older WP-POLICY handover is replaced by the final source handover.
+- The user-authorized full 52-path dirty snapshot was captured before main progressed. The rebase excludes replaying its snapshot commit because progressed main carried its tracked state. The main worktree was saved in a recovery stash before fast-forward, then its 12 modified tracked paths and four unrelated untracked paths were restored. The old WP-POLICY handover was replaced by the final source handover; the stash is retained as a backup.
 - The rebased integration preserved current-main structured-proof reporting, source-correspondence results, source-classifier resolution threading, ordered JSON serialization, and deserialization error handling while adding policy fields and renderers.
 - Bans use collection-time first-level exclusions when the core extension is active and strict post-resolution checks in supported goal paths. A successful operation must establish absence; ambiguous graph, closure, or audit evidence fails closed.
 - The policy applies to supported current-project Maven views and generated outputs. It does not rewrite consumer POMs or claim universal future Resolver, plugin-realm, annotation-processor, Spring AOT, or exhaustive test-bytecode behavior.
@@ -89,6 +90,7 @@ From progressed base `024b092b` to code/test candidate `335f1f8a`, the cumulativ
 change was 207 files, 23,093 insertions, and 1,423 deletions. The implementation
 sequence is preserved by `git log --oneline --reverse
 024b092b93b05fe77de3215f92198da9e74fa80f..335f1f8aef20ac2567198df0b658c09af299cd9e`;
-documentation-only review successors follow that candidate. The final main
-delivery hash and post-integration diff will be added after the fast-forward and
-integrated review.
+documentation-only review successors follow that candidate. The WP-POLICY-01
+implementation was fast-forwarded to `main` at `d3fad3a3b601ec01389ca74507b5b127d0e114a1`;
+post-integration verification and review are recorded in the receipt above. The
+later documentation-only successor contains these final closeout details.

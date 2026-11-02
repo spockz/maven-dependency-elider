@@ -226,17 +226,20 @@ mainline source-correspondence results, report proof/policy/exclusion/ban fields
 and execution-configuration publication APIs. README list spacing was corrected
 for Markdown lint.
 
-The full Java 21 `make check` passed on the verified candidate: Spotless,
+The full Java 21 `make check` passed on verified candidate `335f1f8a` and again
+after integration on `d3fad3a`: Spotless,
 Checkstyle, PMD, SpotBugs, core/plugin tests, 27 lifecycle integration tests,
 coverage, Markdown lint, scheduler and SBOM checks, and configured transcript
 drift. The plugin unit suite reported 767 tests with one skipped. The transcript
 tool reported “Configured command transcripts are up to date.” The packaged
 mixed-goal integration test passed with both Analyze/Elide goal orders; `make
 lint-java` and `git diff --check` passed. Exact-tree contract and architecture
-reviews approved commit `33a30c70` / tree `f70edffc`; receipts are linked from
-the versioned closeout. The fast-forward to local `main` and integrated-main
-review remain pending. The final delivery state will be recorded in the
-versioned sibling
+reviews approved commit `33a30c70` / tree `f70edffc`; the integrated-main review
+approved commit `d3fad3a3b601ec01389ca74507b5b127d0e114a1`. Receipts are linked
+from the versioned closeout. WP-POLICY-01 is fast-forwarded to local `main`; the
+main worktree's 12 tracked modifications and four unrelated untracked paths
+were restored from the retained recovery stash. The final delivery state is
+recorded in the versioned sibling
 [`2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip-closeout.md`](2026-10-31-wp-policy-01-global-dependency-exclusions-and-retained-artifacts-flip-closeout.md).
 
 The verified boundary is the current project's supported Maven views and
