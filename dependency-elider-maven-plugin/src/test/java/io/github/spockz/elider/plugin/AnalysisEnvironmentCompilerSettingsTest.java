@@ -53,7 +53,7 @@ final class AnalysisEnvironmentCompilerSettingsTest {
   }
 
   @Test
-  void userProcessorOverrideCanEnableAnnotationProcessing() throws Exception {
+  void userProcessorNoneOverrideDisablesAnnotationProcessing() throws Exception {
     final MavenProject project = project();
     project.getProperties().setProperty(MAVEN_COMPILER_RELEASE, "17");
     project.getProperties().setProperty(MAVEN_COMPILER_PROCESSING, "full");
@@ -69,7 +69,7 @@ final class AnalysisEnvironmentCompilerSettingsTest {
   }
 
   @Test
-  void userProcessorOverrideCannotDisableAnnotationProcessing() throws Exception {
+  void userProcessorFullOverrideIsRejected() throws Exception {
     final MavenProject project = project();
     project.getProperties().setProperty(MAVEN_COMPILER_RELEASE, "17");
     project.getProperties().setProperty(MAVEN_COMPILER_PROCESSING, "full");
