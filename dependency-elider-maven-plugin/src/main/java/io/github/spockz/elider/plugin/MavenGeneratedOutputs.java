@@ -55,7 +55,8 @@ final class MavenGeneratedOutputs {
         new ArrayList<>(
             List.of(
                 outputFile(sbom, project, "dependency-elider-sbom.cdx.json").toPath(),
-                outputFile(baseline, project, "baseline-sbom.cdx.json").toPath()));
+                outputFile(baseline, project, "baseline-sbom.cdx.json").toPath(),
+                buildDirectory(project).resolve(AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME)));
     if (vexWasWritten) {
       outputs.add(outputFile(vex, project, "dependency-elider.openvex.json").toPath());
     }

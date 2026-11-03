@@ -204,6 +204,8 @@ final class MavenElisionOutputPublisher {
       targets.add(files.vex().toPath());
       targets.addAll(MavenSbomWriter.stagedPaths(request.project()));
       targets.add(MavenGeneratedOutputs.manifestPath(request.project()));
+      final Path buildDir = Path.of(request.project().getBuild().getDirectory()).toAbsolutePath().normalize();
+      targets.add(buildDir.resolve(AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME));
     }
     return targets;
   }
@@ -247,6 +249,28 @@ final class MavenElisionOutputPublisher {
       for (final Path stagedSbom : stagedSboms) {
         MavenSbomWriter.stage(sbom, outputs.stagedPath(stagedSbom));
       }
+      final Path advisoryModulesPath =
+          Path.of(request.project().getBuild().getDirectory())
+              .toAbsolutePath()
+              .normalize()
+              .resolve(AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME);
+      final List<Path> inputs = new ArrayList<>();
+      if (request.project().getBuild() != null && request.project().getBuild().getOutputDirectory() != null) {
+        inputs.add(Path.of(request.project().getBuild().getOutputDirectory()));
+      }
+      SpringAotAssetPaths.resolveMainClasses(request.project()).ifPresent(inputs::add);
+      for (final ArtifactFileRef ref : inventory.artifactFiles()) {
+        inputs.add(ref.filePath());
+      }
+      final Set<String> recommendedModules =
+          new AdvisoryJdkModulesAnalyzer()
+              .analyze(
+                  inputs,
+                  List.of(),
+                  analysis.trimResult().executionEnvironment().targetRelease());
+      final String formattedModules = AdvisoryJdkModulesAnalyzer.formatModuleList(recommendedModules);
+      java.nio.file.Files.writeString(outputs.stagedPath(advisoryModulesPath), formattedModules);
+
       final List<Path> generated =
           MavenGeneratedOutputs.generatedOutputPaths(
               request.project(),

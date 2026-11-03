@@ -54,9 +54,20 @@ public final class CdsClassListReader implements RuntimeTraceReader {
     if (candidate.isEmpty() || candidate.startsWith("#") || candidate.startsWith("@")) {
       return;
     }
-    if (!TraceClassName.isValid(candidate) || TraceClassName.isHidden(candidate)) {
+    final String className;
+    final int firstSpace = candidate.indexOf(' ');
+    if (firstSpace > 0) {
+      final String remainder = candidate.substring(firstSpace).trim();
+      if (!remainder.startsWith("id:")) {
+        throw new IOException("Malformed CDS class-list entry: " + candidate);
+      }
+      className = candidate.substring(0, firstSpace);
+    } else {
+      className = candidate;
+    }
+    if (!TraceClassName.isValid(className) || TraceClassName.isHidden(className)) {
       throw new IOException("Malformed CDS class-list entry: " + candidate);
     }
-    classes.add(candidate);
+    classes.add(className);
   }
 }

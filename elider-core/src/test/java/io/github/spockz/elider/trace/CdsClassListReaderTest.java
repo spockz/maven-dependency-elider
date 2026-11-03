@@ -43,6 +43,22 @@ class CdsClassListReaderTest {
   }
 
   @Test
+  void readsExtendedHotSpotClassListEntries() throws IOException {
+    final Path list = tempDir.resolve("extended.lst");
+    Files.writeString(
+        list,
+        "# HotSpot CDS dump\n"
+            + "java/lang/Object id: 0\n"
+            + "java/lang/String id: 6 super: 0 interfaces: 1,3 source: /path/to/modules\n"
+            + "com/example/SubClass id: 700 super: 699 source: /tmp/cdstest/sub.jar\n");
+
+    final TraceData result = new CdsClassListReader().read(list);
+
+    assertThat(result.loadedClassesSlashFormat())
+        .containsExactlyInAnyOrder("java/lang/Object", "java/lang/String", "com/example/SubClass");
+  }
+
+  @Test
   void rejectsMalformedEntriesAndUnsupportedFiles() throws IOException {
     final Path malformed = tempDir.resolve("malformed.lst");
     Files.writeString(malformed, "java/lang/Object extra\n");
