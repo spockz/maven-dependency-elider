@@ -255,20 +255,21 @@ final class MavenElisionOutputPublisher {
               .normalize()
               .resolve(AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME);
       final List<Path> inputs = new ArrayList<>();
+      final List<Path> classPath = new ArrayList<>();
       if (request.project().getBuild() != null && request.project().getBuild().getOutputDirectory() != null) {
         inputs.add(Path.of(request.project().getBuild().getOutputDirectory()));
       }
       SpringAotAssetPaths.resolveMainClasses(request.project()).ifPresent(inputs::add);
       for (final ArtifactFileRef ref : inventory.artifactFiles()) {
         if (ref.filePath().toString().endsWith(".jar") || ref.filePath().toString().endsWith(".class")) {
-          inputs.add(ref.filePath());
+          classPath.add(ref.filePath());
         }
       }
       final Set<String> recommendedModules =
           new AdvisoryJdkModulesAnalyzer()
               .analyze(
                   inputs,
-                  List.of(),
+                  classPath,
                   analysis.trimResult().executionEnvironment().targetRelease());
       final String formattedModules = AdvisoryJdkModulesAnalyzer.formatModuleList(recommendedModules);
       java.nio.file.Files.writeString(outputs.stagedPath(advisoryModulesPath), formattedModules);
