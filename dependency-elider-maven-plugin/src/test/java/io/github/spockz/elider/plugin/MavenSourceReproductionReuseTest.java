@@ -25,6 +25,9 @@ final class MavenSourceReproductionReuseTest {
 
   @Test
   void independentAdvisoriesReuseOneCandidateReproductionAndProduceTwoProofs() throws IOException {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        io.github.spockz.elider.correspondence.SourceReproductionEngine.isSupportedJdk(),
+        "Skipping source reproduction tests on non-pinned JDK");
     final Path directory = temporaryDirectory.resolve("same-artifact-advisories");
     final MavenCorroboratedSourceScenario.Prepared prepared =
         MavenCorroboratedSourceScenario.prepareReproducibleClaim(
@@ -66,6 +69,9 @@ final class MavenSourceReproductionReuseTest {
 
   @Test
   void separateArtifactsReuseBuildsAcrossAnInterveningReviewOnlyCandidate() throws IOException {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        io.github.spockz.elider.correspondence.SourceReproductionEngine.isSupportedJdk(),
+        "Skipping source reproduction tests on non-pinned JDK");
     final Path directory = temporaryDirectory.resolve("multiple-advisories");
     final MavenCorroboratedSourceScenario.Prepared prepared =
         MavenCorroboratedSourceScenario.prepareReproducibleClaim(
@@ -131,6 +137,9 @@ final class MavenSourceReproductionReuseTest {
   @Test
   void productionProofReusesCorrespondenceAndPhysicalInventoryWithinOneAssessment()
       throws IOException {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        io.github.spockz.elider.correspondence.SourceReproductionEngine.isSupportedJdk(),
+        "Skipping source reproduction tests on non-pinned JDK");
     final Path directory = temporaryDirectory.resolve("correspondence-and-proof");
     final MavenCorroboratedSourceScenario.Prepared prepared =
         MavenCorroboratedSourceScenario.prepareReproducibleClaim(

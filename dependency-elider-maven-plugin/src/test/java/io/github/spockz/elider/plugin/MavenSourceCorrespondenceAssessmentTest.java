@@ -44,6 +44,9 @@ final class MavenSourceCorrespondenceAssessmentTest {
 
   @Test
   void uniquelyOwnedRoutineAndConventionalFileClaimReproduceExactArtifact() throws IOException {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        io.github.spockz.elider.correspondence.SourceReproductionEngine.isSupportedJdk(),
+        "Skipping source reproduction tests on non-pinned JDK");
     final Path directory = temporaryDirectory.resolve("unique");
     final MavenCorroboratedSourceScenario.Prepared prepared =
         MavenCorroboratedSourceScenario.prepareReproducibleClaim(
@@ -135,6 +138,9 @@ final class MavenSourceCorrespondenceAssessmentTest {
 
   @Test
   void routineOnlyUniqueOwnerCanBeMatchedButOverloadsAndRepeatedNamesAbstain() throws IOException {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        io.github.spockz.elider.correspondence.SourceReproductionEngine.isSupportedJdk(),
+        "Skipping source reproduction tests on non-pinned JDK");
     assertAll(
         "routine names resolve only to one source declaration",
         () -> assertUniqueRoutineOnly(temporaryDirectory.resolve("routine-only")),
@@ -145,6 +151,9 @@ final class MavenSourceCorrespondenceAssessmentTest {
 
   @Test
   void missingExtraAndChangedPhysicalOutputsAbstain() {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        io.github.spockz.elider.correspondence.SourceReproductionEngine.isSupportedJdk(),
+        "Skipping source reproduction tests on non-pinned JDK");
     assertAll(
         "the reproduced disjoint output union must equal the complete original inventory",
         () ->
@@ -166,6 +175,9 @@ final class MavenSourceCorrespondenceAssessmentTest {
 
   @Test
   void unsupportedSourceArchiveEntriesAbstainBeforeCompilation() throws IOException {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        io.github.spockz.elider.correspondence.SourceReproductionEngine.isSupportedJdk(),
+        "Skipping source reproduction tests on non-pinned JDK");
     final Path directory = temporaryDirectory.resolve("unsupported-input");
     final MavenCorroboratedSourceScenario.Prepared prepared =
         MavenCorroboratedSourceScenario.prepareReproducibleClaim(
@@ -190,6 +202,9 @@ final class MavenSourceCorrespondenceAssessmentTest {
   @Test
   void manifestClassPathIsRejectedEvenWhenItWouldResolveTheExactCompilationDependency()
       throws IOException {
+    org.junit.jupiter.api.Assumptions.assumeTrue(
+        io.github.spockz.elider.correspondence.SourceReproductionEngine.isSupportedJdk(),
+        "Skipping source reproduction tests on non-pinned JDK");
     final Path directory = temporaryDirectory.resolve("manifest-classpath");
     final MavenCorroboratedSourceScenario.Prepared prepared =
         MavenCorroboratedSourceScenario.prepareReproducibleClaim(
