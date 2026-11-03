@@ -40,6 +40,7 @@ final class AdvisoryJdkModulesAnalyzer {
 
     final List<String> args = new ArrayList<>();
     args.add("--print-module-deps");
+    args.add("--ignore-missing-deps");
     if (targetRelease >= 9) {
       args.add("--multi-release");
       args.add(String.valueOf(targetRelease));
