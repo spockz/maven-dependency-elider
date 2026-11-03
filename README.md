@@ -11,21 +11,22 @@ Software Composition Analysis (SCA) frequently surfaces vulnerabilities in depen
 Whole-artifact removal runs only when a compatible mediated graph proves the exact safe nodes to elide; otherwise candidates are safely retained. Trimmed outputs include schema-valid CycloneDX 1.6 SBOMs with pedigree provenance.
 
 ```text
-  Runtime Evidence                 Maven Build Lifecycle               Lean Distribution
-┌──────────────────┐           ┌────────────────────────────┐         ┌───────────────────┐
-│ CDS Class Lists  │           │   compile                  │         │ Slashed JAR Size  │
-│ -Xlog:class+load │ ────────> │   test  (validates elision)│ ──────> │ Zero Bloat CVEs   │
-│ JFR ClassLoad    │           │   package (Shade / Boot)   │         │ CycloneDX 1.6 SBOM│
-│ JaCoCo & GraalVM │           └────────────────────────────┘         │ Pedigree Provenance│
-└──────────────────┘                         ▲                        └───────────────────┘
-                                             │
-                                    In-Memory Redirection
-                                  (Transparent to Packagers)
+       Dual Evidence Sources              Maven Build Lifecycle               Lean Distribution
+┌─────────────────────────────────┐   ┌────────────────────────────┐         ┌───────────────────┐
+│ Runtime JVM Telemetry           │   │   compile                  │         │ Slashed JAR Size  │
+│ • CDS Class Lists / JFR events  │   │   test  (validates elision)│ ──────> │ Zero Bloat CVEs   │
+│ • -Xlog:class+load / JaCoCo     │   │   package (Shade / Boot)   │         │ CycloneDX 1.6 SBOM│
+│                                 │──>└────────────────────────────┘         │ Pedigree Provenance│
+│ Static Reachability & Closure   │                 ▲                        └───────────────────┘
+│ • Application Bytecode & Sources│                 │
+│ • ProGuard Core Link Closure    │        In-Memory Redirection
+│ • SPI Providers & GraalVM Meta  │      (Transparent to Packagers)
+└─────────────────────────────────┘
 ```
 
 ## Why Maven Dependency Elider?
 
-* **Concrete Runtime Telemetry**: Drives decisions using verifiable JVM execution data: CDS lists (`-XX:DumpLoadedClassList`), class-loading logs (`-Xlog:class+load`), JFR events (`jdk.ClassLoad`), JaCoCo coverage (`jacoco.exec`), and GraalVM reflection configs.
+* **Dual Evidence Foundation**: Combines concrete runtime JVM telemetry (CDS lists, `-Xlog:class+load`, JFR events, JaCoCo coverage) with rigorous static bytecode and descriptor reachability (application roots, ProGuard Core closed-world link closure, `ServiceLoader` SPI provider declarations, and GraalVM reachability metadata).
 * **Early Regression Detection**: Injects trimmed dependency views into Maven at `INITIALIZE`. Your standard `test` and `verify` phases execute against the trimmed classpath, catching regressions *before* packaging.
 * **Two-Tier Size Reduction**:
   * **Whole-Artifact Elision**: Removes unused dependencies from effective classpaths and packaged archives.
