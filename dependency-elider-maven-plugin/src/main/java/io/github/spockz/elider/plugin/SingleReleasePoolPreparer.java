@@ -24,7 +24,8 @@ final class SingleReleasePoolPreparer {
           final List<Path> fullClasspath,
           final JdkClassTables tables,
           final TrimAnalysisSession analysisSession,
-          final int trimWorkers)
+          final int trimWorkers,
+          final boolean allowModularCandidate)
           throws IOException {
     final List<DependencyJarTrimmer.PreparedAnalysis> results =
         ParallelTrimExecutor.mapParallel(
@@ -35,7 +36,11 @@ final class SingleReleasePoolPreparer {
               final List<Path> siblings =
                   fullClasspath.stream().filter(value -> !value.equals(path)).toList();
               return analysisSession.prepareWithUnchangedPassThroughLibraries(
-                  path, siblings, tables.candidate(), layout.unchangedPassThroughClasses());
+                  path,
+                  siblings,
+                  tables.candidate(),
+                  layout.unchangedPassThroughClasses(),
+                  allowModularCandidate);
             });
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         preparedCandidates = TrimCollections.orderedMap();
@@ -89,11 +94,12 @@ final class SingleReleasePoolPreparer {
       final SingleReleaseLayout layout,
       final List<Path> classpath,
       final JdkClassTables tables,
-      final int workers)
+      final int workers,
+      final boolean allowModularCandidate)
       throws IOException {
     final TrimAnalysisSession session = new TrimAnalysisSession(new DependencyJarTrimmer());
     return new PreparedPools(
-        prepareCandidates(layout, classpath, tables, session, workers),
+        prepareCandidates(layout, classpath, tables, session, workers, allowModularCandidate),
         preparePrograms(inventory, layout, classpath, tables, session, workers));
   }
 }

@@ -91,6 +91,22 @@ public final class TrimAnalysisSession {
       final ClassPool jdkClassTable,
       final Collection<String> unchangedPassThroughClassNames)
       throws IOException {
+    return prepareWithUnchangedPassThroughLibraries(
+        candidateJar, libraryClassPath, jdkClassTable, unchangedPassThroughClassNames, false);
+  }
+
+  /**
+   * Prepares candidate closure; optionally allowing modular candidates in classpath-only mode.
+   *
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
+   */
+  public DependencyJarTrimmer.PreparedAnalysis prepareWithUnchangedPassThroughLibraries(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool jdkClassTable,
+      final Collection<String> unchangedPassThroughClassNames,
+      final boolean allowModularCandidate)
+      throws IOException {
     // Copy API signatures now so later caller mutations cannot change this context.
     return trimmer.prepareInternal(
         candidateJar,
@@ -98,7 +114,7 @@ public final class TrimAnalysisSession {
         jdkClassTable,
         false,
         normalizeClassNames(unchangedPassThroughClassNames),
-        this::archive);
+        (path, candidate) -> archives.read(path, candidate, allowModularCandidate));
   }
 
   /**
@@ -163,6 +179,12 @@ public final class TrimAnalysisSession {
         new ConcurrentHashMap<>();
 
     private ArchiveSnapshot read(final Path path, final boolean candidate) throws IOException {
+      return read(path, candidate, false);
+    }
+
+    private ArchiveSnapshot read(
+        final Path path, final boolean candidate, final boolean allowModularCandidate)
+        throws IOException {
       validatePath(path, candidate);
       final Path key = path.toAbsolutePath().normalize();
       final FutureTask<ArchiveSnapshot> newRead =
@@ -174,7 +196,7 @@ public final class TrimAnalysisSession {
       }
       final ArchiveSnapshot snapshot = await(key, read);
       if (candidate) {
-        snapshot.validateCandidate(key);
+        snapshot.validateCandidate(key, allowModularCandidate);
       }
       return snapshot;
     }

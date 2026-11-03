@@ -31,7 +31,10 @@ final class TrimPassThroughPlanner {
       throw new IOException(
           "Unsupported root module descriptor in retained classpath JAR: " + snapshot.coordinate());
     }
-    return moduleInfo
+    final boolean modulePassThrough =
+        moduleInfo
+            && !MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(request.policy().mrjarStrategy());
+    return modulePassThrough
         || (multiRelease
             && MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(request.policy().mrjarStrategy()));
   }
@@ -97,7 +100,9 @@ final class TrimPassThroughPlanner {
               "Unsupported root module descriptor in retained classpath JAR: "
                   + snapshot.coordinate());
         }
-        moduleInfo.add(snapshot);
+        if (!MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(request.policy().mrjarStrategy())) {
+          moduleInfo.add(snapshot);
+        }
       }
     }
     return new ArchivePolicies(multiRelease, moduleInfo);

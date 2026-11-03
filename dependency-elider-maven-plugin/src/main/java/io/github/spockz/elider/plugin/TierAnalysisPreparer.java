@@ -138,11 +138,15 @@ final class TierAnalysisPreparer {
             snapshot -> {
               final List<Path> siblings =
                   TierAnalysisViews.tierSiblings(inventory, projection, snapshot);
+              final boolean allowModular =
+                  MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(
+                      operation.request().policy().mrjarStrategy());
               return session.prepareWithUnchangedPassThroughLibraries(
                   projection.pathFor(snapshot),
                   siblings,
                   projection.jdkClassTable(),
-                  unchangedClasses);
+                  unchangedClasses,
+                  allowModular);
             });
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         prepared =

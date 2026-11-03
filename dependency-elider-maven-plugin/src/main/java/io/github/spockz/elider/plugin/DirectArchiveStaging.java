@@ -50,15 +50,28 @@ final class DirectArchiveStaging {
               toSanitize,
               request.policy().trimWorkers(),
               candidate -> {
+                final boolean isClasspathOnlyModule =
+                    MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(request.policy().mrjarStrategy())
+                        && MultiReleaseLibraryProjection.hasRootModuleDescriptor(
+                            candidate.archive().snapshot().filePath());
                 final ArchiveSanitizer.PreparedOutput staged =
-                    sanitizer.prepareWithProvenance(
-                        candidate.archive().snapshot().filePath(),
-                        candidate.output(),
-                        candidate.archive().snapshot().coordinate(),
-                        candidate.analysis(),
-                        TrimInputDigests.requiredInputDigest(
-                            fingerprintSnapshot.inputDigests(),
-                            candidate.archive().snapshot().filePath()));
+                    isClasspathOnlyModule
+                        ? sanitizer.prepareClasspathOnly(
+                            candidate.archive().snapshot().filePath(),
+                            candidate.output(),
+                            candidate.archive().snapshot().coordinate(),
+                            candidate.analysis(),
+                            TrimInputDigests.requiredInputDigest(
+                                fingerprintSnapshot.inputDigests(),
+                                candidate.archive().snapshot().filePath()))
+                        : sanitizer.prepareWithProvenance(
+                            candidate.archive().snapshot().filePath(),
+                            candidate.output(),
+                            candidate.archive().snapshot().coordinate(),
+                            candidate.analysis(),
+                            TrimInputDigests.requiredInputDigest(
+                                fingerprintSnapshot.inputDigests(),
+                                candidate.archive().snapshot().filePath()));
                 return preparedOutputCleanup.track(new PendingOutput(candidate, staged));
               },
               preparedOutputCleanup);

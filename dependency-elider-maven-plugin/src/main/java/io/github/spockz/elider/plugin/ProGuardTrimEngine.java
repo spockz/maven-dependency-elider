@@ -29,7 +29,8 @@ final class ProGuardTrimEngine {
       final Path analysisLibraryDirectory,
       final int runtimeRelease,
       final JdkClassTables jdkClassTables,
-      final int trimWorkers)
+      final int trimWorkers,
+      final boolean allowModularCandidate)
       throws IOException {
     final AnalysisLibraries libraries =
         PassThroughAnalysisLibraries.analysisLibraries(
@@ -42,7 +43,12 @@ final class ProGuardTrimEngine {
             candidatePlan, libraries, session, jdkClassTables.passThrough(), trimWorkers);
     return passThroughRuns
         + analyzeCandidateFixedPoint(
-            candidatePlan, libraries, session, jdkClassTables.candidate(), trimWorkers);
+            candidatePlan,
+            libraries,
+            session,
+            jdkClassTables.candidate(),
+            trimWorkers,
+            allowModularCandidate);
   }
 
   private static void validateUniqueAnalysisClasses(
@@ -107,7 +113,8 @@ final class ProGuardTrimEngine {
       final AnalysisLibraries libraries,
       final TrimAnalysisSession analysisSession,
       final ClassPool jdkClassTable,
-      final int trimWorkers)
+      final int trimWorkers,
+      final boolean allowModularCandidate)
       throws IOException {
     int analysisRuns = 0;
     final List<TrimCandidate> work = candidatePlan.work();
@@ -124,7 +131,8 @@ final class ProGuardTrimEngine {
                   candidate.archive().snapshot().filePath(),
                   siblings,
                   jdkClassTable,
-                  libraries.passThroughClassNames());
+                  libraries.passThroughClassNames(),
+                  allowModularCandidate);
             });
     final Map<TrimCandidate, DependencyJarTrimmer.PreparedAnalysis> candidateAnalyses =
         TrimCollections.lookupMap();

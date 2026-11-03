@@ -14,12 +14,16 @@ final class DirectTrimAnalysis {
   /* package */ static int analyze(final PreparedDirectTrim plan) throws IOException {
     final JdkClassTables tables =
         SingleReleasePlatforms.readJdkClassTables(plan.fingerprint().platformSnapshots());
+    final boolean allowModularCandidate =
+        MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(
+            plan.request().policy().mrjarStrategy());
     return ProGuardTrimEngine.analyze(
         plan.candidatePlan(),
         plan.passThrough(),
         TrimPaths.analysisLibraryDirectory(plan.request().project()),
         plan.runtimeRelease(),
         tables,
-        plan.request().policy().trimWorkers());
+        plan.request().policy().trimWorkers(),
+        allowModularCandidate);
   }
 }

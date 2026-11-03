@@ -544,6 +544,53 @@ class ArchiveSanitizerTest {
     output.closeEntry();
   }
 
+  @Test
+  void classpathOnlyStripsRootModuleDescriptorAndRetainsClasses() throws Exception {
+    final Path candidate = createCandidateJar();
+    final Path modularJar = temporaryDirectory.resolve("modular-candidate.jar");
+    final Path moduleSource = temporaryDirectory.resolve("module-src/module-info.java");
+    final Path moduleOutput = temporaryDirectory.resolve("module-bin");
+    Files.createDirectories(moduleSource.getParent());
+    Files.writeString(moduleSource, "module fixture.module {}\n");
+    CompilationFixtureSupport.compile(moduleOutput, List.of(moduleSource));
+    try (JarFile input = new JarFile(candidate.toFile());
+        JarOutputStream output = new JarOutputStream(Files.newOutputStream(modularJar))) {
+      final Enumeration<JarEntry> entries = input.entries();
+      while (entries.hasMoreElements()) {
+        copyEntry(input, output, entries.nextElement());
+      }
+      writeEntry(
+          output,
+          "module-info.class",
+          Files.readAllBytes(moduleOutput.resolve("module-info.class")));
+    }
+
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer.TrimAnalysis(2, java.util.Set.of("fixture/Keep"), java.util.Set.of("fixture/Keep"));
+    final Path output = temporaryDirectory.resolve("classpath-only-trimmed.jar");
+    final ArtifactDigests digests = ArtifactDigests.read(modularJar);
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepareClasspathOnly(
+            modularJar,
+            output,
+            ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+            analysis,
+            digests);
+
+    final ArtifactTrimRecord record = sanitizer.publish(prepared);
+    org.junit.jupiter.api.Assertions.assertAll(
+        () -> assertThat(record.mrjarStatus()).isEqualTo("classpath-only"),
+        () -> assertThat(record.trimmedSha256()).isEqualTo(digest(Files.readAllBytes(output), SHA_256)),
+        () -> {
+          try (JarFile trimmed = new JarFile(output.toFile())) {
+            assertThat(trimmed.getJarEntry("module-info.class")).isNull();
+            assertThat(trimmed.getJarEntry("fixture/Keep.class")).isNotNull();
+            assertThat(trimmed.getJarEntry("fixture/Drop.class")).isNull();
+          }
+        });
+  }
+
   private static void writeEntry(
       final JarOutputStream output, final String name, final byte[] contents) throws IOException {
     output.putNextEntry(new JarEntry(name));

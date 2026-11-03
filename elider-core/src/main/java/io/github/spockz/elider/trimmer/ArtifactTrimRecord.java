@@ -100,7 +100,9 @@ public record ArtifactTrimRecord(
         || prunedClassBytes < 0) {
       throw new IllegalArgumentException("Invalid class counts or pruned-class byte total");
     }
-    if (!"not_multi_release".equals(mrjarStatus) && !"elevated_and_trimmed".equals(mrjarStatus)) {
+    if (!"not_multi_release".equals(mrjarStatus)
+        && !"elevated_and_trimmed".equals(mrjarStatus)
+        && !"classpath-only".equals(mrjarStatus)) {
       throw new IllegalArgumentException("Unsupported MRJAR trim status: " + mrjarStatus);
     }
   }

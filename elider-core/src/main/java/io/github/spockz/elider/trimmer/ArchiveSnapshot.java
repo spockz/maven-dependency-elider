@@ -130,7 +130,12 @@ final class ArchiveSnapshot {
   }
 
   void validateCandidate(final Path archivePath) throws IOException {
-    if (hasModuleDescriptor) {
+    validateCandidate(archivePath, false);
+  }
+
+  void validateCandidate(final Path archivePath, final boolean allowModularCandidate)
+      throws IOException {
+    if (hasModuleDescriptor && !allowModularCandidate) {
       throw new IOException("Cannot safely trim an explicit modular JAR: " + archivePath);
     }
   }

@@ -50,9 +50,11 @@ final class TrimCacheValidator {
   }
 
   private static boolean validCacheStatus(final CacheEntry entry, final TrimCandidate candidate) {
-    return candidate.archive().multiRelease()
-        ? "elevated_and_trimmed".equals(entry.mrjarStatus())
-        : "not_multi_release".equals(entry.mrjarStatus());
+    if (candidate.archive().multiRelease()) {
+      return "elevated_and_trimmed".equals(entry.mrjarStatus());
+    }
+    return "not_multi_release".equals(entry.mrjarStatus())
+        || "classpath-only".equals(entry.mrjarStatus());
   }
 
   private static boolean validCacheOutput(final CacheEntry entry, final TrimCandidate candidate) {

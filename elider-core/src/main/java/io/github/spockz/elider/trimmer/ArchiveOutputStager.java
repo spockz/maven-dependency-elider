@@ -35,9 +35,20 @@ final class ArchiveOutputStager {
       final DependencyJarTrimmer.TrimAnalysis analysis,
       final MultiReleaseArchivePlan elevationPlan)
       throws IOException {
+    return writeAndMeasure(originalJar, temporaryJar, analysis, elevationPlan, false);
+  }
+
+  static WriteResult writeAndMeasure(
+      final Path originalJar,
+      final Path temporaryJar,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final MultiReleaseArchivePlan elevationPlan,
+      final boolean stripRootModuleDescriptor)
+      throws IOException {
     final long prunedClassBytes =
         elevationPlan == null
-            ? SingleReleaseArchiveWriter.write(originalJar, temporaryJar, analysis)
+            ? SingleReleaseArchiveWriter.write(
+                originalJar, temporaryJar, analysis, stripRootModuleDescriptor)
             : MultiReleaseArchiveWriter.write(originalJar, temporaryJar, analysis, elevationPlan);
     return new WriteResult(
         prunedClassBytes,

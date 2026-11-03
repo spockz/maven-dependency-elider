@@ -50,7 +50,8 @@ public final class ArchiveSanitizer {
         && !expectedOriginalSha256.equals(originalDigests.sha256())) {
       throw new IOException("Original dependency changed during trim analysis: " + originalJar);
     }
-    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests, null);
+    return prepareValidated(
+        originalJar, trimmedJar, coordinate, analysis, originalDigests, null, false, "not_multi_release");
   }
 
   /** Stages an MRJAR using a validated target-release elevation plan. */
@@ -77,7 +78,8 @@ public final class ArchiveSanitizer {
         || !analysis.retainedClasses().equals(plan.retainedTargetClasses())) {
       throw new IOException("Trim analysis does not match the MRJAR target-release view");
     }
-    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests, plan);
+    return prepareValidated(
+        originalJar, trimmedJar, coordinate, analysis, originalDigests, plan, false, "elevated_and_trimmed");
   }
 
   /**
@@ -98,7 +100,28 @@ public final class ArchiveSanitizer {
       throw new IOException(
           "Captured original dependency digests belong to a different path: " + originalJar);
     }
-    return prepareValidated(originalJar, trimmedJar, coordinate, analysis, originalDigests, null);
+    return prepareValidated(
+        originalJar, trimmedJar, coordinate, analysis, originalDigests, null, false, "not_multi_release");
+  }
+
+  /**
+   * Stages a runtime derivative in classpath-only mode, stripping the root module descriptor.
+   */
+  public PreparedOutput prepareClasspathOnly(
+      final Path originalJar,
+      final Path trimmedJar,
+      final ArtifactCoordinate coordinate,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final ArtifactDigests originalDigests)
+      throws IOException {
+    validateInputs(originalJar, trimmedJar, coordinate, analysis);
+    Objects.requireNonNull(originalDigests, "originalDigests");
+    if (!originalDigests.matchesPath(originalJar)) {
+      throw new IOException(
+          "Captured original dependency digests belong to a different path: " + originalJar);
+    }
+    return prepareValidated(
+        originalJar, trimmedJar, coordinate, analysis, originalDigests, null, true, "classpath-only");
   }
 
   private static void validateInputs(
@@ -125,7 +148,9 @@ public final class ArchiveSanitizer {
       final ArtifactCoordinate coordinate,
       final DependencyJarTrimmer.TrimAnalysis analysis,
       final ArtifactDigests originalDigests,
-      final MultiReleaseArchivePlan elevationPlan)
+      final MultiReleaseArchivePlan elevationPlan,
+      final boolean stripRootModuleDescriptor,
+      final String mrjarStatus)
       throws IOException {
     final ArchiveOutputStager.OutputLocation location =
         ArchiveOutputStager.resolveOutputLocation(originalJar, trimmedJar);
@@ -133,7 +158,8 @@ public final class ArchiveSanitizer {
     boolean moved = false;
     try {
       final ArchiveOutputStager.WriteResult writeResult =
-          ArchiveOutputStager.writeAndMeasure(originalJar, temporaryJar, analysis, elevationPlan);
+          ArchiveOutputStager.writeAndMeasure(
+              originalJar, temporaryJar, analysis, elevationPlan, stripRootModuleDescriptor);
       moved = true;
       return new PreparedOutput(
           temporaryJar,
@@ -152,7 +178,7 @@ public final class ArchiveSanitizer {
           writeResult.prunedClassBytes(),
           writeResult.originalPhysicalEntries(),
           writeResult.trimmedPhysicalEntries(),
-          elevationPlan == null ? "not_multi_release" : "elevated_and_trimmed");
+          mrjarStatus);
     } finally {
       if (!moved) {
         Files.deleteIfExists(temporaryJar);

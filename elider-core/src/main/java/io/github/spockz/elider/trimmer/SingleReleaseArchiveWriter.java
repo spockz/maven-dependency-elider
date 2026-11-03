@@ -27,6 +27,15 @@ final class SingleReleaseArchiveWriter {
       final Path temporaryJar,
       final DependencyJarTrimmer.TrimAnalysis analysis)
       throws IOException {
+    return write(originalJar, temporaryJar, analysis, false);
+  }
+
+  static long write(
+      final Path originalJar,
+      final Path temporaryJar,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final boolean stripRootModuleDescriptor)
+      throws IOException {
     final Set<String> retainedClasses = new HashSet<>(analysis.retainedClasses());
     final Set<String> seenNames = new HashSet<>();
     final Set<String> writtenClasses = new HashSet<>();
@@ -45,7 +54,8 @@ final class SingleReleaseArchiveWriter {
             seenNames,
             writtenClasses,
             inputClasses,
-            prunedClassBytes);
+            prunedClassBytes,
+            stripRootModuleDescriptor);
       }
     }
     verifyClasses(inputClasses, writtenClasses, retainedClasses, analysis.totalClasses());
@@ -74,7 +84,8 @@ final class SingleReleaseArchiveWriter {
       final Set<String> seenNames,
       final Set<String> writtenClasses,
       final Set<String> inputClasses,
-      final PrunedClassByteCounter prunedClassBytes)
+      final PrunedClassByteCounter prunedClassBytes,
+      final boolean stripRootModuleDescriptor)
       throws IOException {
     final String name = entry.getName();
     if (!seenNames.add(name)) {
@@ -84,7 +95,14 @@ final class SingleReleaseArchiveWriter {
       copyEntry(input, output, entry);
     } else if (!JarSignatureSanitizer.isSignatureFile(name)) {
       writeNonSignatureEntry(
-          input, output, entry, retainedClasses, writtenClasses, inputClasses, prunedClassBytes);
+          input,
+          output,
+          entry,
+          retainedClasses,
+          writtenClasses,
+          inputClasses,
+          prunedClassBytes,
+          stripRootModuleDescriptor);
     }
   }
 
@@ -95,14 +113,22 @@ final class SingleReleaseArchiveWriter {
       final Set<String> retainedClasses,
       final Set<String> writtenClasses,
       final Set<String> inputClasses,
-      final PrunedClassByteCounter prunedClassBytes)
+      final PrunedClassByteCounter prunedClassBytes,
+      final boolean stripRootModuleDescriptor)
       throws IOException {
     final String name = entry.getName();
     if (JarSignatureSanitizer.isManifest(name)) {
       writeManifest(input, output, entry);
     } else if (!DependencyJarTrimmer.isVersionedModuleDescriptor(name)) {
       writeClassOrResource(
-          input, output, entry, retainedClasses, writtenClasses, inputClasses, prunedClassBytes);
+          input,
+          output,
+          entry,
+          retainedClasses,
+          writtenClasses,
+          inputClasses,
+          prunedClassBytes,
+          stripRootModuleDescriptor);
     }
   }
 
@@ -113,14 +139,21 @@ final class SingleReleaseArchiveWriter {
       final Set<String> retainedClasses,
       final Set<String> writtenClasses,
       final Set<String> inputClasses,
-      final PrunedClassByteCounter prunedClassBytes)
+      final PrunedClassByteCounter prunedClassBytes,
+      final boolean stripRootModuleDescriptor)
       throws IOException {
     if (!entry.getName().endsWith(".class")) {
       copyEntry(input, output, entry);
       return;
     }
     final String name = entry.getName();
-    if ("module-info.class".equals(name) || name.startsWith("META-INF/versions/")) {
+    if ("module-info.class".equals(name)) {
+      if (stripRootModuleDescriptor) {
+        return;
+      }
+      throw new IOException("Unsupported modular or multi-release entry: " + name);
+    }
+    if (name.startsWith("META-INF/versions/")) {
       throw new IOException("Unsupported modular or multi-release entry: " + name);
     }
     writeClass(

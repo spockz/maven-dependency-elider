@@ -24,6 +24,9 @@ final class MavenDependencyTrimmer {
   /** Preserves multi-release archives while still analyzing their dependencies. */
   /* package */ static final String MRJAR_PASS_THROUGH = "pass-through";
 
+  /** Trims modular dependencies as runtime derivatives by stripping module descriptors. */
+  /* package */ static final String MRJAR_CLASSPATH_ONLY = "classpath-only";
+
   /** Artifact type supported by archive trimming. */
   /* package */ static final String JAR_TYPE = "jar";
 
