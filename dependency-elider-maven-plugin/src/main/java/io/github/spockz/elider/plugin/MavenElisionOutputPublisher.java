@@ -260,7 +260,9 @@ final class MavenElisionOutputPublisher {
       }
       SpringAotAssetPaths.resolveMainClasses(request.project()).ifPresent(inputs::add);
       for (final ArtifactFileRef ref : inventory.artifactFiles()) {
-        inputs.add(ref.filePath());
+        if (ref.filePath().toString().endsWith(".jar") || ref.filePath().toString().endsWith(".class")) {
+          inputs.add(ref.filePath());
+        }
       }
       final Set<String> recommendedModules =
           new AdvisoryJdkModulesAnalyzer()
