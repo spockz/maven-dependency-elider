@@ -2,7 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.correspondence.SourceClaimPathMatcher;
+import io.github.spockz.elider.model.SourceClaimPathMatcher;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
 import io.github.spockz.elider.model.CveAffectedEntryContext;

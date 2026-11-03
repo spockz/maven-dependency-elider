@@ -1,6 +1,6 @@
 // WHY: Keeps basename and package-suffix comparisons review-only instead of treating them as proof.
 
-package io.github.spockz.elider.correspondence;
+package io.github.spockz.elider.model;
 
 /** Applies conservative path checks to source-file claims and class-file metadata. */
 public final class SourceClaimPathMatcher {

@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.correspondence;
 
+import io.github.spockz.elider.model.SourceClaimPathMatcher;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
