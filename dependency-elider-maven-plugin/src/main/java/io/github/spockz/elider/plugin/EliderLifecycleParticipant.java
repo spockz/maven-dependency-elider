@@ -88,6 +88,13 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
               project.getFile());
         }
         execution.setPhase("process-classes");
+        execution.setPriority(Integer.MAX_VALUE);
+      }
+      if (plugin.getExecutions().stream().anyMatch(e -> "process-classes".equals(e.getPhase()) && e.getGoals().contains("elide"))) {
+        final var plugins = build.getPlugins();
+        if (plugins.remove(plugin)) {
+          plugins.add(plugin);
+        }
       }
     }
   }
