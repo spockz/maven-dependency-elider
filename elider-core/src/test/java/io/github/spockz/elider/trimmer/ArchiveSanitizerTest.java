@@ -591,6 +591,55 @@ class ArchiveSanitizerTest {
         });
   }
 
+  @Test
+  void autoConfigurationImportsAreFilteredDuringSingleReleaseTrimming() throws Exception {
+    final Path candidate = createCandidateJar();
+    // Add AutoConfiguration.imports to candidate
+    final Path withImports = temporaryDirectory.resolve("with-imports.jar");
+    final String importsContent =
+        "fixture.Keep\n"
+            + "fixture.Drop\n"
+            + "org.external.ForeignConfig\n";
+    try (JarFile input = new JarFile(candidate.toFile());
+        JarOutputStream output = new JarOutputStream(Files.newOutputStream(withImports))) {
+      final Enumeration<JarEntry> entries = input.entries();
+      while (entries.hasMoreElements()) {
+        final JarEntry entry = entries.nextElement();
+        writeEntry(output, entry.getName(), input.getInputStream(entry).readAllBytes());
+      }
+      writeEntry(
+          output,
+          AutoConfigurationDescriptorFilter.IMPORTS_PATH,
+          importsContent.getBytes(StandardCharsets.UTF_8));
+    }
+
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer()
+            .analyze(withImports, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
+    final Path trimmedOutput = temporaryDirectory.resolve("imports-trimmed.jar");
+    final ArtifactDigests digests = ArtifactDigests.read(withImports);
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepareWithProvenance(
+            withImports,
+            trimmedOutput,
+            ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+            analysis,
+            digests);
+
+    sanitizer.publish(prepared);
+
+    try (JarFile trimmed = new JarFile(trimmedOutput.toFile())) {
+      final JarEntry entry = trimmed.getJarEntry(AutoConfigurationDescriptorFilter.IMPORTS_PATH);
+      assertThat(entry).isNotNull();
+      final String content = new String(trimmed.getInputStream(entry).readAllBytes(), StandardCharsets.UTF_8);
+      org.junit.jupiter.api.Assertions.assertAll(
+          () -> assertThat(content).contains("fixture.Keep"),
+          () -> assertThat(content).contains("org.external.ForeignConfig"),
+          () -> assertThat(content).doesNotContain("fixture.Drop"));
+    }
+  }
+
   private static void writeEntry(
       final JarOutputStream output, final String name, final byte[] contents) throws IOException {
     output.putNextEntry(new JarEntry(name));

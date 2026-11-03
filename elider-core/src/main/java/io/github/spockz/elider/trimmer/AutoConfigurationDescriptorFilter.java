@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.jar.JarEntry;
@@ -28,6 +29,7 @@ public final class AutoConfigurationDescriptorFilter {
 
   /**
    * Filters an AutoConfiguration.imports entry if present and any archive-owned classes were removed.
+   * Handles both dot-separated (binary) and slash-separated (internal) class names.
    */
   public static Optional<byte[]> filterImports(
       final JarFile input,
@@ -38,6 +40,9 @@ public final class AutoConfigurationDescriptorFilter {
     if (!IMPORTS_PATH.equals(entry.getName())) {
       return Optional.empty();
     }
+    final Set<String> normalizedOwned = normalizeNames(archiveOwnedClasses);
+    final Set<String> normalizedRetained = normalizeNames(retainedClasses);
+
     final StringBuilder filtered = new StringBuilder();
     boolean modified = false;
     try (BufferedReader reader =
@@ -50,11 +55,11 @@ public final class AutoConfigurationDescriptorFilter {
           filtered.append(line).append('\n');
           continue;
         }
+        final String internalName = className.replace('.', '/');
         // Input-Archive Ownership Invariant:
         // Remove an entry only when its owner belonged to the input archive AND was actually removed.
-        // Never prune third-party or external configuration classes.
-        final boolean ownedByArchive = archiveOwnedClasses.contains(className);
-        final boolean retained = retainedClasses.contains(className);
+        final boolean ownedByArchive = normalizedOwned.contains(internalName);
+        final boolean retained = normalizedRetained.contains(internalName);
         if (ownedByArchive && !retained) {
           modified = true;
           // Omit this entry because it was owned by this archive and removed
@@ -64,5 +69,13 @@ public final class AutoConfigurationDescriptorFilter {
       }
     }
     return modified ? Optional.of(filtered.toString().getBytes(StandardCharsets.UTF_8)) : Optional.empty();
+  }
+
+  private static Set<String> normalizeNames(final Set<String> names) {
+    final Set<String> normalized = new HashSet<>(names.size());
+    for (final String name : names) {
+      normalized.add(name.replace('.', '/'));
+    }
+    return normalized;
   }
 }

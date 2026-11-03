@@ -207,6 +207,11 @@ final class ProductionAnalysisInputs {
 
   /* default */ static ProductionBytecodeInputs productionBytecodeInputs(
       final File output, final boolean productionClassesComplete) throws IOException {
+    return productionBytecodeInputs(output, List.of(), productionClassesComplete);
+  }
+
+  /* default */ static ProductionBytecodeInputs productionBytecodeInputs(
+      final File output, final List<Path> additionalOutputs, final boolean productionClassesComplete) throws IOException {
     if (output == null) {
       if (productionClassesComplete) {
         throw new IOException(
@@ -215,7 +220,8 @@ final class ProductionAnalysisInputs {
       return new ProductionBytecodeInputs("none", Optional.empty(), Set.of(), Set.of());
     }
     final Path path = output.toPath();
-    final ProductionBytecodeAnalysis.Snapshot snapshot = ProductionBytecodeAnalysis.capture(path);
+    final ProductionBytecodeAnalysis.Snapshot snapshot =
+        ProductionBytecodeAnalysis.capture(path, additionalOutputs);
     if (productionClassesComplete && snapshot.bytecodeReferences().classFilesScanned() == 0) {
       throw new IOException(
           "elide.productionClassesComplete=true requires compiled production class files in "
@@ -224,7 +230,7 @@ final class ProductionAnalysisInputs {
     }
     final Set<String> provenServiceInterfaces =
         snapshot.scanServiceLoaderCalls().provenServiceInterfaces();
-    final String after = ProductionOutputFingerprint.fingerprint(path);
+    final String after = ProductionOutputFingerprint.fingerprint(path, additionalOutputs);
     if (!snapshot.fingerprint().equals(after)) {
       throw new IOException("Production output changed during bytecode analysis");
     }

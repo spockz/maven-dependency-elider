@@ -37,9 +37,12 @@ final class MavenAnalysisEvidence {
     final TraceData trace = new CompositeTraceReader().readAll(tracePaths(options.traceFiles()));
     final ArtifactClassIndex index = new JarIndexScanner().scan(candidates);
     final CompletenessOptions completeness = options.completeness();
+    final List<Path> additionalBytecodeRoots =
+        SpringAotAssetPaths.resolveMainClasses(project).map(List::of).orElseGet(List::of);
     final ProductionAnalysisInputs.ProductionBytecodeInputs production =
         ProductionAnalysisInputs.productionBytecodeInputs(
             MavenProductionOutputPaths.resolve(project, options),
+            additionalBytecodeRoots,
             completeness.productionClassesComplete());
     final ProductionAnalysisInputs.CompilerInputs compiler =
         ProductionAnalysisInputs.compilerInputs(

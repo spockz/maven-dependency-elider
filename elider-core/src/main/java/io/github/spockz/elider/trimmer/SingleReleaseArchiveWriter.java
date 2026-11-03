@@ -41,21 +41,31 @@ final class SingleReleaseArchiveWriter {
     final Set<String> writtenClasses = new HashSet<>();
     final Set<String> inputClasses = new HashSet<>();
     final PrunedClassByteCounter prunedClassBytes = new PrunedClassByteCounter();
-    try (JarFile input = new JarFile(originalJar.toFile());
-        OutputStream fileOutput = Files.newOutputStream(temporaryJar);
-        JarOutputStream output = new JarOutputStream(fileOutput)) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        writeEntry(
-            input,
-            output,
-            entries.nextElement(),
-            retainedClasses,
-            seenNames,
-            writtenClasses,
-            inputClasses,
-            prunedClassBytes,
-            stripRootModuleDescriptor);
+    try (JarFile input = new JarFile(originalJar.toFile())) {
+      final Enumeration<JarEntry> scanEntries = input.entries();
+      while (scanEntries.hasMoreElements()) {
+        final JarEntry entry = scanEntries.nextElement();
+        final String name = entry.getName();
+        if (name.endsWith(".class") && !"module-info.class".equals(name) && !name.startsWith("META-INF/versions/")) {
+          final String className = name.substring(0, name.length() - ".class".length());
+          inputClasses.add(className);
+        }
+      }
+      try (OutputStream fileOutput = Files.newOutputStream(temporaryJar);
+          JarOutputStream output = new JarOutputStream(fileOutput)) {
+        final Enumeration<JarEntry> entries = input.entries();
+        while (entries.hasMoreElements()) {
+          writeEntry(
+              input,
+              output,
+              entries.nextElement(),
+              retainedClasses,
+              seenNames,
+              writtenClasses,
+              inputClasses,
+              prunedClassBytes,
+              stripRootModuleDescriptor);
+        }
       }
     }
     verifyClasses(inputClasses, writtenClasses, retainedClasses, analysis.totalClasses());
@@ -143,6 +153,23 @@ final class SingleReleaseArchiveWriter {
       final boolean stripRootModuleDescriptor)
       throws IOException {
     if (!entry.getName().endsWith(".class")) {
+      if (AutoConfigurationDescriptorFilter.IMPORTS_PATH.equals(entry.getName())) {
+        final java.util.Optional<byte[]> filtered =
+            AutoConfigurationDescriptorFilter.filterImports(input, entry, inputClasses, retainedClasses);
+        if (filtered.isPresent()) {
+          final JarEntry copy = new JarEntry(entry.getName());
+          if (entry.getTime() >= 0) {
+            copy.setTime(entry.getTime());
+          }
+          if (entry.getComment() != null) {
+            copy.setComment(entry.getComment());
+          }
+          output.putNextEntry(copy);
+          output.write(filtered.get());
+          output.closeEntry();
+          return;
+        }
+      }
       copyEntry(input, output, entry);
       return;
     }

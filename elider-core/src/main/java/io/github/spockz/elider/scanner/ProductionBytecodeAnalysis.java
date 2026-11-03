@@ -79,11 +79,22 @@ public final class ProductionBytecodeAnalysis {
 
   /** Captures classes once for direct and later evidence scans. */
   public static Snapshot capture(final Path productionOutput) throws IOException {
+    return capture(productionOutput, List.of());
+  }
+
+  /** Captures classes across primary production output and additional class directories (e.g. Spring AOT). */
+  public static Snapshot capture(final Path productionOutput, final List<Path> additionalOutputs) throws IOException {
     final Path scope = productionOutput.toAbsolutePath().normalize();
     if (!Files.isDirectory(scope)) {
       throw new IOException("Production class output directory is missing: " + scope);
     }
-    final List<ClassFile> classFiles = captureClassFiles(scope);
+    final List<ClassFile> classFiles = new ArrayList<>(captureClassFiles(scope));
+    for (final Path additional : additionalOutputs) {
+      final Path normalizedAdditional = additional.toAbsolutePath().normalize();
+      if (Files.isDirectory(normalizedAdditional)) {
+        classFiles.addAll(captureClassFiles(normalizedAdditional));
+      }
+    }
     final List<ClassFile> sortedFiles =
         classFiles.stream().sorted(Comparator.comparing(ClassFile::path)).toList();
     final Set<String> references = new java.util.HashSet<>();
@@ -93,7 +104,14 @@ public final class ProductionBytecodeAnalysis {
     }
     final Set<String> classNames = new TreeSet<>();
     for (final ClassFile classFile : classFiles) {
-      final String relativePath = scope.relativize(classFile.path()).toString().replace('\\', '/');
+      final Path root = classFile.path().startsWith(scope)
+          ? scope
+          : additionalOutputs.stream()
+              .map(p -> p.toAbsolutePath().normalize())
+              .filter(p -> classFile.path().startsWith(p))
+              .findFirst()
+              .orElse(scope);
+      final String relativePath = root.relativize(classFile.path()).toString().replace('\\', '/');
       if (!"module-info.class".equals(relativePath)
           && !relativePath.endsWith("/module-info.class")) {
         classNames.add(
@@ -103,28 +121,52 @@ public final class ProductionBytecodeAnalysis {
     }
     final BytecodeReferenceScan referenceScan =
         new BytecodeReferenceScan(scope, references, classFiles.size(), true);
+    final List<Path> roots = new ArrayList<>();
+    roots.add(scope);
+    for (final Path additional : additionalOutputs) {
+      final Path normalizedAdditional = additional.toAbsolutePath().normalize();
+      if (Files.isDirectory(normalizedAdditional)) {
+        roots.add(normalizedAdditional);
+      }
+    }
     return new Snapshot(
-        fingerprintCapturedFiles(scope, sortedFiles), referenceScan, classNames, classFiles);
+        fingerprintCapturedFiles(roots, sortedFiles), referenceScan, classNames, classFiles);
   }
 
   /** Computes the versioned fingerprint by rereading the current production output. */
   public static String fingerprint(final Path output) throws IOException {
+    return fingerprint(output, List.of());
+  }
+
+  /** Computes the versioned fingerprint by rereading current production outputs. */
+  public static String fingerprint(final Path output, final List<Path> additionalOutputs) throws IOException {
     final Path scope = output.toAbsolutePath().normalize();
     if (!Files.isDirectory(scope)) {
       throw new IOException("Production class output directory is missing: " + scope);
     }
-    final List<Path> classes;
-    try (Stream<Path> paths = Files.walk(scope)) {
-      classes =
-          paths
-              .filter(Files::isRegularFile)
-              .filter(ProductionBytecodeAnalysis::isClassFile)
-              .sorted()
-              .toList();
+    final List<Path> roots = new ArrayList<>();
+    roots.add(scope);
+    for (final Path additional : additionalOutputs) {
+      final Path normalized = additional.toAbsolutePath().normalize();
+      if (Files.isDirectory(normalized)) {
+        roots.add(normalized);
+      }
     }
+    final List<Path> classes = new ArrayList<>();
+    for (final Path root : roots) {
+      try (Stream<Path> paths = Files.walk(root)) {
+        classes.addAll(
+            paths
+                .filter(Files::isRegularFile)
+                .filter(ProductionBytecodeAnalysis::isClassFile)
+                .toList());
+      }
+    }
+    classes.sort(Comparator.naturalOrder());
     final MessageDigest digest = startFingerprint();
     for (final Path classFile : classes) {
-      updateFingerprint(digest, scope, classFile, Files.readAllBytes(classFile));
+      final Path root = roots.stream().filter(classFile::startsWith).findFirst().orElse(scope);
+      updateFingerprint(digest, root, classFile, Files.readAllBytes(classFile));
     }
     return HexFormat.of().formatHex(digest.digest());
   }
@@ -149,10 +191,12 @@ public final class ProductionBytecodeAnalysis {
   }
 
   private static String fingerprintCapturedFiles(
-      final Path scope, final List<ClassFile> classFiles) {
+      final List<Path> roots, final List<ClassFile> classFiles) {
     final MessageDigest digest = startFingerprint();
+    final Path primaryScope = roots.getFirst();
     for (final ClassFile classFile : classFiles) {
-      updateFingerprint(digest, scope, classFile.path(), classFile.content());
+      final Path root = roots.stream().filter(classFile.path()::startsWith).findFirst().orElse(primaryScope);
+      updateFingerprint(digest, root, classFile.path(), classFile.content());
     }
     return HexFormat.of().formatHex(digest.digest());
   }

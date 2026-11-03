@@ -56,6 +56,24 @@ final class ProductionBytecodeAnalysisTest {
   }
 
   @Test
+  void capturesClassesAcrossAdditionalRoots() throws IOException {
+    final Path mainOutput = Files.createDirectory(temporaryDirectory.resolve("main-classes"));
+    final Path aotOutput = Files.createDirectory(temporaryDirectory.resolve("aot-classes"));
+    final Path mainPkg = Files.createDirectory(mainOutput.resolve("sample"));
+    final Path aotPkg = Files.createDirectory(aotOutput.resolve("sample"));
+    Files.write(mainPkg.resolve("MainApp.class"), appClass("sample/MainApp"));
+    Files.write(aotPkg.resolve("AotGenerated.class"), appClass("sample/AotGenerated"));
+
+    final ProductionBytecodeAnalysis.Snapshot snapshot =
+        ProductionBytecodeAnalysis.capture(mainOutput, List.of(aotOutput));
+
+    assertAll(
+        () -> assertThat(snapshot.classNames()).containsExactlyInAnyOrder("sample.MainApp", "sample.AotGenerated"),
+        () -> assertThat(snapshot.bytecodeReferences().classFilesScanned()).isEqualTo(2),
+        () -> assertThat(snapshot.fingerprint()).isEqualTo(ProductionBytecodeAnalysis.fingerprint(mainOutput, List.of(aotOutput))));
+  }
+
+  @Test
   void rejectsSymbolicLinksInProductionOutput() throws IOException {
     final Path output = Files.createDirectory(temporaryDirectory.resolve("linked-classes"));
     try {

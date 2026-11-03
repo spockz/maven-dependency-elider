@@ -155,6 +155,15 @@ final class MultiReleaseArchiveWriter {
       return;
     }
     state.reserve(name);
+    if (AutoConfigurationDescriptorFilter.IMPORTS_PATH.equals(name)) {
+      final Optional<byte[]> aotContents =
+          AutoConfigurationDescriptorFilter.filterImports(
+              input, entry, state.plan.targetClasses(), state.plan.retainedTargetClasses());
+      if (aotContents.isPresent()) {
+        MultiReleaseEntrySupport.writeEntryAs(output, entry, name, aotContents.orElseThrow());
+        return;
+      }
+    }
     final Optional<byte[]> serviceContents =
         ServiceDescriptorFilter.filter(input, entry, state.removedServiceProviders());
     if (serviceContents.isEmpty()) {
