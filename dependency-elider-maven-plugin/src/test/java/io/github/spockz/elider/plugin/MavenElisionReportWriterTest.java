@@ -326,17 +326,17 @@ final class MavenElisionReportWriterTest {
             "Mitigated CVEs (vulnerable code pruned by trimming):",
             "  - CVE-2025-11226 org.example:trimmed:jar:2.0",
             "CVEs inactive due to unmet prerequisite dependencies:",
-            "  - CVE-2025-11227 ch.qos.logback:logback-core:jar:1.5.15; inactive because"
-                + " missing prerequisite dependencies: org.codehaus.janino:janino (class"
-                + " org.codehaus.janino.ClassBodyEvaluator)",
+            "  - CVE-2025-11227 ch.qos.logback:logback-core:jar:1.5.15; inactive because",
+            "    missing prerequisite dependencies: org.codehaus.janino:janino (class",
+            "    org.codehaus.janino.ClassBodyEvaluator)",
             "Potentially conservative CVE exclusions:",
             "  - CVE-2026-68494 com.fasterxml.jackson.core:jackson-core:jar:2.14.3",
-            "    Reason: Advisory mapping requires multiple symbols, but class(es)"
-                + " [com.fasterxml.jackson.core.exc.StreamConstraintsException] are absent from"
-                + " original archive while [com.fasterxml.jackson.core.async.ByteArrayFeeder] were"
-                + " pruned.",
-            "    Actionable POM override to certify if absent classes do not apply to your"
-                + " version:",
+            "    Reason: Advisory mapping requires multiple symbols, but class(es)",
+            "    [com.fasterxml.jackson.core.exc.StreamConstraintsException] are absent from",
+            "    original archive while [com.fasterxml.jackson.core.async.ByteArrayFeeder]",
+            "    were pruned.",
+            "    Actionable POM override to certify if absent classes do not apply to your",
+            "    version:",
             "      <configuration>",
             "        <vulnerabilityMappings>",
             "          <vulnerabilityMapping>",

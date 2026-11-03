@@ -459,10 +459,15 @@ Process exit status: 0
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none
 [INFO] Potentially conservative CVE exclusions: none detected
 [INFO] Advisory associations (review only; inventory disposition is not impact proof):
-[INFO]     Heuristic candidates are review leads; they do not establish a complete affected class set.
-[INFO]     Add a POM mapping with HIGH only after verifying the source applies to the exact artifact version and the listed classes form the complete affected set.
-[INFO]     The elider still checks the original and trimmed artifacts before publishing VEX. Keep unverified candidates review-only.
-[INFO]     REMOVED means excluded from this project's subsequent classpaths; the cached JAR is not deleted.
+[INFO]     Heuristic candidates are review leads; they do not establish a complete
+[INFO]     affected class set.
+[INFO]     Add a POM mapping with HIGH only after verifying the source applies to the
+[INFO]     exact artifact version and the listed classes form the complete affected
+[INFO]     set.
+[INFO]     The elider still checks the original and trimmed artifacts before publishing
+[INFO]     VEX. Keep unverified candidates review-only.
+[INFO]     REMOVED means excluded from this project's subsequent classpaths; the cached
+[INFO]     JAR is not deleted.
 [INFO]   - GHSA-transcript-httpclient / CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
 [INFO]     Heuristic origin: REFERENCE_URL / GHSA-transcript-httpclient#reference:0 (MEDIUM)
 [INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
@@ -486,12 +491,21 @@ Process exit status: 0
 [INFO]       </vulnerabilityMappings>
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
-[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
+[INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven
+[INFO]   supplied no source location/identity or the location matched zero or multiple
+[INFO]   original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields
+[INFO]   exclusionReview.snapshot.dependencies and
+[INFO]   exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
+[INFO]   a global ban changes this project's output and may remove content needed by
+[INFO]   downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
@@ -562,19 +576,32 @@ Process exit status: 0
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none
 [INFO] Potentially conservative CVE exclusions:
 [INFO]   - CVE-2026-68494 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2
-[INFO]     Reason: Vulnerable code was retained due to conservative ServiceLoader SPI root com.fasterxml.jackson.core.ObjectCodec, com.fasterxml.jackson.databind.ObjectMapper without positive proof of use in application bytecode.
-[INFO]     Actionable POM override to certify if absent classes do not apply to your version:
+[INFO]     Reason: Vulnerable code was retained due to conservative ServiceLoader SPI
+[INFO]     root com.fasterxml.jackson.core.ObjectCodec,
+[INFO]     com.fasterxml.jackson.databind.ObjectMapper without positive proof of use in
+[INFO]     application bytecode.
+[INFO]     Actionable POM override to certify if absent classes do not apply to your
+[INFO]     version:
 [INFO]       <configuration>
 [INFO]         <conservativeServiceLoaderRoots>false</conservativeServiceLoaderRoots>
 [INFO]       </configuration>
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 1529 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
-[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
+[INFO]   Exclusion provenance incomplete for 1529 dependency or exclusion origins.
+[INFO]   Maven supplied no source location/identity or the location matched zero or
+[INFO]   multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields
+[INFO]   exclusionReview.snapshot.dependencies and
+[INFO]   exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
+[INFO]   a global ban changes this project's output and may remove content needed by
+[INFO]   downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n7} [RETAINED, CLASS_TRIMMED]
@@ -643,12 +670,21 @@ Process exit status: 0
 [INFO]     OSV ranges: ECOSYSTEM range: introduced at 1.5; fixed at 1.10.0
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
-[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
+[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
+[INFO]   Maven supplied no source location/identity or the location matched zero or
+[INFO]   multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields
+[INFO]   exclusionReview.snapshot.dependencies and
+[INFO]   exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
+[INFO]   a global ban changes this project's output and may remove content needed by
+[INFO]   downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n3} [RETAINED]
@@ -702,16 +738,27 @@ Process exit status: 0
 [INFO] Advisories associated with removed components: none
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none
 [INFO] CVEs inactive due to unmet prerequisite dependencies:
-[INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18; inactive because missing prerequisite dependencies: org.codehaus.janino:janino (class org.codehaus.janino.ClassBodyEvaluator)
+[INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18; inactive because
+[INFO]     missing prerequisite dependencies: org.codehaus.janino:janino (class
+[INFO]     org.codehaus.janino.ClassBodyEvaluator)
 [INFO] Potentially conservative CVE exclusions: none detected
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
-[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
+[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
+[INFO]   Maven supplied no source location/identity or the location matched zero or
+[INFO]   multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields
+[INFO]   exclusionReview.snapshot.dependencies and
+[INFO]   exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
+[INFO]   a global ban changes this project's output and may remove content needed by
+[INFO]   downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n1} [RETAINED]
@@ -772,12 +819,21 @@ Process exit status: 0
 [INFO]   Vulnerability mappings that remain unverified by the in-memory Analyze prediction: none detected
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
-[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
+[INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven
+[INFO]   supplied no source location/identity or the location matched zero or multiple
+[INFO]   original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields
+[INFO]   exclusionReview.snapshot.dependencies and
+[INFO]   exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
+[INFO]   a global ban changes this project's output and may remove content needed by
+[INFO]   downstream consumers.
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-basic-app-class-usage.json
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------

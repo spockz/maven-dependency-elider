@@ -110,12 +110,21 @@ Process exit status: 0
 [INFO]         </configuration>
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins. Maven supplied no source location/identity or the location matched zero or multiple original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location for dependency-management row 2 (org.apache.maven:maven-core)
-[INFO]   Full evidence is in the JSON snapshot fields exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation; a global ban changes this project's output and may remove content needed by downstream consumers.
+[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
+[INFO]   Maven supplied no source location/identity or the location matched zero or
+[INFO]   multiple original POM rows. This advisory review does not affect elision.
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
+[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
+[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
+[INFO]   Full evidence is in the JSON snapshot fields
+[INFO]   exclusionReview.snapshot.dependencies and
+[INFO]   exclusionReview.snapshot.diagnostics.
+[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
+[INFO]   a global ban changes this project's output and may remove content needed by
+[INFO]   downstream consumers.
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------

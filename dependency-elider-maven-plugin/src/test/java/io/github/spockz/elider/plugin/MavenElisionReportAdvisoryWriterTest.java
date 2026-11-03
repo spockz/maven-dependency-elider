@@ -73,15 +73,19 @@ final class MavenElisionReportAdvisoryWriterTest {
                 .contains(
                     "Advisory associations (review only; inventory disposition is not impact"
                         + " proof):",
-                    "    Heuristic candidates are review leads; they do not establish a complete"
-                        + " affected class set.",
+                    "    Heuristic candidates are review leads; they do not establish a complete",
+                    "    affected class set.",
                     "    Add a POM mapping with HIGH only after verifying the source applies to"
-                        + " the exact artifact version and the listed classes form the complete"
-                        + " affected set.",
+                        + " the",
+                    "    exact artifact version and the listed classes form the complete"
+                        + " affected",
+                    "    set.",
                     "    The elider still checks the original and trimmed artifacts before"
-                        + " publishing VEX. Keep unverified candidates review-only.",
+                        + " publishing",
+                    "    VEX. Keep unverified candidates review-only.",
                     "    REMOVED means excluded from this project's subsequent classpaths; the"
-                        + " cached JAR is not deleted.",
+                        + " cached",
+                    "    JAR is not deleted.",
                     "  - GHSA-package-only org.example:removed:jar:1.0 (compile) [REMOVED]",
                     "    Aliases: none",
                     "    Affected-version applicability: UNRESOLVED"

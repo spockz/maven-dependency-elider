@@ -118,7 +118,8 @@ final class MavenElisionReportRenderer {
             finding.missingPrerequisites().stream()
                 .map(MavenMissingPrerequisite::displayText)
                 .collect(Collectors.joining(", "));
-        lines.add(
+        addWrapped(
+            lines,
             BULLET
                 + finding.cveId()
                 + " "
@@ -134,8 +135,9 @@ final class MavenElisionReportRenderer {
       for (final MavenElisionReportSnapshot.ConservativeCveFinding finding :
           snapshot.potentiallyConservativeCves()) {
         lines.add(BULLET + finding.cveId() + " " + finding.coordinate());
-        lines.add("    Reason: " + finding.reason());
-        lines.add(
+        addWrapped(lines, "    Reason: " + finding.reason());
+        addWrapped(
+            lines,
             "    Actionable POM override to certify if absent classes do not apply to your"
                 + " version:");
         for (final String overrideLine : finding.pomOverrideSnippet().split("\n")) {
@@ -150,6 +152,10 @@ final class MavenElisionReportRenderer {
     lines.addAll(
         MediatedGraphReportRenderer.render(snapshot.mediatedGraph(), snapshot.projectGav()));
     return List.copyOf(lines);
+  }
+
+  private static void addWrapped(final List<String> lines, final String text) {
+    lines.addAll(WordWrapFormatter.wrap(text, 80));
   }
 
   private static void renderSourceReviewFindings(
@@ -201,7 +207,8 @@ final class MavenElisionReportRenderer {
         }
       }
       lines.add("    Review: " + finding.unresolvedRationale());
-      lines.add(
+      addWrapped(
+          lines,
           "    Verify the complete source-to-class mapping, then add an exact POM"
               + " vulnerableClasses assertion if confirmed; a filename match alone is incomplete.");
     }

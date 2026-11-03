@@ -28,7 +28,7 @@ final class ExclusionReviewRenderer {
   static List<String> render(final ExclusionReview review) {
     final List<String> lines = new ArrayList<>();
     if (!review.available()) {
-      lines.add(SECTION_INDENT + "Exclusion review unavailable: " + review.unavailableReason());
+      addWrapped(lines, SECTION_INDENT + "Exclusion review unavailable: " + review.unavailableReason());
       return List.copyOf(lines);
     }
     lines.add(SECTION_INDENT + "Repeated POM exclusions (advisory only):");
@@ -36,7 +36,8 @@ final class ExclusionReviewRenderer {
     appendManagement(review.management(), lines);
     appendDiagnostics(review, lines);
     if (!review.candidates().isEmpty()) {
-      lines.add(
+      addWrapped(
+          lines,
           SECTION_INDENT
               + "Next step: review each listed dependency path and origin. If you want a reviewed"
               + " transitive component removed from this project's output, set"
@@ -45,7 +46,8 @@ final class ExclusionReviewRenderer {
               + " POM exclusions; a global ban can also remove content needed by downstream"
               + " consumers.");
     }
-    lines.add(
+    addWrapped(
+        lines,
         SECTION_INDENT
             + "Review only: Maven path exclusions change dependency collection and mediation; "
             + "a global ban changes this project's output and may remove content needed by "
@@ -137,7 +139,8 @@ final class ExclusionReviewRenderer {
             .filter(value -> !value.startsWith("Incomplete or ambiguous provenance"))
             .toList();
     if (!originDiagnostics.isEmpty()) {
-      lines.add(
+      addWrapped(
+          lines,
           SECTION_INDENT
               + "Exclusion provenance incomplete for "
               + originDiagnostics.size()
@@ -148,10 +151,11 @@ final class ExclusionReviewRenderer {
           .distinct()
           .limit(3)
           .map(ExclusionReviewRenderer::diagnostic)
-          .forEach(value -> lines.add(ITEM_INDENT + value));
+          .forEach(value -> addWrapped(lines, ITEM_INDENT + value));
     }
     if (!captureDiagnostics.isEmpty()) {
-      lines.add(
+      addWrapped(
+          lines,
           SECTION_INDENT
               + "Exclusion capture warnings: "
               + captureDiagnostics.size()
@@ -159,14 +163,19 @@ final class ExclusionReviewRenderer {
       captureDiagnostics.stream()
           .distinct()
           .limit(3)
-          .forEach(value -> lines.add(ITEM_INDENT + value));
+          .forEach(value -> addWrapped(lines, ITEM_INDENT + value));
     }
     if (!diagnostics.isEmpty()) {
-      lines.add(
+      addWrapped(
+          lines,
           SECTION_INDENT
               + "Full evidence is in the JSON snapshot fields"
               + " exclusionReview.snapshot.dependencies and exclusionReview.snapshot.diagnostics.");
     }
+  }
+
+  private static void addWrapped(final List<String> lines, final String text) {
+    lines.addAll(WordWrapFormatter.wrap(text, 80));
   }
 
   private static String origin(final ExclusionRecommendations.Origin origin) {

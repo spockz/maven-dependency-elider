@@ -50,9 +50,9 @@ final class MavenElisionSourceReviewReportTest {
                     "  - OSV GHSA-example CVE-2025-11226 org.example:demo:jar:1.0 (compile) "
                         + "[containers.cna.affected[1]]",
                     "    SourceFile match leads:",
-                    "    Verify the complete source-to-class mapping, then add an exact POM"
-                        + " vulnerableClasses assertion if confirmed; a filename match alone is"
-                        + " incomplete."));
+                    "    Verify the complete source-to-class mapping, then add an exact POM",
+                    "    vulnerableClasses assertion if confirmed; a filename match alone is",
+                    "    incomplete."));
   }
 
   @Test

@@ -26,18 +26,22 @@ final class MavenElisionReportAdvisoryRenderer {
     final List<String> lines = new ArrayList<>();
     lines.add("Advisory associations (review only; inventory disposition is not impact proof):");
     if (!review.heuristicAdvisories().isEmpty()) {
-      lines.add(
+      addWrapped(
+          lines,
           "    Heuristic candidates are review leads; they do not establish a complete affected"
               + " class set.");
-      lines.add(
+      addWrapped(
+          lines,
           "    Add a POM mapping with HIGH only after verifying the source applies to the exact"
               + " artifact version and the listed classes form the complete affected set.");
-      lines.add(
+      addWrapped(
+          lines,
           "    The elider still checks the original and trimmed artifacts before publishing VEX."
               + " Keep unverified candidates review-only.");
     }
     if (hasRemovedAdvisory(review)) {
-      lines.add(
+      addWrapped(
+          lines,
           "    REMOVED means excluded from this project's subsequent classpaths; the cached JAR "
               + "is not deleted.");
     }
@@ -164,5 +168,9 @@ final class MavenElisionReportAdvisoryRenderer {
         lines.add("      " + snippetLine);
       }
     }
+  }
+
+  private static void addWrapped(final List<String> lines, final String text) {
+    lines.addAll(WordWrapFormatter.wrap(text, 80));
   }
 }
