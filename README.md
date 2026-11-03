@@ -296,7 +296,7 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 | Persisted report and CycloneDX pedigree | Unit tested; fixture verified | Verifies report structure, graph data, class and byte metrics, and example pedigree output. |
 | Maven multi-module reactor with active elision | One strict three-module chain verified on Maven CLI 3.9.11 and GraalVM JDK 21.0.12 | By default, elision executes only on leaf modules (`elide.leafOnly=true`). With `leafOnly=false`, sequential and `-T 4` `clean verify` builds pass with module-local schema-1 reports. The chain has no independent siblings, so broader reactor concurrency remains unverified. |
 | Other Maven CLI versions | Unverified | Pinned to Maven CLI 3.9.11. Other Maven 3 versions and Maven 4 are unverified. |
-| Java 25 class files | Supported | Pinned ProGuard Core 9.4.0 engine parses and analyzes class files through Java 27. |
+| Java 21–27 class files | Supported | Pinned ProGuard Core 9.4.0 engine parses and analyzes class files through Java 27. |
 | Process crash during publication | Unverified | Covers normal rollback on failure, not crash recovery or concurrent writers. |
 
 ### Configuration Rules & Safeguards
@@ -313,7 +313,7 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 
 * Add a parallel reactor integration fixture with two independent consumer modules under `mvn -T2`.
 * Extend tree verification beyond single leaf graphs to deep transitive conflict and mediated scope graphs.
-* Broaden testing beyond Maven CLI 3.9.11 and JDK 21.
+* Broaden testing across additional Maven CLI distributions beyond 3.9.11.
 
 ---
 
