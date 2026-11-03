@@ -87,12 +87,8 @@ final class ElisionAnalysisModel {
       if (trim.workers() < MIN_TRIM_WORKERS) {
         throw new IllegalArgumentException("trimWorkers must be at least 1");
       }
-      if (!MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING.equals(trim.mrjarStrategy())
-          && !MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(trim.mrjarStrategy())
-          && !MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(trim.mrjarStrategy())) {
-        throw new IllegalArgumentException(
-            "elide.mrjarStrategy must be vertical-shading, pass-through, or classpath-only");
-      }
+      // Validates mrjarStrategy parsing
+      MrjarStrategy.parse(trim.mrjarStrategy());
     }
 
     /* default */ AnalysisOptions withEnvironment(final AnalysisEnvironment value) {

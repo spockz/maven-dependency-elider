@@ -55,7 +55,7 @@ final class SingleReleaseRootPlanner {
             SingleReleaseTrimInventory.fullClasspath(inventory),
             platform.tables(),
             request.policy().trimWorkers(),
-            MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(request.policy().mrjarStrategy()));
+            MrjarStrategy.parse(request.policy().mrjarStrategy()) == MrjarStrategy.CLASSPATH_ONLY);
     final Set<ArtifactCoordinate> reachable = new LinkedHashSet<>(common.droppedArtifacts());
     reachable.addAll(dynamic.droppedArtifacts());
     return new SingleReleaseRootPlan(roots, prepared.candidates(), prepared.programs(), reachable);

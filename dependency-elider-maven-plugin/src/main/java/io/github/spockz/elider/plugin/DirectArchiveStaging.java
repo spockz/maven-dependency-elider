@@ -51,7 +51,7 @@ final class DirectArchiveStaging {
               request.policy().trimWorkers(),
               candidate -> {
                 final boolean isClasspathOnlyModule =
-                    MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(request.policy().mrjarStrategy())
+                    MrjarStrategy.parse(request.policy().mrjarStrategy()) == MrjarStrategy.CLASSPATH_ONLY
                         && MultiReleaseLibraryProjection.hasRootModuleDescriptor(
                             candidate.archive().snapshot().filePath());
                 final ArchiveSanitizer.PreparedOutput staged =

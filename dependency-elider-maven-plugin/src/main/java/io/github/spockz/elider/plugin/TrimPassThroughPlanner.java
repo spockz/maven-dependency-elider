@@ -31,12 +31,15 @@ final class TrimPassThroughPlanner {
       throw new IOException(
           "Unsupported root module descriptor in retained classpath JAR: " + snapshot.coordinate());
     }
+    final MrjarStrategy strategy = MrjarStrategy.parse(request.policy().mrjarStrategy());
     final boolean modulePassThrough =
-        moduleInfo
-            && !MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(request.policy().mrjarStrategy());
-    return modulePassThrough
-        || (multiRelease
-            && MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(request.policy().mrjarStrategy()));
+        moduleInfo && strategy != MrjarStrategy.CLASSPATH_ONLY;
+    final boolean multiReleasePassThrough =
+        switch (strategy) {
+          case PASS_THROUGH -> multiRelease;
+          case VERTICAL_SHADING, CLASSPATH_ONLY -> false;
+        };
+    return modulePassThrough || multiReleasePassThrough;
   }
 
   /* package */ static TrimPassThroughPlan passThroughPlan(final TrimRequest request)
@@ -89,9 +92,10 @@ final class TrimPassThroughPlanner {
       throws IOException {
     final List<ElisionAnalysisModel.ArtifactSnapshot> multiRelease = new ArrayList<>();
     final List<ElisionAnalysisModel.ArtifactSnapshot> moduleInfo = new ArrayList<>();
+    final MrjarStrategy strategy = MrjarStrategy.parse(request.policy().mrjarStrategy());
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : retainedLibraries) {
       if (MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath())
-          && MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(request.policy().mrjarStrategy())) {
+          && strategy == MrjarStrategy.PASS_THROUGH) {
         multiRelease.add(snapshot);
       }
       if (MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath())) {
@@ -100,7 +104,7 @@ final class TrimPassThroughPlanner {
               "Unsupported root module descriptor in retained classpath JAR: "
                   + snapshot.coordinate());
         }
-        if (!MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(request.policy().mrjarStrategy())) {
+        if (strategy != MrjarStrategy.CLASSPATH_ONLY) {
           moduleInfo.add(snapshot);
         }
       }

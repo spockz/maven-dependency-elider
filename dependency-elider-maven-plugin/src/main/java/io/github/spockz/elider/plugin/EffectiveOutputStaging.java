@@ -97,8 +97,7 @@ final class EffectiveOutputStaging implements AutoCloseable {
                         TrimInputDigests.requiredInputDigest(
                                 inputDigests, candidate.archive().snapshot().filePath())
                             .sha256());
-              } else if (MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(
-                  outputPlan.mrjarStrategy())
+              } else if (MrjarStrategy.parse(outputPlan.mrjarStrategy()) == MrjarStrategy.CLASSPATH_ONLY
                   && MultiReleaseLibraryProjection.hasRootModuleDescriptor(
                       candidate.archive().snapshot().filePath())) {
                 staged =
