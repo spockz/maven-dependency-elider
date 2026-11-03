@@ -462,11 +462,6 @@ Process exit status: 0
 [INFO]     Add a POM mapping with HIGH only after verifying the source applies to the exact artifact version and the listed classes form the complete affected set.
 [INFO]     The elider still checks the original and trimmed artifacts before publishing VEX. Keep unverified candidates review-only.
 [INFO]     REMOVED means excluded from this project's subsequent classpaths; the cached JAR is not deleted.
-[INFO]   - GHSA-transcript-httpclient org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
-[INFO]     Origin: OSV Maven / org.apache.httpcomponents:httpclient
-[INFO]     Aliases: [CVE-2014-3577]
-[INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
-[INFO]     OSV ranges: ECOSYSTEM range: introduced at 0; fixed at 4.3.5
 [INFO]   - GHSA-transcript-httpclient / CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
 [INFO]     Heuristic origin: REFERENCE_URL / GHSA-transcript-httpclient#reference:0 (MEDIUM)
 [INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
