@@ -49,6 +49,10 @@ final class MavenPreconditionStages {
 
   private static void validateStage(final Path stage) throws IOException {
     validatePath(stage);
+    if (stage.getFileName() != null
+        && stage.getFileName().toString().contains(AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME)) {
+      return;
+    }
     requireJsonObject(parseJsonObject(stage), stage);
   }
 
