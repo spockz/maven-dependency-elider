@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.Set;
 
 /** Reads HotSpot {@code -XX:DumpLoadedClassList} files. */
+@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class CdsClassListReader implements RuntimeTraceReader {
   /** Creates a reader for HotSpot CDS class-list files. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")

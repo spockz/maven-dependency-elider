@@ -6,9 +6,9 @@ package io.github.spockz.elider.trimmer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.Set;
@@ -19,6 +19,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** Verifies that AutoConfigurationDescriptorFilter prunes removed classes. */
+@SuppressWarnings({
+  "PMD.CommentRequired",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.AtLeastOneConstructor",
+  "PMD.UnitTestContainsTooManyAsserts",
+  "PMD.AvoidDuplicateLiterals"
+})
 final class AutoConfigurationDescriptorFilterTest {
 
   private static final String DISPLAY_DOT =
@@ -40,7 +48,7 @@ final class AutoConfigurationDescriptorFilterTest {
             + "com.example.OwnedRemoved\n"
             + "org.external.ExternalConfig\n";
 
-    try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(jarPath.toFile()))) {
+    try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
       final JarEntry entry = new JarEntry(AutoConfigurationDescriptorFilter.IMPORTS_PATH);
       jos.putNextEntry(entry);
       jos.write(importsContent.getBytes(StandardCharsets.UTF_8));
@@ -77,7 +85,7 @@ final class AutoConfigurationDescriptorFilterTest {
             + "com.example.OwnedRemoved\n"
             + "org.external.ExternalConfig\n";
 
-    try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(jarPath.toFile()))) {
+    try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
       final JarEntry entry = new JarEntry(AutoConfigurationDescriptorFilter.IMPORTS_PATH);
       jos.putNextEntry(entry);
       jos.write(importsContent.getBytes(StandardCharsets.UTF_8));
@@ -110,7 +118,7 @@ final class AutoConfigurationDescriptorFilterTest {
     final Path jarPath = tempDir.resolve("unchanged.jar");
     final String importsContent = "com.example.OwnedRetained\n" + "org.external.ExternalConfig\n";
 
-    try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(jarPath.toFile()))) {
+    try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
       final JarEntry entry = new JarEntry(AutoConfigurationDescriptorFilter.IMPORTS_PATH);
       jos.putNextEntry(entry);
       jos.write(importsContent.getBytes(StandardCharsets.UTF_8));

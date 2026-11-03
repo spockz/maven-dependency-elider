@@ -1,4 +1,5 @@
-// WHY: Wraps text lines at a fixed column width preserving leading and hanging indentation.
+// WHY: Wraps text lines at a fixed column width preserving leading and hanging
+// indentation.
 
 package io.github.spockz.elider.plugin;
 
@@ -8,9 +9,9 @@ import java.util.List;
 /**
  * Utility for wrapping report text lines at a configurable column width.
  *
- * <p>Preserves leading indentation and aligns continuation lines under bullet items or indentation
- * prefixes.
+ * <p>Preserves indentation and aligns continuation lines under bullet items.
  */
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.CyclomaticComplexity"})
 final class WordWrapFormatter {
   /** Bullet prefix marker recognized for hanging indent calculation. */
   private static final String BULLET = "  - ";

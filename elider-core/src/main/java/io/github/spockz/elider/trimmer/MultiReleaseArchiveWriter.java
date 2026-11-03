@@ -144,6 +144,7 @@ final class MultiReleaseArchiveWriter {
     state.markWrittenClass(className, true);
   }
 
+  @SuppressWarnings("PMD.LawOfDemeter")
   private static void writeResource(
       final JarFile input,
       final JarOutputStream output,

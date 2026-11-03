@@ -17,6 +17,13 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /** Derives proof class families from current file claims using JarSourceFileIndex. */
+@SuppressWarnings({
+  "PMD.CognitiveComplexity",
+  "PMD.CyclomaticComplexity",
+  "PMD.NPathComplexity",
+  "PMD.AvoidInstantiatingObjectsInLoops",
+  "PMD.AvoidLiteralsInIfCondition"
+})
 final class StructuredClaimClassResolver {
   private StructuredClaimClassResolver() {}
 

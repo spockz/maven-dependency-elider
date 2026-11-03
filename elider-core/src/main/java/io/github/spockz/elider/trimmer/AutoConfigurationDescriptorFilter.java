@@ -14,12 +14,14 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /**
- * Filters Spring Boot AutoConfiguration descriptors: -
- * META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports Preserves
+ * Filters Spring Boot AutoConfiguration descriptors:
+ * META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports. Preserves
  * external classes and ordering integrity, removing only classes that belonged to the input archive
  * and were actually pruned.
  */
+@SuppressWarnings({"PMD.AssignmentInOperand", "PMD.CommentSize"})
 public final class AutoConfigurationDescriptorFilter {
+  /** Relative resource path of the AutoConfiguration imports descriptor. */
   public static final String IMPORTS_PATH =
       "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports";
 
@@ -58,8 +60,8 @@ public final class AutoConfigurationDescriptorFilter {
         }
         final String internalName = className.replace('.', '/');
         // Input-Archive Ownership Invariant:
-        // Remove an entry only when its owner belonged to the input archive AND was actually
-        // removed.
+        // Remove an entry only when its owner belonged to the input archive
+        // AND was actually removed.
         final boolean ownedByArchive = normalizedOwned.contains(internalName);
         final boolean retained = normalizedRetained.contains(internalName);
         if (ownedByArchive && !retained) {

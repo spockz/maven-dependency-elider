@@ -9,6 +9,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /** Verifies word-wrapping and subsequent indentation formatting rules. */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class WordWrapFormatterTest {
 
   @Test

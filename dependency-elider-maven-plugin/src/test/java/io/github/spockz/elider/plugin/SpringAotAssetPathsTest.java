@@ -16,6 +16,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** Verifies Spring AOT asset directory discovery and test directory isolation. */
+@SuppressWarnings({
+  "PMD.CommentRequired",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.AtLeastOneConstructor",
+  "PMD.LawOfDemeter"
+})
 final class SpringAotAssetPathsTest {
 
   @TempDir Path tempDir;

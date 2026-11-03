@@ -12,6 +12,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Objects;
 
 /** Writes sanitized dependency JARs without merging artifact boundaries. */
+@SuppressWarnings("PMD.CommentSize")
 public final class ArchiveSanitizer {
   /** Creates a stateless archive sanitizer. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")

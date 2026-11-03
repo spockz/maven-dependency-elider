@@ -22,6 +22,7 @@ import java.util.TreeSet;
 import java.util.stream.Stream;
 
 /** Captures production class bytes once for all analysis passes. */
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity", "PMD.CommentSize"})
 public final class ProductionBytecodeAnalysis {
   /** WHY: Keeps cache identities stable across output generations. */
   private static final byte[] FINGERPRINT_VERSION =

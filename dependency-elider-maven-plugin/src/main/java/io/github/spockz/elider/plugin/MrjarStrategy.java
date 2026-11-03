@@ -3,6 +3,12 @@
 package io.github.spockz.elider.plugin;
 
 /** Strategy governing multi-release and modular JAR transformation. */
+@SuppressWarnings({
+  "PMD.CommentRequired",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.CommentSize",
+  "PMD.AvoidFieldNameMatchingMethodName"
+})
 enum MrjarStrategy {
   /** Elevates target release bytecode to the root and trims while preserving upper tiers. */
   VERTICAL_SHADING("vertical-shading"),

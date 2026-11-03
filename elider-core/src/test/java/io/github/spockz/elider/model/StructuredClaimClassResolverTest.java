@@ -18,13 +18,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies file claims map to classes using JarSourceFileIndex. */
+@SuppressWarnings({
+  "PMD.CommentRequired",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.AtLeastOneConstructor",
+  "PMD.AvoidDuplicateLiterals"
+})
 final class StructuredClaimClassResolverTest {
   private static final String OUTER_BINARY_NAME = "org.example.Outer";
   private static final String OUTER_SOURCE = "src/main/java/org/example/Outer.java";
 
   @TempDir Path tempDir;
-
-  /* default */ StructuredClaimClassResolverTest() {}
 
   @Test
   void fileClaimsSelectEveryClassEmittedByTheirMappedSourceUnit() throws IOException {
@@ -110,6 +114,7 @@ final class StructuredClaimClassResolverTest {
         .hasMessageContaining("no exact archive match");
   }
 
+  @SuppressWarnings({"PMD.CommentRequired", "PMD.UnnecessaryConstructor"})
   private static final class FixtureData {
     private static final String ARCHIVE_SHA256 = "b".repeat(64);
 

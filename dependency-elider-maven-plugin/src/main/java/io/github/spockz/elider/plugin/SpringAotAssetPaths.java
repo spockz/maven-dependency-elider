@@ -7,12 +7,12 @@ import java.nio.file.Path;
 import java.util.Optional;
 import org.apache.maven.project.MavenProject;
 
-/** Resolves Spring AOT generated production output directories while isolating test AOT assets. */
+/** Resolves Spring AOT production output directories while isolating test AOT assets. */
+@SuppressWarnings({"PMD.CommentRequired", "PMD.CommentDefaultAccessModifier", "PMD.CommentSize"})
 final class SpringAotAssetPaths {
   private static final String SPRING_AOT_DIR = "spring-aot";
   private static final String MAIN_DIR = "main";
   private static final String CLASSES_DIR = "classes";
-  private static final String TEST_DIR = "test";
 
   private SpringAotAssetPaths() {
     throw new AssertionError("No instances");

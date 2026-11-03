@@ -16,6 +16,13 @@ import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** Verifies pass-through planning for modular and multi-release JARs. */
+@SuppressWarnings({
+  "PMD.CommentRequired",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.AtLeastOneConstructor",
+  "PMD.UnitTestContainsTooManyAsserts"
+})
 final class TrimPassThroughPlannerTest {
   @TempDir Path temporaryDirectory;
 

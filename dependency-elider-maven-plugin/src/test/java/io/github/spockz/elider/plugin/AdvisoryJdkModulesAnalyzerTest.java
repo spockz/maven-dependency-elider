@@ -17,6 +17,13 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
+/** Verifies advisory platform module analysis via jdeps. */
+@SuppressWarnings({
+  "PMD.CommentRequired",
+  "PMD.AtLeastOneConstructor",
+  "PMD.LawOfDemeter",
+  "PMD.ShortVariable"
+})
 final class AdvisoryJdkModulesAnalyzerTest {
 
   @TempDir private Path tempDir;

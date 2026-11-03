@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/** Verifies RetentionTaxonomyCategory parsing and serialization. */
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class RetentionTaxonomyCategoryTest {
 
   @Test

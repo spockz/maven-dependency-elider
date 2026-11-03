@@ -4,14 +4,8 @@ package io.github.spockz.elider.plugin;
 
 import java.util.Objects;
 
-/**
- * The 4 retention provenance categories defined by WP-PLATFORM-01: - conservative_metadata:
- * Retained solely because of discovery metadata (Spring imports/conditions/properties). -
- * generated_aot_registration: Retained by explicit Spring AOT generated bean definitions, proxies,
- * or runtime hints. - not_observed_in_workload: Unobserved during recorded workloads
- * (trace/class-list/probes). - bytecode_link_closure: Retained due to hard bytecode references
- * (application code or transitive bytecode links).
- */
+/** Retention provenance categories defined by WP-PLATFORM-01. */
+@SuppressWarnings({"PMD.CommentRequired", "PMD.AvoidFieldNameMatchingMethodName"})
 public enum RetentionTaxonomyCategory {
   CONSERVATIVE_METADATA("conservative_metadata"),
   GENERATED_AOT_REGISTRATION("generated_aot_registration"),

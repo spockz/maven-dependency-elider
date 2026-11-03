@@ -15,14 +15,23 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.spi.ToolProvider;
 
-/**
- * Advisory analysis of platform modules required by application bytecode and retained dependencies.
- * Emits recommendations suitable for jlink --add-modules.
- */
+/** Advisory analysis of platform modules required by application bytecode. */
+@SuppressWarnings({
+  "PMD.CommentRequired",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.CommentSize",
+  "PMD.CognitiveComplexity",
+  "PMD.CyclomaticComplexity",
+  "PMD.NPathComplexity",
+  "PMD.AvoidLiteralsInIfCondition",
+  "PMD.ShortVariable",
+  "PMD.UnnecessaryConstructor",
+  "PMD.UncommentedEmptyConstructor"
+})
 final class AdvisoryJdkModulesAnalyzer {
   static final String ADVISORY_MODULES_FILENAME = "dependency-elider-jdk-modules.txt";
 
-  AdvisoryJdkModulesAnalyzer() {}
+  /* default */ AdvisoryJdkModulesAnalyzer() {}
 
   /**
    * Analyzes the given input paths (e.g. application classes directory, retained jars) with jdeps

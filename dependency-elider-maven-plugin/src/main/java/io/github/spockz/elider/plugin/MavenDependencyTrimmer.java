@@ -26,7 +26,7 @@ final class MavenDependencyTrimmer {
   /* package */ static final String MRJAR_PASS_THROUGH =
       MrjarStrategy.PASS_THROUGH.configurationValue();
 
-  /** Trims modular dependencies as runtime derivatives by stripping module descriptors. */
+  /** Trims modular dependencies as runtime derivatives by stripping module-info. */
   /* package */ static final String MRJAR_CLASSPATH_ONLY =
       MrjarStrategy.CLASSPATH_ONLY.configurationValue();
 

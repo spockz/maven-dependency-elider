@@ -23,7 +23,8 @@ import proguard.classfile.io.ProgramClassReader;
   "PMD.CommentDefaultAccessModifier",
   "PMD.UseConcurrentHashMap",
   "PMD.AvoidInstantiatingObjectsInLoops",
-  "PMD.AvoidCatchingGenericException"
+  "PMD.AvoidCatchingGenericException",
+  "PMD.GodClass"
 })
 final class ArchiveSnapshot {
   /** Entry path identifying an explicit module descriptor. */

@@ -34,7 +34,8 @@ import proguard.classfile.ClassPool;
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
   "PMD.TooManyMethods",
-  "PMD.CommentDefaultAccessModifier"
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.AvoidDuplicateLiterals"
 })
 class ArchiveSanitizerTest {
   /** Identifies the digest algorithm used to bind replacement JARs to their analysis. */

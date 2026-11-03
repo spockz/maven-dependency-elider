@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import java.util.List;
 import java.util.Properties;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -93,7 +94,7 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
       if (plugin.getExecutions().stream()
           .anyMatch(
               e -> "process-classes".equals(e.getPhase()) && e.getGoals().contains("elide"))) {
-        final var plugins = build.getPlugins();
+        final List<Plugin> plugins = build.getPlugins();
         if (plugins.remove(plugin)) {
           plugins.add(plugin);
         }

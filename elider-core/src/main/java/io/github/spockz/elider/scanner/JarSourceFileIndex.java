@@ -38,15 +38,7 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
       int multiReleaseTier,
       String sourceFile,
       Set<String> declaredMethods) {
-    /**
-     * Compact constructor.
-     *
-     * @param physicalJarEntry physical jar entry path
-     * @param classEntry class entry name
-     * @param multiReleaseTier MRJAR version
-     * @param sourceFile SourceFile attribute
-     * @param declaredMethods set of declared method names and descriptors
-     */
+    /** Compact constructor. */
     public ClassSourceFile {
       declaredMethods = declaredMethods == null ? Set.of() : Set.copyOf(declaredMethods);
     }

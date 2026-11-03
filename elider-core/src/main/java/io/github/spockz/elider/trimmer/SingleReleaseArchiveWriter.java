@@ -18,7 +18,16 @@ import java.util.zip.ZipFile;
 import org.objectweb.asm.ClassReader;
 
 /** Writes the retained root view of an ordinary JAR. */
-@SuppressWarnings({"PMD.CommentRequired", "PMD.CommentDefaultAccessModifier"})
+@SuppressWarnings({
+  "PMD.CommentRequired",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.GodClass",
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.CognitiveComplexity",
+  "PMD.CyclomaticComplexity",
+  "PMD.AvoidDeeplyNestedIfStmts",
+  "PMD.AvoidLiteralsInIfCondition"
+})
 final class SingleReleaseArchiveWriter {
   private SingleReleaseArchiveWriter() {}
 

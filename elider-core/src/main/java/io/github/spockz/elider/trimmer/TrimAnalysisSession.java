@@ -17,6 +17,7 @@ import java.util.concurrent.FutureTask;
 import proguard.classfile.ClassPool;
 
 /** Holds immutable input snapshots for one multi-candidate trim invocation. */
+@SuppressWarnings("PMD.CommentSize")
 public final class TrimAnalysisSession {
   /** Engine used to construct an isolated reference model for each analysis. */
   private final DependencyJarTrimmer trimmer;
@@ -98,7 +99,13 @@ public final class TrimAnalysisSession {
   /**
    * Prepares candidate closure; optionally allowing modular candidates in classpath-only mode.
    *
+   * @param candidateJar candidate archive under analysis
+   * @param libraryClassPath resolved compile dependencies
    * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
+   * @param unchangedPassThroughClassNames classes passed through unchanged
+   * @param allowModularCandidate whether to allow modular candidates in classpath-only mode
+   * @return prepared analysis
+   * @throws IOException on read or analysis error
    */
   public DependencyJarTrimmer.PreparedAnalysis prepareWithUnchangedPassThroughLibraries(
       final Path candidateJar,
