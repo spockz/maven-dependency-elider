@@ -14,7 +14,7 @@ SERVE_PORT ?= 8080
 MAKE_JOBS ?= 12
 # Keep aggregate test concurrency bounded across reactor modules, forks, and JUnit classes.
 TEST_MAVEN_THREADS ?= 2
-TEST_FORKS ?= 2
+TEST_FORKS ?= 2C
 TEST_JUNIT_PARALLELISM ?= 2
 
 ifeq ($(MAKELEVEL),0)
