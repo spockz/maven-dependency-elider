@@ -1,4 +1,5 @@
-/* WHY: Verifies that mrjarStrategy=classpath-only does not force root modular JARs into pass-through. */
+// WHY: Verifies that mrjarStrategy=classpath-only does not force root modular JARs
+// into pass-through.
 
 package io.github.spockz.elider.plugin;
 
@@ -16,8 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class TrimPassThroughPlannerTest {
-  @TempDir
-  Path temporaryDirectory;
+  @TempDir Path temporaryDirectory;
 
   @Test
   void modularJarPassesThroughByDefaultWhenFailOnUnsupportedModuleInfoFalse() throws IOException {
@@ -27,7 +27,8 @@ final class TrimPassThroughPlannerTest {
         new ElisionAnalysisModel.ArtifactSnapshot(null, coord, modularJar);
 
     final TrimRequest defaultRequest =
-        requestWithStrategy(MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING, false, Set.of(coord), List.of(snapshot));
+        requestWithStrategy(
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING, false, Set.of(coord), List.of(snapshot));
     final TrimPassThroughPlan plan = TrimPassThroughPlanner.passThroughPlan(defaultRequest);
     assertThat(plan.moduleInfoCoordinates()).contains(coord);
     assertThat(TrimPassThroughPlanner.passThroughCoordinate(defaultRequest, snapshot)).isTrue();
@@ -41,7 +42,8 @@ final class TrimPassThroughPlannerTest {
         new ElisionAnalysisModel.ArtifactSnapshot(null, coord, modularJar);
 
     final TrimRequest strictRequest =
-        requestWithStrategy(MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING, true, Set.of(coord), List.of(snapshot));
+        requestWithStrategy(
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING, true, Set.of(coord), List.of(snapshot));
     assertThatThrownBy(() -> TrimPassThroughPlanner.passThroughPlan(strictRequest))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Unsupported root module descriptor");
@@ -55,10 +57,12 @@ final class TrimPassThroughPlannerTest {
         new ElisionAnalysisModel.ArtifactSnapshot(null, coord, modularJar);
 
     final TrimRequest classpathOnlyRequest =
-        requestWithStrategy(MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY, false, Set.of(coord), List.of(snapshot));
+        requestWithStrategy(
+            MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY, false, Set.of(coord), List.of(snapshot));
     final TrimPassThroughPlan plan = TrimPassThroughPlanner.passThroughPlan(classpathOnlyRequest);
     assertThat(plan.moduleInfoCoordinates()).doesNotContain(coord);
-    assertThat(TrimPassThroughPlanner.passThroughCoordinate(classpathOnlyRequest, snapshot)).isFalse();
+    assertThat(TrimPassThroughPlanner.passThroughCoordinate(classpathOnlyRequest, snapshot))
+        .isFalse();
   }
 
   private static TrimRequest requestWithStrategy(
@@ -79,14 +83,6 @@ final class TrimPassThroughPlannerTest {
             false,
             1);
     return new TrimRequest(
-        project,
-        null,
-        null,
-        candidates,
-        null,
-        retainedCoordinates,
-        null,
-        policy,
-        Optional.empty());
+        project, null, null, candidates, null, retainedCoordinates, null, policy, Optional.empty());
   }
 }

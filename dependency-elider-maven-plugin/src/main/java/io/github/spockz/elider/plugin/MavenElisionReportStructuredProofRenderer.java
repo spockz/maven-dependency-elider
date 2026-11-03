@@ -2,8 +2,8 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.correspondence.SourceReproductionResult.ClassEntry;
 import io.github.spockz.elider.model.StructuredProofProvenance;
+import io.github.spockz.elider.model.StructuredProofProvenance.ClassEntry;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

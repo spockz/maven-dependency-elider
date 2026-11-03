@@ -2,7 +2,6 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.correspondence.SourceReproductionEngine;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
@@ -18,7 +17,6 @@ import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.repository.ArtifactRepository;
 import org.eclipse.aether.repository.RemoteRepository;
-import org.junit.jupiter.api.Assumptions;
 
 /** Builds one live structured proof assessment. */
 final class MavenStructuredProofScenario {
@@ -74,9 +72,6 @@ final class MavenStructuredProofScenario {
       final ElisionAnalysisModel.Analysis analysis,
       final boolean conventionalLayoutAssumed)
       throws IOException {
-    Assumptions.assumeTrue(
-        SourceReproductionEngine.isSupportedJdk(),
-        "Skipping source reproduction structured proof on non-pinned JDK");
     copyCurrentCveRecord(prepared);
     final MavenSourceCorrespondenceAssessment sourceAssessment =
         sourceAssessment(archives, conventionalLayoutAssumed, ignored -> {});
@@ -114,9 +109,6 @@ final class MavenStructuredProofScenario {
       final Consumer<RepositorySystemSession> resolutionObserver,
       final boolean debugEnabled)
       throws IOException {
-    Assumptions.assumeTrue(
-        SourceReproductionEngine.isSupportedJdk(),
-        "Skipping source reproduction structured proof on non-pinned JDK");
     copyCurrentCveRecord(prepared);
     final ArtifactTrimRecord trimRecord = trimRecord(prepared, archives.originalJar(), trimmedJar);
     final MavenSourceCorrespondenceAssessment sourceAssessment =
@@ -155,8 +147,21 @@ final class MavenStructuredProofScenario {
       final Path originalJar,
       final Path trimmedJar)
       throws IOException {
-    return MavenSourceReproductionReuseScenarios.trimRecord(
-        prepared.coordinate(), originalJar, trimmedJar);
+    final io.github.spockz.elider.trimmer.ArtifactDigests originalDigest =
+        io.github.spockz.elider.trimmer.ArtifactDigests.read(originalJar);
+    final io.github.spockz.elider.trimmer.ArtifactDigests trimmedDigest =
+        io.github.spockz.elider.trimmer.ArtifactDigests.read(trimmedJar);
+    return new ArtifactTrimRecord(
+        prepared.coordinate(),
+        originalJar,
+        originalDigest.sha256(),
+        originalDigest.sha1(),
+        trimmedJar,
+        trimmedDigest.sha256(),
+        trimmedDigest.sha1(),
+        5,
+        0,
+        256);
   }
 
   /* default */ static MavenSourceCorrespondenceAssessment sourceAssessment(

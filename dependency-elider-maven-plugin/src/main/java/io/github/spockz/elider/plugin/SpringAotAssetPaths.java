@@ -2,16 +2,12 @@
 
 package io.github.spockz.elider.plugin;
 
-import java.io.File;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import org.apache.maven.project.MavenProject;
 
-/**
- * Resolves Spring AOT generated production output directories while isolating test AOT assets.
- */
+/** Resolves Spring AOT generated production output directories while isolating test AOT assets. */
 final class SpringAotAssetPaths {
   private static final String SPRING_AOT_DIR = "spring-aot";
   private static final String MAIN_DIR = "main";
@@ -27,20 +23,21 @@ final class SpringAotAssetPaths {
    * Strictly ignores and rejects any consideration of target/spring-aot/test.
    */
   static Optional<Path> resolveMainClasses(final MavenProject project) {
-    if (project == null || project.getBuild() == null || project.getBuild().getDirectory() == null) {
+    if (project == null
+        || project.getBuild() == null
+        || project.getBuild().getDirectory() == null) {
       return Optional.empty();
     }
     final Path buildDir = Path.of(project.getBuild().getDirectory()).toAbsolutePath().normalize();
-    final Path mainClasses = buildDir.resolve(SPRING_AOT_DIR).resolve(MAIN_DIR).resolve(CLASSES_DIR);
+    final Path mainClasses =
+        buildDir.resolve(SPRING_AOT_DIR).resolve(MAIN_DIR).resolve(CLASSES_DIR);
     if (Files.isDirectory(mainClasses)) {
       return Optional.of(mainClasses);
     }
     return Optional.empty();
   }
 
-  /**
-   * Verifies that the path is not within the test AOT tree.
-   */
+  /** Verifies that the path is not within the test AOT tree. */
   static boolean isTestAotPath(final Path path) {
     if (path == null) {
       return false;

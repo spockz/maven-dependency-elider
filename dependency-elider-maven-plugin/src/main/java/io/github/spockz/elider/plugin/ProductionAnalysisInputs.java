@@ -211,7 +211,10 @@ final class ProductionAnalysisInputs {
   }
 
   /* default */ static ProductionBytecodeInputs productionBytecodeInputs(
-      final File output, final List<Path> additionalOutputs, final boolean productionClassesComplete) throws IOException {
+      final File output,
+      final List<Path> additionalOutputs,
+      final boolean productionClassesComplete)
+      throws IOException {
     if (output == null) {
       if (productionClassesComplete) {
         throw new IOException(

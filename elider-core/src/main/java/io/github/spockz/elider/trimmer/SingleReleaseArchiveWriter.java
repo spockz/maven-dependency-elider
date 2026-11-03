@@ -46,7 +46,9 @@ final class SingleReleaseArchiveWriter {
       while (scanEntries.hasMoreElements()) {
         final JarEntry entry = scanEntries.nextElement();
         final String name = entry.getName();
-        if (name.endsWith(".class") && !"module-info.class".equals(name) && !name.startsWith("META-INF/versions/")) {
+        if (name.endsWith(".class")
+            && !"module-info.class".equals(name)
+            && !name.startsWith("META-INF/versions/")) {
           final String className = name.substring(0, name.length() - ".class".length());
           inputClasses.add(className);
         }
@@ -155,7 +157,8 @@ final class SingleReleaseArchiveWriter {
     if (!entry.getName().endsWith(".class")) {
       if (AutoConfigurationDescriptorFilter.IMPORTS_PATH.equals(entry.getName())) {
         final java.util.Optional<byte[]> filtered =
-            AutoConfigurationDescriptorFilter.filterImports(input, entry, inputClasses, retainedClasses);
+            AutoConfigurationDescriptorFilter.filterImports(
+                input, entry, inputClasses, retainedClasses);
         if (filtered.isPresent()) {
           final JarEntry copy = new JarEntry(entry.getName());
           if (entry.getTime() >= 0) {

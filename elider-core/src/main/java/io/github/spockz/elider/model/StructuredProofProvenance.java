@@ -2,7 +2,6 @@
 
 package io.github.spockz.elider.model;
 
-import io.github.spockz.elider.correspondence.SourceReproductionResult;
 import java.util.List;
 import java.util.Objects;
 
@@ -75,13 +74,27 @@ public record StructuredProofProvenance(
     }
   }
 
+  /** One physical class-file entry and its SHA-256 digest. */
+  public record ClassEntry(String path, String sha256) {
+    /**
+     * Creates a class entry.
+     *
+     * @param path physical jar path
+     * @param sha256 entry digest
+     */
+    public ClassEntry {
+      requireText(path, "path");
+      requireDigest(sha256, "sha256");
+    }
+  }
+
   /** One live CNA claim and its reproduced source outputs. */
   public record ClaimAttribution(
       ClaimType type,
       String claim,
       String sourceEntry,
       String routineOwnerBinaryName,
-      List<SourceReproductionResult.ClassEntry> emittedClasses) {
+      List<ClassEntry> emittedClasses) {
     /** Freezes class outputs and validates this source-to-class provenance edge. */
     public ClaimAttribution {
       Objects.requireNonNull(type, "type");

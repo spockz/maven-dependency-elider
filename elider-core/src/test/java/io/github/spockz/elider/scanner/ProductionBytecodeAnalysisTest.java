@@ -68,9 +68,13 @@ final class ProductionBytecodeAnalysisTest {
         ProductionBytecodeAnalysis.capture(mainOutput, List.of(aotOutput));
 
     assertAll(
-        () -> assertThat(snapshot.classNames()).containsExactlyInAnyOrder("sample.MainApp", "sample.AotGenerated"),
+        () ->
+            assertThat(snapshot.classNames())
+                .containsExactlyInAnyOrder("sample.MainApp", "sample.AotGenerated"),
         () -> assertThat(snapshot.bytecodeReferences().classFilesScanned()).isEqualTo(2),
-        () -> assertThat(snapshot.fingerprint()).isEqualTo(ProductionBytecodeAnalysis.fingerprint(mainOutput, List.of(aotOutput))));
+        () ->
+            assertThat(snapshot.fingerprint())
+                .isEqualTo(ProductionBytecodeAnalysis.fingerprint(mainOutput, List.of(aotOutput))));
   }
 
   @Test

@@ -1,4 +1,5 @@
-// WHY: Analyzes application classes and retained dependencies with target-aware jdeps to suggest platform modules for jlink.
+// WHY: Analyzes application classes and retained dependencies with target-aware jdeps to suggest
+// platform modules for jlink.
 
 package io.github.spockz.elider.plugin;
 
@@ -8,7 +9,6 @@ import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -25,13 +25,11 @@ final class AdvisoryJdkModulesAnalyzer {
   AdvisoryJdkModulesAnalyzer() {}
 
   /**
-   * Analyzes the given input paths (e.g. application classes directory, retained jars)
-   * with jdeps using target release and classpath.
+   * Analyzes the given input paths (e.g. application classes directory, retained jars) with jdeps
+   * using target release and classpath.
    */
   Set<String> analyze(
-      final List<Path> inputPaths,
-      final List<Path> classPathEntries,
-      final int targetRelease)
+      final List<Path> inputPaths, final List<Path> classPathEntries, final int targetRelease)
       throws IOException {
     final Optional<ToolProvider> jdepsProvider = ToolProvider.findFirst("jdeps");
     if (jdepsProvider.isEmpty()) {
@@ -65,15 +63,18 @@ final class AdvisoryJdkModulesAnalyzer {
 
     final StringWriter out = new StringWriter();
     final StringWriter err = new StringWriter();
-    final int exitCode =
-        jdepsProvider.get().run(new PrintWriter(out), new PrintWriter(err), args.toArray(String[]::new));
+    jdepsProvider
+        .get()
+        .run(new PrintWriter(out), new PrintWriter(err), args.toArray(String[]::new));
 
     final Set<String> modules = new TreeSet<>();
     final String result = out.toString().trim();
     if (!result.isEmpty()) {
       for (final String mod : result.split("[,\\s]+")) {
         final String trimmed = mod.trim();
-        if (!trimmed.isEmpty() && !trimmed.startsWith("Error:") && !trimmed.startsWith("Warning:")) {
+        if (!trimmed.isEmpty()
+            && !trimmed.startsWith("Error:")
+            && !trimmed.startsWith("Warning:")) {
           modules.add(trimmed);
         }
       }

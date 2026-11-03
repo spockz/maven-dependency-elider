@@ -52,7 +52,7 @@ final class MavenStructuredProofMutationGuardTest {
         () -> assertThat(assessment.result().potentiallyConservativeCves()).isEmpty(),
         () ->
             assertThat(assessment.log().debugMessages())
-                .anyMatch(message -> message.contains("Duplicate archive entry: proofdup/")));
+                .anyMatch(message -> message.contains("duplicate physical ZIP entry: proofdup/")));
   }
 
   @ParameterizedTest
@@ -104,7 +104,7 @@ final class MavenStructuredProofMutationGuardTest {
         MavenStructuredProofCacheFixtures.mutateCurrentCveRecord(prepared);
       }
     },
-    ORIGINAL_ARCHIVE("Source reproduction does not match the exact trim candidate") {
+    ORIGINAL_ARCHIVE("Artifact digest no longer matches trim record") {
       @Override
       /* default */ void apply(
           final MavenCorroboratedSourceScenario.Prepared prepared,

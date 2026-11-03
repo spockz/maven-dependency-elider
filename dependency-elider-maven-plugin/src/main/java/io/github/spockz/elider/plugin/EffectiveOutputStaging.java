@@ -97,7 +97,8 @@ final class EffectiveOutputStaging implements AutoCloseable {
                         TrimInputDigests.requiredInputDigest(
                                 inputDigests, candidate.archive().snapshot().filePath())
                             .sha256());
-              } else if (MrjarStrategy.parse(outputPlan.mrjarStrategy()) == MrjarStrategy.CLASSPATH_ONLY
+              } else if (MrjarStrategy.parse(outputPlan.mrjarStrategy())
+                      == MrjarStrategy.CLASSPATH_ONLY
                   && MultiReleaseLibraryProjection.hasRootModuleDescriptor(
                       candidate.archive().snapshot().filePath())) {
                 staged =

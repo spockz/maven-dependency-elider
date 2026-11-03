@@ -2,10 +2,10 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.model.SourceClaimPathMatcher;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
 import io.github.spockz.elider.model.CveAffectedEntryContext;
+import io.github.spockz.elider.model.SourceClaimPathMatcher;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import io.github.spockz.elider.scanner.JarSourceFileIndex;
 import io.github.spockz.elider.scanner.JarSourceFileIndex.ClassSourceFile;

@@ -108,9 +108,6 @@ final class LiveStructuredSourceBoundaryTest {
 
   @Test
   void structuredProofRebindsLiveEvidenceBeforeAttemptingSourceReproduction() throws Exception {
-    org.junit.jupiter.api.Assumptions.assumeTrue(
-        io.github.spockz.elider.correspondence.SourceReproductionEngine.isSupportedJdk(),
-        "Skipping source reproduction tests on non-pinned JDK");
     final LiveStructuredSourceValidatorTest.Fixture fixture =
         LiveStructuredSourceValidatorTest.fixture(
             temporaryDirectory,

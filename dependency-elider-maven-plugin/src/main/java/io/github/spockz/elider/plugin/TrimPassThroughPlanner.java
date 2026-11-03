@@ -32,8 +32,7 @@ final class TrimPassThroughPlanner {
           "Unsupported root module descriptor in retained classpath JAR: " + snapshot.coordinate());
     }
     final MrjarStrategy strategy = MrjarStrategy.parse(request.policy().mrjarStrategy());
-    final boolean modulePassThrough =
-        moduleInfo && strategy != MrjarStrategy.CLASSPATH_ONLY;
+    final boolean modulePassThrough = moduleInfo && strategy != MrjarStrategy.CLASSPATH_ONLY;
     final boolean multiReleasePassThrough =
         switch (strategy) {
           case PASS_THROUGH -> multiRelease;

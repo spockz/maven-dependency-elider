@@ -31,9 +31,42 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
   /** Minimum class-file version allowed in the MRJAR versions directory. */
   private static final int MIN_MULTI_RELEASE_VERSION = 9;
 
-  /** One physical class-file entry and its optional Java source name. */
+  /** Records the relationship between a class file and its source file attribute. */
   public record ClassSourceFile(
-      String physicalJarEntry, String classEntry, int multiReleaseTier, String sourceFile) {}
+      String physicalJarEntry,
+      String classEntry,
+      int multiReleaseTier,
+      String sourceFile,
+      Set<String> declaredMethods) {
+    /**
+     * Compact constructor.
+     *
+     * @param physicalJarEntry physical jar entry path
+     * @param classEntry class entry name
+     * @param multiReleaseTier MRJAR version
+     * @param sourceFile SourceFile attribute
+     * @param declaredMethods set of declared method names and descriptors
+     */
+    public ClassSourceFile {
+      declaredMethods = declaredMethods == null ? Set.of() : Set.copyOf(declaredMethods);
+    }
+
+    /**
+     * Creates a class source file without declared methods.
+     *
+     * @param physicalJarEntry physical jar entry path
+     * @param classEntry class entry name
+     * @param multiReleaseTier MRJAR version
+     * @param sourceFile SourceFile attribute
+     */
+    public ClassSourceFile(
+        final String physicalJarEntry,
+        final String classEntry,
+        final int multiReleaseTier,
+        final String sourceFile) {
+      this(physicalJarEntry, classEntry, multiReleaseTier, sourceFile, Set.of());
+    }
+  }
 
   /** Keeps a physical entry path separate from its logical class name. */
   private record EntryIdentity(String internalClassName, int multiReleaseTier) {}
@@ -68,7 +101,7 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
       while (entries.hasMoreElements()) {
         final ZipEntry entry = entries.nextElement();
         if (!physicalEntryNames.add(entry.getName())) {
-          throw new IOException("Archive contains duplicate physical ZIP entry names");
+          throw new IOException("duplicate physical ZIP entry: " + entry.getName());
         }
         if (entry.isDirectory() || !entry.getName().endsWith(".class")) {
           continue;
@@ -92,11 +125,23 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
         throw new IOException("Class entry path does not match class-file identity");
       }
       final String[] sourceFile = {null};
+      final Set<String> declaredMethods = new HashSet<>();
       reader.accept(
           new ClassVisitor(Opcodes.ASM9) {
             @Override
             public void visitSource(final String source, final String debug) {
               sourceFile[0] = source;
+            }
+
+            @Override
+            public org.objectweb.asm.MethodVisitor visitMethod(
+                final int access,
+                final String name,
+                final String descriptor,
+                final String signature,
+                final String[] exceptions) {
+              declaredMethods.add(name);
+              return null;
             }
           },
           ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES);
@@ -105,7 +150,8 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
               entry.getName(),
               internalName.replace('/', '.'),
               identity.multiReleaseTier(),
-              sourceFile[0]));
+              sourceFile[0],
+              declaredMethods));
     } catch (final IllegalArgumentException | IndexOutOfBoundsException exception) {
       throw new IOException("Could not read class-file source metadata", exception);
     }

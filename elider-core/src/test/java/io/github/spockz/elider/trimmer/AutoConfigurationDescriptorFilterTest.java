@@ -1,4 +1,5 @@
-// WHY: Unit tests verifying AutoConfigurationDescriptorFilter preserves external classes and handles dot/slash formats.
+// WHY: Unit tests verifying AutoConfigurationDescriptorFilter preserves external classes and
+// handles dot/slash formats.
 
 package io.github.spockz.elider.trimmer;
 
@@ -20,10 +21,17 @@ import org.junit.jupiter.api.io.TempDir;
 
 final class AutoConfigurationDescriptorFilterTest {
 
+  private static final String DISPLAY_DOT =
+      "filterImports prunes owned removed classes and retains external or kept classes"
+          + " (dot format)";
+  private static final String DISPLAY_SLASH =
+      "filterImports prunes owned removed classes when ownedClasses/retainedClasses"
+          + " are slash format";
+
   @TempDir Path tempDir;
 
   @Test
-  @DisplayName("filterImports prunes owned removed classes and retains external or kept classes (dot format)")
+  @DisplayName(DISPLAY_DOT)
   void filterImportsPrunesOwnedRemovedClassesDotFormat() throws IOException {
     final Path jarPath = tempDir.resolve("test-dot.jar");
     final String importsContent =
@@ -41,11 +49,13 @@ final class AutoConfigurationDescriptorFilterTest {
 
     try (JarFile jarFile = new JarFile(jarPath.toFile())) {
       final JarEntry entry = jarFile.getJarEntry(AutoConfigurationDescriptorFilter.IMPORTS_PATH);
-      final Set<String> ownedClasses = Set.of("com.example.OwnedRetained", "com.example.OwnedRemoved");
+      final Set<String> ownedClasses =
+          Set.of("com.example.OwnedRetained", "com.example.OwnedRemoved");
       final Set<String> retainedClasses = Set.of("com.example.OwnedRetained");
 
       final Optional<byte[]> result =
-          AutoConfigurationDescriptorFilter.filterImports(jarFile, entry, ownedClasses, retainedClasses);
+          AutoConfigurationDescriptorFilter.filterImports(
+              jarFile, entry, ownedClasses, retainedClasses);
 
       assertThat(result).isPresent();
       final String filtered = new String(result.get(), StandardCharsets.UTF_8);
@@ -59,7 +69,7 @@ final class AutoConfigurationDescriptorFilterTest {
   }
 
   @Test
-  @DisplayName("filterImports prunes owned removed classes when ownedClasses/retainedClasses are slash format")
+  @DisplayName(DISPLAY_SLASH)
   void filterImportsPrunesOwnedRemovedClassesSlashFormat() throws IOException {
     final Path jarPath = tempDir.resolve("test-slash.jar");
     final String importsContent =
@@ -76,11 +86,13 @@ final class AutoConfigurationDescriptorFilterTest {
 
     try (JarFile jarFile = new JarFile(jarPath.toFile())) {
       final JarEntry entry = jarFile.getJarEntry(AutoConfigurationDescriptorFilter.IMPORTS_PATH);
-      final Set<String> ownedClasses = Set.of("com/example/OwnedRetained", "com/example/OwnedRemoved");
+      final Set<String> ownedClasses =
+          Set.of("com/example/OwnedRetained", "com/example/OwnedRemoved");
       final Set<String> retainedClasses = Set.of("com/example/OwnedRetained");
 
       final Optional<byte[]> result =
-          AutoConfigurationDescriptorFilter.filterImports(jarFile, entry, ownedClasses, retainedClasses);
+          AutoConfigurationDescriptorFilter.filterImports(
+              jarFile, entry, ownedClasses, retainedClasses);
 
       assertThat(result).isPresent();
       final String filtered = new String(result.get(), StandardCharsets.UTF_8);
@@ -96,9 +108,7 @@ final class AutoConfigurationDescriptorFilterTest {
   @DisplayName("filterImports returns empty when no owned classes were removed")
   void filterImportsReturnsEmptyWhenNoClassesRemoved() throws IOException {
     final Path jarPath = tempDir.resolve("unchanged.jar");
-    final String importsContent =
-        "com.example.OwnedRetained\n"
-            + "org.external.ExternalConfig\n";
+    final String importsContent = "com.example.OwnedRetained\n" + "org.external.ExternalConfig\n";
 
     try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(jarPath.toFile()))) {
       final JarEntry entry = new JarEntry(AutoConfigurationDescriptorFilter.IMPORTS_PATH);
@@ -113,7 +123,8 @@ final class AutoConfigurationDescriptorFilterTest {
       final Set<String> retainedClasses = Set.of("com.example.OwnedRetained");
 
       final Optional<byte[]> result =
-          AutoConfigurationDescriptorFilter.filterImports(jarFile, entry, ownedClasses, retainedClasses);
+          AutoConfigurationDescriptorFilter.filterImports(
+              jarFile, entry, ownedClasses, retainedClasses);
 
       assertThat(result).isEmpty();
     }

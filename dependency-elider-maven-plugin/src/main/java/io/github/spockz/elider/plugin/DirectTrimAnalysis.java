@@ -15,8 +15,7 @@ final class DirectTrimAnalysis {
     final JdkClassTables tables =
         SingleReleasePlatforms.readJdkClassTables(plan.fingerprint().platformSnapshots());
     final boolean allowModularCandidate =
-        MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(
-            plan.request().policy().mrjarStrategy());
+        MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(plan.request().policy().mrjarStrategy());
     return ProGuardTrimEngine.analyze(
         plan.candidatePlan(),
         plan.passThrough(),

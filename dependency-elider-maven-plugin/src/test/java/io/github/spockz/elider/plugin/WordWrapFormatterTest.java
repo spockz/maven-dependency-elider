@@ -42,8 +42,7 @@ final class WordWrapFormatterTest {
                         + " or multiple"),
         () ->
             assertThat(wrapped.get(2))
-                .isEqualTo(
-                    "  original POM rows. This advisory review does not affect elision."));
+                .isEqualTo("  original POM rows. This advisory review does not affect elision."));
   }
 
   @Test
@@ -66,8 +65,7 @@ final class WordWrapFormatterTest {
                         + " because"),
         () ->
             assertThat(wrapped.get(1))
-                .isEqualTo(
-                    "    missing prerequisite dependencies: ch.qos.logback:logback-access"));
+                .isEqualTo("    missing prerequisite dependencies: ch.qos.logback:logback-access"));
   }
 
   @Test

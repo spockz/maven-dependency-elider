@@ -4,12 +4,10 @@ package io.github.spockz.elider.plugin;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-import io.github.spockz.elider.correspondence.SourceReproductionEngine;
 import java.io.IOException;
 import java.nio.file.Path;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -26,9 +24,6 @@ final class MavenStructuredProofPublicationTest {
           ReflectiveOperationException,
           MojoExecutionException,
           MojoFailureException {
-    Assumptions.assumeTrue(
-        SourceReproductionEngine.isSupportedJdk(),
-        "Skipping source reproduction structured proof on non-pinned JDK");
     final MavenStructuredProofPublicationScenario.PublishedResult result =
         MavenStructuredProofPublicationScenario.publish(temporaryDirectory);
 

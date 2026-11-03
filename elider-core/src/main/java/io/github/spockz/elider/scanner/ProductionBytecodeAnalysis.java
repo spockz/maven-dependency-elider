@@ -82,8 +82,12 @@ public final class ProductionBytecodeAnalysis {
     return capture(productionOutput, List.of());
   }
 
-  /** Captures classes across primary production output and additional class directories (e.g. Spring AOT). */
-  public static Snapshot capture(final Path productionOutput, final List<Path> additionalOutputs) throws IOException {
+  /**
+   * Captures classes across primary production output and additional class directories (e.g. Spring
+   * AOT).
+   */
+  public static Snapshot capture(final Path productionOutput, final List<Path> additionalOutputs)
+      throws IOException {
     final Path scope = productionOutput.toAbsolutePath().normalize();
     if (!Files.isDirectory(scope)) {
       throw new IOException("Production class output directory is missing: " + scope);
@@ -104,13 +108,14 @@ public final class ProductionBytecodeAnalysis {
     }
     final Set<String> classNames = new TreeSet<>();
     for (final ClassFile classFile : classFiles) {
-      final Path root = classFile.path().startsWith(scope)
-          ? scope
-          : additionalOutputs.stream()
-              .map(p -> p.toAbsolutePath().normalize())
-              .filter(p -> classFile.path().startsWith(p))
-              .findFirst()
-              .orElse(scope);
+      final Path root =
+          classFile.path().startsWith(scope)
+              ? scope
+              : additionalOutputs.stream()
+                  .map(p -> p.toAbsolutePath().normalize())
+                  .filter(p -> classFile.path().startsWith(p))
+                  .findFirst()
+                  .orElse(scope);
       final String relativePath = root.relativize(classFile.path()).toString().replace('\\', '/');
       if (!"module-info.class".equals(relativePath)
           && !relativePath.endsWith("/module-info.class")) {
@@ -139,7 +144,8 @@ public final class ProductionBytecodeAnalysis {
   }
 
   /** Computes the versioned fingerprint by rereading current production outputs. */
-  public static String fingerprint(final Path output, final List<Path> additionalOutputs) throws IOException {
+  public static String fingerprint(final Path output, final List<Path> additionalOutputs)
+      throws IOException {
     final Path scope = output.toAbsolutePath().normalize();
     if (!Files.isDirectory(scope)) {
       throw new IOException("Production class output directory is missing: " + scope);
@@ -195,7 +201,8 @@ public final class ProductionBytecodeAnalysis {
     final MessageDigest digest = startFingerprint();
     final Path primaryScope = roots.getFirst();
     for (final ClassFile classFile : classFiles) {
-      final Path root = roots.stream().filter(classFile.path()::startsWith).findFirst().orElse(primaryScope);
+      final Path root =
+          roots.stream().filter(classFile.path()::startsWith).findFirst().orElse(primaryScope);
       updateFingerprint(digest, root, classFile.path(), classFile.content());
     }
     return HexFormat.of().formatHex(digest.digest());

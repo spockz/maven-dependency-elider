@@ -20,7 +20,8 @@ final class ProductionOutputFingerprint {
 
   /** Hashes the exact class files across primary and additional output directories. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static String fingerprint(final Path output, final java.util.List<Path> additionalOutputs) throws IOException {
+  static String fingerprint(final Path output, final java.util.List<Path> additionalOutputs)
+      throws IOException {
     return ProductionBytecodeAnalysis.fingerprint(output, additionalOutputs);
   }
 }

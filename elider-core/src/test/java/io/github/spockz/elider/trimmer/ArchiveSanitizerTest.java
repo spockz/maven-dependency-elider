@@ -566,7 +566,8 @@ class ArchiveSanitizerTest {
     }
 
     final DependencyJarTrimmer.TrimAnalysis analysis =
-        new DependencyJarTrimmer.TrimAnalysis(2, java.util.Set.of("fixture/Keep"), java.util.Set.of("fixture/Keep"));
+        new DependencyJarTrimmer.TrimAnalysis(
+            2, java.util.Set.of("fixture/Keep"), java.util.Set.of("fixture/Keep"));
     final Path output = temporaryDirectory.resolve("classpath-only-trimmed.jar");
     final ArtifactDigests digests = ArtifactDigests.read(modularJar);
     final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
@@ -581,7 +582,9 @@ class ArchiveSanitizerTest {
     final ArtifactTrimRecord record = sanitizer.publish(prepared);
     org.junit.jupiter.api.Assertions.assertAll(
         () -> assertThat(record.mrjarStatus()).isEqualTo("classpath-only"),
-        () -> assertThat(record.trimmedSha256()).isEqualTo(digest(Files.readAllBytes(output), SHA_256)),
+        () ->
+            assertThat(record.trimmedSha256())
+                .isEqualTo(digest(Files.readAllBytes(output), SHA_256)),
         () -> {
           try (JarFile trimmed = new JarFile(output.toFile())) {
             assertThat(trimmed.getJarEntry("module-info.class")).isNull();
@@ -597,9 +600,7 @@ class ArchiveSanitizerTest {
     // Add AutoConfiguration.imports to candidate
     final Path withImports = temporaryDirectory.resolve("with-imports.jar");
     final String importsContent =
-        "fixture.Keep\n"
-            + "fixture.Drop\n"
-            + "org.external.ForeignConfig\n";
+        "fixture.Keep\n" + "fixture.Drop\n" + "org.external.ForeignConfig\n";
     try (JarFile input = new JarFile(candidate.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(withImports))) {
       final Enumeration<JarEntry> entries = input.entries();
@@ -632,7 +633,8 @@ class ArchiveSanitizerTest {
     try (JarFile trimmed = new JarFile(trimmedOutput.toFile())) {
       final JarEntry entry = trimmed.getJarEntry(AutoConfigurationDescriptorFilter.IMPORTS_PATH);
       assertThat(entry).isNotNull();
-      final String content = new String(trimmed.getInputStream(entry).readAllBytes(), StandardCharsets.UTF_8);
+      final String content =
+          new String(trimmed.getInputStream(entry).readAllBytes(), StandardCharsets.UTF_8);
       org.junit.jupiter.api.Assertions.assertAll(
           () -> assertThat(content).contains("fixture.Keep"),
           () -> assertThat(content).contains("org.external.ForeignConfig"),

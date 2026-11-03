@@ -28,7 +28,8 @@ final class ExclusionReviewRenderer {
   static List<String> render(final ExclusionReview review) {
     final List<String> lines = new ArrayList<>();
     if (!review.available()) {
-      addWrapped(lines, SECTION_INDENT + "Exclusion review unavailable: " + review.unavailableReason());
+      addWrapped(
+          lines, SECTION_INDENT + "Exclusion review unavailable: " + review.unavailableReason());
       return List.copyOf(lines);
     }
     lines.add(SECTION_INDENT + "Repeated POM exclusions (advisory only):");

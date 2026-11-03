@@ -1,11 +1,11 @@
-// WHY: Unit tests verifying SpringAotAssetPaths correctly identifies main AOT classes and isolates test AOT.
+// WHY: Unit tests verifying SpringAotAssetPaths correctly identifies main AOT classes and isolates
+// test AOT.
 
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

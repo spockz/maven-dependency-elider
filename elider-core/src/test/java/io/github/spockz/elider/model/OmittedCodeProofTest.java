@@ -8,7 +8,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-import io.github.spockz.elider.correspondence.SourceReproductionResult;
 import io.github.spockz.elider.metadata.CycloneDxSbomGenerator;
 import io.github.spockz.elider.metadata.OpenVexGenerator;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
@@ -116,7 +115,7 @@ class OmittedCodeProofTest {
                     "src/main/java/org/example/Vulnerable.java",
                     null,
                     List.of(
-                        new SourceReproductionResult.ClassEntry(
+                        new StructuredProofProvenance.ClassEntry(
                             "org/example/Vulnerable.class", "e".repeat(64))))));
     return VexAttestation.structuredOmittedCode(
         "CVE-2025-12345",

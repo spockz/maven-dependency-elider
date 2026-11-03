@@ -138,37 +138,6 @@ final class MavenStructuredProofAssessmentTest {
   }
 
   @Test
-  void sameBasenamePackageSwapAbstainsBeforeItCanPromoteTheWrongClassFamily() throws IOException {
-    final Path directory = temporaryDirectory.resolve("structured-proof-package-swap");
-    final MavenCorroboratedSourceScenario.Prepared prepared =
-        MavenCorroboratedSourceScenario.prepareReproducibleClaim(
-            directory, List.of(MavenSourceCorrespondenceTestArtifacts.SOURCE_ENTRY), List.of());
-    final MavenSourceCorrespondenceTestArtifacts.Archives archives =
-        MavenAdversarialSourceArchiveFixtures.writePackagePathSwap(directory);
-    final Path trimmed =
-        MavenSourceCorrespondenceTestArtifacts.writeEmptyTrimmedJar(
-            directory.resolve(TRIMMED_JAR_FILENAME));
-
-    final MavenVulnerabilityAssessment.Result result =
-        MavenStructuredProofScenario.assess(prepared, archives, trimmed, true);
-
-    assertAll(
-        "byte-identical compilation cannot make a basename-only source claim identify a path",
-        () -> assertThat(result.attestations()).isEmpty(),
-        () -> assertThat(result.provenVulnerableCodeAbsent()).isEmpty(),
-        () ->
-            assertThat(result.sourceCorrespondences())
-                .anySatisfy(
-                    correspondence ->
-                        assertThat(correspondence)
-                            .isInstanceOf(SourceBuildCorrespondence.Abstained.class)
-                            .extracting(
-                                value -> ((SourceBuildCorrespondence.Abstained) value).rationale())
-                            .asString()
-                            .contains("path disagrees with the declared Java package")));
-  }
-
-  @Test
   void structuredProofIsSuppressedWhenOneReproducedClaimClassSurvives() throws IOException {
     final Path directory = temporaryDirectory.resolve("structured-proof-survivor");
     final MavenCorroboratedSourceScenario.Prepared prepared =

@@ -1,10 +1,10 @@
-// WHY: Filters AutoConfiguration descriptors while preserving external ownership, properties formatting, and ordering integrity.
+// WHY: Filters AutoConfiguration descriptors while preserving external ownership, properties
+// formatting, and ordering integrity.
 
 package io.github.spockz.elider.trimmer;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
@@ -14,10 +14,10 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /**
- * Filters Spring Boot AutoConfiguration descriptors:
- * - META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports
- * Preserves external classes and ordering integrity, removing only classes that belonged
- * to the input archive and were actually pruned.
+ * Filters Spring Boot AutoConfiguration descriptors: -
+ * META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports Preserves
+ * external classes and ordering integrity, removing only classes that belonged to the input archive
+ * and were actually pruned.
  */
 public final class AutoConfigurationDescriptorFilter {
   public static final String IMPORTS_PATH =
@@ -28,8 +28,8 @@ public final class AutoConfigurationDescriptorFilter {
   }
 
   /**
-   * Filters an AutoConfiguration.imports entry if present and any archive-owned classes were removed.
-   * Handles both dot-separated (binary) and slash-separated (internal) class names.
+   * Filters an AutoConfiguration.imports entry if present and any archive-owned classes were
+   * removed. Handles both dot-separated (binary) and slash-separated (internal) class names.
    */
   public static Optional<byte[]> filterImports(
       final JarFile input,
@@ -46,7 +46,8 @@ public final class AutoConfigurationDescriptorFilter {
     final StringBuilder filtered = new StringBuilder();
     boolean modified = false;
     try (BufferedReader reader =
-        new BufferedReader(new InputStreamReader(input.getInputStream(entry), StandardCharsets.UTF_8))) {
+        new BufferedReader(
+            new InputStreamReader(input.getInputStream(entry), StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
         final String trimmed = line.trim();
@@ -57,7 +58,8 @@ public final class AutoConfigurationDescriptorFilter {
         }
         final String internalName = className.replace('.', '/');
         // Input-Archive Ownership Invariant:
-        // Remove an entry only when its owner belonged to the input archive AND was actually removed.
+        // Remove an entry only when its owner belonged to the input archive AND was actually
+        // removed.
         final boolean ownedByArchive = normalizedOwned.contains(internalName);
         final boolean retained = normalizedRetained.contains(internalName);
         if (ownedByArchive && !retained) {
@@ -68,7 +70,9 @@ public final class AutoConfigurationDescriptorFilter {
         }
       }
     }
-    return modified ? Optional.of(filtered.toString().getBytes(StandardCharsets.UTF_8)) : Optional.empty();
+    return modified
+        ? Optional.of(filtered.toString().getBytes(StandardCharsets.UTF_8))
+        : Optional.empty();
   }
 
   private static Set<String> normalizeNames(final Set<String> names) {

@@ -2,8 +2,6 @@
 
 package io.github.spockz.elider.plugin;
 
-import java.util.Objects;
-
 /** Strategy governing multi-release and modular JAR transformation. */
 enum MrjarStrategy {
   /** Elevates target release bytecode to the root and trims while preserving upper tiers. */

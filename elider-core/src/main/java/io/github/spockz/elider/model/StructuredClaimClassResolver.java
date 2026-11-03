@@ -1,134 +1,149 @@
-/* WHY: Maps only freshly reproduced CNA claims to their exact emitted class families. */
+/* WHY: Maps CNA source-file claims to exact class families using JarSourceFileIndex. */
 
 package io.github.spockz.elider.model;
 
-import io.github.spockz.elider.correspondence.SourceReproductionResult;
+import io.github.spockz.elider.scanner.JarSourceFileIndex;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
-/** Derives proof class families from current file and unique routine claims. */
+/** Derives proof class families from current file claims using JarSourceFileIndex. */
 final class StructuredClaimClassResolver {
-  /** One exact entry must own each current file or routine claim. */
-  private static final int UNIQUE_MATCH_COUNT = 1;
-
   private StructuredClaimClassResolver() {}
 
   /* default */ static Result derive(
-      final CveAffectedEntryContext entry, final SourceReproductionResult.Completed completed)
+      final CveAffectedEntryContext entry,
+      final JarSourceFileIndex sourceIndex,
+      final Path originalJar,
+      final boolean conventionalLayoutAssumed)
       throws IOException {
-    final Set<String> selectedEntries = new HashSet<>();
+    final Set<String> selectedClasses = new HashSet<>();
     final List<StructuredProofProvenance.ClaimAttribution> attributions = new ArrayList<>();
+
     for (final String claim : entry.programFiles().stream().sorted().toList()) {
-      final String sourceEntry = completed.mappedClaims().get(claim);
-      if (sourceEntry == null) {
-        throw new IOException("A current CNA source-file claim has no exact archive match");
+      if (!SourceClaimPathMatcher.isSupportedJavaSourceClaim(claim)) {
+        continue;
       }
-      final List<SourceReproductionResult.SourceUnit> units =
-          completed.sourceUnits().stream()
-              .filter(unit -> unit.sourceEntry().equals(sourceEntry))
-              .toList();
-      if (units.size() != UNIQUE_MATCH_COUNT) {
-        throw new IOException("A matched source claim has no unique reproduced source unit");
+      final String sourceBasename = SourceClaimPathMatcher.basename(claim);
+      final List<JarSourceFileIndex.ClassSourceFile> matchedClassFiles = new ArrayList<>();
+      for (final JarSourceFileIndex.ClassSourceFile classFile : sourceIndex.classFiles()) {
+        if (matchesClaim(classFile, claim, sourceBasename)) {
+          matchedClassFiles.add(classFile);
+        }
       }
-      final SourceReproductionResult.SourceUnit unit = units.getFirst();
-      final List<SourceReproductionResult.ClassEntry> emittedClasses =
-          orderedClasses(unit.emittedClasses());
-      selectedEntries.addAll(classNames(emittedClasses));
+      if (matchedClassFiles.isEmpty()) {
+        throw new IOException(
+            "A current CNA source-file claim has no exact archive match: " + claim);
+      }
+      final List<StructuredProofProvenance.ClassEntry> emittedClasses =
+          readClassEntries(matchedClassFiles, originalJar);
+      for (final JarSourceFileIndex.ClassSourceFile cf : matchedClassFiles) {
+        selectedClasses.add(className(cf.physicalJarEntry()));
+      }
       attributions.add(
           new StructuredProofProvenance.ClaimAttribution(
-              StructuredProofProvenance.ClaimType.FILE, claim, sourceEntry, null, emittedClasses));
+              StructuredProofProvenance.ClaimType.FILE, claim, claim, null, emittedClasses));
     }
+
     for (final String routine : entry.programRoutines().stream().sorted().toList()) {
-      attributions.add(addRoutineOwnerFamily(routine, completed, selectedEntries));
+      final List<JarSourceFileIndex.ClassSourceFile> owners = new ArrayList<>();
+      for (final JarSourceFileIndex.ClassSourceFile classFile : sourceIndex.classFiles()) {
+        if (classFile.declaredMethods().contains(routine)) {
+          owners.add(classFile);
+        }
+      }
+      if (owners.size() != 1) {
+        throw new IOException("A current CNA routine claim has no unique owner: " + routine);
+      }
+      final JarSourceFileIndex.ClassSourceFile owner = owners.getFirst();
+      final String ownerClassName = className(owner.physicalJarEntry());
+      final String ownerClassPrefix = ownerClassName + "$";
+      final List<JarSourceFileIndex.ClassSourceFile> familyClassFiles = new ArrayList<>();
+      for (final JarSourceFileIndex.ClassSourceFile classFile : sourceIndex.classFiles()) {
+        final String name = className(classFile.physicalJarEntry());
+        if (name.equals(ownerClassName) || name.startsWith(ownerClassPrefix)) {
+          familyClassFiles.add(classFile);
+          selectedClasses.add(name);
+        }
+      }
+      final List<StructuredProofProvenance.ClassEntry> emittedClasses =
+          readClassEntries(familyClassFiles, originalJar);
+      final String sourceEntry =
+          owner.sourceFile() != null ? owner.sourceFile() : owner.physicalJarEntry();
+      attributions.add(
+          new StructuredProofProvenance.ClaimAttribution(
+              StructuredProofProvenance.ClaimType.ROUTINE,
+              routine,
+              sourceEntry,
+              ownerClassName,
+              emittedClasses));
     }
-    if (selectedEntries.isEmpty()) {
-      throw new IOException("Current CNA claims identify no reproduced class family");
+
+    if (selectedClasses.isEmpty()) {
+      throw new IOException("Current CNA claims identify no matched class family");
     }
-    return new Result(selectedEntries, attributions);
+    return new Result(selectedClasses, attributions);
   }
 
-  private static StructuredProofProvenance.ClaimAttribution addRoutineOwnerFamily(
-      final String routine,
-      final SourceReproductionResult.Completed completed,
-      final Set<String> selectedEntries)
+  private static boolean matchesClaim(
+      final JarSourceFileIndex.ClassSourceFile classFile,
+      final String claim,
+      final String sourceBasename) {
+    if (classFile.sourceFile() == null || !classFile.sourceFile().equals(sourceBasename)) {
+      return false;
+    }
+    final String entry = classFile.classEntry();
+    final String classPackage = SourceClaimPathMatcher.classPackage(entry);
+    return !classPackage.isBlank() && SourceClaimPathMatcher.hasPackageSuffix(claim, classPackage);
+  }
+
+  private static List<StructuredProofProvenance.ClassEntry> readClassEntries(
+      final List<JarSourceFileIndex.ClassSourceFile> matched, final Path originalJar)
       throws IOException {
-    final List<SourceReproductionResult.RoutineDeclaration> declarations =
-        completed.sourceUnits().stream()
-            .flatMap(unit -> unit.routineDeclarations().stream())
-            .filter(declaration -> declaration.name().equals(routine))
-            .toList();
-    if (declarations.size() != UNIQUE_MATCH_COUNT) {
-      throw new IOException("A current CNA routine claim has no unique reproduced owner");
+    final List<StructuredProofProvenance.ClassEntry> entries = new ArrayList<>();
+    try (ZipFile zip = new ZipFile(originalJar.toFile())) {
+      for (final JarSourceFileIndex.ClassSourceFile cf : matched) {
+        final ZipEntry zipEntry = zip.getEntry(cf.physicalJarEntry());
+        if (zipEntry == null) {
+          throw new IOException("Class entry not found in archive: " + cf.physicalJarEntry());
+        }
+        final byte[] bytes = zip.getInputStream(zipEntry).readAllBytes();
+        final String sha256 = sha256Hex(bytes);
+        entries.add(new StructuredProofProvenance.ClassEntry(cf.physicalJarEntry(), sha256));
+      }
     }
-    final String owner = declarations.getFirst().ownerBinaryName();
-    final String ownerPath = owner.replace('.', '/') + ".class";
-    final List<SourceReproductionResult.SourceUnit> ownerUnits =
-        completed.sourceUnits().stream().filter(unit -> emitsOwner(unit, ownerPath)).toList();
-    if (ownerUnits.size() != UNIQUE_MATCH_COUNT) {
-      throw new IOException("A routine owner is not emitted by one reproduced source unit");
-    }
-    final SourceReproductionResult.SourceUnit ownerUnit = ownerUnits.getFirst();
-    final String nestedPrefix = owner.replace('.', '/') + "$";
-    final List<SourceReproductionResult.ClassEntry> familyEntries =
-        orderedClasses(
-            ownerUnit.emittedClasses().stream()
-                .filter(entry -> isOwnerFamilyEntry(entry, ownerPath, nestedPrefix))
-                .toList());
-    final Set<String> family = classNames(familyEntries);
-    if (!family.contains(owner)) {
-      throw new IOException("A routine owner is absent from the reproduced class inventory");
-    }
-    selectedEntries.addAll(family);
-    return new StructuredProofProvenance.ClaimAttribution(
-        StructuredProofProvenance.ClaimType.ROUTINE,
-        routine,
-        ownerUnit.sourceEntry(),
-        owner,
-        familyEntries);
+    entries.sort(Comparator.comparing(StructuredProofProvenance.ClassEntry::path));
+    return List.copyOf(entries);
   }
 
-  private static boolean emitsOwner(
-      final SourceReproductionResult.SourceUnit unit, final String ownerPath) {
-    return unit.emittedClasses().stream().anyMatch(entry -> ownerPath.equals(entry.path()));
-  }
-
-  private static boolean isOwnerFamilyEntry(
-      final SourceReproductionResult.ClassEntry entry,
-      final String ownerPath,
-      final String nestedPrefix) {
-    return entry.path().equals(ownerPath) || entry.path().startsWith(nestedPrefix);
-  }
-
-  private static List<SourceReproductionResult.ClassEntry> orderedClasses(
-      final List<SourceReproductionResult.ClassEntry> classEntries) {
-    return classEntries.stream()
-        .sorted(java.util.Comparator.comparing(SourceReproductionResult.ClassEntry::path))
-        .toList();
-  }
-
-  private static Set<String> classNames(
-      final List<SourceReproductionResult.ClassEntry> classEntries) throws IOException {
-    final Set<String> names = new HashSet<>();
-    for (final SourceReproductionResult.ClassEntry entry : classEntries) {
-      names.add(className(entry.path()));
+  private static String sha256Hex(final byte[] bytes) {
+    try {
+      final MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      return HexFormat.of().formatHex(digest.digest(bytes));
+    } catch (final NoSuchAlgorithmException e) {
+      throw new IllegalStateException(e);
     }
-    return names;
   }
 
   private static String className(final String path) throws IOException {
     if (!path.endsWith(".class") || path.startsWith("/") || path.contains("..")) {
-      throw new IOException("Reproduced class inventory contains an invalid physical entry");
+      throw new IOException("Class inventory contains an invalid physical entry: " + path);
     }
     return path.substring(0, path.length() - ".class".length()).replace('/', '.');
   }
 
-  /** Immutable result of mapping current source claims to reproduced outputs. */
+  /** Immutable result of mapping current source claims to outputs. */
   /* default */ record Result(
       Set<String> classNames, List<StructuredProofProvenance.ClaimAttribution> attributions) {
-    /** Freezes the derived proof inputs. */
     Result {
       classNames = Set.copyOf(classNames);
       attributions = List.copyOf(attributions);

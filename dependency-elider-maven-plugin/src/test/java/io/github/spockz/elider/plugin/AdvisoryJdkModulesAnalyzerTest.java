@@ -19,8 +19,7 @@ import org.objectweb.asm.Opcodes;
 
 final class AdvisoryJdkModulesAnalyzerTest {
 
-  @TempDir
-  private Path tempDir;
+  @TempDir private Path tempDir;
 
   @Test
   @DisplayName("analyzes compiled class and extracts java.base module dependency")
@@ -33,8 +32,7 @@ final class AdvisoryJdkModulesAnalyzerTest {
     final Set<String> modules = analyzer.analyze(List.of(classesDir), List.of(), 21);
 
     assertAll(
-        () -> assertThat(modules).isNotEmpty(),
-        () -> assertThat(modules).contains("java.base"));
+        () -> assertThat(modules).isNotEmpty(), () -> assertThat(modules).contains("java.base"));
   }
 
   @Test
@@ -49,11 +47,14 @@ final class AdvisoryJdkModulesAnalyzerTest {
   private void writeSimpleClass(final Path classFile) throws IOException {
     final ClassWriter cw = new ClassWriter(0);
     cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "SimpleApp", null, "java/lang/Object", null);
-    final MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, "main", "([Ljava/lang/String;)V", null, null);
+    final MethodVisitor mv =
+        cw.visitMethod(
+            Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, "main", "([Ljava/lang/String;)V", null, null);
     mv.visitCode();
     mv.visitFieldInsn(Opcodes.GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
     mv.visitLdcInsn("hello");
-    mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
+    mv.visitMethodInsn(
+        Opcodes.INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
     mv.visitInsn(Opcodes.RETURN);
     mv.visitMaxs(2, 1);
     mv.visitEnd();

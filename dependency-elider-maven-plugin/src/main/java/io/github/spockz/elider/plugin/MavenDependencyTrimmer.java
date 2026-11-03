@@ -19,13 +19,16 @@ import org.apache.maven.project.MavenProject;
 /** Coordinates candidate analysis and output staging. */
 final class MavenDependencyTrimmer {
   /** Analyzes each implementation tier before trimming a multi-release archive. */
-  /* package */ static final String MRJAR_VERTICAL_SHADING = MrjarStrategy.VERTICAL_SHADING.configurationValue();
+  /* package */ static final String MRJAR_VERTICAL_SHADING =
+      MrjarStrategy.VERTICAL_SHADING.configurationValue();
 
   /** Preserves multi-release archives while still analyzing their dependencies. */
-  /* package */ static final String MRJAR_PASS_THROUGH = MrjarStrategy.PASS_THROUGH.configurationValue();
+  /* package */ static final String MRJAR_PASS_THROUGH =
+      MrjarStrategy.PASS_THROUGH.configurationValue();
 
   /** Trims modular dependencies as runtime derivatives by stripping module descriptors. */
-  /* package */ static final String MRJAR_CLASSPATH_ONLY = MrjarStrategy.CLASSPATH_ONLY.configurationValue();
+  /* package */ static final String MRJAR_CLASSPATH_ONLY =
+      MrjarStrategy.CLASSPATH_ONLY.configurationValue();
 
   /** Artifact type supported by archive trimming. */
   /* package */ static final String JAR_TYPE = "jar";

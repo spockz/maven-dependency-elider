@@ -51,7 +51,8 @@ final class DirectArchiveStaging {
               request.policy().trimWorkers(),
               candidate -> {
                 final boolean isClasspathOnlyModule =
-                    MrjarStrategy.parse(request.policy().mrjarStrategy()) == MrjarStrategy.CLASSPATH_ONLY
+                    MrjarStrategy.parse(request.policy().mrjarStrategy())
+                            == MrjarStrategy.CLASSPATH_ONLY
                         && MultiReleaseLibraryProjection.hasRootModuleDescriptor(
                             candidate.archive().snapshot().filePath());
                 final ArchiveSanitizer.PreparedOutput staged =

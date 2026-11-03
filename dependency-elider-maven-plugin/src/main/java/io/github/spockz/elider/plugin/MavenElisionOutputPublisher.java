@@ -204,7 +204,8 @@ final class MavenElisionOutputPublisher {
       targets.add(files.vex().toPath());
       targets.addAll(MavenSbomWriter.stagedPaths(request.project()));
       targets.add(MavenGeneratedOutputs.manifestPath(request.project()));
-      final Path buildDir = Path.of(request.project().getBuild().getDirectory()).toAbsolutePath().normalize();
+      final Path buildDir =
+          Path.of(request.project().getBuild().getDirectory()).toAbsolutePath().normalize();
       targets.add(buildDir.resolve(AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME));
     }
     return targets;
@@ -256,22 +257,23 @@ final class MavenElisionOutputPublisher {
               .resolve(AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME);
       final List<Path> inputs = new ArrayList<>();
       final List<Path> classPath = new ArrayList<>();
-      if (request.project().getBuild() != null && request.project().getBuild().getOutputDirectory() != null) {
+      if (request.project().getBuild() != null
+          && request.project().getBuild().getOutputDirectory() != null) {
         inputs.add(Path.of(request.project().getBuild().getOutputDirectory()));
       }
       SpringAotAssetPaths.resolveMainClasses(request.project()).ifPresent(inputs::add);
       for (final ArtifactFileRef ref : inventory.artifactFiles()) {
-        if (ref.filePath().toString().endsWith(".jar") || ref.filePath().toString().endsWith(".class")) {
+        if (ref.filePath().toString().endsWith(".jar")
+            || ref.filePath().toString().endsWith(".class")) {
           classPath.add(ref.filePath());
         }
       }
       final Set<String> recommendedModules =
           new AdvisoryJdkModulesAnalyzer()
               .analyze(
-                  inputs,
-                  classPath,
-                  analysis.trimResult().executionEnvironment().targetRelease());
-      final String formattedModules = AdvisoryJdkModulesAnalyzer.formatModuleList(recommendedModules);
+                  inputs, classPath, analysis.trimResult().executionEnvironment().targetRelease());
+      final String formattedModules =
+          AdvisoryJdkModulesAnalyzer.formatModuleList(recommendedModules);
       java.nio.file.Files.writeString(outputs.stagedPath(advisoryModulesPath), formattedModules);
 
       final List<Path> generated =

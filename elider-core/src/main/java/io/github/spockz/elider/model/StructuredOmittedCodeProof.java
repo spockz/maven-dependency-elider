@@ -3,58 +3,65 @@
 package io.github.spockz.elider.model;
 
 import io.github.spockz.elider.applicability.MavenRawScopeApplicability;
-import io.github.spockz.elider.correspondence.SourceReproductionEngine;
-import io.github.spockz.elider.correspondence.SourceReproductionRequest;
-import io.github.spockz.elider.correspondence.SourceReproductionResult;
+import io.github.spockz.elider.scanner.JarSourceFileIndex;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-/** Revalidates current structured claims before the shared physical omission check. */
+/** Revalidates current structured claims before physical omission check. */
 final class StructuredOmittedCodeProof {
   private StructuredOmittedCodeProof() {}
 
   /* default */ static VexAttestation prove(
-      final StructuredSourceProofRequest request,
-      final ArtifactTrimRecord trimRecord,
-      final SourceReproductionEngine reproductionEngine)
+      final StructuredSourceProofRequest request, final ArtifactTrimRecord trimRecord)
       throws IOException {
     Objects.requireNonNull(request, "request");
     Objects.requireNonNull(trimRecord, "trimRecord");
-    Objects.requireNonNull(reproductionEngine, "reproductionEngine");
     requireStructuredCandidate(request, trimRecord);
+    if (!java.nio.file.Files.isRegularFile(trimRecord.originalPath())) {
+      throw new IOException(
+          "original artifact must be a regular JAR file: " + trimRecord.originalPath());
+    }
     final LiveStructuredSourceValidator.ObservedInputs before =
         LiveStructuredSourceValidator.observe(request);
     requireAffected(before);
-    final SourceReproductionResult reproduction =
-        reproduce(request, trimRecord, before, reproductionEngine);
-    if (reproduction instanceof SourceReproductionResult.Abstained abstained) {
-      throw new IOException(abstained.rationale());
+
+    final ArtifactDigests initialOriginal =
+        PhysicalOmissionChecks.verifyDigest(
+            trimRecord.originalPath(), trimRecord.originalSha256(), trimRecord.originalSha1());
+    if (!trimRecord.originalSha256().equals(initialOriginal.sha256())) {
+      throw new IOException("Source reproduction does not match the exact trim candidate");
     }
-    final SourceReproductionResult.Completed completed =
-        (SourceReproductionResult.Completed) reproduction;
-    requireReproductionIdentity(request, trimRecord, completed);
+
+    final JarSourceFileIndex sourceIndex = JarSourceFileIndex.read(trimRecord.originalPath());
+    if (!sourceIndex.archiveSha256().equals(trimRecord.originalSha256())) {
+      throw new IOException("Source reproduction does not match the exact trim candidate");
+    }
     final StructuredClaimClassResolver.Result selection =
-        StructuredClaimClassResolver.derive(before.cnaEntry(), completed);
+        StructuredClaimClassResolver.derive(
+            before.cnaEntry(),
+            sourceIndex,
+            trimRecord.originalPath(),
+            request.conventionalLayoutAssumed());
     requireStable(before, LiveStructuredSourceValidator.observe(request));
-    final StructuredProofProvenance provenance =
-        provenance(before, completed, request.conventionalLayoutAssumed(), selection);
+
+    final StructuredProofProvenance provenance = provenance(before, request, trimRecord, selection);
     final VexAttestation attestation =
         provePhysicalOmission(
             new VerifiedStructuredEvidence(
                 request.sourceEvidence().scope().cveId(), selection.classNames(), provenance),
-            trimRecord,
-            reproductionEngine);
-    verifyFinalInputs(request, trimRecord, completed, before);
+            trimRecord);
+    verifyFinalInputs(request, trimRecord, before);
     return attestation;
   }
 
   private static StructuredProofProvenance provenance(
       final LiveStructuredSourceValidator.ObservedInputs observed,
-      final SourceReproductionResult.Completed completed,
-      final boolean conventionalLayoutAssumed,
+      final StructuredSourceProofRequest request,
+      final ArtifactTrimRecord trimRecord,
       final StructuredClaimClassResolver.Result selection) {
     return new StructuredProofProvenance(
         observed.owner().osvId(),
@@ -62,12 +69,12 @@ final class StructuredOmittedCodeProof {
         observed.cnaEntry().entryIdentity(),
         observed.evidence().affectedProductIdentity(),
         StructuredProofProvenance.OsvSourceAuthority.CONFIGURED_PRODUCER_COMPATIBLE_INDEX,
-        completed.sourcesCoordinate(),
-        completed.sourcesArchiveSha256(),
-        completed.sourceRepositoryProvenance(),
-        completed.compilerIdentity(),
-        completed.compilerOptions(),
-        conventionalLayoutAssumed,
+        request.sourcesCoordinate(),
+        trimRecord.originalSha256(),
+        request.sourceRepositoryProvenance(),
+        "source-file-index",
+        List.of(),
+        request.conventionalLayoutAssumed(),
         rawScopeEvidence(observed),
         selection.attributions());
   }
@@ -92,38 +99,6 @@ final class StructuredOmittedCodeProof {
       throw new IOException(
           "Current raw OSV and CNA scope does not establish AFFECTED: "
               + applicability.rationale());
-    }
-  }
-
-  private static SourceReproductionResult reproduce(
-      final StructuredSourceProofRequest request,
-      final ArtifactTrimRecord trimRecord,
-      final LiveStructuredSourceValidator.ObservedInputs observed,
-      final SourceReproductionEngine reproductionEngine) {
-    final SourceReproductionRequest reproductionRequest =
-        new SourceReproductionRequest(
-            request.candidate(),
-            request.sourcesCoordinate(),
-            trimRecord.originalPath(),
-            request.sourcesJar(),
-            request.sourceRepositoryProvenance(),
-            observed.cnaEntry().programFiles().stream().sorted().toList(),
-            observed.cnaEntry().programRoutines().stream().sorted().toList(),
-            request.conventionalLayoutAssumed());
-    return reproductionEngine.reproduce(reproductionRequest);
-  }
-
-  private static void requireReproductionIdentity(
-      final StructuredSourceProofRequest request,
-      final ArtifactTrimRecord trimRecord,
-      final SourceReproductionResult.Completed completed)
-      throws IOException {
-    if (!PhysicalOmissionChecks.sameArtifactIdentity(request.candidate(), completed.candidate())
-        || !PhysicalOmissionChecks.sameArtifactIdentity(
-            trimRecord.coordinate(), completed.candidate())
-        || !request.sourcesCoordinate().equals(completed.sourcesCoordinate())
-        || !trimRecord.originalSha256().equals(completed.originalArchiveSha256())) {
-      throw new IOException("Source reproduction does not match the exact trim candidate");
     }
   }
 
@@ -169,31 +144,20 @@ final class StructuredOmittedCodeProof {
   private static void verifyFinalInputs(
       final StructuredSourceProofRequest request,
       final ArtifactTrimRecord trimRecord,
-      final SourceReproductionResult.Completed completed,
       final LiveStructuredSourceValidator.ObservedInputs before)
       throws IOException {
-    if (!completed
-        .sourcesArchiveSha256()
-        .equals(ArtifactDigests.read(request.sourcesJar()).sha256())) {
-      throw new IOException("Sources archive changed during structured omission proof");
-    }
     final ArtifactDigests original =
         PhysicalOmissionChecks.verifyDigest(
             trimRecord.originalPath(), trimRecord.originalSha256(), trimRecord.originalSha1());
     final ArtifactDigests trimmed =
         PhysicalOmissionChecks.verifyDigest(
             trimRecord.trimmedPath(), trimRecord.trimmedSha256(), trimRecord.trimmedSha1());
-    if (!original.sha256().equals(completed.originalArchiveSha256())) {
-      throw new IOException("Original archive changed during structured omission proof");
-    }
     PhysicalOmissionChecks.verifyUnchanged(trimRecord, original, trimmed);
     requireStable(before, LiveStructuredSourceValidator.observe(request));
   }
 
   private static VexAttestation provePhysicalOmission(
-      final VerifiedStructuredEvidence capability,
-      final ArtifactTrimRecord trimRecord,
-      final SourceReproductionEngine reproductionEngine)
+      final VerifiedStructuredEvidence capability, final ArtifactTrimRecord trimRecord)
       throws IOException {
     final ArtifactDigests original =
         PhysicalOmissionChecks.verifyDigest(
@@ -202,11 +166,8 @@ final class StructuredOmittedCodeProof {
         PhysicalOmissionChecks.verifyDigest(
             trimRecord.trimmedPath(), trimRecord.trimmedSha256(), trimRecord.trimmedSha1());
     final Set<String> originalClasses =
-        reproductionEngine.readPhysicalClassInventory(
-            trimRecord.coordinate(), trimRecord.originalPath(), trimRecord.originalSha256());
-    final Set<String> trimmedClasses =
-        reproductionEngine.readPhysicalClassInventory(
-            trimRecord.coordinate(), trimRecord.trimmedPath(), trimRecord.trimmedSha256());
+        OmittedArchiveClassInventory.read(trimRecord.originalPath());
+    final Set<String> trimmedClasses = OmittedArchiveClassInventory.read(trimRecord.trimmedPath());
     final Set<String> absent =
         PhysicalOmissionChecks.verifySymbols(
             capability.vulnerableClasses(), originalClasses, trimmedClasses);
@@ -214,9 +175,9 @@ final class StructuredOmittedCodeProof {
     return VexAttestation.structuredOmittedCode(
         capability.cveId(),
         trimRecord.coordinate(),
-        "CNA-declared source claims were rebound to current CVE and OSV inputs, reproduced "
+        "CNA-declared source claims were rebound to current CVE and OSV inputs, verified "
             + "against the exact original archive, and their class families are absent from the "
-            + "trimmed artifact. This establishes absence for those reproduced classes only; it "
+            + "trimmed artifact. This establishes absence for those verified classes only; it "
             + "does not validate the CNA declaration's correctness or completeness.",
         absent,
         original.sha256(),

@@ -51,7 +51,14 @@ public final class ArchiveSanitizer {
       throw new IOException("Original dependency changed during trim analysis: " + originalJar);
     }
     return prepareValidated(
-        originalJar, trimmedJar, coordinate, analysis, originalDigests, null, false, "not_multi_release");
+        originalJar,
+        trimmedJar,
+        coordinate,
+        analysis,
+        originalDigests,
+        null,
+        false,
+        "not_multi_release");
   }
 
   /** Stages an MRJAR using a validated target-release elevation plan. */
@@ -79,7 +86,14 @@ public final class ArchiveSanitizer {
       throw new IOException("Trim analysis does not match the MRJAR target-release view");
     }
     return prepareValidated(
-        originalJar, trimmedJar, coordinate, analysis, originalDigests, plan, false, "elevated_and_trimmed");
+        originalJar,
+        trimmedJar,
+        coordinate,
+        analysis,
+        originalDigests,
+        plan,
+        false,
+        "elevated_and_trimmed");
   }
 
   /**
@@ -101,12 +115,17 @@ public final class ArchiveSanitizer {
           "Captured original dependency digests belong to a different path: " + originalJar);
     }
     return prepareValidated(
-        originalJar, trimmedJar, coordinate, analysis, originalDigests, null, false, "not_multi_release");
+        originalJar,
+        trimmedJar,
+        coordinate,
+        analysis,
+        originalDigests,
+        null,
+        false,
+        "not_multi_release");
   }
 
-  /**
-   * Stages a runtime derivative in classpath-only mode, stripping the root module descriptor.
-   */
+  /** Stages a runtime derivative in classpath-only mode, stripping the root module descriptor. */
   public PreparedOutput prepareClasspathOnly(
       final Path originalJar,
       final Path trimmedJar,
@@ -121,7 +140,14 @@ public final class ArchiveSanitizer {
           "Captured original dependency digests belong to a different path: " + originalJar);
     }
     return prepareValidated(
-        originalJar, trimmedJar, coordinate, analysis, originalDigests, null, true, "classpath-only");
+        originalJar,
+        trimmedJar,
+        coordinate,
+        analysis,
+        originalDigests,
+        null,
+        true,
+        "classpath-only");
   }
 
   private static void validateInputs(

@@ -54,7 +54,7 @@ fix: fmt ## Apply repository formatters
 fmt: ## Format Java sources and remove unused imports
 	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) spotless:apply
 
-lint: lint-java lint-markdown ## Run all Java and documentation linters
+lint: fmt lint-java lint-markdown ## Apply automatic formatting, then run all Java and documentation linters
 
 lint-check: ## Apply formatting, then run Java and Markdown linters concurrently
 	$(MAKE) --no-print-directory fmt
