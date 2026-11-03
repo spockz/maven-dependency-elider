@@ -288,60 +288,6 @@ final class MavenCompilerSettings {
         environment.userPropertiesAsProperties());
   }
 
-  /** Resolves post-compile source attribution options without invoking configured processors. */
-  static List<String> postCompileSourceOptions(
-      final MavenProject project, final MavenSession session) throws IOException {
-    rejectSelectedToolchain(session);
-    return postCompileSourceOptions(project, userProperties(session));
-  }
-
-  private static List<String> postCompileSourceOptions(
-      final MavenProject project, final Properties userProperties) throws IOException {
-    final List<Xpp3Dom> configurations = compilerConfigurations(project);
-    rejectUnsupportedPlatformSettings(configurations, project.getProperties(), userProperties);
-    final String release =
-        value("release", "maven.compiler.release", project, userProperties, configurations);
-    final String source =
-        value("source", "maven.compiler.source", project, userProperties, configurations);
-    final String target =
-        value("target", "maven.compiler.target", project, userProperties, configurations);
-    final List<String> options = new ArrayList<>(sourceLevelOptions(release, source, target));
-    final String encoding =
-        value("encoding", "maven.compiler.encoding", project, userProperties, configurations);
-    final String projectEncoding =
-        project.getProperties().getProperty("project.build.sourceEncoding");
-    final String effectiveEncoding = encoding == null ? projectEncoding : encoding;
-    if (effectiveEncoding != null && !effectiveEncoding.isBlank()) {
-      options.addAll(List.of("-encoding", effectiveEncoding));
-    }
-    options.add("-proc:none");
-    return List.copyOf(options);
-  }
-
-  static List<String> postCompileSourceOptionsWithEnvironment(
-      final MavenProject project, final AnalysisEnvironment environment) throws IOException {
-    requireUnselectedToolchain(environment);
-    return postCompileSourceOptions(project, environment.userPropertiesAsProperties());
-  }
-
-  private static List<String> sourceLevelOptions(
-      final String release, final String source, final String target) throws IOException {
-    if (release != null && (source != null || target != null)) {
-      throw new IOException("Cannot attribute source with both compiler release and source/target");
-    }
-    if (release != null) {
-      return List.of("--release", release);
-    }
-    if (source != null && target != null) {
-      return List.of("-source", source, "-target", target);
-    }
-    if (source == null && target == null) {
-      return List.of();
-    }
-    throw new IOException(
-        "Source attribution requires effective compiler release or source/target settings");
-  }
-
   /** Reports processor settings that can generate source during the normal compile lifecycle. */
   static boolean hasConfiguredAnnotationProcessing(final MavenProject project) {
     return hasConfiguredAnnotationProcessing(project, null);

@@ -531,136 +531,47 @@ final class MavenElisionServiceTest {
   }
 
   @Test
-  @DisplayName("ADR-0010/post-compile source-bytecode union retains inlined constant owners")
-  void inlinedConstantOwnerIsRetainedForArtifactAndJarTrimming() throws Exception {
+  @DisplayName(
+      "ADR-0010/ADR-0013 bytecode-first post-compile analysis uses bytecode and explicit retention")
+  void bytecodeFirstPostCompileAnalysisRetainsConstantsViaExplicitRetention() throws Exception {
     final ConstantFixture fixture = constantFixture("inlined-constant");
-    final ElisionAnalysisModel.Analysis artifactAnalysis =
+    final ElisionAnalysisModel.Analysis defaultAnalysis =
         new MavenElisionService().analyze(fixture.project(), postCompileOptions(fixture, false));
 
-    assertThat(artifactAnalysis.evidence().bytecodeScan().orElseThrow().referencedClasses())
+    assertThat(defaultAnalysis.evidence().bytecodeScan().orElseThrow().referencedClasses())
         .doesNotContain("library.Constants");
-    assertThat(artifactAnalysis.evidence().classUsageReport().classes())
-        .anySatisfy(
-            usage -> {
-              assertThat(usage.className()).isEqualTo("library.Constants");
-              assertThat(usage.category().name()).isEqualTo("NEITHER_REFERENCED_NOR_OBSERVED");
-              assertThat(usage.applicationBytecodeReferenced()).isFalse();
-              assertThat(usage.runtimeObserved()).isFalse();
-            });
-    assertThat(artifactAnalysis.decision().retainedArtifacts())
+    assertThat(defaultAnalysis.decision().retainedArtifacts())
+        .doesNotContain(coordinateFor("inlined-constant", "compile"));
+
+    final ElisionAnalysisModel.Analysis retainedAnalysis =
+        new MavenElisionService()
+            .analyze(
+                fixture.project(),
+                postCompileOptionsWithRetained(
+                    fixture, false, List.of("org.example:inlined-constant")));
+
+    assertThat(retainedAnalysis.decision().retainedArtifacts())
         .contains(coordinateFor("inlined-constant", "compile"));
-    assertThat(
-            artifactAnalysis
-                .decision()
-                .getRetainedClasses(coordinateFor("inlined-constant", "compile")))
-        .contains("library.Constants")
-        .doesNotContain("library.Dead");
-
-    final ElisionAnalysisModel.Analysis trimAnalysis =
-        new MavenElisionService().analyze(fixture.project(), postCompileOptions(fixture, true));
-
-    assertThat(trimAnalysis.trimResult().records())
-        .anySatisfy(
-            record -> {
-              assertThat(record.coordinate())
-                  .isEqualTo(coordinateFor("inlined-constant", "compile"));
-              assertThat(record.totalClasses()).isEqualTo(2);
-              assertThat(record.retainedClasses()).isEqualTo(1);
-            });
-    assertThat(trimAnalysis.evidence().sourceAttributionFallback()).isNull();
-
-    final MavenElisionService service = new MavenElisionService();
-    final ElisionAnalysisModel.PreparedAnalysis sourcePrepared =
-        service.prepare(fixture.project(), postCompileOptions(fixture, false));
-    Files.writeString(
-        fixture.source(),
-        "package app; public final class Consumer { "
-            + "String value = \"constant\"; generated.Model model; }\n");
-    final ElisionAnalysisModel.PreparedAnalysis bytecodeOnlyPrepared =
-        service.prepare(fixture.project(), postCompileOptions(fixture, false));
-    assertThat(bytecodeOnlyPrepared.graphBinding().operationFingerprint())
-        .isNotEqualTo(sourcePrepared.graphBinding().operationFingerprint());
+    assertThat(retainedAnalysis.evidence().sourceAttributionFallback()).isNull();
   }
 
-  @Test
-  @DisplayName("ADR-0010/post-compile attribution failure retains all compile evidence")
-  void incompletePostCompileAttributionFallsBackConservatively() throws Exception {
-    final Artifact first = resolvedArtifact("fallback-first", "compile", "fallback-first.jar");
-    first.setFile(
-        CompilationFixtureSupport.compileToJar(
-                tempDir.resolve("fallback-first.jar"),
-                tempDir.resolve("fallback-first-src"),
-                Map.of(
-                    "library/Api.java",
-                    "package library; public final class Api {}\n",
-                    "library/ApiHelper.java",
-                    "package library; public final class ApiHelper {}\n"),
-                null)
-            .toFile());
-    final Artifact second = resolvedArtifact("fallback-second", "compile", "fallback-second.jar");
-    second.setFile(compileJar("fallback-second.jar", "other.Unused").toFile());
-    final Artifact runtime =
-        resolvedArtifact("fallback-runtime", "runtime", "fallback-runtime.jar");
-    runtime.setFile(compileJar("fallback-runtime.jar", "observed.Entry").toFile());
-    final MavenProject project =
-        projectWith(new LinkedHashSet<>(List.of(first, second, runtime)), null);
-    project.getProperties().setProperty("maven.compiler.release", "21");
-    final Path output = Files.createDirectories(tempDir.resolve("fallback-output"));
-    project.getBuild().setOutputDirectory(output.toString());
-    final Path compiledClass = output.resolve("app/UsesGeneratedMember.class");
-    Files.createDirectories(compiledClass.getParent());
-    Files.write(compiledClass, emptyClass("app/UsesGeneratedMember"));
-    final Path sourceRoot = Files.createDirectories(tempDir.resolve("fallback-source-root"));
-    final Path source = sourceRoot.resolve("app/UsesGeneratedMember.java");
-    Files.createDirectories(source.getParent());
-    Files.writeString(
-        source,
-        "package app; public final class UsesGeneratedMember { "
-            + "library.Api generated = library.Api.builder(); }\n");
-    project.addCompileSourceRoot(sourceRoot.toString());
-    final Path trace = tempDir.resolve("fallback-runtime.lst");
-    Files.writeString(trace, "observed/Entry\n");
-    final ElisionAnalysisModel.AnalysisOptions options =
-        new ElisionAnalysisModel.AnalysisOptions(
-            List.of(trace.toFile()),
+  private static ElisionAnalysisModel.AnalysisOptions postCompileOptionsWithRetained(
+      final ConstantFixture fixture, final boolean trimJars, final List<String> retained) {
+    return new ElisionAnalysisModel.AnalysisOptions(
+        List.of(fixture.trace().toFile()),
+        retained,
+        fixture.output().toFile(),
+        null,
+        new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+        new ElisionAnalysisModel.TrimOptions(
+            trimJars,
             List.of(),
-            output.toFile(),
-            null,
-            new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
-            new ElisionAnalysisModel.TrimOptions(
-                true,
-                List.of(),
-                false,
-                List.of(),
-                false,
-                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
-            new ElisionAnalysisModel.DynamicRootOptions(true));
-
-    final ElisionAnalysisModel.Analysis analysis =
-        new MavenElisionService().analyze(project, options);
-
-    assertThat(analysis.evidence().sourceAttributionFallback())
-        .contains("Cannot resolve production source references");
-    assertThat(analysis.decision().retainedArtifacts())
-        .contains(
-            coordinateFor("fallback-first", "compile"),
-            coordinateFor("fallback-second", "compile"),
-            coordinateFor("fallback-runtime", "runtime"));
-    assertThat(analysis.decision().getRetainedClasses(coordinateFor("fallback-first", "compile")))
-        .containsExactlyInAnyOrder("library.Api", "library.ApiHelper");
-    assertThat(analysis.decision().getRetainedClasses(coordinateFor("fallback-second", "compile")))
-        .containsExactly("other.Unused");
-    final RecordingMavenLog log = new RecordingMavenLog();
-    ElisionSummary.reportAnalysis(log, analysis, null, true);
-    assertThat(log.warnings()).anyMatch(message -> message.contains("used conservative fallback"));
-  }
-
-  @Test
-  @DisplayName("ADR-0010/post-compile source options accept default javac and disable processors")
-  void postCompileSourceOptionsUseDefaultJavacWithoutProcessors() throws IOException {
-    assertThat(MavenCompilerSettings.postCompileSourceOptions(new MavenProject(), null))
-        .containsExactly("-proc:none");
+            false,
+            List.of(),
+            false,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+        new ElisionAnalysisModel.DynamicRootOptions(true));
   }
 
   private ConstantFixture constantFixture(final String name) throws IOException {
@@ -745,19 +656,6 @@ final class MavenElisionServiceTest {
             MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
             MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
         new ElisionAnalysisModel.DynamicRootOptions(true));
-  }
-
-  private static byte[] emptyClass(final String internalName) {
-    final org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
-    writer.visit(
-        org.objectweb.asm.Opcodes.V21,
-        org.objectweb.asm.Opcodes.ACC_PUBLIC,
-        internalName,
-        null,
-        "java/lang/Object",
-        null);
-    writer.visitEnd();
-    return writer.toByteArray();
   }
 
   private record ConstantFixture(MavenProject project, Path output, Path trace, Path source) {}

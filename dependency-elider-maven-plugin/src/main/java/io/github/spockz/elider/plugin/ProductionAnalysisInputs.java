@@ -21,6 +21,8 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 
 /** Resolves compiler and production bytecode roots before artifact pruning. */
+@SuppressWarnings(
+    "PMD.CouplingBetweenObjects") // Aggregates Maven compile and production inputs for analysis
 final class ProductionAnalysisInputs {
   /** Dependency scopes Maven places on its production compile classpath. */
   private static final Set<String> COMPILE_VISIBLE_SCOPES = Set.of("compile", "provided", "system");
@@ -93,16 +95,8 @@ final class ProductionAnalysisInputs {
       return inputsForRequiredClasses(
           compileVisibleArtifacts, indexedClasses, requiredClasses, sourceScan.declaredTypes());
     } else if (productionClassesComplete) {
-      return PostCompileSourceAttribution.analyze(
-          project,
-          session,
-          environment,
-          classpath,
-          candidates,
-          compileVisibleArtifacts,
-          indexedClasses,
-          bytecodeScan,
-          outputClassNames);
+      return postCompileBytecodeInputs(
+          compileVisibleArtifacts, indexedClasses, bytecodeScan, outputClassNames);
     } else {
       compileVisibleArtifacts.forEach(
           artifact -> requiredClasses.addAll(indexedClasses.getOrDefault(artifact, Set.of())));
@@ -111,6 +105,36 @@ final class ProductionAnalysisInputs {
     compileVisibleArtifacts.forEach(
         artifact -> compileVisibleCoordinates.add(artifact.coordinate()));
     return new CompilerInputs(compileVisibleCoordinates, requiredClasses, Set.of(), null);
+  }
+
+  private static CompilerInputs postCompileBytecodeInputs(
+      final Set<ArtifactFileRef> compileVisibleArtifacts,
+      final Map<ArtifactFileRef, Set<String>> indexedClasses,
+      final Optional<BytecodeReferenceScan> bytecodeScan,
+      final Set<String> outputClassNames)
+      throws IOException {
+    final BytecodeReferenceScan scan =
+        bytecodeScan.orElseThrow(
+            () ->
+                new IOException(
+                    "elide.productionClassesComplete=true requires a production bytecode scan"));
+    if (!scan.complete()) {
+      final Set<String> fallbackClasses = new HashSet<>();
+      compileVisibleArtifacts.forEach(
+          artifact -> fallbackClasses.addAll(indexedClasses.getOrDefault(artifact, Set.of())));
+      final Set<ArtifactCoordinate> coordinates = new HashSet<>();
+      compileVisibleArtifacts.forEach(artifact -> coordinates.add(artifact.coordinate()));
+      return new CompilerInputs(
+          coordinates,
+          fallbackClasses,
+          Set.of(),
+          "Production bytecode reference scan is incomplete");
+    }
+    return inputsForRequiredClasses(
+        compileVisibleArtifacts,
+        indexedClasses,
+        new HashSet<>(scan.referencedClasses()),
+        outputClassNames);
   }
 
   private static Set<ArtifactFileRef> compileVisibleArtifacts(
