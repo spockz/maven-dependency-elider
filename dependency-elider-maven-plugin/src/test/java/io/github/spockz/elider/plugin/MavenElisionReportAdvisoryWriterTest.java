@@ -111,6 +111,9 @@ final class MavenElisionReportAdvisoryWriterTest {
                     "        </vulnerabilityMapping>",
                     "      </vulnerabilityMappings>"),
         () ->
+            assertThat(rendered)
+                .noneMatch(line -> line.startsWith("  - GHSA-heuristic org.example:trimmed:jar:2.0")),
+        () ->
             assertThat(
                     rendered.stream()
                         .filter(

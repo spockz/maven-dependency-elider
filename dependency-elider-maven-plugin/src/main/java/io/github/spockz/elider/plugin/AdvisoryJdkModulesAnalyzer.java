@@ -68,14 +68,12 @@ final class AdvisoryJdkModulesAnalyzer {
         jdepsProvider.get().run(new PrintWriter(out), new PrintWriter(err), args.toArray(String[]::new));
 
     final Set<String> modules = new TreeSet<>();
-    if (exitCode == 0) {
-      final String result = out.toString().trim();
-      if (!result.isEmpty()) {
-        for (final String mod : result.split("[,\\s]+")) {
-          final String trimmed = mod.trim();
-          if (!trimmed.isEmpty()) {
-            modules.add(trimmed);
-          }
+    final String result = out.toString().trim();
+    if (!result.isEmpty()) {
+      for (final String mod : result.split("[,\\s]+")) {
+        final String trimmed = mod.trim();
+        if (!trimmed.isEmpty() && !trimmed.startsWith("Error:") && !trimmed.startsWith("Warning:")) {
+          modules.add(trimmed);
         }
       }
     }

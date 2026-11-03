@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /** Formats report-only package and heuristic advisory rows. */
@@ -40,7 +41,13 @@ final class MavenElisionReportAdvisoryRenderer {
           "    REMOVED means excluded from this project's subsequent classpaths; the cached JAR "
               + "is not deleted.");
     }
-    review.packageAdvisories().forEach(finding -> renderPackage(finding, lines));
+    final Set<String> heuristicAdvisoryKeys =
+        review.heuristicAdvisories().stream()
+            .map(h -> h.osvId() + ":" + h.coordinate())
+            .collect(Collectors.toSet());
+    review.packageAdvisories().stream()
+        .filter(pkg -> !heuristicAdvisoryKeys.contains(pkg.osvId() + ":" + pkg.coordinate()))
+        .forEach(finding -> renderPackage(finding, lines));
     review.heuristicAdvisories().forEach(finding -> renderHeuristic(finding, lines));
     return List.copyOf(lines);
   }
