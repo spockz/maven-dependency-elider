@@ -464,7 +464,7 @@ public final class CycloneDxSbomGenerator {
       throws IOException {
     Path outputPath = record.trimmedPath().toAbsolutePath().normalize();
     Path inventoryPath = component.ref.filePath().toAbsolutePath().normalize();
-    if (!outputPath.equals(inventoryPath)) {
+    if (!outputPath.equals(inventoryPath) && !sameFile(outputPath, inventoryPath)) {
       throw new IllegalArgumentException(
           "Trim record output path does not match retained inventory for "
               + identity(record.coordinate()));
@@ -480,6 +480,14 @@ public final class CycloneDxSbomGenerator {
     }
     if (!record.trimmedSha256().equals(sha256(outputPath))) {
       throw new IOException("Trimmed artifact digest does not match trim record");
+    }
+  }
+
+  private static boolean sameFile(final Path path1, final Path path2) {
+    try {
+      return Files.exists(path1) && Files.exists(path2) && Files.isSameFile(path1, path2);
+    } catch (final IOException ignored) {
+      return false;
     }
   }
 

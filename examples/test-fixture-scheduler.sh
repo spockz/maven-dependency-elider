@@ -306,7 +306,7 @@ test_interrupted_active_workers() {
   for fixture in active-one active-two; do
     test "$(<"$evidence/$fixture.worker.status")" -ne 0
     read -r worker_pid worker_pgid <"$TEST_ROOT/$fixture.identity"
-    if ps -eo pgid= | awk -v group="$worker_pgid" '$1 == group { found=1 } END { exit !found }'; then
+    if ps -eo stat=,pgid= | awk -v group="$worker_pgid" '$2 == group && $1 !~ /Z/ { found=1 } END { exit !found }'; then
       echo "Interrupted worker process group $worker_pgid survived" >&2
       return 1
     fi
@@ -366,13 +366,15 @@ test_exit_cleanup_reaps_workers() {
     echo "EXIT cleanup removed its test root incompletely: $test_root_path" >&2
     return 1
   fi
+  local proc_stat
   while read -r role process_id process_group; do
-    if kill -0 "$process_id" 2>/dev/null; then
+    proc_stat=$(ps -o stat= -p "$process_id" 2>/dev/null | tr -d ' ' || true)
+    if [[ -n $proc_stat && $proc_stat != *Z* ]]; then
       echo "EXIT cleanup left $role PID $process_id alive" >&2
       return 1
     fi
-    if [[ $role == worker ]] && ps -eo pgid= | \
-      awk -v group="$process_group" '$1 == group { found=1 } END { exit !found }'; then
+    if [[ $role == worker ]] && ps -eo stat=,pgid= | \
+      awk -v group="$process_group" '$2 == group && $1 !~ /Z/ { found=1 } END { exit !found }'; then
       echo "EXIT cleanup left $role PID $process_id or process group $process_group alive" >&2
       return 1
     fi
@@ -428,7 +430,7 @@ test_descendant_cleanup() {
     cat "$output" >&2
     return 1
   fi
-  if ps -eo pgid= | awk -v group="$worker_pgid" '$1 == group { found=1 } END { exit !found }'; then
+  if ps -eo stat=,pgid= | awk -v group="$worker_pgid" '$2 == group && $1 !~ /Z/ { found=1 } END { exit !found }'; then
     cleanup_descendant_groups
     echo "Worker process group $worker_pgid survived scheduler interruption" >&2
     return 1

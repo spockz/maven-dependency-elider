@@ -53,15 +53,11 @@ final class ElisionCacheTest {
     final ArtifactCoordinate firstCoordinate = ArtifactCoordinate.of("g", "a", "1");
     final ArtifactCoordinate secondCoordinate =
         new ArtifactCoordinate("g", "b", "null", "jar", "", "runtime");
+    final ArtifactFileRef firstRef = ArtifactFileRef.fromPath(firstCoordinate, one);
     final Set<ArtifactFileRef> refs =
-        Set.of(
-            ArtifactFileRef.fromPath(firstCoordinate, one),
-            ArtifactFileRef.fromPath(secondCoordinate, two));
+        Set.of(firstRef, ArtifactFileRef.fromPath(secondCoordinate, two));
     final Set<ArtifactFileRef> reversedRefs =
-        new LinkedHashSet<>(
-            List.of(
-                ArtifactFileRef.fromPath(secondCoordinate, two),
-                ArtifactFileRef.fromPath(firstCoordinate, one)));
+        new LinkedHashSet<>(List.of(ArtifactFileRef.fromPath(secondCoordinate, two), firstRef));
     final Set<Path> traces = new LinkedHashSet<>(List.of(trace, secondTrace));
     final Set<Path> reversedTraces = new LinkedHashSet<>(List.of(secondTrace, trace));
     final long fingerprint =
@@ -73,7 +69,7 @@ final class ElisionCacheTest {
     final Set<ArtifactFileRef> staleRefs =
         new LinkedHashSet<>(
             List.of(
-                new ArtifactFileRef(firstCoordinate, one, 0L, 0L),
+                new ArtifactFileRef(firstCoordinate, firstRef.filePath(), 0L, 0L),
                 ArtifactFileRef.fromPath(secondCoordinate, two)));
     assertThat(
             FingerprintEngine.fingerprint(staleRefs, traces, new PruneConfig(), SEMANTICS_VERSION))
