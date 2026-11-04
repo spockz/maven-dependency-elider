@@ -47,23 +47,30 @@ final class ElisionSummaryMetricTest {
         ArtifactCoordinate.of(GROUP_ID, DROPPED_ARTIFACT_ID, VERSION);
     final MavenElisionReportSnapshot snapshot =
         new MavenElisionReportSnapshot(
-            MavenElisionReportSnapshot.SCHEMA_VERSION,
-            GROUP_ID,
-            PROJECT_ARTIFACT_ID,
-            VERSION,
-            Path.of(".").toAbsolutePath().normalize().toString(),
-            "2026-10-28T00:00:00Z",
-            new TrimExecutionEnvironment(21, Runtime.version().feature()),
-            1,
-            2048,
-            List.of(
-                new MavenElisionReportSnapshot.DroppedArtifact(DROPPED_COORDINATE, 2048, 2, 18)),
-            List.of(DROPPED_COORDINATE),
-            0,
-            0,
-            List.of(),
-            MediatedGraphReportTestSupport.reportForDroppedOutput(coordinate, PROJECT_GAV),
-            MavenElisionPolicyIdentityTestSupport.emptyPolicy());
+                MavenElisionReportSnapshot.SCHEMA_VERSION,
+                GROUP_ID,
+                PROJECT_ARTIFACT_ID,
+                VERSION,
+                Path.of(".").toAbsolutePath().normalize().toString(),
+                "2026-10-28T00:00:00Z",
+                new TrimExecutionEnvironment(21, Runtime.version().feature()),
+                1,
+                2048,
+                List.of(
+                    new MavenElisionReportSnapshot.DroppedArtifact(
+                        DROPPED_COORDINATE, 2048, 2, 18)),
+                List.of(DROPPED_COORDINATE),
+                0,
+                0,
+                List.of(),
+                MediatedGraphReportTestSupport.reportForDroppedOutput(coordinate, PROJECT_GAV),
+                MavenElisionPolicyIdentityTestSupport.emptyPolicy())
+            .withToleratedDuplicates(
+                List.of(
+                    new MavenElisionReportSnapshot.ToleratedDuplicateClass(
+                        "dup.Type",
+                        "TRIM_OTHER_CLASSES",
+                        List.of("org.example:a:jar:1.0", "org.example:b:jar:1.0"))));
     final RecordingMavenLog log = new RecordingMavenLog();
     final ElisionDecision decision =
         new ElisionDecision(Set.of(), Set.of(coordinate), Map.of(), Map.of(), 0L);
@@ -79,6 +86,9 @@ final class ElisionSummaryMetricTest {
         .contains(
             "  Program classes removed with dropped JARs: 2 (uncompressed .class entry payload"
                 + " bytes: 18 B; excludes module descriptors and archive sanitation metadata)",
+            "  Tolerated duplicate classes (accepted by configuration):",
+            "    - dup.Type: duplicate kept in every owner, other classes may be trimmed"
+                + " [org.example:a:jar:1.0, org.example:b:jar:1.0]",
             "  Classes removed: 0 / N/A (N/A; stage not run)");
     assertThat(log.messages()).doesNotContain("  Program classes removed:");
   }

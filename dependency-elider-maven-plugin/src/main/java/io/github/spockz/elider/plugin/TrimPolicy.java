@@ -14,11 +14,34 @@ record TrimPolicy(
     String mrjarStrategy,
     boolean trimEnabled,
     boolean conservativeServiceLoaderRoots,
-    int trimWorkers) {
+    int trimWorkers,
+    DuplicateClassPolicy duplicateClasses) {
   TrimPolicy {
     if (trimWorkers < MavenDependencyTrimmer.MIN_TRIM_WORKERS) {
       throw new IllegalArgumentException("trimWorkers must be at least 1");
     }
+    java.util.Objects.requireNonNull(duplicateClasses, "duplicateClasses");
+  }
+
+  /* package */ TrimPolicy(
+      final List<String> explicitRoots,
+      final boolean failOnUnsupportedMultiRelease,
+      final List<String> explicitPassThroughCoordinates,
+      final boolean failOnUnsupportedModuleInfo,
+      final String mrjarStrategy,
+      final boolean trimEnabled,
+      final boolean conservativeServiceLoaderRoots,
+      final int trimWorkers) {
+    this(
+        explicitRoots,
+        failOnUnsupportedMultiRelease,
+        explicitPassThroughCoordinates,
+        failOnUnsupportedModuleInfo,
+        mrjarStrategy,
+        trimEnabled,
+        conservativeServiceLoaderRoots,
+        trimWorkers,
+        DuplicateClassPolicy.NONE);
   }
 
   /* package */ TrimPolicy(

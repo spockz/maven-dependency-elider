@@ -191,15 +191,16 @@ final class TierClosureAnalyzer {
     boolean changed = false;
     for (final String name : reachable) {
       final String dotted = name.replace('/', '.');
-      final ElisionAnalysisModel.ArtifactSnapshot owner = context.ownerOf(dotted);
-      if (owner == null || owner.equals(source)) {
-        continue;
-      }
-      final TierCandidate candidate = candidates.get(owner);
-      if (candidate != null) {
-        changed |= candidate.roots().add(dotted);
-      } else if (!operation.request().retainedCoordinates().contains(owner.coordinate())) {
-        roots.reachableArtifacts().add(owner.coordinate());
+      for (final ElisionAnalysisModel.ArtifactSnapshot owner : context.ownersOf(dotted)) {
+        if (owner.equals(source)) {
+          continue;
+        }
+        final TierCandidate candidate = candidates.get(owner);
+        if (candidate != null) {
+          changed |= candidate.roots().add(dotted);
+        } else if (!operation.request().retainedCoordinates().contains(owner.coordinate())) {
+          roots.reachableArtifacts().add(owner.coordinate());
+        }
       }
     }
     return changed;

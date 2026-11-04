@@ -33,6 +33,15 @@ final class SingleReleaseClosureAnalyzer {
         TrimCollections.orderedMap();
     final Set<ArtifactCoordinate> reachableArtifacts =
         new LinkedHashSet<>(roots.reachableArtifacts());
+    inventory
+        .toleratedDuplicates()
+        .values()
+        .forEach(
+            owners ->
+                owners.stream()
+                    .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+                    .filter(coordinate -> !layout.retainedCoordinates().contains(coordinate))
+                    .forEach(reachableArtifacts::add));
     int analysisRuns = 0;
     boolean rootsChanged;
     do {
@@ -56,6 +65,7 @@ final class SingleReleaseClosureAnalyzer {
             collectReachableClasses(
                 analysis.reachableLibraryClasses(),
                 inventory.ownerByClass(),
+                inventory.toleratedDuplicates(),
                 layout.candidates(),
                 roots.candidateRoots(),
                 reachableArtifacts,
@@ -82,6 +92,7 @@ final class SingleReleaseClosureAnalyzer {
             collectReachableClasses(
                 analysis.reachableLibraryClasses(),
                 inventory.ownerByClass(),
+                inventory.toleratedDuplicates(),
                 layout.candidates(),
                 roots.candidateRoots(),
                 reachableArtifacts,
@@ -95,6 +106,7 @@ final class SingleReleaseClosureAnalyzer {
   /* package */ static boolean collectReachableClasses(
       final Set<String> reachable,
       final Map<String, ElisionAnalysisModel.ArtifactSnapshot> ownerByClass,
+      final Map<String, List<ElisionAnalysisModel.ArtifactSnapshot>> toleratedDuplicates,
       final List<ElisionAnalysisModel.ArtifactSnapshot> candidates,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> candidateRoots,
       final Set<ArtifactCoordinate> reachableArtifacts,
@@ -103,17 +115,23 @@ final class SingleReleaseClosureAnalyzer {
     boolean changed = false;
     for (final String reachableName : reachable) {
       final String name = reachableName.replace('/', '.');
-      final ElisionAnalysisModel.ArtifactSnapshot owner = ownerByClass.get(name);
-      if (owner == null || owner.equals(source)) {
+      final ElisionAnalysisModel.ArtifactSnapshot firstOwner = ownerByClass.get(name);
+      if (firstOwner == null) {
         continue;
       }
-      final ArtifactCoordinate coordinate = owner.coordinate();
-      if (retainedCoordinates.contains(coordinate)) {
+      for (final ElisionAnalysisModel.ArtifactSnapshot owner :
+          toleratedDuplicates.getOrDefault(name, List.of(firstOwner))) {
+        if (owner.equals(source)) {
+          continue;
+        }
+        final ArtifactCoordinate coordinate = owner.coordinate();
+        if (!retainedCoordinates.contains(coordinate)) {
+          reachableArtifacts.add(coordinate);
+          continue;
+        }
         if (candidates.contains(owner)) {
           changed |= candidateRoots.get(owner).add(name);
         }
-      } else {
-        reachableArtifacts.add(coordinate);
       }
     }
     return changed;

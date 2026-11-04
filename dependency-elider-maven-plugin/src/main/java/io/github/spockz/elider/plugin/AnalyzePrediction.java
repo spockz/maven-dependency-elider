@@ -25,7 +25,8 @@ record AnalyzePrediction(
     String environmentFingerprint,
     String inventoryFingerprint,
     String operationFingerprint,
-    MavenBanPlan banPlan) {
+    MavenBanPlan banPlan,
+    List<MavenElisionReportSnapshot.ToleratedDuplicateClass> toleratedDuplicates) {
   /* default */ AnalyzePrediction(
       final Provenance provenance,
       final List<ArtifactSnapshot> inputArtifacts,
@@ -46,7 +47,8 @@ record AnalyzePrediction(
         environmentFingerprint,
         inventoryFingerprint,
         operationFingerprint,
-        MavenBanPlan.empty());
+        MavenBanPlan.empty(),
+        List.of());
   }
 
   AnalyzePrediction {
@@ -55,6 +57,7 @@ record AnalyzePrediction(
     retainedArtifacts = retainedArtifacts.stream().sorted().toList();
     wouldElideArtifacts = wouldElideArtifacts.stream().sorted().toList();
     plannedTrims = plannedTrims.stream().sorted().toList();
+    toleratedDuplicates = List.copyOf(toleratedDuplicates);
     Objects.requireNonNull(evidence, "evidence");
     Objects.requireNonNull(environmentFingerprint, "environmentFingerprint");
     Objects.requireNonNull(inventoryFingerprint, "inventoryFingerprint");
@@ -64,6 +67,11 @@ record AnalyzePrediction(
 
   /* default */ static AnalyzePrediction from(final ElisionAnalysisModel.EffectiveAnalysis analysis)
       throws IOException {
+    final TrimRequest trimRequest =
+        TrimRequestFactory.fromPreparedAnalysis(
+            analysis.prepared(),
+            analysis.effectiveDecision().retainedArtifacts(),
+            analysis.prepared().pruningRequiredClasses());
     return new AnalyzePrediction(
         analysis.prepared().resolutionContext().provenance(),
         analysis.prepared().resolvedSnapshots(),
@@ -74,7 +82,10 @@ record AnalyzePrediction(
         analysis.prepared().resolutionContext().environment().fingerprint(),
         analysis.inventoryFingerprint(),
         analysis.operationFingerprint(),
-        analysis.banPlan());
+        analysis.banPlan(),
+        DuplicateClasses.resolveRetained(trimRequest).stream()
+            .map(MavenElisionReportSnapshot.ToleratedDuplicateClass::from)
+            .toList());
   }
 
   private static List<PlannedTrim> plannedTrims(

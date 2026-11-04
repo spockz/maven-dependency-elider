@@ -23,6 +23,7 @@ final class DirectTrimAnalysis {
         plan.runtimeRelease(),
         tables,
         plan.request().policy().trimWorkers(),
-        allowModularCandidate);
+        allowModularCandidate,
+        plan.request().policy().duplicateClasses());
   }
 }

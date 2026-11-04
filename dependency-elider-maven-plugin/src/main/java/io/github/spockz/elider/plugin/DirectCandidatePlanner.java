@@ -31,7 +31,8 @@ final class DirectCandidatePlanner {
       final List<ElisionAnalysisModel.ArtifactSnapshot> retained,
       final TrimScanInputs scans,
       final Map<ArtifactFileRef, Set<String>> classesByArtifact,
-      final Set<String> roots)
+      final Set<String> roots,
+      final DuplicateClassPolicy duplicates)
       throws IOException {
     final List<Path> inputs =
         libraries.stream().map(ElisionAnalysisModel.ArtifactSnapshot::filePath).toList();
@@ -49,7 +50,7 @@ final class DirectCandidatePlanner {
     final Map<String, List<TrimCandidate>> owners = TrimCollections.lookupMap();
     final Map<String, Path> paths = TrimCollections.lookupMap();
     for (final TrimCandidate candidate : work) {
-      registerOwners(candidate, owners, paths);
+      registerOwners(candidate, owners, paths, duplicates);
     }
     return new CandidatePlan(inputs, work, owners, paths);
   }
@@ -95,10 +96,11 @@ final class DirectCandidatePlanner {
   private static void registerOwners(
       final TrimCandidate candidate,
       final Map<String, List<TrimCandidate>> owners,
-      final Map<String, Path> paths)
+      final Map<String, Path> paths,
+      final DuplicateClassPolicy duplicates)
       throws IOException {
     for (final String className : candidate.archive().classes()) {
-      registerOwner(candidate, className, owners, paths);
+      registerOwner(candidate, className, owners, paths, duplicates);
     }
   }
 
@@ -106,11 +108,12 @@ final class DirectCandidatePlanner {
       final TrimCandidate candidate,
       final String className,
       final Map<String, List<TrimCandidate>> owners,
-      final Map<String, Path> paths)
+      final Map<String, Path> paths,
+      final DuplicateClassPolicy duplicates)
       throws IOException {
     final Path path = candidate.archive().snapshot().filePath();
     final Path previous = paths.putIfAbsent(className, path);
-    if (previous != null && !previous.equals(path)) {
+    if (previous != null && !previous.equals(path) && !duplicates.tolerates(className)) {
       throw new IOException(
           "Duplicate class across retained dependency JARs makes library order ambiguous: "
               + className);

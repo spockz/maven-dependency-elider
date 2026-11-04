@@ -205,6 +205,59 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
+  void requiresCanonicalToleratedDuplicateRows() throws IOException {
+    final ObjectNode missing = currentReportShapeWithDroppedRow();
+    missing.remove("toleratedDuplicates");
+    final ObjectNode malformedRow = currentReportShapeWithDroppedRow();
+    malformedRow.putArray("toleratedDuplicates").addObject().put("className", "dup.Type");
+    final ObjectNode invalidAction = duplicatePayload();
+    ((ObjectNode) invalidAction.withArray("toleratedDuplicates").get(0)).put("action", "KEEP_SOME");
+    final ObjectNode invalidOwners = duplicatePayload();
+    ((ObjectNode) invalidOwners.withArray("toleratedDuplicates").get(0))
+        .putArray("owners")
+        .add("example:z:jar:1.0")
+        .add("example:a:jar:1.0");
+    final ObjectNode unsortedRows = duplicatePayload();
+    unsortedRows
+        .withArray("toleratedDuplicates")
+        .addObject()
+        .put("className", "dup.A")
+        .put("action", "RETAIN_JARS")
+        .putArray("owners")
+        .add("example:a:jar:1.0")
+        .add("example:b:jar:1.0");
+
+    assertAll(
+        () -> assertInvalidDuplicate(missing, "fields do not match schema version 1"),
+        () -> assertInvalidDuplicate(malformedRow, "row fields do not match"),
+        () -> assertInvalidDuplicate(invalidAction, "action is invalid"),
+        () -> assertInvalidDuplicate(invalidOwners, "owners must be a sorted array"),
+        () -> assertInvalidDuplicate(unsortedRows, "must be sorted and distinct"));
+  }
+
+  private void assertInvalidDuplicate(final ObjectNode payload, final String diagnostic)
+      throws IOException {
+    final Path report =
+        writeReport("invalid-duplicates-" + diagnostic.hashCode() + ".json", payload);
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(report))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(diagnostic);
+  }
+
+  private static ObjectNode duplicatePayload() {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload
+        .withArray("toleratedDuplicates")
+        .addObject()
+        .put("className", "dup.B")
+        .put("action", "RETAIN_JARS")
+        .putArray("owners")
+        .add("example:a:jar:1.0")
+        .add("example:b:jar:1.0");
+    return payload;
+  }
+
+  @Test
   void rejectsSchemaOneSnapshotMissingVerifiedStructuredProofCollection() throws IOException {
     final ObjectNode payload = currentReportShapeWithDroppedRow();
     payload.remove("verifiedStructuredProofs");
@@ -1119,6 +1172,7 @@ final class MavenElisionReportSchemaTest {
         JSON.valueToTree(
             ExclusionReview.unavailable("No pre-injection declaration capture is available")));
     payload.putArray("appliedBans");
+    payload.putArray("toleratedDuplicates");
     final ObjectNode graph = payload.putObject("mediatedGraph");
     graph.put("available", false);
     graph.put("unavailableReason", "No graph was provided");

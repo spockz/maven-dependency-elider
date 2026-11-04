@@ -23,6 +23,24 @@ final class MavenElisionReportRenderer {
 
   private MavenElisionReportRenderer() {}
 
+  /** Lists tolerated duplicate classes with the action applied to their owning JARs. */
+  static List<String> toleratedDuplicateLines(
+      final List<MavenElisionReportSnapshot.ToleratedDuplicateClass> duplicates) {
+    if (duplicates.isEmpty()) {
+      return List.of();
+    }
+    final List<String> lines = new ArrayList<>();
+    lines.add("Tolerated duplicate classes (accepted by configuration):");
+    for (final MavenElisionReportSnapshot.ToleratedDuplicateClass duplicate : duplicates) {
+      final String action =
+          DuplicateClassPolicy.Action.RETAIN_JARS.name().equals(duplicate.action())
+              ? "owning JARs retained whole"
+              : "duplicate kept in every owner, other classes may be trimmed";
+      lines.add(BULLET + duplicate.className() + ": " + action + " " + duplicate.owners());
+    }
+    return lines;
+  }
+
   static List<String> render(final MavenElisionReportSnapshot snapshot) {
     final List<String> lines = new ArrayList<>();
     lines.add("Dependency Elider report");
@@ -53,19 +71,8 @@ final class MavenElisionReportRenderer {
             + "; excludes module descriptors and archive sanitation metadata)");
     lines.add(
         "Raw trace decision drops before graph safety: " + snapshot.rawDroppedCoordinates().size());
-    if (snapshot.appliedBans().isEmpty()) {
-      lines.add("Applied bans: none");
-    } else {
-      lines.add("Applied ban outcomes:");
-      for (final MavenElisionReportSnapshot.AppliedBan ban : snapshot.appliedBans()) {
-        lines.add(
-            BULLET
-                + ban.dependency()
-                + ": "
-                + ban.status().toLowerCase(Locale.ROOT)
-                + (ban.matchedArtifacts().isEmpty() ? "" : " " + ban.matchedArtifacts()));
-      }
-    }
+    renderAppliedBans(snapshot.appliedBans(), lines);
+    lines.addAll(toleratedDuplicateLines(snapshot.toleratedDuplicates()));
     for (final MavenElisionReportSnapshot.DroppedArtifact artifact : snapshot.droppedArtifacts()) {
       lines.add(
           BULLET
@@ -152,6 +159,23 @@ final class MavenElisionReportRenderer {
     lines.addAll(
         MediatedGraphReportRenderer.render(snapshot.mediatedGraph(), snapshot.projectGav()));
     return List.copyOf(lines);
+  }
+
+  private static void renderAppliedBans(
+      final List<MavenElisionReportSnapshot.AppliedBan> bans, final List<String> lines) {
+    if (bans.isEmpty()) {
+      lines.add("Applied bans: none");
+    } else {
+      lines.add("Applied ban outcomes:");
+      for (final MavenElisionReportSnapshot.AppliedBan ban : bans) {
+        lines.add(
+            BULLET
+                + ban.dependency()
+                + ": "
+                + ban.status().toLowerCase(Locale.ROOT)
+                + (ban.matchedArtifacts().isEmpty() ? "" : " " + ban.matchedArtifacts()));
+      }
+    }
   }
 
   private static void addWrapped(final List<String> lines, final String text) {

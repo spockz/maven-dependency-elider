@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Tests report snapshots independently from Maven dependency analysis. */
-@SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
+@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.TooManyMethods"})
 final class MavenElisionReportWriterTest {
   /** Maven group used in synthetic test coordinates. */
   private static final String GROUP_ID = "org.example";
@@ -38,6 +38,10 @@ final class MavenElisionReportWriterTest {
 
   /** Stable version used by the synthetic report project. */
   private static final String PROJECT_VERSION = REMOVED_VERSION;
+
+  /** Owners shared by persisted tolerated duplicate assertions. */
+  private static final List<String> DUPLICATE_OWNERS =
+      List.of("org.example:a:jar:1.0", "org.example:b:jar:1.0");
 
   /** Artifact identifier used for synthetic whole-artifact removal records. */
   private static final String REMOVED_ARTIFACT = "removed";
@@ -344,6 +348,61 @@ final class MavenElisionReportWriterTest {
             "          </vulnerabilityMapping>",
             "        </vulnerabilityMappings>",
             "      </configuration>");
+  }
+
+  @Test
+  void writesReadsAndRendersToleratedDuplicatesAndRejectsMalformedRows() throws IOException {
+    final MavenElisionReportSnapshot.ToleratedDuplicateClass retained =
+        new MavenElisionReportSnapshot.ToleratedDuplicateClass(
+            "dup.Retained",
+            "RETAIN_JARS",
+            List.of(DUPLICATE_OWNERS.get(1), DUPLICATE_OWNERS.get(0)));
+    final MavenElisionReportSnapshot.ToleratedDuplicateClass trimmed =
+        new MavenElisionReportSnapshot.ToleratedDuplicateClass(
+            "dup.Trimmed", "TRIM_OTHER_CLASSES", DUPLICATE_OWNERS);
+    final MavenElisionReportSnapshot populated =
+        snapshot().withToleratedDuplicates(List.of(trimmed, retained));
+    final Path output = temporaryDirectory.resolve("target/duplicates-report.json");
+
+    MavenElisionReportWriter.write(output, populated);
+    final MavenElisionReportSnapshot reread = MavenElisionReportWriter.read(output);
+
+    assertAll(
+        () -> assertThat(reread).isEqualTo(populated),
+        () ->
+            assertThat(populated.toleratedDuplicates())
+                .extracting(MavenElisionReportSnapshot.ToleratedDuplicateClass::className)
+                .containsExactly("dup.Retained", "dup.Trimmed"),
+        () ->
+            assertThat(retained.owners())
+                .as("owners are stored sorted")
+                .containsExactlyElementsOf(DUPLICATE_OWNERS),
+        () ->
+            assertThat(MavenElisionReportWriter.render(reread))
+                .contains(
+                    "Tolerated duplicate classes (accepted by configuration):",
+                    "  - dup.Retained: owning JARs retained whole" + " " + DUPLICATE_OWNERS,
+                    "  - dup.Trimmed: duplicate kept in every owner, other classes may be trimmed"
+                        + " "
+                        + DUPLICATE_OWNERS),
+        () ->
+            assertThat(MavenElisionReportWriter.render(snapshot()))
+                .as("the section is omitted when nothing was tolerated")
+                .noneMatch(line -> line.contains("Tolerated duplicate")),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        new MavenElisionReportSnapshot.ToleratedDuplicateClass(
+                            "dup.One", "RETAIN_JARS", List.of(DUPLICATE_OWNERS.get(0))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("two owners"),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        new MavenElisionReportSnapshot.ToleratedDuplicateClass(
+                            "dup.One", "KEEP_EVERYTHING", DUPLICATE_OWNERS))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("action"));
   }
 
   @Test

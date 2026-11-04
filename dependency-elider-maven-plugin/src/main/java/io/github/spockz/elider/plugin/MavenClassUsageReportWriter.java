@@ -105,12 +105,26 @@ final class MavenClassUsageReportWriter {
     document.put(
         "classes", report.classes().stream().map(MavenClassUsageReportWriter::classRow).toList());
     if (prediction != null) {
+      document.put(
+          "toleratedDuplicates",
+          prediction.toleratedDuplicates().stream()
+              .map(MavenClassUsageReportWriter::toleratedDuplicateRow)
+              .toList());
       document.put("dependencyPrediction", predictionDocument(prediction));
     }
     if (exclusionReview != null) {
       document.put("exclusionReview", exclusionReview);
     }
     return document;
+  }
+
+  private static Map<String, Object> toleratedDuplicateRow(
+      final MavenElisionReportSnapshot.ToleratedDuplicateClass duplicate) {
+    final Map<String, Object> row = new LinkedHashMap<>();
+    row.put("className", duplicate.className());
+    row.put("action", duplicate.action());
+    row.put("owners", duplicate.owners());
+    return row;
   }
 
   private static Map<String, Object> predictionDocument(final AnalyzePrediction prediction) {

@@ -18,6 +18,7 @@ import java.util.Set;
 import proguard.classfile.ClassPool;
 
 /** Computes direct candidate and unchanged-program closure. */
+@SuppressWarnings("PMD.CouplingBetweenObjects")
 final class ProGuardTrimEngine {
   private ProGuardTrimEngine() {}
 
@@ -30,14 +31,15 @@ final class ProGuardTrimEngine {
       final int runtimeRelease,
       final JdkClassTables jdkClassTables,
       final int trimWorkers,
-      final boolean allowModularCandidate)
+      final boolean allowModularCandidate,
+      final DuplicateClassPolicy duplicates)
       throws IOException {
     final AnalysisLibraries libraries =
         PassThroughAnalysisLibraries.analysisLibraries(
-            passThroughPlan, analysisLibraryDirectory, runtimeRelease);
+            passThroughPlan, analysisLibraryDirectory, runtimeRelease, duplicates);
     final DependencyJarTrimmer trimmer = new DependencyJarTrimmer();
     final TrimAnalysisSession session = new TrimAnalysisSession(trimmer);
-    validateUniqueAnalysisClasses(candidatePlan, libraries.skippedPrograms());
+    validateUniqueAnalysisClasses(candidatePlan, libraries.skippedPrograms(), duplicates);
     final int passThroughRuns =
         analyzePassThroughPrograms(
             candidatePlan, libraries, session, jdkClassTables.passThrough(), trimWorkers);
@@ -52,12 +54,14 @@ final class ProGuardTrimEngine {
   }
 
   private static void validateUniqueAnalysisClasses(
-      final CandidatePlan candidatePlan, final List<SkippedProgram> skippedPrograms)
+      final CandidatePlan candidatePlan,
+      final List<SkippedProgram> skippedPrograms,
+      final DuplicateClassPolicy duplicates)
       throws IOException {
     final Set<String> allCandidateClasses = new HashSet<>(candidatePlan.ownerByClass().keySet());
     for (final SkippedProgram skippedProgram : skippedPrograms) {
       for (final String className : skippedProgram.classNames()) {
-        if (!allCandidateClasses.add(className)) {
+        if (!allCandidateClasses.add(className) && !duplicates.tolerates(className)) {
           throw new IOException(
               "Duplicate class across retained dependency JARs makes library order ambiguous: "
                   + className);

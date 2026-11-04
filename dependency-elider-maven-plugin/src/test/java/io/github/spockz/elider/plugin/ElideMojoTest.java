@@ -306,6 +306,154 @@ final class ElideMojoTest {
   }
 
   @Test
+  void reportsConfiguredDuplicateOwnersForTrimmedRetainedAndUntrimmedJars()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final DuplicateOwnerRun retained = duplicateOwnerRun("retain", true, true);
+    final DuplicateOwnerRun trimmed = duplicateOwnerRun("trim", true, false);
+    final DuplicateOwnerRun untrimmed = duplicateOwnerRun("no-trim", false, false);
+
+    assertAll(
+        "duplicate owner policy is reported with each JAR action",
+        () -> {
+          assertAll(
+              "RETAIN_JARS keeps both owners whole",
+              () -> assertJarEntryPresent(retained.first(), "owner/FirstOnly.class"),
+              () -> assertJarEntryPresent(retained.second(), "owner/SecondOnly.class"),
+              () -> assertDuplicateReport(retained, "RETAIN_JARS", "owning JARs retained whole"));
+        },
+        () -> {
+          assertAll(
+              "TRIM_OTHER_CLASSES keeps the duplicate while allowing sibling pruning",
+              () -> assertJarOmits(trimmed.first(), "owner/FirstOnly.class"),
+              () -> assertJarOmits(trimmed.second(), "owner/SecondOnly.class"),
+              () -> assertJarEntryPresent(trimmed.first(), "duplicate/Shared.class"),
+              () -> assertJarEntryPresent(trimmed.second(), "duplicate/Shared.class"),
+              () ->
+                  assertDuplicateReport(
+                      trimmed,
+                      "TRIM_OTHER_CLASSES",
+                      "duplicate kept in every owner, other classes may be trimmed"));
+        },
+        () -> {
+          assertAll(
+              "trimJars=false preserves both owners and reports tolerated duplicates",
+              () -> assertJarEntryPresent(untrimmed.first(), "owner/FirstOnly.class"),
+              () -> assertJarEntryPresent(untrimmed.second(), "owner/SecondOnly.class"),
+              () ->
+                  assertDuplicateReport(
+                      untrimmed,
+                      "TRIM_OTHER_CLASSES",
+                      "duplicate kept in every owner, other classes may be trimmed"));
+        });
+  }
+
+  private DuplicateOwnerRun duplicateOwnerRun(
+      final String name, final boolean trimJars, final boolean retainOwners)
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final byte[] sharedClass = classBytes("duplicate/Shared");
+    final Path firstJar =
+        ImmutableTestJar.write(
+            tempDir.resolve(name + "-first-content.jar"),
+            Map.of(
+                "duplicate/Shared.class",
+                sharedClass,
+                "owner/FirstOnly.class",
+                classBytes("owner/FirstOnly")));
+    final Path secondJar =
+        ImmutableTestJar.write(
+            tempDir.resolve(name + "-second-content.jar"),
+            Map.of(
+                "duplicate/Shared.class",
+                sharedClass,
+                "owner/SecondOnly.class",
+                classBytes("owner/SecondOnly")));
+    final Artifact first = artifact(name + "-first", "duplicate/Shared.class");
+    final Artifact second = artifact(name + "-second", "duplicate/Shared.class");
+    first.setFile(firstJar.toFile());
+    second.setFile(secondJar.toFile());
+    final MavenProject project =
+        project(first, new LinkedHashSet<>(List.of(first, second)), second);
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve(name + "-build").toString());
+    project.setBuild(build);
+    final Path productionSources = tempDir.resolve(name + "-sources");
+    Files.createDirectories(productionSources);
+    Files.writeString(productionSources.resolve("Seed.java"), "class Seed {}\n");
+    project.addCompileSourceRoot(productionSources.toString());
+    final Path trace = tempDir.resolve(name + "-duplicate-runtime.lst");
+    Files.writeString(trace, "duplicate.Shared\n");
+    final Path reportFile = tempDir.resolve(name + "-duplicate-report.json");
+    final Path summaryFile = tempDir.resolve(name + "-duplicate-summary.json");
+    final RecordingMavenLog log = new RecordingMavenLog();
+    final ElideMojo mojo = newMojo();
+    mojo.setLog(log);
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "trimJars", trimJars);
+    set(mojo, "reportFile", reportFile.toFile());
+    set(mojo, "summaryFile", summaryFile.toFile());
+    set(mojo, "sourceRootsComplete", true);
+    set(
+        mojo,
+        retainOwners ? "retainDuplicateClassOwners" : "trimDuplicateClassOwners",
+        List.of("duplicate.Shared"));
+
+    mojo.execute();
+
+    return new DuplicateOwnerRun(first, second, summaryFile, log);
+  }
+
+  private static void assertDuplicateReport(
+      final DuplicateOwnerRun run, final String action, final String actionText)
+      throws IOException {
+    final JsonNode report = new ObjectMapper().readTree(run.summaryFile().toFile());
+    assertThat(report.path("toleratedDuplicates")).hasSize(1);
+    final JsonNode duplicate = report.path("toleratedDuplicates").get(0);
+    final JsonNode owners = duplicate.path("owners");
+    final List<String> expectedOwners =
+        List.of(
+                ArtifactCoordinate.of("org.example", run.first().getArtifactId(), "1.0").toString(),
+                ArtifactCoordinate.of("org.example", run.second().getArtifactId(), "1.0")
+                    .toString())
+            .stream()
+            .sorted()
+            .toList();
+    assertAll(
+        "saved and logged duplicate diagnostics retain exact owner identities",
+        () -> assertThat(duplicate.path("className").asText()).isEqualTo("duplicate.Shared"),
+        () -> assertThat(duplicate.path("action").asText()).isEqualTo(action),
+        () -> assertDuplicateOwnerRows(owners, expectedOwners),
+        () ->
+            assertThat(run.log().messages())
+                .anySatisfy(
+                    line ->
+                        assertThat(line)
+                            .contains("duplicate.Shared")
+                            .contains(actionText)
+                            .contains(run.first().getArtifactId())
+                            .contains(run.second().getArtifactId())));
+  }
+
+  private static void assertDuplicateOwnerRows(
+      final JsonNode owners, final List<String> expectedOwners) {
+    assertThat(owners).hasSize(2);
+    assertAll(
+        "both persisted owners are sorted and retained",
+        () -> assertThat(owners.get(0).asText()).isEqualTo(expectedOwners.get(0)),
+        () -> assertThat(owners.get(1).asText()).isEqualTo(expectedOwners.get(1)));
+  }
+
+  private static byte[] classBytes(final String internalName) {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
+    writer.visitEnd();
+    return writer.toByteArray();
+  }
+
+  private record DuplicateOwnerRun(
+      Artifact first, Artifact second, Path summaryFile, RecordingMavenLog log) {}
+
+  @Test
   void failedPlanPublicationRestoresPriorOutputsViewsAndResolverPayload()
       throws IOException, ReflectiveOperationException {
     final Path originalJar =

@@ -56,7 +56,12 @@ final class MavenElisionReportPayloadValidator {
           "verifiedStructuredProofs",
           "policy",
           "exclusionReview",
-          "appliedBans");
+          "appliedBans",
+          "toleratedDuplicates");
+
+  /** Exact fields persisted for each tolerated duplicate class. */
+  private static final Set<String> TOLERATED_DUPLICATE_FIELDS =
+      Set.of("className", "action", "owners");
 
   /** Exact target and active runtime releases saved for report replay. */
   private static final Set<String> EXECUTION_ENVIRONMENT_FIELDS =
@@ -162,6 +167,7 @@ final class MavenElisionReportPayloadValidator {
     ExclusionReviewPayloadValidator.validate(payload.get("exclusionReview"));
     validateAppliedBans(
         payload.get("appliedBans"), textValues(payload.path("policy").get("banishedDependencies")));
+    validateToleratedDuplicates(payload.get("toleratedDuplicates"));
     final Set<ArtifactCoordinate> retainedPolicy =
         retentionCoordinates(payload.path("policy").get("retainedArtifacts"));
     final MediatedGraphReport mediatedGraph =
@@ -304,6 +310,43 @@ final class MavenElisionReportPayloadValidator {
     final Set<String> coordinates = new HashSet<>();
     rows.forEach(row -> coordinates.add(row.path("coordinate").textValue()));
     return Set.copyOf(coordinates);
+  }
+
+  private static void validateToleratedDuplicates(final JsonNode rows) throws IOException {
+    if (rows == null || !rows.isArray()) {
+      throw new IOException("Elision report toleratedDuplicates must be an array");
+    }
+    String previous = null;
+    for (final JsonNode row : rows) {
+      final String className = validateToleratedDuplicateRow(row);
+      if (previous != null && previous.compareTo(className) >= 0) {
+        throw new IOException("Elision report tolerated duplicates must be sorted and distinct");
+      }
+      previous = className;
+    }
+  }
+
+  private static String validateToleratedDuplicateRow(final JsonNode row) throws IOException {
+    if (!row.isObject() || !fieldNames(row).equals(TOLERATED_DUPLICATE_FIELDS)) {
+      throw new IOException(
+          "Elision report tolerated duplicate row fields do not match schema version 1");
+    }
+    final JsonNode className = row.get("className");
+    final JsonNode action = row.get("action");
+    if (className == null || !className.isTextual() || className.textValue().isBlank()) {
+      throw new IOException("Elision report tolerated duplicate className must be nonblank text");
+    }
+    if (action == null
+        || !action.isTextual()
+        || java.util.Arrays.stream(DuplicateClassPolicy.Action.values())
+            .noneMatch(candidate -> candidate.name().equals(action.textValue()))) {
+      throw new IOException("Elision report tolerated duplicate action is invalid");
+    }
+    if (!canonicalSortedDistinctTextArray(row.get("owners")) || row.get("owners").size() < 2) {
+      throw new IOException(
+          "Elision report tolerated duplicate owners must be a sorted array of two or more");
+    }
+    return className.textValue();
   }
 
   private static void validateAppliedBans(
@@ -461,6 +504,20 @@ final class MavenElisionReportPayloadValidator {
       if (!item.isTextual() || item.textValue().isBlank()) {
         return false;
       }
+    }
+    return true;
+  }
+
+  private static boolean canonicalSortedDistinctTextArray(final JsonNode value) {
+    if (!canonicalTextArray(value)) {
+      return false;
+    }
+    String previous = null;
+    for (final JsonNode item : value) {
+      if (previous != null && previous.compareTo(item.textValue()) >= 0) {
+        return false;
+      }
+      previous = item.textValue();
     }
     return true;
   }

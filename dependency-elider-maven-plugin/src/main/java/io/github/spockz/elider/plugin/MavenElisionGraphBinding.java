@@ -338,6 +338,14 @@ final class MavenElisionGraphBinding {
             .toList());
     fields.addAll(sorted(options.trim().explicitRoots()));
     fields.addAll(sorted(options.trim().passThroughArtifacts()));
+    options.trim().duplicateClasses().retainOwners().stream()
+        .sorted()
+        .map(pattern -> "duplicate-retain=" + pattern)
+        .forEach(fields::add);
+    options.trim().duplicateClasses().trimOwners().stream()
+        .sorted()
+        .map(pattern -> "duplicate-trim=" + pattern)
+        .forEach(fields::add);
     fields.addAll(
         consumedInputs.stream().map(NativeImageConsumedInput::identity).sorted().toList());
     fields.addAll(sorted(trace.loadedClassesDotFormat()));

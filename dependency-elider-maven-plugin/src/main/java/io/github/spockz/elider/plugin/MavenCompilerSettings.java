@@ -130,7 +130,9 @@ final class MavenCompilerSettings {
         value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
         value("target", "maven.compiler.target", project, userProperties, configurations);
-    if (release != null && (source != null || target != null) && !isConsistent(release, source, target)) {
+    if (release != null
+        && (source != null || target != null)
+        && !isConsistent(release, source, target)) {
       throw new IOException("Cannot attribute source with both compiler release and source/target");
     }
     final List<String> options = new ArrayList<>();
@@ -178,7 +180,9 @@ final class MavenCompilerSettings {
         value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
         value("target", "maven.compiler.target", project, userProperties, configurations);
-    if (release != null && (source != null || target != null) && !isConsistent(release, source, target)) {
+    if (release != null
+        && (source != null || target != null)
+        && !isConsistent(release, source, target)) {
       throw new IOException("Cannot identify compiler release with both release and source/target");
     }
     if (release != null) {

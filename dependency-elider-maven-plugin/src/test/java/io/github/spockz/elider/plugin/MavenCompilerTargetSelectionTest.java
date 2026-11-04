@@ -206,12 +206,14 @@ final class MavenCompilerTargetSelectionTest {
         () ->
             assertThatThrownBy(() -> MavenCompilerSettings.options(project, null, List.of()))
                 .isInstanceOf(IOException.class)
-                .hasMessageContaining("Cannot attribute source with both compiler release and source/target"),
+                .hasMessageContaining(
+                    "Cannot attribute source with both compiler release and source/target"),
         () ->
             assertThatThrownBy(
                     () -> MavenCompilerSettings.releaseIdentity(project, (MavenSession) null))
                 .isInstanceOf(IOException.class)
-                .hasMessageContaining("Cannot identify compiler release with both release and source/target"));
+                .hasMessageContaining(
+                    "Cannot identify compiler release with both release and source/target"));
   }
 
   @Test

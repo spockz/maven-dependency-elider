@@ -32,11 +32,15 @@ final class TrimOutputCoordinator {
       final JdkPlatformContext platformContext,
       final EffectiveOutputPlan effectiveOutput)
       throws IOException, MojoFailureException {
-    if (effectiveOutput != null) {
-      return EffectiveTrimOutput.trimEffectivePrepared(
-          request, release, runtimeRelease, platformContext, effectiveOutput);
-    }
-    return DirectTrimOutput.trimDirectPrepared(request, release, runtimeRelease, platformContext);
+    final List<DuplicateClasses.ToleratedDuplicate> duplicates =
+        DuplicateClasses.resolveRetained(request);
+    final TrimResult result =
+        effectiveOutput != null
+            ? EffectiveTrimOutput.trimEffectivePrepared(
+                request, release, runtimeRelease, platformContext, effectiveOutput)
+            : DirectTrimOutput.trimDirectPrepared(
+                request, release, runtimeRelease, platformContext);
+    return result.withToleratedDuplicates(duplicates);
   }
 
   /* package */ record PendingOutput(

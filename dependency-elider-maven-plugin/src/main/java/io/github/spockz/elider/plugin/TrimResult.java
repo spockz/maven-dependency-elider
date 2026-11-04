@@ -18,7 +18,8 @@ record TrimResult(
     long maximumCacheHitNanos,
     int analysisRuns,
     TrimExecutionEnvironment executionEnvironment,
-    TrimOutputGenerationCommitHandle generationCommit) {
+    TrimOutputGenerationCommitHandle generationCommit,
+    List<DuplicateClasses.ToleratedDuplicate> toleratedDuplicates) {
   TrimResult {
     records =
         records.stream().sorted(Comparator.comparing(ArtifactTrimRecord::coordinate)).toList();
@@ -26,6 +27,46 @@ record TrimResult(
     moduleInfoPassthroughArtifacts = moduleInfoPassthroughArtifacts.stream().sorted().toList();
     configuredPassThroughArtifacts = configuredPassThroughArtifacts.stream().sorted().toList();
     java.util.Objects.requireNonNull(executionEnvironment, "executionEnvironment");
+    toleratedDuplicates = List.copyOf(toleratedDuplicates);
+  }
+
+  /* package */ TrimResult(
+      final List<ArtifactTrimRecord> records,
+      final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+      final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+      final List<ArtifactCoordinate> configuredPassThroughArtifacts,
+      final int cacheHits,
+      final long maximumCacheHitNanos,
+      final int analysisRuns,
+      final TrimExecutionEnvironment executionEnvironment,
+      final TrimOutputGenerationCommitHandle generationCommit) {
+    this(
+        records,
+        multiReleasePassthroughArtifacts,
+        moduleInfoPassthroughArtifacts,
+        configuredPassThroughArtifacts,
+        cacheHits,
+        maximumCacheHitNanos,
+        analysisRuns,
+        executionEnvironment,
+        generationCommit,
+        List.of());
+  }
+
+  /** Attaches accepted duplicate classes to this result. */
+  /* package */ TrimResult withToleratedDuplicates(
+      final List<DuplicateClasses.ToleratedDuplicate> duplicates) {
+    return new TrimResult(
+        records,
+        multiReleasePassthroughArtifacts,
+        moduleInfoPassthroughArtifacts,
+        configuredPassThroughArtifacts,
+        cacheHits,
+        maximumCacheHitNanos,
+        analysisRuns,
+        executionEnvironment,
+        generationCommit,
+        duplicates);
   }
 
   /* package */ static TrimResult empty(final TrimExecutionEnvironment executionEnvironment) {

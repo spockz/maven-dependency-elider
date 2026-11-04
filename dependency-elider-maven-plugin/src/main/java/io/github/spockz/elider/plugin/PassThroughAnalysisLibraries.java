@@ -20,7 +20,8 @@ final class PassThroughAnalysisLibraries {
   /* package */ static AnalysisLibraries analysisLibraries(
       final TrimPassThroughPlan passThroughPlan,
       final Path analysisLibraryDirectory,
-      final int runtimeRelease)
+      final int runtimeRelease,
+      final DuplicateClassPolicy duplicates)
       throws IOException {
     final List<Path> analysisLibraries = new ArrayList<>();
     final List<SkippedProgram> skippedPrograms = new ArrayList<>();
@@ -53,7 +54,7 @@ final class PassThroughAnalysisLibraries {
     skippedPrograms.stream()
         .flatMap(program -> program.classNames().stream())
         .forEach(unchangedPassThroughClassNames::add);
-    validatePassThroughOwnership(skippedPrograms, analysisLibraries);
+    validatePassThroughOwnership(skippedPrograms, analysisLibraries, duplicates);
     return new AnalysisLibraries(
         analysisLibraries, skippedPrograms, unchangedPassThroughClassNames);
   }
@@ -65,21 +66,26 @@ final class PassThroughAnalysisLibraries {
   }
 
   /* package */ static void validatePassThroughOwnership(
-      final List<SkippedProgram> programs, final List<Path> libraries) throws IOException {
+      final List<SkippedProgram> programs,
+      final List<Path> libraries,
+      final DuplicateClassPolicy duplicates)
+      throws IOException {
     for (final SkippedProgram program : programs) {
       for (final Path sibling : libraries) {
-        validateSiblingOwnership(program, sibling);
+        validateSiblingOwnership(program, sibling, duplicates);
       }
     }
   }
 
   /* package */ static void validateSiblingOwnership(
-      final SkippedProgram program, final Path sibling) throws IOException {
+      final SkippedProgram program, final Path sibling, final DuplicateClassPolicy duplicates)
+      throws IOException {
     if (sibling.equals(program.path())) {
       return;
     }
     final Set<String> ambiguous = new HashSet<>(program.classNames());
     ambiguous.retainAll(TrimPaths.classNames(sibling));
+    ambiguous.removeIf(duplicates::tolerates);
     if (!ambiguous.isEmpty()) {
       throw new IOException(
           "Duplicate class ownership makes pass-through unresolved-link tolerance ambiguous: "

@@ -68,7 +68,8 @@ abstract class PluginCacheMojoSupport extends AbstractMojo {
       final List<String> passThroughArtifacts,
       final boolean failOnUnsupportedModuleInfo,
       final int workers,
-      final String mrjarStrategy) {
+      final String mrjarStrategy,
+      final DuplicateClassPolicy duplicateClasses) {
     final PluginCacheProducerIdentityResolver.Resolution producer = cacheProducerResolution();
     if (enabled && producer.identity().isEmpty() && getLog().isWarnEnabled()) {
       getLog()
@@ -84,7 +85,8 @@ abstract class PluginCacheMojoSupport extends AbstractMojo {
         failOnUnsupportedModuleInfo,
         workers,
         mrjarStrategy,
-        producer);
+        producer,
+        duplicateClasses);
   }
 
   /** Creates shared support for plugin cache configuration. */

@@ -61,8 +61,7 @@ class OsvSnapshotIndexerTest {
                 tempDir)
             .getFirst();
 
-    assertThat(record.evidence().getFirst().scope().versionRangeSpec())
-        .isEqualTo("[0.9.3,0.10.0]");
+    assertThat(record.evidence().getFirst().scope().versionRangeSpec()).isEqualTo("[0.9.3,0.10.0]");
   }
 
   @Test

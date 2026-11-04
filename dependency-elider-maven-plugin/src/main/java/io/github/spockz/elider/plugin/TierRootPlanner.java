@@ -44,6 +44,13 @@ final class TierRootPlanner {
         emptyCandidateRoots(snapshots);
     final Set<ArtifactCoordinate> reachable = new LinkedHashSet<>();
     final TierRootResolution resolution = new TierRootResolution(operation);
+    final Set<String> duplicates =
+        projections.stream()
+            .flatMap(projection -> projection.ownersByClass().entrySet().stream())
+            .filter(entry -> entry.getValue().size() > 1)
+            .map(Map.Entry::getKey)
+            .collect(java.util.stream.Collectors.toSet());
+    resolution.addCommonRoots(duplicates, projections, candidates, roots, reachable);
     resolution.addCommonRoots(
         TrimRootPlanner.commonRoots(operation.request()),
         projections,

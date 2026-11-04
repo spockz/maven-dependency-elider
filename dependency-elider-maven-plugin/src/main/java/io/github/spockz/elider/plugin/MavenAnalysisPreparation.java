@@ -8,6 +8,7 @@ import io.github.spockz.elider.engine.DependencyPruner;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
+import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactViews;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootInputs;
@@ -21,6 +22,7 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
 /** Prepares a checked raw plan before any trimming or artifact publication. */
+@SuppressWarnings("PMD.CouplingBetweenObjects")
 final class MavenAnalysisPreparation {
   private MavenAnalysisPreparation() {}
 
@@ -75,7 +77,8 @@ final class MavenAnalysisPreparation {
             options.trim().explicitRoots(),
             evidence.index(),
             options.trim().enabled());
-    final Set<ArtifactCoordinate> keep = keepArtifacts(options, inventory, evidence);
+    final Set<ArtifactCoordinate> keep =
+        keepArtifacts(analysisProject, options, inventory, evidence);
     final Set<String> projectOutputClasses =
         MavenAnalysisEvidence.projectOutputClasses(
             evidence.declaredClasses(), evidence.productionOutputClasses());
@@ -193,10 +196,11 @@ final class MavenAnalysisPreparation {
   }
 
   private static Set<ArtifactCoordinate> keepArtifacts(
+      final MavenProject project,
       final AnalysisOptions options,
       final MavenAnalysisInventory.Snapshot inventory,
       final MavenAnalysisEvidence.RootEvidence evidence)
-      throws MojoFailureException {
+      throws MojoFailureException, IOException {
     final Set<ArtifactCoordinate> keep = new HashSet<>(evidence.compileVisibleCoordinates());
     final DynamicRootInputs roots = evidence.dynamicRoots();
     keep.addAll(roots.declaringArtifacts());
@@ -208,6 +212,27 @@ final class MavenAnalysisPreparation {
       keep.addAll(
           ElisionArtifactPolicy.parsePassThroughCoordinates(
               options.trim().passThroughArtifacts(), inventory.views().resolvedSnapshots()));
+    }
+    if (!options.trim().duplicateClasses().isEmpty()) {
+      final TrimExecutionEnvironment environment =
+          MavenDependencyTrimmer.executionEnvironment(
+              project, options.session(), options.environment(), options.trim().enabled());
+      final List<ArtifactSnapshot> libraries =
+          inventory.views().resolvedSnapshots().stream()
+              .filter(
+                  snapshot -> MavenDependencyTrimmer.JAR_TYPE.equals(snapshot.coordinate().type()))
+              .filter(
+                  snapshot ->
+                      MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(
+                          snapshot.coordinate().scope()))
+              .toList();
+      for (final DuplicateClasses.ToleratedDuplicate duplicate :
+          DuplicateClasses.resolve(
+              options.trim().duplicateClasses(),
+              libraries,
+              Math.max(environment.targetRelease(), environment.runtimeRelease()))) {
+        keep.addAll(duplicate.owners());
+      }
     }
     return keep;
   }

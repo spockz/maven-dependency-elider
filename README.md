@@ -169,6 +169,13 @@ The `elide` goal writes two structured JSON records:
 
 The persisted Elide summary records ban outcomes in `appliedBans`. Its `rawDroppedCoordinates` metric excludes policy-forced absences, while total absent-artifact metrics include them.
 
+Duplicate classes fail analysis by default. Use `elide.retainDuplicateClassOwners` to accept
+specific class names or globs and retain every provider JAR whole, or
+`elide.trimDuplicateClassOwners` to keep the duplicates in every provider while trimming unused
+sibling classes. Both goals log accepted duplicates and record them under `toleratedDuplicates`
+in their reports. See [Plugin Usage](dependency-elider-maven-plugin/src/site/markdown/usage.md)
+for matching rules and configuration examples.
+
 * `target/dependency-elider-class-usage.json` (`-Delide.reportFile`): Detailed class-usage evidence.
 
 The saved elision report and Analyze class-usage report include `exclusionReview`, with an explicit

@@ -37,6 +37,12 @@ final class MavenClassUsageReportWriterTest {
   /** Archive type used by artifact report fixtures. */
   private static final String JAR_TYPE = "jar";
 
+  /** Version shared by the main report fixture artifacts. */
+  private static final String VERSION_1 = "1.0";
+
+  /** Compile scope used by the main report fixture artifacts. */
+  private static final String COMPILE_SCOPE = "compile";
+
   /** JSON field containing retained artifact coordinates. */
   private static final String RETAINED_ARTIFACTS_FIELD = "retainedArtifacts";
 
@@ -46,13 +52,14 @@ final class MavenClassUsageReportWriterTest {
   @Test
   void writesPredictionProvenanceWithoutPublishedTrimState() throws Exception {
     final ArtifactCoordinate retained =
-        new ArtifactCoordinate(EXAMPLE_GROUP_ID, "kept", "1.0", JAR_TYPE, "", "compile");
+        new ArtifactCoordinate(EXAMPLE_GROUP_ID, "kept", VERSION_1, JAR_TYPE, "", COMPILE_SCOPE);
     final ArtifactCoordinate elided =
-        new ArtifactCoordinate(EXAMPLE_GROUP_ID, "unused", "1.0", JAR_TYPE, "", "runtime");
+        new ArtifactCoordinate(EXAMPLE_GROUP_ID, "unused", VERSION_1, JAR_TYPE, "", "runtime");
     final ArtifactCoordinate retainedClassifier =
-        new ArtifactCoordinate(EXAMPLE_GROUP_ID, "kept", "1.0", JAR_TYPE, "tests", "compile");
+        new ArtifactCoordinate(
+            EXAMPLE_GROUP_ID, "kept", VERSION_1, JAR_TYPE, "tests", COMPILE_SCOPE);
     final ArtifactCoordinate retainedNewerVersion =
-        new ArtifactCoordinate(EXAMPLE_GROUP_ID, "kept", "2.0", JAR_TYPE, "", "compile");
+        new ArtifactCoordinate(EXAMPLE_GROUP_ID, "kept", "2.0", JAR_TYPE, "", COMPILE_SCOPE);
     final Path input = temporaryDirectory.resolve("input.jar");
     java.nio.file.Files.writeString(input, "input-bytes");
     final org.apache.maven.artifact.Artifact mavenArtifact =
@@ -159,5 +166,61 @@ final class MavenClassUsageReportWriterTest {
         () -> assertFalse(publishesTrimmedArtifacts, "prediction has no published trim records"),
         () -> assertFalse(publishesOutputPath, "prediction has no published output path"),
         () -> assertFalse(publishesOutputSha256, "prediction has no published output checksum"));
+  }
+
+  @Test
+  void writesToleratedDuplicateClassesAsExplicitDiagnostics() throws Exception {
+    final ArtifactCoordinate first =
+        new ArtifactCoordinate(EXAMPLE_GROUP_ID, "first", VERSION_1, JAR_TYPE, "", COMPILE_SCOPE);
+    final ArtifactCoordinate second =
+        new ArtifactCoordinate(EXAMPLE_GROUP_ID, "second", VERSION_1, JAR_TYPE, "", COMPILE_SCOPE);
+    final Path input = temporaryDirectory.resolve("duplicate-input.jar");
+    java.nio.file.Files.writeString(input, "input-bytes");
+    final org.apache.maven.artifact.Artifact mavenArtifact =
+        new DefaultArtifact(
+            first.groupId(),
+            first.artifactId(),
+            first.version(),
+            first.scope(),
+            first.type(),
+            first.classifier(),
+            new DefaultArtifactHandler(first.type()));
+    mavenArtifact.setFile(input.toFile());
+    final AnalysisEvidence evidence =
+        new AnalysisEvidence(
+            new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null);
+    final AnalyzePrediction prediction =
+        new AnalyzePrediction(
+            MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL,
+            List.of(new ArtifactSnapshot(mavenArtifact, first, input)),
+            List.of(first, second),
+            List.of(),
+            List.of(),
+            evidence,
+            "c".repeat(64),
+            "a".repeat(64),
+            "b".repeat(64),
+            MavenBanPlan.empty(),
+            List.of(
+                new MavenElisionReportSnapshot.ToleratedDuplicateClass(
+                    "shared.Type",
+                    "TRIM_OTHER_CLASSES",
+                    List.of(first.toString(), second.toString()))));
+    final Path report = temporaryDirectory.resolve("tolerated-duplicates.json");
+
+    MavenClassUsageReportWriter.write(
+        report, new ClassUsageReport(List.of()), Optional.empty(), prediction);
+
+    final JsonNode duplicate = JSON.readTree(report.toFile()).path("toleratedDuplicates").get(0);
+    assertAll(
+        "Analyze preserves tolerated duplicate details in class usage JSON",
+        () -> assertThat(duplicate.path("className").asText()).isEqualTo("shared.Type"),
+        () -> assertThat(duplicate.path("action").asText()).isEqualTo("TRIM_OTHER_CLASSES"),
+        () ->
+            assertThat(
+                    List.of(
+                        duplicate.path("owners").get(0).asText(),
+                        duplicate.path("owners").get(1).asText()))
+                .containsExactly(first.toString(), second.toString()));
   }
 }

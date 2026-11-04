@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.applicability.MavenRawScopeApplicability;
 import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
-import org.apache.maven.artifact.versioning.ComparableVersion;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -44,6 +43,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import org.apache.maven.artifact.versioning.ComparableVersion;
 
 /** Indexes OSV Maven advisories and retains source-attribution candidates for review. */
 @SuppressWarnings({

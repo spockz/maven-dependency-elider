@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
@@ -52,6 +53,7 @@ import org.objectweb.asm.Opcodes;
   "PMD.CommentRequired",
   "PMD.CouplingBetweenObjects",
   "PMD.ExcessiveImports",
+  "PMD.GodClass",
   "PMD.LawOfDemeter",
   "PMD.TooManyMethods"
 })
@@ -71,6 +73,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
       "no retained provider for class banned.Idle";
   private static final String PREVIOUS_REPORT = "prior report\n";
   private static final String PREVIOUS_SUMMARY = "prior summary\n";
+  private static final String DEPENDENCY_PREDICTION_FIELD = "dependencyPrediction";
+  private static final String DUPLICATE_CLASS_PATTERN = "shared.**";
 
   /** Isolates each graph and evidence fixture from the other scenarios. */
   @TempDir private Path temporaryDirectory;
@@ -136,13 +140,14 @@ final class NoExtensionAnalyzeBanPredictionTest {
     final com.fasterxml.jackson.databind.JsonNode json =
         new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
     final com.fasterxml.jackson.databind.JsonNode rows =
-        json.path("dependencyPrediction").path("banPlan");
+        json.path(DEPENDENCY_PREDICTION_FIELD).path("banPlan");
 
     assertAll(
         "schema-one prediction records action, unmatched policy, and no applied Maven mutation",
         () -> assertThat(json.path("schemaVersion").asInt()).isEqualTo(1),
         () ->
-            assertThat(json.path("dependencyPrediction").path("banContextFingerprint").asText())
+            assertThat(
+                    json.path(DEPENDENCY_PREDICTION_FIELD).path("banContextFingerprint").asText())
                 .hasSize(64),
         () -> assertThat(rows.size()).isEqualTo(2),
         () -> assertThat(rows.get(0).path("dependency").asText()).isEqualTo(BAN),
@@ -158,6 +163,137 @@ final class NoExtensionAnalyzeBanPredictionTest {
         () ->
             assertThat(prediction.operationFingerprint())
                 .isNotEqualTo(withoutBan.operationFingerprint()));
+  }
+
+  @Test
+  void duplicateOwnerPoliciesRetainEveryProviderInEffectiveAnalyzePrediction() throws Exception {
+    final Fixture controlFixture = basicFixture("used.Api\n");
+    final AnalyzePrediction control =
+        new MavenElisionService()
+            .predict(
+                controlFixture.project(),
+                controlFixture.options(List.of()),
+                controlFixture.resolver());
+    final Fixture fixture = duplicateProviderFixture();
+    final DuplicateClassPolicy retainPolicy =
+        new DuplicateClassPolicy(List.of(DUPLICATE_CLASS_PATTERN), List.of());
+    final DuplicateClassPolicy trimPolicy =
+        new DuplicateClassPolicy(List.of(), List.of(DUPLICATE_CLASS_PATTERN));
+    final AnalyzePrediction retainedWhole =
+        new MavenElisionService()
+            .predict(
+                fixture.project(),
+                withDuplicatePolicy(fixture, retainPolicy, true),
+                fixture.resolver());
+    final AnalyzePrediction trimmedAroundDuplicates =
+        new MavenElisionService()
+            .predict(
+                fixture.project(),
+                withDuplicatePolicy(fixture, trimPolicy, true),
+                fixture.resolver());
+    final ArtifactCoordinate usedCoordinate =
+        new ArtifactCoordinate(GROUP_ID, USED_ARTIFACT_ID, VERSION, JAR_TYPE, "", "compile");
+    final ArtifactCoordinate otherCoordinate =
+        new ArtifactCoordinate(GROUP_ID, BANNED_ARTIFACT_ID, VERSION, JAR_TYPE, "", RUNTIME_SCOPE);
+    final Path report = temporaryDirectory.resolve("duplicate-analysis.json");
+    MavenClassUsageReportWriter.write(
+        report,
+        trimmedAroundDuplicates.evidence().classUsageReport(),
+        trimmedAroundDuplicates.evidence().bytecodeScan(),
+        trimmedAroundDuplicates);
+    final com.fasterxml.jackson.databind.JsonNode json =
+        new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
+    final com.fasterxml.jackson.databind.JsonNode duplicate =
+        json.path("toleratedDuplicates").get(0);
+    assertAll(
+        "effective Analyze keeps both owners of tolerated classes",
+        () ->
+            assertThat(control.wouldElideArtifacts())
+                .anyMatch(coordinate -> BANNED_ARTIFACT_ID.equals(coordinate.artifactId())),
+        () ->
+            assertThat(retainedWhole.retainedArtifacts()).contains(usedCoordinate, otherCoordinate),
+        () ->
+            assertThat(retainedWhole.wouldElideArtifacts())
+                .noneMatch(coordinate -> BANNED_ARTIFACT_ID.equals(coordinate.artifactId())),
+        () ->
+            assertThat(trimmedAroundDuplicates.retainedArtifacts())
+                .containsAll(retainedWhole.retainedArtifacts()),
+        () ->
+            assertThat(trimmedAroundDuplicates.plannedTrims())
+                .anySatisfy(
+                    trim ->
+                        assertThat(trim.removedClasses())
+                            .contains("banned.Idle")
+                            .doesNotContain("shared.Type")),
+        () -> assertThat(retainedWhole.plannedTrims()).isEmpty(),
+        () ->
+            assertThat(retainedWhole.operationFingerprint())
+                .isNotEqualTo(trimmedAroundDuplicates.operationFingerprint()),
+        () -> assertThat(duplicate.path("className").asText()).isEqualTo("shared.Type"),
+        () -> assertThat(duplicate.path("action").asText()).isEqualTo("TRIM_OTHER_CLASSES"),
+        () -> assertThat(duplicate.path("owners")).hasSize(2));
+  }
+
+  @Test
+  void analyzeMojoDuplicateOwnerParameterPersistsAndLogsEffectiveFinding() throws Exception {
+    final Fixture fixture = duplicateProviderFixture();
+    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final Path report = temporaryDirectory.resolve("analyze-duplicate-owners.json");
+    final RecordingMavenLog log = new RecordingMavenLog();
+    AnalyzeMojoTestFieldSupport.set(mojo, "project", fixture.project());
+    AnalyzeMojoTestFieldSupport.set(mojo, "session", fixture.session());
+    AnalyzeMojoTestFieldSupport.set(mojo, "projectDependenciesResolver", fixture.resolver());
+    AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(fixture.trace().toFile()));
+    AnalyzeMojoTestFieldSupport.set(mojo, "sourceRootsComplete", true);
+    AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(
+        mojo, "retainDuplicateClassOwners", List.of(DUPLICATE_CLASS_PATTERN));
+    AnalyzeMojoTestFieldSupport.set(mojo, "trimDuplicateClassOwners", List.of("unused.**"));
+    mojo.setLog(log);
+
+    mojo.execute();
+
+    final com.fasterxml.jackson.databind.JsonNode json =
+        new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
+    final com.fasterxml.jackson.databind.JsonNode duplicate =
+        json.path("toleratedDuplicates").get(0);
+    final AnalyzeMojo trimMojo = new AnalyzeMojo();
+    final Path trimReport = temporaryDirectory.resolve("analyze-duplicate-trim-owners.json");
+    final RecordingMavenLog trimLog = new RecordingMavenLog();
+    AnalyzeMojoTestFieldSupport.set(trimMojo, "project", fixture.project());
+    AnalyzeMojoTestFieldSupport.set(trimMojo, "session", fixture.session());
+    AnalyzeMojoTestFieldSupport.set(trimMojo, "projectDependenciesResolver", fixture.resolver());
+    AnalyzeMojoTestFieldSupport.set(trimMojo, "traceFiles", List.of(fixture.trace().toFile()));
+    AnalyzeMojoTestFieldSupport.set(trimMojo, "sourceRootsComplete", true);
+    AnalyzeMojoTestFieldSupport.set(trimMojo, "reportFile", trimReport.toFile());
+    AnalyzeMojoTestFieldSupport.set(trimMojo, "trimJars", true);
+    AnalyzeMojoTestFieldSupport.set(trimMojo, "retainDuplicateClassOwners", List.of("unused.**"));
+    AnalyzeMojoTestFieldSupport.set(
+        trimMojo, "trimDuplicateClassOwners", List.of(DUPLICATE_CLASS_PATTERN));
+    trimMojo.setLog(trimLog);
+
+    trimMojo.execute();
+
+    final com.fasterxml.jackson.databind.JsonNode trimJson =
+        new com.fasterxml.jackson.databind.ObjectMapper().readTree(trimReport.toFile());
+    final com.fasterxml.jackson.databind.JsonNode trimDuplicate =
+        trimJson.path("toleratedDuplicates").get(0);
+    assertAll(
+        "Analyze Mojo passes configured duplicate policy through effective prediction",
+        () -> assertThat(duplicate.path("className").asText()).isEqualTo("shared.Type"),
+        () -> assertThat(duplicate.path("action").asText()).isEqualTo("RETAIN_JARS"),
+        () -> assertThat(duplicate.path("owners")).hasSize(2),
+        () ->
+            assertThat(log.messages())
+                .anyMatch(line -> line.contains("Tolerated duplicate classes")),
+        () ->
+            assertThat(json.path(DEPENDENCY_PREDICTION_FIELD).path("retainedArtifacts").toString())
+                .contains(BANNED_ARTIFACT_ID),
+        () -> assertThat(trimDuplicate.path("action").asText()).isEqualTo("TRIM_OTHER_CLASSES"),
+        () -> assertThat(trimDuplicate.path("owners")).hasSize(2),
+        () ->
+            assertThat(trimLog.messages())
+                .anyMatch(line -> line.contains("other classes may be trimmed")));
   }
 
   @Test
@@ -185,7 +321,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
     final com.fasterxml.jackson.databind.JsonNode row =
         new com.fasterxml.jackson.databind.ObjectMapper()
             .readTree(report.toFile())
-            .path("dependencyPrediction")
+            .path(DEPENDENCY_PREDICTION_FIELD)
             .path("banPlan")
             .get(0);
 
@@ -822,6 +958,65 @@ final class NoExtensionAnalyzeBanPredictionTest {
 
   private Fixture basicFixture(final String traceContents) throws IOException {
     return fixture(traceContents, false);
+  }
+
+  private Fixture duplicateProviderFixture() throws IOException {
+    final Fixture fixture = basicFixture("used.Api\n");
+    final org.apache.maven.artifact.Artifact used =
+        fixture.project().getArtifacts().stream()
+            .filter(artifact -> USED_ARTIFACT_ID.equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow();
+    final org.apache.maven.artifact.Artifact banned =
+        fixture.project().getArtifacts().stream()
+            .filter(artifact -> BANNED_ARTIFACT_ID.equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow();
+    writeJarClasses(used.getFile().toPath(), List.of("used/Api", "shared/Type", "used/Only"));
+    writeJarClasses(
+        banned.getFile().toPath(), List.of("shared/Type", "banned/Idle", "banned/Only"));
+    return fixture;
+  }
+
+  private static AnalysisOptions withDuplicatePolicy(
+      final Fixture fixture, final DuplicateClassPolicy policy, final boolean trim) {
+    final AnalysisOptions base = fixture.options(List.of(), trim);
+    final TrimOptions original = base.trim();
+    final TrimOptions selected =
+        new TrimOptions(
+            trim,
+            original.explicitRoots(),
+            original.failOnUnsupportedMultiRelease(),
+            original.passThroughArtifacts(),
+            original.failOnUnsupportedModuleInfo(),
+            original.workers(),
+            original.mrjarStrategy(),
+            original.cacheProducerResolution(),
+            policy);
+    return new AnalysisOptions(
+        base.traceFiles(),
+        base.retainedArtifacts(),
+        base.banishedDependencies(),
+        base.productionOutput(),
+        base.session(),
+        base.completeness(),
+        selected,
+        base.dynamicRoots());
+  }
+
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  private static void writeJarClasses(final Path path, final List<String> classNames)
+      throws IOException {
+    try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(path))) {
+      for (final String className : classNames) {
+        final ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, "java/lang/Object", null);
+        writer.visitEnd();
+        zip.putNextEntry(new ZipEntry(className + ".class"));
+        zip.write(writer.toByteArray());
+        zip.closeEntry();
+      }
+    }
   }
 
   private Fixture fixtureWithUnrelatedTraceDrop(final String traceContents) throws IOException {

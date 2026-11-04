@@ -60,9 +60,72 @@ record MavenElisionReportSnapshot(
     List<VerifiedStructuredProofFinding> verifiedStructuredProofs,
     MavenElisionPolicyIdentity policy,
     ExclusionReview exclusionReview,
-    List<AppliedBan> appliedBans) {
+    List<AppliedBan> appliedBans,
+    List<ToleratedDuplicateClass> toleratedDuplicates) {
   /** Current persisted JSON format version. */
   static final int SCHEMA_VERSION = 1;
+
+  /** Creates a snapshot that records no tolerated duplicate classes. */
+  MavenElisionReportSnapshot(
+      final int schemaVersion,
+      final String projectGroupId,
+      final String projectArtifactId,
+      final String projectVersion,
+      final String projectBaseDirectory,
+      final String generatedAt,
+      final TrimExecutionEnvironment executionEnvironment,
+      final int wholeArtifactsDropped,
+      final long originalJarBytesDropped,
+      final int droppedProgramClassEntries,
+      final long droppedProgramClassBytes,
+      final List<DroppedArtifact> droppedArtifacts,
+      final List<String> rawDroppedCoordinates,
+      final int programClassesPruned,
+      final long uncompressedProgramClassBytesPruned,
+      final List<TrimmedArtifact> trimmedArtifacts,
+      final List<CveFinding> removedCveComponents,
+      final List<CveFinding> provenAbsentCves,
+      final List<CveFinding> inactivePreconditionCves,
+      final List<ConservativeCveFinding> potentiallyConservativeCves,
+      final MediatedGraphReport mediatedGraph,
+      final boolean assumeConventionalJavaSourceLayout,
+      final List<SourceReviewFinding> sourceReviewFindings,
+      final AdvisoryReview advisoryReview,
+      final List<VerifiedStructuredProofFinding> verifiedStructuredProofs,
+      final MavenElisionPolicyIdentity policy,
+      final ExclusionReview exclusionReview,
+      final List<AppliedBan> appliedBans) {
+    this(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        executionEnvironment,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        removedCveComponents,
+        provenAbsentCves,
+        inactivePreconditionCves,
+        potentiallyConservativeCves,
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        sourceReviewFindings,
+        advisoryReview,
+        verifiedStructuredProofs,
+        policy,
+        exclusionReview,
+        appliedBans,
+        List.of());
+  }
 
   MavenElisionReportSnapshot {
     require(schemaVersion == SCHEMA_VERSION, "Unsupported report snapshot schema version");
@@ -129,6 +192,18 @@ record MavenElisionReportSnapshot(
     Objects.requireNonNull(policy, "policy");
     Objects.requireNonNull(exclusionReview, "exclusionReview");
     appliedBans = List.copyOf(Objects.requireNonNull(appliedBans, "appliedBans"));
+    toleratedDuplicates =
+        Objects.requireNonNull(toleratedDuplicates, "toleratedDuplicates").stream()
+            .sorted(Comparator.comparing(ToleratedDuplicateClass::className))
+            .toList();
+    for (int index = 1; index < toleratedDuplicates.size(); index++) {
+      require(
+          !toleratedDuplicates
+              .get(index - 1)
+              .className()
+              .equals(toleratedDuplicates.get(index).className()),
+          "Tolerated duplicate classes must be distinct");
+    }
     require(wholeArtifactsDropped >= 0, "wholeArtifactsDropped must not be negative");
     require(originalJarBytesDropped >= 0, "originalJarBytesDropped must not be negative");
     require(droppedProgramClassEntries >= 0, "droppedProgramClassEntries must not be negative");
@@ -523,6 +598,9 @@ record MavenElisionReportSnapshot(
                         entry.artifacts().stream().map(Object::toString).sorted().toList(),
                         entry.originalArtifacts().stream().map(Object::toString).sorted().toList(),
                         entry.status() != MavenBanPlan.Entry.Status.UNMATCHED))
+            .toList(),
+        analysis.trimResult().toleratedDuplicates().stream()
+            .map(ToleratedDuplicateClass::from)
             .toList());
   }
 
@@ -602,7 +680,8 @@ record MavenElisionReportSnapshot(
         verifiedStructuredProofs,
         policy,
         exclusionReview,
-        appliedBans);
+        appliedBans,
+        toleratedDuplicates);
   }
 
   MavenElisionReportSnapshot withExclusionReview(final ExclusionReview review) {
@@ -634,7 +713,8 @@ record MavenElisionReportSnapshot(
         verifiedStructuredProofs,
         policy,
         review,
-        appliedBans);
+        appliedBans,
+        toleratedDuplicates);
   }
 
   MavenElisionReportSnapshot withAppliedBans(final List<AppliedBan> bans) {
@@ -666,7 +746,41 @@ record MavenElisionReportSnapshot(
         verifiedStructuredProofs,
         policy,
         exclusionReview,
-        bans);
+        bans,
+        toleratedDuplicates);
+  }
+
+  MavenElisionReportSnapshot withToleratedDuplicates(final List<ToleratedDuplicateClass> rows) {
+    return new MavenElisionReportSnapshot(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        executionEnvironment,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        removedCveComponents,
+        provenAbsentCves,
+        inactivePreconditionCves,
+        potentiallyConservativeCves,
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        sourceReviewFindings,
+        advisoryReview,
+        verifiedStructuredProofs,
+        policy,
+        exclusionReview,
+        appliedBans,
+        rows);
   }
 
   static AdvisoryReview advisoryReview(final MavenVulnerabilityAssessment.Result assessment) {
@@ -1130,6 +1244,28 @@ record MavenElisionReportSnapshot(
       require(
           uncompressedProgramClassBytesPruned >= 0,
           "uncompressedProgramClassBytesPruned must not be negative");
+    }
+  }
+
+  /** One tolerated duplicated class and its configured owner action. */
+  record ToleratedDuplicateClass(String className, String action, List<String> owners) {
+    ToleratedDuplicateClass {
+      requireNonBlank(className, "className");
+      Objects.requireNonNull(action, "action");
+      try {
+        DuplicateClassPolicy.Action.valueOf(action);
+      } catch (final IllegalArgumentException exception) {
+        throw new IllegalArgumentException("Tolerated duplicate action is invalid", exception);
+      }
+      owners = sortedDistinctNonBlank(owners, "owners");
+      require(owners.size() > 1, "A tolerated duplicate must have at least two owners");
+    }
+
+    static ToleratedDuplicateClass from(final DuplicateClasses.ToleratedDuplicate duplicate) {
+      return new ToleratedDuplicateClass(
+          duplicate.className(),
+          duplicate.action().name(),
+          duplicate.owners().stream().map(Object::toString).toList());
     }
   }
 

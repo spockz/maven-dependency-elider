@@ -55,8 +55,13 @@ final class TrimPassThroughPlanner {
     final List<ElisionAnalysisModel.ArtifactSnapshot> multiRelease = policies.multiRelease();
     final List<ElisionAnalysisModel.ArtifactSnapshot> moduleInfo = policies.moduleInfo();
     final List<ElisionAnalysisModel.ArtifactSnapshot> configured =
-        parsePassThroughArtifacts(
-            request.policy().explicitPassThroughCoordinates(), retainedLibraries);
+        new ArrayList<>(
+            parsePassThroughArtifacts(
+                request.policy().explicitPassThroughCoordinates(), retainedLibraries));
+    final Set<String> configuredIdentities = identities(configured);
+    DuplicateClasses.retainedOwners(request, retainedLibraries).stream()
+        .filter(snapshot -> !configuredIdentities.contains(artifactIdentity(snapshot.coordinate())))
+        .forEach(configured::add);
     final Set<String> multiReleaseIdentities = identities(multiRelease);
     final Set<String> moduleInfoIdentities = identities(moduleInfo);
     final List<ElisionAnalysisModel.ArtifactSnapshot> configuredOnly =

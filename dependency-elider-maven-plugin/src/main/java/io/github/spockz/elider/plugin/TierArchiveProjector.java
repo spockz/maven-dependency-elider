@@ -42,7 +42,7 @@ final class TierArchiveProjector {
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> classes =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
-    final Map<String, ElisionAnalysisModel.ArtifactSnapshot> owners =
+    final Map<String, List<ElisionAnalysisModel.ArtifactSnapshot>> owners =
         HashMap.newHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : inventory.snapshots()) {
       if (!MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(snapshot.coordinate().scope())) {
@@ -83,17 +83,22 @@ final class TierArchiveProjector {
     classes.put(snapshot, TrimPaths.classNames(analysisPath));
   }
 
-  private static void assignTierOwners(
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  private void assignTierOwners(
       final Set<String> names,
       final ElisionAnalysisModel.ArtifactSnapshot snapshot,
-      final Map<String, ElisionAnalysisModel.ArtifactSnapshot> owners,
+      final Map<String, List<ElisionAnalysisModel.ArtifactSnapshot>> owners,
       final int release)
       throws IOException {
     for (final String name : names) {
-      final ElisionAnalysisModel.ArtifactSnapshot previous = owners.putIfAbsent(name, snapshot);
-      if (previous != null && !previous.equals(snapshot)) {
+      final List<ElisionAnalysisModel.ArtifactSnapshot> previous =
+          owners.computeIfAbsent(name, ignored -> new ArrayList<>());
+      if (!previous.isEmpty()
+          && !previous.contains(snapshot)
+          && !operation.request().policy().duplicateClasses().tolerates(name)) {
         throw new IOException("Duplicate class owner in tier " + release + ": " + name);
       }
+      previous.add(snapshot);
     }
   }
 
@@ -103,17 +108,21 @@ final class TierArchiveProjector {
       Map<ElisionAnalysisModel.ArtifactSnapshot, MultiReleaseCandidateInfo> multiReleaseCandidates,
       Map<ElisionAnalysisModel.ArtifactSnapshot, Path> paths,
       Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> classes,
-      Map<String, ElisionAnalysisModel.ArtifactSnapshot> ownerByClass,
+      Map<String, List<ElisionAnalysisModel.ArtifactSnapshot>> ownersByClass,
       Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
           candidatePrepared,
       Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
           programPrepared,
       ClassPool jdkClassTable) {
+    @SuppressWarnings("PMD.UseConcurrentHashMap")
     /* package */ TierContext {
       multiReleaseCandidates = Map.copyOf(multiReleaseCandidates);
       paths = Map.copyOf(paths);
       classes = Map.copyOf(classes);
-      ownerByClass = Map.copyOf(ownerByClass);
+      final Map<String, List<ElisionAnalysisModel.ArtifactSnapshot>> immutableOwners =
+          new HashMap<>();
+      ownersByClass.forEach((name, owners) -> immutableOwners.put(name, List.copyOf(owners)));
+      ownersByClass = Map.copyOf(immutableOwners);
       candidatePrepared = Map.copyOf(candidatePrepared);
       programPrepared = Map.copyOf(programPrepared);
     }
@@ -129,7 +138,7 @@ final class TierArchiveProjector {
           multiReleaseCandidates,
           paths,
           classes,
-          ownerByClass,
+          ownersByClass,
           candidates,
           programs,
           jdkClassTable);
@@ -152,7 +161,11 @@ final class TierArchiveProjector {
     }
 
     /* package */ ElisionAnalysisModel.ArtifactSnapshot ownerOf(final String name) {
-      return ownerByClass.get(name);
+      return ownersOf(name).stream().findFirst().orElse(null);
+    }
+
+    /* package */ List<ElisionAnalysisModel.ArtifactSnapshot> ownersOf(final String name) {
+      return ownersByClass.getOrDefault(name, List.of());
     }
 
     /* package */ List<

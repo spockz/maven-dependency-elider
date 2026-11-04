@@ -230,6 +230,8 @@ If the requested lifecycle reaches `test`, the guard also requires the standard 
 | `elide.productionClassesComplete` | `false` | Asserts that production output contains all compiled production classes. With the Maven extension enabled, this rebinds the default `elide` execution from `initialize` to `process-classes`; the output directory defaults to `${project.build.outputDirectory}` and must contain at least one `.class` file. This assertion is separate from trusted precondition capture: direct CLI goals and missing/other phases keep conservative provider-generation guards. It cannot be combined with `elide.sourceRootsComplete=true`. After compile, bytecode references are unioned with attributed references from compile source roots to retain dependencies used only through inlined constants. |
 | `elide.trimRoots` | *(none)* | Comma-separated additional root classes (e.g. `com.example.AppRoot`). |
 | `elide.trimSkipArtifacts` | *(none)* | Comma-separated coordinates of retained JARs to keep byte-identical. Their classes serve as roots for sibling closure. |
+| `elide.retainDuplicateClassOwners` | *(none)* | Comma-separated class names or globs (`*` within a package, `**` across packages, e.g. `org.example.**`). When a matching class is present in several dependency JARs, every owning JAR is retained whole and byte-identical, including owners that would otherwise be dropped. Unmatched duplicates still fail the build. |
+| `elide.trimDuplicateClassOwners` | *(none)* | Comma-separated class names or globs with the same syntax. Every matching duplicate class is kept in every owning JAR, including owners that would otherwise be dropped; with `trimJars=true`, their other unused classes can still be trimmed. If both lists match a class, `retainDuplicateClassOwners` wins; the same pattern in both lists is rejected. |
 | `elide.mrjarStrategy` | `vertical-shading` | With `trimJars=true`, `vertical-shading` elevates and trims the configured compiler release view. Higher-tier entries are preserved while their analyzed bodies retain sibling dependencies. Set to `pass-through` to preserve the entire multi-release input JAR byte-identically; when another dependency is trimmed, the unchanged MRJAR still contributes closure through the Maven runtime release. |
 | `elide.failOnUnsupportedModuleInfo` | `false` | When `false`, JARs with root `module-info.class` pass through unchanged on the classpath. When `true`, they fail the build. |
 | `elide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader dynamic roots declared in `META-INF/services/`. When `false`, unproven SPI roots are pruned. |
@@ -237,6 +239,21 @@ If the requested lifecycle reaches `test`, the guard also requires the standard 
 | `elide.sbomFile` | `target/dependency-elider-sbom.cdx.json` | Path for the post-elision CycloneDX 1.6 SBOM. |
 | `elide.baselineSbomFile` | `target/baseline-sbom.cdx.json` | Path for the pre-elision baseline CycloneDX 1.6 SBOM. |
 | `elide.vexFile` | `target/dependency-elider.openvex.json` | Path for the OpenVEX document written during trim-enabled publication when omission or precondition proof succeeds. |
+
+For example, accept duplicated `org.example.Shared` and keep every provider JAR whole with
+`'-Delide.retainDuplicateClassOwners=org.example.Shared'`. To preserve duplicates throughout
+a package while allowing unused sibling classes to be trimmed, use
+`-Delide.trimJars=true '-Delide.trimDuplicateClassOwners=org.example.**'` instead.
+Quote glob arguments so the shell passes them unchanged. The equivalent POM list is:
+
+```xml
+<configuration>
+  <trimJars>true</trimJars>
+  <trimDuplicateClassOwners>
+    <className>org.example.**</className>
+  </trimDuplicateClassOwners>
+</configuration>
+```
 
 ### Preserving Metadata and Special JARs
 
@@ -247,6 +264,7 @@ Set `-Delide.trimWorkers=2` to cap trimming at two workers. This setting limits 
 * **Intra-JAR Trimming**: Trimmed JARs are written to `target/elided-artifacts/` with original JARs left untouched. Digital signatures are stripped to maintain archive validity, while resources, licenses, and SPI descriptors are preserved.
 * **Multi-Release and Module Descriptors**: With JAR trimming enabled, Elider selects the effective compiler release, then target, as its analysis target; if neither is configured, it uses the active runtime feature as an analysis default. The selected target view is elevated and trimmed. All higher-tier entries remain byte-identical except versioned `module-info.class`, which is removed. Bodies at class-tier breakpoints through the Maven runtime release contribute to sibling closure; tiers above that runtime remain outside the verified linkage boundary. The active JDK class table comes from Maven's runtime and does not emulate a historical target API. Set `elide.mrjarStrategy=pass-through` to preserve the whole source archive. Root module descriptors keep the existing classpath pass-through behavior.
 * **Exact Pass-Through (`trimSkipArtifacts`)**: Pins specified dependencies byte-identical while allowing their classes to resolve external links into trimmed sibling dependencies.
+* **Tolerated duplicate classes**: By default duplicate class ownership fails analysis because class-loading order would be ambiguous. `retainDuplicateClassOwners` and `trimDuplicateClassOwners` let you accept specific duplicates explicitly, preserving all providers and the dependency closure of each implementation. Both policies cover the production analysis classpath, including `provided` and `system` owners, which remain untrimmed. Multi-release duplicates use the effective class views through the greater of the analysis target and Maven runtime release; inactive versioned entries do not create duplicate findings. Tolerated duplicates are listed in the build log and under `toleratedDuplicates` in `dependency-elider-report.json` and the Analyze class-usage report (class name, action `RETAIN_JARS` or `TRIM_OTHER_CLASSES`, and owning coordinates). The saved `report` goal replays these findings.
 * **Native-image argument policy**: Class roots, package roots, configuration references, and descriptor fields in the audited GraalVM Native Image 21.0.12+7.1 inventory are modeled. Invalid recognized inputs fail clearly. Other syntactically valid arguments are accepted without inferred roots; unknown future options are outside the completeness guarantee. See [ADR-0009](../../../../docs/adr/0009-permissive-graalvm-native-image-metadata-ingestion.md).
 
 ### Using Post-Compile Elision and Inspecting the Dependency Tree

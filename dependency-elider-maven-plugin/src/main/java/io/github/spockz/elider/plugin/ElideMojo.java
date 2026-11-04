@@ -80,6 +80,14 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.trimSkipArtifacts")
   private List<String> trimSkipArtifacts;
 
+  /** Class-name patterns whose duplicate owners are retained whole. */
+  @Parameter(property = "elide.retainDuplicateClassOwners")
+  private List<String> retainDuplicateClassOwners;
+
+  /** Class-name patterns whose duplicates survive sibling trimming. */
+  @Parameter(property = "elide.trimDuplicateClassOwners")
+  private List<String> trimDuplicateClassOwners;
+
   /** Selects MRJAR vertical shading or byte-identical pass-through. */
   @Parameter(property = "elide.mrjarStrategy", defaultValue = "vertical-shading")
   private String mrjarStrategy = "vertical-shading";
@@ -294,7 +302,8 @@ public final class ElideMojo extends PluginCacheMojoSupport {
             trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
             failOnUnsupportedModuleInfo,
             trimWorkers,
-            mrjarStrategy),
+            mrjarStrategy,
+            new DuplicateClassPolicy(retainDuplicateClassOwners, trimDuplicateClassOwners)),
         new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots));
   }
 

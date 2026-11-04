@@ -24,7 +24,8 @@ final class SingleReleaseTrimInventory {
       Map<Path, Set<String>> classesByPath,
       Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> classesByArtifact,
       Map<String, ElisionAnalysisModel.ArtifactSnapshot> ownerByClass,
-      Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> requestedRoots) {}
+      Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> requestedRoots,
+      Map<String, List<ElisionAnalysisModel.ArtifactSnapshot>> toleratedDuplicates) {}
 
   /* package */ record SingleReleaseLayout(
       Set<ArtifactCoordinate> retainedCoordinates,
@@ -38,6 +39,7 @@ final class SingleReleaseTrimInventory {
       Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> rootsByOwner,
       Set<ArtifactCoordinate> droppedArtifacts) {}
 
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
   /* package */ static SingleReleaseInventory readSingleReleaseInventory(
       final TrimRequest request, final Map<TrimArtifactRootKey, Set<String>> discoveredRoots)
       throws IOException {
@@ -63,8 +65,16 @@ final class SingleReleaseTrimInventory {
         TrimCollections.orderedMap();
     final Map<String, ElisionAnalysisModel.ArtifactSnapshot> ownerByClass =
         TrimCollections.lookupMap();
+    final Map<String, List<ElisionAnalysisModel.ArtifactSnapshot>> toleratedDuplicates =
+        new java.util.TreeMap<>();
     populateSingleReleaseClassInventory(
-        artifacts, analysisPaths, classesByPath, classesByArtifact, ownerByClass);
+        artifacts,
+        analysisPaths,
+        classesByPath,
+        classesByArtifact,
+        ownerByClass,
+        new DuplicateTolerance(
+            request.policy().duplicateClasses(), retainedCoordinates, toleratedDuplicates));
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> requestedRoots =
         TrimRootPlanner.validateDiscoveredRoots(discoveredRoots, artifacts, classesByPath);
     return new SingleReleaseInventory(
@@ -74,15 +84,23 @@ final class SingleReleaseTrimInventory {
         classesByPath,
         classesByArtifact,
         ownerByClass,
-        requestedRoots);
+        requestedRoots,
+        toleratedDuplicates);
   }
+
+  /** Records which owners share each class the user agreed to tolerate. */
+  private record DuplicateTolerance(
+      DuplicateClassPolicy policy,
+      Set<ArtifactCoordinate> retainedCoordinates,
+      Map<String, List<ElisionAnalysisModel.ArtifactSnapshot>> owners) {}
 
   private static void populateSingleReleaseClassInventory(
       final List<ElisionAnalysisModel.ArtifactSnapshot> artifacts,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Path> analysisPaths,
       final Map<Path, Set<String>> classesByPath,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> classesByArtifact,
-      final Map<String, ElisionAnalysisModel.ArtifactSnapshot> ownerByClass)
+      final Map<String, ElisionAnalysisModel.ArtifactSnapshot> ownerByClass,
+      final DuplicateTolerance tolerance)
       throws IOException {
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : artifacts) {
       final Path source = snapshot.filePath().toAbsolutePath().normalize();
@@ -95,12 +113,33 @@ final class SingleReleaseTrimInventory {
       classesByPath.put(source, sourceClasses);
       classesByArtifact.put(snapshot, classes);
       for (final String name : classes) {
-        final ElisionAnalysisModel.ArtifactSnapshot previous =
-            ownerByClass.putIfAbsent(name, snapshot);
-        if (previous != null && !previous.equals(snapshot)) {
-          throw new IOException("Duplicate class owner in complete JAR inventory: " + name);
-        }
+        registerOwner(name, snapshot, ownerByClass, tolerance);
       }
+    }
+  }
+
+  private static void registerOwner(
+      final String name,
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot,
+      final Map<String, ElisionAnalysisModel.ArtifactSnapshot> ownerByClass,
+      final DuplicateTolerance tolerance)
+      throws IOException {
+    final ElisionAnalysisModel.ArtifactSnapshot previous = ownerByClass.putIfAbsent(name, snapshot);
+    if (previous == null || previous.equals(snapshot)) {
+      return;
+    }
+    if (!tolerance.policy().tolerates(name)) {
+      throw new IOException("Duplicate class owner in complete JAR inventory: " + name);
+    }
+    final List<ElisionAnalysisModel.ArtifactSnapshot> owners =
+        tolerance.owners().computeIfAbsent(name, ignored -> new java.util.ArrayList<>());
+    if (owners.isEmpty()) {
+      owners.add(previous);
+    }
+    owners.add(snapshot);
+    if (!tolerance.retainedCoordinates().contains(previous.coordinate())
+        && tolerance.retainedCoordinates().contains(snapshot.coordinate())) {
+      ownerByClass.put(name, snapshot);
     }
   }
 
@@ -117,6 +156,22 @@ final class SingleReleaseTrimInventory {
         layoutPassThroughCoordinates.add(snapshot.coordinate());
       }
     }
+    inventory
+        .toleratedDuplicates()
+        .forEach(
+            (className, owners) -> {
+              if (request
+                  .policy()
+                  .duplicateClasses()
+                  .actionFor(className)
+                  .filter(DuplicateClassPolicy.Action.RETAIN_JARS::equals)
+                  .isPresent()) {
+                owners.stream()
+                    .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+                    .filter(retainedCoordinates::contains)
+                    .forEach(layoutPassThroughCoordinates::add);
+              }
+            });
     final List<ElisionAnalysisModel.ArtifactSnapshot> eligible =
         inventory.retainedLibraries().stream()
             .filter(
@@ -126,7 +181,13 @@ final class SingleReleaseTrimInventory {
             .toList();
     final List<ElisionAnalysisModel.ArtifactSnapshot> configuredPassThrough =
         TrimPassThroughPlanner.parsePassThroughArtifacts(
-            request.policy().explicitPassThroughCoordinates(), eligible);
+            request.policy().explicitPassThroughCoordinates(),
+            inventory.retainedLibraries().stream()
+                .filter(
+                    snapshot ->
+                        TrimPassThroughPlanner.TRIMMABLE_SCOPES.contains(
+                            snapshot.coordinate().scope()))
+                .toList());
     final Set<String> passThroughIdentities =
         TrimPassThroughPlanner.identities(configuredPassThrough);
     final Set<ArtifactCoordinate> skippedProgramCoordinates =
@@ -306,6 +367,14 @@ final class SingleReleaseTrimInventory {
           new TreeSet<>(inventory.requestedRoots().getOrDefault(candidate, Set.of()));
       roots.addAll(commonRootOwners.byArtifact().getOrDefault(candidate, Set.of()));
       roots.addAll(dynamicRoots.rootsByOwner().getOrDefault(candidate, Set.of()));
+      inventory
+          .toleratedDuplicates()
+          .forEach(
+              (className, owners) -> {
+                if (owners.contains(candidate)) {
+                  roots.add(className);
+                }
+              });
       if (roots.isEmpty()) {
         roots.addAll(inventory.classesByArtifact().getOrDefault(candidate, Set.of()));
       }

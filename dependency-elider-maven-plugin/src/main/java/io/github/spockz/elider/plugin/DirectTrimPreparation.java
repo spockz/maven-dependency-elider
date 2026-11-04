@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 
 /** Captures candidate and cache inputs for direct output execution. */
 final class DirectTrimPreparation {
@@ -36,6 +37,13 @@ final class DirectTrimPreparation {
     NativeImageConsumedInput.verifyAll(request.scanInputs().consumedInputs());
     validateArchives(request);
     final TrimPassThroughPlan passThrough = TrimPassThroughPlanner.passThroughPlan(request);
+    final Set<String> roots = TrimRootPlanner.commonRoots(request);
+    for (final DuplicateClasses.ToleratedDuplicate duplicate :
+        DuplicateClasses.resolveRetained(request)) {
+      if (duplicate.action() == DuplicateClassPolicy.Action.TRIM_OTHER_CLASSES) {
+        roots.add(duplicate.className());
+      }
+    }
     final CandidatePlan candidates =
         DirectCandidatePlanner.candidatePlan(
             request.project(),
@@ -43,7 +51,8 @@ final class DirectTrimPreparation {
             passThrough.retained(),
             request.scanInputs(),
             request.scanInputs().classIndex().classesByArtifact(),
-            TrimRootPlanner.commonRoots(request));
+            roots,
+            request.policy().duplicateClasses());
     if (request.cacheProducerIdentity().isEmpty()) {
       final Path ephemeralOutput = Files.createTempDirectory("dependency-elider-trim-output-");
       ephemeralOutput.toFile().deleteOnExit();

@@ -119,9 +119,32 @@ final class ElisionAnalysisModel {
       boolean failOnUnsupportedModuleInfo,
       int workers,
       String mrjarStrategy,
-      PluginCacheProducerIdentityResolver.Resolution cacheProducerResolution) {
+      PluginCacheProducerIdentityResolver.Resolution cacheProducerResolution,
+      DuplicateClassPolicy duplicateClasses) {
     /* default */ TrimOptions {
       java.util.Objects.requireNonNull(cacheProducerResolution, "cacheProducerResolution");
+      java.util.Objects.requireNonNull(duplicateClasses, "duplicateClasses");
+    }
+
+    /* default */ TrimOptions(
+        final boolean enabled,
+        final List<String> explicitRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> passThroughArtifacts,
+        final boolean failOnUnsupportedModuleInfo,
+        final int workers,
+        final String mrjarStrategy,
+        final PluginCacheProducerIdentityResolver.Resolution cacheProducerResolution) {
+      this(
+          enabled,
+          explicitRoots,
+          failOnUnsupportedMultiRelease,
+          passThroughArtifacts,
+          failOnUnsupportedModuleInfo,
+          workers,
+          mrjarStrategy,
+          cacheProducerResolution,
+          DuplicateClassPolicy.NONE);
     }
 
     /* default */ TrimOptions(

@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
@@ -83,11 +84,6 @@ final class MavenDependencyTrimmer {
     final ElisionAnalysisModel.PreparedAnalysis prepared = effective.prepared();
     MavenArtifactInventory.verifyPreparedInventory(prepared);
     final ElisionAnalysisModel.AnalysisOptions options = prepared.options();
-    if (!options.trim().enabled()) {
-      return TrimResult.empty(
-          new TrimExecutionEnvironment(
-              effective.trimAnalysis().targetRelease(), effective.trimAnalysis().runtimeRelease()));
-    }
     final TrimRequest request =
         new TrimRequest(
             prepared.project(),
@@ -115,8 +111,16 @@ final class MavenDependencyTrimmer {
                 options.trim().mrjarStrategy(),
                 options.trim().enabled(),
                 options.dynamicRoots().conservativeServiceLoaderRoots(),
-                options.trim().workers()),
+                options.trim().workers(),
+                options.trim().duplicateClasses()),
             options.trim().cacheProducerResolution().identity());
+    if (!options.trim().enabled()) {
+      return TrimResult.empty(
+              new TrimExecutionEnvironment(
+                  effective.trimAnalysis().targetRelease(),
+                  effective.trimAnalysis().runtimeRelease()))
+          .withToleratedDuplicates(DuplicateClasses.resolveRetained(request));
+    }
     final Map<TrimArtifactRootKey, Set<String>> roots =
         TrimRootPlanner.artifactRootKeys(
             prepared.resolvedSnapshots(), effective.trimAnalysis().candidateRoots());
@@ -171,20 +175,30 @@ final class MavenDependencyTrimmer {
 
   /* package */ static TrimExecutionEnvironment executionEnvironment(final TrimRequest request)
       throws IOException {
-    final MavenProject project = request.project();
-    final boolean trimmingEnabled = request.policy().trimEnabled();
+    return executionEnvironment(
+        request.project(),
+        request.session(),
+        request.environment(),
+        request.policy().trimEnabled());
+  }
+
+  /* package */ static TrimExecutionEnvironment executionEnvironment(
+      final MavenProject project,
+      final MavenSession session,
+      final AnalysisEnvironment environment,
+      final boolean trimmingEnabled)
+      throws IOException {
     final List<String> compilerOptions;
-    if (request.environment() == null) {
+    if (environment == null) {
       compilerOptions =
           trimmingEnabled
-              ? MavenCompilerSettings.platformReleaseOptions(project, request.session())
-              : MavenCompilerSettings.analysisTargetOptions(project, request.session());
+              ? MavenCompilerSettings.platformReleaseOptions(project, session)
+              : MavenCompilerSettings.analysisTargetOptions(project, session);
     } else {
       compilerOptions =
           trimmingEnabled
-              ? MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
-                  project, request.environment())
-              : MavenCompilerSettings.analysisTargetOptions(project, request.environment());
+              ? MavenCompilerSettings.platformReleaseOptionsWithEnvironment(project, environment)
+              : MavenCompilerSettings.analysisTargetOptions(project, environment);
     }
     return new TrimExecutionEnvironment(
         TrimPlatform.targetReleaseFromOptions(compilerOptions), Runtime.version().feature());

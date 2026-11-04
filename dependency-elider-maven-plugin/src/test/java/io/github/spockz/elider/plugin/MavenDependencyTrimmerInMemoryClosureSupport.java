@@ -108,6 +108,38 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final int release,
       final String firstArtifactScope)
       throws IOException {
+    return fixtureWithOptions(
+        duplicateClass,
+        serviceRootInA,
+        resourceOnlyB,
+        optionalAsmReference,
+        release,
+        firstArtifactScope,
+        false,
+        RUNTIME_SCOPE);
+  }
+
+  /** Builds two duplicate variants that link to different dropped artifacts. */
+  protected Fixture fixtureWithDistinctDuplicateDependencies() throws IOException {
+    return fixtureWithOptions(true, false, false, false, 21, COMPILE_SCOPE, true, RUNTIME_SCOPE);
+  }
+
+  /** Builds duplicate owners in compile and provided scope. */
+  protected Fixture fixtureWithProvidedDuplicate() throws IOException {
+    return fixtureWithOptions(true, false, false, false, 21, COMPILE_SCOPE, false, "provided");
+  }
+
+  @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.NPathComplexity"})
+  private Fixture fixtureWithOptions(
+      final boolean duplicateClass,
+      final boolean serviceRootInA,
+      final boolean resourceOnlyB,
+      final boolean optionalAsmReference,
+      final int release,
+      final String firstArtifactScope,
+      final boolean distinctDuplicateDependencies,
+      final String secondArtifactScope)
+      throws IOException {
     final Path sourceDirectory = Files.createDirectories(temporaryDirectory.resolve("sources"));
     final Path classes = Files.createDirectories(temporaryDirectory.resolve("classes"));
     final Path firstSource =
@@ -131,7 +163,12 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
             : null;
     final Path extraSource =
         writeSource(
-            sourceDirectory, "closure/a/Extra.java", "package closure.a; public class Extra {}");
+            sourceDirectory,
+            "closure/a/Extra.java",
+            distinctDuplicateDependencies
+                ? "package closure.a; public class Extra { "
+                    + "public Object make() { return new closure.c.Leaf(); } }"
+                : "package closure.a; public class Extra {}");
     final Path secondSource =
         writeSource(
             sourceDirectory,
@@ -177,6 +214,14 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
                     "data/fixture.txt", "preserve this resource\n",
                     "META-INF/services/closure.a.Entry", "closure.b.Middle\n")
                 : Map.of("data/fixture.txt", "preserve this resource\n"));
+    if (distinctDuplicateDependencies) {
+      Files.writeString(
+          extraSource,
+          "package closure.a; public class Extra { "
+              + "public Object make() { return new closure.e.Leaf(); } }\n");
+      io.github.spockz.elider.test.CompilationFixtureSupport.compile(
+          classes, List.of(extraSource), "-classpath", classes.toString());
+    }
     final List<String> secondClasses =
         resourceOnlyB
             ? List.of()
@@ -199,7 +244,8 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         fourthArtifactPath,
         fifthArtifactPath,
         release,
-        firstArtifactScope);
+        firstArtifactScope,
+        secondArtifactScope);
   }
 
   /** Builds a fixture whose first archive is visible only at runtime. */
@@ -284,10 +330,11 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         final Path fourthArtifactPath,
         final Path fifthArtifactPath,
         final int release,
-        final String firstArtifactScope)
+        final String firstArtifactScope,
+        final String secondArtifactScope)
         throws IOException {
       final Artifact firstArtifact = artifact("a", firstArtifactPath, firstArtifactScope);
-      final Artifact secondArtifact = artifact("b", secondArtifactPath, RUNTIME_SCOPE);
+      final Artifact secondArtifact = artifact("b", secondArtifactPath, secondArtifactScope);
       final Artifact thirdArtifact = artifact("c", thirdArtifactPath, RUNTIME_SCOPE);
       final Artifact fourthArtifact = artifact("d", fourthArtifactPath, RUNTIME_SCOPE);
       final Artifact fifthArtifact = artifact("e", fifthArtifactPath, RUNTIME_SCOPE);
@@ -326,6 +373,13 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       return analyze(retained, unchanged, roots, Map.of(), List.of());
     }
 
+    /** Analyzes the complete inventory while tolerating selected duplicate classes. */
+    TrimAnalysisResult analyze(
+        final Set<ArtifactCoordinate> retained, final DuplicateClassPolicy duplicates)
+        throws IOException, org.apache.maven.plugin.MojoFailureException {
+      return analyze(retained, Set.of(), Map.of(), Map.of(), List.of(), duplicates);
+    }
+
     /** Attaches dynamic roots to each candidate archive before strict analysis. */
     TrimAnalysisResult analyze(
         final Set<ArtifactCoordinate> retained,
@@ -333,6 +387,42 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         final Map<TrimArtifactRootKey, Set<String>> roots,
         final Map<Path, Set<String>> dynamicRoots,
         final List<String> passThroughCoordinates)
+        throws IOException, org.apache.maven.plugin.MojoFailureException {
+      return analyze(
+          retained,
+          unchanged,
+          roots,
+          dynamicRoots,
+          passThroughCoordinates,
+          DuplicateClassPolicy.NONE);
+    }
+
+    private TrimAnalysisResult analyze(
+        final Set<ArtifactCoordinate> retained,
+        final Set<ArtifactCoordinate> unchanged,
+        final Map<TrimArtifactRootKey, Set<String>> roots,
+        final Map<Path, Set<String>> dynamicRoots,
+        final List<String> passThroughCoordinates,
+        final DuplicateClassPolicy duplicates)
+        throws IOException, org.apache.maven.plugin.MojoFailureException {
+      return analyze(
+          retained,
+          unchanged,
+          roots,
+          dynamicRoots,
+          passThroughCoordinates,
+          duplicates,
+          "closure.a.Entry");
+    }
+
+    private TrimAnalysisResult analyze(
+        final Set<ArtifactCoordinate> retained,
+        final Set<ArtifactCoordinate> unchanged,
+        final Map<TrimArtifactRootKey, Set<String>> roots,
+        final Map<Path, Set<String>> dynamicRoots,
+        final List<String> passThroughCoordinates,
+        final DuplicateClassPolicy duplicates,
+        final String traceRoot)
         throws IOException, org.apache.maven.plugin.MojoFailureException {
       final Map<Path, DependencyDynamicRoots.RootScan> scans =
           snapshots.stream()
@@ -351,11 +441,40 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
               snapshots,
               new TrimScanInputs(scanInputs.classIndex(), scans),
               retained,
-              new TrimEvidence(
-                  TraceData.of(Set.of("closure.a.Entry")), Set.of(), Set.of(), Set.of()),
-              new TrimPolicy(List.of(), false, passThroughCoordinates, false)),
+              new TrimEvidence(TraceData.of(Set.of(traceRoot)), Set.of(), Set.of(), Set.of()),
+              new TrimPolicy(
+                  List.of(),
+                  false,
+                  passThroughCoordinates,
+                  false,
+                  MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+                  true,
+                  true,
+                  MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                  duplicates)),
           roots,
           unchanged);
+    }
+
+    TrimAnalysisResult analyzeDuplicateRoot(
+        final Set<ArtifactCoordinate> retained, final DuplicateClassPolicy duplicates)
+        throws IOException, org.apache.maven.plugin.MojoFailureException {
+      return analyzeDuplicateRoot(retained, duplicates, List.of());
+    }
+
+    TrimAnalysisResult analyzeDuplicateRoot(
+        final Set<ArtifactCoordinate> retained,
+        final DuplicateClassPolicy duplicates,
+        final List<String> passThroughCoordinates)
+        throws IOException, org.apache.maven.plugin.MojoFailureException {
+      return analyze(
+          retained,
+          Set.of(),
+          Map.of(),
+          Map.of(),
+          passThroughCoordinates,
+          duplicates,
+          "closure.a.Extra");
     }
 
     MavenProject mavenProject() {

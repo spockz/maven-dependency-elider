@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ElisionDecision;
 import java.io.IOException;
+import java.util.List;
 import java.util.Locale;
 import org.apache.maven.plugin.logging.Log;
 
@@ -62,6 +63,9 @@ final class ElisionSummary {
     }
     reportHeader(log, decision, inputCount);
     reportDroppedClassMetrics(log, reportSnapshot);
+    if (reportSnapshot != null) {
+      reportToleratedDuplicates(log, reportSnapshot.toleratedDuplicates());
+    }
     log.info("  Classes removed: 0 / N/A (N/A; stage not run)");
     log.info("  Methods removed: 0 / N/A (N/A; stage not run)");
     log.info("  Fields removed: 0 / N/A (N/A; stage not run)");
@@ -116,6 +120,9 @@ final class ElisionSummary {
             + MavenElisionReportWriter.formatBytes(
                 droppedArtifacts.uncompressedProgramClassBytesRemoved())
             + "; excludes module descriptors and archive sanitation metadata)");
+    if (analysis.trimResult() != null) {
+      reportLiveToleratedDuplicates(log, analysis.trimResult().toleratedDuplicates());
+    }
     reportTrimCache(log, analysis, trimJars);
     ElisionSummaryCveReporter.report(log, vulnerabilityAssessment, true);
   }
@@ -172,6 +179,7 @@ final class ElisionSummary {
             + MavenElisionReportWriter.formatBytes(
                 droppedArtifacts.uncompressedProgramClassBytesRemoved())
             + "; excludes module descriptors and archive sanitation metadata)");
+    reportToleratedDuplicates(log, prediction.toleratedDuplicates());
     log.info(
         trimJars
             ? "  JAR trim cache: unavailable (Analyze reports an in-memory prediction only)"
@@ -201,6 +209,7 @@ final class ElisionSummary {
     log.info("  Methods removed: 0 / N/A (N/A; stage not run)");
     log.info("  Fields removed: 0 / N/A (N/A; stage not run)");
     reportTrimCache(log, analysis, true);
+    reportToleratedDuplicates(log, reportSnapshot.toleratedDuplicates());
     ElisionSummaryCveReporter.report(log, vulnerabilityAssessment, false);
   }
 
@@ -225,6 +234,22 @@ final class ElisionSummary {
     log.info("  Methods removed: 0 / N/A (N/A; stage not run)");
     log.info("  Fields removed: 0 / N/A (N/A; stage not run)");
     log.info("  JAR trim cache: unavailable");
+    reportToleratedDuplicates(log, reportSnapshot.toleratedDuplicates());
+  }
+
+  private static void reportToleratedDuplicates(
+      final Log log, final List<MavenElisionReportSnapshot.ToleratedDuplicateClass> rows) {
+    if (rows == null || rows.isEmpty()) {
+      return;
+    }
+    MavenElisionReportRenderer.toleratedDuplicateLines(rows).forEach(line -> log.info("  " + line));
+  }
+
+  private static void reportLiveToleratedDuplicates(
+      final Log log, final List<DuplicateClasses.ToleratedDuplicate> duplicates) {
+    reportToleratedDuplicates(
+        log,
+        duplicates.stream().map(MavenElisionReportSnapshot.ToleratedDuplicateClass::from).toList());
   }
 
   private static void reportTrimCache(

@@ -29,8 +29,9 @@ final class TierRootResolution {
     for (final String rawRoot : roots) {
       final String root = rawRoot.replace('/', '.');
       for (final TierContext context : contexts) {
-        final ElisionAnalysisModel.ArtifactSnapshot owner = context.ownerOf(root);
-        addOwnedRoot(owner, root, candidates, candidateRoots, reachableArtifacts);
+        for (final ElisionAnalysisModel.ArtifactSnapshot owner : context.ownersOf(root)) {
+          addOwnedRoot(owner, root, candidates, candidateRoots, reachableArtifacts);
+        }
       }
     }
   }
@@ -112,12 +113,10 @@ final class TierRootResolution {
       final Set<String> platformNames) {
     boolean found = false;
     for (final TierContext context : contexts) {
-      final ElisionAnalysisModel.ArtifactSnapshot owner = context.ownerOf(root);
-      if (owner == null) {
-        continue;
+      for (final ElisionAnalysisModel.ArtifactSnapshot owner : context.ownersOf(root)) {
+        found = true;
+        addOwnedRoot(owner, root, candidates, candidateRoots, reachableArtifacts);
       }
-      found = true;
-      addOwnedRoot(owner, root, candidates, candidateRoots, reachableArtifacts);
     }
     if (!found
         && !operation.request().evidence().projectOutputClasses().contains(root)
