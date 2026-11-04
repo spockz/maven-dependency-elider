@@ -29,13 +29,18 @@ public record CodeReference(Kind kind, String value, Set<String> originalValues)
     }
     Objects.requireNonNull(originalValues, "originalValues");
     final Set<String> originals = new TreeSet<>();
-    originalValues.forEach(
-        original -> {
-          if (original == null || original.isBlank()) {
-            throw new IllegalArgumentException("originalValues must contain non-blank values");
-          }
-          originals.add(original);
-        });
+    for (final String original : originalValues) {
+      if (original == null || original.isBlank()) {
+        throw new IllegalArgumentException("originalValues must contain non-blank values");
+      }
+      final String normalizedOriginal =
+          kind == Kind.SOURCE_FILE ? normalizePath(original) : original.trim();
+      if (!value.equals(normalizedOriginal)) {
+        throw new IllegalArgumentException(
+            "originalValues must normalize to the declared locator identity");
+      }
+      originals.add(original);
+    }
     if (originals.isEmpty()) {
       throw new IllegalArgumentException("originalValues must not be empty");
     }
