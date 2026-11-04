@@ -1,0 +1,1581 @@
+{
+  "purpose": "Dated research evidence for RQ-0020, not a plugin cache format, a complete source mapping, or an exploitability assessment.",
+  "checkedOn": "2026-11-04",
+  "scope": "Selected records from the existing Spring investigation plus bounded primary schema/API checks; not a representative advisory-coverage survey.",
+  "interpretation": [
+    "Source-file and routine declarations are scoped publisher claims. Field presence alone does not establish a complete affected-class set or bind a released binary to source.",
+    "NVD affected data republishes CVE contributor claims; it is distinct from NVD CPE configurations and is not independent corroboration of the same CNA assertion.",
+    "Empty GHSA vulnerable_functions lists in these two responses establish only that those responses contain no listed functions.",
+    "The retained NVD feed has an advertised/downloaded digest discrepancy. Its aggregate observations retain that limitation; a separate successful current API spot check confirms CVE-2026-18401's fields.",
+    "Null values in normalized retained-record sourceClaims below denote an unavailable selected field; no original missing-versus-null claim is made for those optional fields."
+  ],
+  "schemasAndDocumentation": {
+    "cveRecord": "https://cveproject.github.io/cve-schema/schema/docs/",
+    "nvdDeployment": "https://www.nist.gov/itl/nvd",
+    "nvdAffectedSchema": "https://csrc.nist.gov/schema/nvd/api/2.0/cve_affected_1.0.json",
+    "githubGlobalAdvisories": "https://docs.github.com/en/rest/security-advisories/global-advisories",
+    "osv": "https://ossf.github.io/osv-schema/",
+    "goDatabase": "https://go.dev/doc/security/vuln/database"
+  },
+  "cnaRetainedSample": {
+    "scope": "The same 34 other CVEs in the mapping-latency sample, excluding Tomcat/Jackson; current retained CVE records, not their initial-publication versions.",
+    "records": 34,
+    "withProgramFiles": 2,
+    "withProgramRoutines": 0,
+    "withEither": 2,
+    "withModules": 6,
+    "examples": [
+      {
+        "cve": "CVE-2026-10532",
+        "affected": [
+          {
+            "vendor": "QOS.CH Sarl",
+            "product": "logback",
+            "packageName": "logback-core",
+            "packageURL": null,
+            "collectionURL": null,
+            "programFiles": [
+              "HardenedObjectInputStream.java"
+            ],
+            "programRoutines": [],
+            "modules": [
+              "HardenedObjectInputStream (logback-core)"
+            ],
+            "repo": "https://github.com/qos-ch/logback"
+          }
+        ]
+      },
+      {
+        "cve": "CVE-2026-9828",
+        "affected": [
+          {
+            "vendor": "QOS.CH Sarl",
+            "product": "logback",
+            "packageName": "logback-core",
+            "packageURL": null,
+            "collectionURL": null,
+            "programFiles": [
+              "HardenedObjectInputStream.java"
+            ],
+            "programRoutines": [],
+            "modules": [
+              "HardenedObjectInputStream (logback-core)"
+            ],
+            "repo": "https://github.com/qos-ch/logback"
+          }
+        ]
+      }
+    ],
+    "recordSources": [
+      {
+        "cve": "CVE-2026-10532",
+        "url": "https://github.com/CVEProject/cvelistV5/blob/main/cves/2026/10xxx/CVE-2026-10532.json"
+      },
+      {
+        "cve": "CVE-2026-9828",
+        "url": "https://github.com/CVEProject/cvelistV5/blob/main/cves/2026/9xxx/CVE-2026-9828.json"
+      }
+    ]
+  },
+  "nvdRetainedJacksonSample": {
+    "scope": "The 16 Jackson CVEs from the existing NVD/OSV comparison; counts are per distinct CVE record.",
+    "counts": {
+      "records": 16,
+      "withProgramFiles": 5,
+      "withProgramRoutines": 9,
+      "withEither": 9,
+      "withoutCpeButWithSourceClaims": 9
+    },
+    "source": "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-2026.json.gz",
+    "feedTimestamp": "2026-11-04T03:00:01.5808434",
+    "metadataChecksumMatchesDownload": false,
+    "downloadedFeedSha256": "40399a33a2744130d67336268c4df2ad9ef388bca6dbbc9e02b149a35e81f069",
+    "metadataAdvertisedSha256": "609478EDF20F6D3702B10771ADB2987D2C0E5571622939A6F447F3AEDBB7B626",
+    "records": [
+      {
+        "id": "CVE-2026-18401",
+        "vulnStatus": "Awaiting Analysis",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "com.fasterxml.jackson.core:jackson-core",
+            "repo": "https://github.com/FasterXML/jackson-core",
+            "programFiles": [
+              "src/main/java/com/fasterxml/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "NonBlockingUtf8JsonParserBase._finishNumberIntegralPart"
+              },
+              {
+                "name": "NonBlockingUtf8JsonParserBase._valueComplete"
+              }
+            ]
+          },
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "tools.jackson.core:jackson-core",
+            "repo": "https://github.com/FasterXML/jackson-core",
+            "programFiles": [
+              "src/main/java/tools/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "NonBlockingUtf8JsonParserBase._finishNumberIntegralPart"
+              },
+              {
+                "name": "NonBlockingUtf8JsonParserBase._valueComplete"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-19032",
+        "vulnStatus": "Awaiting Analysis",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "com.fasterxml.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": [
+              "src/main/java/com/fasterxml/jackson/databind/ext/NioPathDeserializer.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "com.fasterxml.jackson.databind.ext.NioPathDeserializer.deserialize"
+              }
+            ]
+          },
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "tools.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": [
+              "src/main/java/tools/jackson/databind/deser/jdk/JDKFromStringDeserializer.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "tools.jackson.databind.deser.jdk.JDKFromStringDeserializer.NioPathHelper.deserialize"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-54512",
+        "vulnStatus": "Analyzed",
+        "configurationsState": "present",
+        "hasCpeConfiguration": true,
+        "sourceClaims": [
+          {
+            "source": "security-advisories@github.com",
+            "packageName": null,
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-54513",
+        "vulnStatus": "Modified",
+        "configurationsState": "present",
+        "hasCpeConfiguration": true,
+        "sourceClaims": [
+          {
+            "source": "security-advisories@github.com",
+            "packageName": null,
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "cryostat/cryostat-reports-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "cryostat/cryostat-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "cryostat/jfr-datasource-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk/keycloak-operator-bundle",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk/keycloak-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk/keycloak-rhel9-operator",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk/keycloak",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk-openshift-rhel9/rhbk",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk-rhel9-operator/rhbk",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk/keycloak-operator-bundle",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk/keycloak-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk/keycloak-rhel9-operator",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk/keycloak-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk/keycloak",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk-openshift-rhel9/rhbk",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhbk-rhel9-operator/rhbk",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "redhat-pki:10",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "dogtag-pki",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "dogtag-pki",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "pki-deps:10.6",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "pki-deps:10.6",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "pki-deps:10.6",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "pki-deps:10.6",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "pki-deps:10.6",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "pki-deps:10.6",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "pki-deps:10.6",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "devspaces/openvsx-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "devspaces/pluginregistry-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jenkins",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jenkins-2-plugins",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "ocp-tools-4/jenkins-rhel8",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "ocp-tools-4/jenkins-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-ekb-dispatcher-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-ekb-receiver-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-eventing-integrations-aws-ddb-streams-source-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-eventing-integrations-aws-s3-sink-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-eventing-integrations-aws-s3-source-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-eventing-integrations-aws-sns-sink-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-eventing-integrations-aws-sqs-sink-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-eventing-integrations-aws-sqs-source-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-eventing-integrations-log-sink-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openshift-serverless-1/kn-eventing-integrations-timer-source-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhaiis/vllm-cuda-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhaii/vllm-gaudi-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "ansible-automation-platform-27/de-minimal-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "ansible-automation-platform-27/de-supported-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "python3.11-drools-jpy-jar",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "python3.12-drools-jpy-jar",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "python3x-drools-jpy-jar",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "python-drools-jpy-jar",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhelai3/bootc-gaudi-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "eap74-els-openjdk11-openshift-rhel8/eap74-els-openjdk11-openshift-rhel8",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "eap74-els-openjdk17-openshift-rhel8/eap74-els-openjdk17-openshift-rhel8",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "eap74-els-openjdk8-openshift-rhel8/eap74-els-openjdk8-openshift-rhel8",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jboss-eap-7/eap74-els-openjdk17-openshift-rhel8",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind-2.15.0.jar",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind-2.15.0.module",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind-nullable",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rh-lightspeed-runtimes/runtimes-agent-init-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "offline-knowledge-portal/rhokp-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-modelmesh-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-pipeline-runtime-datascience-cpu-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-pipeline-runtime-pytorch-cuda-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-pipeline-runtime-pytorch-rocm-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-pipeline-runtime-tensorflow-cuda-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-pipeline-runtime-tensorflow-rocm-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-spark-operator-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-th06-cpu-torch210-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-th06-cpu-torch291-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-th06-cuda130-torch210-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-th06-cuda130-torch291-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-th06-rocm64-torch291-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-trustyai-service-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-vllm-gaudi-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-workbench-jupyter-datascience-cpu-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-workbench-jupyter-pytorch-cuda-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-workbench-jupyter-pytorch-llmcompressor-cuda-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-workbench-jupyter-pytorch-rocm-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-workbench-jupyter-tensorflow-cuda-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-workbench-jupyter-tensorflow-rocm-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "rhoai/odh-workbench-jupyter-trustyai-cpu-py312-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "devspaces/multicluster-redirector-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "devspaces/server-rhel9",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "candlepin",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "openvox-server",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "puppetserver",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "satellite-capsule:el8/puppetserver",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "satellite:el8/candlepin",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "0b0ca135-0b70-47e7-9f44-1890c2a1c46c",
+            "packageName": "jackson-databind",
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-54514",
+        "vulnStatus": "Analyzed",
+        "configurationsState": "present",
+        "hasCpeConfiguration": true,
+        "sourceClaims": [
+          {
+            "source": "security-advisories@github.com",
+            "packageName": null,
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-54515",
+        "vulnStatus": "Analyzed",
+        "configurationsState": "present",
+        "hasCpeConfiguration": true,
+        "sourceClaims": [
+          {
+            "source": "security-advisories@github.com",
+            "packageName": null,
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-59888",
+        "vulnStatus": "Awaiting Analysis",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "security-advisories@github.com",
+            "packageName": null,
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-59889",
+        "vulnStatus": "Awaiting Analysis",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "security-advisories@github.com",
+            "packageName": null,
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-68494",
+        "vulnStatus": "Awaiting Analysis",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "com.fasterxml.jackson.core:jackson-core",
+            "repo": "https://github.com/FasterXML/jackson-core",
+            "programFiles": [
+              "src/main/java/com/fasterxml/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "NonBlockingUtf8JsonParserBase._startPositiveNumber"
+              },
+              {
+                "name": "NonBlockingUtf8JsonParserBase._startNegativeNumber"
+              },
+              {
+                "name": "NonBlockingUtf8JsonParserBase._finishNumberIntegralPart"
+              }
+            ]
+          },
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "tools.jackson.core:jackson-core",
+            "repo": "https://github.com/FasterXML/jackson-core",
+            "programFiles": [
+              "src/main/java/tools/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "NonBlockingUtf8JsonParserBase._startPositiveNumber"
+              },
+              {
+                "name": "NonBlockingUtf8JsonParserBase._startNegativeNumber"
+              },
+              {
+                "name": "NonBlockingUtf8JsonParserBase._finishNumberIntegralPart"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-68497",
+        "vulnStatus": "Awaiting Analysis",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "com.fasterxml.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": [
+              "src/main/java/com/fasterxml/jackson/databind/ext/CoreXMLDeserializers.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "com.fasterxml.jackson.databind.ext.CoreXMLDeserializers.Std._deserialize"
+              }
+            ]
+          },
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "tools.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": [
+              "src/main/java/tools/jackson/databind/ext/CoreXMLDeserializers.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "tools.jackson.databind.ext.CoreXMLDeserializers.Std._deserialize"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-77310",
+        "vulnStatus": "Deferred",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "security-advisories@github.com",
+            "packageName": null,
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          },
+          {
+            "source": "security-advisories@github.com",
+            "packageName": null,
+            "repo": null,
+            "programFiles": null,
+            "programRoutines": null
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-83557",
+        "vulnStatus": "Awaiting Analysis",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "com.fasterxml.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": [
+              "src/main/java/com/fasterxml/jackson/databind/jsontype/DefaultBaseTypeLimitingValidator.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator.isUnsafeBaseType"
+              }
+            ]
+          },
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "tools.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": [
+              "src/main/java/tools/jackson/databind/jsontype/DefaultBaseTypeLimitingValidator.java"
+            ],
+            "programRoutines": [
+              {
+                "name": "tools.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator.isUnsafeBaseType"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-89407",
+        "vulnStatus": "Deferred",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "com.fasterxml.jackson.core:jackson-core",
+            "repo": "https://github.com/FasterXML/jackson-core",
+            "programFiles": null,
+            "programRoutines": [
+              {
+                "name": "com.fasterxml.jackson.core.io.NumberInput.looksLikeValidNumber"
+              }
+            ]
+          },
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "tools.jackson.core:jackson-core",
+            "repo": "https://github.com/FasterXML/jackson-core",
+            "programFiles": null,
+            "programRoutines": [
+              {
+                "name": "tools.jackson.core.io.NumberInput.looksLikeValidNumber"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-89425",
+        "vulnStatus": "Deferred",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "com.fasterxml.jackson.core:jackson-core",
+            "repo": "https://github.com/FasterXML/jackson-core",
+            "programFiles": null,
+            "programRoutines": [
+              {
+                "name": "com.fasterxml.jackson.core.json.UTF8DataInputJsonParser._reportInvalidToken"
+              }
+            ]
+          },
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "tools.jackson.core:jackson-core",
+            "repo": "https://github.com/FasterXML/jackson-core",
+            "programFiles": null,
+            "programRoutines": [
+              {
+                "name": "tools.jackson.core.json.UTF8DataInputJsonParser._reportInvalidToken"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-91776",
+        "vulnStatus": "Deferred",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "com.fasterxml.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": null,
+            "programRoutines": [
+              {
+                "name": "com.fasterxml.jackson.databind.jsontype.impl.TypeDeserializerBase._findDeserializer"
+              }
+            ]
+          },
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "tools.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": null,
+            "programRoutines": [
+              {
+                "name": "tools.jackson.databind.jsontype.impl.TypeDeserializerBase._findDeserializer"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "CVE-2026-91777",
+        "vulnStatus": "Deferred",
+        "configurationsState": "missing",
+        "hasCpeConfiguration": false,
+        "sourceClaims": [
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "com.fasterxml.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": null,
+            "programRoutines": [
+              {
+                "name": "com.fasterxml.jackson.databind.deser.std.CollectionDeserializer.CollectionReferringAccumulator.resolveForwardReference"
+              },
+              {
+                "name": "com.fasterxml.jackson.databind.deser.std.MapDeserializer.MapReferringAccumulator.resolveForwardReference"
+              }
+            ]
+          },
+          {
+            "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+            "packageName": "tools.jackson.core:jackson-databind",
+            "repo": "https://github.com/FasterXML/jackson-databind",
+            "programFiles": null,
+            "programRoutines": [
+              {
+                "name": "tools.jackson.databind.deser.jdk.CollectionDeserializer.CollectionReferringAccumulator.resolveForwardReference"
+              },
+              {
+                "name": "tools.jackson.databind.deser.jdk.MapDeserializer.MapReferringAccumulator.resolveForwardReference"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "nvdLiveSpotCheck": {
+    "requestUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-18401",
+    "successfulResponse": true,
+    "selectedCveFields": {
+      "id": "CVE-2026-18401",
+      "published": "2026-08-04T15:16:29.900",
+      "lastModified": "2026-10-23T23:10:00.157",
+      "vulnStatus": "Awaiting Analysis",
+      "configurationsState": "missing",
+      "affected": [
+        {
+          "source": "36c7be3b-2937-45df-85ea-ca7133ea542c",
+          "affectedData": [
+            {
+              "vendor": "FasterXML",
+              "product": "jackson-core",
+              "defaultStatus": "unaffected",
+              "collectionURL": "https://repo.maven.apache.org/maven2",
+              "packageName": "com.fasterxml.jackson.core:jackson-core",
+              "programFiles": [
+                "src/main/java/com/fasterxml/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java"
+              ],
+              "programRoutines": [
+                {
+                  "name": "NonBlockingUtf8JsonParserBase._finishNumberIntegralPart"
+                },
+                {
+                  "name": "NonBlockingUtf8JsonParserBase._valueComplete"
+                }
+              ],
+              "repo": "https://github.com/FasterXML/jackson-core",
+              "versions": [
+                {
+                  "version": "2.15.0",
+                  "lessThanOrEqual": "2.18.5",
+                  "versionType": "maven",
+                  "status": "affected"
+                },
+                {
+                  "version": "2.18.6",
+                  "versionType": "maven",
+                  "status": "unaffected"
+                },
+                {
+                  "version": "2.19.0",
+                  "lessThan": "2.21.1",
+                  "versionType": "maven",
+                  "status": "affected"
+                },
+                {
+                  "version": "2.21.1",
+                  "versionType": "maven",
+                  "status": "unaffected"
+                }
+              ]
+            },
+            {
+              "vendor": "FasterXML",
+              "product": "jackson-core",
+              "defaultStatus": "unaffected",
+              "collectionURL": "https://repo.maven.apache.org/maven2",
+              "packageName": "tools.jackson.core:jackson-core",
+              "programFiles": [
+                "src/main/java/tools/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java"
+              ],
+              "programRoutines": [
+                {
+                  "name": "NonBlockingUtf8JsonParserBase._finishNumberIntegralPart"
+                },
+                {
+                  "name": "NonBlockingUtf8JsonParserBase._valueComplete"
+                }
+              ],
+              "repo": "https://github.com/FasterXML/jackson-core",
+              "versions": [
+                {
+                  "version": "3.0.0",
+                  "lessThan": "3.1.0",
+                  "versionType": "maven",
+                  "status": "affected"
+                },
+                {
+                  "version": "3.1.0",
+                  "versionType": "maven",
+                  "status": "unaffected"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "originalCnaRecordUrl": "https://github.com/CVEProject/cvelistV5/blob/main/cves/2026/18xxx/CVE-2026-18401.json"
+  },
+  "githubApiSpotChecks": [
+    {
+      "requestUrl": "https://api.github.com/advisories/GHSA-jhq6-gfmj-v8fx",
+      "successfulResponse": true,
+      "selectedAdvisoryFields": {
+        "ghsa_id": "GHSA-jhq6-gfmj-v8fx",
+        "cve_id": "CVE-2026-10532",
+        "published_at": "2026-06-01T15:30:40Z",
+        "updated_at": "2026-07-15T21:52:55Z",
+        "source_code_location": "https://github.com/qos-ch/logback",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "maven",
+              "name": "ch.qos.logback:logback-core"
+            },
+            "vulnerable_version_range": "< 1.5.34",
+            "first_patched_version": "1.5.34",
+            "vulnerable_functions": []
+          }
+        ]
+      }
+    },
+    {
+      "requestUrl": "https://api.github.com/advisories/GHSA-27j2-h3m2-8237",
+      "successfulResponse": true,
+      "selectedAdvisoryFields": {
+        "ghsa_id": "GHSA-27j2-h3m2-8237",
+        "cve_id": "CVE-2026-84939",
+        "published_at": "2026-09-10T06:31:45Z",
+        "updated_at": "2026-09-24T19:08:24Z",
+        "source_code_location": "https://github.com/apache/freemarker",
+        "vulnerabilities": [
+          {
+            "package": {
+              "ecosystem": "maven",
+              "name": "org.freemarker:freemarker"
+            },
+            "vulnerable_version_range": ">= 2.2.0, <= 2.3.34",
+            "first_patched_version": "2.3.35",
+            "vulnerable_functions": []
+          }
+        ]
+      }
+    }
+  ],
+  "goExample": {
+    "requestUrl": "https://vuln.go.dev/ID/GO-2024-2609.json",
+    "successfulResponse": true,
+    "symbolField": "affected[].ecosystem_specific.imports[].symbols",
+    "selectedRecordFields": {
+      "id": "GO-2024-2609",
+      "modified": "2024-05-20T16:03:47Z",
+      "published": "2024-03-05T22:15:04Z",
+      "aliases": [
+        "CVE-2024-24784"
+      ],
+      "affected": [
+        {
+          "package": {
+            "name": "stdlib",
+            "ecosystem": "Go"
+          },
+          "ranges": [
+            {
+              "type": "SEMVER",
+              "events": [
+                {
+                  "introduced": "0"
+                },
+                {
+                  "fixed": "1.21.8"
+                },
+                {
+                  "introduced": "1.22.0-0"
+                },
+                {
+                  "fixed": "1.22.1"
+                }
+              ]
+            }
+          ],
+          "ecosystem_specific": {
+            "imports": [
+              {
+                "path": "net/mail",
+                "symbols": [
+                  "Address.String",
+                  "AddressParser.Parse",
+                  "AddressParser.ParseList",
+                  "Header.AddressList",
+                  "ParseAddress",
+                  "ParseAddressList",
+                  "addrParser.consumeGroupList",
+                  "addrParser.consumePhrase",
+                  "isAtext"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "database_specific": {
+        "url": "https://pkg.go.dev/vuln/GO-2024-2609",
+        "review_status": "REVIEWED"
+      }
+    }
+  },
+  "rustSecExample": {
+    "sourceUrl": "https://github.com/rustsec/advisory-db/blob/osv/crates/RUSTSEC-2026-0334.json",
+    "successfulResponse": true,
+    "symbolField": "affected[].ecosystem_specific.affects.functions",
+    "selectedRecordFields": {
+      "id": "RUSTSEC-2026-0334",
+      "modified": "2026-10-09T08:12:02Z",
+      "published": "2026-08-14T12:00:00Z",
+      "aliases": [
+        "GHSA-5chw-87w3-j9cv"
+      ],
+      "affected": [
+        {
+          "package": {
+            "ecosystem": "crates.io",
+            "name": "bip322",
+            "purl": "pkg:cargo/bip322"
+          },
+          "ecosystem_specific": {
+            "affects": {
+              "arch": [],
+              "os": [],
+              "functions": [
+                "bip322::verify_full",
+                "bip322::verify_full_encoded",
+                "bip322::verify_simple",
+                "bip322::verify_simple_encoded"
+              ]
+            },
+            "affected_functions": null
+          },
+          "database_specific": {
+            "categories": [
+              "crypto-failure"
+            ],
+            "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+            "informational": null
+          },
+          "ranges": [
+            {
+              "type": "SEMVER",
+              "events": [
+                {
+                  "introduced": "0.0.6"
+                },
+                {
+                  "fixed": "0.0.11"
+                }
+              ]
+            }
+          ],
+          "versions": []
+        }
+      ]
+    }
+  },
+  "inputDigests": [
+    {
+      "sha256": "15f71717c63408d0cc60445bab41f70928b5227c02727fb7b0cae129c25f9584",
+      "path": ".scratch/verification/nvd-divergence/selected-records.json"
+    },
+    {
+      "sha256": "30f2fbd6796a588f0ee899c579892f0117f767c24499a47dd93b48fee13cea93",
+      "path": ".scratch/verification/structured-advisory-research/live/nvd-CVE-2026-18401.json"
+    },
+    {
+      "sha256": "a9edb9a4f9af54d7789abfd07b6347c51524ca0c4e90081b73aeab1d05cb41a6",
+      "path": ".scratch/verification/structured-advisory-research/live/GO-2024-2609.json"
+    },
+    {
+      "sha256": "2359434b6f146aa3c77dd23cc94a5a92df21e53cc45fae08061d96baa9164e95",
+      "path": ".scratch/verification/structured-advisory-research/live/GHSA-jhq6-gfmj-v8fx.json"
+    },
+    {
+      "sha256": "b21a817becee308f89f970d2fb015d83e0a33b7de0fdaace6668a07c4f8ee239",
+      "path": ".scratch/verification/structured-advisory-research/live/GHSA-27j2-h3m2-8237.json"
+    },
+    {
+      "sha256": "5c75ced49b0087014e49c36df54f9525d1f0f97c080dfddd50db3de5b9198859",
+      "path": ".scratch/verification/maven-advisory-timelines/cve-records/CVE-2026-10532.json"
+    },
+    {
+      "sha256": "2d2dd0ed05861a1c41ce4844674c189ced7658e72a83f8fe215ea8b365758700",
+      "path": ".scratch/verification/maven-advisory-timelines/cve-records/CVE-2026-9828.json"
+    }
+  ]
+}

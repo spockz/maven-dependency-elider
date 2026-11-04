@@ -5,6 +5,8 @@
 
 Open
 
+Continue the empirical NVD/OSV/GHSA coverage investigation in [RQ-0020](RQ-0020-advisory-source-coverage-and-scanner-finding-projections.md). That living record distinguishes coarse CPE associations, package-mapping gaps, and projected scanner finding reduction from the more detailed assessment and proof evidence considered here.
+
 ## Current boundary
 
 Dependency Elider's vulnerability assessment engine ([`MavenVulnerabilityAssessment.java`](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenVulnerabilityAssessment.java)) operates under a strict "Fail-Closed" and "Zero Hallucinated VEX" invariant established in [ADR-0003](../adr/0003-proguard-core-intra-jar-trimming-and-cyclonedx-pedigree.md), [ADR-0006](../adr/0006-dual-source-vulnerability-advisory-ingestion-from-cvelist-v5-and-osv-maven.md), and [ADR-0007](../adr/0007-proven-serviceloader-spi-roots-and-conservative-cve-exclusions.md):

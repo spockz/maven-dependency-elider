@@ -1,0 +1,61 @@
+{
+  "purpose": "Dated public-source observations supporting RQ-0020's additional-advisory-source evaluation; not an authenticated scan or a plugin index payload.",
+  "checkedOn": "2026-11-04",
+  "source": "Snyk",
+  "observationScope": "One Tomcat package-mapping example, one Jackson technical-detail example, and public API documentation.",
+  "tomcatPublicPage": {
+    "url": "https://security.snyk.io/vuln/SNYK-JAVA-ORGAPACHETOMCATEMBED-20304748",
+    "advisoryId": "SNYK-JAVA-ORGAPACHETOMCATEMBED-20304748",
+    "cveId": "CVE-2026-68763",
+    "mavenPackage": "org.apache.tomcat.embed:tomcat-embed-core",
+    "comparedVersion": "10.1.31",
+    "pagePublishedDate": "2026-09-30",
+    "pageDisclosedDate": "2026-08-26",
+    "headline10_1Interval": "[10.1.0-M1,10.1.59)",
+    "proseExcludedFixedCandidate": "10.1.58",
+    "normalizationStatus": "Headline/prose exception requires reconciliation; no general range normalization performed.",
+    "earlierOsvMavenQueryReturnedThisCve": false,
+    "baselineEvidence": "2026-11-04-findings.json",
+    "caveat": "Evidence of a package association absent from the earlier OSV result, not an additional globally unknown CVE or proof of all-source completeness."
+  },
+  "jacksonPublicPage": {
+    "url": "https://security.snyk.io/vuln/SNYK-JAVA-TOOLSJACKSONCORE-15365915",
+    "advisoryId": "SNYK-JAVA-TOOLSJACKSONCORE-15365915",
+    "cveId": "CVE-2026-18401",
+    "mavenPackage": "tools.jackson.core:jackson-core",
+    "headlineInterval": "[3.0.0,3.1.0)",
+    "technicalDetailObserved": [
+      "Narrative explanation",
+      "Demonstration code"
+    ],
+    "reusableStructuredJavaMethodMappingEstablished": false,
+    "caveat": "This 3.x package is distinct from the Spring example's Jackson 2.x coordinate; demonstration code is not a complete affected-class declaration."
+  },
+  "apiDocumentation": {
+    "packageIssuesUrl": "https://docs.snyk.io/developer-tools/snyk-api/using-specific-snyk-apis/issues-list-issues-for-a-package",
+    "overviewUrl": "https://docs.snyk.io/developer-tools/snyk-api/snyk-api",
+    "documentedPackageIdentity": "PURL, including Maven",
+    "documentedQueryScope": "Issues in the named package/version; does not traverse its dependencies.",
+    "authenticationRequired": true,
+    "majorityOfApisEnterpriseRestrictedPerOverview": true,
+    "authenticatedApiRequestsPerformed": false,
+    "accountSpecificEntitlementChecked": false,
+    "completeBulkFeedEstablished": false,
+    "reusableJavaClassOrMethodExportEstablished": false,
+    "cachingAndRedistributionRightsEstablished": false,
+    "caveat": "Unestablished access, export and data-use conditions remain open questions, not claims of absence or prohibition."
+  },
+  "researchRecommendation": {
+    "retainCurrentDefaultSources": true,
+    "benchmarkOptionalEnrichment": true,
+    "benchmarkMetrics": [
+      "Additional CVE/component/version associations after alias deduplication",
+      "Useful mappings for globally known CVEs",
+      "First observed usable mapping availability",
+      "Populated attributable code-location claims",
+      "Ambiguous/conflicting scope",
+      "API completeness and consumption conditions"
+    ],
+    "sourceIntegrationImplemented": false
+  }
+}

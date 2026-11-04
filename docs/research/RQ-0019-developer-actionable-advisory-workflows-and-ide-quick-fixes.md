@@ -5,6 +5,8 @@
 
 Open
 
+Sharing reviewed mappings across teams as a versioned Maven dependency is investigated in [RQ-0021](RQ-0021-centrally-distributed-vulnerability-mapping-dependencies.md). That record covers central distribution and project adoption, complementing the local editing and remediation workflows here.
+
 ## Context and Current Boundary
 
 In `maven-dependency-elider`, vulnerability assessment and VEX attestation adhere strictly to "Fail-Closed" and "Zero Hallucinated VEX" principles established in [ADR-0003](../adr/0003-proguard-core-intra-jar-trimming-and-cyclonedx-pedigree.md), [ADR-0006](../adr/0006-dual-source-vulnerability-advisory-ingestion-from-cvelist-v5-and-osv-maven.md), [ADR-0007](../adr/0007-proven-serviceloader-spi-roots-and-conservative-cve-exclusions.md), [ADR-0008](../adr/0008-precondition-gated-vex-attestations.md), and [RQ-0015](RQ-0015-actionable-advisory-gap-detection-and-heuristic-elision-candidates.md):

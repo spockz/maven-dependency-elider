@@ -1,0 +1,5071 @@
+{
+  "asOf": "2026-11-04",
+  "purpose": "Dated research evidence, not a plugin cache format or an exploitability assessment.",
+  "studyScope": "Baseline Spring Boot example before elision; cross-scanner counts are not an elision benefit measurement.",
+  "versions": {
+    "springBoot": "3.3.5",
+    "springFramework": "6.1.14",
+    "tomcat": "10.1.31",
+    "jackson": "2.18.2",
+    "dependencyCheck": "13.0.0",
+    "osvScanner": "2.7.0",
+    "osvScalibr": "0.5.3"
+  },
+  "dependencyCheck": {
+    "inventory": "Maven baseline scan with dependency-check-maven; includes shaded component report rows.",
+    "distinctCveCount": 104,
+    "distinctCveIds": [
+      "CVE-2024-50379",
+      "CVE-2024-52318",
+      "CVE-2024-54677",
+      "CVE-2024-56337",
+      "CVE-2025-24813",
+      "CVE-2025-31650",
+      "CVE-2025-31651",
+      "CVE-2025-46701",
+      "CVE-2025-48988",
+      "CVE-2025-48989",
+      "CVE-2025-49124",
+      "CVE-2025-49125",
+      "CVE-2025-52520",
+      "CVE-2025-53506",
+      "CVE-2025-55668",
+      "CVE-2025-55752",
+      "CVE-2025-55754",
+      "CVE-2025-61795",
+      "CVE-2025-66614",
+      "CVE-2025-7962",
+      "CVE-2026-22733",
+      "CVE-2026-22735",
+      "CVE-2026-22737",
+      "CVE-2026-22740",
+      "CVE-2026-22741",
+      "CVE-2026-22745",
+      "CVE-2026-24733",
+      "CVE-2026-24734",
+      "CVE-2026-24880",
+      "CVE-2026-25854",
+      "CVE-2026-29145",
+      "CVE-2026-29146",
+      "CVE-2026-34477",
+      "CVE-2026-34479",
+      "CVE-2026-34483",
+      "CVE-2026-34487",
+      "CVE-2026-34500",
+      "CVE-2026-40972",
+      "CVE-2026-40973",
+      "CVE-2026-40974",
+      "CVE-2026-40975",
+      "CVE-2026-40977",
+      "CVE-2026-41001",
+      "CVE-2026-41284",
+      "CVE-2026-41293",
+      "CVE-2026-41838",
+      "CVE-2026-41839",
+      "CVE-2026-41840",
+      "CVE-2026-41841",
+      "CVE-2026-41842",
+      "CVE-2026-41843",
+      "CVE-2026-41844",
+      "CVE-2026-41845",
+      "CVE-2026-41846",
+      "CVE-2026-41848",
+      "CVE-2026-41850",
+      "CVE-2026-41851",
+      "CVE-2026-41852",
+      "CVE-2026-41853",
+      "CVE-2026-41855",
+      "CVE-2026-42498",
+      "CVE-2026-43512",
+      "CVE-2026-43513",
+      "CVE-2026-43514",
+      "CVE-2026-43515",
+      "CVE-2026-47884",
+      "CVE-2026-47885",
+      "CVE-2026-47886",
+      "CVE-2026-47887",
+      "CVE-2026-47888",
+      "CVE-2026-47891",
+      "CVE-2026-47892",
+      "CVE-2026-47893",
+      "CVE-2026-49844",
+      "CVE-2026-50229",
+      "CVE-2026-53404",
+      "CVE-2026-53434",
+      "CVE-2026-54512",
+      "CVE-2026-54513",
+      "CVE-2026-54514",
+      "CVE-2026-54515",
+      "CVE-2026-55276",
+      "CVE-2026-55955",
+      "CVE-2026-55956",
+      "CVE-2026-55957",
+      "CVE-2026-59083",
+      "CVE-2026-59084",
+      "CVE-2026-59280",
+      "CVE-2026-59281",
+      "CVE-2026-59282",
+      "CVE-2026-59283",
+      "CVE-2026-59313",
+      "CVE-2026-59314",
+      "CVE-2026-65182",
+      "CVE-2026-65183",
+      "CVE-2026-65905",
+      "CVE-2026-65927",
+      "CVE-2026-66299",
+      "CVE-2026-66422",
+      "CVE-2026-68525",
+      "CVE-2026-68569",
+      "CVE-2026-68763",
+      "CVE-2026-73180",
+      "CVE-2026-84939"
+    ],
+    "reportEntriesWithFindings": 9,
+    "physicalArchiveCountWithFindings": 7,
+    "severityByDistinctCve": [
+      {
+        "severity": "CRITICAL",
+        "count": 25
+      },
+      {
+        "severity": "HIGH",
+        "count": 40
+      },
+      {
+        "severity": "LOW",
+        "count": 5
+      },
+      {
+        "severity": "MEDIUM",
+        "count": 34
+      }
+    ],
+    "findingRows": [
+      {
+        "fileName": "freemarker-2.3.33.jar",
+        "packageUrls": [
+          "pkg:maven/org.freemarker/freemarker@2.3.33"
+        ],
+        "cveIds": [
+          "CVE-2026-84939"
+        ],
+        "sources": [
+          "NVD"
+        ]
+      },
+      {
+        "fileName": "jackson-databind-2.18.2.jar",
+        "packageUrls": [
+          "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.18.2"
+        ],
+        "cveIds": [
+          "CVE-2026-54512",
+          "CVE-2026-54513",
+          "CVE-2026-54514",
+          "CVE-2026-54515"
+        ],
+        "sources": [
+          "NVD"
+        ]
+      },
+      {
+        "fileName": "jakarta.mail-2.0.3.jar (shaded: org.eclipse.angus:angus-core:2.0.3)",
+        "packageUrls": [
+          "pkg:maven/org.eclipse.angus/angus-core@2.0.3"
+        ],
+        "cveIds": [
+          "CVE-2025-7962"
+        ],
+        "sources": [
+          "NVD"
+        ]
+      },
+      {
+        "fileName": "jakarta.mail-2.0.3.jar (shaded: org.eclipse.angus:angus-mail:2.0.3)",
+        "packageUrls": [
+          "pkg:maven/org.eclipse.angus/angus-mail@2.0.3"
+        ],
+        "cveIds": [
+          "CVE-2025-7962"
+        ],
+        "sources": [
+          "NVD"
+        ]
+      },
+      {
+        "fileName": "jakarta.mail-2.0.3.jar",
+        "packageUrls": [
+          "pkg:maven/org.eclipse.angus/jakarta.mail@2.0.3"
+        ],
+        "cveIds": [
+          "CVE-2025-7962"
+        ],
+        "sources": [
+          "NVD"
+        ]
+      },
+      {
+        "fileName": "log4j-api-2.23.1.jar",
+        "packageUrls": [
+          "pkg:maven/org.apache.logging.log4j/log4j-api@2.23.1"
+        ],
+        "cveIds": [
+          "CVE-2026-34477",
+          "CVE-2026-34479",
+          "CVE-2026-49844"
+        ],
+        "sources": [
+          "NVD"
+        ]
+      },
+      {
+        "fileName": "spring-boot-3.3.5.jar",
+        "packageUrls": [
+          "pkg:maven/org.springframework.boot/spring-boot@3.3.5"
+        ],
+        "cveIds": [
+          "CVE-2026-22733",
+          "CVE-2026-40972",
+          "CVE-2026-40973",
+          "CVE-2026-40974",
+          "CVE-2026-40975",
+          "CVE-2026-40977",
+          "CVE-2026-41001"
+        ],
+        "sources": [
+          "NVD"
+        ]
+      },
+      {
+        "fileName": "spring-core-6.1.14.jar",
+        "packageUrls": [
+          "pkg:maven/org.springframework/spring-core@6.1.14"
+        ],
+        "cveIds": [
+          "CVE-2026-22735",
+          "CVE-2026-22737",
+          "CVE-2026-22740",
+          "CVE-2026-22741",
+          "CVE-2026-22745",
+          "CVE-2026-41838",
+          "CVE-2026-41839",
+          "CVE-2026-41840",
+          "CVE-2026-41841",
+          "CVE-2026-41842",
+          "CVE-2026-41843",
+          "CVE-2026-41844",
+          "CVE-2026-41845",
+          "CVE-2026-41846",
+          "CVE-2026-41848",
+          "CVE-2026-41850",
+          "CVE-2026-41851",
+          "CVE-2026-41852",
+          "CVE-2026-41853",
+          "CVE-2026-41855",
+          "CVE-2026-47884",
+          "CVE-2026-47885",
+          "CVE-2026-47886",
+          "CVE-2026-47887",
+          "CVE-2026-47888",
+          "CVE-2026-47891",
+          "CVE-2026-47892",
+          "CVE-2026-47893",
+          "CVE-2026-59280",
+          "CVE-2026-59281",
+          "CVE-2026-59282",
+          "CVE-2026-59283",
+          "CVE-2026-59313",
+          "CVE-2026-59314"
+        ],
+        "sources": [
+          "NVD"
+        ]
+      },
+      {
+        "fileName": "tomcat-embed-core-10.1.31.jar",
+        "packageUrls": [
+          "pkg:maven/org.apache.tomcat.embed/tomcat-embed-core@10.1.31"
+        ],
+        "cveIds": [
+          "CVE-2024-50379",
+          "CVE-2024-52318",
+          "CVE-2024-54677",
+          "CVE-2024-56337",
+          "CVE-2025-24813",
+          "CVE-2025-31650",
+          "CVE-2025-31651",
+          "CVE-2025-46701",
+          "CVE-2025-48988",
+          "CVE-2025-48989",
+          "CVE-2025-49124",
+          "CVE-2025-49125",
+          "CVE-2025-52520",
+          "CVE-2025-53506",
+          "CVE-2025-55668",
+          "CVE-2025-55752",
+          "CVE-2025-55754",
+          "CVE-2025-61795",
+          "CVE-2025-66614",
+          "CVE-2026-24733",
+          "CVE-2026-24734",
+          "CVE-2026-24880",
+          "CVE-2026-25854",
+          "CVE-2026-29145",
+          "CVE-2026-29146",
+          "CVE-2026-34483",
+          "CVE-2026-34487",
+          "CVE-2026-34500",
+          "CVE-2026-41284",
+          "CVE-2026-41293",
+          "CVE-2026-42498",
+          "CVE-2026-43512",
+          "CVE-2026-43513",
+          "CVE-2026-43514",
+          "CVE-2026-43515",
+          "CVE-2026-50229",
+          "CVE-2026-53404",
+          "CVE-2026-53434",
+          "CVE-2026-55276",
+          "CVE-2026-55955",
+          "CVE-2026-55956",
+          "CVE-2026-55957",
+          "CVE-2026-59083",
+          "CVE-2026-59084",
+          "CVE-2026-65182",
+          "CVE-2026-65183",
+          "CVE-2026-65905",
+          "CVE-2026-65927",
+          "CVE-2026-66299",
+          "CVE-2026-66422",
+          "CVE-2026-68525",
+          "CVE-2026-68569",
+          "CVE-2026-68763",
+          "CVE-2026-73180"
+        ],
+        "sources": [
+          "NVD"
+        ]
+      }
+    ]
+  },
+  "osv": {
+    "runtimeInventory": {
+      "identifiedRows": 63,
+      "distinctPackageIdentities": 63,
+      "packagesWithFindings": 15,
+      "distinctCveIds": [
+        "CVE-2024-12798",
+        "CVE-2024-12801",
+        "CVE-2024-50379",
+        "CVE-2024-56337",
+        "CVE-2025-11226",
+        "CVE-2025-22233",
+        "CVE-2025-22235",
+        "CVE-2025-24813",
+        "CVE-2025-31650",
+        "CVE-2025-31651",
+        "CVE-2025-41234",
+        "CVE-2025-41242",
+        "CVE-2025-41249",
+        "CVE-2025-46701",
+        "CVE-2025-48988",
+        "CVE-2025-48989",
+        "CVE-2025-49124",
+        "CVE-2025-49125",
+        "CVE-2025-52520",
+        "CVE-2025-53506",
+        "CVE-2025-55668",
+        "CVE-2025-55752",
+        "CVE-2025-55754",
+        "CVE-2025-61795",
+        "CVE-2025-66614",
+        "CVE-2026-10532",
+        "CVE-2026-1225",
+        "CVE-2026-18401",
+        "CVE-2026-19032",
+        "CVE-2026-22733",
+        "CVE-2026-22735",
+        "CVE-2026-22737",
+        "CVE-2026-22741",
+        "CVE-2026-22745",
+        "CVE-2026-24734",
+        "CVE-2026-24880",
+        "CVE-2026-25854",
+        "CVE-2026-34483",
+        "CVE-2026-34487",
+        "CVE-2026-40973",
+        "CVE-2026-40984",
+        "CVE-2026-41001",
+        "CVE-2026-41284",
+        "CVE-2026-41293",
+        "CVE-2026-41841",
+        "CVE-2026-41842",
+        "CVE-2026-41843",
+        "CVE-2026-41844",
+        "CVE-2026-41845",
+        "CVE-2026-41846",
+        "CVE-2026-41848",
+        "CVE-2026-41850",
+        "CVE-2026-41851",
+        "CVE-2026-41852",
+        "CVE-2026-41853",
+        "CVE-2026-42498",
+        "CVE-2026-43512",
+        "CVE-2026-43513",
+        "CVE-2026-43514",
+        "CVE-2026-43515",
+        "CVE-2026-47884",
+        "CVE-2026-49844",
+        "CVE-2026-53404",
+        "CVE-2026-54512",
+        "CVE-2026-54513",
+        "CVE-2026-54514",
+        "CVE-2026-54515",
+        "CVE-2026-55276",
+        "CVE-2026-55956",
+        "CVE-2026-55957",
+        "CVE-2026-59888",
+        "CVE-2026-59889",
+        "CVE-2026-65182",
+        "CVE-2026-65905",
+        "CVE-2026-68494",
+        "CVE-2026-68497",
+        "CVE-2026-68525",
+        "CVE-2026-77310",
+        "CVE-2026-83557",
+        "CVE-2026-84939",
+        "CVE-2026-89407",
+        "CVE-2026-89425",
+        "CVE-2026-91776",
+        "CVE-2026-91777",
+        "CVE-2026-9828"
+      ],
+      "distinctCveCount": 85,
+      "distinctAdvisoryIds": [
+        "GHSA-23hv-mwm6-g8jf",
+        "GHSA-25qh-j22f-pwp8",
+        "GHSA-25xr-qj8w-c4vf",
+        "GHSA-27hp-xhwr-wr2m",
+        "GHSA-27j2-h3m2-8237",
+        "GHSA-3chg-m5w7-qfv5",
+        "GHSA-3p2h-wqq4-wf4h",
+        "GHSA-3pjw-73gf-8qr5",
+        "GHSA-42wg-hm62-jcwg",
+        "GHSA-4773-3jfm-qmx3",
+        "GHSA-4wp7-92pw-q264",
+        "GHSA-563x-q5rq-57qp",
+        "GHSA-5gvw-p9qm-jgwh",
+        "GHSA-5j33-cvvr-w245",
+        "GHSA-5jmj-h7xm-6q6v",
+        "GHSA-5m62-pw8w-7w9f",
+        "GHSA-5mp6-jrq3-r938",
+        "GHSA-5v3h-fjv2-54fg",
+        "GHSA-659m-px2c-25wj",
+        "GHSA-6hcq-hmm3-jj3c",
+        "GHSA-6p4f-wcwh-5vvm",
+        "GHSA-6r3c-xf4w-jxjm",
+        "GHSA-6v67-2wr5-gvf4",
+        "GHSA-72hv-8253-57qq",
+        "GHSA-72pg-x5f8-j25j",
+        "GHSA-7895-gffq-w6jq",
+        "GHSA-7hhh-6rmp-j9qf",
+        "GHSA-83qj-6fr2-vhqg",
+        "GHSA-957g-f97v-vppc",
+        "GHSA-9f52-rjqv-25qv",
+        "GHSA-9m3c-qcxr-9x87",
+        "GHSA-9m89-8frq-c98c",
+        "GHSA-9xv2-5v5q-p794",
+        "GHSA-cjpg-rgq5-fr37",
+        "GHSA-cxp5-3px4-pw24",
+        "GHSA-ff77-26x5-69cr",
+        "GHSA-fpj8-gq4v-p354",
+        "GHSA-fv25-8xcx-gqjc",
+        "GHSA-g3pr-3p32-fp23",
+        "GHSA-gcx9-497g-6cp6",
+        "GHSA-ggg2-9786-hwc8",
+        "GHSA-gqp3-2cvr-x8m3",
+        "GHSA-gx5v-xp9w-j4cg",
+        "GHSA-gx83-3vf8-gh7j",
+        "GHSA-h2fw-rfh5-95r3",
+        "GHSA-h3gc-qfqq-6h8f",
+        "GHSA-h3qp-gqrc-q736",
+        "GHSA-h3x4-894j-xpx5",
+        "GHSA-h6fc-48rj-7qqh",
+        "GHSA-h792-v28v-ppgr",
+        "GHSA-hgj6-7826-r7m5",
+        "GHSA-hgrr-935x-pq79",
+        "GHSA-j3rv-43j4-c7qm",
+        "GHSA-jhq6-gfmj-v8fx",
+        "GHSA-jmp9-x22r-554x",
+        "GHSA-mgp5-rv84-w37q",
+        "GHSA-mgvc-8q2h-5pgc",
+        "GHSA-mhm7-754m-9p8w",
+        "GHSA-mq64-j8f9-9gcj",
+        "GHSA-mqg3-r7h5-24x4",
+        "GHSA-p47f-322f-whfh",
+        "GHSA-p6pp-m3f8-5c89",
+        "GHSA-pc63-qcmh-9cmg",
+        "GHSA-pr98-23f8-jwxv",
+        "GHSA-q4xh-88c3-wmh7",
+        "GHSA-qqpg-mvqg-649v",
+        "GHSA-qv9r-c865-cp47",
+        "GHSA-r29c-68gh-xp6x",
+        "GHSA-r5w3-xv2f-j59q",
+        "GHSA-r7wm-3cxj-wff9",
+        "GHSA-r936-gwx5-v52f",
+        "GHSA-rc42-6c7j-7h5r",
+        "GHSA-rmj7-2vxq-3g9f",
+        "GHSA-rv64-5gf8-9qq8",
+        "GHSA-vfww-5hm6-hx2j",
+        "GHSA-vvgp-rfg2-7rr6",
+        "GHSA-wc4r-xq3c-5cf3",
+        "GHSA-wg35-8jpf-2xv3",
+        "GHSA-wjgm-6hv5-3cvf",
+        "GHSA-wmwf-9ccg-fff5",
+        "GHSA-wr62-c79q-cv37",
+        "GHSA-wv8q-qhhj-9h54",
+        "GHSA-wwpq-f5c3-7hvx",
+        "GHSA-wxpp-56q6-5pcg",
+        "GHSA-x23c-287f-qqv5",
+        "GHSA-x4m4-345f-5h5g"
+      ],
+      "findingRows": [
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.freemarker:freemarker",
+            "version": "2.3.33",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.freemarker/freemarker@2.3.33?type=jar"
+          },
+          "cveIds": [
+            "CVE-2026-84939"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-27j2-h3m2-8237",
+              "aliases": [
+                "CVE-2026-84939"
+              ],
+              "published": "2026-09-10T06:31:45Z",
+              "modified": "2026-09-24T19:15:05.725637844Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-27j2-h3m2-8237"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "com.fasterxml.jackson.core:jackson-core",
+            "version": "2.18.2",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-core@2.18.2?type=jar"
+          },
+          "cveIds": [
+            "CVE-2026-18401",
+            "CVE-2026-68494",
+            "CVE-2026-89407",
+            "CVE-2026-89425"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-72hv-8253-57qq",
+              "aliases": [
+                "CVE-2026-18401"
+              ],
+              "published": "2026-02-28T02:01:05Z",
+              "modified": "2026-09-10T03:50:34.318297905Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-72hv-8253-57qq"
+            },
+            {
+              "id": "GHSA-7hhh-6rmp-j9qf",
+              "aliases": [
+                "CVE-2026-89425"
+              ],
+              "published": "2026-10-01T15:20:27Z",
+              "modified": "2026-10-01T15:30:05.552671898Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-7hhh-6rmp-j9qf"
+            },
+            {
+              "id": "GHSA-p6pp-m3f8-5c89",
+              "aliases": [
+                "CVE-2026-89407"
+              ],
+              "published": "2026-10-01T15:19:21Z",
+              "modified": "2026-10-01T15:30:13.452657713Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-p6pp-m3f8-5c89"
+            },
+            {
+              "id": "GHSA-r7wm-3cxj-wff9",
+              "aliases": [
+                "CVE-2026-68494"
+              ],
+              "published": "2026-07-21T21:58:53Z",
+              "modified": "2026-10-02T23:15:06.853935725Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r7wm-3cxj-wff9"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "com.fasterxml.jackson.core:jackson-databind",
+            "version": "2.18.2",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.18.2?type=jar"
+          },
+          "cveIds": [
+            "CVE-2026-19032",
+            "CVE-2026-54512",
+            "CVE-2026-54513",
+            "CVE-2026-54514",
+            "CVE-2026-54515",
+            "CVE-2026-59888",
+            "CVE-2026-59889",
+            "CVE-2026-68497",
+            "CVE-2026-77310",
+            "CVE-2026-83557",
+            "CVE-2026-91776",
+            "CVE-2026-91777"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-3pjw-73gf-8qr5",
+              "aliases": [
+                "CVE-2026-59888"
+              ],
+              "published": "2026-07-21T19:33:06Z",
+              "modified": "2026-09-10T03:51:10.312389083Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-3pjw-73gf-8qr5"
+            },
+            {
+              "id": "GHSA-5gvw-p9qm-jgwh",
+              "aliases": [
+                "CVE-2026-59889"
+              ],
+              "published": "2026-07-21T22:00:43Z",
+              "modified": "2026-10-19T19:45:04.650428177Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5gvw-p9qm-jgwh"
+            },
+            {
+              "id": "GHSA-5jmj-h7xm-6q6v",
+              "aliases": [
+                "CVE-2026-54515"
+              ],
+              "published": "2026-06-23T21:23:58Z",
+              "modified": "2026-09-10T03:51:08.069993966Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5jmj-h7xm-6q6v"
+            },
+            {
+              "id": "GHSA-cxp5-3px4-pw24",
+              "aliases": [
+                "CVE-2026-91777"
+              ],
+              "published": "2026-09-30T15:37:24Z",
+              "modified": "2026-09-30T15:46:18.051343022Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-cxp5-3px4-pw24"
+            },
+            {
+              "id": "GHSA-gx83-3vf8-gh7j",
+              "aliases": [
+                "CVE-2026-83557"
+              ],
+              "published": "2026-09-28T20:44:25Z",
+              "modified": "2026-09-28T21:00:05.608227628Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-gx83-3vf8-gh7j"
+            },
+            {
+              "id": "GHSA-hgj6-7826-r7m5",
+              "aliases": [
+                "CVE-2026-54514"
+              ],
+              "published": "2026-06-23T21:22:54Z",
+              "modified": "2026-09-10T03:50:49.909813840Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-hgj6-7826-r7m5"
+            },
+            {
+              "id": "GHSA-j3rv-43j4-c7qm",
+              "aliases": [
+                "CVE-2026-54512"
+              ],
+              "published": "2026-06-23T21:21:38Z",
+              "modified": "2026-10-28T10:56:49.472327085Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-j3rv-43j4-c7qm"
+            },
+            {
+              "id": "GHSA-mhm7-754m-9p8w",
+              "aliases": null,
+              "published": "2026-07-21T19:40:12Z",
+              "modified": "2026-09-10T03:50:52.852212609Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mhm7-754m-9p8w"
+            },
+            {
+              "id": "GHSA-q4xh-88c3-wmh7",
+              "aliases": [
+                "CVE-2026-68497"
+              ],
+              "published": "2026-09-28T20:19:46Z",
+              "modified": "2026-09-28T20:30:05.315085978Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-q4xh-88c3-wmh7"
+            },
+            {
+              "id": "GHSA-rmj7-2vxq-3g9f",
+              "aliases": [
+                "CVE-2026-54513"
+              ],
+              "published": "2026-06-23T21:22:15Z",
+              "modified": "2026-09-11T15:45:08.499771763Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-rmj7-2vxq-3g9f"
+            },
+            {
+              "id": "GHSA-vvgp-rfg2-7rr6",
+              "aliases": [
+                "CVE-2026-77310"
+              ],
+              "published": "2026-09-28T20:17:41Z",
+              "modified": "2026-09-28T20:30:05.324367371Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-vvgp-rfg2-7rr6"
+            },
+            {
+              "id": "GHSA-wjgm-6hv5-3cvf",
+              "aliases": [
+                "CVE-2026-19032"
+              ],
+              "published": "2026-09-28T20:19:19Z",
+              "modified": "2026-09-28T20:30:05.331167692Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wjgm-6hv5-3cvf"
+            },
+            {
+              "id": "GHSA-wv8q-qhhj-9h54",
+              "aliases": [
+                "CVE-2026-91776"
+              ],
+              "published": "2026-09-30T15:36:55Z",
+              "modified": "2026-09-30T15:46:18.451708212Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wv8q-qhhj-9h54"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.apache.logging.log4j:log4j-api",
+            "version": "2.23.1",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.apache.logging.log4j/log4j-api@2.23.1?type=jar"
+          },
+          "cveIds": [
+            "CVE-2026-49844"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-qv9r-c865-cp47",
+              "aliases": [
+                "CVE-2026-49844"
+              ],
+              "published": "2026-07-11T00:31:48Z",
+              "modified": "2026-09-10T03:50:52.972700022Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-qv9r-c865-cp47"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "ch.qos.logback:logback-core",
+            "version": "1.5.11",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/ch.qos.logback/logback-core@1.5.11?type=jar"
+          },
+          "cveIds": [
+            "CVE-2024-12798",
+            "CVE-2024-12801",
+            "CVE-2025-11226",
+            "CVE-2026-10532",
+            "CVE-2026-1225",
+            "CVE-2026-9828"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-25qh-j22f-pwp8",
+              "aliases": [
+                "CVE-2025-11226"
+              ],
+              "published": "2025-10-01T09:30:24Z",
+              "modified": "2026-09-10T03:50:29.081250287Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-25qh-j22f-pwp8"
+            },
+            {
+              "id": "GHSA-6v67-2wr5-gvf4",
+              "aliases": [
+                "CVE-2024-12801"
+              ],
+              "published": "2024-12-19T18:31:37Z",
+              "modified": "2026-09-10T03:50:21.323991997Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6v67-2wr5-gvf4"
+            },
+            {
+              "id": "GHSA-jhq6-gfmj-v8fx",
+              "aliases": [
+                "CVE-2026-10532"
+              ],
+              "published": "2026-06-01T15:30:40Z",
+              "modified": "2026-09-10T03:50:50.074688321Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-jhq6-gfmj-v8fx"
+            },
+            {
+              "id": "GHSA-p47f-322f-whfh",
+              "aliases": [
+                "CVE-2026-9828"
+              ],
+              "published": "2026-05-28T15:39:50Z",
+              "modified": "2026-09-10T03:50:47.152421417Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-p47f-322f-whfh"
+            },
+            {
+              "id": "GHSA-pr98-23f8-jwxv",
+              "aliases": [
+                "CVE-2024-12798"
+              ],
+              "published": "2024-12-19T18:31:37Z",
+              "modified": "2026-09-10T03:50:21.783184580Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-pr98-23f8-jwxv"
+            },
+            {
+              "id": "GHSA-qqpg-mvqg-649v",
+              "aliases": [
+                "CVE-2026-1225"
+              ],
+              "published": "2026-01-22T12:31:22Z",
+              "modified": "2026-09-10T03:50:33.725359105Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-qqpg-mvqg-649v"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "io.micrometer:micrometer-core",
+            "version": "1.13.6",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/io.micrometer/micrometer-core@1.13.6?type=jar"
+          },
+          "cveIds": [
+            "CVE-2026-40984"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-g3pr-3p32-fp23",
+              "aliases": [
+                "CVE-2026-40984"
+              ],
+              "published": "2026-06-09T06:31:56Z",
+              "modified": "2026-09-11T15:45:08.795437706Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-g3pr-3p32-fp23"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.springframework.boot:spring-boot",
+            "version": "3.3.5",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework.boot/spring-boot@3.3.5?type=jar"
+          },
+          "cveIds": [
+            "CVE-2025-22235",
+            "CVE-2026-40973"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-rc42-6c7j-7h5r",
+              "aliases": [
+                "CVE-2025-22235"
+              ],
+              "published": "2025-04-28T09:31:53Z",
+              "modified": "2026-09-10T03:50:24.246697135Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-rc42-6c7j-7h5r"
+            },
+            {
+              "id": "GHSA-wwpq-f5c3-7hvx",
+              "aliases": [
+                "CVE-2026-40973"
+              ],
+              "published": "2026-04-28T00:31:41Z",
+              "modified": "2026-09-10T03:51:04.035674492Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wwpq-f5c3-7hvx"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.springframework.boot:spring-boot-autoconfigure",
+            "version": "3.3.5",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework.boot/spring-boot-autoconfigure@3.3.5?type=jar"
+          },
+          "cveIds": [
+            "CVE-2026-41001"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-ggg2-9786-hwc8",
+              "aliases": [
+                "CVE-2026-41001"
+              ],
+              "published": "2026-06-11T09:31:56Z",
+              "modified": "2026-09-10T03:51:08.972811216Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-ggg2-9786-hwc8"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.springframework.boot:spring-boot-starter-actuator",
+            "version": "3.3.5",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework.boot/spring-boot-starter-actuator@3.3.5?type=jar"
+          },
+          "cveIds": [
+            "CVE-2026-22733"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-mgvc-8q2h-5pgc",
+              "aliases": [
+                "CVE-2026-22733"
+              ],
+              "published": "2026-03-20T00:31:28Z",
+              "modified": "2026-09-10T03:50:40.101209162Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mgvc-8q2h-5pgc"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.springframework:spring-context",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-context@6.1.14?type=jar"
+          },
+          "cveIds": [
+            "CVE-2025-22233"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-4wp7-92pw-q264",
+              "aliases": [
+                "CVE-2025-22233"
+              ],
+              "published": "2025-05-16T21:32:12Z",
+              "modified": "2026-09-10T03:50:24.401937154Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-4wp7-92pw-q264"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.springframework:spring-core",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-core@6.1.14?type=jar"
+          },
+          "cveIds": [
+            "CVE-2025-41249",
+            "CVE-2026-41848"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-659m-px2c-25wj",
+              "aliases": [
+                "CVE-2026-41848"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:48.636887140Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-659m-px2c-25wj"
+            },
+            {
+              "id": "GHSA-jmp9-x22r-554x",
+              "aliases": [
+                "CVE-2025-41249"
+              ],
+              "published": "2025-09-16T15:32:34Z",
+              "modified": "2026-09-10T03:50:28.526913629Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-jmp9-x22r-554x"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.springframework:spring-expression",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-expression@6.1.14?type=jar"
+          },
+          "cveIds": [
+            "CVE-2026-41850",
+            "CVE-2026-41851",
+            "CVE-2026-41852"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-9f52-rjqv-25qv",
+              "aliases": [
+                "CVE-2026-41852"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:49.325466833Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-9f52-rjqv-25qv"
+            },
+            {
+              "id": "GHSA-r5w3-xv2f-j59q",
+              "aliases": [
+                "CVE-2026-41850"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:50.592219153Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r5w3-xv2f-j59q"
+            },
+            {
+              "id": "GHSA-wxpp-56q6-5pcg",
+              "aliases": [
+                "CVE-2026-41851"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:51.051005886Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wxpp-56q6-5pcg"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.springframework:spring-web",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-web@6.1.14?type=jar"
+          },
+          "cveIds": [
+            "CVE-2025-41234"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-6r3c-xf4w-jxjm",
+              "aliases": [
+                "CVE-2025-41234"
+              ],
+              "published": "2025-06-13T00:33:18Z",
+              "modified": "2026-09-10T03:50:25.010163414Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6r3c-xf4w-jxjm"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.springframework:spring-webmvc",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-webmvc@6.1.14?type=jar"
+          },
+          "cveIds": [
+            "CVE-2025-41242",
+            "CVE-2026-22735",
+            "CVE-2026-22737",
+            "CVE-2026-22741",
+            "CVE-2026-22745",
+            "CVE-2026-41841",
+            "CVE-2026-41842",
+            "CVE-2026-41843",
+            "CVE-2026-41844",
+            "CVE-2026-41845",
+            "CVE-2026-41846",
+            "CVE-2026-41853",
+            "CVE-2026-47884"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-3chg-m5w7-qfv5",
+              "aliases": [
+                "CVE-2026-41845"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:55.485813575Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-3chg-m5w7-qfv5"
+            },
+            {
+              "id": "GHSA-4773-3jfm-qmx3",
+              "aliases": [
+                "CVE-2026-22737"
+              ],
+              "published": "2026-03-20T00:31:28Z",
+              "modified": "2026-09-10T03:50:37.345211234Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-4773-3jfm-qmx3"
+            },
+            {
+              "id": "GHSA-6hcq-hmm3-jj3c",
+              "aliases": [
+                "CVE-2026-22735"
+              ],
+              "published": "2026-03-20T00:31:28Z",
+              "modified": "2026-09-10T03:51:00.075344686Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6hcq-hmm3-jj3c"
+            },
+            {
+              "id": "GHSA-6p4f-wcwh-5vvm",
+              "aliases": [
+                "CVE-2026-22745"
+              ],
+              "published": "2026-04-29T12:33:07Z",
+              "modified": "2026-09-10T03:50:43.783544605Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6p4f-wcwh-5vvm"
+            },
+            {
+              "id": "GHSA-72pg-x5f8-j25j",
+              "aliases": [
+                "CVE-2026-41843"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:49.015129767Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-72pg-x5f8-j25j"
+            },
+            {
+              "id": "GHSA-957g-f97v-vppc",
+              "aliases": [
+                "CVE-2026-41846"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:49.221153674Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-957g-f97v-vppc"
+            },
+            {
+              "id": "GHSA-cjpg-rgq5-fr37",
+              "aliases": [
+                "CVE-2026-41853"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:51:08.751198453Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-cjpg-rgq5-fr37"
+            },
+            {
+              "id": "GHSA-h3qp-gqrc-q736",
+              "aliases": [
+                "CVE-2026-41844"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:49.910720570Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h3qp-gqrc-q736"
+            },
+            {
+              "id": "GHSA-mq64-j8f9-9gcj",
+              "aliases": [
+                "CVE-2026-41841"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:51:09.434155277Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mq64-j8f9-9gcj"
+            },
+            {
+              "id": "GHSA-pc63-qcmh-9cmg",
+              "aliases": [
+                "CVE-2026-47884"
+              ],
+              "published": "2026-08-27T06:31:34Z",
+              "modified": "2026-10-05T23:30:04.884745277Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-pc63-qcmh-9cmg"
+            },
+            {
+              "id": "GHSA-r936-gwx5-v52f",
+              "aliases": [
+                "CVE-2025-41242"
+              ],
+              "published": "2025-08-18T09:31:44Z",
+              "modified": "2026-09-10T03:50:27.662656136Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r936-gwx5-v52f"
+            },
+            {
+              "id": "GHSA-wg35-8jpf-2xv3",
+              "aliases": [
+                "CVE-2026-22741"
+              ],
+              "published": "2026-04-29T12:33:07Z",
+              "modified": "2026-09-10T03:51:04.065980932Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wg35-8jpf-2xv3"
+            },
+            {
+              "id": "GHSA-x23c-287f-qqv5",
+              "aliases": [
+                "CVE-2026-41842"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:51.456648476Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-x23c-287f-qqv5"
+            }
+          ]
+        },
+        {
+          "inputName": "runtime-sbom.cdx.json",
+          "inputType": "sbom",
+          "package": {
+            "name": "org.apache.tomcat.embed:tomcat-embed-core",
+            "version": "10.1.31",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.apache.tomcat.embed/tomcat-embed-core@10.1.31?type=jar"
+          },
+          "cveIds": [
+            "CVE-2024-50379",
+            "CVE-2024-56337",
+            "CVE-2025-24813",
+            "CVE-2025-31650",
+            "CVE-2025-31651",
+            "CVE-2025-46701",
+            "CVE-2025-48988",
+            "CVE-2025-48989",
+            "CVE-2025-49124",
+            "CVE-2025-49125",
+            "CVE-2025-52520",
+            "CVE-2025-53506",
+            "CVE-2025-55668",
+            "CVE-2025-55752",
+            "CVE-2025-55754",
+            "CVE-2025-61795",
+            "CVE-2025-66614",
+            "CVE-2026-24734",
+            "CVE-2026-24880",
+            "CVE-2026-25854",
+            "CVE-2026-34483",
+            "CVE-2026-34487",
+            "CVE-2026-41284",
+            "CVE-2026-41293",
+            "CVE-2026-42498",
+            "CVE-2026-43512",
+            "CVE-2026-43513",
+            "CVE-2026-43514",
+            "CVE-2026-43515",
+            "CVE-2026-53404",
+            "CVE-2026-55276",
+            "CVE-2026-55956",
+            "CVE-2026-55957",
+            "CVE-2026-65182",
+            "CVE-2026-65905",
+            "CVE-2026-68525"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-23hv-mwm6-g8jf",
+              "aliases": [
+                "BIT-tomcat-2025-55668",
+                "CVE-2025-55668"
+              ],
+              "published": "2025-08-13T15:30:34Z",
+              "modified": "2026-07-01T16:30:08.497253076Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-23hv-mwm6-g8jf"
+            },
+            {
+              "id": "GHSA-25xr-qj8w-c4vf",
+              "aliases": [
+                "BIT-tomcat-2025-53506",
+                "CVE-2025-53506"
+              ],
+              "published": "2025-07-10T21:31:53Z",
+              "modified": "2026-09-10T03:50:25.989583964Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-25xr-qj8w-c4vf"
+            },
+            {
+              "id": "GHSA-27hp-xhwr-wr2m",
+              "aliases": [
+                "BIT-tomcat-2024-56337",
+                "CVE-2024-56337"
+              ],
+              "published": "2024-12-20T18:31:32Z",
+              "modified": "2026-09-10T03:50:56.287801425Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-27hp-xhwr-wr2m"
+            },
+            {
+              "id": "GHSA-3p2h-wqq4-wf4h",
+              "aliases": [
+                "BIT-tomcat-2025-31650",
+                "CVE-2025-31650"
+              ],
+              "published": "2025-04-28T21:30:43Z",
+              "modified": "2026-09-10T03:50:57.424635503Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-3p2h-wqq4-wf4h"
+            },
+            {
+              "id": "GHSA-42wg-hm62-jcwg",
+              "aliases": [
+                "BIT-tomcat-2025-49124",
+                "CVE-2025-49124"
+              ],
+              "published": "2025-06-16T15:32:28Z",
+              "modified": "2025-10-29T16:13:33.340454Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-42wg-hm62-jcwg"
+            },
+            {
+              "id": "GHSA-563x-q5rq-57qp",
+              "aliases": [
+                "BIT-tomcat-2026-24880",
+                "CVE-2026-24880"
+              ],
+              "published": "2026-04-09T21:31:29Z",
+              "modified": "2026-09-11T08:25:36.344434847Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-563x-q5rq-57qp"
+            },
+            {
+              "id": "GHSA-5j33-cvvr-w245",
+              "aliases": [
+                "BIT-tomcat-2024-50379",
+                "CVE-2024-50379"
+              ],
+              "published": "2024-12-17T15:31:43Z",
+              "modified": "2026-09-10T03:50:21.575819644Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5j33-cvvr-w245"
+            },
+            {
+              "id": "GHSA-5m62-pw8w-7w9f",
+              "aliases": [
+                "BIT-tomcat-2026-43515",
+                "CVE-2026-43515"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:25.696036560Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5m62-pw8w-7w9f"
+            },
+            {
+              "id": "GHSA-5mp6-jrq3-r938",
+              "aliases": [
+                "BIT-tomcat-2026-43513",
+                "CVE-2026-43513"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:26.202863452Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5mp6-jrq3-r938"
+            },
+            {
+              "id": "GHSA-5v3h-fjv2-54fg",
+              "aliases": [
+                "BIT-tomcat-2026-55956",
+                "CVE-2026-55956"
+              ],
+              "published": "2026-06-29T21:32:15Z",
+              "modified": "2026-11-04T16:41:04.583757097Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5v3h-fjv2-54fg"
+            },
+            {
+              "id": "GHSA-7895-gffq-w6jq",
+              "aliases": [
+                "BIT-tomcat-2026-55957",
+                "CVE-2026-55957"
+              ],
+              "published": "2026-06-29T21:32:15Z",
+              "modified": "2026-11-04T16:41:00.614199414Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-7895-gffq-w6jq"
+            },
+            {
+              "id": "GHSA-83qj-6fr2-vhqg",
+              "aliases": [
+                "BIT-tomcat-2025-24813",
+                "CVE-2025-24813"
+              ],
+              "published": "2025-03-10T18:31:56Z",
+              "modified": "2026-09-10T03:50:23.313083129Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-83qj-6fr2-vhqg"
+            },
+            {
+              "id": "GHSA-9m3c-qcxr-9x87",
+              "aliases": [
+                "BIT-tomcat-2026-25854",
+                "CVE-2026-25854"
+              ],
+              "published": "2026-04-09T21:31:29Z",
+              "modified": "2026-09-11T08:25:31.206255258Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-9m3c-qcxr-9x87"
+            },
+            {
+              "id": "GHSA-9m89-8frq-c98c",
+              "aliases": [
+                "BIT-tomcat-2026-43514",
+                "CVE-2026-43514"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:30.451322281Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-9m89-8frq-c98c"
+            },
+            {
+              "id": "GHSA-9xv2-5v5q-p794",
+              "aliases": [
+                "BIT-tomcat-2026-65905",
+                "CVE-2026-65905"
+              ],
+              "published": "2026-08-26T00:30:52Z",
+              "modified": "2026-09-11T08:25:52.825871989Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-9xv2-5v5q-p794"
+            },
+            {
+              "id": "GHSA-ff77-26x5-69cr",
+              "aliases": [
+                "BIT-tomcat-2025-31651",
+                "CVE-2025-31651"
+              ],
+              "published": "2025-04-28T21:30:43Z",
+              "modified": "2026-09-10T03:50:24.113174461Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-ff77-26x5-69cr"
+            },
+            {
+              "id": "GHSA-fpj8-gq4v-p354",
+              "aliases": [
+                "BIT-tomcat-2025-66614",
+                "CVE-2025-66614"
+              ],
+              "published": "2026-02-17T21:31:13Z",
+              "modified": "2026-09-11T08:25:48.825991702Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-fpj8-gq4v-p354"
+            },
+            {
+              "id": "GHSA-fv25-8xcx-gqjc",
+              "aliases": [
+                "BIT-tomcat-2026-42498",
+                "CVE-2026-42498"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-10T03:51:05.853750997Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-fv25-8xcx-gqjc"
+            },
+            {
+              "id": "GHSA-gcx9-497g-6cp6",
+              "aliases": [
+                "BIT-tomcat-2026-65182",
+                "CVE-2026-65182"
+              ],
+              "published": "2026-08-26T00:30:52Z",
+              "modified": "2026-09-11T08:25:41.300012858Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-gcx9-497g-6cp6"
+            },
+            {
+              "id": "GHSA-gqp3-2cvr-x8m3",
+              "aliases": [
+                "BIT-tomcat-2025-48989",
+                "CVE-2025-48989"
+              ],
+              "published": "2025-08-13T15:30:34Z",
+              "modified": "2026-05-13T16:35:26.549711Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-gqp3-2cvr-x8m3"
+            },
+            {
+              "id": "GHSA-gx5v-xp9w-j4cg",
+              "aliases": [
+                "BIT-tomcat-2026-41284",
+                "CVE-2026-41284"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:36.520411734Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-gx5v-xp9w-j4cg"
+            },
+            {
+              "id": "GHSA-h2fw-rfh5-95r3",
+              "aliases": [
+                "BIT-tomcat-2025-46701",
+                "CVE-2025-46701"
+              ],
+              "published": "2025-05-29T21:31:37Z",
+              "modified": "2026-09-10T03:50:57.935292058Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h2fw-rfh5-95r3"
+            },
+            {
+              "id": "GHSA-h3gc-qfqq-6h8f",
+              "aliases": [
+                "BIT-tomcat-2025-48988",
+                "CVE-2025-48988"
+              ],
+              "published": "2025-06-16T15:32:28Z",
+              "modified": "2026-09-10T03:50:25.525981341Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h3gc-qfqq-6h8f"
+            },
+            {
+              "id": "GHSA-h3x4-894j-xpx5",
+              "aliases": [
+                "BIT-tomcat-2026-68525",
+                "CVE-2026-68525"
+              ],
+              "published": "2026-08-26T00:30:52Z",
+              "modified": "2026-09-11T08:25:40.118635278Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h3x4-894j-xpx5"
+            },
+            {
+              "id": "GHSA-h6fc-48rj-7qqh",
+              "aliases": [
+                "BIT-tomcat-2026-43512",
+                "CVE-2026-43512"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:26.501986953Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h6fc-48rj-7qqh"
+            },
+            {
+              "id": "GHSA-h792-v28v-ppgr",
+              "aliases": [
+                "BIT-tomcat-2026-53404",
+                "CVE-2026-53404"
+              ],
+              "published": "2026-06-29T21:32:15Z",
+              "modified": "2026-11-04T17:11:10.238803752Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h792-v28v-ppgr"
+            },
+            {
+              "id": "GHSA-hgrr-935x-pq79",
+              "aliases": [
+                "BIT-tomcat-2025-61795",
+                "CVE-2025-61795"
+              ],
+              "published": "2025-10-27T18:31:13Z",
+              "modified": "2026-09-10T03:50:30.251352491Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-hgrr-935x-pq79"
+            },
+            {
+              "id": "GHSA-mgp5-rv84-w37q",
+              "aliases": [
+                "BIT-tomcat-2026-24734",
+                "CVE-2026-24734"
+              ],
+              "published": "2026-02-17T21:31:13Z",
+              "modified": "2026-11-04T03:30:50.704997391Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mgp5-rv84-w37q"
+            },
+            {
+              "id": "GHSA-mqg3-r7h5-24x4",
+              "aliases": [
+                "BIT-tomcat-2026-55276",
+                "CVE-2026-55276"
+              ],
+              "published": "2026-06-29T21:32:15Z",
+              "modified": "2026-11-04T16:55:37.235582408Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mqg3-r7h5-24x4"
+            },
+            {
+              "id": "GHSA-r29c-68gh-xp6x",
+              "aliases": [
+                "BIT-tomcat-2026-41293",
+                "CVE-2026-41293"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-10T03:50:55.679134930Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r29c-68gh-xp6x"
+            },
+            {
+              "id": "GHSA-rv64-5gf8-9qq8",
+              "aliases": [
+                "BIT-tomcat-2026-34483",
+                "CVE-2026-34483"
+              ],
+              "published": "2026-04-09T21:31:30Z",
+              "modified": "2026-09-11T08:25:42.129097701Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-rv64-5gf8-9qq8"
+            },
+            {
+              "id": "GHSA-vfww-5hm6-hx2j",
+              "aliases": [
+                "BIT-tomcat-2025-55754",
+                "CVE-2025-55754"
+              ],
+              "published": "2025-10-27T18:31:13Z",
+              "modified": "2026-09-10T03:50:30.791118688Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-vfww-5hm6-hx2j"
+            },
+            {
+              "id": "GHSA-wc4r-xq3c-5cf3",
+              "aliases": [
+                "BIT-tomcat-2025-49125",
+                "CVE-2025-49125"
+              ],
+              "published": "2025-06-16T15:32:28Z",
+              "modified": "2026-09-10T03:50:26.000004953Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wc4r-xq3c-5cf3"
+            },
+            {
+              "id": "GHSA-wmwf-9ccg-fff5",
+              "aliases": [
+                "BIT-tomcat-2025-55752",
+                "CVE-2025-55752"
+              ],
+              "published": "2025-10-27T18:31:13Z",
+              "modified": "2026-09-10T03:50:30.776927726Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wmwf-9ccg-fff5"
+            },
+            {
+              "id": "GHSA-wr62-c79q-cv37",
+              "aliases": [
+                "BIT-tomcat-2025-52520",
+                "CVE-2025-52520"
+              ],
+              "published": "2025-07-10T21:31:52Z",
+              "modified": "2026-03-06T22:01:30.941844Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wr62-c79q-cv37"
+            },
+            {
+              "id": "GHSA-x4m4-345f-5h5g",
+              "aliases": [
+                "BIT-tomcat-2026-34487",
+                "CVE-2026-34487"
+              ],
+              "published": "2026-04-09T21:31:30Z",
+              "modified": "2026-09-11T08:25:51.806825759Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-x4m4-345f-5h5g"
+            }
+          ]
+        }
+      ]
+    },
+    "executableJar": {
+      "identifiedRows": 65,
+      "distinctPackageIdentities": 65,
+      "packagesWithFindings": 7,
+      "distinctCveIds": [
+        "CVE-2024-12798",
+        "CVE-2024-12801",
+        "CVE-2025-11226",
+        "CVE-2025-41234",
+        "CVE-2025-41242",
+        "CVE-2025-7962",
+        "CVE-2026-10532",
+        "CVE-2026-1225",
+        "CVE-2026-18401",
+        "CVE-2026-19032",
+        "CVE-2026-22735",
+        "CVE-2026-22737",
+        "CVE-2026-22741",
+        "CVE-2026-22745",
+        "CVE-2026-41841",
+        "CVE-2026-41842",
+        "CVE-2026-41843",
+        "CVE-2026-41844",
+        "CVE-2026-41845",
+        "CVE-2026-41846",
+        "CVE-2026-41853",
+        "CVE-2026-47884",
+        "CVE-2026-49844",
+        "CVE-2026-54512",
+        "CVE-2026-54513",
+        "CVE-2026-54514",
+        "CVE-2026-54515",
+        "CVE-2026-59888",
+        "CVE-2026-59889",
+        "CVE-2026-68494",
+        "CVE-2026-68497",
+        "CVE-2026-77310",
+        "CVE-2026-83557",
+        "CVE-2026-89407",
+        "CVE-2026-89425",
+        "CVE-2026-91776",
+        "CVE-2026-91777",
+        "CVE-2026-9828"
+      ],
+      "distinctCveCount": 38,
+      "distinctAdvisoryIds": [
+        "GHSA-25qh-j22f-pwp8",
+        "GHSA-3chg-m5w7-qfv5",
+        "GHSA-3pjw-73gf-8qr5",
+        "GHSA-4773-3jfm-qmx3",
+        "GHSA-5gvw-p9qm-jgwh",
+        "GHSA-5jmj-h7xm-6q6v",
+        "GHSA-6hcq-hmm3-jj3c",
+        "GHSA-6p4f-wcwh-5vvm",
+        "GHSA-6r3c-xf4w-jxjm",
+        "GHSA-6v67-2wr5-gvf4",
+        "GHSA-72hv-8253-57qq",
+        "GHSA-72pg-x5f8-j25j",
+        "GHSA-7hhh-6rmp-j9qf",
+        "GHSA-9342-92gg-6v29",
+        "GHSA-957g-f97v-vppc",
+        "GHSA-cjpg-rgq5-fr37",
+        "GHSA-cxp5-3px4-pw24",
+        "GHSA-gx83-3vf8-gh7j",
+        "GHSA-h3qp-gqrc-q736",
+        "GHSA-hgj6-7826-r7m5",
+        "GHSA-j3rv-43j4-c7qm",
+        "GHSA-jhq6-gfmj-v8fx",
+        "GHSA-mhm7-754m-9p8w",
+        "GHSA-mq64-j8f9-9gcj",
+        "GHSA-p47f-322f-whfh",
+        "GHSA-p6pp-m3f8-5c89",
+        "GHSA-pc63-qcmh-9cmg",
+        "GHSA-pr98-23f8-jwxv",
+        "GHSA-q4xh-88c3-wmh7",
+        "GHSA-qqpg-mvqg-649v",
+        "GHSA-qv9r-c865-cp47",
+        "GHSA-r7wm-3cxj-wff9",
+        "GHSA-r936-gwx5-v52f",
+        "GHSA-rmj7-2vxq-3g9f",
+        "GHSA-vvgp-rfg2-7rr6",
+        "GHSA-wg35-8jpf-2xv3",
+        "GHSA-wjgm-6hv5-3cvf",
+        "GHSA-wv8q-qhhj-9h54",
+        "GHSA-x23c-287f-qqv5"
+      ],
+      "findingRows": [
+        {
+          "inputName": "example-spring-boot-app-0.1.0-SNAPSHOT.jar",
+          "inputType": "artifact",
+          "package": {
+            "name": "ch.qos.logback:logback-core",
+            "version": "1.5.11",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/ch.qos.logback/logback-core@1.5.11"
+          },
+          "cveIds": [
+            "CVE-2024-12798",
+            "CVE-2024-12801",
+            "CVE-2025-11226",
+            "CVE-2026-10532",
+            "CVE-2026-1225",
+            "CVE-2026-9828"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-25qh-j22f-pwp8",
+              "aliases": [
+                "CVE-2025-11226"
+              ],
+              "published": "2025-10-01T09:30:24Z",
+              "modified": "2026-09-10T03:50:29.081250287Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-25qh-j22f-pwp8"
+            },
+            {
+              "id": "GHSA-6v67-2wr5-gvf4",
+              "aliases": [
+                "CVE-2024-12801"
+              ],
+              "published": "2024-12-19T18:31:37Z",
+              "modified": "2026-09-10T03:50:21.323991997Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6v67-2wr5-gvf4"
+            },
+            {
+              "id": "GHSA-jhq6-gfmj-v8fx",
+              "aliases": [
+                "CVE-2026-10532"
+              ],
+              "published": "2026-06-01T15:30:40Z",
+              "modified": "2026-09-10T03:50:50.074688321Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-jhq6-gfmj-v8fx"
+            },
+            {
+              "id": "GHSA-p47f-322f-whfh",
+              "aliases": [
+                "CVE-2026-9828"
+              ],
+              "published": "2026-05-28T15:39:50Z",
+              "modified": "2026-09-10T03:50:47.152421417Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-p47f-322f-whfh"
+            },
+            {
+              "id": "GHSA-pr98-23f8-jwxv",
+              "aliases": [
+                "CVE-2024-12798"
+              ],
+              "published": "2024-12-19T18:31:37Z",
+              "modified": "2026-09-10T03:50:21.783184580Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-pr98-23f8-jwxv"
+            },
+            {
+              "id": "GHSA-qqpg-mvqg-649v",
+              "aliases": [
+                "CVE-2026-1225"
+              ],
+              "published": "2026-01-22T12:31:22Z",
+              "modified": "2026-09-10T03:50:33.725359105Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-qqpg-mvqg-649v"
+            }
+          ]
+        },
+        {
+          "inputName": "example-spring-boot-app-0.1.0-SNAPSHOT.jar",
+          "inputType": "artifact",
+          "package": {
+            "name": "com.fasterxml.jackson.core:jackson-core",
+            "version": "2.18.2",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-core@2.18.2"
+          },
+          "cveIds": [
+            "CVE-2026-18401",
+            "CVE-2026-68494",
+            "CVE-2026-89407",
+            "CVE-2026-89425"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-72hv-8253-57qq",
+              "aliases": [
+                "CVE-2026-18401"
+              ],
+              "published": "2026-02-28T02:01:05Z",
+              "modified": "2026-09-10T03:50:34.318297905Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-72hv-8253-57qq"
+            },
+            {
+              "id": "GHSA-7hhh-6rmp-j9qf",
+              "aliases": [
+                "CVE-2026-89425"
+              ],
+              "published": "2026-10-01T15:20:27Z",
+              "modified": "2026-10-01T15:30:05.552671898Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-7hhh-6rmp-j9qf"
+            },
+            {
+              "id": "GHSA-p6pp-m3f8-5c89",
+              "aliases": [
+                "CVE-2026-89407"
+              ],
+              "published": "2026-10-01T15:19:21Z",
+              "modified": "2026-10-01T15:30:13.452657713Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-p6pp-m3f8-5c89"
+            },
+            {
+              "id": "GHSA-r7wm-3cxj-wff9",
+              "aliases": [
+                "CVE-2026-68494"
+              ],
+              "published": "2026-07-21T21:58:53Z",
+              "modified": "2026-10-02T23:15:06.853935725Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r7wm-3cxj-wff9"
+            }
+          ]
+        },
+        {
+          "inputName": "example-spring-boot-app-0.1.0-SNAPSHOT.jar",
+          "inputType": "artifact",
+          "package": {
+            "name": "com.fasterxml.jackson.core:jackson-databind",
+            "version": "2.18.2",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.18.2"
+          },
+          "cveIds": [
+            "CVE-2026-19032",
+            "CVE-2026-54512",
+            "CVE-2026-54513",
+            "CVE-2026-54514",
+            "CVE-2026-54515",
+            "CVE-2026-59888",
+            "CVE-2026-59889",
+            "CVE-2026-68497",
+            "CVE-2026-77310",
+            "CVE-2026-83557",
+            "CVE-2026-91776",
+            "CVE-2026-91777"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-3pjw-73gf-8qr5",
+              "aliases": [
+                "CVE-2026-59888"
+              ],
+              "published": "2026-07-21T19:33:06Z",
+              "modified": "2026-09-10T03:51:10.312389083Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-3pjw-73gf-8qr5"
+            },
+            {
+              "id": "GHSA-5gvw-p9qm-jgwh",
+              "aliases": [
+                "CVE-2026-59889"
+              ],
+              "published": "2026-07-21T22:00:43Z",
+              "modified": "2026-10-19T19:45:04.650428177Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5gvw-p9qm-jgwh"
+            },
+            {
+              "id": "GHSA-5jmj-h7xm-6q6v",
+              "aliases": [
+                "CVE-2026-54515"
+              ],
+              "published": "2026-06-23T21:23:58Z",
+              "modified": "2026-09-10T03:51:08.069993966Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5jmj-h7xm-6q6v"
+            },
+            {
+              "id": "GHSA-cxp5-3px4-pw24",
+              "aliases": [
+                "CVE-2026-91777"
+              ],
+              "published": "2026-09-30T15:37:24Z",
+              "modified": "2026-09-30T15:46:18.051343022Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-cxp5-3px4-pw24"
+            },
+            {
+              "id": "GHSA-gx83-3vf8-gh7j",
+              "aliases": [
+                "CVE-2026-83557"
+              ],
+              "published": "2026-09-28T20:44:25Z",
+              "modified": "2026-09-28T21:00:05.608227628Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-gx83-3vf8-gh7j"
+            },
+            {
+              "id": "GHSA-hgj6-7826-r7m5",
+              "aliases": [
+                "CVE-2026-54514"
+              ],
+              "published": "2026-06-23T21:22:54Z",
+              "modified": "2026-09-10T03:50:49.909813840Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-hgj6-7826-r7m5"
+            },
+            {
+              "id": "GHSA-j3rv-43j4-c7qm",
+              "aliases": [
+                "CVE-2026-54512"
+              ],
+              "published": "2026-06-23T21:21:38Z",
+              "modified": "2026-10-28T10:56:49.472327085Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-j3rv-43j4-c7qm"
+            },
+            {
+              "id": "GHSA-mhm7-754m-9p8w",
+              "aliases": null,
+              "published": "2026-07-21T19:40:12Z",
+              "modified": "2026-09-10T03:50:52.852212609Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mhm7-754m-9p8w"
+            },
+            {
+              "id": "GHSA-q4xh-88c3-wmh7",
+              "aliases": [
+                "CVE-2026-68497"
+              ],
+              "published": "2026-09-28T20:19:46Z",
+              "modified": "2026-09-28T20:30:05.315085978Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-q4xh-88c3-wmh7"
+            },
+            {
+              "id": "GHSA-rmj7-2vxq-3g9f",
+              "aliases": [
+                "CVE-2026-54513"
+              ],
+              "published": "2026-06-23T21:22:15Z",
+              "modified": "2026-09-11T15:45:08.499771763Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-rmj7-2vxq-3g9f"
+            },
+            {
+              "id": "GHSA-vvgp-rfg2-7rr6",
+              "aliases": [
+                "CVE-2026-77310"
+              ],
+              "published": "2026-09-28T20:17:41Z",
+              "modified": "2026-09-28T20:30:05.324367371Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-vvgp-rfg2-7rr6"
+            },
+            {
+              "id": "GHSA-wjgm-6hv5-3cvf",
+              "aliases": [
+                "CVE-2026-19032"
+              ],
+              "published": "2026-09-28T20:19:19Z",
+              "modified": "2026-09-28T20:30:05.331167692Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wjgm-6hv5-3cvf"
+            },
+            {
+              "id": "GHSA-wv8q-qhhj-9h54",
+              "aliases": [
+                "CVE-2026-91776"
+              ],
+              "published": "2026-09-30T15:36:55Z",
+              "modified": "2026-09-30T15:46:18.451708212Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wv8q-qhhj-9h54"
+            }
+          ]
+        },
+        {
+          "inputName": "example-spring-boot-app-0.1.0-SNAPSHOT.jar",
+          "inputType": "artifact",
+          "package": {
+            "name": "org.apache.logging.log4j:log4j-api",
+            "version": "2.23.1",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.apache.logging.log4j/log4j-api@2.23.1"
+          },
+          "cveIds": [
+            "CVE-2026-49844"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-qv9r-c865-cp47",
+              "aliases": [
+                "CVE-2026-49844"
+              ],
+              "published": "2026-07-11T00:31:48Z",
+              "modified": "2026-09-10T03:50:52.972700022Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-qv9r-c865-cp47"
+            }
+          ]
+        },
+        {
+          "inputName": "example-spring-boot-app-0.1.0-SNAPSHOT.jar",
+          "inputType": "artifact",
+          "package": {
+            "name": "org.eclipse.angus:smtp",
+            "version": "2.0.3",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.eclipse.angus/smtp@2.0.3"
+          },
+          "cveIds": [
+            "CVE-2025-7962"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-9342-92gg-6v29",
+              "aliases": [
+                "CVE-2025-7962"
+              ],
+              "published": "2025-07-21T18:32:19Z",
+              "modified": "2026-09-10T03:50:25.995445668Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-9342-92gg-6v29"
+            }
+          ]
+        },
+        {
+          "inputName": "example-spring-boot-app-0.1.0-SNAPSHOT.jar",
+          "inputType": "artifact",
+          "package": {
+            "name": "org.springframework:spring-web",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-web@6.1.14"
+          },
+          "cveIds": [
+            "CVE-2025-41234"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-6r3c-xf4w-jxjm",
+              "aliases": [
+                "CVE-2025-41234"
+              ],
+              "published": "2025-06-13T00:33:18Z",
+              "modified": "2026-09-10T03:50:25.010163414Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6r3c-xf4w-jxjm"
+            }
+          ]
+        },
+        {
+          "inputName": "example-spring-boot-app-0.1.0-SNAPSHOT.jar",
+          "inputType": "artifact",
+          "package": {
+            "name": "org.springframework:spring-webmvc",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-webmvc@6.1.14"
+          },
+          "cveIds": [
+            "CVE-2025-41242",
+            "CVE-2026-22735",
+            "CVE-2026-22737",
+            "CVE-2026-22741",
+            "CVE-2026-22745",
+            "CVE-2026-41841",
+            "CVE-2026-41842",
+            "CVE-2026-41843",
+            "CVE-2026-41844",
+            "CVE-2026-41845",
+            "CVE-2026-41846",
+            "CVE-2026-41853",
+            "CVE-2026-47884"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-3chg-m5w7-qfv5",
+              "aliases": [
+                "CVE-2026-41845"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:55.485813575Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-3chg-m5w7-qfv5"
+            },
+            {
+              "id": "GHSA-4773-3jfm-qmx3",
+              "aliases": [
+                "CVE-2026-22737"
+              ],
+              "published": "2026-03-20T00:31:28Z",
+              "modified": "2026-09-10T03:50:37.345211234Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-4773-3jfm-qmx3"
+            },
+            {
+              "id": "GHSA-6hcq-hmm3-jj3c",
+              "aliases": [
+                "CVE-2026-22735"
+              ],
+              "published": "2026-03-20T00:31:28Z",
+              "modified": "2026-09-10T03:51:00.075344686Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6hcq-hmm3-jj3c"
+            },
+            {
+              "id": "GHSA-6p4f-wcwh-5vvm",
+              "aliases": [
+                "CVE-2026-22745"
+              ],
+              "published": "2026-04-29T12:33:07Z",
+              "modified": "2026-09-10T03:50:43.783544605Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6p4f-wcwh-5vvm"
+            },
+            {
+              "id": "GHSA-72pg-x5f8-j25j",
+              "aliases": [
+                "CVE-2026-41843"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:49.015129767Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-72pg-x5f8-j25j"
+            },
+            {
+              "id": "GHSA-957g-f97v-vppc",
+              "aliases": [
+                "CVE-2026-41846"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:49.221153674Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-957g-f97v-vppc"
+            },
+            {
+              "id": "GHSA-cjpg-rgq5-fr37",
+              "aliases": [
+                "CVE-2026-41853"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:51:08.751198453Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-cjpg-rgq5-fr37"
+            },
+            {
+              "id": "GHSA-h3qp-gqrc-q736",
+              "aliases": [
+                "CVE-2026-41844"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:49.910720570Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h3qp-gqrc-q736"
+            },
+            {
+              "id": "GHSA-mq64-j8f9-9gcj",
+              "aliases": [
+                "CVE-2026-41841"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:51:09.434155277Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mq64-j8f9-9gcj"
+            },
+            {
+              "id": "GHSA-pc63-qcmh-9cmg",
+              "aliases": [
+                "CVE-2026-47884"
+              ],
+              "published": "2026-08-27T06:31:34Z",
+              "modified": "2026-10-05T23:30:04.884745277Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-pc63-qcmh-9cmg"
+            },
+            {
+              "id": "GHSA-r936-gwx5-v52f",
+              "aliases": [
+                "CVE-2025-41242"
+              ],
+              "published": "2025-08-18T09:31:44Z",
+              "modified": "2026-09-10T03:50:27.662656136Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r936-gwx5-v52f"
+            },
+            {
+              "id": "GHSA-wg35-8jpf-2xv3",
+              "aliases": [
+                "CVE-2026-22741"
+              ],
+              "published": "2026-04-29T12:33:07Z",
+              "modified": "2026-09-10T03:51:04.065980932Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wg35-8jpf-2xv3"
+            },
+            {
+              "id": "GHSA-x23c-287f-qqv5",
+              "aliases": [
+                "CVE-2026-41842"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:51.456648476Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-x23c-287f-qqv5"
+            }
+          ]
+        }
+      ]
+    },
+    "pom": {
+      "identifiedRows": 104,
+      "distinctPackageIdentities": 104,
+      "packagesWithFindings": 18,
+      "distinctCveIds": [
+        "CVE-2024-12798",
+        "CVE-2024-12801",
+        "CVE-2024-31573",
+        "CVE-2024-50379",
+        "CVE-2024-56337",
+        "CVE-2024-57699",
+        "CVE-2025-11226",
+        "CVE-2025-22233",
+        "CVE-2025-22235",
+        "CVE-2025-24813",
+        "CVE-2025-31650",
+        "CVE-2025-31651",
+        "CVE-2025-41234",
+        "CVE-2025-41242",
+        "CVE-2025-41249",
+        "CVE-2025-46701",
+        "CVE-2025-48988",
+        "CVE-2025-48989",
+        "CVE-2025-49124",
+        "CVE-2025-49125",
+        "CVE-2025-52520",
+        "CVE-2025-53506",
+        "CVE-2025-55668",
+        "CVE-2025-55752",
+        "CVE-2025-55754",
+        "CVE-2025-61795",
+        "CVE-2025-66614",
+        "CVE-2026-10532",
+        "CVE-2026-1225",
+        "CVE-2026-18401",
+        "CVE-2026-19032",
+        "CVE-2026-22733",
+        "CVE-2026-22735",
+        "CVE-2026-22737",
+        "CVE-2026-22741",
+        "CVE-2026-22745",
+        "CVE-2026-24400",
+        "CVE-2026-24734",
+        "CVE-2026-24880",
+        "CVE-2026-25854",
+        "CVE-2026-34483",
+        "CVE-2026-34487",
+        "CVE-2026-40973",
+        "CVE-2026-40984",
+        "CVE-2026-41001",
+        "CVE-2026-41284",
+        "CVE-2026-41293",
+        "CVE-2026-41841",
+        "CVE-2026-41842",
+        "CVE-2026-41843",
+        "CVE-2026-41844",
+        "CVE-2026-41845",
+        "CVE-2026-41846",
+        "CVE-2026-41848",
+        "CVE-2026-41850",
+        "CVE-2026-41851",
+        "CVE-2026-41852",
+        "CVE-2026-41853",
+        "CVE-2026-42498",
+        "CVE-2026-43512",
+        "CVE-2026-43513",
+        "CVE-2026-43514",
+        "CVE-2026-43515",
+        "CVE-2026-47884",
+        "CVE-2026-49844",
+        "CVE-2026-53404",
+        "CVE-2026-54512",
+        "CVE-2026-54513",
+        "CVE-2026-54514",
+        "CVE-2026-54515",
+        "CVE-2026-55276",
+        "CVE-2026-55956",
+        "CVE-2026-55957",
+        "CVE-2026-59888",
+        "CVE-2026-59889",
+        "CVE-2026-65182",
+        "CVE-2026-65905",
+        "CVE-2026-68494",
+        "CVE-2026-68497",
+        "CVE-2026-68525",
+        "CVE-2026-77310",
+        "CVE-2026-83557",
+        "CVE-2026-84939",
+        "CVE-2026-89407",
+        "CVE-2026-89425",
+        "CVE-2026-91776",
+        "CVE-2026-91777",
+        "CVE-2026-9828"
+      ],
+      "distinctCveCount": 88,
+      "distinctAdvisoryIds": [
+        "GHSA-23hv-mwm6-g8jf",
+        "GHSA-25qh-j22f-pwp8",
+        "GHSA-25xr-qj8w-c4vf",
+        "GHSA-27hp-xhwr-wr2m",
+        "GHSA-27j2-h3m2-8237",
+        "GHSA-3chg-m5w7-qfv5",
+        "GHSA-3p2h-wqq4-wf4h",
+        "GHSA-3pjw-73gf-8qr5",
+        "GHSA-42wg-hm62-jcwg",
+        "GHSA-4773-3jfm-qmx3",
+        "GHSA-4wp7-92pw-q264",
+        "GHSA-563x-q5rq-57qp",
+        "GHSA-5gvw-p9qm-jgwh",
+        "GHSA-5j33-cvvr-w245",
+        "GHSA-5jmj-h7xm-6q6v",
+        "GHSA-5m62-pw8w-7w9f",
+        "GHSA-5mp6-jrq3-r938",
+        "GHSA-5v3h-fjv2-54fg",
+        "GHSA-659m-px2c-25wj",
+        "GHSA-6hcq-hmm3-jj3c",
+        "GHSA-6p4f-wcwh-5vvm",
+        "GHSA-6r3c-xf4w-jxjm",
+        "GHSA-6v67-2wr5-gvf4",
+        "GHSA-72hv-8253-57qq",
+        "GHSA-72pg-x5f8-j25j",
+        "GHSA-7895-gffq-w6jq",
+        "GHSA-7hhh-6rmp-j9qf",
+        "GHSA-83qj-6fr2-vhqg",
+        "GHSA-957g-f97v-vppc",
+        "GHSA-9f52-rjqv-25qv",
+        "GHSA-9m3c-qcxr-9x87",
+        "GHSA-9m89-8frq-c98c",
+        "GHSA-9xv2-5v5q-p794",
+        "GHSA-chfm-68vv-pvw5",
+        "GHSA-cjpg-rgq5-fr37",
+        "GHSA-cxp5-3px4-pw24",
+        "GHSA-ff77-26x5-69cr",
+        "GHSA-fpj8-gq4v-p354",
+        "GHSA-fv25-8xcx-gqjc",
+        "GHSA-g3pr-3p32-fp23",
+        "GHSA-gcx9-497g-6cp6",
+        "GHSA-ggg2-9786-hwc8",
+        "GHSA-gqp3-2cvr-x8m3",
+        "GHSA-gx5v-xp9w-j4cg",
+        "GHSA-gx83-3vf8-gh7j",
+        "GHSA-h2fw-rfh5-95r3",
+        "GHSA-h3gc-qfqq-6h8f",
+        "GHSA-h3qp-gqrc-q736",
+        "GHSA-h3x4-894j-xpx5",
+        "GHSA-h6fc-48rj-7qqh",
+        "GHSA-h792-v28v-ppgr",
+        "GHSA-hgj6-7826-r7m5",
+        "GHSA-hgrr-935x-pq79",
+        "GHSA-j3rv-43j4-c7qm",
+        "GHSA-jhq6-gfmj-v8fx",
+        "GHSA-jmp9-x22r-554x",
+        "GHSA-mgp5-rv84-w37q",
+        "GHSA-mgvc-8q2h-5pgc",
+        "GHSA-mhm7-754m-9p8w",
+        "GHSA-mq64-j8f9-9gcj",
+        "GHSA-mqg3-r7h5-24x4",
+        "GHSA-p47f-322f-whfh",
+        "GHSA-p6pp-m3f8-5c89",
+        "GHSA-pc63-qcmh-9cmg",
+        "GHSA-pq2g-wx69-c263",
+        "GHSA-pr98-23f8-jwxv",
+        "GHSA-q4xh-88c3-wmh7",
+        "GHSA-qqpg-mvqg-649v",
+        "GHSA-qv9r-c865-cp47",
+        "GHSA-r29c-68gh-xp6x",
+        "GHSA-r5w3-xv2f-j59q",
+        "GHSA-r7wm-3cxj-wff9",
+        "GHSA-r936-gwx5-v52f",
+        "GHSA-rc42-6c7j-7h5r",
+        "GHSA-rmj7-2vxq-3g9f",
+        "GHSA-rqfh-9r24-8c9r",
+        "GHSA-rv64-5gf8-9qq8",
+        "GHSA-vfww-5hm6-hx2j",
+        "GHSA-vvgp-rfg2-7rr6",
+        "GHSA-wc4r-xq3c-5cf3",
+        "GHSA-wg35-8jpf-2xv3",
+        "GHSA-wjgm-6hv5-3cvf",
+        "GHSA-wmwf-9ccg-fff5",
+        "GHSA-wr62-c79q-cv37",
+        "GHSA-wv8q-qhhj-9h54",
+        "GHSA-wwpq-f5c3-7hvx",
+        "GHSA-wxpp-56q6-5pcg",
+        "GHSA-x23c-287f-qqv5",
+        "GHSA-x4m4-345f-5h5g"
+      ],
+      "findingRows": [
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "ch.qos.logback:logback-core",
+            "version": "1.5.11",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/ch.qos.logback/logback-core@1.5.11"
+          },
+          "cveIds": [
+            "CVE-2024-12798",
+            "CVE-2024-12801",
+            "CVE-2025-11226",
+            "CVE-2026-10532",
+            "CVE-2026-1225",
+            "CVE-2026-9828"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-25qh-j22f-pwp8",
+              "aliases": [
+                "CVE-2025-11226"
+              ],
+              "published": "2025-10-01T09:30:24Z",
+              "modified": "2026-09-10T03:50:29.081250287Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-25qh-j22f-pwp8"
+            },
+            {
+              "id": "GHSA-6v67-2wr5-gvf4",
+              "aliases": [
+                "CVE-2024-12801"
+              ],
+              "published": "2024-12-19T18:31:37Z",
+              "modified": "2026-09-10T03:50:21.323991997Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6v67-2wr5-gvf4"
+            },
+            {
+              "id": "GHSA-jhq6-gfmj-v8fx",
+              "aliases": [
+                "CVE-2026-10532"
+              ],
+              "published": "2026-06-01T15:30:40Z",
+              "modified": "2026-09-10T03:50:50.074688321Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-jhq6-gfmj-v8fx"
+            },
+            {
+              "id": "GHSA-p47f-322f-whfh",
+              "aliases": [
+                "CVE-2026-9828"
+              ],
+              "published": "2026-05-28T15:39:50Z",
+              "modified": "2026-09-10T03:50:47.152421417Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-p47f-322f-whfh"
+            },
+            {
+              "id": "GHSA-pr98-23f8-jwxv",
+              "aliases": [
+                "CVE-2024-12798"
+              ],
+              "published": "2024-12-19T18:31:37Z",
+              "modified": "2026-09-10T03:50:21.783184580Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-pr98-23f8-jwxv"
+            },
+            {
+              "id": "GHSA-qqpg-mvqg-649v",
+              "aliases": [
+                "CVE-2026-1225"
+              ],
+              "published": "2026-01-22T12:31:22Z",
+              "modified": "2026-09-10T03:50:33.725359105Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-qqpg-mvqg-649v"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "com.fasterxml.jackson.core:jackson-core",
+            "version": "2.18.2",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-core@2.18.2"
+          },
+          "cveIds": [
+            "CVE-2026-18401",
+            "CVE-2026-68494",
+            "CVE-2026-89407",
+            "CVE-2026-89425"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-72hv-8253-57qq",
+              "aliases": [
+                "CVE-2026-18401"
+              ],
+              "published": "2026-02-28T02:01:05Z",
+              "modified": "2026-09-10T03:50:34.318297905Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-72hv-8253-57qq"
+            },
+            {
+              "id": "GHSA-7hhh-6rmp-j9qf",
+              "aliases": [
+                "CVE-2026-89425"
+              ],
+              "published": "2026-10-01T15:20:27Z",
+              "modified": "2026-10-01T15:30:05.552671898Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-7hhh-6rmp-j9qf"
+            },
+            {
+              "id": "GHSA-p6pp-m3f8-5c89",
+              "aliases": [
+                "CVE-2026-89407"
+              ],
+              "published": "2026-10-01T15:19:21Z",
+              "modified": "2026-10-01T15:30:13.452657713Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-p6pp-m3f8-5c89"
+            },
+            {
+              "id": "GHSA-r7wm-3cxj-wff9",
+              "aliases": [
+                "CVE-2026-68494"
+              ],
+              "published": "2026-07-21T21:58:53Z",
+              "modified": "2026-10-02T23:15:06.853935725Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r7wm-3cxj-wff9"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "com.fasterxml.jackson.core:jackson-databind",
+            "version": "2.18.2",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.18.2"
+          },
+          "cveIds": [
+            "CVE-2026-19032",
+            "CVE-2026-54512",
+            "CVE-2026-54513",
+            "CVE-2026-54514",
+            "CVE-2026-54515",
+            "CVE-2026-59888",
+            "CVE-2026-59889",
+            "CVE-2026-68497",
+            "CVE-2026-77310",
+            "CVE-2026-83557",
+            "CVE-2026-91776",
+            "CVE-2026-91777"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-3pjw-73gf-8qr5",
+              "aliases": [
+                "CVE-2026-59888"
+              ],
+              "published": "2026-07-21T19:33:06Z",
+              "modified": "2026-09-10T03:51:10.312389083Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-3pjw-73gf-8qr5"
+            },
+            {
+              "id": "GHSA-5gvw-p9qm-jgwh",
+              "aliases": [
+                "CVE-2026-59889"
+              ],
+              "published": "2026-07-21T22:00:43Z",
+              "modified": "2026-10-19T19:45:04.650428177Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5gvw-p9qm-jgwh"
+            },
+            {
+              "id": "GHSA-5jmj-h7xm-6q6v",
+              "aliases": [
+                "CVE-2026-54515"
+              ],
+              "published": "2026-06-23T21:23:58Z",
+              "modified": "2026-09-10T03:51:08.069993966Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5jmj-h7xm-6q6v"
+            },
+            {
+              "id": "GHSA-cxp5-3px4-pw24",
+              "aliases": [
+                "CVE-2026-91777"
+              ],
+              "published": "2026-09-30T15:37:24Z",
+              "modified": "2026-09-30T15:46:18.051343022Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-cxp5-3px4-pw24"
+            },
+            {
+              "id": "GHSA-gx83-3vf8-gh7j",
+              "aliases": [
+                "CVE-2026-83557"
+              ],
+              "published": "2026-09-28T20:44:25Z",
+              "modified": "2026-09-28T21:00:05.608227628Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-gx83-3vf8-gh7j"
+            },
+            {
+              "id": "GHSA-hgj6-7826-r7m5",
+              "aliases": [
+                "CVE-2026-54514"
+              ],
+              "published": "2026-06-23T21:22:54Z",
+              "modified": "2026-09-10T03:50:49.909813840Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-hgj6-7826-r7m5"
+            },
+            {
+              "id": "GHSA-j3rv-43j4-c7qm",
+              "aliases": [
+                "CVE-2026-54512"
+              ],
+              "published": "2026-06-23T21:21:38Z",
+              "modified": "2026-10-28T10:56:49.472327085Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-j3rv-43j4-c7qm"
+            },
+            {
+              "id": "GHSA-mhm7-754m-9p8w",
+              "aliases": null,
+              "published": "2026-07-21T19:40:12Z",
+              "modified": "2026-09-10T03:50:52.852212609Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mhm7-754m-9p8w"
+            },
+            {
+              "id": "GHSA-q4xh-88c3-wmh7",
+              "aliases": [
+                "CVE-2026-68497"
+              ],
+              "published": "2026-09-28T20:19:46Z",
+              "modified": "2026-09-28T20:30:05.315085978Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-q4xh-88c3-wmh7"
+            },
+            {
+              "id": "GHSA-rmj7-2vxq-3g9f",
+              "aliases": [
+                "CVE-2026-54513"
+              ],
+              "published": "2026-06-23T21:22:15Z",
+              "modified": "2026-09-11T15:45:08.499771763Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-rmj7-2vxq-3g9f"
+            },
+            {
+              "id": "GHSA-vvgp-rfg2-7rr6",
+              "aliases": [
+                "CVE-2026-77310"
+              ],
+              "published": "2026-09-28T20:17:41Z",
+              "modified": "2026-09-28T20:30:05.324367371Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-vvgp-rfg2-7rr6"
+            },
+            {
+              "id": "GHSA-wjgm-6hv5-3cvf",
+              "aliases": [
+                "CVE-2026-19032"
+              ],
+              "published": "2026-09-28T20:19:19Z",
+              "modified": "2026-09-28T20:30:05.331167692Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wjgm-6hv5-3cvf"
+            },
+            {
+              "id": "GHSA-wv8q-qhhj-9h54",
+              "aliases": [
+                "CVE-2026-91776"
+              ],
+              "published": "2026-09-30T15:36:55Z",
+              "modified": "2026-09-30T15:46:18.451708212Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wv8q-qhhj-9h54"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "io.micrometer:micrometer-core",
+            "version": "1.13.6",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/io.micrometer/micrometer-core@1.13.6"
+          },
+          "cveIds": [
+            "CVE-2026-40984"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-g3pr-3p32-fp23",
+              "aliases": [
+                "CVE-2026-40984"
+              ],
+              "published": "2026-06-09T06:31:56Z",
+              "modified": "2026-09-11T15:45:08.795437706Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-g3pr-3p32-fp23"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "net.minidev:json-smart",
+            "version": "2.5.1",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/net.minidev/json-smart@2.5.1"
+          },
+          "cveIds": [
+            "CVE-2024-57699"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-pq2g-wx69-c263",
+              "aliases": [
+                "CVE-2024-57699"
+              ],
+              "published": "2025-02-06T06:31:26Z",
+              "modified": "2026-09-10T03:50:22.800274372Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-pq2g-wx69-c263"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.apache.logging.log4j:log4j-api",
+            "version": "2.23.1",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.apache.logging.log4j/log4j-api@2.23.1"
+          },
+          "cveIds": [
+            "CVE-2026-49844"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-qv9r-c865-cp47",
+              "aliases": [
+                "CVE-2026-49844"
+              ],
+              "published": "2026-07-11T00:31:48Z",
+              "modified": "2026-09-10T03:50:52.972700022Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-qv9r-c865-cp47"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.apache.tomcat.embed:tomcat-embed-core",
+            "version": "10.1.31",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.apache.tomcat.embed/tomcat-embed-core@10.1.31"
+          },
+          "cveIds": [
+            "CVE-2024-50379",
+            "CVE-2024-56337",
+            "CVE-2025-24813",
+            "CVE-2025-31650",
+            "CVE-2025-31651",
+            "CVE-2025-46701",
+            "CVE-2025-48988",
+            "CVE-2025-48989",
+            "CVE-2025-49124",
+            "CVE-2025-49125",
+            "CVE-2025-52520",
+            "CVE-2025-53506",
+            "CVE-2025-55668",
+            "CVE-2025-55752",
+            "CVE-2025-55754",
+            "CVE-2025-61795",
+            "CVE-2025-66614",
+            "CVE-2026-24734",
+            "CVE-2026-24880",
+            "CVE-2026-25854",
+            "CVE-2026-34483",
+            "CVE-2026-34487",
+            "CVE-2026-41284",
+            "CVE-2026-41293",
+            "CVE-2026-42498",
+            "CVE-2026-43512",
+            "CVE-2026-43513",
+            "CVE-2026-43514",
+            "CVE-2026-43515",
+            "CVE-2026-53404",
+            "CVE-2026-55276",
+            "CVE-2026-55956",
+            "CVE-2026-55957",
+            "CVE-2026-65182",
+            "CVE-2026-65905",
+            "CVE-2026-68525"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-23hv-mwm6-g8jf",
+              "aliases": [
+                "BIT-tomcat-2025-55668",
+                "CVE-2025-55668"
+              ],
+              "published": "2025-08-13T15:30:34Z",
+              "modified": "2026-07-01T16:30:08.497253076Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-23hv-mwm6-g8jf"
+            },
+            {
+              "id": "GHSA-25xr-qj8w-c4vf",
+              "aliases": [
+                "BIT-tomcat-2025-53506",
+                "CVE-2025-53506"
+              ],
+              "published": "2025-07-10T21:31:53Z",
+              "modified": "2026-09-10T03:50:25.989583964Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-25xr-qj8w-c4vf"
+            },
+            {
+              "id": "GHSA-27hp-xhwr-wr2m",
+              "aliases": [
+                "BIT-tomcat-2024-56337",
+                "CVE-2024-56337"
+              ],
+              "published": "2024-12-20T18:31:32Z",
+              "modified": "2026-09-10T03:50:56.287801425Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-27hp-xhwr-wr2m"
+            },
+            {
+              "id": "GHSA-3p2h-wqq4-wf4h",
+              "aliases": [
+                "BIT-tomcat-2025-31650",
+                "CVE-2025-31650"
+              ],
+              "published": "2025-04-28T21:30:43Z",
+              "modified": "2026-09-10T03:50:57.424635503Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-3p2h-wqq4-wf4h"
+            },
+            {
+              "id": "GHSA-42wg-hm62-jcwg",
+              "aliases": [
+                "BIT-tomcat-2025-49124",
+                "CVE-2025-49124"
+              ],
+              "published": "2025-06-16T15:32:28Z",
+              "modified": "2025-10-29T16:13:33.340454Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-42wg-hm62-jcwg"
+            },
+            {
+              "id": "GHSA-563x-q5rq-57qp",
+              "aliases": [
+                "BIT-tomcat-2026-24880",
+                "CVE-2026-24880"
+              ],
+              "published": "2026-04-09T21:31:29Z",
+              "modified": "2026-09-11T08:25:36.344434847Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-563x-q5rq-57qp"
+            },
+            {
+              "id": "GHSA-5j33-cvvr-w245",
+              "aliases": [
+                "BIT-tomcat-2024-50379",
+                "CVE-2024-50379"
+              ],
+              "published": "2024-12-17T15:31:43Z",
+              "modified": "2026-09-10T03:50:21.575819644Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5j33-cvvr-w245"
+            },
+            {
+              "id": "GHSA-5m62-pw8w-7w9f",
+              "aliases": [
+                "BIT-tomcat-2026-43515",
+                "CVE-2026-43515"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:25.696036560Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5m62-pw8w-7w9f"
+            },
+            {
+              "id": "GHSA-5mp6-jrq3-r938",
+              "aliases": [
+                "BIT-tomcat-2026-43513",
+                "CVE-2026-43513"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:26.202863452Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5mp6-jrq3-r938"
+            },
+            {
+              "id": "GHSA-5v3h-fjv2-54fg",
+              "aliases": [
+                "BIT-tomcat-2026-55956",
+                "CVE-2026-55956"
+              ],
+              "published": "2026-06-29T21:32:15Z",
+              "modified": "2026-11-04T16:41:04.583757097Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-5v3h-fjv2-54fg"
+            },
+            {
+              "id": "GHSA-7895-gffq-w6jq",
+              "aliases": [
+                "BIT-tomcat-2026-55957",
+                "CVE-2026-55957"
+              ],
+              "published": "2026-06-29T21:32:15Z",
+              "modified": "2026-11-04T16:41:00.614199414Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-7895-gffq-w6jq"
+            },
+            {
+              "id": "GHSA-83qj-6fr2-vhqg",
+              "aliases": [
+                "BIT-tomcat-2025-24813",
+                "CVE-2025-24813"
+              ],
+              "published": "2025-03-10T18:31:56Z",
+              "modified": "2026-09-10T03:50:23.313083129Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-83qj-6fr2-vhqg"
+            },
+            {
+              "id": "GHSA-9m3c-qcxr-9x87",
+              "aliases": [
+                "BIT-tomcat-2026-25854",
+                "CVE-2026-25854"
+              ],
+              "published": "2026-04-09T21:31:29Z",
+              "modified": "2026-09-11T08:25:31.206255258Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-9m3c-qcxr-9x87"
+            },
+            {
+              "id": "GHSA-9m89-8frq-c98c",
+              "aliases": [
+                "BIT-tomcat-2026-43514",
+                "CVE-2026-43514"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:30.451322281Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-9m89-8frq-c98c"
+            },
+            {
+              "id": "GHSA-9xv2-5v5q-p794",
+              "aliases": [
+                "BIT-tomcat-2026-65905",
+                "CVE-2026-65905"
+              ],
+              "published": "2026-08-26T00:30:52Z",
+              "modified": "2026-09-11T08:25:52.825871989Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-9xv2-5v5q-p794"
+            },
+            {
+              "id": "GHSA-ff77-26x5-69cr",
+              "aliases": [
+                "BIT-tomcat-2025-31651",
+                "CVE-2025-31651"
+              ],
+              "published": "2025-04-28T21:30:43Z",
+              "modified": "2026-09-10T03:50:24.113174461Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-ff77-26x5-69cr"
+            },
+            {
+              "id": "GHSA-fpj8-gq4v-p354",
+              "aliases": [
+                "BIT-tomcat-2025-66614",
+                "CVE-2025-66614"
+              ],
+              "published": "2026-02-17T21:31:13Z",
+              "modified": "2026-09-11T08:25:48.825991702Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-fpj8-gq4v-p354"
+            },
+            {
+              "id": "GHSA-fv25-8xcx-gqjc",
+              "aliases": [
+                "BIT-tomcat-2026-42498",
+                "CVE-2026-42498"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-10T03:51:05.853750997Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-fv25-8xcx-gqjc"
+            },
+            {
+              "id": "GHSA-gcx9-497g-6cp6",
+              "aliases": [
+                "BIT-tomcat-2026-65182",
+                "CVE-2026-65182"
+              ],
+              "published": "2026-08-26T00:30:52Z",
+              "modified": "2026-09-11T08:25:41.300012858Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-gcx9-497g-6cp6"
+            },
+            {
+              "id": "GHSA-gqp3-2cvr-x8m3",
+              "aliases": [
+                "BIT-tomcat-2025-48989",
+                "CVE-2025-48989"
+              ],
+              "published": "2025-08-13T15:30:34Z",
+              "modified": "2026-05-13T16:35:26.549711Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-gqp3-2cvr-x8m3"
+            },
+            {
+              "id": "GHSA-gx5v-xp9w-j4cg",
+              "aliases": [
+                "BIT-tomcat-2026-41284",
+                "CVE-2026-41284"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:36.520411734Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-gx5v-xp9w-j4cg"
+            },
+            {
+              "id": "GHSA-h2fw-rfh5-95r3",
+              "aliases": [
+                "BIT-tomcat-2025-46701",
+                "CVE-2025-46701"
+              ],
+              "published": "2025-05-29T21:31:37Z",
+              "modified": "2026-09-10T03:50:57.935292058Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h2fw-rfh5-95r3"
+            },
+            {
+              "id": "GHSA-h3gc-qfqq-6h8f",
+              "aliases": [
+                "BIT-tomcat-2025-48988",
+                "CVE-2025-48988"
+              ],
+              "published": "2025-06-16T15:32:28Z",
+              "modified": "2026-09-10T03:50:25.525981341Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h3gc-qfqq-6h8f"
+            },
+            {
+              "id": "GHSA-h3x4-894j-xpx5",
+              "aliases": [
+                "BIT-tomcat-2026-68525",
+                "CVE-2026-68525"
+              ],
+              "published": "2026-08-26T00:30:52Z",
+              "modified": "2026-09-11T08:25:40.118635278Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h3x4-894j-xpx5"
+            },
+            {
+              "id": "GHSA-h6fc-48rj-7qqh",
+              "aliases": [
+                "BIT-tomcat-2026-43512",
+                "CVE-2026-43512"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-11T08:25:26.501986953Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h6fc-48rj-7qqh"
+            },
+            {
+              "id": "GHSA-h792-v28v-ppgr",
+              "aliases": [
+                "BIT-tomcat-2026-53404",
+                "CVE-2026-53404"
+              ],
+              "published": "2026-06-29T21:32:15Z",
+              "modified": "2026-11-04T17:11:10.238803752Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h792-v28v-ppgr"
+            },
+            {
+              "id": "GHSA-hgrr-935x-pq79",
+              "aliases": [
+                "BIT-tomcat-2025-61795",
+                "CVE-2025-61795"
+              ],
+              "published": "2025-10-27T18:31:13Z",
+              "modified": "2026-09-10T03:50:30.251352491Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-hgrr-935x-pq79"
+            },
+            {
+              "id": "GHSA-mgp5-rv84-w37q",
+              "aliases": [
+                "BIT-tomcat-2026-24734",
+                "CVE-2026-24734"
+              ],
+              "published": "2026-02-17T21:31:13Z",
+              "modified": "2026-11-04T03:30:50.704997391Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mgp5-rv84-w37q"
+            },
+            {
+              "id": "GHSA-mqg3-r7h5-24x4",
+              "aliases": [
+                "BIT-tomcat-2026-55276",
+                "CVE-2026-55276"
+              ],
+              "published": "2026-06-29T21:32:15Z",
+              "modified": "2026-11-04T16:55:37.235582408Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mqg3-r7h5-24x4"
+            },
+            {
+              "id": "GHSA-r29c-68gh-xp6x",
+              "aliases": [
+                "BIT-tomcat-2026-41293",
+                "CVE-2026-41293"
+              ],
+              "published": "2026-05-12T18:30:38Z",
+              "modified": "2026-09-10T03:50:55.679134930Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r29c-68gh-xp6x"
+            },
+            {
+              "id": "GHSA-rv64-5gf8-9qq8",
+              "aliases": [
+                "BIT-tomcat-2026-34483",
+                "CVE-2026-34483"
+              ],
+              "published": "2026-04-09T21:31:30Z",
+              "modified": "2026-09-11T08:25:42.129097701Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-rv64-5gf8-9qq8"
+            },
+            {
+              "id": "GHSA-vfww-5hm6-hx2j",
+              "aliases": [
+                "BIT-tomcat-2025-55754",
+                "CVE-2025-55754"
+              ],
+              "published": "2025-10-27T18:31:13Z",
+              "modified": "2026-09-10T03:50:30.791118688Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-vfww-5hm6-hx2j"
+            },
+            {
+              "id": "GHSA-wc4r-xq3c-5cf3",
+              "aliases": [
+                "BIT-tomcat-2025-49125",
+                "CVE-2025-49125"
+              ],
+              "published": "2025-06-16T15:32:28Z",
+              "modified": "2026-09-10T03:50:26.000004953Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wc4r-xq3c-5cf3"
+            },
+            {
+              "id": "GHSA-wmwf-9ccg-fff5",
+              "aliases": [
+                "BIT-tomcat-2025-55752",
+                "CVE-2025-55752"
+              ],
+              "published": "2025-10-27T18:31:13Z",
+              "modified": "2026-09-10T03:50:30.776927726Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wmwf-9ccg-fff5"
+            },
+            {
+              "id": "GHSA-wr62-c79q-cv37",
+              "aliases": [
+                "BIT-tomcat-2025-52520",
+                "CVE-2025-52520"
+              ],
+              "published": "2025-07-10T21:31:52Z",
+              "modified": "2026-03-06T22:01:30.941844Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wr62-c79q-cv37"
+            },
+            {
+              "id": "GHSA-x4m4-345f-5h5g",
+              "aliases": [
+                "BIT-tomcat-2026-34487",
+                "CVE-2026-34487"
+              ],
+              "published": "2026-04-09T21:31:30Z",
+              "modified": "2026-09-11T08:25:51.806825759Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-x4m4-345f-5h5g"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.assertj:assertj-core",
+            "version": "3.27.3",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.assertj/assertj-core@3.27.3"
+          },
+          "cveIds": [
+            "CVE-2026-24400"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-rqfh-9r24-8c9r",
+              "aliases": [
+                "CVE-2026-24400"
+              ],
+              "published": "2026-01-26T21:31:41Z",
+              "modified": "2026-02-03T03:04:53.356771Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-rqfh-9r24-8c9r"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.freemarker:freemarker",
+            "version": "2.3.33",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.freemarker/freemarker@2.3.33"
+          },
+          "cveIds": [
+            "CVE-2026-84939"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-27j2-h3m2-8237",
+              "aliases": [
+                "CVE-2026-84939"
+              ],
+              "published": "2026-09-10T06:31:45Z",
+              "modified": "2026-09-24T19:15:05.725637844Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-27j2-h3m2-8237"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.springframework.boot:spring-boot",
+            "version": "3.3.5",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework.boot/spring-boot@3.3.5"
+          },
+          "cveIds": [
+            "CVE-2025-22235",
+            "CVE-2026-40973"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-rc42-6c7j-7h5r",
+              "aliases": [
+                "CVE-2025-22235"
+              ],
+              "published": "2025-04-28T09:31:53Z",
+              "modified": "2026-09-10T03:50:24.246697135Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-rc42-6c7j-7h5r"
+            },
+            {
+              "id": "GHSA-wwpq-f5c3-7hvx",
+              "aliases": [
+                "CVE-2026-40973"
+              ],
+              "published": "2026-04-28T00:31:41Z",
+              "modified": "2026-09-10T03:51:04.035674492Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wwpq-f5c3-7hvx"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.springframework.boot:spring-boot-autoconfigure",
+            "version": "3.3.5",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework.boot/spring-boot-autoconfigure@3.3.5"
+          },
+          "cveIds": [
+            "CVE-2026-41001"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-ggg2-9786-hwc8",
+              "aliases": [
+                "CVE-2026-41001"
+              ],
+              "published": "2026-06-11T09:31:56Z",
+              "modified": "2026-09-10T03:51:08.972811216Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-ggg2-9786-hwc8"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.springframework.boot:spring-boot-starter-actuator",
+            "version": "3.3.5",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework.boot/spring-boot-starter-actuator@3.3.5"
+          },
+          "cveIds": [
+            "CVE-2026-22733"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-mgvc-8q2h-5pgc",
+              "aliases": [
+                "CVE-2026-22733"
+              ],
+              "published": "2026-03-20T00:31:28Z",
+              "modified": "2026-09-10T03:50:40.101209162Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mgvc-8q2h-5pgc"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.springframework:spring-context",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-context@6.1.14"
+          },
+          "cveIds": [
+            "CVE-2025-22233"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-4wp7-92pw-q264",
+              "aliases": [
+                "CVE-2025-22233"
+              ],
+              "published": "2025-05-16T21:32:12Z",
+              "modified": "2026-09-10T03:50:24.401937154Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-4wp7-92pw-q264"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.springframework:spring-core",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-core@6.1.14"
+          },
+          "cveIds": [
+            "CVE-2025-41249",
+            "CVE-2026-41848"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-659m-px2c-25wj",
+              "aliases": [
+                "CVE-2026-41848"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:48.636887140Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-659m-px2c-25wj"
+            },
+            {
+              "id": "GHSA-jmp9-x22r-554x",
+              "aliases": [
+                "CVE-2025-41249"
+              ],
+              "published": "2025-09-16T15:32:34Z",
+              "modified": "2026-09-10T03:50:28.526913629Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-jmp9-x22r-554x"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.springframework:spring-expression",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-expression@6.1.14"
+          },
+          "cveIds": [
+            "CVE-2026-41850",
+            "CVE-2026-41851",
+            "CVE-2026-41852"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-9f52-rjqv-25qv",
+              "aliases": [
+                "CVE-2026-41852"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:49.325466833Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-9f52-rjqv-25qv"
+            },
+            {
+              "id": "GHSA-r5w3-xv2f-j59q",
+              "aliases": [
+                "CVE-2026-41850"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:50.592219153Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r5w3-xv2f-j59q"
+            },
+            {
+              "id": "GHSA-wxpp-56q6-5pcg",
+              "aliases": [
+                "CVE-2026-41851"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:51.051005886Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wxpp-56q6-5pcg"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.springframework:spring-web",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-web@6.1.14"
+          },
+          "cveIds": [
+            "CVE-2025-41234"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-6r3c-xf4w-jxjm",
+              "aliases": [
+                "CVE-2025-41234"
+              ],
+              "published": "2025-06-13T00:33:18Z",
+              "modified": "2026-09-10T03:50:25.010163414Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6r3c-xf4w-jxjm"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.springframework:spring-webmvc",
+            "version": "6.1.14",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.springframework/spring-webmvc@6.1.14"
+          },
+          "cveIds": [
+            "CVE-2025-41242",
+            "CVE-2026-22735",
+            "CVE-2026-22737",
+            "CVE-2026-22741",
+            "CVE-2026-22745",
+            "CVE-2026-41841",
+            "CVE-2026-41842",
+            "CVE-2026-41843",
+            "CVE-2026-41844",
+            "CVE-2026-41845",
+            "CVE-2026-41846",
+            "CVE-2026-41853",
+            "CVE-2026-47884"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-3chg-m5w7-qfv5",
+              "aliases": [
+                "CVE-2026-41845"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:55.485813575Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-3chg-m5w7-qfv5"
+            },
+            {
+              "id": "GHSA-4773-3jfm-qmx3",
+              "aliases": [
+                "CVE-2026-22737"
+              ],
+              "published": "2026-03-20T00:31:28Z",
+              "modified": "2026-09-10T03:50:37.345211234Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-4773-3jfm-qmx3"
+            },
+            {
+              "id": "GHSA-6hcq-hmm3-jj3c",
+              "aliases": [
+                "CVE-2026-22735"
+              ],
+              "published": "2026-03-20T00:31:28Z",
+              "modified": "2026-09-10T03:51:00.075344686Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6hcq-hmm3-jj3c"
+            },
+            {
+              "id": "GHSA-6p4f-wcwh-5vvm",
+              "aliases": [
+                "CVE-2026-22745"
+              ],
+              "published": "2026-04-29T12:33:07Z",
+              "modified": "2026-09-10T03:50:43.783544605Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-6p4f-wcwh-5vvm"
+            },
+            {
+              "id": "GHSA-72pg-x5f8-j25j",
+              "aliases": [
+                "CVE-2026-41843"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:49.015129767Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-72pg-x5f8-j25j"
+            },
+            {
+              "id": "GHSA-957g-f97v-vppc",
+              "aliases": [
+                "CVE-2026-41846"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:50:49.221153674Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-957g-f97v-vppc"
+            },
+            {
+              "id": "GHSA-cjpg-rgq5-fr37",
+              "aliases": [
+                "CVE-2026-41853"
+              ],
+              "published": "2026-06-09T06:31:58Z",
+              "modified": "2026-09-10T03:51:08.751198453Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-cjpg-rgq5-fr37"
+            },
+            {
+              "id": "GHSA-h3qp-gqrc-q736",
+              "aliases": [
+                "CVE-2026-41844"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:49.910720570Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-h3qp-gqrc-q736"
+            },
+            {
+              "id": "GHSA-mq64-j8f9-9gcj",
+              "aliases": [
+                "CVE-2026-41841"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:51:09.434155277Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-mq64-j8f9-9gcj"
+            },
+            {
+              "id": "GHSA-pc63-qcmh-9cmg",
+              "aliases": [
+                "CVE-2026-47884"
+              ],
+              "published": "2026-08-27T06:31:34Z",
+              "modified": "2026-10-05T23:30:04.884745277Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-pc63-qcmh-9cmg"
+            },
+            {
+              "id": "GHSA-r936-gwx5-v52f",
+              "aliases": [
+                "CVE-2025-41242"
+              ],
+              "published": "2025-08-18T09:31:44Z",
+              "modified": "2026-09-10T03:50:27.662656136Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-r936-gwx5-v52f"
+            },
+            {
+              "id": "GHSA-wg35-8jpf-2xv3",
+              "aliases": [
+                "CVE-2026-22741"
+              ],
+              "published": "2026-04-29T12:33:07Z",
+              "modified": "2026-09-10T03:51:04.065980932Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-wg35-8jpf-2xv3"
+            },
+            {
+              "id": "GHSA-x23c-287f-qqv5",
+              "aliases": [
+                "CVE-2026-41842"
+              ],
+              "published": "2026-06-09T06:31:57Z",
+              "modified": "2026-09-10T03:50:51.456648476Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-x23c-287f-qqv5"
+            }
+          ]
+        },
+        {
+          "inputName": "pom.xml",
+          "inputType": "unknown",
+          "package": {
+            "name": "org.xmlunit:xmlunit-core",
+            "version": "2.9.1",
+            "ecosystem": "Maven",
+            "purl": "pkg:maven/org.xmlunit/xmlunit-core@2.9.1"
+          },
+          "cveIds": [
+            "CVE-2024-31573"
+          ],
+          "advisories": [
+            {
+              "id": "GHSA-chfm-68vv-pvw5",
+              "aliases": [
+                "CVE-2024-31573"
+              ],
+              "published": "2024-05-01T16:40:01Z",
+              "modified": "2024-12-05T05:28:04.518630Z",
+              "sourceUrl": "https://api.osv.dev/v1/vulns/GHSA-chfm-68vv-pvw5"
+            }
+          ]
+        }
+      ]
+    },
+    "combinedRuntimeAndJarCveIds": [
+      "CVE-2024-12798",
+      "CVE-2024-12801",
+      "CVE-2024-50379",
+      "CVE-2024-56337",
+      "CVE-2025-11226",
+      "CVE-2025-22233",
+      "CVE-2025-22235",
+      "CVE-2025-24813",
+      "CVE-2025-31650",
+      "CVE-2025-31651",
+      "CVE-2025-41234",
+      "CVE-2025-41242",
+      "CVE-2025-41249",
+      "CVE-2025-46701",
+      "CVE-2025-48988",
+      "CVE-2025-48989",
+      "CVE-2025-49124",
+      "CVE-2025-49125",
+      "CVE-2025-52520",
+      "CVE-2025-53506",
+      "CVE-2025-55668",
+      "CVE-2025-55752",
+      "CVE-2025-55754",
+      "CVE-2025-61795",
+      "CVE-2025-66614",
+      "CVE-2025-7962",
+      "CVE-2026-10532",
+      "CVE-2026-1225",
+      "CVE-2026-18401",
+      "CVE-2026-19032",
+      "CVE-2026-22733",
+      "CVE-2026-22735",
+      "CVE-2026-22737",
+      "CVE-2026-22741",
+      "CVE-2026-22745",
+      "CVE-2026-24734",
+      "CVE-2026-24880",
+      "CVE-2026-25854",
+      "CVE-2026-34483",
+      "CVE-2026-34487",
+      "CVE-2026-40973",
+      "CVE-2026-40984",
+      "CVE-2026-41001",
+      "CVE-2026-41284",
+      "CVE-2026-41293",
+      "CVE-2026-41841",
+      "CVE-2026-41842",
+      "CVE-2026-41843",
+      "CVE-2026-41844",
+      "CVE-2026-41845",
+      "CVE-2026-41846",
+      "CVE-2026-41848",
+      "CVE-2026-41850",
+      "CVE-2026-41851",
+      "CVE-2026-41852",
+      "CVE-2026-41853",
+      "CVE-2026-42498",
+      "CVE-2026-43512",
+      "CVE-2026-43513",
+      "CVE-2026-43514",
+      "CVE-2026-43515",
+      "CVE-2026-47884",
+      "CVE-2026-49844",
+      "CVE-2026-53404",
+      "CVE-2026-54512",
+      "CVE-2026-54513",
+      "CVE-2026-54514",
+      "CVE-2026-54515",
+      "CVE-2026-55276",
+      "CVE-2026-55956",
+      "CVE-2026-55957",
+      "CVE-2026-59888",
+      "CVE-2026-59889",
+      "CVE-2026-65182",
+      "CVE-2026-65905",
+      "CVE-2026-68494",
+      "CVE-2026-68497",
+      "CVE-2026-68525",
+      "CVE-2026-77310",
+      "CVE-2026-83557",
+      "CVE-2026-84939",
+      "CVE-2026-89407",
+      "CVE-2026-89425",
+      "CVE-2026-91776",
+      "CVE-2026-91777",
+      "CVE-2026-9828"
+    ],
+    "combinedRuntimeAndJarCveCount": 86,
+    "jarOnlyCveIds": [
+      "CVE-2025-7962"
+    ],
+    "interpretation": "Different inputs have different inventory coverage. The JAR cataloger misidentified some coordinates; the POM result includes test dependencies. Runtime findings are package associations, not confirmed exploitable vulnerabilities."
+  },
+  "tomcatComparison": {
+    "package": "org.apache.tomcat.embed:tomcat-embed-core",
+    "version": "10.1.31",
+    "osvCount": 36,
+    "nvdCount": 54,
+    "sharedCount": 36,
+    "osvOnly": [],
+    "nvdOnly": [
+      "CVE-2024-52318",
+      "CVE-2024-54677",
+      "CVE-2026-24733",
+      "CVE-2026-29145",
+      "CVE-2026-29146",
+      "CVE-2026-34500",
+      "CVE-2026-50229",
+      "CVE-2026-53434",
+      "CVE-2026-55955",
+      "CVE-2026-59083",
+      "CVE-2026-59084",
+      "CVE-2026-65183",
+      "CVE-2026-65927",
+      "CVE-2026-66299",
+      "CVE-2026-66422",
+      "CVE-2026-68569",
+      "CVE-2026-68763",
+      "CVE-2026-73180"
+    ]
+  },
+  "tomcatGlobalRecords": [
+    {
+      "cve": "CVE-2024-52318",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2024-52318",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "7ecea31658766b7d0ce7fee5a34564b67c68e789"
+            },
+            {
+              "last_affected": "56e547d387ab49f688c93fe9ca082b1b5d94deed"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-f632-9449-3j4w",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-f632-9449-3j4w",
+      "githubReviewType": "reviewed",
+      "githubMavenPackageRows": [
+        {
+          "packageName": "org.apache.tomcat:tomcat-jasper",
+          "affectedRange": "= 11.0.0",
+          "firstPatchedVersion": "11.0.1"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-jasper",
+          "affectedRange": "= 10.1.31",
+          "firstPatchedVersion": "10.1.32"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-jasper",
+          "affectedRange": "= 9.0.96",
+          "firstPatchedVersion": "9.0.97"
+        },
+        {
+          "packageName": "org.apache.tomcat.embed:tomcat-embed-jasper",
+          "affectedRange": "= 9.0.96",
+          "firstPatchedVersion": "9.0.97"
+        },
+        {
+          "packageName": "org.apache.tomcat.embed:tomcat-embed-jasper",
+          "affectedRange": "= 11.0.0",
+          "firstPatchedVersion": "11.0.1"
+        },
+        {
+          "packageName": "org.apache.tomcat.embed:tomcat-embed-jasper",
+          "affectedRange": "= 10.1.31",
+          "firstPatchedVersion": "10.1.32"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": "= 11.0.0",
+          "firstPatchedVersion": "11.0.1"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": "= 10.1.31",
+          "firstPatchedVersion": "10.1.32"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": "= 9.0.96",
+          "firstPatchedVersion": "9.0.97"
+        }
+      ],
+      "ghsaOsvHttpStatus": "200",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "no exact embed-core row; related Maven artifact ranges include 10.1.31"
+    },
+    {
+      "cve": "CVE-2024-54677",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2024-54677",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "16bf392c67833ad549733b58c350ff92b5ee782a"
+            },
+            {
+              "fixed": "727a8467a37e17fef91e12a65db4d56862d36171"
+            },
+            {
+              "introduced": "e9d17cddc285615807ec5fef09240777436b25dc"
+            },
+            {
+              "fixed": "acf7da1801a4751b282a70ced24b73c1046db831"
+            },
+            {
+              "introduced": "56e547d387ab49f688c93fe9ca082b1b5d94deed"
+            },
+            {
+              "fixed": "d428a82c122c86e64aa4ffc4a515aee31ba7a51e"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-653p-vg55-5652",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-653p-vg55-5652",
+      "githubReviewType": "reviewed",
+      "githubMavenPackageRows": [
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 11.0.0-M1, < 11.0.2",
+          "firstPatchedVersion": "11.0.2"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 10.1.0-M1, < 10.1.34",
+          "firstPatchedVersion": "10.1.34"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 9.0.0.M1, < 9.0.98",
+          "firstPatchedVersion": "9.0.98"
+        }
+      ],
+      "ghsaOsvHttpStatus": "200",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "no exact embed-core row; related Maven artifact ranges include 10.1.31"
+    },
+    {
+      "cve": "CVE-2026-24733",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-24733",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "3c78e95e36268dfb76db1570f0cf49104fa6eabc"
+            },
+            {
+              "fixed": "1da89d3d01aece456d622548d92055a60ff19c37"
+            },
+            {
+              "introduced": "934df02dc68e72b95a38f372017f1b89b0d13a76"
+            },
+            {
+              "fixed": "cd6d685800b0e46797325866dee2c9a78fc8e69c"
+            },
+            {
+              "introduced": "6c56147c3966fde5ae34aab2b253593e8700a28c"
+            },
+            {
+              "fixed": "692d6ffc5aa75d6804749ffcc14353c6b046fd92"
+            },
+            {
+              "introduced": "29b07def810d335012e738b22ab44d4e232b50d1"
+            },
+            {
+              "last_affected": "de714a23642a4d0baef342db6762a7f7a550d82c"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-qq5r-98hh-rxc9",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-qq5r-98hh-rxc9",
+      "githubReviewType": "reviewed",
+      "githubMavenPackageRows": [
+        {
+          "packageName": "org.apache.tomcat:tomcat-coyote",
+          "affectedRange": ">= 11.0.0-M1, < 11.0.15",
+          "firstPatchedVersion": "11.0.15"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-coyote",
+          "affectedRange": ">= 10.1.0-M1, < 10.1.50",
+          "firstPatchedVersion": "10.1.50"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-coyote",
+          "affectedRange": "< 9.0.113",
+          "firstPatchedVersion": "9.0.113"
+        }
+      ],
+      "ghsaOsvHttpStatus": "200",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "no exact embed-core row; related Maven artifact ranges include 10.1.31"
+    },
+    {
+      "cve": "CVE-2026-29145",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-29145",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "be97b0e06e77226aea5eb2a7b448f1d53bda2aa1"
+            },
+            {
+              "fixed": "d2c7dce5e94d6d1d81ad7d66402140b1c1962a53"
+            },
+            {
+              "introduced": "934df02dc68e72b95a38f372017f1b89b0d13a76"
+            },
+            {
+              "fixed": "f3d5786aa1bd6c2a78d666afc89b2a4570f66593"
+            },
+            {
+              "introduced": "56e547d387ab49f688c93fe9ca082b1b5d94deed"
+            },
+            {
+              "fixed": "1c65de6f27a3bac481514e56e3637785b65a4f2c"
+            },
+            {
+              "introduced": "e9d17cddc285615807ec5fef09240777436b25dc"
+            },
+            {
+              "last_affected": "02d546ba3c553c74ff1a99ecc166a6ff9c501ba8"
+            }
+          ]
+        },
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat-native",
+          "events": [
+            {
+              "introduced": "71090a48b31816e3d5a0646be5c3e7b2b533bf07"
+            },
+            {
+              "fixed": "c51879b3c49b35807d70f5667cf3230035babd97"
+            },
+            {
+              "introduced": "39c19afe4a3df7ea4fda778d82dc25bd494a110c"
+            },
+            {
+              "fixed": "ad89e96bdc47f9a75dbafb04ec08d60e9042708b"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-95jq-rwvf-vjx4",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-95jq-rwvf-vjx4",
+      "githubReviewType": "reviewed",
+      "githubMavenPackageRows": [
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 9.0.83, < 9.0.116",
+          "firstPatchedVersion": "9.0.116"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 10.1.0-M7, < 10.1.53",
+          "firstPatchedVersion": "10.1.53"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 11.0.0-M1, < 11.0.20",
+          "firstPatchedVersion": "11.0.20"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-coyote-ffm",
+          "affectedRange": ">= 9.0.83, < 9.0.116",
+          "firstPatchedVersion": "9.0.116"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-coyote-ffm",
+          "affectedRange": ">= 10.1.0-M7, < 10.1.53",
+          "firstPatchedVersion": "10.1.53"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-coyote-ffm",
+          "affectedRange": ">= 11.0.0-M1, < 11.0.20",
+          "firstPatchedVersion": "11.0.20"
+        }
+      ],
+      "ghsaOsvHttpStatus": "200",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "no exact embed-core row; related Maven artifact ranges include 10.1.31"
+    },
+    {
+      "cve": "CVE-2026-29146",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-29146",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "a1ea109bf367ad32361396348845ffd6e524d115"
+            },
+            {
+              "last_affected": "2cdef2c0241cdf70b5edd88d3733a52e6b675047"
+            },
+            {
+              "introduced": "4b0b2f6b828d12d150b4de0b64fd6c3849dfcefb"
+            },
+            {
+              "last_affected": "eddcf278ad919382608ada1898b2c5b63675c6d5"
+            },
+            {
+              "introduced": "706a395be7c34414d04739de69bde986661976ec"
+            },
+            {
+              "fixed": "d2c7dce5e94d6d1d81ad7d66402140b1c1962a53"
+            },
+            {
+              "introduced": "4c8b650437e2464c1c31c6598a263b3805b7a81f"
+            },
+            {
+              "fixed": "f3d5786aa1bd6c2a78d666afc89b2a4570f66593"
+            },
+            {
+              "introduced": "56e547d387ab49f688c93fe9ca082b1b5d94deed"
+            },
+            {
+              "fixed": "1c65de6f27a3bac481514e56e3637785b65a4f2c"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-h468-7pvh-8vr8",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-h468-7pvh-8vr8",
+      "githubReviewType": "reviewed",
+      "githubMavenPackageRows": [
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 9.0.13, < 9.0.116",
+          "firstPatchedVersion": "9.0.116"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 10.1.50, < 10.1.53",
+          "firstPatchedVersion": "10.1.53"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 9.0.13, < 9.0.116",
+          "firstPatchedVersion": "9.0.116"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 10.1.50, < 10.1.53",
+          "firstPatchedVersion": "10.1.53"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 11.0.0-M1, <= 11.0.18",
+          "firstPatchedVersion": "11.0.20"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 11.0.0-M1, <= 11.0.18",
+          "firstPatchedVersion": "11.0.20"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 8.5.38, <= 8.5.100",
+          "firstPatchedVersion": null
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 8.5.38, <= 8.5.100",
+          "firstPatchedVersion": null
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 7.0.100, <= 7.0.109",
+          "firstPatchedVersion": null
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 7.0.100, <= 7.0.109",
+          "firstPatchedVersion": null
+        }
+      ],
+      "ghsaOsvHttpStatus": "200",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "no: Maven rows exist for other artifacts, range starts at 10.1.50"
+    },
+    {
+      "cve": "CVE-2026-34500",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-34500",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "b6ca266795a4245f3c3308a619987136ad46e19a"
+            },
+            {
+              "fixed": "f892e52577feef83aff57d34c2b4be61a5a68524"
+            },
+            {
+              "introduced": "fd9c0bb1f0a7e586daabfda625ef50827bcfddf3"
+            },
+            {
+              "fixed": "8ec9fde54ce6bda64027759389dd755b1b875edc"
+            },
+            {
+              "introduced": "6c56147c3966fde5ae34aab2b253593e8700a28c"
+            },
+            {
+              "fixed": "1d6b501b493c11ee6fdebae911c67ca214e28c82"
+            },
+            {
+              "introduced": "9108a1f6776f7211f5cd27e80b7b5a6e98116b01"
+            },
+            {
+              "last_affected": "e9935d107776339a4a48cf4e32195a763fbf8379"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-24j9-x2wg-9qv6",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-24j9-x2wg-9qv6",
+      "githubReviewType": "reviewed",
+      "githubMavenPackageRows": [
+        {
+          "packageName": "org.apache.tomcat:tomcat-coyote-ffm",
+          "affectedRange": ">= 9.0.92, < 9.0.117",
+          "firstPatchedVersion": "9.0.117"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-coyote-ffm",
+          "affectedRange": ">= 10.1.22, < 10.1.54",
+          "firstPatchedVersion": "10.1.54"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-coyote-ffm",
+          "affectedRange": ">= 11.0.0-M14, < 11.0.21",
+          "firstPatchedVersion": "11.0.21"
+        }
+      ],
+      "ghsaOsvHttpStatus": "200",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "no exact embed-core row; related Maven artifact ranges include 10.1.31"
+    },
+    {
+      "cve": "CVE-2026-50229",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-50229",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "last_affected": "2cdef2c0241cdf70b5edd88d3733a52e6b675047"
+            },
+            {
+              "introduced": "e37b977db6f47e4380ad67114a49e8568951c953"
+            },
+            {
+              "last_affected": "eddcf278ad919382608ada1898b2c5b63675c6d5"
+            },
+            {
+              "introduced": "16bf392c67833ad549733b58c350ff92b5ee782a"
+            },
+            {
+              "fixed": "36c2e40f60e3176f12c0344f40f656251448b004"
+            },
+            {
+              "introduced": "e9d17cddc285615807ec5fef09240777436b25dc"
+            },
+            {
+              "fixed": "59f3f1ab4f905f94c9c99cad579d6afb3a935b66"
+            },
+            {
+              "introduced": "56e547d387ab49f688c93fe9ca082b1b5d94deed"
+            },
+            {
+              "fixed": "b5c1bba61f2e54875bd6d538ae145fffd7b217a8"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-pg42-rg8c-j886",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-pg42-rg8c-j886",
+      "githubReviewType": "reviewed",
+      "githubMavenPackageRows": [
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 11.0.0-M1, < 11.0.23",
+          "firstPatchedVersion": "11.0.23"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 10.1.0-M1, < 10.1.56",
+          "firstPatchedVersion": "10.1.56"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 9.0.0.M1, < 9.0.119",
+          "firstPatchedVersion": "9.0.119"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 8.5.0, <= 8.5.100",
+          "firstPatchedVersion": null
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": "<= 7.0.109",
+          "firstPatchedVersion": null
+        }
+      ],
+      "ghsaOsvHttpStatus": "200",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "no exact embed-core row; related Maven artifact ranges include 10.1.31"
+    },
+    {
+      "cve": "CVE-2026-53434",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-53434",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "be97b0e06e77226aea5eb2a7b448f1d53bda2aa1"
+            },
+            {
+              "fixed": "36c2e40f60e3176f12c0344f40f656251448b004"
+            },
+            {
+              "introduced": "e9d17cddc285615807ec5fef09240777436b25dc"
+            },
+            {
+              "fixed": "59f3f1ab4f905f94c9c99cad579d6afb3a935b66"
+            },
+            {
+              "introduced": "56e547d387ab49f688c93fe9ca082b1b5d94deed"
+            },
+            {
+              "fixed": "b5c1bba61f2e54875bd6d538ae145fffd7b217a8"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-4x29-79gh-6v8q",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-4x29-79gh-6v8q",
+      "githubReviewType": "reviewed",
+      "githubMavenPackageRows": [
+        {
+          "packageName": "org.apache.tomcat:tomcat-util",
+          "affectedRange": ">= 11.0.0-M1, <= 11.0.22",
+          "firstPatchedVersion": "11.0.23"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-util",
+          "affectedRange": ">= 10.1.0-M7, <= 10.1.55",
+          "firstPatchedVersion": "10.1.56"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-util",
+          "affectedRange": ">= 9.0.83, <= 9.0.118",
+          "firstPatchedVersion": "9.0.119"
+        }
+      ],
+      "ghsaOsvHttpStatus": "200",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "no exact embed-core row; related Maven artifact ranges include 10.1.31"
+    },
+    {
+      "cve": "CVE-2026-55955",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-55955",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "36c2e40f60e3176f12c0344f40f656251448b004"
+            },
+            {
+              "introduced": "e9d17cddc285615807ec5fef09240777436b25dc"
+            },
+            {
+              "fixed": "59f3f1ab4f905f94c9c99cad579d6afb3a935b66"
+            },
+            {
+              "introduced": "56e547d387ab49f688c93fe9ca082b1b5d94deed"
+            },
+            {
+              "fixed": "b5c1bba61f2e54875bd6d538ae145fffd7b217a8"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-c5ph-rghf-fjfj",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-c5ph-rghf-fjfj",
+      "githubReviewType": "reviewed",
+      "githubMavenPackageRows": [
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 11.0.0-M1, < 11.0.23",
+          "firstPatchedVersion": "11.0.23"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 10.1.0-M1, < 10.1.56",
+          "firstPatchedVersion": "10.1.56"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 9.0.13, < 9.0.119",
+          "firstPatchedVersion": "9.0.119"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 8.5.38, <= 8.5.100",
+          "firstPatchedVersion": null
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat",
+          "affectedRange": ">= 7.0.100, <= 7.0.109",
+          "firstPatchedVersion": null
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 11.0.0-M1, < 11.0.23",
+          "firstPatchedVersion": "11.0.23"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 10.1.0-M1, < 10.1.56",
+          "firstPatchedVersion": "10.1.56"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 9.0.13, < 9.0.119",
+          "firstPatchedVersion": "9.0.119"
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 8.5.38, <= 8.5.100",
+          "firstPatchedVersion": null
+        },
+        {
+          "packageName": "org.apache.tomcat:tomcat-tribes",
+          "affectedRange": ">= 7.0.100, <= 7.0.109",
+          "firstPatchedVersion": null
+        }
+      ],
+      "ghsaOsvHttpStatus": "200",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "no exact embed-core row; related Maven artifact ranges include 10.1.31"
+    },
+    {
+      "cve": "CVE-2026-59083",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-59083",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "e37b977db6f47e4380ad67114a49e8568951c953"
+            },
+            {
+              "last_affected": "eddcf278ad919382608ada1898b2c5b63675c6d5"
+            },
+            {
+              "introduced": "16bf392c67833ad549733b58c350ff92b5ee782a"
+            },
+            {
+              "last_affected": "36c2e40f60e3176f12c0344f40f656251448b004"
+            },
+            {
+              "introduced": "e9d17cddc285615807ec5fef09240777436b25dc"
+            },
+            {
+              "last_affected": "59f3f1ab4f905f94c9c99cad579d6afb3a935b66"
+            },
+            {
+              "introduced": "56e547d387ab49f688c93fe9ca082b1b5d94deed"
+            },
+            {
+              "last_affected": "b5c1bba61f2e54875bd6d538ae145fffd7b217a8"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-hcjr-322h-429r",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-hcjr-322h-429r",
+      "githubReviewType": "unreviewed",
+      "githubMavenPackageRows": [],
+      "ghsaOsvHttpStatus": "404",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "unavailable: GHSA is unreviewed and has no package vulnerability entries"
+    },
+    {
+      "cve": "CVE-2026-59084",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-59084",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "a1ea109bf367ad32361396348845ffd6e524d115"
+            },
+            {
+              "last_affected": "2cdef2c0241cdf70b5edd88d3733a52e6b675047"
+            },
+            {
+              "introduced": "4b0b2f6b828d12d150b4de0b64fd6c3849dfcefb"
+            },
+            {
+              "last_affected": "eddcf278ad919382608ada1898b2c5b63675c6d5"
+            },
+            {
+              "introduced": "706a395be7c34414d04739de69bde986661976ec"
+            },
+            {
+              "last_affected": "36c2e40f60e3176f12c0344f40f656251448b004"
+            },
+            {
+              "introduced": "e9d17cddc285615807ec5fef09240777436b25dc"
+            },
+            {
+              "last_affected": "59f3f1ab4f905f94c9c99cad579d6afb3a935b66"
+            },
+            {
+              "introduced": "56e547d387ab49f688c93fe9ca082b1b5d94deed"
+            },
+            {
+              "last_affected": "b5c1bba61f2e54875bd6d538ae145fffd7b217a8"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-cwxf-7cw2-7r32",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-cwxf-7cw2-7r32",
+      "githubReviewType": "unreviewed",
+      "githubMavenPackageRows": [],
+      "ghsaOsvHttpStatus": "404",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "unavailable: GHSA is unreviewed and has no package vulnerability entries"
+    },
+    {
+      "cve": "CVE-2026-65183",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-65183",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "59c81e30e2f64f5e8c1db78c4860c51850dfb0bd"
+            },
+            {
+              "last_affected": "4f33a9eca48c5cbf5963dd213b74866e629154ad"
+            },
+            {
+              "introduced": "f2ab9ac8bc3f40ee9b2cb50b030c99df927f0429"
+            },
+            {
+              "last_affected": "5da21b1c24a6443bca5c10dc80a69a76042ca337"
+            },
+            {
+              "introduced": "868b50e7af1dd6c3489ba0fda86dfc1ff1b8c8cb"
+            },
+            {
+              "last_affected": "8fc613dd46061308028b75ed99571db00b9db4e0"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-h3mr-2w3q-jcv9",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-h3mr-2w3q-jcv9",
+      "githubReviewType": "unreviewed",
+      "githubMavenPackageRows": [],
+      "ghsaOsvHttpStatus": "404",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "unavailable: GHSA is unreviewed and has no package vulnerability entries"
+    },
+    {
+      "cve": "CVE-2026-65927",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-65927",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "59c81e30e2f64f5e8c1db78c4860c51850dfb0bd"
+            },
+            {
+              "last_affected": "4f33a9eca48c5cbf5963dd213b74866e629154ad"
+            },
+            {
+              "introduced": "f2ab9ac8bc3f40ee9b2cb50b030c99df927f0429"
+            },
+            {
+              "last_affected": "5da21b1c24a6443bca5c10dc80a69a76042ca337"
+            },
+            {
+              "introduced": "29b07def810d335012e738b22ab44d4e232b50d1"
+            },
+            {
+              "last_affected": "8fc613dd46061308028b75ed99571db00b9db4e0"
+            },
+            {
+              "introduced": "e37b977db6f47e4380ad67114a49e8568951c953"
+            },
+            {
+              "last_affected": "eddcf278ad919382608ada1898b2c5b63675c6d5"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-g8qj-vp23-742m",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-g8qj-vp23-742m",
+      "githubReviewType": "unreviewed",
+      "githubMavenPackageRows": [],
+      "ghsaOsvHttpStatus": "404",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "unavailable: GHSA is unreviewed and has no package vulnerability entries"
+    },
+    {
+      "cve": "CVE-2026-66299",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-66299",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "c400bf727cbc10198d3f52c29849d18660050b0c"
+            },
+            {
+              "last_affected": "e9935d107776339a4a48cf4e32195a763fbf8379"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-rpf9-hrjr-88fv",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-rpf9-hrjr-88fv",
+      "githubReviewType": "unreviewed",
+      "githubMavenPackageRows": [],
+      "ghsaOsvHttpStatus": "404",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "unavailable: GHSA is unreviewed and has no package vulnerability entries"
+    },
+    {
+      "cve": "CVE-2026-66422",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-66422",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "1cfec207b09fed52965f0d0426059ca989daf3b4"
+            },
+            {
+              "last_affected": "2cdef2c0241cdf70b5edd88d3733a52e6b675047"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-w3xg-786f-g788",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-w3xg-786f-g788",
+      "githubReviewType": "unreviewed",
+      "githubMavenPackageRows": [],
+      "ghsaOsvHttpStatus": "404",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "unavailable: GHSA is unreviewed and has no package vulnerability entries"
+    },
+    {
+      "cve": "CVE-2026-68569",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-68569",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "e498667bd7811e846771a852b16ce9f1e524b81b"
+            },
+            {
+              "last_affected": "2cdef2c0241cdf70b5edd88d3733a52e6b675047"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-5q6q-ffrq-6xfc",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-5q6q-ffrq-6xfc",
+      "githubReviewType": "unreviewed",
+      "githubMavenPackageRows": [],
+      "ghsaOsvHttpStatus": "404",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "unavailable: GHSA is unreviewed and has no package vulnerability entries"
+    },
+    {
+      "cve": "CVE-2026-68763",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-68763",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "59c81e30e2f64f5e8c1db78c4860c51850dfb0bd"
+            },
+            {
+              "last_affected": "4f33a9eca48c5cbf5963dd213b74866e629154ad"
+            },
+            {
+              "introduced": "f2ab9ac8bc3f40ee9b2cb50b030c99df927f0429"
+            },
+            {
+              "last_affected": "5da21b1c24a6443bca5c10dc80a69a76042ca337"
+            },
+            {
+              "introduced": "6989c4e9360b4f9443862968c15a95d17f264321"
+            },
+            {
+              "last_affected": "8fc613dd46061308028b75ed99571db00b9db4e0"
+            },
+            {
+              "introduced": "c042ec71219dbde3e1ce0381ce5be0801120d0fa"
+            },
+            {
+              "last_affected": "eddcf278ad919382608ada1898b2c5b63675c6d5"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-82jr-6mfr-9vq5",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-82jr-6mfr-9vq5",
+      "githubReviewType": "unreviewed",
+      "githubMavenPackageRows": [],
+      "ghsaOsvHttpStatus": "404",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "unavailable: GHSA is unreviewed and has no package vulnerability entries"
+    },
+    {
+      "cve": "CVE-2026-73180",
+      "osvSourceUrl": "https://api.osv.dev/v1/vulns/CVE-2026-73180",
+      "primaryOsvHttpStatus": "200",
+      "primaryOsvPackageIdentities": [],
+      "primaryOsvRanges": [
+        {
+          "type": "GIT",
+          "repo": "https://github.com/apache/tomcat",
+          "events": [
+            {
+              "introduced": "506ab576d6e086286b79ca7ddebe679223ec3f9f"
+            },
+            {
+              "last_affected": "2cdef2c0241cdf70b5edd88d3733a52e6b675047"
+            }
+          ]
+        }
+      ],
+      "githubAdvisoryId": "GHSA-wrvx-pxxf-g8fg",
+      "githubAdvisoryUrl": "https://github.com/advisories/GHSA-wrvx-pxxf-g8fg",
+      "githubReviewType": "unreviewed",
+      "githubMavenPackageRows": [],
+      "ghsaOsvHttpStatus": "404",
+      "exactEmbedCoreCoordinatePresent": false,
+      "qualification": "unavailable: GHSA is unreviewed and has no package vulnerability entries"
+    }
+  ],
+  "jacksonNvdEnrichment": {
+    "source": "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-2026.json.gz",
+    "sourceTimestamp": "2026-11-04T03:00:01.5808434",
+    "sourceVerification": {
+      "downloadedFeedSha256": "40399a33a2744130d67336268c4df2ad9ef388bca6dbbc9e02b149a35e81f069",
+      "advertisedFeedSha256": "609478EDF20F6D3702B10771ADB2987D2C0E5571622939A6F447F3AEDBB7B626",
+      "advertisedChecksumMatched": false,
+      "qualification": "The downloaded feed did not match the advertised checksum. Representative individual NVD API records corroborated configuration/status observations; no claim is made that all selected feed records were independently API-verified."
+    },
+    "records": [
+      {
+        "id": "CVE-2026-18401",
+        "published": "2026-08-04T15:16:29.900",
+        "lastModified": "2026-10-23T23:10:00.157",
+        "status": "Awaiting Analysis",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-18401",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-18401"
+      },
+      {
+        "id": "CVE-2026-19032",
+        "published": "2026-09-01T04:18:00.433",
+        "lastModified": "2026-09-08T19:29:32.200",
+        "status": "Awaiting Analysis",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-19032",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-19032"
+      },
+      {
+        "id": "CVE-2026-54512",
+        "published": "2026-06-23T21:17:02.203",
+        "lastModified": "2026-10-25T23:10:00.167",
+        "status": "Analyzed",
+        "configurationsPresent": true,
+        "configurationCount": 1,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-54512",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-54512"
+      },
+      {
+        "id": "CVE-2026-54513",
+        "published": "2026-06-23T21:17:02.333",
+        "lastModified": "2026-10-25T23:10:00.167",
+        "status": "Modified",
+        "configurationsPresent": true,
+        "configurationCount": 1,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-54513",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-54513"
+      },
+      {
+        "id": "CVE-2026-54514",
+        "published": "2026-06-23T21:17:02.467",
+        "lastModified": "2026-10-25T23:10:00.167",
+        "status": "Analyzed",
+        "configurationsPresent": true,
+        "configurationCount": 1,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-54514",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-54514"
+      },
+      {
+        "id": "CVE-2026-54515",
+        "published": "2026-06-23T21:17:02.597",
+        "lastModified": "2026-10-25T23:10:00.167",
+        "status": "Analyzed",
+        "configurationsPresent": true,
+        "configurationCount": 1,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-54515",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-54515"
+      },
+      {
+        "id": "CVE-2026-59888",
+        "published": "2026-07-14T17:17:15.137",
+        "lastModified": "2026-10-24T21:10:00.130",
+        "status": "Awaiting Analysis",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-59888",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-59888"
+      },
+      {
+        "id": "CVE-2026-59889",
+        "published": "2026-07-14T21:17:06.160",
+        "lastModified": "2026-10-24T21:10:00.130",
+        "status": "Awaiting Analysis",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-59889",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-59889"
+      },
+      {
+        "id": "CVE-2026-68494",
+        "published": "2026-08-04T15:16:41.443",
+        "lastModified": "2026-10-23T23:10:00.157",
+        "status": "Awaiting Analysis",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-68494",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-68494"
+      },
+      {
+        "id": "CVE-2026-68497",
+        "published": "2026-09-11T16:17:39.610",
+        "lastModified": "2026-09-18T19:34:36.657",
+        "status": "Awaiting Analysis",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-68497",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-68497"
+      },
+      {
+        "id": "CVE-2026-77310",
+        "published": "2026-08-24T20:17:20.977",
+        "lastModified": "2026-10-12T21:10:00.227",
+        "status": "Deferred",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-77310",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-77310"
+      },
+      {
+        "id": "CVE-2026-83557",
+        "published": "2026-09-01T15:17:37.987",
+        "lastModified": "2026-09-08T19:29:32.200",
+        "status": "Awaiting Analysis",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-83557",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-83557"
+      },
+      {
+        "id": "CVE-2026-89407",
+        "published": "2026-09-22T15:17:21.053",
+        "lastModified": "2026-09-22T20:00:03.713",
+        "status": "Deferred",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-89407",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-89407"
+      },
+      {
+        "id": "CVE-2026-89425",
+        "published": "2026-09-23T03:17:04.357",
+        "lastModified": "2026-09-24T20:43:32.537",
+        "status": "Deferred",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-89425",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-89425"
+      },
+      {
+        "id": "CVE-2026-91776",
+        "published": "2026-09-23T03:17:04.620",
+        "lastModified": "2026-09-24T20:43:32.537",
+        "status": "Deferred",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-91776",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-91776"
+      },
+      {
+        "id": "CVE-2026-91777",
+        "published": "2026-09-23T03:17:04.783",
+        "lastModified": "2026-09-24T20:43:32.537",
+        "status": "Deferred",
+        "configurationsPresent": false,
+        "configurationCount": 0,
+        "sourceUrl": "https://nvd.nist.gov/vuln/detail/CVE-2026-91777",
+        "apiUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2026-91777"
+      }
+    ]
+  },
+  "gitQueryControl": {
+    "checkedAt": "2026-11-04T19:12:21Z",
+    "repository": "https://github.com/apache/tomcat",
+    "releaseTag": "10.1.31",
+    "releaseCommit": "b07cda9f3cc385f6f2d6c0701a050317979745dc",
+    "endpoint": "https://api.osv.dev/v1/query",
+    "gitTag": {
+      "request": {
+        "package": {
+          "ecosystem": "GIT",
+          "name": "https://github.com/apache/tomcat"
+        },
+        "version": "10.1.31"
+      },
+      "records": 1,
+      "ids": [
+        "CVE-2024-52318"
+      ],
+      "nextPageToken": null
+    },
+    "gitCommit": {
+      "request": {
+        "commit": "b07cda9f3cc385f6f2d6c0701a050317979745dc"
+      },
+      "records": 0,
+      "ids": [],
+      "nextPageToken": null
+    },
+    "targetCve": "CVE-2026-68763",
+    "interpretation": "Both queries omitted the target CVE. The observed query results do not establish why the record was omitted and do not override the upstream Apache advisory."
+  },
+  "githubReleaseAssociation": {
+    "cve": "CVE-2026-68763",
+    "repository": "https://github.com/apache/tomcat",
+    "releaseTag": "10.1.31",
+    "releaseCommit": "b07cda9f3cc385f6f2d6c0701a050317979745dc",
+    "githubReleaseObjects": 0,
+    "tags": [
+      {
+        "ref": "refs/tags/10.1.0-M1",
+        "node_id": "MDM6UmVmMjQ5MzkwNDpyZWZzL3RhZ3MvMTAuMS4wLU0x",
+        "url": "https://api.github.com/repos/apache/tomcat/git/refs/tags/10.1.0-M1",
+        "object": {
+          "sha": "f2ab9ac8bc3f40ee9b2cb50b030c99df927f0429",
+          "type": "commit",
+          "url": "https://api.github.com/repos/apache/tomcat/git/commits/f2ab9ac8bc3f40ee9b2cb50b030c99df927f0429"
+        }
+      },
+      {
+        "ref": "refs/tags/10.1.57",
+        "node_id": "MDM6UmVmMjQ5MzkwNDpyZWZzL3RhZ3MvMTAuMS41Nw==",
+        "url": "https://api.github.com/repos/apache/tomcat/git/refs/tags/10.1.57",
+        "object": {
+          "sha": "5da21b1c24a6443bca5c10dc80a69a76042ca337",
+          "type": "commit",
+          "url": "https://api.github.com/repos/apache/tomcat/git/commits/5da21b1c24a6443bca5c10dc80a69a76042ca337"
+        }
+      }
+    ],
+    "comparisons": [
+      {
+        "label": "introduced-to-release",
+        "base": "f2ab9ac8bc3f40ee9b2cb50b030c99df927f0429",
+        "head": "b07cda9f3cc385f6f2d6c0701a050317979745dc",
+        "status": "diverged",
+        "aheadBy": 2882,
+        "behindBy": 1,
+        "mergeBase": "796d2d6174938b8fa1fa9dbb536482f40de9382b",
+        "url": "https://github.com/apache/tomcat/compare/f2ab9ac8bc3f40ee9b2cb50b030c99df927f0429...b07cda9f3cc385f6f2d6c0701a050317979745dc"
+      },
+      {
+        "label": "release-to-last-affected",
+        "base": "b07cda9f3cc385f6f2d6c0701a050317979745dc",
+        "head": "5da21b1c24a6443bca5c10dc80a69a76042ca337",
+        "status": "diverged",
+        "aheadBy": 1976,
+        "behindBy": 1,
+        "mergeBase": "9d9b9afda331ad197d169be1129bde2dffc020ee",
+        "url": "https://github.com/apache/tomcat/compare/b07cda9f3cc385f6f2d6c0701a050317979745dc...5da21b1c24a6443bca5c10dc80a69a76042ca337"
+      }
+    ],
+    "tagCommits": [
+      {
+        "sha": "f2ab9ac8bc3f40ee9b2cb50b030c99df927f0429",
+        "message": "Tag 10.1.0-M1",
+        "parents": [
+          "796d2d6174938b8fa1fa9dbb536482f40de9382b"
+        ]
+      },
+      {
+        "sha": "b07cda9f3cc385f6f2d6c0701a050317979745dc",
+        "message": "Tag 10.1.31",
+        "parents": [
+          "9d9b9afda331ad197d169be1129bde2dffc020ee"
+        ]
+      },
+      {
+        "sha": "5da21b1c24a6443bca5c10dc80a69a76042ca337",
+        "message": "Tag 10.1.57",
+        "parents": [
+          "fae623e6a0abf444d4f01d49dc64f1b4787e672a"
+        ]
+      }
+    ],
+    "result": "UNRESOLVED_BY_LITERAL_ANCESTRY",
+    "meaning": "The compared tag commits diverge. Their names identify versions but do not establish Git-range membership for the intervening release. The Apache advisory independently lists 10.1.31 within its affected product-version range.",
+    "releaseProcedure": "https://github.com/apache/tomcat/blob/main/BUILDING.txt"
+  },
+  "freemarkerInitialCveMavenMetadata": {
+    "cve": "CVE-2026-84939",
+    "initialCveCommit": "396cc66e7c242acecf8e660c6395f39e5e843f5c",
+    "initialCveCommitAt": "2026-09-10T05:23:18Z",
+    "initialCveCommitUrl": "https://github.com/CVEProject/cvelistV5/commit/396cc66e7c242acecf8e660c6395f39e5e843f5c",
+    "initialCveRawUrl": "https://raw.githubusercontent.com/CVEProject/cvelistV5/396cc66e7c242acecf8e660c6395f39e5e843f5c/cves/2026/84xxx/CVE-2026-84939.json",
+    "datePublished": "2026-09-10T05:07:24.045Z",
+    "affectedAtInitialPublication": [
+      {
+        "vendor": "Apache Software Foundation",
+        "product": "Apache FreeMarker",
+        "collectionURL": "https://repo.maven.apache.org/maven2",
+        "packageName": "org.freemarker:freemarker",
+        "packageURL": "pkg:maven/org.freemarker/freemarker",
+        "versions": [
+          {
+            "status": "affected",
+            "version": "2.2.0",
+            "lessThanOrEqual": "2.3.34",
+            "versionType": "semver"
+          },
+          {
+            "status": "unaffected",
+            "version": "2.3.35",
+            "versionType": "semver"
+          }
+        ],
+        "defaultStatus": "unaffected"
+      },
+      {
+        "vendor": "Apache Software Foundation",
+        "product": "Apache FreeMarker",
+        "collectionURL": "https://repo.maven.apache.org/maven2",
+        "packageName": "org.freemarker:freemarker-gae",
+        "packageURL": "pkg:maven/org.freemarker/freemarker-gae",
+        "versions": [
+          {
+            "status": "affected",
+            "version": "2.2.0",
+            "lessThanOrEqual": "2.3.34",
+            "versionType": "semver"
+          },
+          {
+            "status": "unaffected",
+            "version": "2.3.35",
+            "versionType": "semver"
+          }
+        ],
+        "defaultStatus": "unaffected"
+      }
+    ]
+  },
+  "proposedCapabilities": {
+    "nvdIntegrationIntoDependencyEliderImplemented": false,
+    "nvdCpeFindingProjectionImplemented": false,
+    "gitReleaseAssociationFlagImplemented": false,
+    "illustrativeGitFlag": "elide.resolveGitAdvisoryReleases",
+    "illustrativeGitFlagDefault": false,
+    "boundary": "Coarse product matches, upstream release associations and scanner-finding projections do not grant VEX or mitigation proof authority."
+  },
+  "sourceRevision": "9ccf50eaa857c5cbcfa993b7e910f33765eb827f",
+  "inputArtifacts": [
+    {
+      "name": "example-spring-boot-app-0.1.0-SNAPSHOT.jar",
+      "kind": "baseline executable JAR",
+      "sha256": "b46e5b0bb4327804a02523a4611ba780c833969a78f49cffa5c5636561a553bd"
+    },
+    {
+      "name": "runtime-sbom.cdx.json",
+      "kind": "resolved runtime CycloneDX 1.6 inventory",
+      "producer": "org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeBom",
+      "validation": "63 package records agreed with Maven dependency:list using includeScope=runtime; test packages excluded",
+      "sha256": "8ab9fc15f408498bd5d8a6be425d483386c324dfffdcb1c227057d217b104c95"
+    },
+    {
+      "name": "dependency-check-report.json",
+      "kind": "OWASP baseline scanner report",
+      "sha256": "96ca1ef2f0355edd28a991c367f7d985c00d0fcf120959fecdd026ee3190ab8c"
+    },
+    {
+      "name": "runtime-sbom-osv.json",
+      "kind": "OSV runtime-inventory scanner report",
+      "sha256": "f13faa7a3f942893b803b0bb33ef20563cb6571f3552557cefa4809dfba93061"
+    },
+    {
+      "name": "executable-jar.json",
+      "kind": "OSV executable-JAR scanner report",
+      "sha256": "17e668804e17da5358c83e2cc4b6418abd36c417af7d21c05005a30a13f56fb7"
+    }
+  ]
+}

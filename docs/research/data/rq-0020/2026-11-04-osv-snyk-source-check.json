@@ -1,0 +1,58 @@
+{
+  "purpose": "Dated research evidence for whether OSV directly ingests Snyk's database; not an exhaustive overlap survey or a plugin cache payload.",
+  "checkedOn": "2026-11-04",
+  "sourceDocumentationUrl": "https://google.github.io/osv.dev/data/",
+  "sourceConfiguration": {
+    "url": "https://github.com/google/osv.dev/blob/master/source.yaml",
+    "rawUrl": "https://raw.githubusercontent.com/google/osv.dev/master/source.yaml",
+    "fetchSucceeded": true,
+    "toolReportedModifiedDate": "2026-10-27T03:51:27Z",
+    "configuredEntryCount": 45,
+    "caseInsensitiveSnykOccurrences": 0,
+    "snykSourceListedInCheckedDocumentation": false,
+    "relevantConfiguredSource": {
+      "name": "ghsa",
+      "repository": "https://github.com/github/advisory-database.git",
+      "directory": "advisories/github-reviewed"
+    },
+    "limitation": "The public source list and repository configuration were checked; this is not independent inspection of production server configuration."
+  },
+  "indirectExample": {
+    "osvUrl": "https://osv.dev/vulnerability/GHSA-m7j4-fhg6-xf5v",
+    "importSourceUrl": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2020/12/GHSA-m7j4-fhg6-xf5v/GHSA-m7j4-fhg6-xf5v.json",
+    "id": "GHSA-m7j4-fhg6-xf5v",
+    "aliases": [
+      "CVE-2020-28458"
+    ],
+    "affectedPackages": [
+      {
+        "ecosystem": "npm",
+        "name": "datatables.net"
+      }
+    ],
+    "snykReferences": [
+      {
+        "type": "WEB",
+        "url": "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSBOWER-1051961"
+      },
+      {
+        "type": "WEB",
+        "url": "https://snyk.io/vuln/SNYK-JAVA-ORGWEBJARSNPM-1051962"
+      },
+      {
+        "type": "WEB",
+        "url": "https://snyk.io/vuln/SNYK-JS-DATATABLESNET-1016402"
+      },
+      {
+        "type": "WEB",
+        "url": "https://snyk.io/vuln/SNYK-JS-DATATABLESNET-598806"
+      }
+    ],
+    "interpretation": "OSV imports this record from GitHub's advisory database. Snyk links are references, not evidence of a direct Snyk feed or of Maven affected entries.",
+    "limitation": "One selected example establishes reference overlap only; no inference of complete Snyk coverage or zero incremental value."
+  },
+  "conclusion": "Snyk is not a direct source in the checked OSV source list/configuration. Some Snyk-linked advisories are present through other sources.",
+  "causeOfNonIngestionEstablished": false,
+  "freshTomcatMavenQueryPerformed": false,
+  "additionalSourceIntegrationImplemented": false
+}

@@ -52,3 +52,8 @@
 - When a change affects an example fixture, its documented Maven command, or the output shown in README or plugin usage, refresh the generated examples with `make update-transcripts` (`go run scripts/update-transcripts.go --update`) before wrapping up.
 - Review and include the generated documentation changes. Do not hand-edit content inside transcript marker blocks; update the manifest or fixture setup, then regenerate with `make update-transcripts`.
 - Use `make check-transcripts` to check for drift without rewriting documentation.
+
+## Living research records
+
+- Keep follow-up CVE/database coverage, Maven mapping latency, scanner finding projection, and Git release-association research in [RQ-0020](docs/research/RQ-0020-advisory-source-coverage-and-scanner-finding-projections.md). Update its last-updated date, append dated findings, and preserve prior evidence snapshots rather than starting another RQ for the same investigation.
+- Keep follow-up research on centrally distributed vulnerability mappings consumed as Maven dependencies in [RQ-0021](docs/research/RQ-0021-centrally-distributed-vulnerability-mapping-dependencies.md), including catalog adoption, provenance, local overrides, and dependency isolation.
