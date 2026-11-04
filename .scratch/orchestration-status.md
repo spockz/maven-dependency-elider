@@ -1329,3 +1329,30 @@ Baseline prerequisite committed as `cf70e00049cd9ac0ab6d169874fcc8e0690103f8`; d
 - S2b removes `PostCompileSourceAttribution` completely and updates `ProductionAnalysisInputs` so `productionClassesComplete=true` discovers production roots directly from emitted bytecode (`BytecodeReferenceScan`) without demanding in-process `javac` source passes.
 - Inlined-constant protection is asserted via explicit `<retainedArtifacts>`, fulfilling P04 and ADR-0010 amendment.
 - Full verification passed: `make lint-java` clean (Checkstyle, Spotless, PMD, SpotBugs), `make lint-markdown` clean, `make check-transcripts` clean, `make test-sbom-comparison` clean, 747 plugin unit tests and 28 lifecycle integration tests pass with 0 failures. P04 is VERIFIED.
+
+## WP-FINDINGS-01: Source-independent vulnerability findings
+
+- Owning session: current coordinating thread; source is `docs/handovers/2026-11-04-source-independent-vulnerability-findings-plan.md`, approved by the user's `Implement` instruction.
+- Baseline: `main` at `49ac811`; research and approved plan checkpointed, no pending tracked edits. Initial `make check` hit native-thread exhaustion. Unchanged bounded run is in progress with `JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2`, one test fork, and two Maven threads.
+- Scope: all GF-01 through GF-10; independent OSV/CVE List/manual ingestion, generic assessment, normalized code-set and gap-preserving version unions, scoped supplied-field manual overrides, reporting provenance, no severity, source-independent physical proof, cache/report/goal integration.
+- Architecture: `/root/generic_findings_architect` (Sol) provides initial seam scrutiny and final integration review. Dedicated track implementer/reviewer will be provisioned after the clean baseline passes.
+- Track: `findings`, sequential committable slices in `.scratch/worktrees/track-generic-findings`; code and resource/test ownership in one track avoids cross-subsystem interface races. Coordinator owns documentation and orchestration.
+- Gemini/semantic tool availability: no `gemini_review_diff` or semantic editing tool exposed; optional peer bridge fails open and standard tools are used.
+- Key decisions: preserve code/version correlation; manual whole-code-group override; separate generic AUTO_VERIFY/REVIEW_ONLY intent from descriptive confidence; manual LOW/MEDIUM means REVIEW_ONLY without lower-priority fallback; ambiguous multi-CVE aliases cannot merge unrelated vulnerabilities; GHSA-only IDs remain visible; source refresh failure is explicit and retains last-good inputs.
+
+| Requirement | Required behavior | Owner / integration | Production evidence | Verification | Status |
+| --- | --- | --- | --- | --- | --- |
+| GF-01 | OSV, CVE List and manual inputs independently produce findings | findings / coordinator | Pending | Source-only production-path fixtures | MISSING |
+| GF-02 | Effective facts and assessment independent of provenance | findings / coordinator | Pending | Adapter equivalence and provenance swap | MISSING |
+| GF-03 | Automatic union, scoped manual overrides, missing-field enrichment | findings / coordinator | Pending | Permutation, group replacement, review-only intent | MISSING |
+| GF-04 | Faithful version union, gaps, aliases and code/version scope | findings / coordinator | Pending | Boundaries, unsupported rules, alias/classifier isolation | MISSING |
+| GF-05 | Normalized paths and qualified routine attribution | findings / coordinator | Pending | Roots, separators, package/case, overloads/nesting | MISSING |
+| GF-06 | Common physical omission and prerequisite limits | findings / coordinator | Pending | Retained classes, archive identity, incomplete inventory | MISSING |
+| GF-07 | Independent source lifecycle, project-local manual data | findings / coordinator | Pending | Refresh/withdrawal/deletion/failure tests | MISSING |
+| GF-08 | Strict generic serialization, offline use and replay | findings / coordinator | Pending | Roundtrip/malformed/old draft/no-CVE cases | MISSING |
+| GF-09 | Analyze/elide/report and attestation use common pipeline | findings / coordinator | Pending | Real Maven entrypoints, effective manual presence | MISSING |
+| GF-10 | Portable JDK21+ and bounded CVE refresh work | findings / coordinator | Pending | Standard compliant installed JDK runs, refresh counters | MISSING |
+
+### WP-FINDINGS-01 review and delivery state
+
+Architect seam scrutiny completed read-only. No implementation or worktree yet; clean passing baseline gate pending. Plan approval is not implementation evidence. All source-authority changes must be recorded in the ADRs, and final closeout must reconcile the actual implementation with every requirement above.
