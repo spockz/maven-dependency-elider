@@ -6,6 +6,8 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.applicability.MavenRawScopeApplicability;
+import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
+import org.apache.maven.artifact.versioning.ComparableVersion;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -434,6 +436,11 @@ public final class OsvSnapshotIndexer {
     final String artifactId = name.substring(colon + 1);
     final String versionRangeSpec = resolveVersionRange(affected);
     if (versionRangeSpec == null) {
+      return null;
+    }
+    try {
+      MavenVersionRangeMatcher.validate(versionRangeSpec);
+    } catch (final IllegalArgumentException ignored) {
       return null;
     }
     return new AdvisoryScope(
@@ -947,14 +954,24 @@ public final class OsvSnapshotIndexer {
     }
     final JsonNode versions = affected.path(VERSIONS_FIELD);
     if (versions.isArray() && !versions.isEmpty()) {
-      if (versions.size() == 1) {
-        return "[" + versions.get(0).asText() + "]";
+      final List<String> sortedVersions = new ArrayList<>();
+      for (final JsonNode v : versions) {
+        if (v.isTextual() && !v.textValue().isBlank()) {
+          sortedVersions.add(v.textValue());
+        }
       }
-      return "["
-          + versions.get(0).asText()
-          + ","
-          + versions.get(versions.size() - 1).asText()
-          + "]";
+      if (!sortedVersions.isEmpty()) {
+        sortedVersions.sort(
+            (v1, v2) -> new ComparableVersion(v1).compareTo(new ComparableVersion(v2)));
+        if (sortedVersions.size() == 1) {
+          return "[" + sortedVersions.get(0) + "]";
+        }
+        return "["
+            + sortedVersions.get(0)
+            + ","
+            + sortedVersions.get(sortedVersions.size() - 1)
+            + "]";
+      }
     }
     return null;
   }

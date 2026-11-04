@@ -84,6 +84,32 @@ final class MavenCompilerSettings {
   private MavenCompilerSettings() {}
 
   /** Resolves supported javac options or rejects unmodeled settings. */
+  private static boolean isConsistent(
+      final String release, final String source, final String target) {
+    if (release == null) {
+      return true;
+    }
+    final String normRelease = normalizeRelease(release);
+    if (source != null && !normRelease.equals(normalizeRelease(source))) {
+      return false;
+    }
+    if (target != null && !normRelease.equals(normalizeRelease(target))) {
+      return false;
+    }
+    return true;
+  }
+
+  private static String normalizeRelease(final String version) {
+    if (version == null) {
+      return null;
+    }
+    final String trimmed = version.trim();
+    if (trimmed.startsWith("1.")) {
+      return trimmed.substring(2);
+    }
+    return trimmed;
+  }
+
   static List<String> options(
       final MavenProject project, final MavenSession session, final List<String> compileClasspath)
       throws IOException {
@@ -104,7 +130,7 @@ final class MavenCompilerSettings {
         value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
         value("target", "maven.compiler.target", project, userProperties, configurations);
-    if (release != null && (source != null || target != null)) {
+    if (release != null && (source != null || target != null) && !isConsistent(release, source, target)) {
       throw new IOException("Cannot attribute source with both compiler release and source/target");
     }
     final List<String> options = new ArrayList<>();
@@ -152,7 +178,7 @@ final class MavenCompilerSettings {
         value("source", "maven.compiler.source", project, userProperties, configurations);
     final String target =
         value("target", "maven.compiler.target", project, userProperties, configurations);
-    if (release != null && (source != null || target != null)) {
+    if (release != null && (source != null || target != null) && !isConsistent(release, source, target)) {
       throw new IOException("Cannot identify compiler release with both release and source/target");
     }
     if (release != null) {

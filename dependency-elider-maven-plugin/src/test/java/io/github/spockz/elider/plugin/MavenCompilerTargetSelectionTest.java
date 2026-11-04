@@ -30,6 +30,9 @@ final class MavenCompilerTargetSelectionTest {
   /** Javac option representing the selected target. */
   private static final String TARGET_OPTION = "-target";
 
+  /** Javac option representing the selected release. */
+  private static final String RELEASE_OPTION = "--release";
+
   /** Holds the model directories used by the Maven POM fixtures. */
   @TempDir private Path temporaryDirectory;
 
@@ -144,6 +147,71 @@ final class MavenCompilerTargetSelectionTest {
                     TrimPlatform.targetReleaseFromOptions(
                         MavenCompilerSettings.analysisTargetOptions(project, (MavenSession) null)))
                 .isEqualTo(17));
+  }
+
+  @Test
+  void consistentReleaseAndSourceTargetSettingsResolveToRelease()
+      throws IOException, ModelBuildingException {
+    final MavenProject project =
+        effectiveProject(
+            "consistent-release-source-target.xml",
+            """
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>example</groupId><artifactId>compiler-target</artifactId><version>1</version>
+              <properties>
+                <maven.compiler.release>21</maven.compiler.release>
+                <maven.compiler.source>21</maven.compiler.source>
+                <maven.compiler.target>21</maven.compiler.target>
+              </properties>
+            </project>
+            """);
+
+    assertAll(
+        "consistent release and source/target resolve to --release",
+        () ->
+            assertThat(MavenCompilerSettings.options(project, null, List.of()))
+                .containsExactly(RELEASE_OPTION, "21"),
+        () ->
+            assertThat(MavenCompilerSettings.releaseIdentity(project, (MavenSession) null))
+                .containsExactly(RELEASE_OPTION, "21"),
+        () ->
+            assertThat(MavenCompilerSettings.platformReleaseOptions(project, null))
+                .containsExactly(RELEASE_OPTION, "21"),
+        () ->
+            assertThat(MavenCompilerSettings.analysisTargetOptions(project, (MavenSession) null))
+                .containsExactly(RELEASE_OPTION, "21"));
+  }
+
+  @Test
+  void conflictingReleaseAndSourceOrTargetRejectsAttributionAndIdentity()
+      throws IOException, ModelBuildingException {
+    final MavenProject project =
+        effectiveProject(
+            "conflicting-release-source-target.xml",
+            """
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <modelVersion>4.0.0</modelVersion>
+              <groupId>example</groupId><artifactId>compiler-target</artifactId><version>1</version>
+              <properties>
+                <maven.compiler.release>21</maven.compiler.release>
+                <maven.compiler.source>17</maven.compiler.source>
+                <maven.compiler.target>21</maven.compiler.target>
+              </properties>
+            </project>
+            """);
+
+    assertAll(
+        "conflicting release and source/target reject attribution and identity",
+        () ->
+            assertThatThrownBy(() -> MavenCompilerSettings.options(project, null, List.of()))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Cannot attribute source with both compiler release and source/target"),
+        () ->
+            assertThatThrownBy(
+                    () -> MavenCompilerSettings.releaseIdentity(project, (MavenSession) null))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Cannot identify compiler release with both release and source/target"));
   }
 
   @Test

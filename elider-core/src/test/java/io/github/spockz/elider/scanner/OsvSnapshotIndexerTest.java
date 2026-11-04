@@ -39,6 +39,63 @@ class OsvSnapshotIndexerTest {
   @TempDir Path tempDir;
 
   @Test
+  void sortsVersionsArrayToResolveValidAscendingMavenRange() throws IOException {
+    final String osv =
+        """
+        {
+          "id": "GHSA-reversed-versions",
+          "modified": "2026-11-04T00:00:00Z",
+          "aliases": ["CVE-2026-99999"],
+          "affected": [
+            {
+              "package": {"ecosystem": "Maven", "name": "org.example:library"},
+              "versions": ["0.10.0", "0.9.4", "0.9.3"]
+            }
+          ]
+        }
+        """;
+    final OsvAdvisoryRecord record =
+        new OsvSnapshotIndexer()
+            .indexZip(
+                new ByteArrayInputStream(createZip(List.of(new ZipItem("record.json", osv)))),
+                tempDir)
+            .getFirst();
+
+    assertThat(record.evidence().getFirst().scope().versionRangeSpec())
+        .isEqualTo("[0.9.3,0.10.0]");
+  }
+
+  @Test
+  void rejectsOrSkipsMalformedVersionRangeGracefullyWithoutCrashingIndex() throws IOException {
+    final String osv =
+        """
+        {
+          "id": "GHSA-malformed-range",
+          "modified": "2026-11-04T00:00:00Z",
+          "aliases": ["CVE-2026-99998"],
+          "affected": [
+            {
+              "package": {"ecosystem": "Maven", "name": "org.example:library"},
+              "ranges": [
+                {
+                  "type": "ECOSYSTEM",
+                  "events": [{"introduced": "2.0"}, {"fixed": "1.0"}]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+    final List<OsvAdvisoryRecord> records =
+        new OsvSnapshotIndexer()
+            .indexZip(
+                new ByteArrayInputStream(createZip(List.of(new ZipItem("record.json", osv)))),
+                tempDir);
+
+    assertThat(records.getFirst().evidence()).isEmpty();
+  }
+
+  @Test
   void preservesOsvOwnershipScopesCnaAndIndependentSourceOrigins() throws IOException {
     final Path cvePath = tempDir.resolve("cves/2025/12xxx/CVE-2025-12345.json");
     Files.createDirectories(cvePath.getParent());

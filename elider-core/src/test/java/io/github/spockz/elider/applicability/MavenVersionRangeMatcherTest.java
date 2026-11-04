@@ -35,5 +35,7 @@ final class MavenVersionRangeMatcherTest {
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Invalid Maven version range")
         .hasMessageContaining("[1.0,2.0");
+    assertThatThrownBy(() -> MavenVersionRangeMatcher.validate("[2.0,1.0]"))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 }
