@@ -345,12 +345,37 @@ class OmittedCodeProofTest {
   }
 
   @Test
-  void rejectsMappingAbsentFromOriginalArchive() throws Exception {
+  void provesOmissionWhenAtLeastOneMappedSymbolPrunedAndNoneSurvive() throws Exception {
+    final ArtifactTrimRecord record =
+        record(
+            jar("original.jar", "org/example/PresentVulnerable.class", "org/example/Safe.class"),
+            jar("trimmed.jar", "org/example/Safe.class"));
+    final VulnerabilitySymbolMapping multiSymbol =
+        new VulnerabilitySymbolMapping(
+            "CVE-2026-68494",
+            ArtifactCoordinate.of("org.example", "demo", "1.0"),
+            "[1.0,2.0)",
+            Set.of("org.example.PresentVulnerable", "org.example.AbsentInOlderVersion"),
+            null,
+            ConfidenceLevel.HIGH);
+
+    final VexAttestation attestation =
+        OmittedCodeProof.prove(ExplicitEvidenceTestSupport.classEvidence(multiSymbol), record);
+    assertAll(
+        () -> assertThat(attestation.cveId()).isEqualTo("CVE-2026-68494"),
+        () -> assertThat(attestation.justification()).isEqualTo("vulnerable_code_not_present"),
+        () ->
+            assertThat(attestation.evidenceSymbols())
+                .containsExactly("org.example.PresentVulnerable"));
+  }
+
+  @Test
+  void rejectsMappingWhenNoneOfMappedSymbolsWereInOriginalArchive() throws Exception {
     final ArtifactTrimRecord record =
         record(jar("original.jar", "org/example/Other.class"), jar("trimmed.jar"));
     assertThatThrownBy(() -> OmittedCodeProof.prove(mapping("org.example.Vulnerable"), record))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("absent from original");
+        .hasMessageContaining("absent from original archive");
   }
 
   @Test

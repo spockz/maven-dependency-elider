@@ -578,7 +578,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final ArtifactCoordinate affected =
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
     final Path originalJar = writeJar("conservative-original.jar", "org/example/Present.class");
-    final Path trimmedJar = writeJar("conservative-trimmed.jar");
+    final Path trimmedJar = writeJar("conservative-trimmed.jar", "org/example/Present.class");
     final ArtifactTrimRecord trimRecord = trimRecord(affected, originalJar, trimmedJar);
     final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected), List.of(trimRecord));
     final MavenPreconditionInventory.Snapshot inventory =

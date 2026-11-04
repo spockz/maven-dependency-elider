@@ -23,7 +23,6 @@ final class PhysicalOmissionChecks {
     return digests;
   }
 
-  @SuppressWarnings("PMD.CyclomaticComplexity")
   /* default */ static Set<String> verifySymbols(
       final Set<String> vulnerableClasses,
       final Set<String> originalClasses,
@@ -31,26 +30,43 @@ final class PhysicalOmissionChecks {
     final Set<String> absent = new TreeSet<>();
     for (final String mapped : vulnerableClasses) {
       final String binaryName = mapped.replace('.', '/');
-      if (!originalClasses.contains(binaryName)) {
-        throw new IllegalArgumentException(
-            "Mapped class is absent from original archive: " + mapped);
+      if (originalClasses.contains(binaryName)) {
+        absent.addAll(verifyPrunedSymbols(binaryName, originalClasses, trimmedClasses));
       }
-      for (final String symbol : nestedSymbols(binaryName, originalClasses)) {
-        if (trimmedClasses.contains(symbol)) {
-          throw new IllegalArgumentException(
-              "Vulnerable class survives trimmed archive: " + symbol.replace('/', '.'));
-        }
-        absent.add(symbol.replace('/', '.'));
-      }
-      final String nestedPrefix = binaryName + "$";
-      for (final String trimmed : trimmedClasses) {
-        if (trimmed.startsWith(nestedPrefix)) {
-          throw new IllegalArgumentException(
-              "Vulnerable nested class survives trimmed archive: " + trimmed.replace('/', '.'));
-        }
-      }
+      verifyNoSurvivingNested(binaryName, trimmedClasses);
+    }
+    if (absent.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Mapped class is absent from original archive: "
+              + String.join(", ", new TreeSet<>(vulnerableClasses)));
     }
     return absent;
+  }
+
+  private static Set<String> verifyPrunedSymbols(
+      final String binaryName,
+      final Set<String> originalClasses,
+      final Set<String> trimmedClasses) {
+    final Set<String> absent = new TreeSet<>();
+    for (final String symbol : nestedSymbols(binaryName, originalClasses)) {
+      if (trimmedClasses.contains(symbol)) {
+        throw new IllegalArgumentException(
+            "Vulnerable class survives trimmed archive: " + symbol.replace('/', '.'));
+      }
+      absent.add(symbol.replace('/', '.'));
+    }
+    return absent;
+  }
+
+  private static void verifyNoSurvivingNested(
+      final String binaryName, final Set<String> trimmedClasses) {
+    final String nestedPrefix = binaryName + "$";
+    for (final String trimmed : trimmedClasses) {
+      if (trimmed.startsWith(nestedPrefix)) {
+        throw new IllegalArgumentException(
+            "Vulnerable nested class survives trimmed archive: " + trimmed.replace('/', '.'));
+      }
+    }
   }
 
   /* default */ static void verifyUnchanged(
