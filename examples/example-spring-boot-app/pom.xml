@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- WHY: Keeps the Spring Boot fixture self-contained while exposing an opt-in CVE scan profile. -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -148,27 +149,6 @@
                 <groupId>io.github.spockz</groupId>
                 <artifactId>dependency-elider-maven-plugin</artifactId>
                 <version>${project.version}</version>
-                <configuration>
-                    <!--
-                        Demonstrates refining an upstream advisory index gap:
-                        Upstream advisory feeds (OSV, NVD) only track package-level ranges or internal
-                        parser patch classes, lacking the public entry point. The project analyst refines
-                        the mapping to target ObjectMapper. Dependency Elider correlates ObjectMapper with
-                        the META-INF/services/com.fasterxml.jackson.core.ObjectCodec provider, warning
-                        that vulnerable code was conservatively retained under conservativeServiceLoaderRoots=true.
-                    -->
-                    <vulnerabilityMappings>
-                        <vulnerabilityMapping>
-                            <cveId>CVE-2026-68494</cveId>
-                            <groupId>com.fasterxml.jackson.core</groupId>
-                            <artifactId>jackson-databind</artifactId>
-                            <versionRangeSpec>(,3.0.0)</versionRangeSpec>
-                            <vulnerableClasses>
-                                <vulnerableClass>com.fasterxml.jackson.databind.ObjectMapper</vulnerableClass>
-                            </vulnerableClasses>
-                        </vulnerabilityMapping>
-                    </vulnerabilityMappings>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -185,4 +165,35 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>cve-scan</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <configuration>
+                            <formats>
+                                <format>HTML</format>
+                                <format>JSON</format>
+                            </formats>
+                            <failOnError>true</failOnError>
+                            <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>cve-scan</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

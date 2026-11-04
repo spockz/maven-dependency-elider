@@ -370,7 +370,7 @@ The repository includes end-to-end integration fixtures under `examples/`:
 | Fixture | Architecture | Target Demonstration |
 | :--- | :--- | :--- |
 | **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec` and `httpclient`, retains the cached `AbstractVerifier` source candidate for review, and emits no cache-derived CVE classification; produces a shrunken shaded JAR. |
-| **`example-spring-boot-app`** | Spring Boot 3 Web | Retains candidates when no safe drop exists, trims Spring MVC under `BOOT-INF/lib`, and flags conservative SPI retention (`CVE-2026-68494`). |
+| **`example-spring-boot-app`** | Spring Boot 3 Web | Trims Spring MVC under `BOOT-INF/lib` and exercises Spring Boot repackaging of the application and its dependencies. |
 | **`example-cve-unused-app`** | Standalone CVE test | Uses a validated explicit POM `HIGH` assertion for `StringLookup` on Commons Text versions below 1.10.0, proves that class physically absent after trimming, and emits OpenVEX. |
 | **`example-multi-module-reactor`** | Three-module Maven reactor with Shade | Exercises module-local reports and dependency elision for `reactor-common` → `reactor-service` → `reactor-app`, under sequential and `-T 4` builds. |
 | **`example-cve-safe-class-app`** | Standalone CVE test | Explicitly opts into complete inventory inspection and proves the Janino coordinate and `ClassBodyEvaluator` class absent from the Logback 1.5.18 conditional-script path for `CVE-2025-11226`, then emits CycloneDX and OpenVEX precondition evidence while preserving fixture runtime behavior. |
@@ -529,7 +529,13 @@ Process exit status: 0
 
 #### example-spring-boot-app
 
-Look at the `Potentially conservative CVE exclusions` finding for Jackson Databind. A ServiceLoader root prevents a safe omission proof, so the report explains what remained and gives a POM override for users who can certify that the root does not apply. This demonstrates fail-closed retention in a larger Spring Boot dependency graph.
+The Spring Boot fixture demonstrates dependency trimming inside a repackaged application. Its independent OWASP Dependency-Check scan reports published advisories for resolved dependencies; those findings do not establish that vulnerable code is reachable or prove that a dependency can be safely removed.
+
+Run the optional OWASP Dependency-Check scan with `./mvnw -f examples/example-spring-boot-app/pom.xml verify -Pcve-scan -Delide.mode=baseline`. The profile is inactive in ordinary builds. It writes `target/dependency-check-report.html` and `target/dependency-check-report.json`. Set `NVD_API_KEY` to use an NVD API key; when one is unavailable, use the public NVD feed URL below. Its initial download can take several minutes.
+
+```sh
+./mvnw -f examples/example-spring-boot-app/pom.xml verify -Pcve-scan -Delide.mode=baseline '-DnvdDatafeedUrl=https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{0}.json.gz'
+```
 
 <!-- BEGIN:transcript:report-spring-boot-app -->
 
@@ -581,17 +587,7 @@ Process exit status: 0
 [INFO] Advisories associated with removed components: none
 [INFO] Mitigated CVEs (vulnerable code pruned by trimming): none
 [INFO] CVEs inactive due to unmet prerequisite dependencies: none
-[INFO] Potentially conservative CVE exclusions:
-[INFO]   - CVE-2026-68494 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2
-[INFO]     Reason: Vulnerable code was retained due to conservative ServiceLoader SPI
-[INFO]     root com.fasterxml.jackson.core.ObjectCodec,
-[INFO]     com.fasterxml.jackson.databind.ObjectMapper without positive proof of use in
-[INFO]     application bytecode.
-[INFO]     Actionable POM override to certify if absent classes do not apply to your
-[INFO]     version:
-[INFO]       <configuration>
-[INFO]         <conservativeServiceLoaderRoots>false</conservativeServiceLoaderRoots>
-[INFO]       </configuration>
+[INFO] Potentially conservative CVE exclusions: none detected
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 1529 dependency or exclusion origins.
