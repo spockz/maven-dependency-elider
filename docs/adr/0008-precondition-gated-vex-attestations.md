@@ -52,3 +52,7 @@ Keep POM mapping overrides ahead of cached mappings when they address the same C
 ## Consequences
 
 This design rejects cases where only coordinates are known, and it requires callers to affirm that the declared build inventory is complete. It reduces false claims caused by equivalent classes in other artifacts and makes incomplete source or archive evidence suppress VEX. It still cannot certify provider absence in future packaging inputs or deployment-time runtime environments, which must remain visible as a limitation. OpenVEX statements explain the precondition through `impact_statement` rather than an unsupported justification category.
+
+## Dated Amendment: 2026-11-04 Common Finding and Proof Inputs
+
+[ADR-0014](0014-source-independent-vulnerability-findings.md) replaces provider-specific admission with common effective code/prerequisite declarations. Manual corrections retain explicit scoped merge priority, including review-only intent, but are not handled through a separate POM-origin proof route. Missing fields can be enriched; a prerequisite coordinate and class remain one atomic declaration pair. Priority and provenance cannot bypass exact version binding, complete opted-in inventory, archive identity, physical absence or output integrity checks. The inventory boundary and supported CycloneDX/OpenVEX representations above remain unchanged.

@@ -1,3 +1,4 @@
+<!-- WHY: Registers accepted architecture decisions so current contracts and superseding amendments can be found together. -->
 # Architecture Decision Records (ADRs)
 
 This directory contains Architecture Decision Records (ADRs) for the `maven-dependency-elider` project.
@@ -19,3 +20,4 @@ This directory contains Architecture Decision Records (ADRs) for the `maven-depe
 | [ADR-0011](0011-reactor-leaf-module-elision-boundary.md) | Reactor Leaf Module Elision Boundary | 2026-10-30 | architecture | reactor-lifecycle | plugin-core | Restrict dependency elision and trimming to leaf modules in multi-module reactors (`elide.leafOnly`) via topological DAG detection, skipping intermediate libraries. |
 | [ADR-0012](0012-dual-layer-ban-policy-and-retention-naming.md) | Dual-Layer Ban Policy and Retention Naming | 2026-11-02 | policy | build-lifecycle | plugin-core | Separate artifact retention from strict bans; pair collection-time exclusions with post-resolution absence and closure checks, treating original resolver evidence as audit-only. |
 | [ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md) | Compiler Decoupling, Multi-JDK Portability, and Report-Driven Liveness Attestation | 2026-11-02 | architecture | build-lifecycle | plugin-core | Enforce compliant JDK 21+ execution without pinned compiler digests; deprecate in-process source reproduction in favor of report-driven live proof data and compiled bytecode link-closure. |
+| [ADR-0014](0014-source-independent-vulnerability-findings.md) | Source-Independent Vulnerability Findings and Scoped Manual Overrides | 2026-11-04 | architecture | vulnerability-assessment | plugin-core | Independently ingest OSV, CVE List and manual mappings into common findings; union normalized code/version sets, apply scoped manual field overrides and verify effective claims without provider authority. |

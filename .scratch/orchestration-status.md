@@ -1353,6 +1353,22 @@ Baseline prerequisite committed as `cf70e00049cd9ac0ab6d169874fcc8e0690103f8`; d
 | GF-09 | Analyze/elide/report and attestation use common pipeline | findings / coordinator | Pending | Real Maven entrypoints, effective manual presence | MISSING |
 | GF-10 | Portable JDK21+ and bounded CVE refresh work | findings / coordinator | Pending | Standard compliant installed JDK runs, refresh counters | MISSING |
 
+### WP-FINDINGS-01 Slice 1: Generic merge contract
+
+- State: IMPLEMENTED, REVIEWED and VERIFIED for the limited model slice; production integration remains pending.
+- Observable contract: normalized automatic code sets, overlapping/disjoint version coverage, scoped manual whole-code-group replacement, omitted-group enrichment, manual review-only intent, provenance invariance and retained display attribution.
+- First red: `GenericFindingMergeTest` reaches compilation and fails because the new generic model API is absent. A stray test typo was corrected before the recorded intended red. No semantic behavior is claimed verified yet.
+- Model commit: `ee6ddcf4a99e4fa73f955cfbbe0d36d228b11af2`. Eight focused merge tests pass; independent model review approved. Full `make check` passes with bounded JVM resources and the clean-output Go override, including static analysis, coverage, 814 plugin unit tests, 28 lifecycle integration tests and generated transcripts.
+- GF-02, GF-03 and GF-04 have verified core-model evidence only and remain PARTIAL globally; cache/Maven/proof wiring is not implemented. The stable `CodeClaim`/`CodeReference` seam can now support the bounded attribution track.
+
+### WP-FINDINGS-01 Track ownership refinement
+
+The architect cleared a second bounded track after the model contract: code attribution owns `JarSourceFileIndex`, `SourceClaimPathMatcher`, a new generic resolver/result and focused tests. Its resolver accepts already-applicable generic code claims, an original JAR/index and layout flag, and returns per-declaration resolved/partial/unresolved attribution. It receives no source, version, priority or proof-intent policy. Main findings work retains model, version/merge policy, cache, proof dispatch, Maven and reporting ownership. A tiny old-resolver compile adaptation is allowed only if index metadata changes require it; no new source-specific proof route is introduced. Reviews are queued within the four-active-agent host limit.
+
 ### WP-FINDINGS-01 review and delivery state
 
-Architect seam scrutiny completed read-only. No implementation or worktree yet; clean passing baseline gate pending. Plan approval is not implementation evidence. All source-authority changes must be recorded in the ADRs, and final closeout must reconcile the actual implementation with every requirement above.
+Architect seam scrutiny completed read-only and clearance was granted. Baseline Java, lint, core/plugin/lifecycle checks passed with bounded JVM resources; the transcript phase initially differed only by the JVM resource-setting banner and passed when rerun with clean output. All configured baseline checks are green, and `main` is pristine at `ca77b55`.
+
+The active implementation track is `.scratch/worktrees/track-generic-findings`, branch `codex/generic-findings`. The implementer owns Java/resources/tests; the coordinator owns docs/ADRs/FAQ/research and this ledger. The dedicated reviewer owns read-only verification. Initial architecture receipt: `.scratch/reviews/generic-findings-initial-architecture.md` in the main checkout. Initial code/merge TDD slice is in progress; GF rows remain unverified until their production paths are wired. ADR-0014 records the approved contract, with superseding amendments in ADR-0006 and ADR-0008.
+
+Plan approval is not implementation evidence. Final closeout must reconcile the actual implementation with every requirement above. No source-authority wrapper, fake POM conversion, or adapter-only test suite satisfies the full work package.

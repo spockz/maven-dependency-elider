@@ -11,7 +11,7 @@ Elision can remove unused dependency artifacts from a compatible Maven resolver 
 
 ### How do I enable elision?
 
-Configure a supported trace file and set `-Delide.skip=false`. See [Maven plugin usage](plugin-usage.md) for trace formats, JAR trimming options, and examples.
+Configure a supported trace file and set `-Delide.skip=false`. See [Maven plugin usage](../dependency-elider-maven-plugin/src/site/markdown/usage.md) for trace formats, JAR trimming options, and examples.
 
 For the repository examples, use `-Delide.mode=baseline` or `-Delide.mode=elision` with the same POM. `elision` activates the example profile; `baseline` is the default. This makes it easy to compare the two packaged outputs without maintaining separate POMs.
 
@@ -35,7 +35,7 @@ It reports artifacts that would be elided by that analysis and the exact sum of 
 
 ### How can I keep a dependency JAR unchanged?
 
-Set `elide.trimSkipArtifacts` to the exact resolved coordinate, such as `groupId:artifactId:version:jar:`. The JAR remains byte-identical and is protected from whole-artifact elision. Its classes can still cause linked classes in other trim candidates to be retained. See [Maven plugin usage](plugin-usage.md) for the Spring example.
+Set `elide.trimSkipArtifacts` to the exact resolved coordinate, such as `groupId:artifactId:version:jar:`. The JAR remains byte-identical and is protected from whole-artifact elision. Its classes can still cause linked classes in other trim candidates to be retained. See [Maven plugin usage](../dependency-elider-maven-plugin/src/site/markdown/usage.md) for the Spring example.
 
 ### How can I retain an artifact from whole-artifact elision?
 
@@ -87,13 +87,25 @@ Native Image resource-bundle names from `-H:IncludeResourceBundles` and configur
 
 ### Does removing classes make a vulnerability finding go away?
 
-Not necessarily. Many vulnerability tools report by artifact coordinates and version, even when some classes have been removed. Omitted-code proof accepts validated effective-POM `HIGH` assertions and live-verified structured CNA claims, but only when every mapped class is present in the original artifact and physically absent from the exact retained, trimmed artifact. Structured claims additionally require unambiguous exact CNA product/version selection, corroborating current OSV+CNA affected-version evidence, and a complete byte-equal reproduction of the exact ordinary JAR from its matching Java `sources` archive under the supported pinned compiler image. Cached labels, heuristic candidates, a package/version finding, or an unused artifact alone are insufficient. The tool trusts the CNA's assertion that its declared source files/routines are affected; it does not independently establish vulnerability truth or declaration completeness. Snapshot-aware assessment can classify a CVE as inactive only after a complete opted-in inventory proves both the exact prerequisite coordinate and class absent for the exact affected version. Incomplete inventories, missing opt-in, low-confidence mappings, or a class found in any declared provider produce no inactive classification or precondition VEX. The Maven goal wires this inventory into assessment and transactional publication; if a provider or output changes during staging, publication aborts and restores prior outputs. The inventory assertion will not cover providers added by later packaging or deployment runtime mechanisms. Inspect and scan the final packaged artifact, and assess the advisory's affected code and exploit conditions separately. See [RQ-0008](research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) and [RQ-0013](research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
+Not necessarily. Package scanners can continue reporting the same artifact coordinates and version after classes are removed. Dependency Elider assesses effective vulnerability declarations through the same checks regardless of their source. Omitted-code proof requires exact component/version binding, attributable declared classes in the original JAR, and their physical absence from the resulting artifact. A package match, heuristic hint, confidence label or higher merge priority cannot establish that proof. A verified observation covers the declared classes; it does not independently verify the vulnerability or the completeness of the declaration.
+
+Precondition proof additionally requires an exact prerequisite coordinate and class and `elide.preconditionClassPathComplete=true`, with a complete verified declared inventory. Missing inputs, a retained prerequisite class, unresolved code attribution or review-only intent prevent the corresponding attestation. The inventory assertion does not cover providers added by later packaging or deployment mechanisms. Inspect and scan the final packaged artifact separately. See [RQ-0008](research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) and [RQ-0013](research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
+
+### Which sources produce vulnerability findings?
+
+The OSV Maven snapshot, CVE List v5 and configured manual mappings independently contribute to a common finding model. A CVE List record with supported Maven identity and version information can produce a finding without a matching OSV entry. Missing or unsupported identity/version information remains unresolved rather than becoming an invented Maven match. Reports retain each contributing source and record reference; the source name does not select a different assessment or proof route.
+
+### How are findings merged, and do manual mappings take priority?
+
+For the same vulnerability and Maven component, automatic code declarations are normalized and combined as sets. A source with code details can enrich another source's package-only finding. Affected-version coverage is the union of supported ranges: disjoint intervals keep their gaps. Code declarations retain their applicable version scope, so widening package coverage does not invent code mappings for other versions.
+
+Manual mappings have higher merge priority within their configured CVE/component/version scope. Supplied manual fields replace automatic fields; omitted fields can be enriched. A supplied manual code mapping replaces the whole automatic class/file/routine mapping for that scope. All resulting fields then use the same validation and physical checks. Manual `LOW` or `MEDIUM` keeps the result review-only even when missing code details are enriched; a lower-priority automatic declaration cannot bypass that intent. Severity scores do not affect this process.
 
 ### What does the conventional Java source-layout option do?
 
-`elide.assumeConventionalJavaSourceLayout` defaults to `true` and permits the specific `src/main/java/` root translation when matching a structured CNA path to its exact-version sources archive. Set it to `false` to require an exact archive path. The setting is retained in verified proof provenance and the saved report, but it does not waive complete source-to-class reproduction or physical omission proof. Unresolved claims remain review-only; an owner can verify the mapping and configure an exact POM `vulnerableClasses` assertion. A filename or `SourceFile` attribute alone is not complete attribution. The `report` goal replays the assumption and proof provenance from the last successful run, independent of current Maven configuration.
+`elide.assumeConventionalJavaSourceLayout` defaults to `true` and permits the documented source-root translation when attributing a declared Java source path. Set it to `false` to disable that assumption. The option does not waive unambiguous class attribution or physical omission checks. Ambiguous filenames and unsupported claims remain visible for review. The saved report retains the assumption and attribution used by the successful run; `report` replays those values independently of current configuration.
 
-The report also retains package-only and heuristic advisory candidates as review rows. Each row names the exact assessed component and reports applicability from preserved OSV claims; unsupported ranges stay unresolved. Inventory disposition describes whether that component was removed, trimmed, or unchanged and does not claim mitigation. Verify the source and exact artifact before adding any POM mapping.
+The report also retains package-only and heuristic candidates as review findings with their contributing sources. Each finding identifies the assessed component and version coverage; unsupported ranges stay explicit. Removed, trimmed and unchanged describe inventory disposition rather than mitigation. Verify the declaration and exact artifact before adding a manual correction.
 
 The saved report's `policy` section records canonical `retainedArtifacts`, `banishedDependencies`, and the SHA-256 identity of the operation that produced the snapshot. `appliedBans` records each request as `FORCED_ABSENT_AFTER_RESOLUTION`, `EXCLUDED_BEFORE_RESOLUTION`, or `UNMATCHED`, with the original and effective artifact matches. `rawDroppedCoordinates` excludes artifacts removed because of an explicit ban; whole-artifact drop metrics still describe every artifact absent from the final Maven view.
 
