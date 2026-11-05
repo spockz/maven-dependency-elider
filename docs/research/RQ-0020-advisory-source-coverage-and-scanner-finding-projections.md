@@ -10,7 +10,7 @@ The agreed reporting direction is to distinguish potential scanner findings proj
 ## Record
 
 - Opened: 2026-11-04
-- Last updated: 2026-11-04
+- Last updated: 2026-11-05
 - Evidence snapshot: 2026-11-04; tool and source behavior below is as checked on that date.
 - Related decisions: [ADR-0006](../adr/0006-dual-source-vulnerability-advisory-ingestion-from-cvelist-v5-and-osv-maven.md), [ADR-0013](../adr/0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md), [RQ-0008](RQ-0008-osv-sbom-comparison-and-vex-evidence.md), [RQ-0011](RQ-0011-persisted-report-scope-and-vulnerability-telemetry.md), [RQ-0013](RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md), [RQ-0015](RQ-0015-actionable-advisory-gap-detection-and-heuristic-elision-candidates.md), and [RQ-0019](RQ-0019-developer-actionable-advisory-workflows-and-ide-quick-fixes.md).
 
@@ -305,6 +305,16 @@ The [source-independent findings plan](../handovers/2026-11-04-source-independen
 The user clarified the merge contract after an initial proposal to leave differing source claims unresolved: complementary code information should enrich a common finding; code paths must be normalized before deduplication and treated as sets; severity is irrelevant to this tool; and differing affected-version coverage should be widened to include both. For disjoint ranges, the user explicitly selected set union that preserves the gap. The revised plan incorporates these requirements instead of the earlier conflict default: different code sets and supported version ranges are merged, not treated as conflicts. It retains version-specific attribution so widening package coverage does not invent code mappings for versions lacking such data. No implementation was added.
 
 The user then confirmed an explicit exception to equal merge precedence: manual mappings have higher priority while receiving the same handling. For the same CVE, artifact and applicable version, explicitly supplied manual fields override automatic fields; missing fields are enriched. The plan now keeps this priority at the common merge boundary and removes only the separate source-specific assessment/proof route, not manual correction priority. Code mapping overrides cover class/file/routine representations together so automatic paths cannot reintroduce a superseded mapping. Priority does not bypass validation or physical verification. The earlier proposal to remove manual precedence is superseded by this requirement.
+
+### 2026-11-05: Accepted common model and independent ingestion implementation
+
+The user approved the full plan for implementation. [ADR-0014](../adr/0014-source-independent-vulnerability-findings.md) now records the common semantic model, gap-preserving version union, scoped manual priority, and source-independent physical verification. This supersedes the proposed status in the preceding dated snapshot; it does not change the historical scanner measurements.
+
+The first implemented slice is the [generic merge model](../../elider-core/src/main/java/io/github/spockz/elider/model/GenericVulnerabilityFinding.java). Its [behavioral tests](../../elider-core/src/test/java/io/github/spockz/elider/model/GenericFindingMergeTest.java) exercise automatic enrichment, manual whole-code-group replacement, version-scoped code and review intent, and provenance invariance. Version status is explicit: supported affected coverage can establish applicability, unsupported coverage remains unresolved, and code from a contribution applies only within that contribution's supported affected scope. These model tests do not establish production Maven integration.
+
+Independent [CVE ingestion](../../elider-core/src/main/java/io/github/spockz/elider/scanner/CveVulnerabilityFindingAdapter.java) now has focused fixtures for Maven identities in CNA and ADP entries, optional product names, version changes/default status, unsupported range types and wildcards, PURL identity/version constraints, and record lifecycle/identity validation. [OSV ingestion tests](../../elider-core/src/test/java/io/github/spockz/elider/scanner/OsvVulnerabilityFindingAdapterTest.java) preserve advisory-only identities and disjoint Maven coverage. These fixtures demonstrate the intended adapter boundary; they are not new live coverage counts or evidence that previously unmapped Tomcat records have acquired Maven coordinates.
+
+Production cache, Maven assessment and report integration remain in progress at this checkpoint. Independent ingestion still requires machine-readable component/version evidence: a Git-only record without a supported Maven identity does not become a Maven finding by product-name similarity. Additional providers, Git release association, scanner finding projections and central mapping dependencies remain open research topics.
 
 ## Finding projection and assessment semantics
 

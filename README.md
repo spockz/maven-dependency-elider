@@ -419,7 +419,7 @@ Run standalone CVE fixture baselines:
 
 The transcripts below come from configured Maven invocations. Run `make update-transcripts` to refresh them. Report dependency graphs keep the first three rows; an elision count and SHA-256 digest detect changes in omitted rows. Rerun the displayed fixture's full `report` command to inspect its graph without elision.
 
-The pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md) supplies two package-advisory contexts and a commit-derived class candidate for stable examples. These package and heuristic rows remain review-only; only a validated effective-POM `HIGH` assertion or the separate live-verified structured CNA capability can enter physical proof.
+The pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md) supplies two package-advisory contexts and a commit-derived class candidate for stable examples. These package and heuristic rows remain review-only. Effective declared code from any input uses the same attribution and physical checks; manual `LOW`/`MEDIUM` retains review-only intent.
 
 Read each report from the elision totals through its CVE findings and advisory review. The examples show different evidence outcomes: review-only candidates do not establish impact, omitted-code proof can support mitigation, and a complete-inventory precondition proof can show why a retained library is inactive for a CVE.
 
@@ -621,7 +621,7 @@ Process exit status: 0
 
 #### example-cve-unused-app
 
-Look at the `Mitigated CVEs` row for `CVE-2022-42889`. An explicit `HIGH` POM mapping identifies `StringLookup`; trimming removes that class from Commons Text, allowing the elider to prove the mapped code absent and publish VEX. The cached advisory context remains review information and is not the source of proof authority.
+Look at the `Mitigated CVEs` row for `CVE-2022-42889`. An explicit POM mapping identifies `StringLookup` and requests verification with `HIGH`; trimming removes that class from Commons Text, allowing the common checks to prove the declared code absent and publish VEX. The fixture's package and heuristic claims provide review context.
 
 <!-- BEGIN:transcript:report-cve-unused-app -->
 

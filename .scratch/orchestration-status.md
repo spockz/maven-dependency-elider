@@ -1333,20 +1333,20 @@ Baseline prerequisite committed as `cf70e00049cd9ac0ab6d169874fcc8e0690103f8`; d
 ## WP-FINDINGS-01: Source-independent vulnerability findings
 
 - Owning session: current coordinating thread; source is `docs/handovers/2026-11-04-source-independent-vulnerability-findings-plan.md`, approved by the user's `Implement` instruction.
-- Baseline: `main` at `49ac811`; research and approved plan checkpointed, no pending tracked edits. Initial `make check` hit native-thread exhaustion. Unchanged bounded run is in progress with `JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2`, one test fork, and two Maven threads.
+- Baseline: `main` at `49ac811`; research and approved plan checkpointed. Initial `make check` hit native-thread exhaustion; the unchanged bounded run passed with `JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2`, one test fork, and two Maven threads. Transcript commands use clean-output Go execution while Maven retains bounded resources.
 - Scope: all GF-01 through GF-10; independent OSV/CVE List/manual ingestion, generic assessment, normalized code-set and gap-preserving version unions, scoped supplied-field manual overrides, reporting provenance, no severity, source-independent physical proof, cache/report/goal integration.
-- Architecture: `/root/generic_findings_architect` (Sol) provides initial seam scrutiny and final integration review. Dedicated track implementer/reviewer will be provisioned after the clean baseline passes.
+- Architecture: `/root/generic_findings_architect` (Sol) provides initial seam scrutiny and final integration review. Dedicated implementer/reviewer pairs own the main findings and bounded attribution tracks.
 - Track: `findings`, sequential committable slices in `.scratch/worktrees/track-generic-findings`; code and resource/test ownership in one track avoids cross-subsystem interface races. Coordinator owns documentation and orchestration.
 - Gemini/semantic tool availability: no `gemini_review_diff` or semantic editing tool exposed; optional peer bridge fails open and standard tools are used.
 - Key decisions: preserve code/version correlation; manual whole-code-group override; separate generic AUTO_VERIFY/REVIEW_ONLY intent from descriptive confidence; manual LOW/MEDIUM means REVIEW_ONLY without lower-priority fallback; ambiguous multi-CVE aliases cannot merge unrelated vulnerabilities; GHSA-only IDs remain visible; source refresh failure is explicit and retains last-good inputs.
 
 | Requirement | Required behavior | Owner / integration | Production evidence | Verification | Status |
 | --- | --- | --- | --- | --- | --- |
-| GF-01 | OSV, CVE List and manual inputs independently produce findings | findings / coordinator | Pending | Source-only production-path fixtures | MISSING |
-| GF-02 | Effective facts and assessment independent of provenance | findings / coordinator | Pending | Adapter equivalence and provenance swap | MISSING |
-| GF-03 | Automatic union, scoped manual overrides, missing-field enrichment | findings / coordinator | Pending | Permutation, group replacement, review-only intent | MISSING |
-| GF-04 | Faithful version union, gaps, aliases and code/version scope | findings / coordinator | Pending | Boundaries, unsupported rules, alias/classifier isolation | MISSING |
-| GF-05 | Normalized paths and qualified routine attribution | findings / coordinator | Pending | Roots, separators, package/case, overloads/nesting | MISSING |
+| GF-01 | OSV, CVE List and manual inputs independently produce findings | findings / coordinator | CVE and OSV adapters; Maven wiring pending | Independent CNA/ADP and GHSA-only adapter fixtures pass | PARTIAL |
+| GF-02 | Effective facts and assessment independent of provenance | findings / coordinator | Generic merge model; assessment pending | Model provenance invariance passes | PARTIAL |
+| GF-03 | Automatic union, scoped manual overrides, missing-field enrichment | findings / coordinator | Generic merge model; effective POM binding pending | Model group replacement/review-only scope passes | PARTIAL |
+| GF-04 | Faithful version union, gaps, aliases and code/version scope | findings / coordinator | Model and adapters; grouping/output pending | Gap/boundary/default/change fixtures pass | PARTIAL |
+| GF-05 | Normalized paths and qualified routine attribution | attribution / findings wiring | Bounded resolver in review; production dispatch pending | Actual-JAR descriptor/path/owner fixtures pass | PARTIAL |
 | GF-06 | Common physical omission and prerequisite limits | findings / coordinator | Pending | Retained classes, archive identity, incomplete inventory | MISSING |
 | GF-07 | Independent source lifecycle, project-local manual data | findings / coordinator | Pending | Refresh/withdrawal/deletion/failure tests | MISSING |
 | GF-08 | Strict generic serialization, offline use and replay | findings / coordinator | Pending | Roundtrip/malformed/old draft/no-CVE cases | MISSING |
@@ -1369,6 +1369,16 @@ The architect cleared a second bounded track after the model contract: code attr
 
 Architect seam scrutiny completed read-only and clearance was granted. Baseline Java, lint, core/plugin/lifecycle checks passed with bounded JVM resources; the transcript phase initially differed only by the JVM resource-setting banner and passed when rerun with clean output. All configured baseline checks are green, and `main` is pristine at `ca77b55`.
 
-The active implementation track is `.scratch/worktrees/track-generic-findings`, branch `codex/generic-findings`. The implementer owns Java/resources/tests; the coordinator owns docs/ADRs/FAQ/research and this ledger. The dedicated reviewer owns read-only verification. Initial architecture receipt: `.scratch/reviews/generic-findings-initial-architecture.md` in the main checkout. Initial code/merge TDD slice is in progress; GF rows remain unverified until their production paths are wired. ADR-0014 records the approved contract, with superseding amendments in ADR-0006 and ADR-0008.
+The active implementation track is `.scratch/worktrees/track-generic-findings`, branch `codex/generic-findings`. The implementer owns Java/resources/tests; the coordinator owns docs/ADRs/FAQ/research and this ledger. The dedicated reviewer owns read-only verification. Initial architecture receipt: `.scratch/reviews/generic-findings-initial-architecture.md` in the main checkout. The first model slice is committed and verified; production adapter/cache cutover is in progress. GF rows remain incomplete until their production paths are wired. ADR-0014 records the approved contract, with superseding amendments in ADR-0006 and ADR-0008.
 
 Plan approval is not implementation evidence. Final closeout must reconcile the actual implementation with every requirement above. No source-authority wrapper, fake POM conversion, or adapter-only test suite satisfies the full work package.
+
+### WP-FINDINGS-01 2026-11-05 implementation checkpoint
+
+Main track adds independent OSV/CVE adapters and generic persistence contracts. CVE adapter review repairs have 14 focused tests green after intended behavioral reds, including optional product names, unsupported version syntax, endpoint changes, PURL identity/version constraints and record identity/lifecycle. A one-pass CVE rebuild fixture proves independent discovery and record deletion. OSV normalization preserves GHSA-only identity and disjoint ecosystem coverage. Production manager/assessment/report replacement remains in progress.
+
+The architect cleared a concrete top-level generic cache with source partitions, stable source-record keys, last-good revision/contributions and explicit latest observation. Existing OSV delta machinery remains private and OSV-only; manual contributions remain invocation-local. Successful source updates publish independently while failed sources retain last-good assertions with stale/error metadata. Offline generic reads do no ingestion. Same-revision reuse and reliable changed-path updates bound CVE work; explicit rebuild handles unavailable boundaries. Generic publication failure cannot silently promote raw-source updates.
+
+The attribution track has actual JAR/ASM fixtures for descriptors and source ownership, with source-neutral per-declaration results. Review identified and the implementer is repairing a final dotted-directory path alias. Resolver helper completion will not mark GF-05 complete until the common production assessment uses it.
+
+Research records RQ-0020 and RQ-0021 have dated checkpoints distinguishing accepted architecture and adapter/model evidence from the pending production integration. No live scanner coverage counts were changed.
