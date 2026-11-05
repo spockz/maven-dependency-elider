@@ -243,7 +243,11 @@ public final class DependencyJarTrimmer {
 
     /** Creates a failure listing unresolved candidate references. */
     public UnresolvedReferenceException(final Path candidateJar, final Set<String> references) {
-      super("Cannot safely trim " + candidateJar + "; unresolved references: " + references);
+      super(
+          "Cannot safely complete trimming analysis; analysis candidate "
+              + candidateJar
+              + "; unresolved references: "
+              + references);
     }
   }
 }

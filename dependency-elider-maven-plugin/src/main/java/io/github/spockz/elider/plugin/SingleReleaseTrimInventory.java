@@ -225,12 +225,10 @@ final class SingleReleaseTrimInventory {
             .sorted(TrimCandidatePlanner.artifactSnapshotOrder())
             .toList();
     final Set<String> unchangedPassThroughClasses = new LinkedHashSet<>();
-    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : configuredPassThrough) {
-      unchangedPassThroughClasses.addAll(
-          inventory.classesByArtifact().getOrDefault(snapshot, Set.of()));
-    }
-    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : inventory.retainedLibraries()) {
-      if (layoutPassThroughCoordinates.contains(snapshot.coordinate())) {
+    // Reached dropped owners are promoted unchanged after this closure returns.
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : inventory.artifacts()) {
+      if (skippedProgramCoordinates.contains(snapshot.coordinate())
+          || !retainedCoordinates.contains(snapshot.coordinate())) {
         unchangedPassThroughClasses.addAll(
             inventory.classesByArtifact().getOrDefault(snapshot, Set.of()));
       }

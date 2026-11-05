@@ -67,11 +67,13 @@ final class TierAnalysisPreparer {
   private Set<String> unchangedPassThroughClasses(
       final List<TierContext> projections, final Set<String> skippedIdentities) {
     final Set<String> classes = new LinkedHashSet<>();
+    // Reached dropped owners are promoted unchanged after tier closure returns.
     for (final TierContext projection : projections) {
       for (final ElisionAnalysisModel.ArtifactSnapshot snapshot :
           operation.request().candidates()) {
         if (skippedIdentities.contains(
-            TrimPassThroughPlanner.artifactIdentity(snapshot.coordinate()))) {
+                TrimPassThroughPlanner.artifactIdentity(snapshot.coordinate()))
+            || !operation.request().retainedCoordinates().contains(snapshot.coordinate())) {
           classes.addAll(projection.classesOf(snapshot));
         }
       }
