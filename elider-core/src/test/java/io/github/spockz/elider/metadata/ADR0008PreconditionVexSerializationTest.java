@@ -9,13 +9,25 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
+import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.model.EvidenceOrigin;
+import io.github.spockz.elider.model.FieldValue;
+import io.github.spockz.elider.model.GenericVulnerabilityFinding;
+import io.github.spockz.elider.model.MergePriority;
+import io.github.spockz.elider.model.PreconditionClassInventory;
+import io.github.spockz.elider.model.PreconditionProof;
+import io.github.spockz.elider.model.PrerequisiteClaim;
+import io.github.spockz.elider.model.VersionCoverageClaim;
 import io.github.spockz.elider.model.VexAttestation;
+import io.github.spockz.elider.model.VulnerabilityFindingContribution;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -31,6 +43,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 @SuppressWarnings({
   "PMD.AvoidDuplicateLiterals",
+  "PMD.ExcessiveImports",
+  "PMD.CouplingBetweenObjects",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.AtLeastOneConstructor",
@@ -103,6 +117,164 @@ class ADR0008PreconditionVexSerializationTest {
     assertThat(subcomponent.path("hashes").path("sha-256").asText())
         .isEqualTo(fixture.attestation().postElisionSha256());
     assertOpenVexSchemaValid(openVex);
+  }
+
+  @Test
+  void serializesEveryGenericPrerequisiteAndSourceMetadata() throws Exception {
+    final PreconditionVexTestFixture fixture = PreconditionVexTestFixture.proven(temp);
+    final ArtifactCoordinate coordinate = fixture.coordinate();
+    final AdvisoryProvenance provenance =
+        new AdvisoryProvenance(
+            EvidenceOrigin.CVE_LIST,
+            "CVE-2025-67890",
+            URI.create("https://example.org/source"),
+            "a".repeat(64));
+    final GenericVulnerabilityFinding finding =
+        GenericVulnerabilityFinding.merge(
+            List.of(
+                new VulnerabilityFindingContribution(
+                    "CVE-2025-67890",
+                    Set.of(),
+                    coordinate.groupId(),
+                    coordinate.artifactId(),
+                    coordinate.type(),
+                    coordinate.classifier(),
+                    List.of(VersionCoverageClaim.affected("[1,2)")),
+                    FieldValue.omitted(),
+                    FieldValue.supplied(
+                        Set.of(
+                            new PrerequisiteClaim("org.example:first", "p.First"),
+                            new PrerequisiteClaim("org.example:second", "p.Second"))),
+                    MergePriority.AUTOMATIC,
+                    AssessmentIntent.AUTO_VERIFY,
+                    "source-label",
+                    Set.of(provenance))));
+    final PreconditionClassInventory inventory =
+        PreconditionClassInventory.complete(
+            List.of(
+                PreconditionClassInventory.Provider.dependencyArchive(
+                    coordinate, fixture.inventory().filePath())));
+    final PreconditionProof.InventoryInspection inspection = PreconditionProof.inspect(inventory);
+    final VexAttestation proof = PreconditionProof.prove(finding, coordinate, inspection);
+    final VulnerabilityFindingContribution original = finding.contributions().getFirst();
+    final AdvisoryProvenance otherSource =
+        new AdvisoryProvenance(
+            EvidenceOrigin.CVE_LIST,
+            "CVE-2025-67890",
+            URI.create("https://example.org/other"),
+            "b".repeat(64));
+    final GenericVulnerabilityFinding otherFinding =
+        GenericVulnerabilityFinding.merge(
+            List.of(
+                new VulnerabilityFindingContribution(
+                    original.vulnerabilityId(),
+                    original.aliases(),
+                    original.groupId(),
+                    original.artifactId(),
+                    original.type(),
+                    original.classifier(),
+                    original.versionClaims(),
+                    original.codeGroup(),
+                    original.prerequisiteGroup(),
+                    original.priority(),
+                    original.intent(),
+                    "other-label",
+                    Set.of(otherSource))));
+    final VexAttestation otherProof = PreconditionProof.prove(otherFinding, coordinate, inspection);
+    final List<VexAttestation> proofs = List.of(proof, otherProof);
+    org.junit.jupiter.api.Assertions.assertAll(
+        () -> {
+          final JsonNode bom =
+              JSON.readTree(
+                  CYCLONEDX.generate(
+                      ROOT,
+                      List.of(fixture.inventory()),
+                      retained(coordinate),
+                      CYCLONEDX_METADATA,
+                      List.of(),
+                      proofs));
+          final String detail =
+              bom.path("vulnerabilities").get(0).path("analysis").path("detail").asText();
+          org.junit.jupiter.api.Assertions.assertAll(
+              () -> assertThat(bom.path("vulnerabilities")).hasSize(1),
+              () ->
+                  assertThat(bom)
+                      .isEqualTo(
+                          JSON.readTree(
+                              CYCLONEDX.generate(
+                                  ROOT,
+                                  List.of(fixture.inventory()),
+                                  retained(coordinate),
+                                  CYCLONEDX_METADATA,
+                                  List.of(),
+                                  List.of(otherProof, proof)))),
+              () ->
+                  assertThat(detail)
+                      .contains(
+                          "org.example:first",
+                          "p.First",
+                          "org.example:second",
+                          "p.Second",
+                          "source-label",
+                          "other-label",
+                          "https://example.org/source",
+                          "https://example.org/other",
+                          "a".repeat(64),
+                          "b".repeat(64)),
+              () ->
+                  assertThat(
+                          bom.path("components")
+                              .get(0)
+                              .path("hashes")
+                              .get(0)
+                              .path("content")
+                              .asText())
+                      .isEqualTo(proof.postElisionSha256()),
+              () -> assertCycloneDxSchemaValid(bom));
+        },
+        () -> {
+          final JsonNode vex =
+              JSON.readTree(
+                  OPENVEX.generate(ROOT, List.of(fixture.inventory()), proofs, OPENVEX_METADATA));
+          final String detail = vex.path("statements").get(0).path("impact_statement").asText();
+          org.junit.jupiter.api.Assertions.assertAll(
+              () -> assertThat(vex.path("statements")).hasSize(1),
+              () ->
+                  assertThat(vex)
+                      .isEqualTo(
+                          JSON.readTree(
+                              OPENVEX.generate(
+                                  ROOT,
+                                  List.of(fixture.inventory()),
+                                  List.of(otherProof, proof),
+                                  OPENVEX_METADATA))),
+              () ->
+                  assertThat(detail)
+                      .contains(
+                          "org.example:first",
+                          "p.First",
+                          "org.example:second",
+                          "p.Second",
+                          "source-label",
+                          "other-label",
+                          "https://example.org/source",
+                          "https://example.org/other",
+                          "a".repeat(64),
+                          "b".repeat(64)),
+              () ->
+                  assertThat(
+                          vex.path("statements")
+                              .get(0)
+                              .path("products")
+                              .get(0)
+                              .path("subcomponents")
+                              .get(0)
+                              .path("hashes")
+                              .path("sha-256")
+                              .asText())
+                      .isEqualTo(proof.postElisionSha256()),
+              () -> assertOpenVexSchemaValid(vex));
+        });
   }
 
   @Test

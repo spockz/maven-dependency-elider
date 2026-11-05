@@ -11,7 +11,7 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** Tests semantic version and code-group merges. */
-@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.LawOfDemeter"})
+@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.LawOfDemeter", "PMD.TooManyMethods"})
 class GenericFindingMergeTest {
   /** Creates a test instance. */
   /* package */
@@ -188,7 +188,7 @@ class GenericFindingMergeTest {
         () -> assertThat(forward.codeFor("1.5")).isEmpty(),
         () ->
             assertThat(forward.codeGroupStatusFor("1.5"))
-                .isEqualTo(CodeGroupStatus.EXPLICITLY_EMPTY),
+                .isEqualTo(ClaimGroupStatus.EXPLICITLY_EMPTY),
         () ->
             assertThat(forward.codeFor("1.3"))
                 .containsExactly(
@@ -278,6 +278,51 @@ class GenericFindingMergeTest {
   }
 
   @Test
+  void boundedUnknownCoverageDoesNotPoisonAnotherAffectedSourceOrImportItsCode() {
+    final ArtifactCoordinate component = ArtifactCoordinate.of("org.example", "library", null);
+    final GenericVulnerabilityFinding finding =
+        GenericVulnerabilityFinding.merge(
+            List.of(
+                contribution(
+                        "CVE-2026-12351",
+                        component,
+                        List.of("[1.0,3.0)"),
+                        FieldValue.supplied(
+                            Set.of(
+                                CodeClaim.declared(CodeReference.className("org.example.Valid")))),
+                        MergePriority.AUTOMATIC,
+                        AssessmentIntent.AUTO_VERIFY,
+                        "supported")
+                    .withVersionClaim(
+                        VersionCoverageClaim.unresolvedRange(
+                            "[1.5,2.0)", "status overlap is ambiguous")),
+                contribution(
+                        "CVE-2026-12351",
+                        component,
+                        List.of(),
+                        FieldValue.supplied(
+                            Set.of(
+                                CodeClaim.declared(
+                                    CodeReference.className("org.example.Unknown")))),
+                        MergePriority.AUTOMATIC,
+                        AssessmentIntent.AUTO_VERIFY,
+                        "unknown")
+                    .withVersionClaim(
+                        VersionCoverageClaim.unresolvedRange(
+                            "[1.5,2.0)", "source coverage is ambiguous"))));
+
+    assertAll(
+        "only positively applicable sources contribute code or review intent",
+        () -> assertThat(finding.applicability("1.2")).isEqualTo(VersionApplicability.AFFECTED),
+        () -> assertThat(finding.applicability("1.7")).isEqualTo(VersionApplicability.AFFECTED),
+        () ->
+            assertThat(finding.codeFor("1.7"))
+                .containsExactly(CodeReference.className("org.example.Valid")),
+        () -> assertThat(finding.intentFor("1.7")).contains(AssessmentIntent.AUTO_VERIFY),
+        () -> assertThat(finding.unresolvedVersionClaims()).hasSize(2));
+  }
+
+  @Test
   void unresolvedManualScopeBlocksAutomaticCodeAndIntentFallback() {
     final GenericVulnerabilityFinding finding =
         GenericVulnerabilityFinding.merge(
@@ -307,7 +352,7 @@ class GenericFindingMergeTest {
     assertAll(
         "unknown manual scope cannot authorize fallback to automatic proof intent",
         () -> assertThat(finding.applicability("1.5")).isEqualTo(VersionApplicability.AFFECTED),
-        () -> assertThat(finding.codeGroupStatusFor("1.5")).isEqualTo(CodeGroupStatus.UNRESOLVED),
+        () -> assertThat(finding.codeGroupStatusFor("1.5")).isEqualTo(ClaimGroupStatus.UNRESOLVED),
         () -> assertThat(finding.effectiveCodeClaimsFor("1.5")).isEmpty(),
         () -> assertThat(finding.intentFor("1.5")).isEmpty());
   }
@@ -361,7 +406,7 @@ class GenericFindingMergeTest {
     assertAll(
         "declaration classification is semantic model data, independent from source labels",
         () -> assertThat(finding.effectiveCodeClaimsFor("1.5")).isEmpty(),
-        () -> assertThat(finding.codeGroupStatusFor("1.5")).isEqualTo(CodeGroupStatus.OMITTED),
+        () -> assertThat(finding.codeGroupStatusFor("1.5")).isEqualTo(ClaimGroupStatus.OMITTED),
         () -> assertThat(finding.codeFor("1.5")).isEmpty(),
         () ->
             assertThat(finding.heuristicLeadsFor("1.5"))
@@ -385,9 +430,11 @@ class GenericFindingMergeTest {
         component.classifier(),
         ranges.stream().map(VersionCoverageClaim::affected).toList(),
         codeGroup,
+        FieldValue.omitted(),
         priority,
         intent,
-        provenance);
+        provenance,
+        Set.of());
   }
 
   private static VulnerabilityFindingContribution withProvenance(

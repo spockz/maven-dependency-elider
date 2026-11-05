@@ -42,8 +42,7 @@ final class VexSerializerSupport {
         && left.evidenceSymbols().equals(right.evidenceSymbols())
         && Objects.equals(left.originalSha256(), right.originalSha256())
         && Objects.equals(left.trimmedSha256(), right.trimmedSha256())
-        && Objects.equals(left.requiredDependency(), right.requiredDependency())
-        && Objects.equals(left.requiredClass(), right.requiredClass())
+        && left.requiredPrerequisites().equals(right.requiredPrerequisites())
         && Objects.equals(left.affectedArtifactPath(), right.affectedArtifactPath())
         && Objects.equals(left.postElisionSha256(), right.postElisionSha256())
         && Objects.equals(left.inventorySha256(), right.inventorySha256())
@@ -61,10 +60,13 @@ final class VexSerializerSupport {
     final Map<String, VexAttestation> sameType =
         isPrecondition(candidate) ? preconditions : omittedCode;
     final VexAttestation prior = sameType.putIfAbsent(key, candidate);
-    if (prior != null && !sameEvidence(prior, candidate)) {
-      final String evidenceType = isPrecondition(candidate) ? "precondition" : "omitted-code";
-      throw new IllegalArgumentException(
-          "Conflicting duplicate " + evidenceType + " VEX attestation for " + key);
+    if (prior != null) {
+      if (!sameEvidence(prior, candidate)) {
+        final String evidenceType = isPrecondition(candidate) ? "precondition" : "omitted-code";
+        throw new IllegalArgumentException(
+            "Conflicting duplicate " + evidenceType + " VEX attestation for " + key);
+      }
+      sameType.put(key, prior.withSourceMetadataFrom(candidate));
     }
   }
 
@@ -84,10 +86,13 @@ final class VexSerializerSupport {
         : omittedCodeSha256(attestation);
   }
 
+  @SuppressWarnings("PMD.CyclomaticComplexity")
   private static String preconditionSha256(
       final VexAttestation attestation, final ArtifactFileRef component) {
-    requireText(attestation.requiredDependency(), "required dependency");
-    requireText(attestation.requiredClass(), "required class");
+    if (attestation.requiredPrerequisites().isEmpty()) {
+      throw new IllegalArgumentException(
+          "Precondition attestation has no prerequisite declarations");
+    }
     if (attestation.evidenceSymbols() == null || !attestation.evidenceSymbols().isEmpty()) {
       throw new IllegalArgumentException(
           "Precondition attestation must not contain symbol evidence");

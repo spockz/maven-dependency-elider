@@ -20,6 +20,9 @@ public final class VexAttestation {
   /** Stable VEX justification for omitted vulnerable code. */
   private static final String OMITTED_CODE_JUSTIFICATION = "vulnerable_code_not_present";
 
+  /** Number of pairs supported by the legacy singular getters. */
+  private static final int SINGLE_PREREQUISITE = 1;
+
   /** VEX justification for proof of a missing dependency. */
   private static final String PRECONDITION_JUSTIFICATION = "requires_dependency";
 
@@ -44,11 +47,8 @@ public final class VexAttestation {
   /** Verified trimmed archive digest. */
   private final String trimmedSha256;
 
-  /** Exact required group and artifact for precondition evidence. */
-  private final String requiredDependency;
-
-  /** Exact prerequisite class whose absence was inspected. */
-  private final String requiredClass;
+  /** Complete atomic prerequisite set checked against one inventory. */
+  private final Set<PrerequisiteClaim> requiredPrerequisites;
 
   /** Retained affected artifact path bound by precondition evidence. */
   private final Path affectedArtifactPath;
@@ -61,6 +61,12 @@ public final class VexAttestation {
 
   /** Live source origin retained only for verified structured omitted-code evidence. */
   private final StructuredProofProvenance structuredProofProvenance;
+
+  /** Display-only source labels. */
+  private final Set<String> sourceLabels;
+
+  /** Display-only source records. */
+  private final Set<AdvisoryProvenance> sourceProvenance;
 
   /** Only the model-package proof engine can construct a verified attestation. */
   VexAttestation(
@@ -79,12 +85,13 @@ public final class VexAttestation {
         evidenceSymbols,
         originalSha256,
         trimmedSha256,
+        Set.of(),
         null,
         null,
         null,
         null,
-        null,
-        null);
+        Set.of(),
+        Set.of());
   }
 
   private VexAttestation(
@@ -95,12 +102,13 @@ public final class VexAttestation {
       final Set<String> evidenceSymbols,
       final String originalSha256,
       final String trimmedSha256,
-      final String requiredDependency,
-      final String requiredClass,
+      final Set<PrerequisiteClaim> requiredPrerequisites,
       final Path affectedArtifactPath,
       final String postElisionSha256,
       final String inventorySha256,
-      final StructuredProofProvenance structuredProofProvenance) {
+      final StructuredProofProvenance structuredProofProvenance,
+      final Set<String> sourceLabels,
+      final Set<AdvisoryProvenance> sourceProvenance) {
     this.cveId = Objects.requireNonNull(cveId, "cveId");
     this.coordinate = Objects.requireNonNull(coordinate, "coordinate");
     if (!OMITTED_CODE_JUSTIFICATION.equals(justification)
@@ -114,14 +122,14 @@ public final class VexAttestation {
     this.impactDetail = impactDetail;
     Objects.requireNonNull(evidenceSymbols, "evidenceSymbols");
     this.evidenceSymbols = Collections.unmodifiableSet(new TreeSet<>(evidenceSymbols));
+    this.requiredPrerequisites = Collections.unmodifiableSet(new TreeSet<>(requiredPrerequisites));
     Path boundArtifactPath = null;
     if (OMITTED_CODE_JUSTIFICATION.equals(justification)) {
       validateOmittedCodeEvidence(
           evidenceSymbols,
           originalSha256,
           trimmedSha256,
-          requiredDependency,
-          requiredClass,
+          this.requiredPrerequisites,
           affectedArtifactPath,
           postElisionSha256,
           inventorySha256);
@@ -131,21 +139,20 @@ public final class VexAttestation {
               evidenceSymbols,
               originalSha256,
               trimmedSha256,
-              requiredDependency,
-              requiredClass,
+              this.requiredPrerequisites,
               affectedArtifactPath,
               postElisionSha256,
               inventorySha256);
     }
     this.originalSha256 = originalSha256;
     this.trimmedSha256 = trimmedSha256;
-    this.requiredDependency = requiredDependency;
-    this.requiredClass = requiredClass;
     this.affectedArtifactPath = boundArtifactPath;
     this.postElisionSha256 = postElisionSha256;
     this.inventorySha256 = inventorySha256;
     validateProvenance(justification, structuredProofProvenance);
     this.structuredProofProvenance = structuredProofProvenance;
+    this.sourceLabels = Collections.unmodifiableSet(new TreeSet<>(sourceLabels));
+    this.sourceProvenance = Set.copyOf(sourceProvenance);
   }
 
   /** Creates structured omitted-code evidence after live validation. */
@@ -165,12 +172,13 @@ public final class VexAttestation {
         evidenceSymbols,
         originalSha256,
         trimmedSha256,
+        Set.of(),
         null,
         null,
         null,
-        null,
-        null,
-        Objects.requireNonNull(provenance, "provenance"));
+        Objects.requireNonNull(provenance, "provenance"),
+        Set.of(),
+        Set.of());
   }
 
   private static void validateProvenance(
@@ -190,20 +198,131 @@ public final class VexAttestation {
       final Path affectedArtifactPath,
       final String postElisionSha256,
       final String inventorySha256) {
-    return new VexAttestation(
+    return precondition(
         cveId,
+        coordinate,
+        impactDetail,
+        Set.of(new PrerequisiteClaim(requiredDependency, requiredClass)),
+        affectedArtifactPath,
+        postElisionSha256,
+        inventorySha256);
+  }
+
+  /** Creates evidence for every verified prerequisite pair. */
+  static VexAttestation precondition(
+      final String vulnerabilityId,
+      final ArtifactCoordinate coordinate,
+      final String impactDetail,
+      final Set<PrerequisiteClaim> requiredPrerequisites,
+      final Path affectedArtifactPath,
+      final String postElisionSha256,
+      final String inventorySha256) {
+    return new VexAttestation(
+        vulnerabilityId,
         coordinate,
         PRECONDITION_JUSTIFICATION,
         impactDetail,
         Set.of(),
         null,
         null,
-        requiredDependency,
-        requiredClass,
+        requiredPrerequisites,
         affectedArtifactPath,
         postElisionSha256,
         inventorySha256,
-        null);
+        null,
+        Set.of(),
+        Set.of());
+  }
+
+  /** Creates verified omission evidence with source metadata. */
+  static VexAttestation genericOmittedCode(
+      final GenericVulnerabilityFinding finding,
+      final ArtifactCoordinate coordinate,
+      final String detail,
+      final Set<String> symbols,
+      final String original,
+      final String trimmed) {
+    return new VexAttestation(
+        finding.vulnerabilityId(),
+        coordinate,
+        OMITTED_CODE_JUSTIFICATION,
+        detail,
+        symbols,
+        original,
+        trimmed,
+        Set.of(),
+        null,
+        null,
+        null,
+        null,
+        finding.provenance(),
+        sources(finding));
+  }
+
+  /** Creates verified prerequisite evidence with source metadata. */
+  static VexAttestation genericPrecondition(
+      final GenericVulnerabilityFinding finding,
+      final ArtifactCoordinate coordinate,
+      final String detail,
+      final Set<PrerequisiteClaim> pairs,
+      final Path path,
+      final String digest,
+      final String inventoryDigest) {
+    return new VexAttestation(
+        finding.vulnerabilityId(),
+        coordinate,
+        PRECONDITION_JUSTIFICATION,
+        detail,
+        Set.of(),
+        null,
+        null,
+        pairs,
+        path,
+        digest,
+        inventoryDigest,
+        null,
+        finding.provenance(),
+        sources(finding));
+  }
+
+  private static Set<AdvisoryProvenance> sources(final GenericVulnerabilityFinding finding) {
+    return finding.contributions().stream()
+        .flatMap(value -> value.sourceProvenance().stream())
+        .collect(java.util.stream.Collectors.toUnmodifiableSet());
+  }
+
+  /** Returns source labels retained for display only. */
+  public Set<String> sourceLabels() {
+    return sourceLabels;
+  }
+
+  /** Returns display-only source records. */
+  public Set<AdvisoryProvenance> sourceProvenance() {
+    return sourceProvenance;
+  }
+
+  /** Combines display metadata without changing this verified evidence. */
+  public VexAttestation withSourceMetadataFrom(final VexAttestation other) {
+    Objects.requireNonNull(other, "other");
+    final Set<String> labels = new TreeSet<>(sourceLabels);
+    labels.addAll(other.sourceLabels);
+    final Set<AdvisoryProvenance> sources = new java.util.HashSet<>(sourceProvenance);
+    sources.addAll(other.sourceProvenance);
+    return new VexAttestation(
+        cveId,
+        coordinate,
+        justification,
+        impactDetail,
+        evidenceSymbols,
+        originalSha256,
+        trimmedSha256,
+        requiredPrerequisites,
+        affectedArtifactPath,
+        postElisionSha256,
+        inventorySha256,
+        structuredProofProvenance,
+        labels,
+        sources);
   }
 
   /** Returns the CVE identifier proven by this attestation. */
@@ -243,12 +362,25 @@ public final class VexAttestation {
 
   /** Returns the required Maven group and artifact for precondition evidence. */
   public String requiredDependency() {
-    return requiredDependency;
+    return singlePrerequisite().map(PrerequisiteClaim::requiresDependency).orElse(null);
   }
 
   /** Returns the exact prerequisite class for precondition evidence. */
   public String requiredClass() {
-    return requiredClass;
+    return singlePrerequisite().map(PrerequisiteClaim::requiresClass).orElse(null);
+  }
+
+  /** Returns every effective prerequisite pair proven absent. */
+  public Set<PrerequisiteClaim> requiredPrerequisites() {
+    return requiredPrerequisites;
+  }
+
+  private java.util.Optional<PrerequisiteClaim> singlePrerequisite() {
+    if (requiredPrerequisites.size() > SINGLE_PREREQUISITE) {
+      throw new IllegalStateException(
+          "Plural prerequisite evidence requires requiredPrerequisites");
+    }
+    return requiredPrerequisites.stream().findFirst();
   }
 
   /** Returns the retained affected artifact path for precondition evidence. */
@@ -281,8 +413,7 @@ public final class VexAttestation {
       final Set<String> evidenceSymbols,
       final String originalSha256,
       final String trimmedSha256,
-      final String requiredDependency,
-      final String requiredClass,
+      final Set<PrerequisiteClaim> requiredPrerequisites,
       final Path affectedArtifactPath,
       final String postElisionSha256,
       final String inventorySha256) {
@@ -291,8 +422,7 @@ public final class VexAttestation {
     }
     requireSha256(originalSha256, "originalSha256");
     requireSha256(trimmedSha256, "trimmedSha256");
-    if (requiredDependency != null
-        || requiredClass != null
+    if (!requiredPrerequisites.isEmpty()
         || affectedArtifactPath != null
         || postElisionSha256 != null
         || inventorySha256 != null) {
@@ -305,8 +435,7 @@ public final class VexAttestation {
       final Set<String> evidenceSymbols,
       final String originalSha256,
       final String trimmedSha256,
-      final String requiredDependency,
-      final String requiredClass,
+      final Set<PrerequisiteClaim> requiredPrerequisites,
       final Path affectedArtifactPath,
       final String postElisionSha256,
       final String inventorySha256) {
@@ -314,8 +443,9 @@ public final class VexAttestation {
       throw new IllegalArgumentException(
           "Precondition evidence must not contain omitted-code symbols or digests");
     }
-    requireDependency(requiredDependency);
-    requireClass(requiredClass);
+    if (requiredPrerequisites.isEmpty()) {
+      throw new IllegalArgumentException("Precondition evidence requires a prerequisite set");
+    }
     final Path normalizedPath =
         canonicalizePath(Objects.requireNonNull(affectedArtifactPath, "affectedArtifactPath"));
     requireSha256(postElisionSha256, "postElisionSha256");
@@ -332,17 +462,5 @@ public final class VexAttestation {
       // Fall through to toAbsolutePath().normalize()
     }
     return path.toAbsolutePath().normalize();
-  }
-
-  private static void requireDependency(final String value) {
-    if (!VulnerabilitySymbolMapping.isValidRequiredDependency(value)) {
-      throw new IllegalArgumentException("requiredDependency must be group:artifact");
-    }
-  }
-
-  private static void requireClass(final String value) {
-    if (!VulnerabilitySymbolMapping.isValidFullyQualifiedClassName(value)) {
-      throw new IllegalArgumentException("requiredClass must be a fully qualified class name");
-    }
   }
 }

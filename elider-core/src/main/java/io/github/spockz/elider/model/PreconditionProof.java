@@ -23,7 +23,12 @@ import org.objectweb.asm.ClassReader;
 
 /** Proves required-class absence within a complete Maven inventory. */
 /* The coupled gates recheck each declared input before the proof creates evidence. */
-@SuppressWarnings({"PMD.GodClass", "PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
+@SuppressWarnings({
+  "PMD.GodClass",
+  "PMD.CyclomaticComplexity",
+  "PMD.TooManyMethods",
+  "PMD.LawOfDemeter"
+})
 public final class PreconditionProof {
   /** Suffix recognized for raw class-file providers. */
   private static final String CLASS_SUFFIX = ".class";
@@ -61,7 +66,103 @@ public final class PreconditionProof {
       final ExplicitPrerequisiteEvidence evidence, final PreconditionClassInventory inventory)
       throws IOException {
     final VulnerabilitySymbolMapping mapping = requireEvidence(evidence);
-    final RequiredDependency requiredDependency = requireEligibleMapping(mapping);
+    return prove(
+        mapping.cveId(),
+        mapping.affectedCoordinate(),
+        Set.of(new PrerequisiteClaim(mapping.requiresDependency(), mapping.requiresClass())),
+        inspect(inventory),
+        null);
+  }
+
+  /** Checks effective prerequisites for the exact candidate. */
+  public static VexAttestation prove(
+      final GenericVulnerabilityFinding finding,
+      final ArtifactCoordinate candidate,
+      final PreconditionClassInventory inventory)
+      throws IOException {
+    return prove(finding, candidate, inspect(inventory));
+  }
+
+  /** Checks every effective prerequisite using a previously verified inventory. */
+  public static VexAttestation prove(
+      final GenericVulnerabilityFinding finding,
+      final ArtifactCoordinate candidate,
+      final InventoryInspection inspection)
+      throws IOException {
+    FindingVerification.requireEligible(finding, candidate);
+    if (finding.prerequisiteGroupStatusFor(candidate.version()) != ClaimGroupStatus.DECLARED) {
+      throw new IllegalArgumentException("Precondition proof requires declared prerequisite pairs");
+    }
+    return prove(
+        finding.vulnerabilityId(),
+        candidate,
+        Set.copyOf(finding.effectivePrerequisitesFor(candidate.version())),
+        inspection,
+        finding);
+  }
+
+  private static VexAttestation prove(
+      final String vulnerabilityId,
+      final ArtifactCoordinate candidate,
+      final Set<PrerequisiteClaim> prerequisites,
+      final InventoryInspection inspection,
+      final GenericVulnerabilityFinding finding)
+      throws IOException {
+    Objects.requireNonNull(inspection, "inspection");
+    if (candidate.version() == null || candidate.version().isBlank()) {
+      throw new IllegalArgumentException(
+          "Precondition proof requires an exact affected Maven version");
+    }
+    if (prerequisites.isEmpty()) {
+      throw new IllegalArgumentException("Precondition proof requires prerequisite declarations");
+    }
+    final Provider affected = findAffectedProvider(candidate, inspection.inventory.providers());
+    final Set<String> availableClasses = inspection.availableClasses;
+    final Set<RequiredDependency> availableDependencies = inspection.availableDependencies;
+    for (final PrerequisiteClaim prerequisite : new TreeSet<>(prerequisites)) {
+      if (availableDependencies.contains(
+          parseRequiredDependency(prerequisite.requiresDependency()))) {
+        throw new IllegalArgumentException(
+            "Required dependency is present in the complete inventory: "
+                + prerequisite.requiresDependency());
+      }
+      if (availableClasses.contains(prerequisite.requiresClass())) {
+        throw new IllegalArgumentException(
+            "Required class is present in an inventoried provider: "
+                + prerequisite.requiresClass());
+      }
+    }
+    final String impactDetail =
+        "Required prerequisite pairs "
+            + prerequisites.stream()
+                .sorted()
+                .map(value -> value.requiresDependency() + " / " + value.requiresClass())
+                .collect(java.util.stream.Collectors.joining("; "))
+            + " are absent from the complete declared Maven inventory. The proof does not cover "
+            + "providers introduced outside that inventory.";
+    if (finding != null) {
+      return VexAttestation.genericPrecondition(
+          finding,
+          affected.coordinate(),
+          impactDetail,
+          prerequisites,
+          affected.path(),
+          affected.sha256(),
+          inspection.inventory.fingerprint());
+    }
+    return VexAttestation.precondition(
+        vulnerabilityId,
+        affected.coordinate(),
+        impactDetail,
+        prerequisites,
+        affected.path(),
+        affected.sha256(),
+        inspection.inventory.fingerprint());
+  }
+
+  /** Captures and validates a complete provider inventory for reuse across findings. */
+  public static InventoryInspection inspect(final PreconditionClassInventory inventory)
+      throws IOException {
     Objects.requireNonNull(inventory, "inventory");
     if (inventory.status() == PreconditionClassInventory.Status.INCOMPLETE) {
       throw new IllegalArgumentException(
@@ -74,58 +175,35 @@ public final class PreconditionProof {
       throw new IllegalArgumentException("Precondition inventory status is unsupported");
     }
 
-    final String requiredClass = mapping.requiresClass();
-    final Provider affected = findAffectedProvider(mapping, inventory.providers());
     verifyProviderDigests(inventory.providers());
+    final Set<String> availableClasses = new HashSet<>();
+    final Set<RequiredDependency> availableDependencies = new HashSet<>();
     for (final Provider provider : inventory.providers()) {
-      if (isRequiredDependency(provider, requiredDependency)) {
-        throw new IllegalArgumentException(
-            "Required dependency is present in the complete inventory: "
-                + mapping.requiresDependency());
+      if (provider.kind() == ProviderKind.DEPENDENCY_ARCHIVE) {
+        availableDependencies.add(
+            new RequiredDependency(
+                provider.coordinate().groupId(), provider.coordinate().artifactId()));
       }
-      if (readClasses(provider).contains(requiredClass)) {
-        throw new IllegalArgumentException(
-            "Required class is present in an inventoried provider: " + requiredClass);
-      }
+      availableClasses.addAll(readClasses(provider));
     }
-    verifyProviderDigests(inventory.providers());
-    final String impactDetail =
-        "Required dependency "
-            + mapping.requiresDependency()
-            + " and class "
-            + requiredClass
-            + " are absent from the complete declared Maven inventory. The proof does not cover "
-            + "providers introduced outside that inventory.";
-    return VexAttestation.precondition(
-        mapping.cveId(),
-        affected.coordinate(),
-        impactDetail,
-        mapping.requiresDependency(),
-        requiredClass,
-        affected.path(),
-        affected.sha256(),
-        inventory.fingerprint());
+    return new InventoryInspection(inventory, availableClasses, availableDependencies);
   }
 
-  private static RequiredDependency requireEligibleMapping(
-      final VulnerabilitySymbolMapping mapping) {
-    if (mapping == null) {
-      throw new IllegalArgumentException("mapping is required");
+  /** Immutable, proof-controlled snapshot of a verified provider inventory. */
+  @SuppressWarnings("PMD.CommentRequired")
+  public static final class InventoryInspection {
+    private final PreconditionClassInventory inventory;
+    private final Set<String> availableClasses;
+    private final Set<RequiredDependency> availableDependencies;
+
+    private InventoryInspection(
+        final PreconditionClassInventory inventory,
+        final Set<String> availableClasses,
+        final Set<RequiredDependency> availableDependencies) {
+      this.inventory = inventory;
+      this.availableClasses = Set.copyOf(availableClasses);
+      this.availableDependencies = Set.copyOf(availableDependencies);
     }
-    if (mapping.affectedCoordinate().version() == null
-        || mapping.affectedCoordinate().version().isBlank()) {
-      throw new IllegalArgumentException(
-          "Precondition proof requires an exact affected Maven version");
-    }
-    if (!VulnerabilitySymbolMapping.isValidFullyQualifiedClassName(mapping.requiresClass())) {
-      throw new IllegalArgumentException(
-          "Precondition proof requires an exact fully qualified prerequisite class");
-    }
-    final ArtifactCoordinate coordinate = mapping.affectedCoordinate();
-    if (coordinate.groupId().isBlank() || coordinate.artifactId().isBlank()) {
-      throw new IllegalArgumentException("Precondition proof requires an exact Maven identity");
-    }
-    return parseRequiredDependency(mapping.requiresDependency());
   }
 
   private static VulnerabilitySymbolMapping requireEvidence(
@@ -150,18 +228,18 @@ public final class PreconditionProof {
   }
 
   private static Provider findAffectedProvider(
-      final VulnerabilitySymbolMapping mapping, final List<Provider> providers) {
+      final ArtifactCoordinate candidate, final List<Provider> providers) {
     final List<Provider> affectedProviders = new ArrayList<>();
     for (final Provider provider : providers) {
       if (provider.kind() == ProviderKind.DEPENDENCY_ARCHIVE
-          && sameArtifactIdentity(mapping.affectedCoordinate(), provider.coordinate())) {
+          && sameArtifactIdentity(candidate, provider.coordinate())) {
         affectedProviders.add(provider);
       }
     }
     if (affectedProviders.size() != EXACTLY_ONE_PROVIDER) {
       throw new IllegalArgumentException(
           "Complete inventory must contain exactly one retained affected artifact: "
-              + mapping.affectedCoordinate().toId());
+              + candidate.toId());
     }
     return affectedProviders.getFirst();
   }
@@ -173,15 +251,6 @@ public final class PreconditionProof {
         && Objects.equals(left.version(), right.version())
         && left.type().equals(right.type())
         && left.classifier().equals(right.classifier());
-  }
-
-  private static boolean isRequiredDependency(
-      final Provider provider, final RequiredDependency requiredDependency) {
-    if (provider.kind() != ProviderKind.DEPENDENCY_ARCHIVE) {
-      return false;
-    }
-    return provider.coordinate().groupId().equals(requiredDependency.groupId())
-        && provider.coordinate().artifactId().equals(requiredDependency.artifactId());
   }
 
   private static void verifyProviderDigests(final List<Provider> providers) throws IOException {

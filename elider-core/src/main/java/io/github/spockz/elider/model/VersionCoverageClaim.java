@@ -6,13 +6,26 @@ import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
 
 /** One affected or unaffected predicate, supported or unresolved. */
 public record VersionCoverageClaim(
-    String rawPredicate, String normalizedMavenRange, boolean affected, String diagnostic)
+    String rawPredicate,
+    String normalizedMavenRange,
+    VersionApplicability status,
+    String diagnostic)
     implements Comparable<VersionCoverageClaim> {
   /** Validates supported and unresolved claim states. */
   public VersionCoverageClaim {
     requireText(rawPredicate, "rawPredicate");
-    if (normalizedMavenRange == null) {
+    if (status == null) {
+      throw new IllegalArgumentException("status must not be null");
+    }
+    if (status == VersionApplicability.UNRESOLVED) {
       requireText(diagnostic, "diagnostic for unresolved predicate");
+    } else if (normalizedMavenRange == null) {
+      throw new IllegalArgumentException("resolved coverage requires a Maven range");
+    }
+    if (normalizedMavenRange == null) {
+      if (diagnostic != null && diagnostic.isBlank()) {
+        throw new IllegalArgumentException("diagnostic must not be blank when present");
+      }
     } else {
       MavenVersionRangeMatcher.validate(normalizedMavenRange);
       if (diagnostic != null && diagnostic.isBlank()) {
@@ -23,24 +36,34 @@ public record VersionCoverageClaim(
 
   /** Creates a supported affected range. */
   public static VersionCoverageClaim affected(final String mavenRange) {
-    return new VersionCoverageClaim(mavenRange, mavenRange, true, null);
+    return new VersionCoverageClaim(mavenRange, mavenRange, VersionApplicability.AFFECTED, null);
   }
 
   /** Creates a supported unaffected range. */
   public static VersionCoverageClaim unaffected(final String mavenRange) {
-    return new VersionCoverageClaim(mavenRange, mavenRange, false, null);
+    return new VersionCoverageClaim(
+        mavenRange, mavenRange, VersionApplicability.NOT_AFFECTED, null);
   }
 
   /** Creates an affected predicate that cannot be evaluated. */
   public static VersionCoverageClaim unresolvedAffected(
       final String rawPredicate, final String diagnostic) {
-    return new VersionCoverageClaim(rawPredicate, null, true, diagnostic);
+    return new VersionCoverageClaim(
+        rawPredicate, null, VersionApplicability.UNRESOLVED, diagnostic);
   }
 
   /** Creates an unaffected predicate that cannot be evaluated. */
   public static VersionCoverageClaim unresolvedUnaffected(
       final String rawPredicate, final String diagnostic) {
-    return new VersionCoverageClaim(rawPredicate, null, false, diagnostic);
+    return new VersionCoverageClaim(
+        rawPredicate, null, VersionApplicability.UNRESOLVED, diagnostic);
+  }
+
+  /** Creates a bounded predicate whose status cannot be normalized safely. */
+  public static VersionCoverageClaim unresolvedRange(
+      final String mavenRange, final String diagnostic) {
+    return new VersionCoverageClaim(
+        mavenRange, mavenRange, VersionApplicability.UNRESOLVED, diagnostic);
   }
 
   @Override
@@ -55,7 +78,7 @@ public record VersionCoverageClaim(
     if (normalizedOrder != 0) {
       return normalizedOrder;
     }
-    final int statusOrder = Boolean.compare(affected, other.affected);
+    final int statusOrder = status.compareTo(other.status);
     if (statusOrder != 0) {
       return statusOrder;
     }

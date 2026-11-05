@@ -23,7 +23,34 @@ final class StructuredProofDetailFormatter {
     Objects.requireNonNull(attestation, "attestation");
     final Optional<StructuredProofProvenance> provenance = attestation.structuredProofProvenance();
     if (provenance.isEmpty()) {
-      return attestation.impactDetail();
+      if (attestation.sourceLabels().isEmpty() && attestation.sourceProvenance().isEmpty()) {
+        return attestation.impactDetail();
+      }
+      final ObjectNode details = JSON.createObjectNode();
+      details.set(
+          "sourceLabels", JSON.valueToTree(new java.util.TreeSet<>(attestation.sourceLabels())));
+      final java.util.List<io.github.spockz.elider.model.AdvisoryProvenance> sources =
+          attestation.sourceProvenance().stream()
+              .sorted(
+                  java.util.Comparator.comparing(
+                      value ->
+                          value.origin().name()
+                              + "\u0000"
+                              + value.sourceRecordId()
+                              + "\u0000"
+                              + value.sourceUrl()
+                              + "\u0000"
+                              + value.sourceRecordSha256()))
+              .toList();
+      details.set("sourceProvenance", JSON.valueToTree(sources));
+      if (attestation.inventorySha256() != null) {
+        details.put("inventorySha256", attestation.inventorySha256());
+        details.put("affectedArtifactSha256", attestation.postElisionSha256());
+      } else {
+        details.put("originalArtifactSha256", attestation.originalSha256());
+        details.put("trimmedArtifactSha256", attestation.trimmedSha256());
+      }
+      return attestation.impactDetail() + "\nSource metadata: " + JSON.writeValueAsString(details);
     }
     final ObjectNode record = JSON.createObjectNode();
     record.put("candidate", attestation.coordinate().toString());
