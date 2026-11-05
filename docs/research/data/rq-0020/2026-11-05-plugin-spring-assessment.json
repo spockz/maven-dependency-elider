@@ -1,0 +1,1754 @@
+{
+  "purpose": "Dated Dependency Elider Spring example measurement; source status and exact finding identities are preserved, not a claim of verified exploitability or complete CVE coverage.",
+  "measuredOn": "2026-11-05",
+  "executable": {
+    "goal": "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze",
+    "pluginJarSha256": "c82982d5c70060ea81e5e94995a9d8005d2fbf94de6a7477b1d7d3fdefc80ef6",
+    "coreJarSha256": "ee609549f3878466545901947dee9c056d591f139326403ea9b40706f24696d7",
+    "jdkRelease": 21
+  },
+  "fixture": {
+    "project": "io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT",
+    "springBoot": "3.3.5",
+    "tomcatEmbedCore": "10.1.31",
+    "jacksonCore": "2.18.2",
+    "jacksonDatabind": "2.18.2",
+    "inputArtifactCount": 91,
+    "inputScopes": {
+      "compile": 44,
+      "runtime": 19,
+      "test": 28
+    },
+    "traceLines": 9314,
+    "traceSha256": "5081b6edf318d88379266e8453f5d7e8ef3e4476ee5bbcf5aa75d6880937aae5",
+    "graphFingerprint": "17c2a40b72dcfe8116e074fc6282d833255a0006da6c9d69067e4a1adb3d93cb",
+    "note": "Both runs use the same scratch POM, resolved graph, trace and production class snapshot; only cache path and offline mode differ. The scratch copy only changed its parent relativePath to resolve the existing examples parent; dependency declarations were unchanged."
+  },
+  "configuration": {
+    "mavenThreads": 1,
+    "sourceRootsComplete": true,
+    "compilerProc": "none",
+    "trimJars": true,
+    "trimWorkers": 2,
+    "trimRoots": "freemarker.template.Configuration,groovy.text.markup.MarkupTemplateEngine,jakarta.validation.Validation,org.webjars.WebJarAssetLocator,org.reactivestreams.Publisher,io.micrometer.context.ContextSnapshot,reactor.core.publisher.Flux,reactor.core.publisher.Mono,reactor.util.context.Context,jakarta.servlet.jsp.jstl.core.Config,javax.annotation.Nonnull,edu.umd.cs.findbugs.annotations.SuppressFBWarnings,com.thoughtworks.xstream.XStream,com.thoughtworks.xstream.io.xml.StaxDriver",
+    "trimSkipArtifacts": "org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework.boot:spring-boot-actuator:3.3.5:jar:,org.springframework.boot:spring-boot-actuator-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,org.springframework:spring-core:6.1.14:jar:,io.projectreactor:reactor-core:3.6.11:jar:,io.micrometer:micrometer-core:1.13.6:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,io.micrometer:micrometer-jakarta9:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:",
+    "cveCacheTtlHours": 24,
+    "osvSnapshotUri": "https://storage.googleapis.com/osv-vulnerabilities/Maven/all.zip",
+    "cveListGitUri": "https://github.com/CVEProject/cvelistV5.git",
+    "osvOnlyOffline": true,
+    "combinedOffline": false
+  },
+  "osvOnly": {
+    "reportGeneratedAt": "2026-11-05T10:43:14.105575557Z",
+    "reportSha256": "6c42acf88bbda1348bc745c9e8116079198e8e5f6d9bbec28e4c612c51926656",
+    "findingRows": 89,
+    "distinctCves": 88,
+    "sourceObservations": [
+      {
+        "source": "CVE_LIST",
+        "status": "STALE",
+        "revision": null,
+        "lastSuccessfulSync": null,
+        "diagnostic": "CVE List source observation failed: Git source update exited with status 1",
+        "observationDiagnostics": [],
+        "contributionCount": 0
+      },
+      {
+        "source": "OSV",
+        "status": "CURRENT",
+        "revision": "909794e9a2c4bc6aa423e1389dd764976997bdb525b7c903663e169b0a406234",
+        "lastSuccessfulSync": "2026-11-05T09:19:42.334568554Z",
+        "diagnostic": null,
+        "observationDiagnostics": [],
+        "contributionCount": 13637
+      }
+    ]
+  },
+  "combinedAttempt": {
+    "reportGeneratedAt": "2026-11-05T10:42:00.334400136Z",
+    "reportSha256": "10ba9bf5c1e8ef437e51f850fa764e752aa8f3e8519d9865c4bb9009b969a8b3",
+    "findingRows": 89,
+    "sourceObservations": [
+      {
+        "source": null,
+        "status": "ERROR",
+        "revision": null,
+        "lastSuccessfulSync": null,
+        "diagnostic": "Generic findings refresh or publication failed; last-good source snapshots remain available: CVE List source observation failed: Could not index current CVE source record CVE-2022-0353",
+        "observationDiagnostics": [],
+        "contributionCount": 0
+      },
+      {
+        "source": "CVE_LIST",
+        "status": "STALE",
+        "revision": null,
+        "lastSuccessfulSync": null,
+        "diagnostic": "CVE List source observation failed: Could not index current CVE source record CVE-2022-0353",
+        "observationDiagnostics": [],
+        "contributionCount": 0
+      },
+      {
+        "source": "OSV",
+        "status": "CURRENT",
+        "revision": "909794e9a2c4bc6aa423e1389dd764976997bdb525b7c903663e169b0a406234",
+        "lastSuccessfulSync": "2026-11-05T10:41:28.723562243Z",
+        "diagnostic": null,
+        "observationDiagnostics": [],
+        "contributionCount": 13637
+      }
+    ],
+    "cveListCheckoutRevision": "4131d728c9f934758df567a539b07a037f8c614d",
+    "cveListCheckoutCommitTime": "2026-11-05T10:38:38Z",
+    "failedCveRecord": "CVE-2022-0353",
+    "failedRecordSha256": "15ec47b850e6e680b3e72585e3db1e9eb0122e3d532be18fed4f02e48018728a",
+    "failure": "CVE List indexing rejected containers.cna.affected[0].versions[0].version because it is a blank string; no CVE List contributions were published."
+  },
+  "runtimeScannerComparison": {
+    "historicalScan": "2026-11-04 OSV-Scanner 2.7.0 runtime SBOM",
+    "pluginRuntimeAndCompileRows": 86,
+    "pluginRuntimeAndCompileDistinctCves": 85,
+    "historicalScannerDistinctCves": 85,
+    "pluginOnlyCves": 0,
+    "scannerOnlyCves": 0,
+    "limitations": "Different times and source states; matching identity sets are an observation, not proof of identical scanner behavior."
+  },
+  "findings": [
+    {
+      "vulnerabilityId": "CVE-2024-12798",
+      "aliases": [
+        "CVE-2024-12798",
+        "GHSA-pr98-23f8-jwxv"
+      ],
+      "candidate": {
+        "groupId": "ch.qos.logback",
+        "artifactId": "logback-core",
+        "version": "1.5.11",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2024-12801",
+      "aliases": [
+        "CVE-2024-12801",
+        "GHSA-6v67-2wr5-gvf4"
+      ],
+      "candidate": {
+        "groupId": "ch.qos.logback",
+        "artifactId": "logback-core",
+        "version": "1.5.11",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2024-31573",
+      "aliases": [
+        "CVE-2024-31573",
+        "GHSA-chfm-68vv-pvw5"
+      ],
+      "candidate": {
+        "groupId": "org.xmlunit",
+        "artifactId": "xmlunit-core",
+        "version": "2.9.1",
+        "type": "jar",
+        "classifier": "",
+        "scope": "test"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2024-50379",
+      "aliases": [
+        "BIT-tomcat-2024-50379",
+        "CVE-2024-50379",
+        "GHSA-5j33-cvvr-w245"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2024-56337",
+      "aliases": [
+        "BIT-tomcat-2024-56337",
+        "CVE-2024-56337",
+        "GHSA-27hp-xhwr-wr2m"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2024-57699",
+      "aliases": [
+        "CVE-2024-57699",
+        "GHSA-pq2g-wx69-c263"
+      ],
+      "candidate": {
+        "groupId": "net.minidev",
+        "artifactId": "json-smart",
+        "version": "2.5.1",
+        "type": "jar",
+        "classifier": "",
+        "scope": "test"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-11226",
+      "aliases": [
+        "CVE-2025-11226",
+        "GHSA-25qh-j22f-pwp8"
+      ],
+      "candidate": {
+        "groupId": "ch.qos.logback",
+        "artifactId": "logback-core",
+        "version": "1.5.11",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-22233",
+      "aliases": [
+        "CVE-2025-22233",
+        "GHSA-4wp7-92pw-q264"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-context",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-22235",
+      "aliases": [
+        "CVE-2025-22235",
+        "GHSA-rc42-6c7j-7h5r"
+      ],
+      "candidate": {
+        "groupId": "org.springframework.boot",
+        "artifactId": "spring-boot",
+        "version": "3.3.5",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-24813",
+      "aliases": [
+        "BIT-tomcat-2025-24813",
+        "CVE-2025-24813",
+        "GHSA-83qj-6fr2-vhqg"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-31650",
+      "aliases": [
+        "BIT-tomcat-2025-31650",
+        "CVE-2025-31650",
+        "GHSA-3p2h-wqq4-wf4h"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-31651",
+      "aliases": [
+        "BIT-tomcat-2025-31651",
+        "CVE-2025-31651",
+        "GHSA-ff77-26x5-69cr"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-41234",
+      "aliases": [
+        "CVE-2025-41234",
+        "GHSA-6r3c-xf4w-jxjm"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-web",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-41242",
+      "aliases": [
+        "CVE-2025-41242",
+        "GHSA-r936-gwx5-v52f"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-41249",
+      "aliases": [
+        "CVE-2025-41249",
+        "GHSA-jmp9-x22r-554x"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-core",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-46701",
+      "aliases": [
+        "BIT-tomcat-2025-46701",
+        "CVE-2025-46701",
+        "GHSA-h2fw-rfh5-95r3"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-48988",
+      "aliases": [
+        "BIT-tomcat-2025-48988",
+        "CVE-2025-48988",
+        "GHSA-h3gc-qfqq-6h8f"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-48989",
+      "aliases": [
+        "BIT-tomcat-2025-48989",
+        "CVE-2025-48989",
+        "GHSA-gqp3-2cvr-x8m3"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-49124",
+      "aliases": [
+        "BIT-tomcat-2025-49124",
+        "CVE-2025-49124",
+        "GHSA-42wg-hm62-jcwg"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-49125",
+      "aliases": [
+        "BIT-tomcat-2025-49125",
+        "CVE-2025-49125",
+        "GHSA-wc4r-xq3c-5cf3"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-52520",
+      "aliases": [
+        "BIT-tomcat-2025-52520",
+        "CVE-2025-52520",
+        "GHSA-wr62-c79q-cv37"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-53506",
+      "aliases": [
+        "BIT-tomcat-2025-53506",
+        "CVE-2025-53506",
+        "GHSA-25xr-qj8w-c4vf"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-55668",
+      "aliases": [
+        "BIT-tomcat-2025-55668",
+        "CVE-2025-55668",
+        "GHSA-23hv-mwm6-g8jf"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-55752",
+      "aliases": [
+        "BIT-tomcat-2025-55752",
+        "CVE-2025-55752",
+        "GHSA-wmwf-9ccg-fff5"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-55754",
+      "aliases": [
+        "BIT-tomcat-2025-55754",
+        "CVE-2025-55754",
+        "GHSA-vfww-5hm6-hx2j"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-61795",
+      "aliases": [
+        "BIT-tomcat-2025-61795",
+        "CVE-2025-61795",
+        "GHSA-hgrr-935x-pq79"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2025-66614",
+      "aliases": [
+        "BIT-tomcat-2025-66614",
+        "CVE-2025-66614",
+        "GHSA-fpj8-gq4v-p354"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-10532",
+      "aliases": [
+        "CVE-2026-10532",
+        "GHSA-jhq6-gfmj-v8fx"
+      ],
+      "candidate": {
+        "groupId": "ch.qos.logback",
+        "artifactId": "logback-core",
+        "version": "1.5.11",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-1225",
+      "aliases": [
+        "CVE-2026-1225",
+        "GHSA-qqpg-mvqg-649v"
+      ],
+      "candidate": {
+        "groupId": "ch.qos.logback",
+        "artifactId": "logback-core",
+        "version": "1.5.11",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-18401",
+      "aliases": [
+        "CVE-2026-18401",
+        "GHSA-72hv-8253-57qq"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-core",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-19032",
+      "aliases": [
+        "CVE-2026-19032",
+        "GHSA-wjgm-6hv5-3cvf"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-22733",
+      "aliases": [
+        "CVE-2026-22733",
+        "GHSA-mgvc-8q2h-5pgc"
+      ],
+      "candidate": {
+        "groupId": "org.springframework.boot",
+        "artifactId": "spring-boot-starter-actuator",
+        "version": "3.3.5",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-22735",
+      "aliases": [
+        "CVE-2026-22735",
+        "GHSA-6hcq-hmm3-jj3c"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-22737",
+      "aliases": [
+        "CVE-2026-22737",
+        "GHSA-4773-3jfm-qmx3"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-22741",
+      "aliases": [
+        "CVE-2026-22741",
+        "GHSA-wg35-8jpf-2xv3"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-22745",
+      "aliases": [
+        "CVE-2026-22745",
+        "GHSA-6p4f-wcwh-5vvm"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-24400",
+      "aliases": [
+        "CVE-2026-24400",
+        "GHSA-rqfh-9r24-8c9r"
+      ],
+      "candidate": {
+        "groupId": "org.assertj",
+        "artifactId": "assertj-core",
+        "version": "3.27.3",
+        "type": "jar",
+        "classifier": "",
+        "scope": "test"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-24734",
+      "aliases": [
+        "BIT-tomcat-2026-24734",
+        "CVE-2026-24734",
+        "GHSA-mgp5-rv84-w37q"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-24880",
+      "aliases": [
+        "BIT-tomcat-2026-24880",
+        "CVE-2026-24880",
+        "GHSA-563x-q5rq-57qp"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-25854",
+      "aliases": [
+        "BIT-tomcat-2026-25854",
+        "CVE-2026-25854",
+        "GHSA-9m3c-qcxr-9x87"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-34483",
+      "aliases": [
+        "BIT-tomcat-2026-34483",
+        "CVE-2026-34483",
+        "GHSA-rv64-5gf8-9qq8"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-34487",
+      "aliases": [
+        "BIT-tomcat-2026-34487",
+        "CVE-2026-34487",
+        "GHSA-x4m4-345f-5h5g"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-40973",
+      "aliases": [
+        "CVE-2026-40973",
+        "GHSA-wwpq-f5c3-7hvx"
+      ],
+      "candidate": {
+        "groupId": "org.springframework.boot",
+        "artifactId": "spring-boot",
+        "version": "3.3.5",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-40984",
+      "aliases": [
+        "CVE-2026-40984",
+        "GHSA-g3pr-3p32-fp23"
+      ],
+      "candidate": {
+        "groupId": "io.micrometer",
+        "artifactId": "micrometer-core",
+        "version": "1.13.6",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41001",
+      "aliases": [
+        "CVE-2026-41001",
+        "GHSA-ggg2-9786-hwc8"
+      ],
+      "candidate": {
+        "groupId": "org.springframework.boot",
+        "artifactId": "spring-boot-autoconfigure",
+        "version": "3.3.5",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41284",
+      "aliases": [
+        "BIT-tomcat-2026-41284",
+        "CVE-2026-41284",
+        "GHSA-gx5v-xp9w-j4cg"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41293",
+      "aliases": [
+        "BIT-tomcat-2026-41293",
+        "CVE-2026-41293",
+        "GHSA-r29c-68gh-xp6x"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41841",
+      "aliases": [
+        "CVE-2026-41841",
+        "GHSA-mq64-j8f9-9gcj"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41842",
+      "aliases": [
+        "CVE-2026-41842",
+        "GHSA-x23c-287f-qqv5"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41843",
+      "aliases": [
+        "CVE-2026-41843",
+        "GHSA-72pg-x5f8-j25j"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41844",
+      "aliases": [
+        "CVE-2026-41844",
+        "GHSA-h3qp-gqrc-q736"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41845",
+      "aliases": [
+        "CVE-2026-41845",
+        "GHSA-3chg-m5w7-qfv5"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41846",
+      "aliases": [
+        "CVE-2026-41846",
+        "GHSA-957g-f97v-vppc"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41848",
+      "aliases": [
+        "CVE-2026-41848",
+        "GHSA-659m-px2c-25wj"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-core",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41850",
+      "aliases": [
+        "CVE-2026-41850",
+        "GHSA-r5w3-xv2f-j59q"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-expression",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41851",
+      "aliases": [
+        "CVE-2026-41851",
+        "GHSA-wxpp-56q6-5pcg"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-expression",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41852",
+      "aliases": [
+        "CVE-2026-41852",
+        "GHSA-9f52-rjqv-25qv"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-expression",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-41853",
+      "aliases": [
+        "CVE-2026-41853",
+        "GHSA-cjpg-rgq5-fr37"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-42498",
+      "aliases": [
+        "BIT-tomcat-2026-42498",
+        "CVE-2026-42498",
+        "GHSA-fv25-8xcx-gqjc"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-43512",
+      "aliases": [
+        "BIT-tomcat-2026-43512",
+        "CVE-2026-43512",
+        "GHSA-h6fc-48rj-7qqh"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-43513",
+      "aliases": [
+        "BIT-tomcat-2026-43513",
+        "CVE-2026-43513",
+        "GHSA-5mp6-jrq3-r938"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-43514",
+      "aliases": [
+        "BIT-tomcat-2026-43514",
+        "CVE-2026-43514",
+        "GHSA-9m89-8frq-c98c"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-43515",
+      "aliases": [
+        "BIT-tomcat-2026-43515",
+        "CVE-2026-43515",
+        "GHSA-5m62-pw8w-7w9f"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-47884",
+      "aliases": [
+        "CVE-2026-47884",
+        "GHSA-pc63-qcmh-9cmg"
+      ],
+      "candidate": {
+        "groupId": "org.springframework",
+        "artifactId": "spring-webmvc",
+        "version": "6.1.14",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-49844",
+      "aliases": [
+        "CVE-2026-49844",
+        "GHSA-qv9r-c865-cp47"
+      ],
+      "candidate": {
+        "groupId": "org.apache.logging.log4j",
+        "artifactId": "log4j-api",
+        "version": "2.23.1",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-53404",
+      "aliases": [
+        "BIT-tomcat-2026-53404",
+        "CVE-2026-53404",
+        "GHSA-h792-v28v-ppgr"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-54512",
+      "aliases": [
+        "CVE-2026-54512",
+        "GHSA-j3rv-43j4-c7qm"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-54513",
+      "aliases": [
+        "CVE-2026-54513",
+        "GHSA-rmj7-2vxq-3g9f"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-54514",
+      "aliases": [
+        "CVE-2026-54514",
+        "GHSA-hgj6-7826-r7m5"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-54515",
+      "aliases": [
+        "CVE-2026-54515",
+        "GHSA-5jmj-h7xm-6q6v"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-55276",
+      "aliases": [
+        "BIT-tomcat-2026-55276",
+        "CVE-2026-55276",
+        "GHSA-mqg3-r7h5-24x4"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-55956",
+      "aliases": [
+        "BIT-tomcat-2026-55956",
+        "CVE-2026-55956",
+        "GHSA-5v3h-fjv2-54fg"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-55957",
+      "aliases": [
+        "BIT-tomcat-2026-55957",
+        "CVE-2026-55957",
+        "GHSA-7895-gffq-w6jq"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-59888",
+      "aliases": [
+        "CVE-2026-59888",
+        "GHSA-3pjw-73gf-8qr5"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-59889",
+      "aliases": [
+        "CVE-2026-59889",
+        "GHSA-5gvw-p9qm-jgwh"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-65182",
+      "aliases": [
+        "BIT-tomcat-2026-65182",
+        "CVE-2026-65182",
+        "GHSA-gcx9-497g-6cp6"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-65905",
+      "aliases": [
+        "BIT-tomcat-2026-65905",
+        "CVE-2026-65905",
+        "GHSA-9xv2-5v5q-p794"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-68494",
+      "aliases": [
+        "CVE-2026-68494",
+        "GHSA-r7wm-3cxj-wff9"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-core",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-68497",
+      "aliases": [
+        "CVE-2026-68497",
+        "GHSA-q4xh-88c3-wmh7"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-68525",
+      "aliases": [
+        "BIT-tomcat-2026-68525",
+        "CVE-2026-68525",
+        "GHSA-h3x4-894j-xpx5"
+      ],
+      "candidate": {
+        "groupId": "org.apache.tomcat.embed",
+        "artifactId": "tomcat-embed-core",
+        "version": "10.1.31",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-77310",
+      "aliases": [
+        "CVE-2026-77310",
+        "GHSA-vvgp-rfg2-7rr6"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-83557",
+      "aliases": [
+        "CVE-2026-83557",
+        "GHSA-gx83-3vf8-gh7j"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-84939",
+      "aliases": [
+        "CVE-2026-84939",
+        "GHSA-27j2-h3m2-8237"
+      ],
+      "candidate": {
+        "groupId": "org.freemarker",
+        "artifactId": "freemarker",
+        "version": "2.3.33",
+        "type": "jar",
+        "classifier": "",
+        "scope": "runtime"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-89407",
+      "aliases": [
+        "CVE-2026-89407",
+        "GHSA-p6pp-m3f8-5c89"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-core",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-89425",
+      "aliases": [
+        "CVE-2026-89425",
+        "GHSA-7hhh-6rmp-j9qf"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-core",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-91776",
+      "aliases": [
+        "CVE-2026-91776",
+        "GHSA-wv8q-qhhj-9h54"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-91777",
+      "aliases": [
+        "CVE-2026-91777",
+        "GHSA-cxp5-3px4-pw24"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    },
+    {
+      "vulnerabilityId": "CVE-2026-9828",
+      "aliases": [
+        "CVE-2026-9828",
+        "GHSA-p47f-322f-whfh"
+      ],
+      "candidate": {
+        "groupId": "ch.qos.logback",
+        "artifactId": "logback-core",
+        "version": "1.5.11",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "RETAINED_UNCHANGED"
+    },
+    {
+      "vulnerabilityId": "GHSA-mhm7-754m-9p8w",
+      "aliases": [
+        "GHSA-mhm7-754m-9p8w"
+      ],
+      "candidate": {
+        "groupId": "com.fasterxml.jackson.core",
+        "artifactId": "jackson-databind",
+        "version": "2.18.2",
+        "type": "jar",
+        "classifier": "",
+        "scope": "compile"
+      },
+      "applicability": "AFFECTED",
+      "outcome": "NO_PROOF",
+      "inventoryDisposition": "PLANNED_TRIM"
+    }
+  ]
+}

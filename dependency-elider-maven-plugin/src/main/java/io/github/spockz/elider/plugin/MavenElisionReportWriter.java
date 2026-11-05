@@ -41,6 +41,7 @@ final class MavenElisionReportWriter {
 
   static void write(final Path output, final MavenElisionReportSnapshot snapshot)
       throws IOException {
+    validateMode(snapshot);
     final Path absolute = output.toAbsolutePath().normalize();
     final Path parent = absolute.getParent();
     if (parent == null) {
@@ -77,7 +78,8 @@ final class MavenElisionReportWriter {
       throw new IOException(
           "No successful elision report snapshot exists at "
               + absolute
-              + "; run a Maven lifecycle build with dependency elision enabled first");
+              + "; run a Maven lifecycle build with dependency elision enabled, "
+              + "or run dependency-elider:analyze for an analysis report first");
     }
     final JsonNode payload;
     try (JsonParser parser = JSON.getFactory().createParser(absolute.toFile())) {
@@ -110,7 +112,23 @@ final class MavenElisionReportWriter {
     if (snapshot == null) {
       throw new IOException("Elision report snapshot is empty: " + absolute);
     }
+    validateMode(snapshot);
     return snapshot;
+  }
+
+  private static void validateMode(final MavenElisionReportSnapshot snapshot) throws IOException {
+    for (final GenericFindingAssessment finding : snapshot.genericFindings()) {
+      MavenElisionReportProofValidator.validateForecast(finding, snapshot);
+      if (snapshot.mode() == MavenElisionReportSnapshot.Mode.ANALYSIS
+          && (finding.outcome() == GenericFindingAssessment.Outcome.DECLARED_CODE_ABSENT
+              || finding.outcome() == GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT)) {
+        throw new IOException("Analysis report cannot contain physical proof outcomes");
+      }
+      if (snapshot.mode() == MavenElisionReportSnapshot.Mode.APPLIED
+          && finding.outcome() == GenericFindingAssessment.Outcome.PLANNED_CODE_ABSENT) {
+        throw new IOException("Applied report cannot contain planned proof outcomes");
+      }
+    }
   }
 
   static List<String> render(final MavenElisionReportSnapshot snapshot) {

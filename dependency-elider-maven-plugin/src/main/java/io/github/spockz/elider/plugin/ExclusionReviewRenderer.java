@@ -27,12 +27,13 @@ final class ExclusionReviewRenderer {
 
   static List<String> render(final ExclusionReview review) {
     final List<String> lines = new ArrayList<>();
+    lines.add("POM exclusion review (advisory only):");
     if (!review.available()) {
       addWrapped(
           lines, SECTION_INDENT + "Exclusion review unavailable: " + review.unavailableReason());
       return List.copyOf(lines);
     }
-    lines.add(SECTION_INDENT + "Repeated POM exclusions (advisory only):");
+    lines.add(SECTION_INDENT + "Repeated POM exclusions:");
     appendCandidates(review.candidates(), lines);
     appendManagement(review.management(), lines);
     appendDiagnostics(review, lines);
@@ -47,12 +48,14 @@ final class ExclusionReviewRenderer {
               + " POM exclusions; a global ban can also remove content needed by downstream"
               + " consumers.");
     }
-    addWrapped(
-        lines,
-        SECTION_INDENT
-            + "Review only: Maven path exclusions change dependency collection and mediation; "
-            + "a global ban changes this project's output and may remove content needed by "
-            + "downstream consumers.");
+    if (!review.candidates().isEmpty() || !review.management().isEmpty()) {
+      addWrapped(
+          lines,
+          SECTION_INDENT
+              + "Review only: Maven path exclusions change dependency collection and mediation; "
+              + "a global ban changes this project's output and may remove content needed by "
+              + "downstream consumers.");
+    }
     return List.copyOf(lines);
   }
 
@@ -148,11 +151,6 @@ final class ExclusionReviewRenderer {
               + " dependency or exclusion origins. Maven supplied no source location/identity or"
               + " the location matched zero or multiple original POM rows. This advisory review"
               + " does not affect elision.");
-      originDiagnostics.stream()
-          .distinct()
-          .limit(3)
-          .map(ExclusionReviewRenderer::diagnostic)
-          .forEach(value -> addWrapped(lines, ITEM_INDENT + value));
     }
     if (!captureDiagnostics.isEmpty()) {
       addWrapped(
@@ -161,10 +159,6 @@ final class ExclusionReviewRenderer {
               + "Exclusion capture warnings: "
               + captureDiagnostics.size()
               + " issue(s)");
-      captureDiagnostics.stream()
-          .distinct()
-          .limit(3)
-          .forEach(value -> addWrapped(lines, ITEM_INDENT + value));
     }
     if (!diagnostics.isEmpty()) {
       addWrapped(
@@ -199,13 +193,5 @@ final class ExclusionReviewRenderer {
         + origin.column()
         + (origin.source().isEmpty() ? "" : " source " + origin.source())
         + (origin.profileId().isEmpty() ? "" : " profile " + origin.profileId());
-  }
-
-  private static String diagnostic(final String value) {
-    if (value.startsWith("Incomplete or ambiguous provenance at :")) {
-      return "Incomplete or ambiguous provenance: Maven supplied no source model identity or"
-          + " usable source location for this effective POM element.";
-    }
-    return value;
   }
 }

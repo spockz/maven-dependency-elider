@@ -13,6 +13,7 @@ import java.util.zip.ZipOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.model.Build;
 import org.apache.maven.project.MavenProject;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -21,6 +22,19 @@ import org.objectweb.asm.Opcodes;
 final class AnalyzeMojoTestArtifactSupport {
   private AnalyzeMojoTestArtifactSupport() {
     // WHY: Static helpers need no test instance.
+  }
+
+  /* package */ static MavenProject project(
+      final Path temporaryDirectory, final String artifactId) {
+    final MavenProject project = new MavenProject();
+    project.setGroupId("org.example");
+    project.setArtifactId(artifactId);
+    project.setVersion("1.0");
+    project.setFile(temporaryDirectory.resolve(artifactId + ".pom").toFile());
+    final Build build = new Build();
+    build.setDirectory(temporaryDirectory.resolve(artifactId + "-target").toString());
+    project.setBuild(build);
+    return project;
   }
 
   /* package */ static Artifact artifact(
@@ -81,7 +95,7 @@ final class AnalyzeMojoTestArtifactSupport {
             "jar",
             "fixture.jar",
             "used/Sample.class");
-    final MavenProject project = new MavenProject();
+    final MavenProject project = project(temporaryDirectory, "fixture");
     project.setArtifacts(new LinkedHashSet<>(Set.of(used)));
     final Path trace = temporaryDirectory.resolve("fixture.lst");
     Files.writeString(trace, traceContent);

@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -75,6 +76,9 @@ final class GenericFindingsLifecycleIT {
 
   /** JSON property holding each finding identifier. */
   private static final String VULNERABILITY_ID_FIELD = "vulnerabilityId";
+
+  /** JSON property holding source-neutral vulnerability rows. */
+  private static final String GENERIC_FINDINGS_FIELD = "genericFindings";
 
   /** Opening row tag in manual POM mapping fixture data. */
   private static final String MAPPING_OPEN_TAG = "<vulnerabilityMapping>";
@@ -221,24 +225,33 @@ final class GenericFindingsLifecycleIT {
       final Path dependencyJar,
       final String initialCacheDigest)
       throws IOException, InterruptedException {
+    final Path target = Files.createDirectories(fixture.resolve("target"));
+    final Path summary = target.resolve("dependency-elider-report.json");
+    final Path analysisSummary = target.resolve("dependency-elider-analysis-report.json");
+    Files.writeString(summary, "previous applied report");
     final String analyzeOutput =
         runGoal(
             repositoryRoot, fixture, privateRepository, settings, cache, pluginVersion, "analyze");
+    final boolean previousAppliedReportPreserved =
+        "previous applied report".equals(Files.readString(summary));
     final Path vexFile = fixture.resolve("target/dependency-elider.openvex.json");
     final boolean analyzeProducedVex = Files.exists(vexFile);
     final String elideOutput =
         runGoal(
             repositoryRoot, fixture, privateRepository, settings, cache, pluginVersion, "elide");
-    final Path summary = fixture.resolve("target/dependency-elider-report.json");
     assertThat(summary).isRegularFile();
     final JsonNode savedReport = JSON.readTree(summary.toFile());
-    final JsonNode genericFindings = savedReport.path("genericFindings");
+    final JsonNode genericFindings = savedReport.path(GENERIC_FINDINGS_FIELD);
     final JsonNode sourceObservations = savedReport.path("sourceObservations");
     final String cacheDigestAfterGoals = sha256(cache.resolve(CACHE_INDEX));
 
     assertAll(
         "mixed source analyze, elide and saved report replay",
         () -> assertThat(analyzeOutput).contains("BUILD SUCCESS"),
+        () ->
+            assertTrue(
+                previousAppliedReportPreserved, "analysis must not overwrite applied results"),
+        () -> assertComparableAnalysisReport(analysisSummary, savedReport),
         () -> assertFalse(analyzeProducedVex, "analyze must not publish OpenVEX evidence"),
         () -> assertThat(elideOutput).contains("BUILD SUCCESS"),
         () -> assertThat(cacheDigestAfterGoals).isEqualTo(initialCacheDigest),
@@ -271,6 +284,42 @@ final class GenericFindingsLifecycleIT {
                 repositoryRoot, fixture, privateRepository, settings, cache, pluginVersion));
   }
 
+  private static void assertComparableAnalysisReport(
+      final Path analysisSummary, final JsonNode applied) throws IOException {
+    assertThat(analysisSummary).isRegularFile();
+    final JsonNode analysis = JSON.readTree(analysisSummary.toFile());
+    final Set<String> analysisFields = new java.util.TreeSet<>();
+    final Set<String> appliedFields = new java.util.TreeSet<>();
+    analysis.fieldNames().forEachRemaining(analysisFields::add);
+    applied.fieldNames().forEachRemaining(appliedFields::add);
+    assertAll(
+        "analysis and elision reports carry the same evidence in distinct modes",
+        () -> assertThat(analysisFields).containsExactlyElementsOf(appliedFields),
+        () -> assertThat(analysis.path("mode").asText()).isEqualTo("ANALYSIS"),
+        () -> assertThat(applied.path("mode").asText()).isEqualTo("APPLIED"),
+        () ->
+            assertFindingIds(
+                analysis.path(GENERIC_FINDINGS_FIELD),
+                VULNERABLE_CVE,
+                AUTOMATIC_CVE,
+                EMPTY_OVERRIDE_CVE,
+                MANUAL_REVIEW_CVE,
+                MANUAL_ONLY_CVE,
+                PACKAGE_ONLY_GHSA),
+        () -> assertSourceObservations(analysis.path("sourceObservations")),
+        () ->
+            assertOutcome(
+                analysis.path(GENERIC_FINDINGS_FIELD), VULNERABLE_CVE, "PLANNED_CODE_ABSENT"),
+        () ->
+            assertOutcome(
+                analysis.path(GENERIC_FINDINGS_FIELD), AUTOMATIC_CVE, "PLANNED_CODE_ABSENT"),
+        () ->
+            assertOutcome(analysis.path(GENERIC_FINDINGS_FIELD), MANUAL_REVIEW_CVE, "REVIEW_ONLY"),
+        () ->
+            assertThat(analysis.path(GENERIC_FINDINGS_FIELD).toString())
+                .doesNotContain("DECLARED_CODE_ABSENT", "PREREQUISITES_ABSENT"));
+  }
+
   private static void assertSavedReportReplay(
       final Path repositoryRoot,
       final Path fixture,
@@ -284,6 +333,20 @@ final class GenericFindingsLifecycleIT {
         runGoal(
             repositoryRoot, fixture, privateRepository, settings, cache, pluginVersion, "report");
     assertThat(replayOutput).contains(VULNERABLE_CVE, MANUAL_ONLY_CVE);
+    final String analysisReplay =
+        runGoal(
+            repositoryRoot,
+            fixture,
+            privateRepository,
+            settings,
+            cache,
+            pluginVersion,
+            "report",
+            "-Delide.summaryFile="
+                + fixture.resolve("target/dependency-elider-analysis-report.json"));
+    assertThat(analysisReplay)
+        .contains("analysis prediction", VULNERABLE_CVE, "PLANNED_CODE_ABSENT")
+        .doesNotContain("Outcome: DECLARED_CODE_ABSENT");
   }
 
   private void assertManualOnlyScenario(
@@ -320,7 +383,7 @@ final class GenericFindingsLifecycleIT {
         () -> assertThat(manualOnlyOutput).contains("BUILD SUCCESS"),
         () ->
             assertFindingIds(
-                manualOnlyReport.path("genericFindings"),
+                manualOnlyReport.path(GENERIC_FINDINGS_FIELD),
                 VULNERABLE_CVE,
                 EMPTY_OVERRIDE_CVE,
                 MANUAL_REVIEW_CVE,
@@ -676,7 +739,8 @@ final class GenericFindingsLifecycleIT {
       final Path settings,
       final Path cache,
       final String pluginVersion,
-      final String goal)
+      final String goal,
+      final String... extraArguments)
       throws IOException, InterruptedException {
     final List<String> command =
         new ArrayList<>(
@@ -693,6 +757,7 @@ final class GenericFindingsLifecycleIT {
                 "-Delide.cveListGitUri=",
                 "compile",
                 "io.github.spockz:dependency-elider-maven-plugin:" + pluginVersion + ":" + goal));
+    command.addAll(List.of(extraArguments));
     Files.createDirectories(project.resolve("target"));
     final ProcessBuilder builder =
         new ProcessBuilder(command)

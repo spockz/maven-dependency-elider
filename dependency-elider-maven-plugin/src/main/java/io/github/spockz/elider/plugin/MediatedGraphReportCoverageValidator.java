@@ -33,11 +33,24 @@ final class MediatedGraphReportCoverageValidator {
       final Set<ArtifactCoordinate> drops,
       final List<ArtifactTrimRecord> trims)
       throws IOException {
+    validate(
+        paths,
+        drops,
+        trims.stream()
+            .map(ArtifactTrimRecord::coordinate)
+            .collect(java.util.stream.Collectors.toSet()));
+  }
+
+  static void validate(
+      final List<MediatedGraphReport.ArtifactPath> paths,
+      final Set<ArtifactCoordinate> drops,
+      final Set<ArtifactCoordinate> trims)
+      throws IOException {
     final Set<EffectiveGraphDecisionIndex.DecisionKey> coveredDrops = new HashSet<>();
     final Set<EffectiveGraphDecisionIndex.DecisionKey> coveredTrims = new HashSet<>();
     paths.forEach(path -> addCoverage(path, coveredDrops, coveredTrims));
     if (!coveredDrops.containsAll(decisionKeys(drops))
-        || !coveredTrims.containsAll(trimKeys(trims))) {
+        || !coveredTrims.containsAll(decisionKeys(trims))) {
       throw new IOException("Bound graph has no dependency path for every effective output");
     }
   }
@@ -191,16 +204,6 @@ final class MediatedGraphReportCoverageValidator {
       final Set<ArtifactCoordinate> coordinates) {
     final Set<EffectiveGraphDecisionIndex.DecisionKey> result = new HashSet<>();
     coordinates.stream().map(EffectiveGraphDecisionIndex.DecisionKey::of).forEach(result::add);
-    return result;
-  }
-
-  private static Set<EffectiveGraphDecisionIndex.DecisionKey> trimKeys(
-      final List<ArtifactTrimRecord> records) {
-    final Set<EffectiveGraphDecisionIndex.DecisionKey> result = new HashSet<>();
-    records.stream()
-        .map(ArtifactTrimRecord::coordinate)
-        .map(EffectiveGraphDecisionIndex.DecisionKey::of)
-        .forEach(result::add);
     return result;
   }
 }

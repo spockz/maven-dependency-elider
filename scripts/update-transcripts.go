@@ -56,7 +56,7 @@ type commandResult struct {
 }
 
 var (
-	snapshotAt     = regexp.MustCompile(`(?m)^(\[INFO\] Snapshot: last successful elide run at )[^\s]+`)
+	snapshotAt     = regexp.MustCompile(`(?m)^(\[INFO\] Snapshot: (?:analysis prediction|last successful elide run) at )[^\s]+`)
 	runtimeRelease = regexp.MustCompile(`(?m)^(\[INFO\] Elider runtime JDK release: )\d+$`)
 	buildTime      = regexp.MustCompile(`(?m)^(\[INFO\] Total time:)\s*.*$`)
 	finishedAt     = regexp.MustCompile(`(?m)^(\[INFO\] Finished at:)\s*.*$`)

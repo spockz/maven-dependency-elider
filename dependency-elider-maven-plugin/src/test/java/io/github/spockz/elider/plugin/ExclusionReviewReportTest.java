@@ -225,12 +225,29 @@ final class ExclusionReviewReportTest {
     final ExclusionReview review = ExclusionReview.from(snapshot);
     final List<String> rendered = ExclusionReviewRenderer.render(review);
     assertAll(
+        () -> assertThat(rendered.getFirst()).isEqualTo("POM exclusion review (advisory only):"),
         () -> assertThat(rendered).anySatisfy(line -> assertThat(line).contains("5 issue(s)")),
-        () -> assertThat(rendered).contains("    one", "    two", "    three"),
-        () -> assertThat(rendered).doesNotContain("    four"),
+        () -> assertThat(rendered).doesNotContain("    one", "    two", "    three", "    four"),
         () ->
             assertThat(ExclusionProvenancePayload.decode(review.snapshot()).diagnostics())
                 .containsExactly("one", "one", "two", "three", "four"));
+  }
+
+  @Test
+  void summarizesIncompleteOriginWithoutPrintingIndividualRows() {
+    final String diagnostic =
+        "Incomplete or ambiguous provenance: Maven did not provide a source location for row 0";
+    final ExclusionReview review =
+        ExclusionReview.from(
+            new ExclusionRecommendations.Snapshot(
+                List.of(), List.of(), Map.of(), List.of(diagnostic)));
+    final String rendered = String.join("\n", ExclusionReviewRenderer.render(review));
+    assertAll(
+        () -> assertThat(rendered).contains("Exclusion provenance incomplete", "1 dependency"),
+        () -> assertThat(rendered).doesNotContain("row 0"),
+        () ->
+            assertThat(ExclusionProvenancePayload.decode(review.snapshot()).diagnostics())
+                .containsExactly(diagnostic));
   }
 
   @Test

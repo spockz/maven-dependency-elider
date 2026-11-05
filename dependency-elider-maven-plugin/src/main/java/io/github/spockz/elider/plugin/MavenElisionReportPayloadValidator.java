@@ -30,6 +30,9 @@ final class MavenElisionReportPayloadValidator {
   private static final Set<String> SNAPSHOT_FIELDS =
       Set.of(
           "schemaVersion",
+          "mode",
+          "inputArtifactCount",
+          "sourceAttributionFallback",
           "projectGroupId",
           "projectArtifactId",
           "projectVersion",
@@ -95,7 +98,11 @@ final class MavenElisionReportPayloadValidator {
 
   /** Exact fields for retained-artifact rows. */
   private static final Set<String> TRIMMED_FIELDS =
-      Set.of("coordinate", PROGRAM_CLASSES_PRUNED, UNCOMPRESSED_PROGRAM_CLASS_BYTES_PRUNED);
+      Set.of(
+          "coordinate",
+          PROGRAM_CLASSES_PRUNED,
+          UNCOMPRESSED_PROGRAM_CLASS_BYTES_PRUNED,
+          "plannedClasses");
 
   /** Reachable dispositions that leave an artifact in the effective output. */
   private static final Set<String> RETAINED_GRAPH_DISPOSITIONS =
@@ -124,14 +131,22 @@ final class MavenElisionReportPayloadValidator {
 
   /** Validates the report payload before Jackson binds primitive record fields. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-  static void validate(final JsonNode payload) throws IOException {
-    validateSchemaVersion(payload);
-    validateSnapshotShape(payload);
+  static void validate(final JsonNode input) throws IOException {
+    validateSchemaVersion(input);
+    validateSnapshotShape(input);
+    final JsonNode payload = validateAndNormalizeMode(input);
     validateExecutionEnvironment(payload.get("executionEnvironment"));
     validateMetrics(payload, SNAPSHOT_METRICS, "Elision report metric");
+    validateMetrics(
+        payload, Map.of("inputArtifactCount", (long) Integer.MAX_VALUE), "Elision report metric");
     validateRows(payload.get("droppedArtifacts"), DROPPED_FIELDS, DROPPED_METRICS);
     validateRows(payload.get("trimmedArtifacts"), TRIMMED_FIELDS, TRIMMED_METRICS);
     validateLayoutFlag(payload.get("assumeConventionalJavaSourceLayout"));
+    final JsonNode fallback = payload.get("sourceAttributionFallback");
+    if (fallback == null
+        || !(fallback.isNull() || fallback.isTextual() && !fallback.textValue().isBlank())) {
+      throw new IOException("Source attribution fallback must be null or nonblank text");
+    }
     validatePolicy(payload.get("policy"));
     MavenElisionReportJsonPayloadShape.requireArray(
         payload.get("genericFindings"), "genericFindings");
@@ -146,6 +161,71 @@ final class MavenElisionReportPayloadValidator {
     final MediatedGraphReport mediatedGraph =
         MavenElisionReportGraphPayloadValidator.validateAndRead(payload.get("mediatedGraph"));
     validateAppliedBanCrossSections(payload, mediatedGraph, retainedPolicy);
+  }
+
+  private static JsonNode validateAndNormalizeMode(final JsonNode payload) throws IOException {
+    final JsonNode mode = payload.get("mode");
+    if (mode == null
+        || !mode.isTextual()
+        || !("ANALYSIS".equals(mode.textValue()) || "APPLIED".equals(mode.textValue()))) {
+      throw new IOException("Elision report mode is invalid");
+    }
+    final boolean predicted = "ANALYSIS".equals(mode.textValue());
+    final com.fasterxml.jackson.databind.node.ObjectNode normalized =
+        ((com.fasterxml.jackson.databind.node.ObjectNode) payload).deepCopy();
+    normalizeUnknownBytes(normalized, predicted);
+    normalizeTrimRows(normalized, predicted);
+    normalizeBanRows(normalized, predicted);
+    return normalized;
+  }
+
+  private static void normalizeTrimRows(
+      final com.fasterxml.jackson.databind.node.ObjectNode normalized, final boolean predicted)
+      throws IOException {
+    for (final JsonNode row : normalized.path("trimmedArtifacts")) {
+      if (!row.isObject()) {
+        throw new IOException("Elision report artifact row must be an object");
+      }
+      final JsonNode classes = row.get("plannedClasses");
+      if (classes == null || (predicted ? !canonicalTextArray(classes) : !classes.isNull())) {
+        throw new IOException("Trim planned classes disagree with report mode");
+      }
+      normalizeUnknownBytes((com.fasterxml.jackson.databind.node.ObjectNode) row, predicted);
+    }
+  }
+
+  private static void normalizeBanRows(
+      final com.fasterxml.jackson.databind.node.ObjectNode normalized, final boolean predicted)
+      throws IOException {
+    for (final JsonNode row : normalized.path("appliedBans")) {
+      if (!row.isObject()) {
+        throw new IOException("Elision report ban row must be an object");
+      }
+      if (!row.path("applied").isBoolean()) {
+        throw new IOException("Ban applied flag must be boolean");
+      }
+      if (predicted && row.path("applied").asBoolean()) {
+        throw new IOException("Analysis ban cannot be applied");
+      }
+      if (predicted) {
+        ((com.fasterxml.jackson.databind.node.ObjectNode) row)
+            .put("applied", !"UNMATCHED".equals(row.path("status").asText()));
+      }
+    }
+  }
+
+  private static void normalizeUnknownBytes(
+      final com.fasterxml.jackson.databind.node.ObjectNode row, final boolean predicted)
+      throws IOException {
+    final JsonNode bytes = row.get(UNCOMPRESSED_PROGRAM_CLASS_BYTES_PRUNED);
+    if (predicted) {
+      if (bytes == null || !bytes.isNull()) {
+        throw new IOException("Analysis trim bytes must be unknown");
+      }
+      row.put(UNCOMPRESSED_PROGRAM_CLASS_BYTES_PRUNED, 0);
+    } else if (bytes == null || bytes.isNull()) {
+      throw new IOException("Applied trim bytes are required");
+    }
   }
 
   private static void validateAppliedBanCrossSections(

@@ -28,7 +28,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Tests report snapshots independently from Maven dependency analysis. */
-@SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
+@SuppressWarnings({
+  "PMD.UnitTestContainsTooManyAsserts",
+  "PMD.TooManyMethods",
+  "PMD.AvoidDuplicateLiterals"
+})
 final class MavenElisionReportWriterTest {
   /** Maven group used in synthetic test coordinates. */
   private static final String GROUP_ID = "org.example";
@@ -55,6 +59,184 @@ final class MavenElisionReportWriterTest {
   /** Creates the report writer test fixture. */
   @SuppressWarnings({"PMD.UncommentedEmptyConstructor", "PMD.CommentDefaultAccessModifier"})
   MavenElisionReportWriterTest() {}
+
+  @Test
+  void analysisSnapshotReplaysPlannedTrimWithUnknownBytes() throws IOException {
+    final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "trimmed", "1.0");
+    final AnalyzePrediction prediction =
+        new AnalyzePrediction(
+            MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL,
+            List.of(new ElisionAnalysisModel.ArtifactSnapshot(null, coordinate, null)),
+            List.of(coordinate),
+            List.of(),
+            List.of(new AnalyzePrediction.PlannedTrim(coordinate, Set.of("p.Removed"))),
+            new ElisionAnalysisModel.AnalysisEvidence(
+                new ClassUsageReport(List.of()),
+                Optional.empty(),
+                Map.of(),
+                false,
+                false,
+                "source attribution unavailable"),
+            "a".repeat(64),
+            "b".repeat(64),
+            "c".repeat(64));
+    final MavenElisionReportSnapshot original =
+        MavenElisionReportSnapshot.from(
+            project(),
+            prediction,
+            new MavenVulnerabilityAssessment.Result(List.of(), List.of(), List.of(), false),
+            ExclusionReview.unavailable("unavailable"));
+    final Path report = temporaryDirectory.resolve("analysis-report.json");
+    MavenElisionReportWriter.write(report, original);
+    final MavenElisionReportSnapshot replay = MavenElisionReportWriter.read(report);
+    final com.fasterxml.jackson.databind.ObjectMapper mapper =
+        new com.fasterxml.jackson.databind.ObjectMapper();
+    final com.fasterxml.jackson.databind.node.ObjectNode saved =
+        (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(report.toFile());
+    final com.fasterxml.jackson.databind.node.ObjectNode badMode = saved.deepCopy();
+    badMode.put("mode", "INVENTED");
+    final com.fasterxml.jackson.databind.node.ObjectNode falseMeasurement = saved.deepCopy();
+    falseMeasurement.put("uncompressedProgramClassBytesPruned", 0);
+    final com.fasterxml.jackson.databind.node.ObjectNode absentClasses = saved.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode)
+            absentClasses.withArray("trimmedArtifacts").get(0))
+        .putNull("plannedClasses");
+    assertAll(
+        () -> assertThat(replay.mode()).isEqualTo(MavenElisionReportSnapshot.Mode.ANALYSIS),
+        () -> assertThat(replay.inputArtifactCount()).isEqualTo(1),
+        () ->
+            assertThat(replay.sourceAttributionFallback())
+                .isEqualTo("source attribution unavailable"),
+        () ->
+            assertThat(MavenElisionReportWriter.render(replay))
+                .anyMatch(line -> line.contains("source attribution unavailable")),
+        () -> assertBadPayloadRejected(mapper, badMode, "bad-mode"),
+        () -> assertBadPayloadRejected(mapper, falseMeasurement, "false-measurement"),
+        () -> assertBadPayloadRejected(mapper, absentClasses, "absent-classes"),
+        () ->
+            assertThat(replay.trimmedArtifacts())
+                .singleElement()
+                .satisfies(
+                    trim -> {
+                      assertThat(trim.programClassesPruned()).isEqualTo(1);
+                      assertThat(trim.uncompressedProgramClassBytesPruned()).isNull();
+                      assertThat(trim.plannedClasses()).containsExactly("p.Removed");
+                    }),
+        () -> assertThat(replay.uncompressedProgramClassBytesPruned()).isNull(),
+        () ->
+            assertThat(MavenElisionReportWriter.render(replay))
+                .anyMatch(line -> line.contains("would") && line.contains("unknown")));
+  }
+
+  @Test
+  void validatesForecastAgainstMatchingPlannedClassesAcrossScopes() throws IOException {
+    final ArtifactCoordinate coordinate = ArtifactCoordinate.of("org.example", "trimmed", "1.0");
+    final io.github.spockz.elider.model.CodeClaim code =
+        io.github.spockz.elider.model.CodeClaim.declared(
+            io.github.spockz.elider.model.CodeReference.className("p.Missing"));
+    final GenericFindingAssessment finding =
+        new GenericFindingAssessment(
+            "GHSA-test",
+            Set.of(),
+            new ArtifactCoordinate("org.example", "trimmed", "1.0", "jar", "", "runtime"),
+            io.github.spockz.elider.model.VersionApplicability.AFFECTED,
+            Optional.of(io.github.spockz.elider.model.AssessmentIntent.AUTO_VERIFY),
+            io.github.spockz.elider.model.ClaimGroupStatus.DECLARED,
+            List.of(
+                new io.github.spockz.elider.model.CodeAttributionResolver.DeclarationResult(
+                    code,
+                    io.github.spockz.elider.model.CodeAttributionResolver.Status.RESOLVED,
+                    Set.of("p.Missing"),
+                    List.of())),
+            List.of(),
+            io.github.spockz.elider.model.ClaimGroupStatus.OMITTED,
+            List.of(),
+            List.of(),
+            Set.of(),
+            Set.of(),
+            GenericFindingAssessment.Outcome.PLANNED_CODE_ABSENT,
+            "planned",
+            MavenVulnerabilityAssessment.InventoryDisposition.PLANNED_TRIM,
+            List.of());
+    final AnalyzePrediction prediction =
+        new AnalyzePrediction(
+            MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL,
+            List.of(new ElisionAnalysisModel.ArtifactSnapshot(null, coordinate, null)),
+            List.of(coordinate),
+            List.of(),
+            List.of(new AnalyzePrediction.PlannedTrim(coordinate, Set.of("p.Missing"))),
+            new ElisionAnalysisModel.AnalysisEvidence(
+                new ClassUsageReport(List.of()), Optional.empty(), Map.of(), false, false, null),
+            "a".repeat(64),
+            "b".repeat(64),
+            "c".repeat(64));
+    final MavenElisionReportSnapshot snapshot =
+        MavenElisionReportSnapshot.from(
+            project(),
+            prediction,
+            new MavenVulnerabilityAssessment.Result(List.of(), List.of(finding), List.of(), false),
+            ExclusionReview.unavailable("unavailable"));
+    final Path path = temporaryDirectory.resolve("forecast.json");
+    MavenElisionReportWriter.write(path, snapshot);
+    final com.fasterxml.jackson.databind.ObjectMapper mapper =
+        new com.fasterxml.jackson.databind.ObjectMapper();
+    final com.fasterxml.jackson.databind.node.ObjectNode saved =
+        (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(path.toFile());
+    final com.fasterxml.jackson.databind.node.ObjectNode badClass = saved.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) badClass.withArray("trimmedArtifacts").get(0))
+        .putArray("plannedClasses")
+        .add("p.Other");
+    final com.fasterxml.jackson.databind.node.ObjectNode wrongVersion = saved.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode)
+            wrongVersion.withArray("trimmedArtifacts").get(0))
+        .put("coordinate", "org.example:trimmed:jar:2.0 (compile)");
+    final com.fasterxml.jackson.databind.node.ObjectNode wrongClassifier = saved.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode)
+            wrongClassifier.withArray("trimmedArtifacts").get(0))
+        .put("coordinate", "org.example:trimmed:jar:tests:1.0 (compile)");
+    final com.fasterxml.jackson.databind.node.ObjectNode duplicate = saved.deepCopy();
+    final com.fasterxml.jackson.databind.node.ObjectNode duplicateTrim =
+        ((com.fasterxml.jackson.databind.node.ObjectNode)
+                duplicate.withArray("trimmedArtifacts").get(0))
+            .deepCopy();
+    duplicateTrim.put("coordinate", "org.example:trimmed:jar:1.0 (runtime)");
+    duplicate.withArray("trimmedArtifacts").add(duplicateTrim);
+    duplicate.put("programClassesPruned", 2);
+    final com.fasterxml.jackson.databind.node.ObjectNode emptyFamily = saved.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode)
+            emptyFamily.withArray("genericFindings").get(0).path("codeAttribution").get(0))
+        .putArray("classFamily");
+    final com.fasterxml.jackson.databind.node.ObjectNode fakeProof = saved.deepCopy();
+    ((com.fasterxml.jackson.databind.node.ObjectNode) fakeProof.withArray("genericFindings").get(0))
+        .put("outcome", "DECLARED_CODE_ABSENT");
+    final com.fasterxml.jackson.databind.node.ObjectNode appliedForecast = saved.deepCopy();
+    appliedForecast.put("mode", "APPLIED");
+    appliedForecast.put("uncompressedProgramClassBytesPruned", 1);
+    final com.fasterxml.jackson.databind.node.ObjectNode appliedTrim =
+        (com.fasterxml.jackson.databind.node.ObjectNode)
+            appliedForecast.withArray("trimmedArtifacts").get(0);
+    appliedTrim.put("uncompressedProgramClassBytesPruned", 1);
+    appliedTrim.putNull("plannedClasses");
+    assertAll(
+        () -> assertThat(MavenElisionReportWriter.read(path).genericFindings()).hasSize(1),
+        () -> assertBadPayloadRejected(mapper, badClass, "forged-class"),
+        () -> assertBadPayloadRejected(mapper, wrongVersion, "wrong-version"),
+        () -> assertBadPayloadRejected(mapper, wrongClassifier, "wrong-classifier"),
+        () -> assertBadPayloadRejected(mapper, duplicate, "duplicate-component-plan"),
+        () -> assertBadPayloadRejected(mapper, emptyFamily, "empty-family"),
+        () -> assertBadPayloadRejected(mapper, fakeProof, "analysis-proof"),
+        () -> assertBadPayloadRejected(mapper, appliedForecast, "applied-forecast"));
+  }
+
+  private void assertBadPayloadRejected(
+      final com.fasterxml.jackson.databind.ObjectMapper mapper,
+      final com.fasterxml.jackson.databind.node.ObjectNode payload,
+      final String name)
+      throws IOException {
+    final Path path = temporaryDirectory.resolve(name + ".json");
+    mapper.writeValue(path.toFile(), payload);
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(path)).isInstanceOf(IOException.class);
+  }
 
   @Test
   void capturesOriginalArtifactAndUncompressedPrunedProgramClassBytes() throws IOException {
@@ -115,6 +297,7 @@ final class MavenElisionReportWriterTest {
     final MavenElisionReportSnapshot.DroppedArtifactSummary droppedArtifacts =
         MavenElisionReportSnapshot.droppedArtifactSummary(analysis);
 
+    assertThat(snapshot.inputArtifactCount()).isEqualTo(2);
     assertThat(snapshot.wholeArtifactsDropped()).isOne();
     assertThat(snapshot.originalJarBytesDropped()).isEqualTo(originalDroppedJarBytes);
     assertThat(snapshot.droppedProgramClassEntries()).isEqualTo(2);
@@ -164,7 +347,7 @@ final class MavenElisionReportWriterTest {
                           "Project: org.example:consumer:1.0",
                           "Snapshot: last successful elide run at " + GENERATED_AT,
                           "The snapshot does not revalidate changed inputs when this goal runs.",
-                          "Whole artifacts dropped: 1 (original JAR file bytes: 2.00 KiB)",
+                          "Whole artifacts dropped: 1 / 2 (original JAR file bytes: 2.00 KiB)",
                           "Program classes removed with dropped JARs: 2 (uncompressed .class entry"
                               + " payload bytes: 18 B; excludes module descriptors and "
                               + "archive sanitation metadata)",
@@ -174,7 +357,7 @@ final class MavenElisionReportWriterTest {
                               + " .class payload bytes: "
                               + "3.02 KiB; excludes module descriptors and archive metadata)",
                           "Vulnerability findings: none",
-                          "Source observations: none",
+                          "CVE Sources: none",
                           "Mediated TEST dependency graph (captured and saved by the elide goal):"),
               () ->
                   assertThat(rendered)
@@ -210,6 +393,20 @@ final class MavenElisionReportWriterTest {
   }
 
   @Test
+  void groupsDroppedJarsBeforeTheBanSummary() throws IOException {
+    final List<String> rendered =
+        MavenElisionReportWriter.render(snapshot().withAppliedBans(List.of()));
+    assertThat(rendered)
+        .containsSubsequence(
+            "Whole artifacts dropped: 1 / 2 (original JAR file bytes: 2.00 KiB)",
+            "  - org.example:removed:jar:1.0 (compile): 2.00 KiB original JAR, 2 class entries, 18"
+                + " B",
+            "Applied bans: none",
+            "Program classes pruned from retained JARs: 4 (uncompressed omitted .class payload"
+                + " bytes: 3.02 KiB; excludes module descriptors and archive metadata)");
+  }
+
+  @Test
   void rendersExplicitZeroTotals() throws IOException {
     final MavenElisionReportSnapshot populated = snapshot();
     final MavenElisionReportSnapshot empty =
@@ -233,7 +430,7 @@ final class MavenElisionReportWriterTest {
 
     assertThat(MavenElisionReportWriter.render(empty))
         .contains(
-            "Whole artifacts dropped: 0 (original JAR file bytes: 0 B)",
+            "Whole artifacts dropped: 0 / 0 (original JAR file bytes: 0 B)",
             "Program classes removed with dropped JARs: 0 (uncompressed .class entry"
                 + " payload bytes: 0 B; excludes module descriptors and "
                 + "archive sanitation metadata)",
@@ -241,7 +438,7 @@ final class MavenElisionReportWriterTest {
                 + " .class payload bytes: "
                 + "0 B; excludes module descriptors and archive metadata)",
             "Vulnerability findings: none",
-            "Source observations: none");
+            "CVE Sources: none");
   }
 
   @Test
@@ -306,7 +503,8 @@ final class MavenElisionReportWriterTest {
     assertThatThrownBy(() -> MavenElisionReportWriter.read(missing))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("No successful elision report snapshot")
-        .hasMessageContaining("run a Maven lifecycle build");
+        .hasMessageContaining("run a Maven lifecycle build")
+        .hasMessageContaining("dependency-elider:analyze");
   }
 
   private MavenElisionReportSnapshot snapshot() throws IOException {

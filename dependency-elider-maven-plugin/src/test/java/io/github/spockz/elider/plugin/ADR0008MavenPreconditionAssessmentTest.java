@@ -31,18 +31,23 @@ import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import org.apache.maven.artifact.Artifact;
+import org.apache.maven.artifact.DefaultArtifact;
+import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -132,7 +137,8 @@ final class ADR0008MavenPreconditionAssessmentTest {
                 emptyCache("positive-cache"), configured(List.of(mapping)), analysis, inventory);
 
     final RecordingMavenLog summaryLog = new RecordingMavenLog();
-    ElisionSummaryCveReporter.report(summaryLog, result, false);
+    MavenElisionReportGenericRenderer.render(result.genericFindings(), result.sourceObservations())
+        .forEach(summaryLog::info);
 
     assertThat(result.attestations()).hasSize(1);
     assertThat(result.attestations().getFirst().coordinate()).isEqualTo(affectedOne);
@@ -145,13 +151,41 @@ final class ADR0008MavenPreconditionAssessmentTest {
         .containsExactly(new MavenVulnerabilityAssessment.Finding(CVE_ID, affectedOne));
     assertThat(mapping.vulnerableClasses()).isEmpty();
     assertThat(summaryLog.messages())
-        .contains(
-            "  Vulnerability findings:",
-            "    "
-                + CVE_ID
-                + " "
-                + affectedOne.toId()
-                + ": AFFECTED; PREREQUISITES_ABSENT; RETAINED_UNCHANGED");
+        .satisfies(
+            messages ->
+                assertAll(
+                    "summary retains the affected finding and its prerequisite proof outcome",
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(line -> "Vulnerability findings: 1".equals(line)),
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(
+                                line ->
+                                    line.contains(
+                                            CVE_ID
+                                                + " "
+                                                + affectedOne.toId()
+                                                + " ("
+                                                + affectedOne.scope()
+                                                + ")")
+                                        && line.contains("[RETAINED_UNCHANGED]")),
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(
+                                line ->
+                                    line.contains("Applicability: AFFECTED; intent: AUTO_VERIFY")),
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(line -> line.contains("Outcome: PREREQUISITES_ABSENT;")),
+                    () -> assertThat(messages).anyMatch(line -> "CVE Sources:".equals(line)),
+                    () -> assertThat(messages).anyMatch(line -> line.contains("CACHE UNAVAILABLE")),
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(
+                                line ->
+                                    line.contains(
+                                        "Plugin cache producer identity is unavailable"))));
     assertThat(result.provenVulnerableCodeAbsent()).isEmpty();
     assertThat(result.removedComponents()).isEmpty();
 
@@ -812,6 +846,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     return analysis(retainedCoordinates, List.of(), trimRecords);
   }
 
+  @SuppressWarnings("PMD.UseConcurrentHashMap") // The fixture is built on one thread.
   private static ElisionAnalysisModel.Analysis analysis(
       final List<ArtifactCoordinate> retainedCoordinates,
       final List<ArtifactCoordinate> removedCoordinates,
@@ -823,8 +858,21 @@ final class ADR0008MavenPreconditionAssessmentTest {
             Map.of(),
             Map.of(),
             0L);
+    final Map<String, ArtifactCoordinate> inputCoordinates = new LinkedHashMap<>();
+    retainedCoordinates.forEach(
+        coordinate -> inputCoordinates.putIfAbsent(coordinate.toId(), coordinate));
+    removedCoordinates.forEach(
+        coordinate -> inputCoordinates.putIfAbsent(coordinate.toId(), coordinate));
+    trimRecords.stream()
+        .map(ArtifactTrimRecord::coordinate)
+        .forEach(coordinate -> inputCoordinates.putIfAbsent(coordinate.toId(), coordinate));
     return new ElisionAnalysisModel.Analysis(
-        new ElisionAnalysisModel.ArtifactViews(List.of(), false, List.of()),
+        new ElisionAnalysisModel.ArtifactViews(
+            inputCoordinates.values().stream()
+                .map(coordinate -> artifactSnapshot(coordinate, trimRecords))
+                .toList(),
+            false,
+            List.of()),
         decision,
         decision,
         new ElisionAnalysisModel.AnalysisEvidence(
@@ -842,6 +890,30 @@ final class ADR0008MavenPreconditionAssessmentTest {
         null,
         null,
         MavenElisionPolicyIdentityTestSupport.emptyPolicy());
+  }
+
+  private static ElisionAnalysisModel.ArtifactSnapshot artifactSnapshot(
+      final ArtifactCoordinate coordinate, final List<ArtifactTrimRecord> trimRecords) {
+    final Artifact artifact =
+        new DefaultArtifact(
+            coordinate.groupId(),
+            coordinate.artifactId(),
+            coordinate.version(),
+            coordinate.scope(),
+            coordinate.type(),
+            coordinate.classifier().isEmpty() ? null : coordinate.classifier(),
+            new DefaultArtifactHandler(coordinate.type()));
+    final File file =
+        trimRecords.stream()
+            .filter(record -> record.coordinate().toId().equals(coordinate.toId()))
+            .map(record -> record.originalPath().toFile())
+            .findFirst()
+            .orElseGet(
+                () ->
+                    Path.of("target", coordinate.artifactId() + "-" + coordinate.version() + ".jar")
+                        .toFile());
+    artifact.setFile(file);
+    return ElisionAnalysisModel.ArtifactSnapshot.from(artifact);
   }
 
   private static MavenPreconditionInventory.Snapshot completeInventory(final Provider... providers)

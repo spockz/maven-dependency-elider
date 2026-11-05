@@ -30,8 +30,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
 /** Tests generic cache persistence and malformed-input rejection. */
-@SuppressWarnings(
-    "PMD.AvoidDuplicateLiterals") // Each independent fixture keeps its values visible.
+@SuppressWarnings({"PMD.AvoidDuplicateLiterals", "PMD.TooManyMethods"})
+// Each cache-shape regression keeps its fixture values visible.
 class GenericFindingCacheEnvelopeTest {
   /** Binary identity used to bind every fixture envelope. */
   private static final CacheProducerIdentity PRODUCER =
@@ -114,6 +114,80 @@ class GenericFindingCacheEnvelopeTest {
             assertThat(new String(bytes, java.nio.charset.StandardCharsets.UTF_8))
                 .contains("\"sources\"")
                 .doesNotContain("\"advisoryDocument\""));
+  }
+
+  @Test
+  void partialSourceRoundTripsRetainedClaimsAndRejectsIncompleteMetadata() throws IOException {
+    final Instant sync = Instant.parse("2026-11-04T00:00:00Z");
+    final VulnerabilityFindingContribution claim = contribution("CVE-2026-12345", "cve");
+    final FindingSourceSnapshot partial =
+        new FindingSourceSnapshot(
+            FindingSource.CVE_LIST,
+            "revision-partial",
+            sync,
+            FindingSourceSnapshot.Status.valueOf("PARTIAL"),
+            "Skipped malformed source data",
+            List.of(claim),
+            List.of("CVE-2026-54321 affected[1] skipped"));
+    final GenericFindingCacheEnvelope envelope =
+        new GenericFindingCacheEnvelope(
+            PRODUCER, java.util.Map.of(FindingSource.CVE_LIST, partial));
+    final FindingSourceSnapshot emptyPartial =
+        new FindingSourceSnapshot(
+            FindingSource.CVE_LIST,
+            "revision-empty",
+            sync,
+            FindingSourceSnapshot.Status.valueOf("PARTIAL"),
+            "Skipped malformed source data",
+            List.of(),
+            List.of());
+    final byte[] emptyEncoded =
+        new GenericFindingCacheEnvelopeWriter()
+            .encode(
+                new GenericFindingCacheEnvelope(
+                    PRODUCER, java.util.Map.of(FindingSource.CVE_LIST, emptyPartial)));
+    final ObjectMapper mapper = new ObjectMapper();
+    final byte[] encoded = new GenericFindingCacheEnvelopeWriter().encode(envelope);
+    final GenericFindingCacheEnvelopeReader reader = new GenericFindingCacheEnvelopeReader();
+    final GenericFindingCacheEnvelope decoded =
+        reader.read(new ByteArrayInputStream(encoded), PRODUCER);
+    final ObjectNode root = (ObjectNode) mapper.readTree(encoded);
+    final ObjectNode noRevision = root.deepCopy();
+    ((ObjectNode) noRevision.path("sources").path("CVE_LIST")).putNull("revision");
+    final ObjectNode noTime = root.deepCopy();
+    ((ObjectNode) noTime.path("sources").path("CVE_LIST")).putNull("lastSuccessfulSync");
+    final ObjectNode noDiagnostic = root.deepCopy();
+    ((ObjectNode) noDiagnostic.path("sources").path("CVE_LIST")).putNull("diagnostic");
+    assertAll(
+        () -> assertThat(decoded.sources().get(FindingSource.CVE_LIST)).isEqualTo(partial),
+        () -> assertThat(decoded.contributions()).containsExactly(claim),
+        () ->
+            assertThat(
+                    reader
+                        .read(new ByteArrayInputStream(emptyEncoded), PRODUCER)
+                        .sources()
+                        .get(FindingSource.CVE_LIST))
+                .isEqualTo(emptyPartial),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        reader.read(
+                            new ByteArrayInputStream(mapper.writeValueAsBytes(noRevision)),
+                            PRODUCER))
+                .isInstanceOf(IOException.class),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        reader.read(
+                            new ByteArrayInputStream(mapper.writeValueAsBytes(noTime)), PRODUCER))
+                .isInstanceOf(IOException.class),
+        () ->
+            assertThatThrownBy(
+                    () ->
+                        reader.read(
+                            new ByteArrayInputStream(mapper.writeValueAsBytes(noDiagnostic)),
+                            PRODUCER))
+                .isInstanceOf(IOException.class));
   }
 
   @Test

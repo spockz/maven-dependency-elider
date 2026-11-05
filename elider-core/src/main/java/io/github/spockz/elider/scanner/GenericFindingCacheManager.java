@@ -43,6 +43,9 @@ public final class GenericFindingCacheManager {
   /** Git status indicating a removed CVE source record. */
   private static final String DELETED_STATUS = "D";
 
+  /** Each partial observation has exactly one skipped-row summary. */
+  private static final int EXPECTED_SKIPPED_SUMMARY_COUNT = 1;
+
   /** Carries earlier full-scan identity limitations through incremental refreshes. */
   private static final String PRIOR_UNSUPPORTED_IDENTITY_LIMITATION =
       "Prior CVE scan found unsupported Maven package identities; "
@@ -165,7 +168,7 @@ public final class GenericFindingCacheManager {
           source.records().stream()
               .flatMap(record -> osvAdapter.contributions(record).stream())
               .toList();
-      final String revision = osvRevision(source.records());
+      final String revision = osvRevision(source.records(), source.skippedRows());
       final Optional<String> refreshFailure = source.refreshFailure();
       if (refreshFailure.isPresent()) {
         failures.add("OSV source is stale: " + refreshFailure.orElseThrow());
@@ -177,10 +180,14 @@ public final class GenericFindingCacheManager {
               FindingSource.OSV,
               revision,
               Instant.now(),
-              FindingSourceSnapshot.Status.CURRENT,
-              null,
+              source.skippedCount() == 0
+                  ? FindingSourceSnapshot.Status.CURRENT
+                  : FindingSourceSnapshot.Status.PARTIAL,
+              source.skippedCount() == 0
+                  ? null
+                  : "Skipped " + source.skippedCount() + " OSV source row(s)",
               contributions,
-              List.of()));
+              source.skippedRows()));
     } catch (final IOException | IllegalArgumentException failure) {
       final String diagnostic = "OSV source observation failed: " + describe(failure);
       failures.add(diagnostic);
@@ -229,6 +236,9 @@ public final class GenericFindingCacheManager {
       final FindingSourceSnapshot previous,
       final String revision)
       throws IOException, InterruptedException {
+    if (!canReconcileSkippedRows(previous)) {
+      return Optional.empty();
+    }
     final Optional<ChangedCveRecords> changed =
         changedCveRecords(checkout, previous.revision(), revision);
     if (changed.isEmpty()) {
@@ -244,7 +254,21 @@ public final class GenericFindingCacheManager {
                     contribution -> !paths.changedIds().contains(contribution.vulnerabilityId()))
                 .toList());
     updated.addAll(indexed.contributions());
-    final List<String> diagnostics = new ArrayList<>(indexed.observationDiagnostics());
+    final List<String> diagnostics = new ArrayList<>();
+    final List<String> priorSkipped =
+        previous.observationDiagnostics().stream()
+            .filter(value -> value.startsWith(CveListFindingIndexer.SKIPPED_ROW_PREFIX))
+            .filter(value -> !isChangedSkippedRow(value, paths.changedIds()))
+            .toList();
+    final List<String> newSkipped =
+        indexed.observationDiagnostics().stream()
+            .filter(value -> value.startsWith(CveListFindingIndexer.SKIPPED_ROW_PREFIX))
+            .toList();
+    final int skipped = priorSkipped.size() + indexed.skippedRows();
+    indexed.observationDiagnostics().stream()
+        .filter(value -> !isSkippedDiagnostic(value))
+        .forEach(diagnostics::add);
+    addSkippedDiagnostics(diagnostics, skipped, priorSkipped, newSkipped);
     if (hasUnsupportedIdentityDiagnostic(previous.observationDiagnostics())) {
       diagnostics.add(PRIOR_UNSUPPORTED_IDENTITY_LIMITATION);
     }
@@ -256,8 +280,8 @@ public final class GenericFindingCacheManager {
             FindingSource.CVE_LIST,
             revision,
             Instant.now(),
-            FindingSourceSnapshot.Status.CURRENT,
-            null,
+            cveStatus(skipped),
+            cveDiagnostic(skipped),
             updated,
             diagnostics);
     return Optional.of(
@@ -280,8 +304,8 @@ public final class GenericFindingCacheManager {
             FindingSource.CVE_LIST,
             revision,
             Instant.now(),
-            FindingSourceSnapshot.Status.CURRENT,
-            null,
+            cveStatus(indexed.skippedRows()),
+            cveDiagnostic(indexed.skippedRows()),
             indexed.contributions(),
             diagnostics);
     return new CveRefreshResult(envelope.withSourceSnapshot(snapshot), indexed.sourceRecordCount());
@@ -296,16 +320,110 @@ public final class GenericFindingCacheManager {
     if (!diagnostics.contains(unchangedDiagnostic)) {
       diagnostics.add(unchangedDiagnostic);
     }
+    final boolean partial =
+        previous.status() == FindingSourceSnapshot.Status.PARTIAL
+            || diagnostics.stream()
+                .anyMatch(value -> value.startsWith(CveListFindingIndexer.SKIPPED_SUMMARY_PREFIX));
     final FindingSourceSnapshot snapshot =
         new FindingSourceSnapshot(
             FindingSource.CVE_LIST,
             revision,
             Instant.now(),
-            FindingSourceSnapshot.Status.CURRENT,
-            null,
+            partial ? FindingSourceSnapshot.Status.PARTIAL : FindingSourceSnapshot.Status.CURRENT,
+            partial ? partialDiagnostic(diagnostics) : null,
             previous.contributions(),
             diagnostics);
     return new CveRefreshResult(envelope.withSourceSnapshot(snapshot), 0);
+  }
+
+  private static FindingSourceSnapshot.Status cveStatus(final int skipped) {
+    return skipped == 0
+        ? FindingSourceSnapshot.Status.CURRENT
+        : FindingSourceSnapshot.Status.PARTIAL;
+  }
+
+  private static String cveDiagnostic(final int skipped) {
+    return skipped == 0 ? null : "CVE List index is incomplete: skipped " + skipped + " rows";
+  }
+
+  private static String partialDiagnostic(final List<String> diagnostics) {
+    return diagnostics.stream()
+        .filter(value -> value.startsWith(CveListFindingIndexer.SKIPPED_SUMMARY_PREFIX))
+        .findFirst()
+        .orElse("CVE List index is incomplete; skipped-row details are unavailable");
+  }
+
+  private static boolean canReconcileSkippedRows(final FindingSourceSnapshot previous) {
+    final List<String> diagnostics = previous.observationDiagnostics();
+    if (diagnostics.stream()
+        .anyMatch(value -> value.startsWith(CveListFindingIndexer.SKIPPED_OVERFLOW_PREFIX))) {
+      return false;
+    }
+    final List<String> summaries =
+        diagnostics.stream()
+            .filter(value -> value.startsWith(CveListFindingIndexer.SKIPPED_SUMMARY_PREFIX))
+            .toList();
+    final List<String> details =
+        diagnostics.stream()
+            .filter(value -> value.startsWith(CveListFindingIndexer.SKIPPED_ROW_PREFIX))
+            .toList();
+    if (summaries.isEmpty()) {
+      return previous.status() != FindingSourceSnapshot.Status.PARTIAL && details.isEmpty();
+    }
+    if (summaries.size() != EXPECTED_SKIPPED_SUMMARY_COUNT) {
+      return false;
+    }
+    final String countAndDescription =
+        summaries.getFirst().substring(CveListFindingIndexer.SKIPPED_SUMMARY_PREFIX.length());
+    final int separator = countAndDescription.indexOf(' ');
+    if (separator <= 0 || separator > 9) {
+      return false;
+    }
+    final String count = countAndDescription.substring(0, separator);
+    if (!count.chars().allMatch(Character::isDigit)) {
+      return false;
+    }
+    return Integer.parseInt(count) == details.size()
+        && details.stream().allMatch(GenericFindingCacheManager::hasCanonicalSkippedRowId);
+  }
+
+  private static boolean hasCanonicalSkippedRowId(final String diagnostic) {
+    final String remainder =
+        diagnostic.substring(CveListFindingIndexer.SKIPPED_ROW_PREFIX.length());
+    final int separator = remainder.indexOf(':');
+    return separator > 0 && remainder.substring(0, separator).matches("CVE-[0-9]{4}-[0-9]{4,}");
+  }
+
+  private static boolean isChangedSkippedRow(final String diagnostic, final Set<String> changed) {
+    final String remainder =
+        diagnostic.substring(CveListFindingIndexer.SKIPPED_ROW_PREFIX.length());
+    return changed.contains(remainder.substring(0, remainder.indexOf(':')));
+  }
+
+  private static boolean isSkippedDiagnostic(final String diagnostic) {
+    return diagnostic.startsWith(CveListFindingIndexer.SKIPPED_SUMMARY_PREFIX)
+        || diagnostic.startsWith(CveListFindingIndexer.SKIPPED_ROW_PREFIX)
+        || diagnostic.startsWith(CveListFindingIndexer.SKIPPED_OVERFLOW_PREFIX);
+  }
+
+  private static void addSkippedDiagnostics(
+      final List<String> diagnostics,
+      final int skipped,
+      final List<String> priorSkipped,
+      final List<String> newSkipped) {
+    if (skipped == 0) {
+      return;
+    }
+    diagnostics.add(CveListFindingIndexer.SKIPPED_SUMMARY_PREFIX + skipped + " malformed rows");
+    java.util.stream.Stream.concat(priorSkipped.stream(), newSkipped.stream())
+        .limit(CveListFindingIndexer.MAX_SKIPPED_ROW_DIAGNOSTICS)
+        .forEach(diagnostics::add);
+    if (skipped > CveListFindingIndexer.MAX_SKIPPED_ROW_DIAGNOSTICS) {
+      diagnostics.add(
+          CveListFindingIndexer.SKIPPED_OVERFLOW_PREFIX
+              + " after "
+              + CveListFindingIndexer.MAX_SKIPPED_ROW_DIAGNOSTICS);
+    }
   }
 
   private static boolean hasUnsupportedIdentityDiagnostic(final List<String> diagnostics) {
@@ -388,6 +506,12 @@ public final class GenericFindingCacheManager {
     if (filename == null) {
       return Optional.empty();
     }
+    if (path.getNameCount() == 2
+        && "cves".equals(path.getName(0).toString())
+        && ("delta.json".equals(filename.toString())
+            || "deltaLog.json".equals(filename.toString()))) {
+      return Optional.of(new ParsedCvePath(null, null));
+    }
     if (!filename.toString().endsWith(".json")) {
       return Optional.of(new ParsedCvePath(null, null));
     }
@@ -414,7 +538,8 @@ public final class GenericFindingCacheManager {
   private static boolean isFresh(
       final FindingSourceSnapshot snapshot, final VulnerabilityCacheManager.CacheConfig config) {
     return snapshot != null
-        && snapshot.status() == FindingSourceSnapshot.Status.CURRENT
+        && (snapshot.status() == FindingSourceSnapshot.Status.CURRENT
+            || snapshot.status() == FindingSourceSnapshot.Status.PARTIAL)
         && !config.forceRefresh()
         && Duration.between(snapshot.lastSuccessfulSync(), Instant.now()).compareTo(config.ttl())
             < 0;
@@ -591,12 +716,18 @@ public final class GenericFindingCacheManager {
   }
 
   private static String osvRevision(
-      final List<io.github.spockz.elider.model.OsvAdvisoryRecord> records) throws IOException {
+      final List<io.github.spockz.elider.model.OsvAdvisoryRecord> records,
+      final List<String> skippedRows)
+      throws IOException {
     final List<String> identities =
         records.stream().map(record -> record.osvId() + "\t" + record.modified()).sorted().toList();
     try {
       final MessageDigest digest = MessageDigest.getInstance("SHA-256");
       identities.forEach(value -> digest.update((value + "\n").getBytes(StandardCharsets.UTF_8)));
+      skippedRows.stream()
+          .sorted()
+          .forEach(
+              value -> digest.update(("skipped:" + value + "\n").getBytes(StandardCharsets.UTF_8)));
       return HexFormat.of().formatHex(digest.digest());
     } catch (final NoSuchAlgorithmException exception) {
       throw new IOException("SHA-256 is unavailable", exception);

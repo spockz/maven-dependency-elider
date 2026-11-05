@@ -86,6 +86,19 @@ final class DuplicatePassThroughOwnershipTest extends MavenDependencyTrimmerInMe
     assertTransformedDuplicateRemainsStrict(fixture, dropped);
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void transformedDuplicateRemainsStrictWithProvidedOwner(final boolean tiered) throws Exception {
+    final Fixture fixture = fixtureWithProvidedDuplicate();
+    if (tiered) {
+      fixture.addVersionedClassToC();
+    }
+    replaceDuplicate(fixture.snapshot("a").filePath());
+    assertThatThrownBy(() -> fixture.analyzeDuplicateRoot(all(fixture), POLICY))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("closure/a/Extra -> class missing/Required");
+  }
+
   private void assertTransformedDuplicateRemainsStrict(final Fixture fixture, final String dropped)
       throws IOException {
     final String transformed = "a".equals(dropped) ? "b" : "a";

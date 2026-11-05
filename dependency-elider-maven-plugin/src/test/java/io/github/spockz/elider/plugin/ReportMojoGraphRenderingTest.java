@@ -3,7 +3,6 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
@@ -73,7 +72,7 @@ final class ReportMojoGraphRenderingTest {
     assertThat(messages)
         .contains(
             "Snapshot: last successful elide run at 2026-10-25T12:00:00Z",
-            "Whole artifacts dropped: 1 (original JAR file bytes: 2.00 KiB)",
+            "Whole artifacts dropped: 1 / 2 (original JAR file bytes: 2.00 KiB)",
             "Program classes pruned from retained JARs: 3 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "1.50 KiB; excludes module descriptors and archive metadata)",
@@ -84,8 +83,27 @@ final class ReportMojoGraphRenderingTest {
   }
 
   @Test
-  void rejectsReportRenderingWhenMediatedGraphIsUnavailable()
-      throws IOException, ReflectiveOperationException {
+  void graphLabelsDistinguishPredictedAndAppliedOutputs() throws IOException {
+    final MediatedGraphReport graph =
+        MediatedGraphReportTestSupport.reportForOutputs(
+            coordinate(REPEATED_ARTIFACT_ID), coordinate("partial"), PROJECT_GAV);
+    final MediatedGraphReport plannedGraph =
+        MediatedGraphReportTestSupport.predictionForOutputs(
+            coordinate(REPEATED_ARTIFACT_ID), coordinate("partial"), PROJECT_GAV);
+    final List<String> predicted =
+        MediatedGraphReportRenderer.render(plannedGraph, PROJECT_GAV, true);
+    final List<String> applied = MediatedGraphReportRenderer.render(graph, PROJECT_GAV, false);
+    org.junit.jupiter.api.Assertions.assertAll(
+        () -> assertThat(plannedGraph.artifactPaths()).isEqualTo(graph.artifactPaths()),
+        () -> assertThat(predicted).anyMatch(line -> line.contains("[WOULD_DROP]")),
+        () -> assertThat(predicted).anyMatch(line -> line.contains("WOULD_TRIM")),
+        () -> assertThat(applied).anyMatch(line -> line.contains("[EFFECTIVE_DROP]")),
+        () -> assertThat(applied).anyMatch(line -> line.contains("CLASS_TRIMMED")));
+  }
+
+  @Test
+  void explainsWhenMediatedGraphIsUnavailable()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path snapshotFile = temporaryDirectory.resolve("graphless-report.json");
     final MavenElisionReportSnapshot graphless =
         new MavenElisionReportSnapshot(
@@ -106,12 +124,15 @@ final class ReportMojoGraphRenderingTest {
             MediatedGraphReport.unavailable("No compatible TEST graph was captured"),
             MavenElisionPolicyIdentityTestSupport.emptyPolicy());
     MavenElisionReportWriter.write(snapshotFile, graphless);
-    final ReportMojo mojo = mojo(snapshotFile, project(), new ArrayList<>());
+    final List<String> messages = new ArrayList<>();
+    final ReportMojo mojo = mojo(snapshotFile, project(), messages);
 
-    assertThatThrownBy(mojo::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Mediated dependency graph is unavailable")
-        .hasMessageContaining("No compatible TEST graph was captured");
+    mojo.execute();
+    assertThat(messages)
+        .anyMatch(
+            line ->
+                line.contains("Mediated dependency graph unavailable")
+                    && line.contains("No compatible TEST graph was captured"));
   }
 
   @Test

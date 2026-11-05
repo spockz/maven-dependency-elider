@@ -32,7 +32,8 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CommentRequired",
   "PMD.AtLeastOneConstructor",
   "PMD.CommentDefaultAccessModifier",
-  "PMD.LawOfDemeter"
+  "PMD.LawOfDemeter",
+  "PMD.TooManyMethods"
 })
 final class UpdateCveIndexMojoTest {
   @TempDir Path temporaryDirectory;
@@ -66,6 +67,68 @@ final class UpdateCveIndexMojoTest {
           () -> assertThat(deltaRequests).hasValue(1));
     } finally {
       server.stop(0);
+    }
+  }
+
+  @Test
+  void partialCveUpdateWarnsAndPublishesOtherFindings() throws Exception {
+    final Path repository = temporaryDirectory.resolve("cve-source");
+    Files.createDirectories(repository.resolve("cves/2026/12xxx"));
+    git(repository, "init");
+    git(repository, "config", "user.email", "test@example.invalid");
+    git(repository, "config", "user.name", "Test");
+    Files.writeString(
+        repository.resolve("cves/2026/12xxx/CVE-2026-12345.json"),
+        """
+        {"cveMetadata":{"cveId":"CVE-2026-12345","state":"PUBLISHED"},
+         "containers":{"cna":{"affected":[
+           {"packageURL":"pkg:maven/org.example/library",
+            "versions":[{"version":"1.0","status":"affected"}]}
+         ]}}}
+        """);
+    Files.writeString(repository.resolve("cves/2026/12xxx/CVE-2026-12346.json"), "{ malformed");
+    git(repository, "add", "--all");
+    git(repository, "commit", "-m", "CVE fixture");
+    final Path cache = temporaryDirectory.resolve("partial-cache");
+    final HttpServer server = server(200, snapshot(), new AtomicInteger(), new AtomicInteger());
+    server.start();
+    try {
+      final UpdateCveIndexMojo mojo = newMojo(cache, endpoint(server));
+      set(mojo, "cveListGitUri", repository.toUri().toString());
+      final java.util.List<String> warnings = new java.util.ArrayList<>();
+      mojo.setLog(
+          new SystemStreamLog() {
+            @Override
+            public void warn(final CharSequence content) {
+              warnings.add(content.toString());
+            }
+          });
+      mojo.execute();
+      final String persisted = Files.readString(cache.resolve("index.json"));
+      assertAll(
+          () -> assertThat(persisted).contains("PARTIAL", "CVE-2026-12345", "GHSA-typed"),
+          () ->
+              assertThat(warnings)
+                  .anySatisfy(message -> assertThat(message).contains("PARTIAL", "1")));
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  private static void git(final Path repository, final String... args)
+      throws IOException, InterruptedException {
+    final java.util.List<String> command = new java.util.ArrayList<>();
+    command.add("git");
+    command.addAll(java.util.List.of(args));
+    final Process process =
+        new ProcessBuilder(command)
+            .directory(repository.toFile())
+            .redirectErrorStream(true)
+            .start();
+    final String output =
+        new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    if (process.waitFor() != 0) {
+      throw new IOException("Git fixture failed: " + output);
     }
   }
 

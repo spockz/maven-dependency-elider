@@ -75,7 +75,7 @@ final class DependencyContextLifecycleIT {
   private static final String TRACE_FILE = "trace.txt";
   private static final String KEEP_ENTRY_ROOT = "io.github.spockz.elider.fixture.keep.KeepEntry\n";
   private static final String SEED_PLAN_DISABLED = "-Dlifecycle.seedPlan=false";
-  private static final String ELIDER_SUMMARY = "Dependency Elider summary";
+  private static final String ELIDER_SUMMARY = "Dependency Elider report";
   private static final String LIFECYCLE_ELIDE_SUMMARY = "target/lifecycle-elide-summary.json";
   private static final String LIFECYCLE_POST_ELIDE_VIEW = "target/lifecycle-elide/post-elide.tsv";
   private static final String ANALYZE_RUN_GOAL = "dependency-elider:analyze@run-elider";
@@ -722,11 +722,8 @@ final class DependencyContextLifecycleIT {
         () ->
             assertThat(output)
                 .contains(
-                    "Ban plan, applied=false: "
-                        + GROUP_ID
-                        + ":"
-                        + DROP_ARTIFACT_ID
-                        + " -> excluded_before_resolution"),
+                    "Planned ban outcomes:",
+                    "  - " + GROUP_ID + ":" + DROP_ARTIFACT_ID + ": excluded_before_resolution"),
         () -> {
           assertThat(appliedBans).hasSize(1);
           if (appliedBans.size() == 1) {
@@ -2130,13 +2127,17 @@ final class DependencyContextLifecycleIT {
         "dependency:tree");
 
     final String output = Files.readString(log);
-    assertThat(output).contains(BUILD_SUCCESS).contains("Whole artifacts: 1 / 3");
-    assertThat(output).contains("keep-library", "drop-library").doesNotContain("unused-library");
+    assertThat(output).contains(BUILD_SUCCESS).contains("Whole artifacts dropped: 1 / 3");
     assertThat(output).contains("dependency-elider:0.1.0-SNAPSHOT:elide (run-elider)");
     final int elideGoal = output.indexOf("elide (run-elider)");
     final int treeGoal = output.indexOf("dependency:3.7.0:tree (default-cli)");
     assertThat(elideGoal).isGreaterThanOrEqualTo(0);
     assertThat(treeGoal).isGreaterThan(elideGoal);
+    final int buildSuccess = output.indexOf(BUILD_SUCCESS, treeGoal);
+    assertThat(buildSuccess).isGreaterThan(treeGoal);
+    assertThat(output.substring(treeGoal, buildSuccess))
+        .contains("keep-library", "drop-library")
+        .doesNotContain("unused-library");
     final Path generatedClass = consumer.resolve("target/classes/generated/GeneratedUse.class");
     assertThat(generatedClass).isRegularFile();
     assertThat(

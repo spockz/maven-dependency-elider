@@ -58,7 +58,8 @@ final class AnalyzeMojoNativeImageTest {
             null,
             new DefaultArtifactHandler(JAR_TYPE));
     artifact.setFile(archive.toFile());
-    final MavenProject project = new MavenProject();
+    final MavenProject project =
+        AnalyzeMojoTestArtifactSupport.project(tempDir, "native-image-analysis");
     project.setArtifacts(new LinkedHashSet<>(Set.of(artifact)));
     final Path trace = tempDir.resolve("native-image-trace.lst");
     Files.writeString(trace, "used.Sample\n");

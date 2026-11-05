@@ -218,6 +218,196 @@ class GenericFindingCacheManagerTest {
   }
 
   @Test
+  void deltaMetadataChangesDoNotForceFullCveRecordRebuild()
+      throws IOException, InterruptedException {
+    final Path repository = initializeCveRepository("CVE-2026-12345");
+    writePartialCveRecord(repository, "CVE-2026-12345");
+    git(repository, "add", "--all");
+    git(repository, "commit", "-m", "add a partial CVE record");
+    final VulnerabilityCacheManager.CacheConfig config =
+        config(tempDir.resolve("cache-cve-delta"), repository.toUri(), Duration.ZERO, true);
+    final GenericFindingCacheManager manager = new GenericFindingCacheManager();
+    final GenericFindingCacheManager.CacheResult first = manager.load(config);
+    Files.writeString(repository.resolve("cves/delta.json"), "{\"delta\":true}");
+    Files.writeString(repository.resolve("cves/deltaLog.json"), "[]");
+    git(repository, "add", "--all");
+    git(repository, "commit", "-m", "update CVE delta metadata");
+
+    final GenericFindingCacheManager.CacheResult changed = manager.load(config);
+
+    assertAll(
+        "delta metadata changes advance the repository revision without reparsing CVE records",
+        () -> assertThat(first.cveRecordsParsed()).isEqualTo(1),
+        () -> assertThat(changed.cveRecordsParsed()).isEqualTo(0),
+        () ->
+            assertThat(envelope(changed).sources().get(FindingSource.CVE_LIST).contributions())
+                .containsExactlyElementsOf(
+                    envelope(first).sources().get(FindingSource.CVE_LIST).contributions()),
+        () ->
+            assertThat(envelope(changed).sources().get(FindingSource.CVE_LIST).status())
+                .isEqualTo(FindingSourceSnapshot.Status.PARTIAL),
+        () ->
+            assertThat(
+                    envelope(changed)
+                        .sources()
+                        .get(FindingSource.CVE_LIST)
+                        .observationDiagnostics())
+                .anyMatch(
+                    diagnostic ->
+                        diagnostic.startsWith(CveListFindingIndexer.SKIPPED_SUMMARY_PREFIX)),
+        () ->
+            assertThat(
+                    envelope(changed)
+                        .sources()
+                        .get(FindingSource.CVE_LIST)
+                        .observationDiagnostics())
+                .anyMatch(
+                    diagnostic -> diagnostic.startsWith(CveListFindingIndexer.SKIPPED_ROW_PREFIX)),
+        () ->
+            assertThat(
+                    envelope(changed)
+                        .sources()
+                        .get(FindingSource.CVE_LIST)
+                        .observationDiagnostics())
+                .contains("CVE source revision changed without changed JSON records"),
+        () ->
+            assertThat(envelope(changed).sources().get(FindingSource.CVE_LIST).revision())
+                .isNotEqualTo(envelope(first).sources().get(FindingSource.CVE_LIST).revision()));
+  }
+
+  @Test
+  void partialCveRefreshSurvivesOfflineAndIncrementalUpdatesUntilTheBadRecordIsFixed()
+      throws IOException, InterruptedException {
+    final String changedCveId = "CVE-2026-12345";
+    final String stableCveId = "CVE-2026-12346";
+    final Path repository = initializeCveRepository(changedCveId);
+    writePartialCveRecord(repository, changedCveId);
+    writeCveRecord(repository, stableCveId, "2.0.0");
+    git(repository, "add", "--all");
+    git(repository, "commit", "-m", "add malformed affected row beside valid CVE records");
+    final Path cache = tempDir.resolve("cache-partial-cve");
+    final VulnerabilityCacheManager.CacheConfig refreshConfig =
+        config(cache, repository.toUri(), Duration.ZERO, true);
+    final GenericFindingCacheManager manager = new GenericFindingCacheManager();
+
+    final GenericFindingCacheManager.CacheResult partial = manager.load(refreshConfig);
+    final FindingSourceSnapshot partialSnapshot =
+        envelope(partial).sources().get(FindingSource.CVE_LIST);
+    final GenericFindingCacheManager.CacheResult offline =
+        manager.load(
+            new VulnerabilityCacheManager.CacheConfig(
+                cache,
+                null,
+                repository.toUri(),
+                Duration.ZERO,
+                false,
+                true,
+                () -> new ByteArrayInputStream(new byte[0]),
+                PRODUCER));
+    final GenericFindingCacheManager.CacheResult unchanged = manager.load(refreshConfig);
+    writeCveRecord(repository, "CVE-2026-12347", "3.0.0");
+    git(repository, "add", "--all");
+    git(repository, "commit", "-m", "add an unrelated supported CVE while partial");
+    final GenericFindingCacheManager.CacheResult unrelatedUpdate = manager.load(refreshConfig);
+    final Path unavailableRepository = tempDir.resolve("partial-cve-source-unavailable");
+    Files.move(repository, unavailableRepository, StandardCopyOption.REPLACE_EXISTING);
+    final GenericFindingCacheManager.CacheResult stale = manager.load(refreshConfig);
+    Files.move(unavailableRepository, repository, StandardCopyOption.REPLACE_EXISTING);
+    writeCveRecord(repository, changedCveId, "1.1.0");
+    git(repository, "add", "--all");
+    git(repository, "commit", "-m", "repair malformed affected row with a current version scope");
+
+    final GenericFindingCacheManager.CacheResult repaired = manager.load(refreshConfig);
+    final FindingSourceSnapshot repairedSnapshot =
+        envelope(repaired).sources().get(FindingSource.CVE_LIST);
+
+    assertAll(
+        "partial observations remain explicit offline and changed records replace old claims",
+        () -> assertThat(partial.refreshFailure()).isEmpty(),
+        () -> assertThat(partialSnapshot.status().name()).isEqualTo("PARTIAL"),
+        () ->
+            assertThat(partialSnapshot.contributions())
+                .extracting(VulnerabilityFindingContribution::vulnerabilityId)
+                .containsExactlyInAnyOrder(changedCveId, stableCveId),
+        () ->
+            assertThat(partialSnapshot.observationDiagnostics())
+                .anySatisfy(
+                    diagnostic ->
+                        assertThat(diagnostic)
+                            .contains(changedCveId, "containers.cna.affected[1]")),
+        () -> assertThat(offline.source()).isEqualTo(GenericFindingCacheManager.Source.CACHE),
+        () ->
+            assertThat(envelope(offline).sources().get(FindingSource.CVE_LIST).status().name())
+                .isEqualTo("PARTIAL"),
+        () ->
+            assertThat(
+                    envelope(offline)
+                        .sources()
+                        .get(FindingSource.CVE_LIST)
+                        .observationDiagnostics())
+                .containsExactlyElementsOf(partialSnapshot.observationDiagnostics()),
+        () -> assertThat(unchanged.cveRecordsParsed()).isEqualTo(0),
+        () ->
+            assertThat(envelope(unchanged).sources().get(FindingSource.CVE_LIST).status().name())
+                .isEqualTo("PARTIAL"),
+        () -> assertThat(unrelatedUpdate.cveRecordsParsed()).isEqualTo(1),
+        () ->
+            assertThat(
+                    envelope(unrelatedUpdate).sources().get(FindingSource.CVE_LIST).status().name())
+                .isEqualTo("PARTIAL"),
+        () ->
+            assertThat(
+                    envelope(unrelatedUpdate)
+                        .sources()
+                        .get(FindingSource.CVE_LIST)
+                        .observationDiagnostics())
+                .anySatisfy(
+                    diagnostic ->
+                        assertThat(diagnostic)
+                            .contains(changedCveId, "containers.cna.affected[1]")),
+        () ->
+            assertThat(
+                    envelope(unrelatedUpdate).sources().get(FindingSource.CVE_LIST).contributions())
+                .extracting(VulnerabilityFindingContribution::vulnerabilityId)
+                .containsExactlyInAnyOrder(changedCveId, stableCveId, "CVE-2026-12347"),
+        () -> assertThat(stale.refreshFailure()).isPresent(),
+        () ->
+            assertThat(envelope(stale).sources().get(FindingSource.CVE_LIST).status())
+                .isEqualTo(FindingSourceSnapshot.Status.STALE),
+        () ->
+            assertThat(envelope(stale).sources().get(FindingSource.CVE_LIST).contributions())
+                .containsExactlyElementsOf(
+                    envelope(unrelatedUpdate)
+                        .sources()
+                        .get(FindingSource.CVE_LIST)
+                        .contributions()),
+        () ->
+            assertThat(
+                    envelope(stale).sources().get(FindingSource.CVE_LIST).observationDiagnostics())
+                .anySatisfy(
+                    diagnostic ->
+                        assertThat(diagnostic)
+                            .contains(changedCveId, "containers.cna.affected[1]")),
+        () -> assertThat(repaired.cveRecordsParsed()).isEqualTo(1),
+        () -> assertThat(repairedSnapshot.status()).isEqualTo(FindingSourceSnapshot.Status.CURRENT),
+        () ->
+            assertThat(repairedSnapshot.observationDiagnostics())
+                .noneMatch(diagnostic -> diagnostic.contains("containers.cna.affected[1]")),
+        () ->
+            assertThat(repairedSnapshot.contributions())
+                .extracting(VulnerabilityFindingContribution::vulnerabilityId)
+                .containsExactlyInAnyOrder(changedCveId, stableCveId, "CVE-2026-12347"),
+        () ->
+            assertThat(
+                    repairedSnapshot.contributions().stream()
+                        .filter(value -> changedCveId.equals(value.vulnerabilityId()))
+                        .flatMap(value -> value.versionClaims().stream())
+                        .filter(claim -> claim.status() == VersionApplicability.AFFECTED)
+                        .map(VersionCoverageClaim::normalizedMavenRange))
+                .containsExactly("[1.1.0,1.1.0]"));
+  }
+
+  @Test
   void incrementalRefreshRetainsPriorIdentityLimitationWithoutReusingItsOldCount()
       throws IOException, InterruptedException {
     final Path repository = initializeCveRepository("CVE-2026-12345");
@@ -321,7 +511,7 @@ class GenericFindingCacheManagerTest {
   }
 
   @Test
-  void malformedCveRevisionRetainsPriorPartitionAndIndependentOsv() throws Exception {
+  void malformedCveRevisionPublishesPartialPartitionAndPreservesIndependentOsv() throws Exception {
     final String vulnerabilityId = "CVE-2026-12345";
     final Path repository = initializeCveRepository(vulnerabilityId);
     final Path cache = tempDir.resolve("cache-malformed-cve");
@@ -341,14 +531,23 @@ class GenericFindingCacheManagerTest {
     git(repository, "commit", "-m", "malformed record");
     final GenericFindingCacheManager.CacheResult failed = manager.load(config);
     assertAll(
-        () -> assertThat(failed.refreshFailure()).isPresent(),
+        () -> assertThat(failed.refreshFailure()).isEmpty(),
         () ->
             assertThat(envelope(failed).sources().get(FindingSource.CVE_LIST).status())
-                .isEqualTo(FindingSourceSnapshot.Status.STALE),
+                .isEqualTo(FindingSourceSnapshot.Status.PARTIAL),
         () ->
             assertThat(envelope(failed).sources().get(FindingSource.CVE_LIST).contributions())
-                .containsExactlyElementsOf(
-                    envelope(first).sources().get(FindingSource.CVE_LIST).contributions()),
+                .isEmpty(),
+        () ->
+            assertThat(
+                    envelope(failed).sources().get(FindingSource.CVE_LIST).observationDiagnostics())
+                .anySatisfy(
+                    diagnostic ->
+                        assertThat(diagnostic)
+                            .contains("CVE List skipped row " + vulnerabilityId, "record")),
+        () ->
+            assertThat(envelope(failed).sources().get(FindingSource.CVE_LIST).revision())
+                .isNotEqualTo(envelope(first).sources().get(FindingSource.CVE_LIST).revision()),
         () ->
             assertThat(envelope(failed).sources().get(FindingSource.OSV))
                 .isEqualTo(envelope(first).sources().get(FindingSource.OSV)));
@@ -554,6 +753,24 @@ class GenericFindingCacheManagerTest {
          ]}}}
         """
             .formatted(cveId, version));
+  }
+
+  private static void writePartialCveRecord(final Path repository, final String cveId)
+      throws IOException {
+    final Path path = recordPath(repository, cveId);
+    Files.createDirectories(path.getParent());
+    Files.writeString(
+        path,
+        """
+        {"cveMetadata":{"cveId":"CVE-2026-12345","state":"PUBLISHED"},
+         "containers":{"cna":{"affected":[
+           {"product":"library","packageURL":"pkg:maven/org.example/library",
+            "versions":[{"version":"1.0.0","status":"affected","versionType":"maven"}]},
+           {"product":"malformed","packageURL":"pkg:maven/org.example/malformed",
+            "versions":[{"version":7,"status":"affected","versionType":"maven"}]}
+         ]}}}
+        """
+            .replace("CVE-2026-12345", cveId));
   }
 
   private static void writeUnmappedCveRecord(final Path repository, final String cveId)

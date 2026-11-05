@@ -133,7 +133,11 @@ final class MavenElisionOutputPublisher {
     return new MavenVulnerabilityAssessment(
             request.log(), request.assumeConventionalJavaSourceLayout())
         .assess(
-            request.cacheConfig(), request.vulnerabilityMappings(), request.analysis(), inventory);
+            request.cacheConfig(),
+            request.vulnerabilityMappings(),
+            request.analysis(),
+            inventory,
+            request.snykConfiguration());
   }
 
   private static Optional<String> staleVexDigest(
@@ -217,7 +221,9 @@ final class MavenElisionOutputPublisher {
     MavenClassUsageReportWriter.write(
         outputs.stagedPath(request.files().classUsage().toPath()),
         analysis.evidence().classUsageReport(),
-        analysis.evidence().bytecodeScan());
+        analysis.evidence().bytecodeScan(),
+        null,
+        reportSnapshot.exclusionReview());
     if (request.files().trimJars()) {
       final List<io.github.spockz.elider.model.VexAttestation> attestations =
           assessment.attestations();
@@ -464,6 +470,7 @@ final class MavenElisionOutputPublisher {
       MavenElideExecutionConfiguration.PlanPublication planPublication,
       CacheConfig cacheConfig,
       ConfiguredVulnerabilityMappings vulnerabilityMappings,
+      SnykPackageIssuesIntegration.Configuration snykConfiguration,
       boolean preconditionProofEnabled,
       boolean assumeConventionalJavaSourceLayout,
       AfterStaging afterStaging,
@@ -471,6 +478,7 @@ final class MavenElisionOutputPublisher {
       MavenArtifactViewBinding applicationBinding) {
     Request {
       java.util.Objects.requireNonNull(vulnerabilityMappings, "vulnerabilityMappings");
+      java.util.Objects.requireNonNull(snykConfiguration, "snykConfiguration");
       java.util.Objects.requireNonNull(banPlan, "banPlan");
     }
   }

@@ -41,6 +41,19 @@ func TestNormalizeOutputDoesNotPinTheEliderRuntimeRelease(t *testing.T) {
 	}
 }
 
+func TestNormalizeOutputRemovesBothSnapshotTimestamps(t *testing.T) {
+	output := "[INFO] Snapshot: analysis prediction at 2026-11-05T08:41:32Z\n" +
+		"[INFO] Snapshot: last successful elide run at 2026-11-05T08:41:33Z\n"
+	got := normalizeOutput(output, "/repo", "/repo/.scratch/evidence")
+	want := []string{
+		"[INFO] Snapshot: analysis prediction at <TIMESTAMP>",
+		"[INFO] Snapshot: last successful elide run at <TIMESTAMP>",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalized snapshots = %#v, want %#v", got, want)
+	}
+}
+
 func TestInvocationFixturePathUsesMavenFileArgument(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "examples", "first"), 0o700); err != nil {

@@ -62,6 +62,8 @@ import org.apache.maven.artifact.versioning.ComparableVersion;
   "PMD.CommentDefaultAccessModifier"
 })
 public final class OsvSnapshotIndexer {
+  private static final String OSV_RECORD = "OSV record";
+  private static final String MODIFIED_FIELD = "modified";
   private static final String CONTAINERS_FIELD = "containers";
   private static final String NAME_FIELD = "name";
   private static final String VERSIONS_FIELD = "versions";
@@ -106,7 +108,7 @@ public final class OsvSnapshotIndexer {
       while ((entry = zis.getNextEntry()) != null) {
         if (!entry.isDirectory() && entry.getName().toLowerCase(Locale.ROOT).endsWith(".json")) {
           final byte[] bytes = zis.readAllBytes();
-          final JsonNode root = readSingleJsonDocument(bytes, "OSV record");
+          final JsonNode root = readSingleJsonDocument(bytes, OSV_RECORD);
           if (!root.isObject()) {
             throw new IOException("OSV record in " + entry.getName() + " must be a JSON object");
           }
@@ -134,10 +136,124 @@ public final class OsvSnapshotIndexer {
     return List.copyOf(records);
   }
 
+  /** Indexes independently readable OSV records, retaining diagnostics for skipped entries. */
+  @SuppressWarnings("PMD.ExceptionAsFlowControl") // Invalid records are isolated at this boundary.
+  public PartialIndex indexZipIsolated(final InputStream zipStream, final Path cveListGitDir)
+      throws IOException {
+    Objects.requireNonNull(zipStream, "zipStream");
+    final Map<String, OsvAdvisoryRecord> records = new LinkedHashMap<>();
+    final Set<String> seen = new HashSet<>();
+    final Set<String> ambiguous = new HashSet<>();
+    final Map<String, String> accepted = new java.util.HashMap<>();
+    final Map<String, String> withdrawnRevisions = new java.util.HashMap<>();
+    final List<String> skipped = new ArrayList<>();
+    try (ZipInputStream zip = new ZipInputStream(zipStream)) {
+      ZipEntry entry;
+      while ((entry = zip.getNextEntry()) != null) {
+        if (!entry.isDirectory() && entry.getName().toLowerCase(Locale.ROOT).endsWith(".json")) {
+          final byte[] bytes = zip.readAllBytes();
+          final String locator = entry.getName();
+          String id = null;
+          try {
+            final JsonNode root = readSingleJsonDocument(bytes, OSV_RECORD);
+            if (!root.isObject()
+                || !root.path("id").isTextual()
+                || root.path("id").textValue().isBlank()) {
+              throw new IllegalArgumentException("OSV record has no valid ID");
+            }
+            id = root.path("id").textValue();
+            if (!id.matches("[A-Za-z0-9][A-Za-z0-9._-]*")) {
+              throw new IllegalArgumentException("OSV record ID has invalid characters");
+            }
+            if (!seen.add(id)) {
+              records.remove(id);
+              withdrawnRevisions.remove(id);
+              final String original = accepted.remove(id);
+              if (original != null) {
+                skipped.add(original);
+              }
+              ambiguous.add(id);
+              throw new IllegalArgumentException("Duplicate OSV record ID: " + id);
+            }
+            final OsvAdvisoryRecord record = parseAdvisory(root, bytes, skipped, locator);
+            if (record != null && !ambiguous.contains(id)) {
+              records.put(id, record);
+            }
+            if (record == null) {
+              withdrawnRevisions.put(id, root.path(MODIFIED_FIELD).textValue());
+            }
+            accepted.put(id, skippedRecord(locator, bytes, "Duplicate OSV record ID: " + id));
+          } catch (final IOException | IllegalArgumentException failure) {
+            if (id != null) {
+              records.remove(id);
+              withdrawnRevisions.remove(id);
+              ambiguous.add(id);
+            }
+            skipped.add(skippedRecord(locator, bytes, failure.getMessage()));
+          }
+        }
+        zip.closeEntry();
+      }
+    }
+    return new PartialIndex(
+        List.copyOf(records.values()),
+        List.copyOf(skipped),
+        skipped.size(),
+        ambiguous,
+        withdrawnRevisions);
+  }
+
+  /** Stable diagnostic includes the skipped bytes so repairs change source identity. */
+  static String skippedRecord(final String locator, final byte[] bytes, final String reason)
+      throws IOException {
+    return locator
+        + " sha256="
+        + sha256(bytes)
+        + ": "
+        + Objects.toString(reason, "invalid OSV record");
+  }
+
+  /** Valid records and malformed record diagnostics from one source observation. */
+  public record PartialIndex(
+      List<OsvAdvisoryRecord> records,
+      List<String> skippedRows,
+      int skippedCount,
+      Set<String> quarantinedIds,
+      Map<String, String> withdrawnRevisions) {
+    /** Creates a result with one diagnostic per skipped row. */
+    public PartialIndex(final List<OsvAdvisoryRecord> records, final List<String> skippedRows) {
+      this(records, skippedRows, skippedRows.size(), Set.of(), Map.of());
+    }
+
+    /** Freezes result data and validates the skipped count. */
+    public PartialIndex {
+      records = List.copyOf(records);
+      quarantinedIds = Set.copyOf(quarantinedIds);
+      withdrawnRevisions = Map.copyOf(withdrawnRevisions);
+      skippedRows = List.copyOf(boundSkippedRows(skippedRows));
+      if (skippedCount < skippedRows.size() || skippedCount < 0) {
+        throw new IllegalArgumentException("Invalid skipped record count");
+      }
+    }
+  }
+
+  static List<String> boundSkippedRows(final List<String> rows) {
+    final int limit = 128;
+    if (rows.size() <= limit) {
+      return List.copyOf(rows);
+    }
+    final List<String> bounded = new ArrayList<>(rows.subList(0, limit - 1));
+    final String overflow = String.join("\n", rows.subList(limit - 1, rows.size()));
+    bounded.add(
+        "Additional skipped OSV records; sha256="
+            + sha256(overflow.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    return List.copyOf(bounded);
+  }
+
   /** Strictly indexes one fetched OSV record; an empty result denotes an explicit withdrawal. */
   public IndexedOsvRecord indexRecord(
       final byte[] bytes, final Path cveListGitDir, final String expectedId) throws IOException {
-    final JsonNode root = readSingleJsonDocument(bytes, "OSV record");
+    final JsonNode root = readSingleJsonDocument(bytes, OSV_RECORD);
     if (!root.isObject()) {
       throw new IOException("OSV record must be a JSON object");
     }
@@ -146,11 +262,37 @@ public final class OsvSnapshotIndexer {
       throw new IOException("Fetched OSV record ID does not match modified index");
     }
     try {
-      final String modified = requiredSourceText(root, "modified");
+      final String modified = requiredSourceText(root, MODIFIED_FIELD);
       final OsvAdvisoryRecord record = parseAdvisory(root, cveListGitDir, bytes);
       return new IndexedOsvRecord(expectedId, modified, Optional.ofNullable(record));
     } catch (final IllegalArgumentException exception) {
       throw new IOException("Invalid OSV record " + root.path("id").asText(""), exception);
+    }
+  }
+
+  /** Parses a changed owner while isolating malformed affected entries. */
+  PartialRecord indexRecordIsolated(
+      final byte[] bytes, final Path cveListGitDir, final String expectedId) throws IOException {
+    final JsonNode root = readSingleJsonDocument(bytes, OSV_RECORD);
+    if (!root.isObject()
+        || !root.path("id").isTextual()
+        || !expectedId.equals(root.path("id").textValue())) {
+      throw new IOException("Fetched OSV record ID does not match modified index");
+    }
+    final List<String> skipped = new ArrayList<>();
+    try {
+      final String modified = requiredSourceText(root, MODIFIED_FIELD);
+      final OsvAdvisoryRecord record = parseAdvisory(root, bytes, skipped, expectedId);
+      return new PartialRecord(
+          new IndexedOsvRecord(expectedId, modified, Optional.ofNullable(record)), skipped);
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException("Invalid OSV record " + expectedId, exception);
+    }
+  }
+
+  record PartialRecord(IndexedOsvRecord record, List<String> skippedRows) {
+    PartialRecord {
+      skippedRows = List.copyOf(skippedRows);
     }
   }
 
@@ -184,6 +326,14 @@ public final class OsvSnapshotIndexer {
   /** Parses one OSV record, retaining its identity even when no CVE alias exists. */
   public OsvAdvisoryRecord parseAdvisory(
       final JsonNode root, final Path cveListGitDir, final byte[] sourceBytes) {
+    return parseAdvisory(root, sourceBytes, null, null);
+  }
+
+  private OsvAdvisoryRecord parseAdvisory(
+      final JsonNode root,
+      final byte[] sourceBytes,
+      final List<String> skipped,
+      final String locator) {
     if (root == null || !root.isObject()) {
       throw new IllegalArgumentException("OSV record must be a JSON object");
     }
@@ -192,7 +342,7 @@ public final class OsvSnapshotIndexer {
       throw new IllegalArgumentException("OSV record ID must be a non-blank string");
     }
     final String osvId = idNode.textValue();
-    final String modified = requiredSourceText(root, "modified");
+    final String modified = requiredSourceText(root, MODIFIED_FIELD);
     try {
       Instant.parse(modified);
     } catch (final java.time.format.DateTimeParseException exception) {
@@ -228,7 +378,8 @@ public final class OsvSnapshotIndexer {
     final String osvDigest = sha256(sourceBytes);
     final List<OsvAffectedPackage> affectedPackages = new ArrayList<>();
     final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence = new ArrayList<>();
-    readAffectedEntries(root, cveId, osvId, osvDigest, affectedPackages, evidence);
+    readAffectedEntries(
+        root, cveId, osvId, osvDigest, affectedPackages, evidence, skipped, locator);
     final List<CveAffectedEntryContext> cnaEntries = new ArrayList<>();
     return new OsvAdvisoryRecord(osvId, modified, aliases, affectedPackages, cnaEntries, evidence);
   }
@@ -239,25 +390,40 @@ public final class OsvSnapshotIndexer {
       final String osvId,
       final String digest,
       final List<OsvAffectedPackage> affectedPackages,
-      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
+      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence,
+      final List<String> skipped,
+      final String locator) {
     final JsonNode affectedArray = root.get("affected");
     if (affectedArray == null || !affectedArray.isArray()) {
       throw new IllegalArgumentException("affected must be an array");
     }
     final List<AdvisoryScope> scopes = new ArrayList<>();
-    for (final JsonNode affected : affectedArray) {
-      final OsvAffectedPackage affectedPackage = readAffectedPackage(affected);
-      if (affectedPackage != null) {
-        affectedPackages.add(affectedPackage);
-      }
-      final AdvisoryScope scope = cveId == null ? null : readOsvScope(affected, cveId);
-      if (scope != null) {
-        scopes.add(scope);
-        evidence.add(
-            new PackageAdvisoryEvidence(
-                scope, new AdvisoryProvenance(EvidenceOrigin.OSV, osvId, null, digest)));
-        addTextEvidence(root, scope, osvId, digest, evidence);
-        addReferenceEvidence(root.path("references"), scope, osvId, digest, evidence);
+    for (int index = 0; index < affectedArray.size(); index++) {
+      final JsonNode affected = affectedArray.get(index);
+      final List<io.github.spockz.elider.model.AdvisoryEvidence> stagedEvidence = new ArrayList<>();
+      try {
+        final OsvAffectedPackage affectedPackage = readAffectedPackage(affected);
+        final AdvisoryScope scope = cveId == null ? null : readOsvScope(affected, cveId);
+        if (scope != null) {
+          stagedEvidence.add(
+              new PackageAdvisoryEvidence(
+                  scope, new AdvisoryProvenance(EvidenceOrigin.OSV, osvId, null, digest)));
+          addTextEvidence(root, scope, osvId, digest, stagedEvidence);
+          addReferenceEvidence(root.path("references"), scope, osvId, digest, stagedEvidence);
+        }
+        if (affectedPackage != null) {
+          affectedPackages.add(affectedPackage);
+        }
+        if (scope != null) {
+          scopes.add(scope);
+        }
+        evidence.addAll(stagedEvidence);
+      } catch (final IllegalArgumentException failure) {
+        if (skipped == null) {
+          throw failure;
+        }
+        skipped.add(
+            locator + "#affected[" + index + "] sha256=" + digest + ": " + failure.getMessage());
       }
     }
     return scopes;
@@ -521,6 +687,7 @@ public final class OsvSnapshotIndexer {
 
   /** Applies structural checks to supported affected entries in a live source record. */
   static void validateCveSourceShape(final JsonNode root) {
+    validateCveSourceRecordShape(root);
     final JsonNode containers = optionalObject(root, CONTAINERS_FIELD, CONTAINERS_FIELD);
     if (containers == null) {
       return;
@@ -539,6 +706,17 @@ public final class OsvSnapshotIndexer {
         validateAffectedEntries(adpContainer, "containers.adp[" + adpIndex + "]");
       }
     }
+  }
+
+  /** Validates record/container structure without rejecting independent malformed affected rows. */
+  static void validateCveSourceRecordShape(final JsonNode root) {
+    optionalObject(root, CONTAINERS_FIELD, CONTAINERS_FIELD);
+  }
+
+  /** Validates one independently skippable affected entry at its original source locator. */
+  static void validateCveAffectedEntry(
+      final JsonNode entry, final String containerPath, final int index) {
+    validateCnaAffectedEntry(entry, index, containerPath);
   }
 
   private static void validateAffectedEntries(

@@ -35,6 +35,7 @@ record FindingSourceObservation(
   /** Source-observation lifecycle state. */
   /* package */ enum Status {
     CURRENT,
+    PARTIAL,
     STALE,
     ERROR,
     UNAVAILABLE

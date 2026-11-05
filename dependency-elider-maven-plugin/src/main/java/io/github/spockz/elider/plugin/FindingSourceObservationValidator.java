@@ -40,8 +40,11 @@ final class FindingSourceObservationValidator {
       final String revision,
       final Instant lastSuccessfulSync,
       final String diagnostic) {
-    if (source.isPresent() || revision != null || lastSuccessfulSync != null) {
-      throw new IllegalArgumentException("unavailable cache observations have no source revision");
+    if (source.isPresent() && source.orElseThrow() != FindingSource.SNYK) {
+      throw new IllegalArgumentException("only Snyk source observations may be unavailable");
+    }
+    if (revision != null || lastSuccessfulSync != null) {
+      throw new IllegalArgumentException("unavailable source observations have no source revision");
     }
     requireText(diagnostic, "diagnostic");
   }
@@ -70,6 +73,13 @@ final class FindingSourceObservationValidator {
       return;
     }
     requireText(diagnostic, "diagnostic");
+    if (status == FindingSourceObservation.Status.PARTIAL) {
+      requireText(revision, "revision");
+      if (lastSuccessfulSync == null) {
+        throw new IllegalArgumentException(
+            "lastSuccessfulSync is required for partial observations");
+      }
+    }
   }
 
   private static void requireText(final String value, final String field) {

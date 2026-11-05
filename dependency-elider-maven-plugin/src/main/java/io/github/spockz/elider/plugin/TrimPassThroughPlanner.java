@@ -11,11 +11,29 @@ import java.util.List;
 import java.util.Set;
 
 /** Applies the same unsupported-archive policy to analysis and publication. */
+@SuppressWarnings("PMD.TooManyMethods")
 final class TrimPassThroughPlanner {
   /** Production scopes eligible for candidate trimming. */
   /* package */ static final Set<String> TRIMMABLE_SCOPES = Set.of("compile", "runtime");
 
   private TrimPassThroughPlanner() {}
+
+  /* package */ static List<ElisionAnalysisModel.ArtifactSnapshot> retainedAnalysisLibraries(
+      final TrimRequest request) {
+    return request.candidates().stream()
+        .filter(snapshot -> MavenDependencyTrimmer.JAR_TYPE.equals(snapshot.coordinate().type()))
+        .filter(
+            snapshot ->
+                MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(
+                    snapshot.coordinate().scope()))
+        .filter(snapshot -> request.retainedCoordinates().contains(snapshot.coordinate()))
+        .toList();
+  }
+
+  /* package */ static boolean unchangedScope(final ArtifactCoordinate coordinate) {
+    return MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(coordinate.scope())
+        && !TRIMMABLE_SCOPES.contains(coordinate.scope());
+  }
 
   /* package */ static boolean passThroughCoordinate(
       final TrimRequest request, final ElisionAnalysisModel.ArtifactSnapshot snapshot)

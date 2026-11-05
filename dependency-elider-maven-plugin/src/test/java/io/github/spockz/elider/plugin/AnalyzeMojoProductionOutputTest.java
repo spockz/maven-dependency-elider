@@ -6,6 +6,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -67,7 +68,8 @@ final class AnalyzeMojoProductionOutputTest {
             JAR_TYPE,
             "unused-compile.jar",
             "unused/Idle.class");
-    final MavenProject project = new MavenProject();
+    final MavenProject project =
+        AnalyzeMojoTestArtifactSupport.project(tempDir, "bytecode-default-output");
     project.setArtifacts(new LinkedHashSet<>(List.of(used, unused)));
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Build build = new Build();
@@ -115,10 +117,43 @@ final class AnalyzeMojoProductionOutputTest {
 
     assertThat(report).isRegularFile();
     assertThat(log.messages())
-        .contains(
-            "  Artifacts that would be elided by this analysis: 1 / 2 (50.0%)",
-            "    CVE-2026-19003 org.example:unused-compile:jar:1.0: "
-                + "AFFECTED; UNVERIFIED; PLANNED_UNVERIFIED");
+        .satisfies(
+            messages ->
+                assertAll(
+                    "analysis output keeps planned findings conditional",
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(
+                                line ->
+                                    line.startsWith(
+                                        "Whole artifacts that would be dropped: 1 / 2 "
+                                            + "(original JAR file bytes: ")),
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(
+                                line ->
+                                    "Analysis only: no trim proof or published changes"
+                                        .equals(line)),
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(line -> "Vulnerability findings: 1".equals(line)),
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(
+                                line ->
+                                    line.contains(
+                                            "CVE-2026-19003 org.example:unused-compile:jar:1.0")
+                                        && line.contains("[PLANNED_UNVERIFIED]")),
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(
+                                line ->
+                                    line.contains("Applicability: AFFECTED; intent: AUTO_VERIFY")),
+                    () ->
+                        assertThat(messages).anyMatch(line -> line.contains("Outcome: NO_PROOF;")),
+                    () -> assertThat(messages).anyMatch(line -> "CVE Sources:".equals(line)),
+                    () ->
+                        assertThat(messages).anyMatch(line -> line.contains("CACHE UNAVAILABLE"))));
     final com.fasterxml.jackson.databind.JsonNode reportJson =
         new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
     assertThat(reportJson.path(PRODUCTION_OUTPUT_FIELD).asText()).isEqualTo(output.toString());
@@ -146,7 +181,7 @@ final class AnalyzeMojoProductionOutputTest {
     final Artifact unused =
         AnalyzeMojoTestArtifactSupport.artifact(
             tempDir, "unused", VERSION, COMPILE_SCOPE, JAR_TYPE, "unused.jar", "unused/Idle.class");
-    final MavenProject project = new MavenProject();
+    final MavenProject project = AnalyzeMojoTestArtifactSupport.project(tempDir, "complete-output");
     project.setArtifacts(new LinkedHashSet<>(List.of(used, runtimeOnly, unused)));
     final Path trace = tempDir.resolve("complete.lst");
     Files.writeString(trace, "used/Sample\nruntimeOnly/Type\n");

@@ -36,7 +36,7 @@ final class TierAnalysisPreparer {
     final Set<String> skipped = skippedIdentities(inventory.passThrough());
     final Set<String> unchangedClasses = unchangedPassThroughClasses(projections, skipped);
     final List<ElisionAnalysisModel.ArtifactSnapshot> unchangedPrograms =
-        inventory.passThrough().retainedLibraries().stream()
+        TrimPassThroughPlanner.retainedAnalysisLibraries(operation.request()).stream()
             .filter(snapshot -> !roots.candidateSet().contains(snapshot))
             .toList();
     final List<TierContext> contexts = new ArrayList<>();
@@ -61,6 +61,11 @@ final class TierAnalysisPreparer {
     operation
         .forcedUnchanged()
         .forEach(coordinate -> skipped.add(TrimPassThroughPlanner.artifactIdentity(coordinate)));
+    TrimPassThroughPlanner.retainedAnalysisLibraries(operation.request()).stream()
+        .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+        .filter(TrimPassThroughPlanner::unchangedScope)
+        .map(TrimPassThroughPlanner::artifactIdentity)
+        .forEach(skipped::add);
     return skipped;
   }
 

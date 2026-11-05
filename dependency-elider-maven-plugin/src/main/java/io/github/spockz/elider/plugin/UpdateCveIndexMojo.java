@@ -54,6 +54,26 @@ public final class UpdateCveIndexMojo extends PluginCacheMojoSupport {
     final URI cveListGit = configuredCveListGit();
     requireOnlineSession();
     final CacheResult result = update(osvSource, cveListGit);
+    if (getLog().isWarnEnabled()) {
+      result
+          .envelope()
+          .ifPresent(
+              envelope ->
+                  envelope.sources().values().stream()
+                      .filter(
+                          snapshot ->
+                              snapshot.status()
+                                  == io.github.spockz.elider.scanner.FindingSourceSnapshot.Status
+                                      .PARTIAL)
+                      .forEach(
+                          snapshot ->
+                              getLog()
+                                  .warn(
+                                      "Finding source "
+                                          + snapshot.source()
+                                          + " PARTIAL: "
+                                          + snapshot.diagnostic())));
+    }
     if (getLog().isInfoEnabled()) {
       getLog()
           .info(

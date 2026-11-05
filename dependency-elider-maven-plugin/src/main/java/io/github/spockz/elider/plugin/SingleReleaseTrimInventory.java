@@ -51,13 +51,7 @@ final class SingleReleaseTrimInventory {
     TrimRootPlanner.validateAnalysisInventory(artifacts);
     final Set<ArtifactCoordinate> retainedCoordinates = request.retainedCoordinates();
     final List<ElisionAnalysisModel.ArtifactSnapshot> retainedLibraries =
-        artifacts.stream()
-            .filter(snapshot -> retainedCoordinates.contains(snapshot.coordinate()))
-            .filter(
-                snapshot ->
-                    MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(
-                        snapshot.coordinate().scope()))
-            .toList();
+        TrimPassThroughPlanner.retainedAnalysisLibraries(request);
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Path> analysisPaths =
         analysisPaths(request, artifacts);
     final Map<Path, Set<String>> classesByPath = TrimCollections.orderedMap();
@@ -193,6 +187,10 @@ final class SingleReleaseTrimInventory {
     final Set<ArtifactCoordinate> skippedProgramCoordinates =
         new LinkedHashSet<>(layoutPassThroughCoordinates);
     skippedProgramCoordinates.addAll(forcedUnchanged);
+    inventory.retainedLibraries().stream()
+        .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+        .filter(TrimPassThroughPlanner::unchangedScope)
+        .forEach(skippedProgramCoordinates::add);
     configuredPassThrough.stream()
         .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
         .forEach(skippedProgramCoordinates::add);

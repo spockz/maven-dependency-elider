@@ -29,11 +29,13 @@ final class MediatedGraphReportRenderer {
   }
 
   static List<String> render(final MediatedGraphReport report, final String projectGav) {
+    return render(report, projectGav, false);
+  }
+
+  static List<String> render(
+      final MediatedGraphReport report, final String projectGav, final boolean predicted) {
     if (!report.available()) {
-      throw new IllegalArgumentException(
-          "Mediated dependency graph is unavailable: "
-              + report.unavailableReason()
-              + "; rerun dependency-elider:elide with the production core extension enabled");
+      return List.of("Mediated dependency graph unavailable: " + report.unavailableReason());
     }
     final ResolverArtifactGraphSnapshot snapshot = report.snapshot();
     final Map<String, MediatedGraphReport.NodeStatus> statusById = statusById(report);
@@ -42,7 +44,10 @@ final class MediatedGraphReportRenderer {
     final List<String> nodeIds = reachableNodeIds(snapshot, paths);
     nodeIds.sort(pathOrder(paths, nodeById, projectGav));
     final List<String> lines = new ArrayList<>();
-    lines.add("Mediated TEST dependency graph (captured and saved by the elide goal):");
+    lines.add(
+        "Mediated TEST dependency graph (captured and saved by the "
+            + (predicted ? "analyze" : "elide")
+            + " goal):");
     for (final String nodeId : nodeIds) {
       lines.add(
           "  - "
@@ -51,7 +56,7 @@ final class MediatedGraphReportRenderer {
               + nodeId
               + "}"
               + " ["
-              + disposition(statusById.get(nodeId), isTrimmed(report, nodeId))
+              + disposition(statusById.get(nodeId), isTrimmed(report, nodeId), predicted)
               + "]");
     }
     return List.copyOf(lines);
@@ -102,21 +107,20 @@ final class MediatedGraphReportRenderer {
   }
 
   private static String disposition(
-      final MediatedGraphReport.NodeStatus status, final boolean classTrimmed) {
+      final MediatedGraphReport.NodeStatus status,
+      final boolean classTrimmed,
+      final boolean predicted) {
     if (SAFE_ELIDED.equals(status.disposition())) {
-      return "EFFECTIVE_DROP";
+      return predicted ? "WOULD_DROP" : "EFFECTIVE_DROP";
     }
-    if (PROTECTED.equals(status.disposition())) {
-      return classTrimmed
-          ? "RETAINED, PROTECTED: " + status.protectionReason() + ", CLASS_TRIMMED"
-          : "RETAINED, PROTECTED: " + status.protectionReason();
+    final String protection =
+        PROTECTED.equals(status.disposition())
+            ? ", PROTECTED: " + status.protectionReason()
+            : ANCESTOR_PROMOTED.equals(status.disposition()) ? ", ANCESTOR_PROMOTED" : "";
+    if (!classTrimmed) {
+      return "RETAINED" + protection;
     }
-    if (ANCESTOR_PROMOTED.equals(status.disposition())) {
-      return classTrimmed
-          ? "RETAINED, ANCESTOR_PROMOTED, CLASS_TRIMMED"
-          : "RETAINED, ANCESTOR_PROMOTED";
-    }
-    return classTrimmed ? "RETAINED, CLASS_TRIMMED" : "RETAINED";
+    return "RETAINED" + protection + (predicted ? ", WOULD_TRIM" : ", CLASS_TRIMMED");
   }
 
   private static boolean isTrimmed(final MediatedGraphReport report, final String nodeId) {

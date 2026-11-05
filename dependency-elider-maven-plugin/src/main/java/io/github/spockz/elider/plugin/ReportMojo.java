@@ -1,4 +1,4 @@
-// WHY: Shows the last successful elision result without re-resolving or re-analyzing dependencies.
+// WHY: Shows a saved analysis or elision result without re-resolving or re-analyzing dependencies.
 
 package io.github.spockz.elider.plugin;
 
@@ -11,14 +11,14 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
-/** Displays a saved report from the last successful elision run. */
+/** Displays a saved report from a successful analysis or elision run. */
 @Mojo(name = "report", threadSafe = true)
 public final class ReportMojo extends AbstractMojo {
   /** Maven project that owns the report snapshot. */
   @Parameter(defaultValue = "${project}", readonly = true, required = true)
   private MavenProject project;
 
-  /** Path shared with the {@code elide} goal's persisted summary snapshot. */
+  /** Path to a persisted summary; defaults to the {@code elide} goal's snapshot. */
   @Parameter(
       property = "elide.summaryFile",
       defaultValue = "${project.build.directory}/dependency-elider-report.json")
@@ -29,7 +29,7 @@ public final class ReportMojo extends AbstractMojo {
     super();
   }
 
-  /** Reads and renders the last successful project report snapshot. */
+  /** Reads and renders the selected project report snapshot. */
   @Override
   public void execute() throws MojoFailureException {
     final MavenElisionReportSnapshot snapshot = readSnapshot();
@@ -89,7 +89,8 @@ public final class ReportMojo extends AbstractMojo {
     if (getLog().isInfoEnabled()) {
       getLog()
           .info(
-              "Elision report JSON snapshot: " + summaryFile.toPath().toAbsolutePath().normalize());
+              "Dependency Elider report JSON snapshot: "
+                  + summaryFile.toPath().toAbsolutePath().normalize());
       rendered.forEach(getLog()::info);
     }
   }

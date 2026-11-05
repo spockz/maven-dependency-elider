@@ -66,6 +66,81 @@ final class OsvDeltaRecordUpdater {
         .toList();
   }
 
+  /** Applies changed owners and retains skipped-row diagnostics. */
+  @SuppressWarnings({
+    "PMD.CognitiveComplexity",
+    "PMD.CyclomaticComplexity",
+    "PMD.UseConcurrentHashMap"
+  })
+  OsvSnapshotIndexer.PartialIndex applyIsolated(
+      final InputStream modifiedIndex,
+      final List<OsvAdvisoryRecord> baseRecords,
+      final Path cveListGitDir,
+      final RecordFetcher recordFetcher,
+      final Set<String> quarantinedIds,
+      final Map<String, String> previousWithdrawals)
+      throws IOException {
+    final Map<String, OsvAdvisoryRecord> recordsById = indexById(baseRecords);
+    final Map<String, String> withdrawals = new java.util.HashMap<>(previousWithdrawals);
+    final List<OsvModifiedIdReader.ModifiedId> modifiedRows = new ArrayList<>();
+    modifiedIdReader.read(modifiedIndex, modifiedRows::add);
+    modifiedRows.sort(
+        Comparator.comparing(OsvModifiedIdReader.ModifiedId::recordId)
+            .thenComparing(OsvModifiedIdReader.ModifiedId::modified));
+    final List<String> skipped = new ArrayList<>();
+    int index = 0;
+    while (index < modifiedRows.size()) {
+      int next = index + 1;
+      while (next < modifiedRows.size()
+          && modifiedRows.get(next).recordId().equals(modifiedRows.get(index).recordId())) {
+        next++;
+      }
+      final OsvModifiedIdReader.ModifiedId revision = modifiedRows.get(next - 1);
+      final OsvAdvisoryRecord previous = recordsById.get(revision.recordId());
+      final String withdrawnRevision = withdrawals.get(revision.recordId());
+      if (!quarantinedIds.contains(revision.recordId())
+          && isNewer(revision.modified(), previous)
+          && (withdrawnRevision == null
+              || revision.modified().isAfter(Instant.parse(withdrawnRevision)))) {
+        final byte[] bytes = recordFetcher.fetch(revision.recordId());
+        final OsvSnapshotIndexer.PartialRecord partial;
+        try {
+          partial = indexer.indexRecordIsolated(bytes, cveListGitDir, revision.recordId());
+        } catch (final IOException | IllegalArgumentException invalid) {
+          recordsById.remove(revision.recordId());
+          skipped.add(
+              OsvSnapshotIndexer.skippedRecord(revision.recordId(), bytes, invalid.getMessage()));
+          index = next;
+          continue;
+        }
+        final OsvSnapshotIndexer.IndexedOsvRecord replacement = partial.record();
+        skipped.addAll(partial.skippedRows());
+        final Instant fetchedModified = Instant.parse(replacement.modified());
+        if (fetchedModified.isBefore(revision.modified())
+            || (previous != null && fetchedModified.isBefore(Instant.parse(previous.modified())))) {
+          throw new IOException(
+              "Fetched OSV record is older than selected revision: " + revision.recordId());
+        }
+        if (replacement.advisory().isPresent()) {
+          recordsById.put(revision.recordId(), replacement.advisory().orElseThrow());
+          withdrawals.remove(revision.recordId());
+        } else {
+          recordsById.remove(revision.recordId());
+          withdrawals.put(revision.recordId(), replacement.modified());
+        }
+      }
+      index = next;
+    }
+    return new OsvSnapshotIndexer.PartialIndex(
+        recordsById.values().stream()
+            .sorted(Comparator.comparing(OsvAdvisoryRecord::osvId))
+            .toList(),
+        skipped,
+        skipped.size(),
+        Set.of(),
+        withdrawals);
+  }
+
   private static Map<String, OsvAdvisoryRecord> indexById(final List<OsvAdvisoryRecord> baseRecords)
       throws IOException {
     final Set<String> seenIds = new HashSet<>();

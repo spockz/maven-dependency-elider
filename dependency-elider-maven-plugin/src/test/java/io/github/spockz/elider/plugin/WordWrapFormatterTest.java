@@ -92,7 +92,8 @@ final class WordWrapFormatterTest {
   @Test
   void doesNotSplitAtomicUrlsEvenIfExceedingMaxWidth() {
     final String text =
-        "    Source URL: https://example.test/very/long/path/to/advisory/reference/with/many/parameters/and/commit/hash/1234567890abcdef1234567890abcdef1234567890abcdef";
+        "    Source URL:"
+            + " https://example.test/very/long/path/to/advisory/reference/with/many/parameters/and/commit/hash/1234567890abcdef1234567890abcdef1234567890abcdef";
     final List<String> wrapped = WordWrapFormatter.wrap(text, 80);
 
     assertAll(

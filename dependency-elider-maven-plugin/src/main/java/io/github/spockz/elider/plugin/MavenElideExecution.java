@@ -173,6 +173,7 @@ final class MavenElideExecution {
             publication.planPublication(),
             publication.cacheConfig(),
             publication.vulnerabilityMappings(),
+            publication.snykConfiguration(),
             publication.preconditionProofEnabled(),
             publication.assumeConventionalJavaSourceLayout(),
             publication.afterStaging(),

@@ -35,7 +35,7 @@
       "goal": "analyze",
       "expectedExitCode": 0,
       "requiredOutput": [
-        "Artifacts that would be elided by this analysis: 2 / 13"
+        "Whole artifacts that would be dropped: 2 / 13"
       ]
     },
     {

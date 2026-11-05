@@ -22,40 +22,34 @@ final class MavenElisionOutputLogger {
             .withExclusionReview(exclusionReview);
     final ElisionAnalysisModel.Analysis analysis = request.analysis();
     final Log log = request.log();
-    if (log.isInfoEnabled()
-        && request.files().trimJars()
-        && analysis.trimResult().cacheHits() > 0) {
-      final double milliseconds = analysis.trimResult().maximumCacheHitNanos() / 1_000_000.0;
-      log.info(
-          "  JAR trim cache: "
-              + analysis.trimResult().cacheHits()
-              + " hit(s), maximum validated hit "
-              + milliseconds
-              + " ms (target < 1.5 ms)");
+    if (log.isInfoEnabled()) {
+      if (request.files().trimJars()) {
+        final String message =
+            "  JAR trim cache: "
+                + analysis.trimResult().cacheHits()
+                + " validated hit(s), "
+                + analysis.trimResult().analysisRuns()
+                + " analysis run(s)";
+        log.info(
+            analysis.trimResult().cacheHits() == 0
+                ? message
+                : message
+                    + "; maximum validated hit "
+                    + analysis.trimResult().maximumCacheHitNanos() / 1_000_000.0
+                    + " ms");
+      } else {
+        log.info("  JAR trim cache: unavailable (trim stage not run)");
+      }
     }
-    if (request.files().trimJars()) {
-      ElisionSummary.reportTrimmed(log, analysis, reportSnapshot, assessment);
-    } else {
-      ElisionSummary.report(
-          log,
-          analysis.effectiveDecision(),
-          analysis.artifacts().resolvedSnapshots().size(),
-          reportSnapshot,
-          assessment);
+    final String fallback = analysis.evidence().sourceAttributionFallback();
+    if (fallback != null && log.isWarnEnabled()) {
+      log.warn(
+          "Post-compile source attribution used conservative fallback; all compile-visible "
+              + "artifacts and indexed classes were retained: "
+              + fallback);
     }
     if (log.isInfoEnabled()) {
-      request
-          .banPlan()
-          .entries()
-          .forEach(
-              entry ->
-                  log.info(
-                      "  Dependency ban: "
-                          + entry.dependency()
-                          + " -> "
-                          + entry.status().name().toLowerCase(java.util.Locale.ROOT)
-                          + (entry.artifacts().isEmpty() ? "" : " " + entry.artifacts())));
-      ExclusionReviewRenderer.render(reportSnapshot.exclusionReview()).forEach(log::info);
+      MavenElisionReportWriter.render(reportSnapshot).forEach(log::info);
       log.info(
           "  Class usage report: "
               + request.files().classUsage().toPath().toAbsolutePath().normalize());

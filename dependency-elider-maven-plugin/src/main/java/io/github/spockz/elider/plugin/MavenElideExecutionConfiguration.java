@@ -33,6 +33,7 @@ record MavenElideExecutionConfiguration(
       PlanPublication planPublication,
       CacheConfig cacheConfig,
       ConfiguredVulnerabilityMappings vulnerabilityMappings,
+      SnykPackageIssuesIntegration.Configuration snykConfiguration,
       boolean preconditionProofEnabled,
       boolean assumeConventionalJavaSourceLayout,
       MavenElisionOutputPublisher.AfterStaging afterStaging,

@@ -314,11 +314,11 @@ public final class ExampleSupport {
     for (final JsonNode observation : observations) {
       final JsonNode source = observation.path("source");
       if (!observation.isObject()
-          || !Set.of("CURRENT", "STALE", "ERROR", "UNAVAILABLE")
+          || !Set.of("CURRENT", "PARTIAL", "STALE", "ERROR", "UNAVAILABLE")
               .contains(observation.path("status").asText())
           || !(source.isNull()
               || source.isMissingNode()
-              || Set.of("OSV", "CVE_LIST").contains(source.asText()))) {
+              || Set.of("OSV", "CVE_LIST", "SNYK").contains(source.asText()))) {
         throw new IOException("source observation is invalid");
       }
     }
@@ -480,17 +480,43 @@ public final class ExampleSupport {
         throw invalidExclusionReview();
       }
     }
-    if (unknown
-        && !containsText(
-            diagnostics,
-            "Incomplete or ambiguous provenance at "
-                + model.textValue()
-                + ":"
-                + line.intValue()
-                + ":"
-                + column.intValue())) {
+    if (unknown && !hasUnknownOriginDiagnostic(model, line, column, diagnostics)) {
       throw invalidExclusionReview();
     }
+  }
+
+  private static boolean hasUnknownOriginDiagnostic(
+      final JsonNode model, final JsonNode line, final JsonNode column, final JsonNode diagnostics) {
+    final String legacyLocation =
+        "Incomplete or ambiguous provenance at "
+            + model.textValue()
+            + ":"
+            + line.intValue()
+            + ":"
+            + column.intValue();
+    if (line.intValue() < 1 || column.intValue() < 1) {
+      return hasDiagnosticPrefix(
+              diagnostics,
+              "Incomplete or ambiguous provenance: Maven did not provide a source location for ")
+          || containsText(diagnostics, legacyLocation);
+    }
+    if (model.textValue().isBlank()) {
+      return hasDiagnosticPrefix(
+              diagnostics,
+              "Incomplete or ambiguous provenance: Maven did not provide a source identity for ")
+          || containsText(diagnostics, legacyLocation);
+    }
+    return hasDiagnosticPrefix(diagnostics, legacyLocation + ":")
+        || containsText(diagnostics, legacyLocation);
+  }
+
+  private static boolean hasDiagnosticPrefix(final JsonNode diagnostics, final String prefix) {
+    for (final JsonNode diagnostic : diagnostics) {
+      if (diagnostic.textValue().startsWith(prefix)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static ArrayNode expectedReviewCandidates(final JsonNode dependencies) {

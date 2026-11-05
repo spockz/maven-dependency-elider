@@ -59,7 +59,8 @@ import org.objectweb.asm.Opcodes;
 @SuppressWarnings({
   "PMD.ExcessiveImports",
   "PMD.CouplingBetweenObjects",
-  "PMD.AvoidDuplicateLiterals"
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.TooManyMethods"
 })
 class MavenElisionReportGenericFindingTest {
   /** Isolated report and archive directory. */
@@ -123,6 +124,8 @@ class MavenElisionReportGenericFindingTest {
                     "src/main/java/p/Example.java",
                     "cache unavailable",
                     "refresh failed",
+                    "old-revision",
+                    "retained snapshot",
                     "https://example.test/advisory",
                     "a".repeat(64)),
         () ->
@@ -143,8 +146,66 @@ class MavenElisionReportGenericFindingTest {
                     "refresh failed",
                     "OVERRIDE",
                     "ENRICHED",
+                    "Sources: [CVE_LIST, manual source]",
+                    "CVE Sources:\n",
+                    "OSV CURRENT",
+                    "CVE_LIST STALE",
+                    "CACHE UNAVAILABLE"),
+        () ->
+            assertThat(rendered)
+                .doesNotContain(
                     "https://example.test/advisory",
-                    "a".repeat(64)));
+                    "a".repeat(64),
+                    "AdvisoryProvenance[",
+                    "FieldValue[",
+                    "VersionCoverageClaim[",
+                    "Source observations:",
+                    "revision:",
+                    "last success:",
+                    "contributions:"),
+        () -> {
+          final String predicted =
+              String.join(
+                  "\n", MavenElisionReportGenericRenderer.render(List.of(finding), sources, true));
+          assertThat(predicted)
+              .contains(
+                  "Analysis only",
+                  "GHSA-only",
+                  "Sources: [CVE_LIST, manual source]",
+                  "refresh failed")
+              .doesNotContain("https://example.test/advisory", "FieldValue[", "revision:");
+        });
+  }
+
+  @Test
+  void predictionUsesConditionalWordingForRemovedArtifacts() {
+    final GenericFindingAssessment original = finding();
+    final GenericFindingAssessment removed =
+        new GenericFindingAssessment(
+            original.vulnerabilityId(),
+            original.aliases(),
+            original.candidate(),
+            original.applicability(),
+            original.intent(),
+            original.codeGroupStatus(),
+            original.codeAttribution(),
+            original.heuristicLeads(),
+            original.prerequisiteGroupStatus(),
+            original.effectivePrerequisites(),
+            original.unresolvedVersionClaims(),
+            original.overriddenFields(),
+            original.enrichedFields(),
+            original.outcome(),
+            original.detail(),
+            MavenVulnerabilityAssessment.InventoryDisposition.REMOVED,
+            original.contributions());
+    assertAll(
+        () ->
+            assertThat(MavenElisionReportGenericRenderer.render(List.of(removed), List.of(), true))
+                .anyMatch(line -> line.contains("GHSA-only") && line.contains("[WOULD_REMOVE]")),
+        () ->
+            assertThat(MavenElisionReportGenericRenderer.render(List.of(removed), List.of(), false))
+                .anyMatch(line -> line.contains("GHSA-only") && line.contains("[REMOVED]")));
   }
 
   @Test
@@ -232,6 +293,54 @@ class MavenElisionReportGenericFindingTest {
                     observation ->
                         assertThat(observation.status())
                             .isEqualTo(FindingSourceObservation.Status.CURRENT)));
+  }
+
+  @Test
+  void partialSourceObservationReplaysAndRejectsIncompleteMetadata() throws IOException {
+    final FindingSourceObservation partial =
+        new FindingSourceObservation(
+            Optional.of(FindingSource.CVE_LIST),
+            FindingSourceObservation.Status.valueOf("PARTIAL"),
+            "revision-partial",
+            Instant.parse("2026-11-04T00:00:00Z"),
+            "Skipped malformed source data",
+            List.of("CVE-2026-54321 affected[1] skipped"),
+            1);
+    final MavenElisionReportSnapshot original = snapshot(finding(), List.of(partial));
+    final Path output = temp.resolve("partial-report.json");
+    MavenElisionReportWriter.write(output, original);
+    final MavenElisionReportSnapshot loaded = MavenElisionReportWriter.read(output);
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode root = (ObjectNode) mapper.readTree(output.toFile());
+    final ObjectNode noRevision = root.deepCopy();
+    ((ObjectNode) noRevision.withArray("sourceObservations").get(0)).putNull("revision");
+    final ObjectNode noTime = root.deepCopy();
+    ((ObjectNode) noTime.withArray("sourceObservations").get(0)).putNull("lastSuccessfulSync");
+    final ObjectNode noDiagnostic = root.deepCopy();
+    ((ObjectNode) noDiagnostic.withArray("sourceObservations").get(0)).putNull("diagnostic");
+    assertAll(
+        () -> assertThat(loaded.sourceObservations()).containsExactly(partial),
+        () ->
+            assertThat(loaded.genericFindings())
+                .usingRecursiveComparison()
+                .ignoringCollectionOrder()
+                .isEqualTo(original.genericFindings()),
+        () ->
+            assertThat(String.join("\n", MavenElisionReportWriter.render(loaded)))
+                .contains(
+                    "PARTIAL",
+                    "Skipped malformed source data",
+                    "CVE-2026-54321 affected[1] skipped"),
+        () -> assertInvalidPartialReport(mapper, noRevision, "no-revision"),
+        () -> assertInvalidPartialReport(mapper, noTime, "no-time"),
+        () -> assertInvalidPartialReport(mapper, noDiagnostic, "no-diagnostic"));
+  }
+
+  private void assertInvalidPartialReport(
+      final ObjectMapper mapper, final ObjectNode payload, final String name) throws IOException {
+    final Path path = temp.resolve(name + ".json");
+    mapper.writeValue(path.toFile(), payload);
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(path)).isInstanceOf(IOException.class);
   }
 
   @Test
@@ -368,13 +477,14 @@ class MavenElisionReportGenericFindingTest {
           final String replay =
               String.join(
                   "\n", MavenElisionReportWriter.render(MavenElisionReportWriter.read(report)));
-          assertThat(replay)
-              .contains(
-                  "CVE-2026-12345",
-                  "DECLARED_CODE_ABSENT",
-                  "p.Example",
-                  "source-label",
-                  "https://example.test/source");
+          assertAll(
+              () ->
+                  assertThat(replay)
+                      .contains("CVE-2026-12345", "DECLARED_CODE_ABSENT", "p.Example", "CVE_LIST")
+                      .doesNotContain("https://example.test/source"),
+              () ->
+                  assertThat(Files.readString(report))
+                      .contains("https://example.test/source", "source-label"));
         });
   }
 

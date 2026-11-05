@@ -36,6 +36,13 @@ final class AnalyzeMojoTestFieldSupport {
                   new MavenElisionService().analyze(project, options);
               final String fingerprint =
                   MavenElisionGraphBinding.sha256(List.of("test-prediction"));
+              final String projectGav =
+                  project.getGroupId() + ":" + project.getArtifactId() + ":" + project.getVersion();
+              final MediatedGraphReport graph =
+                  MediatedGraphReportTestSupport.predictionForDecision(
+                      analysis.effectiveDecision().retainedArtifacts(),
+                      analysis.effectiveDecision().elidedArtifacts(),
+                      projectGav);
               return new AnalyzePrediction(
                   MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL,
                   analysis.artifacts().resolvedSnapshots(),
@@ -46,7 +53,26 @@ final class AnalyzeMojoTestFieldSupport {
                   fingerprint,
                   ResolvedArtifactInventoryFingerprint.fingerprint(
                       analysis.artifacts().resolvedSnapshots()),
-                  analysis.policyIdentity().operationFingerprint());
+                  analysis.policyIdentity().operationFingerprint(),
+                  analysis.banPlan(),
+                  List.of(),
+                  new MavenElisionPolicyIdentity(
+                      analysis.policyIdentity().retainedArtifacts(),
+                      analysis.policyIdentity().banishedDependencies(),
+                      analysis.policyIdentity().operationFingerprint()),
+                  new TrimExecutionEnvironment(
+                      Runtime.version().feature(), Runtime.version().feature()),
+                  analysis.traceDecision().elidedArtifacts().stream()
+                      .filter(
+                          coordinate ->
+                              !analysis
+                                  .banPlan()
+                                  .forcedAbsentAfterResolution()
+                                  .contains(coordinate))
+                      .map(Object::toString)
+                      .sorted()
+                      .toList(),
+                  graph);
             });
   }
 

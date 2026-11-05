@@ -20,6 +20,12 @@ final class MavenElisionReportRenderer {
   /** Lists tolerated duplicate classes with the action applied to their owning JARs. */
   static List<String> toleratedDuplicateLines(
       final List<MavenElisionReportSnapshot.ToleratedDuplicateClass> duplicates) {
+    return toleratedDuplicateLines(duplicates, false);
+  }
+
+  private static List<String> toleratedDuplicateLines(
+      final List<MavenElisionReportSnapshot.ToleratedDuplicateClass> duplicates,
+      final boolean predicted) {
     if (duplicates.isEmpty()) {
       return List.of();
     }
@@ -28,18 +34,29 @@ final class MavenElisionReportRenderer {
     for (final MavenElisionReportSnapshot.ToleratedDuplicateClass duplicate : duplicates) {
       final String action =
           DuplicateClassPolicy.Action.RETAIN_JARS.name().equals(duplicate.action())
-              ? "owning JARs retained whole"
-              : "duplicate kept in every owner, other classes may be trimmed";
+              ? (predicted ? "owning JARs would be retained whole" : "owning JARs retained whole")
+              : (predicted
+                  ? "duplicate would be kept in every owner, other classes may be trimmed"
+                  : "duplicate kept in every owner, other classes may be trimmed");
       lines.add(BULLET + duplicate.className() + ": " + action + " " + duplicate.owners());
     }
     return lines;
   }
 
+  @SuppressWarnings({
+    "PMD.CyclomaticComplexity",
+    "PMD.NPathComplexity"
+  }) // One pass formats all captured sections.
   static List<String> render(final MavenElisionReportSnapshot snapshot) {
     final List<String> lines = new ArrayList<>();
+    final boolean predicted = snapshot.mode() == MavenElisionReportSnapshot.Mode.ANALYSIS;
     lines.add("Dependency Elider report");
     lines.add("Project: " + snapshot.projectGav());
-    lines.add("Snapshot: last successful elide run at " + snapshot.generatedAt());
+    lines.add(
+        "Snapshot: "
+            + (predicted ? "analysis prediction" : "last successful elide run")
+            + " at "
+            + snapshot.generatedAt());
     lines.add("Analysis target JDK release: " + snapshot.executionEnvironment().targetRelease());
     lines.add("Elider runtime JDK release: " + snapshot.executionEnvironment().runtimeRelease());
     lines.add(
@@ -48,25 +65,28 @@ final class MavenElisionReportRenderer {
             + ", banished="
             + snapshot.policy().banishedDependencies());
     lines.add("The snapshot does not revalidate changed inputs when this goal runs.");
+    if (snapshot.sourceAttributionFallback() != null) {
+      lines.add("Source attribution fallback: " + snapshot.sourceAttributionFallback());
+    }
     lines.add(
         "Conventional Java source layout assumption saved for this run: "
             + snapshot.assumeConventionalJavaSourceLayout());
     lines.add(
-        "Whole artifacts dropped: "
+        (predicted ? "Whole artifacts that would be dropped: " : "Whole artifacts dropped: ")
             + snapshot.wholeArtifactsDropped()
+            + " / "
+            + snapshot.inputArtifactCount()
             + " (original JAR file bytes: "
             + formatBytes(snapshot.originalJarBytesDropped())
             + ")");
     lines.add(
-        "Program classes removed with dropped JARs: "
+        (predicted
+                ? "Program classes that would be removed with dropped JARs: "
+                : "Program classes removed with dropped JARs: ")
             + snapshot.droppedProgramClassEntries()
             + " (uncompressed .class entry payload bytes: "
             + formatBytes(snapshot.droppedProgramClassBytes())
             + "; excludes module descriptors and archive sanitation metadata)");
-    lines.add(
-        "Raw trace decision drops before graph safety: " + snapshot.rawDroppedCoordinates().size());
-    renderAppliedBans(snapshot.appliedBans(), lines);
-    lines.addAll(toleratedDuplicateLines(snapshot.toleratedDuplicates()));
     for (final MavenElisionReportSnapshot.DroppedArtifact artifact : snapshot.droppedArtifacts()) {
       lines.add(
           BULLET
@@ -79,10 +99,18 @@ final class MavenElisionReportRenderer {
               + formatBytes(artifact.uncompressedProgramClassBytesRemoved()));
     }
     lines.add(
-        "Program classes pruned from retained JARs: "
+        "Raw trace decision drops before graph safety: " + snapshot.rawDroppedCoordinates().size());
+    renderAppliedBans(snapshot.appliedBans(), lines, predicted);
+    lines.addAll(toleratedDuplicateLines(snapshot.toleratedDuplicates(), predicted));
+    lines.add(
+        (predicted
+                ? "Program classes that would be pruned from retained JARs: "
+                : "Program classes pruned from retained JARs: ")
             + snapshot.programClassesPruned()
             + " (uncompressed omitted .class payload bytes: "
-            + formatBytes(snapshot.uncompressedProgramClassBytesPruned())
+            + (snapshot.uncompressedProgramClassBytesPruned() == null
+                ? "unknown"
+                : formatBytes(snapshot.uncompressedProgramClassBytesPruned()))
             + "; excludes module descriptors and archive metadata)");
     for (final MavenElisionReportSnapshot.TrimmedArtifact artifact : snapshot.trimmedArtifacts()) {
       lines.add(
@@ -91,23 +119,31 @@ final class MavenElisionReportRenderer {
               + ": "
               + artifact.programClassesPruned()
               + " classes, "
-              + formatBytes(artifact.uncompressedProgramClassBytesPruned()));
+              + (artifact.uncompressedProgramClassBytesPruned() == null
+                  ? "unknown"
+                  : formatBytes(artifact.uncompressedProgramClassBytesPruned())));
+      if (predicted) {
+        lines.add("    Would remove classes: " + artifact.plannedClasses());
+      }
     }
     lines.addAll(
         MavenElisionReportGenericRenderer.render(
-            snapshot.genericFindings(), snapshot.sourceObservations()));
+            snapshot.genericFindings(), snapshot.sourceObservations(), predicted));
     lines.addAll(ExclusionReviewRenderer.render(snapshot.exclusionReview()));
     lines.addAll(
-        MediatedGraphReportRenderer.render(snapshot.mediatedGraph(), snapshot.projectGav()));
+        MediatedGraphReportRenderer.render(
+            snapshot.mediatedGraph(), snapshot.projectGav(), predicted));
     return List.copyOf(lines);
   }
 
   private static void renderAppliedBans(
-      final List<MavenElisionReportSnapshot.AppliedBan> bans, final List<String> lines) {
+      final List<MavenElisionReportSnapshot.AppliedBan> bans,
+      final List<String> lines,
+      final boolean predicted) {
     if (bans.isEmpty()) {
-      lines.add("Applied bans: none");
+      lines.add((predicted ? "Planned" : "Applied") + " bans: none");
     } else {
-      lines.add("Applied ban outcomes:");
+      lines.add((predicted ? "Planned" : "Applied") + " ban outcomes:");
       for (final MavenElisionReportSnapshot.AppliedBan ban : bans) {
         lines.add(
             BULLET

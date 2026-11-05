@@ -323,6 +323,7 @@
                         <java>
                             <googleJavaFormat>
                                 <version>${spotless-java-format.version}</version>
+                                <reflowLongStrings>true</reflowLongStrings>
                             </googleJavaFormat>
                             <removeUnusedImports />
                             <formatAnnotations />

@@ -20,6 +20,7 @@ public record FindingSourceSnapshot(
   /** Source observation state, retaining last-good claims on stale and error states. */
   public enum Status {
     CURRENT,
+    PARTIAL,
     STALE,
     ERROR
   }
@@ -51,6 +52,13 @@ public record FindingSourceSnapshot(
       if (diagnostic != null) {
         throw new IllegalArgumentException("current source snapshots must not carry diagnostics");
       }
+    } else if (status == Status.PARTIAL) {
+      requireText(revision, "revision");
+      if (lastSuccessfulSync == null) {
+        throw new IllegalArgumentException(
+            "lastSuccessfulSync is required for partial observations");
+      }
+      requireText(diagnostic, "diagnostic for partial source snapshot");
     } else {
       requireText(diagnostic, "diagnostic for non-current source snapshot");
       if ((revision == null) != (lastSuccessfulSync == null)) {

@@ -147,11 +147,29 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   /** Explicit project vulnerability mappings override cached mappings. */
   @Parameter private List<VulnerabilityMappingConfig> vulnerabilityMappings;
 
+  /** Enables optional per-artifact Snyk package issue queries. */
+  @Parameter(property = "elide.snykEnabled", defaultValue = DEFAULT_FALSE)
+  private boolean snykEnabled;
+
+  /** Snyk organization ID; falls back to SNYK_ORG_ID. */
+  @Parameter(property = "elide.snykOrgId")
+  private String snykOrgId;
+
+  /** Official Snyk regional package API origin. */
+  @Parameter(property = "elide.snykApiBaseUri", defaultValue = "https://api.snyk.io")
+  private String snykApiBaseUri;
+
   /** Class-usage evidence; default: target/dependency-elider-class-usage.json. */
   @Parameter(
       property = "elide.reportFile",
       defaultValue = "${project.build.directory}/dependency-elider-class-usage.json")
   private File reportFile;
+
+  /** Saved analysis summary; kept separate from the last applied elision report. */
+  @Parameter(
+      property = "elide.analysisSummaryFile",
+      defaultValue = "${project.build.directory}/dependency-elider-analysis-report.json")
+  private File analysisSummaryFile;
 
   /** Creates a Mojo instance for Maven injection. */
   public AnalyzeMojo() {
@@ -194,23 +212,76 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
       final ExclusionReview exclusionReview = ExclusionReview.capture(project, session);
       final MavenVulnerabilityAssessment.Result vulnerabilityAssessment =
           assessVulnerabilities(prediction);
-      ElisionSummary.reportPrediction(getLog(), prediction, vulnerabilityAssessment, trimJars);
-      MavenClassUsageReportWriter.write(
-          reportFile.toPath(),
-          prediction.evidence().classUsageReport(),
-          prediction.evidence().bytecodeScan(),
-          prediction,
-          exclusionReview);
-      if (getLog().isInfoEnabled()) {
-        ExclusionReviewRenderer.render(exclusionReview).forEach(getLog()::info);
-      }
-      if (getLog().isInfoEnabled()) {
-        getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
-      }
+      final MavenElisionReportSnapshot snapshot =
+          MavenElisionReportSnapshot.from(
+              project, prediction, vulnerabilityAssessment, exclusionReview);
+      final Path summary = analysisSummaryPath();
+      publishReports(prediction, exclusionReview, snapshot, summary);
+      logReport(prediction, snapshot, summary);
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoFailureException(
           "Dependency analysis failed closed: " + exception.getMessage(), exception);
     }
+  }
+
+  private void publishReports(
+      final AnalyzePrediction prediction,
+      final ExclusionReview exclusionReview,
+      final MavenElisionReportSnapshot snapshot,
+      final Path summary)
+      throws IOException, MojoFailureException {
+    try (MavenOutputTransaction outputs =
+        MavenOutputTransaction.forTargets(List.of(reportFile.toPath(), summary))) {
+      MavenClassUsageReportWriter.write(
+          outputs.stagedPath(reportFile.toPath()),
+          prediction.evidence().classUsageReport(),
+          prediction.evidence().bytecodeScan(),
+          prediction,
+          exclusionReview);
+      MavenElisionReportWriter.write(outputs.stagedPath(summary), snapshot);
+      outputs.publish();
+      outputs.commit();
+      try {
+        outputs.cleanupCommitted();
+      } catch (final IOException exception) {
+        throw new MojoFailureException(
+            "Analysis reports were published, but backup cleanup failed", exception);
+      }
+    }
+  }
+
+  private void logReport(
+      final AnalyzePrediction prediction,
+      final MavenElisionReportSnapshot snapshot,
+      final Path summary) {
+    final String fallback = prediction.evidence().sourceAttributionFallback();
+    if (fallback != null && getLog().isWarnEnabled()) {
+      getLog()
+          .warn(
+              "Post-compile source attribution used conservative fallback; all compile-visible "
+                  + "artifacts and indexed classes were retained: "
+                  + fallback);
+    }
+    if (getLog().isInfoEnabled()) {
+      MavenElisionReportWriter.render(snapshot).forEach(getLog()::info);
+      getLog()
+          .info(
+              trimJars
+                  ? "  JAR trim cache: unavailable (Analyze reports an in-memory prediction only)"
+                  : "  JAR trim cache: unavailable (trim stage not run)");
+      getLog().info("  Analysis report: " + summary.toAbsolutePath().normalize());
+      getLog().info("  Class usage report: " + reportFile.toPath().toAbsolutePath().normalize());
+    }
+  }
+
+  private Path analysisSummaryPath() {
+    if (analysisSummaryFile != null) {
+      return analysisSummaryFile.toPath();
+    }
+    final String directory = project.getBuild() == null ? null : project.getBuild().getDirectory();
+    return directory == null
+        ? Path.of("target", "dependency-elider-analysis-report.json")
+        : Path.of(directory, "dependency-elider-analysis-report.json");
   }
 
   private void verifyBanPrediction(final AnalyzePrediction prediction) throws MojoFailureException {
@@ -254,7 +325,12 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
             cveForceSync,
             session != null && session.isOffline());
     return new MavenVulnerabilityAssessment(getLog(), assumeConventionalJavaSourceLayout)
-        .assess(config, ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings), prediction);
+        .assess(
+            config,
+            ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings),
+            prediction,
+            SnykPackageIssuesIntegration.Configuration.configured(
+                snykEnabled, session != null && session.isOffline(), snykOrgId, snykApiBaseUri));
   }
 
   private boolean shouldSkipAnalysis() {

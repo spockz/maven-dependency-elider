@@ -405,6 +405,7 @@ Durable evidence is stored under `docs/research/data/rq-0020/`:
 - [2026-11-04-structured-source-evidence.json](data/rq-0020/2026-11-04-structured-source-evidence.json): selected CNA/NVD source-file and routine declarations, actual Maven GHSA function-list responses, Go/RustSec symbol examples, bounded sample counts, and source/digest limitations.
 - [2026-11-04-additional-source-evaluation.json](data/rq-0020/2026-11-04-additional-source-evaluation.json): Snyk's concrete Tomcat package association outside the earlier OSV Maven result, bounded Java-detail observations, API documentation, and still-unverified consumption conditions.
 - [2026-11-04-osv-snyk-source-check.json](data/rq-0020/2026-11-04-osv-snyk-source-check.json): OSV's published/configured source check and a GitHub-imported record containing Snyk references, preserving the distinction between indirect overlap and direct database ingestion.
+- [2026-11-05-plugin-spring-assessment.json](data/rq-0020/2026-11-05-plugin-spring-assessment.json): exact plugin finding identities, scope, configuration, source observations, hashes and the failed CVE List indexing attempt described below.
 
 The current raw measurement workspaces are `.scratch/verification/osv-spring-scan/`, `.scratch/verification/nvd-divergence/`, `.scratch/verification/tomcat-osv-global/`, `.scratch/verification/tomcat-git-range-investigation/`, and `.scratch/verification/maven-advisory-timelines/`. These workspaces are not durable reader-facing evidence; the checked-in datasets above are the reproducible summary boundary. Keep source snapshots, tool versions, input identities, timestamps, count units, and classification rationale with future evidence.
 
@@ -418,6 +419,135 @@ Primary references checked 2026-11-04:
 - [GitHub Releases API](https://docs.github.com/en/rest/releases/releases), [GitHub Commits API](https://docs.github.com/en/rest/commits/commits), and [GitHub global security advisories API](https://docs.github.com/en/rest/security-advisories/global-advisories).
 
 These sources support source roles, schemas, and tool behavior; empirical counts and latency statistics come from the identified local evidence snapshots, not from these documentation pages. Source URLs and status may change. Future updates should preserve the checked date and exact evidence snapshot rather than silently refreshing historical claims.
+
+## 2026-11-05: Analysis and applied report parity
+
+Analysis and elision use the same saved summary structure and renderer, with separate `ANALYSIS`
+and `APPLIED` snapshots. An analysis can report that all attributed classes in a complete declared
+code group are planned for removal, but the output archive has not been inspected and no VEX
+attestation follows from that forecast. The applied report records the independently verified result.
+Neither a planned component removal nor declared-code absence establishes that a particular scanner
+will stop reporting a CVE, or that every vulnerable code path is absent.
+
+### 2026-11-05: Snyk data rights and integration boundary
+
+The [Snyk CLI](https://github.com/snyk/cli/blob/main/LICENSE) is Apache-2.0 licensed, but that
+license applies to the CLI code and does not establish an open license for Snyk's hosted
+vulnerability database. Snyk describes its application and operating-system vulnerability feeds as
+[separately licensed standalone products](https://github.com/snyk/user-docs/blob/main/scan-fix-and-prevent/scan-with-snyk/snyk-open-source/manage-vulnerabilities/snyk-vulnerability-database.md).
+The [website terms](https://snyk.io/policies/website-terms-of-use/) reserve intellectual-property
+and database rights and grant access rights, without establishing a general right to scrape or
+redistribute the advisory database. Those terms were checked on 2026-11-05; whether a particular
+advisory or access method carries a different license requires confirmation.
+
+Snyk explicitly says customers can incorporate database information into their own systems; its
+separately licensed feeds are an intended way to do that, not evidence that integration is
+prohibited. Snyk is also a [CVE Numbering Authority](https://docs.snyk.io/snyk-data-and-governance/disclosure-of-a-vulnerability-in-an-open-source-package)
+for vulnerabilities it discovers or that are directly disclosed to it. That status concerns CVE
+assignment within its scope; it does not itself specify licensing for the separate Snyk database.
+Snyk-authored CVE Records obtained through the CVE Program follow the [CVE Terms of Use](https://www.cve.org/Legal/TermsOfUse),
+including the stated notice requirements; this does not establish permission to copy additional
+Snyk database enrichment that is absent from those records.
+
+The [Snyk service terms](https://snyk.io/policies/terms-of-service/) define service data to include
+vulnerability information. They limit service use to the applicable permitted purpose and restrict
+copying, distribution and certain competitive uses. They apply to free and paid service access, with
+specified exceptions for free and evaluation use; an order form or separate feed agreement may
+change the applicable terms. A provision for continued use of service data already captured in
+outputs remains subject to the agreement's restrictions. It does not establish a blanket license to
+redistribute or cache Snyk's feed in this Apache-2.0 project. The project should obtain explicit
+rights for the intended integration, persistence, derivative mappings, redistribution, downstream
+access, and use after termination before implementing or publishing an integration. An optional
+Apache-licensed adapter and a user's right to access and retain the provider's data are separate
+questions; a user-supplied API token does not itself settle them.
+
+Technically, Snyk's [package issues API](https://docs.snyk.io/developer-tools/snyk-api/using-specific-snyk-apis/issues-list-issues-for-a-package)
+accepts an authenticated, versioned Maven PURL and returns direct package issues, aliases, affected
+versions and references. A complete inventory comparison needs every in-scope package and all pages,
+not one transitive query; availability and rate limits depend on the account and API. Source status,
+retrieval time and failures should remain explicit. This information may enrich the generic finding
+set, but a version-range match does not establish that declared vulnerable code is absent or authorize
+a mitigation proof.
+
+Snyk's [CVE-2026-68763 advisory](https://security.snyk.io/vuln/SNYK-JAVA-ORGAPACHETOMCATEMBED-20304748)
+still maps the previously investigated Tomcat 10.1.31 to `tomcat-embed-core`. As checked on
+2026-11-05, its interval headline includes the unreleased 10.1.58 candidate while the explanatory
+text says that version is not affected. Any integration would need to preserve and resolve such
+exceptions rather than silently widening them into a single uninterrupted range. This is one mapping,
+not a measured count of all Snyk findings or proof that this component is exploitable.
+
+### 2026-11-05: Spring plugin measurement and CVE List indexing failure
+
+An actual `analyze` run of the Spring Boot 3.3.5 example used a runtime trace, trim prediction and
+the resolved Maven TEST graph. Its 91 input artifacts comprised 44 compile, 19 runtime and 28 test
+artifacts. Its OSV partition was current at revision
+`909794e9a2c4bc6aa423e1389dd764976997bdb525b7c903663e169b0a406234`; it contained 13,637 source
+contributions. CVE List had no successfully indexed contributions. The plugin emitted 89 affected
+finding rows, representing 88 distinct CVEs and one GHSA-only advisory. All 89 outcomes were
+`NO_PROOF`. This is an OSV-backed result with three test-scope CVEs, not a full two-source scan and
+not an exploitability or mitigation count.
+
+The runtime/compile subset was 86 rows: 85 distinct CVEs and one GHSA-only advisory. Its 85 CVE IDs
+were exactly the same as the earlier OSV-Scanner runtime SBOM measurement, although the scans used
+different tools and their source observations and timing differ. Tomcat Embed Core 10.1.31 had 36
+CVE rows; Jackson Core 2.18.2 had four; and Jackson Databind 2.18.2 had twelve CVEs plus one
+GHSA-only advisory. Jackson therefore had 17 rows across its two affected modules. The durable
+[measurement snapshot](data/rq-0020/2026-11-05-plugin-spring-assessment.json) preserves the exact
+finding identities, source health and scope; the `.scratch/osv-only-spring-assessment/` reports,
+logs and trace are retained local working evidence.
+
+A second run used the same input and an isolated, freshly pulled official CVE List checkout at
+`4131d728c9f934758df567a539b07a037f8c614d`. The plugin emitted the same 89 rows but explicitly
+reported CVE List `STALE` with zero contributions: its full indexing operation stopped at
+`CVE-2022-0353`. A direct reader reproduction identifies the rejected field as
+`containers.cna.affected[0].versions[0].version`, whose value is a space; the record has custom
+Lenovo product versions and no Maven package identity. Its
+[official record at that revision](https://github.com/CVEProject/cvelistV5/blob/4131d728c9f934758df567a539b07a037f8c614d/cves/2022/0xxx/CVE-2022-0353.json)
+is the source evidence. This identifies an ingestion blocker, not a claim that the Lenovo issue
+affects this application. The `STALE` status and failed refresh remained visible in the report, so a
+successful Maven build did not mean both vulnerability sources had been indexed.
+
+`CVE-2026-68763` was absent from both plugin reports. The failed CVE List index prevents an empirical
+claim about what a successful CVE List ingestion would add. Its [CVE Program record](https://raw.githubusercontent.com/CVEProject/cvelistV5/4131d728c9f934758df567a539b07a037f8c614d/cves/2026/68xxx/CVE-2026-68763.json)
+lists Apache Tomcat versions but no Maven package identity, whereas the Snyk advisory supplies the
+specific embedded-Core package association. A future parser fix must represent unsupported or
+incomplete version data conservatively and distinguish rejected records from a complete source;
+the effect of such a fix on this count has not been measured.
+
+### 2026-11-05: Full CVE List indexing with malformed-entry isolation
+
+After adding independent affected-entry handling, a direct run of the core CVE List indexer against
+the same official checkout at `4131d728c9f934758df567a539b07a037f8c614d` processed 419,455 CVE
+records and emitted 1,120 Maven finding contributions. It skipped 79 malformed entries; in
+`CVE-2022-0353`, two affected entries have blank version values. The checkout's `cves/delta.json`
+and `cves/deltaLog.json` are upstream metadata, not CVE records, and are excluded from record
+discovery. The indexer's content revision was
+`e8c64d1848aeb2dc9aa53341dc1d68376bba86002d748a7960566c614457ce62`.
+
+This is a core indexing measurement, not a new Spring application assessment or a count of CVEs
+affecting that application. The skipped entries make the CVE List observation incomplete; the
+plugin's cache reports such an observation as `PARTIAL`. The earlier failed run above remains the
+historical result for that build and its Spring finding counts are not revised by this measurement.
+
+The same isolation policy now applies to malformed OSV advisory records and affected-package
+entries. An incomplete source is reported as `PARTIAL`, including across offline cache reuse; a later
+refresh retries the full OSV snapshot. Archive, transport, and untrustworthy change-index failures
+remain source refresh failures. These are ingestion and reporting boundaries, not claims about the
+vulnerability status of any application.
+
+### 2026-11-05: Optional Snyk package API integration
+
+The plugin can opt into the documented [Snyk package-issues API](https://docs.snyk.io/developer-tools/snyk-api/using-specific-snyk-apis/issues-list-issues-for-a-package)
+for the exact Maven package versions in a project assessment. Those findings enter the common merge
+with Snyk and CVE attribution; package-only results do not declare vulnerable code. Results are
+scoped to the queried version and assessment rather than being represented as a complete shared
+vulnerability database. The source observation reports incomplete or unavailable queries.
+
+The API requires an organization and token; Snyk says most APIs require Enterprise access. Its
+[Application Feed](https://github.com/snyk/user-docs/blob/main/scan-fix-and-prevent/scan-with-snyk/snyk-open-source/manage-vulnerabilities/snyk-vulnerability-database.md#incorporating-the-vulnerability-database-into-your-systems)
+is separately licensed and is not a publicly documented bulk feed consumed by this integration. No
+authorized live API request or new Snyk finding count was available for this measurement. Mock API
+tests establish integration behavior, not the account's entitlement or real-world coverage.
 
 ## Unresolved questions
 

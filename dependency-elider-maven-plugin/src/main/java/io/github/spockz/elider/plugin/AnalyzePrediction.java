@@ -26,7 +26,11 @@ record AnalyzePrediction(
     String inventoryFingerprint,
     String operationFingerprint,
     MavenBanPlan banPlan,
-    List<MavenElisionReportSnapshot.ToleratedDuplicateClass> toleratedDuplicates) {
+    List<MavenElisionReportSnapshot.ToleratedDuplicateClass> toleratedDuplicates,
+    MavenElisionPolicyIdentity policy,
+    TrimExecutionEnvironment executionEnvironment,
+    List<String> rawDroppedCoordinates,
+    MediatedGraphReport mediatedGraph) {
   /* default */ AnalyzePrediction(
       final Provenance provenance,
       final List<ArtifactSnapshot> inputArtifacts,
@@ -51,18 +55,57 @@ record AnalyzePrediction(
         List.of());
   }
 
+  @SuppressWarnings("PMD.ExcessiveParameterList")
+  /* default */ AnalyzePrediction(
+      final Provenance provenance,
+      final List<ArtifactSnapshot> inputArtifacts,
+      final List<ArtifactCoordinate> retainedArtifacts,
+      final List<ArtifactCoordinate> wouldElideArtifacts,
+      final List<PlannedTrim> plannedTrims,
+      final AnalysisEvidence evidence,
+      final String environmentFingerprint,
+      final String inventoryFingerprint,
+      final String operationFingerprint,
+      final MavenBanPlan banPlan,
+      final List<MavenElisionReportSnapshot.ToleratedDuplicateClass> toleratedDuplicates) {
+    this(
+        provenance,
+        inputArtifacts,
+        retainedArtifacts,
+        wouldElideArtifacts,
+        plannedTrims,
+        evidence,
+        environmentFingerprint,
+        inventoryFingerprint,
+        operationFingerprint,
+        banPlan,
+        toleratedDuplicates,
+        new MavenElisionPolicyIdentity(List.of(), List.of(), operationFingerprint),
+        new TrimExecutionEnvironment(Runtime.version().feature(), Runtime.version().feature()),
+        List.of(),
+        MediatedGraphReport.unavailable("No graph captured"));
+  }
+
   AnalyzePrediction {
     Objects.requireNonNull(provenance, "provenance");
     inputArtifacts = List.copyOf(inputArtifacts);
     retainedArtifacts = retainedArtifacts.stream().sorted().toList();
     wouldElideArtifacts = wouldElideArtifacts.stream().sorted().toList();
     plannedTrims = plannedTrims.stream().sorted().toList();
+    if (plannedTrims.stream().map(value -> value.coordinate().toId()).distinct().count()
+        != plannedTrims.size()) {
+      throw new IllegalArgumentException("Cannot capture multiple plans for one component");
+    }
     toleratedDuplicates = List.copyOf(toleratedDuplicates);
     Objects.requireNonNull(evidence, "evidence");
     Objects.requireNonNull(environmentFingerprint, "environmentFingerprint");
     Objects.requireNonNull(inventoryFingerprint, "inventoryFingerprint");
     Objects.requireNonNull(operationFingerprint, "operationFingerprint");
     Objects.requireNonNull(banPlan, "banPlan");
+    Objects.requireNonNull(policy, "policy");
+    Objects.requireNonNull(executionEnvironment, "executionEnvironment");
+    rawDroppedCoordinates = List.copyOf(rawDroppedCoordinates);
+    Objects.requireNonNull(mediatedGraph, "mediatedGraph");
   }
 
   /* default */ static AnalyzePrediction from(final ElisionAnalysisModel.EffectiveAnalysis analysis)
@@ -72,12 +115,13 @@ record AnalyzePrediction(
             analysis.prepared(),
             analysis.effectiveDecision().retainedArtifacts(),
             analysis.prepared().pruningRequiredClasses());
+    final List<PlannedTrim> trims = plannedTrims(analysis);
     return new AnalyzePrediction(
         analysis.prepared().resolutionContext().provenance(),
         analysis.prepared().resolvedSnapshots(),
         List.copyOf(analysis.effectiveDecision().retainedArtifacts()),
         List.copyOf(analysis.effectiveDecision().elidedArtifacts()),
-        plannedTrims(analysis),
+        trims,
         ElisionAnalysisModel.evidence(analysis.prepared()),
         analysis.prepared().resolutionContext().environment().fingerprint(),
         analysis.inventoryFingerprint(),
@@ -85,7 +129,30 @@ record AnalyzePrediction(
         analysis.banPlan(),
         DuplicateClasses.resolveRetained(trimRequest).stream()
             .map(MavenElisionReportSnapshot.ToleratedDuplicateClass::from)
-            .toList());
+            .toList(),
+        analysis
+            .prepared()
+            .policyOptions()
+            .withOperationFingerprint(analysis.operationFingerprint()),
+        new TrimExecutionEnvironment(
+            analysis.trimAnalysis().targetRelease(), analysis.trimAnalysis().runtimeRelease()),
+        analysis.prepared().traceDecision().elidedArtifacts().stream()
+            .filter(c -> !analysis.banPlan().forcedAbsentAfterResolution().contains(c))
+            .map(Object::toString)
+            .sorted()
+            .toList(),
+        MediatedGraphReport.createPrediction(
+            analysis.prepared().graphBinding().pair(),
+            analysis.graphEvaluation(),
+            analysis.effectiveDecision().elidedArtifacts(),
+            trims.stream()
+                .map(PlannedTrim::coordinate)
+                .collect(java.util.stream.Collectors.toSet()),
+            analysis.prepared().project().getGroupId()
+                + ":"
+                + analysis.prepared().project().getArtifactId()
+                + ":"
+                + analysis.prepared().project().getVersion()));
   }
 
   private static List<PlannedTrim> plannedTrims(

@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.List;
 import java.util.stream.Stream;
 
 public final class ExampleSupportContractTest {
@@ -129,6 +130,7 @@ public final class ExampleSupportContractTest {
     final ObjectNode available = reportWithValidPrediction(productionOutput);
     available.set("exclusionReview", availableReview());
     ExampleSupport.validateClassUsageReport(available, productionOutput);
+    verifiesUnknownOriginDiagnosticForms(available, productionOutput);
 
     final ObjectNode tamperedCount = available.deepCopy();
     ((ObjectNode) tamperedCount.path("exclusionReview").path("candidates").get(0))
@@ -169,6 +171,21 @@ public final class ExampleSupportContractTest {
     report.putArray("sourceObservations");
 
     ExampleSupport.validateGenericFindingReport(report);
+
+    final ObjectNode partial = report.deepCopy();
+    final ObjectNode observation = partial.withArray("sourceObservations").addObject();
+    observation.put("source", "CVE_LIST");
+    observation.put("status", "PARTIAL");
+    observation.put("revision", "revision-partial");
+    observation.put("lastSuccessfulSync", "2026-11-04T00:00:00Z");
+    observation.put("diagnostic", "Skipped malformed source data");
+    observation.putArray("observationDiagnostics").add("CVE-2026-54321 affected[1] skipped");
+    observation.put("contributionCount", 1);
+    ExampleSupport.validateGenericFindingReport(partial);
+
+    final ObjectNode snyk = partial.deepCopy();
+    ((ObjectNode) snyk.path("sourceObservations").get(0)).put("source", "SNYK");
+    ExampleSupport.validateGenericFindingReport(snyk);
 
     final ObjectNode missingRows = JSON.createObjectNode();
     missingRows.putArray("sourceObservations");
@@ -269,6 +286,82 @@ public final class ExampleSupportContractTest {
     managementCoordinate.put("artifactId", "library");
     managementExclusion.set("origin", managementOrigin.deepCopy());
     return review;
+  }
+
+  private static void verifiesUnknownOriginDiagnosticForms(
+      final ObjectNode validReport, final Path productionOutput) throws IOException {
+    final ObjectNode withoutLocation = validReport.deepCopy();
+    final ObjectNode unknownLocation = unknownOrigin("example:consumer:1", "pom.xml", 0, 0);
+    installUnknownOrigin(withoutLocation, unknownLocation);
+    diagnosticArray(withoutLocation).add(
+        "Incomplete or ambiguous provenance: Maven did not provide a source location for "
+            + "example:consumer:1");
+    ExampleSupport.validateClassUsageReport(withoutLocation, productionOutput);
+
+    final ObjectNode withoutIdentity = validReport.deepCopy();
+    installUnknownOrigin(withoutIdentity, unknownOrigin("", "pom.xml", 5, 3));
+    diagnosticArray(withoutIdentity).add(
+        "Incomplete or ambiguous provenance: Maven did not provide a source identity for "
+            + "pom.xml:5:3");
+    ExampleSupport.validateClassUsageReport(withoutIdentity, productionOutput);
+
+    final ObjectNode located = validReport.deepCopy();
+    installUnknownOrigin(located, unknownOrigin("example:consumer:1", "pom.xml", 5, 3));
+    diagnosticArray(located).add(
+        "Incomplete or ambiguous provenance at example:consumer:1:5:3: source model is "
+            + "ambiguous");
+    ExampleSupport.validateClassUsageReport(located, productionOutput);
+
+    final ObjectNode forged = validReport.deepCopy();
+    installUnknownOrigin(forged, unknownOrigin("example:consumer:1", "pom.xml", 0, 0));
+    rejects(forged, productionOutput, "Invalid exclusionReview payload");
+  }
+
+  private static ObjectNode unknownOrigin(
+      final String modelId, final String source, final int line, final int column) {
+    final ObjectNode origin = JSON.createObjectNode();
+    origin.put("kind", "UNKNOWN");
+    origin.put("modelId", modelId);
+    origin.put("source", source);
+    origin.put("line", line);
+    origin.put("column", column);
+    origin.put("profileId", "");
+    return origin;
+  }
+
+  private static void installUnknownOrigin(
+      final ObjectNode report, final ObjectNode origin) {
+    final ObjectNode review = (ObjectNode) report.path("exclusionReview");
+    replaceOrigins(review, origin);
+    review.putArray("management");
+  }
+
+  private static void replaceOrigins(final JsonNode node, final ObjectNode origin) {
+    if (node instanceof final ObjectNode object) {
+      if (object.has("kind") && object.has("modelId") && object.has("profileId")) {
+        object.removeAll();
+        object.setAll(origin.deepCopy());
+        return;
+      }
+      final List<String> fields = new java.util.ArrayList<>();
+      object.fieldNames().forEachRemaining(fields::add);
+      for (final String field : fields) {
+        if ("origin".equals(field)) {
+          object.set(field, origin.deepCopy());
+        } else {
+          replaceOrigins(object.path(field), origin);
+        }
+      }
+    } else if (node instanceof final ArrayNode array) {
+      for (final JsonNode child : array) {
+        replaceOrigins(child, origin);
+      }
+    }
+  }
+
+  private static ArrayNode diagnosticArray(final ObjectNode report) {
+    return (ArrayNode)
+        report.path("exclusionReview").path("snapshot").path("diagnostics");
   }
 
   private static void verifiesBanPlanValidation(final Path productionOutput) throws IOException {

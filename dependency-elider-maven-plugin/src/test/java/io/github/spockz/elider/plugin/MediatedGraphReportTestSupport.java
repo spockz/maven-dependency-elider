@@ -15,8 +15,10 @@ import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.DependencyNode;
 
 /** Test fixtures for mediated report paths. */
-@SuppressWarnings(
-    "PMD.CommentDefaultAccessModifier") // Helpers are shared only within this test package.
+@SuppressWarnings({
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.TooManyMethods"
+}) // Helpers are shared only within this test package.
 final class MediatedGraphReportTestSupport {
   /** Number of components in the synthetic project identity accepted by test nodes. */
   private static final int PROJECT_GAV_PART_COUNT = 3;
@@ -60,6 +62,37 @@ final class MediatedGraphReportTestSupport {
     root.setChildren(List.of(node(dropped), node(trimmed)));
     return report(
         root, decision(Set.of(trimmed), Set.of(dropped)), List.of(trimRecord(trimmed)), projectGav);
+  }
+
+  static MediatedGraphReport predictionForOutputs(
+      final ArtifactCoordinate dropped, final ArtifactCoordinate trimmed, final String projectGav)
+      throws java.io.IOException {
+    final DependencyNode root = projectNode(projectGav);
+    root.setChildren(List.of(node(dropped), node(trimmed)));
+    final ResolverArtifactGraphCapturePair pair =
+        EffectiveGraphPolicyTestSupport.pair(root, root, "report-capture");
+    final EffectiveGraphPolicy.Evaluation evaluation =
+        EffectiveGraphPolicy.evaluatePair(pair, decision(Set.of(trimmed), Set.of(dropped)));
+    return MediatedGraphReport.createPrediction(
+        pair, evaluation, evaluation.elidedArtifacts(), Set.of(trimmed), projectGav);
+  }
+
+  static MediatedGraphReport predictionForDecision(
+      final Set<ArtifactCoordinate> retained,
+      final Set<ArtifactCoordinate> dropped,
+      final String projectGav)
+      throws java.io.IOException {
+    final DependencyNode root = projectNode(projectGav);
+    root.setChildren(
+        java.util.stream.Stream.concat(retained.stream(), dropped.stream())
+            .sorted()
+            .map(MediatedGraphReportTestSupport::node)
+            .toList());
+    final ResolverArtifactGraphCapturePair pair =
+        EffectiveGraphPolicyTestSupport.pair(root, root, "report-capture");
+    final EffectiveGraphPolicy.Evaluation evaluation =
+        EffectiveGraphPolicy.evaluatePair(pair, decision(retained, dropped));
+    return MediatedGraphReport.createPrediction(pair, evaluation, dropped, Set.of(), projectGav);
   }
 
   static MediatedGraphReport reportForDroppedOutput(

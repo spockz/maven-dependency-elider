@@ -61,7 +61,8 @@ final class MultiReleaseJarTrimmer {
       final TrimPassThroughPlan passThrough,
       final Set<ArtifactCoordinate> forcedUnchanged)
       throws IOException {
-    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : passThrough.retainedLibraries()) {
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot :
+        TrimPassThroughPlanner.retainedAnalysisLibraries(request)) {
       if (!isMultiReleaseArchive(snapshot.filePath())) {
         continue;
       }
@@ -71,6 +72,7 @@ final class MultiReleaseJarTrimmer {
               .skippedArtifactIdentities()
               .contains(TrimPassThroughPlanner.artifactIdentity(snapshot.coordinate()));
       if (forced
+          || TrimPassThroughPlanner.unchangedScope(snapshot.coordinate())
           || skipped
           || MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(request.policy().mrjarStrategy())) {
         return true;

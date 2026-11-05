@@ -38,10 +38,27 @@ final class MediatedGraphReportPathBuilder {
       final List<ArtifactTrimRecord> trimRecords,
       final String projectGav)
       throws IOException {
+    return build(
+        snapshot,
+        statuses,
+        effectiveDrops,
+        trimRecords.stream()
+            .map(ArtifactTrimRecord::coordinate)
+            .collect(java.util.stream.Collectors.toSet()),
+        projectGav);
+  }
+
+  static List<MediatedGraphReport.ArtifactPath> build(
+      final ResolverArtifactGraphSnapshot snapshot,
+      final List<MediatedGraphReport.NodeStatus> statuses,
+      final Set<ArtifactCoordinate> effectiveDrops,
+      final Set<ArtifactCoordinate> trimCoordinates,
+      final String projectGav)
+      throws IOException {
     final Map<String, List<String>> pathsByNode = MediatedGraphShortestPaths.from(snapshot);
     final Map<String, MediatedGraphReport.NodeStatus> statusesByNode = statusesByNode(statuses);
     final Set<EffectiveGraphDecisionIndex.DecisionKey> dropKeys = decisionKeys(effectiveDrops);
-    final Set<EffectiveGraphDecisionIndex.DecisionKey> trimKeys = trimKeys(trimRecords);
+    final Set<EffectiveGraphDecisionIndex.DecisionKey> trimKeys = decisionKeys(trimCoordinates);
     final List<MediatedGraphReport.ArtifactPath> result = new ArrayList<>();
     for (final Map<String, Object> node : snapshot.nodes()) {
       appendPath(
@@ -138,16 +155,6 @@ final class MediatedGraphReportPathBuilder {
       final Set<ArtifactCoordinate> coordinates) {
     final Set<EffectiveGraphDecisionIndex.DecisionKey> result = new HashSet<>();
     coordinates.stream().map(EffectiveGraphDecisionIndex.DecisionKey::of).forEach(result::add);
-    return result;
-  }
-
-  private static Set<EffectiveGraphDecisionIndex.DecisionKey> trimKeys(
-      final List<ArtifactTrimRecord> records) {
-    final Set<EffectiveGraphDecisionIndex.DecisionKey> result = new HashSet<>();
-    records.stream()
-        .map(ArtifactTrimRecord::coordinate)
-        .map(EffectiveGraphDecisionIndex.DecisionKey::of)
-        .forEach(result::add);
     return result;
   }
 }

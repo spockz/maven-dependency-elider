@@ -178,6 +178,13 @@ for matching rules and configuration examples.
 
 * `target/dependency-elider-class-usage.json` (`-Delide.reportFile`): Detailed class-usage evidence.
 
+The `analyze` goal also writes a summary in the same format to
+`target/dependency-elider-analysis-report.json` (`-Delide.analysisSummaryFile`). It preserves the
+last applied report. Both goals print the same report fields; the `ANALYSIS` snapshot describes
+planned actions, while the `APPLIED` snapshot describes the published result. To replay analysis,
+run `dependency-elider:report -Delide.summaryFile=target/dependency-elider-analysis-report.json`.
+The report goal reads the snapshot and does not re-run the analysis or advisory lookup.
+
 The saved elision report and Analyze class-usage report include `exclusionReview`, with an explicit
 unavailable reason when the pre-resolution lifecycle capture is absent. Repeated exact exclusions
 count effective dependency paths once each and retain declaration and exclusion origins
@@ -243,6 +250,8 @@ For complete academic citations and analysis, see the [Project Rationale](depend
 Removing an artifact or class removes package bloat, but a formal VEX statement requires precise symbol-to-CVE mapping and proof tied to the resulting artifacts:
 
 * OSV Maven, CVE List v5 and manual vulnerability mappings independently contribute common findings. Automatic code paths normalize into sets and affected-version ranges combine by union, preserving gaps. Manual supplied fields have higher merge priority within their matching scope; omitted fields can be enriched. Provenance is retained for reporting, while the effective claims use the same applicability and verification rules. Severity does not affect merging. See [ADR-0014](docs/adr/0014-source-independent-vulnerability-findings.md) and the [vulnerability FAQ](docs/faq.md#which-sources-produce-vulnerability-findings).
+* An optional Snyk API lookup adds findings for the project's queried Maven package versions when enabled with an authorized account. See [Snyk configuration](dependency-elider-maven-plugin/src/site/markdown/usage.md#optional-snyk-package-findings).
+* Malformed CVE List and OSV records or affected entries are skipped independently. The affected source is reported as `PARTIAL` with diagnostics and a count, so the remaining findings can be used without implying complete coverage.
 * Omitted-code proof requires exact component/version binding, unambiguous attribution of the effective declared code to the original artifact, and physical absence of every required declared class from the resulting artifact. Manual priority and confidence labels cannot bypass those checks. Manual `LOW`/`MEDIUM` preserves review-only intent, including when code is enriched from automatic sources. Package-only findings, heuristic hints and unresolved attribution do not establish omission proof. The observation covers declared code, not the independent truth or completeness of an advisory. Precondition evidence additionally requires the complete opted-in inventory described in [ADR-0008](docs/adr/0008-precondition-gated-vex-attestations.md).
 * `elide.assumeConventionalJavaSourceLayout` controls the supported source-root translation and is retained with attribution in the saved report; it does not authorize ambiguous filename matching or waive physical verification. The `report` goal replays saved results without reassessing the current configuration. Package-only and heuristic findings retain source attribution and explicit unsupported data; advisory-only identities remain visible without fabricated CVEs. Removed, trimmed and unchanged describe inventory facts rather than mitigation.
 * Precondition VEX requires an exact prerequisite class as well as its coordinate, plus explicit `-Delide.preconditionClassPathComplete=true` confirmation that the declared Maven build inventory is complete. The opt-in cannot override detected downstream generators: both `compile` and `testCompile` must explicitly resolve `maven.compiler.proc=none` under a known Maven Compiler Plugin version from 3.13 through 3.x, with Java release or source/target at least 11. Processor paths, processor lists, compiler arguments other than the exact diagnostic-only `-Xlint:all`, custom compiler/executable modes, compiler plugin dependencies, and missing, unresolved, or conflicting settings leave proof incomplete. Unmodeled plugin executions before or after `INITIALIZE`, configured clean/site executions with unmodeled ordering, Enforcer executions at or after inventory capture or with unknown phases, filtered resources, resource plugin dependencies, unsupported packaging/extensions, and custom compiler/resource roots also suppress proof. Proof supports `jar` and `pom` packaging; `war` and `maven-plugin` packaging remain incomplete because their provider-generation paths are not modeled. The inventory includes `<build.directory>/generated-sources/annotations` and `<build.directory>/generated-test-sources/test-annotations`; custom generated-source directories suppress proof. Pre-capture Enforcer rules are limited to verified built-ins, without custom implementation attributes or plugin dependencies. Interface assertions are also rejected because javac can emit an additional helper class for them. The Maven request must contain one default-lifecycle goal, optionally preceded by `clean`; direct plugin goals and multiple lifecycle segments suppress proof. The publisher revalidates provider membership and digests before commit; serializers recheck the affected component path and digest. Unchanged plugin-owned OpenVEX is removed when no qualifying evidence remains. Modified or unowned output is preserved. With `elide.trimJars=false`, SBOM/VEX publication and stale VEX cleanup do not run. The claim does not cover providers added by later packaging or deployment runtime mechanisms. See [RQ-0013](docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
@@ -444,7 +453,7 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-basic-app ---
-[INFO] Elision report JSON snapshot: <PROJECT_ROOT>/examples/example-basic-app/target/dependency-elider-report.json
+[INFO] Dependency Elider report JSON snapshot: <PROJECT_ROOT>/examples/example-basic-app/target/dependency-elider-report.json
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
@@ -453,12 +462,12 @@ Process exit status: 0
 [INFO] Policy: retained=[commons-io:commons-io::jar:, org.apache.commons:commons-lang3::jar:], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
-[INFO] Whole artifacts dropped: 2 (original JAR file bytes: 942.11 KiB)
+[INFO] Whole artifacts dropped: 2 / 13 (original JAR file bytes: 942.11 KiB)
 [INFO] Program classes removed with dropped JARs: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
-[INFO] Raw trace decision drops before graph safety: 2
-[INFO] Applied bans: none
 [INFO]   - commons-codec:commons-codec:jar:1.19.0 (compile): 365.93 KiB original JAR, 115 class entries, 413.65 KiB
 [INFO]   - org.apache.httpcomponents:httpclient:jar:4.3.4 (compile): 576.18 KiB original JAR, 420 class entries, 1.11 MiB
+[INFO] Raw trace decision drops before graph safety: 2
+[INFO] Applied bans: none
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
 [INFO]   - org.apache.commons:commons-compress:jar:1.28.0 (compile): 535 classes, 1.93 MiB
 [INFO] Vulnerability findings: 1
@@ -466,41 +475,21 @@ Process exit status: 0
 [INFO]     Aliases: [CVE-2014-3577, GHSA-transcript-httpclient]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
-[INFO]     Code group: OMITTED; prerequisite group: OMITTED
 [INFO]     Declared code: [org.apache.http.conn.ssl.AbstractVerifier] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
-[INFO]     Heuristic leads: [CodeReference[kind=CLASS_NAME, value=org.apache.http.conn.ssl.AbstractVerifier, originalValues=[org.apache.http.conn.ssl.AbstractVerifier]]]
-[INFO]     Effective prerequisites: []
-[INFO]     Unresolved coverage: []
-[INFO]     Overridden fields: []
-[INFO]     Enriched fields: []
-[INFO]     Source: osv:GHSA-transcript-httpclient#heuristic:GHSA-transcript-httpclient#reference:0; records: [AdvisoryProvenance[origin=REFERENCE_URL, sourceRecordId=GHSA-transcript-httpclient#reference:0, sourceUrl=https://github.com/apache/httpcomponents-client/commit/51cc67567765d67f878f0dcef61b5ded454d3122, sourceRecordSha256=null]]
-[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=(,4.3.5), normalizedMavenRange=(,4.3.5), status=AFFECTED, diagnostic=null]]
-[INFO]       Original code: FieldValue[supplied=true, value=[CodeClaim[kind=HEURISTIC, reference=CodeReference[kind=CLASS_NAME, value=org.apache.http.conn.ssl.AbstractVerifier, originalValues=[org.apache.http.conn.ssl.AbstractVerifier]]]]]; prerequisites: FieldValue[supplied=false, value=null]
-[INFO]       Priority: AUTOMATIC; intent: AUTO_VERIFY
-[INFO]     Source: osv:GHSA-transcript-httpclient#org.apache.httpcomponents:httpclient; records: [AdvisoryProvenance[origin=OSV, sourceRecordId=GHSA-transcript-httpclient, sourceUrl=null, sourceRecordSha256=null], AdvisoryProvenance[origin=REFERENCE_URL, sourceRecordId=GHSA-transcript-httpclient#reference:0, sourceUrl=https://github.com/apache/httpcomponents-client/commit/51cc67567765d67f878f0dcef61b5ded454d3122, sourceRecordSha256=null]]
-[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=(,4.3.5), normalizedMavenRange=(,4.3.5), status=AFFECTED, diagnostic=null]]
-[INFO]       Original code: FieldValue[supplied=false, value=null]; prerequisites: FieldValue[supplied=false, value=null]
-[INFO]       Priority: AUTOMATIC; intent: AUTO_VERIFY
-[INFO] Source observations: 2
-[INFO]   - CVE_LIST CURRENT; revision: transcript-empty-cve-fixture; last success: 2026-10-31T00:00:00Z; contributions: 0
-[INFO]   - OSV CURRENT; revision: transcript-osv-fixture; last success: 2026-10-31T00:00:00Z; contributions: 3
-[INFO]   Repeated POM exclusions (advisory only):
+[INFO]     Heuristic leads: [org.apache.http.conn.ssl.AbstractVerifier]
+[INFO]     Sources: [OSV]
+[INFO] CVE Sources:
+[INFO]   - CVE_LIST CURRENT
+[INFO]   - OSV CURRENT
+[INFO] POM exclusion review (advisory only):
+[INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven
 [INFO]   supplied no source location/identity or the location matched zero or multiple
 [INFO]   original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
 [INFO]   Full evidence is in the JSON snapshot fields
 [INFO]   exclusionReview.snapshot.dependencies and
 [INFO]   exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
-[INFO]   a global ban changes this project's output and may remove content needed by
-[INFO]   downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, CLASS_TRIMMED]
@@ -542,7 +531,7 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-spring-boot-app ---
-[INFO] Elision report JSON snapshot: <PROJECT_ROOT>/examples/example-spring-boot-app/target/dependency-elider-report.json
+[INFO] Dependency Elider report JSON snapshot: <PROJECT_ROOT>/examples/example-spring-boot-app/target/dependency-elider-report.json
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
@@ -551,7 +540,7 @@ Process exit status: 0
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
-[INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
+[INFO] Whole artifacts dropped: 0 / 91 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
 [INFO] Applied bans: none
@@ -573,26 +562,18 @@ Process exit status: 0
 [INFO]   - org.webjars:webjars-locator-core:jar:0.58 (runtime): 1 classes, 10.66 KiB
 [INFO]   - org.yaml:snakeyaml:jar:2.2 (compile): 0 classes, 2.65 KiB
 [INFO] Vulnerability findings: none
-[INFO] Source observations: 2
-[INFO]   - CVE_LIST CURRENT; revision: transcript-empty-cve-fixture; last success: 2026-10-31T00:00:00Z; contributions: 0
-[INFO]   - OSV CURRENT; revision: transcript-osv-fixture; last success: 2026-10-31T00:00:00Z; contributions: 3
-[INFO]   Repeated POM exclusions (advisory only):
+[INFO] CVE Sources:
+[INFO]   - CVE_LIST CURRENT
+[INFO]   - OSV CURRENT
+[INFO] POM exclusion review (advisory only):
+[INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 1529 dependency or exclusion origins.
 [INFO]   Maven supplied no source location/identity or the location matched zero or
 [INFO]   multiple original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
 [INFO]   Full evidence is in the JSON snapshot fields
 [INFO]   exclusionReview.snapshot.dependencies and
 [INFO]   exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
-[INFO]   a global ban changes this project's output and may remove content needed by
-[INFO]   downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n7} [RETAINED, CLASS_TRIMMED]
@@ -628,7 +609,7 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-cve-unused-app ---
-[INFO] Elision report JSON snapshot: <PROJECT_ROOT>/examples/example-cve-unused-app/target/dependency-elider-report.json
+[INFO] Dependency Elider report JSON snapshot: <PROJECT_ROOT>/examples/example-cve-unused-app/target/dependency-elider-report.json
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
@@ -637,7 +618,7 @@ Process exit status: 0
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
-[INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
+[INFO] Whole artifacts dropped: 0 / 25 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
 [INFO] Applied bans: none
@@ -653,41 +634,22 @@ Process exit status: 0
 [INFO]     Aliases: [CVE-2022-42889, GHSA-transcript-commons-text]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: DECLARED_CODE_ABSENT; All effective declared code and its nested classes are absent from the trimmed artifact. This observation is limited to the declared code and does not establish declaration completeness.
-[INFO]     Code group: DECLARED; prerequisite group: OMITTED
 [INFO]     Declared code: [org.apache.commons.text.lookup.StringLookup] RESOLVED; classes: [org.apache.commons.text.lookup.StringLookup]; reasons: []
-[INFO]     Heuristic leads: []
-[INFO]     Effective prerequisites: []
-[INFO]     Unresolved coverage: []
 [INFO]     Overridden fields: [intent]
 [INFO]     Enriched fields: [code]
-[INFO]     Source: effective-project-pom:vulnerabilityMappings[0]; records: [AdvisoryProvenance[origin=POM, sourceRecordId=effective-project-pom:vulnerabilityMappings[0], sourceUrl=https://nvd.nist.gov/vuln/detail/CVE-2022-42889, sourceRecordSha256=null]]
-[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=[1.0,1.10.0), normalizedMavenRange=[1.0,1.10.0), status=AFFECTED, diagnostic=null]]
-[INFO]       Original code: FieldValue[supplied=true, value=[CodeClaim[kind=DECLARED, reference=CodeReference[kind=CLASS_NAME, value=org.apache.commons.text.lookup.StringLookup, originalValues=[org.apache.commons.text.lookup.StringLookup]]]]]; prerequisites: FieldValue[supplied=false, value=null]
-[INFO]       Priority: MANUAL; intent: AUTO_VERIFY
-[INFO]     Source: osv:GHSA-transcript-commons-text#org.apache.commons:commons-text; records: [AdvisoryProvenance[origin=OSV, sourceRecordId=GHSA-transcript-commons-text, sourceUrl=null, sourceRecordSha256=null]]
-[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=[1.5,1.10.0), normalizedMavenRange=[1.5,1.10.0), status=AFFECTED, diagnostic=null]]
-[INFO]       Original code: FieldValue[supplied=false, value=null]; prerequisites: FieldValue[supplied=false, value=null]
-[INFO]       Priority: AUTOMATIC; intent: AUTO_VERIFY
-[INFO] Source observations: 2
-[INFO]   - CVE_LIST CURRENT; revision: transcript-empty-cve-fixture; last success: 2026-10-31T00:00:00Z; contributions: 0
-[INFO]   - OSV CURRENT; revision: transcript-osv-fixture; last success: 2026-10-31T00:00:00Z; contributions: 3
-[INFO]   Repeated POM exclusions (advisory only):
+[INFO]     Sources: [OSV, POM]
+[INFO] CVE Sources:
+[INFO]   - CVE_LIST CURRENT
+[INFO]   - OSV CURRENT
+[INFO] POM exclusion review (advisory only):
+[INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
 [INFO]   Maven supplied no source location/identity or the location matched zero or
 [INFO]   multiple original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
 [INFO]   Full evidence is in the JSON snapshot fields
 [INFO]   exclusionReview.snapshot.dependencies and
 [INFO]   exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
-[INFO]   a global ban changes this project's output and may remove content needed by
-[INFO]   downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n3} [RETAINED]
@@ -723,7 +685,7 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:report (default-cli) @ example-cve-safe-class-app ---
-[INFO] Elision report JSON snapshot: <PROJECT_ROOT>/examples/example-cve-safe-class-app/target/dependency-elider-report.json
+[INFO] Dependency Elider report JSON snapshot: <PROJECT_ROOT>/examples/example-cve-safe-class-app/target/dependency-elider-report.json
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: last successful elide run at <TIMESTAMP>
@@ -732,7 +694,7 @@ Process exit status: 0
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
-[INFO] Whole artifacts dropped: 0 (original JAR file bytes: 0 B)
+[INFO] Whole artifacts dropped: 0 / 19 (original JAR file bytes: 0 B)
 [INFO] Program classes removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO] Raw trace decision drops before graph safety: 0
 [INFO] Applied bans: none
@@ -740,39 +702,22 @@ Process exit status: 0
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
 [INFO] Vulnerability findings: 1
 [INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
-[INFO]     Aliases: [CVE-2025-11226]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: PREREQUISITES_ABSENT; Required prerequisite pairs org.codehaus.janino:janino / org.codehaus.janino.ClassBodyEvaluator are absent from the complete declared Maven inventory. The proof does not cover providers introduced outside that inventory.
-[INFO]     Code group: OMITTED; prerequisite group: DECLARED
-[INFO]     Heuristic leads: []
-[INFO]     Effective prerequisites: [PrerequisiteClaim[requiresDependency=org.codehaus.janino:janino, requiresClass=org.codehaus.janino.ClassBodyEvaluator]]
-[INFO]     Unresolved coverage: []
-[INFO]     Overridden fields: []
-[INFO]     Enriched fields: []
-[INFO]     Source: effective-project-pom:vulnerabilityMappings[0]; records: [AdvisoryProvenance[origin=POM, sourceRecordId=effective-project-pom:vulnerabilityMappings[0], sourceUrl=null, sourceRecordSha256=null]]
-[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=(,1.6.0), normalizedMavenRange=(,1.6.0), status=AFFECTED, diagnostic=null]]
-[INFO]       Original code: FieldValue[supplied=false, value=null]; prerequisites: FieldValue[supplied=true, value=[PrerequisiteClaim[requiresDependency=org.codehaus.janino:janino, requiresClass=org.codehaus.janino.ClassBodyEvaluator]]]
-[INFO]       Priority: MANUAL; intent: AUTO_VERIFY
-[INFO] Source observations: 2
-[INFO]   - CVE_LIST CURRENT; revision: transcript-empty-cve-fixture; last success: 2026-10-31T00:00:00Z; contributions: 0
-[INFO]   - OSV CURRENT; revision: transcript-osv-fixture; last success: 2026-10-31T00:00:00Z; contributions: 3
-[INFO]   Repeated POM exclusions (advisory only):
+[INFO]     Effective prerequisites: [org.codehaus.janino:janino / org.codehaus.janino.ClassBodyEvaluator]
+[INFO]     Sources: [POM]
+[INFO] CVE Sources:
+[INFO]   - CVE_LIST CURRENT
+[INFO]   - OSV CURRENT
+[INFO] POM exclusion review (advisory only):
+[INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
 [INFO]   Maven supplied no source location/identity or the location matched zero or
 [INFO]   multiple original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
 [INFO]   Full evidence is in the JSON snapshot fields
 [INFO]   exclusionReview.snapshot.dependencies and
 [INFO]   exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
-[INFO]   a global ban changes this project's output and may remove content needed by
-[INFO]   downstream consumers.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-safe-class-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) {nodeId=n1} [RETAINED]
@@ -791,7 +736,7 @@ Process exit status: 0
 
 ## Dry-Run Analysis Output (`analyze`)
 
-The `analyze` goal previews dependencies and byte savings without changing Maven artifact views or resolver plans. It writes class-usage evidence and a `dependencyPrediction` section to `elide.reportFile`. The prediction records retained/elided coordinates, planned class removals marked `PLANNED_UNVERIFIED`, environment/inventory/operation fingerprints, and whether it used the captured effective Resolver graph or a detached current-model resolution. Detached provenance describes only that request-local resolution. Analyze leaves configured vulnerability mappings unresolved unless a published trim archive supports an omission proof. Prediction does not stage or commit trim archives or publish output-manifest/generation state. MRJAR analysis may create temporary classpath projections in an operation-owned directory; that directory is removed when prediction completes or fails. The transcript invocation places the report under ignored `.scratch/`:
+The `analyze` goal previews dependencies and byte savings without changing Maven artifact views or resolver plans. It writes class-usage evidence and a `dependencyPrediction` section to `elide.reportFile`. The prediction records retained/elided coordinates, planned class removals marked `PLANNED_UNVERIFIED`, environment/inventory/operation fingerprints, and whether it used the captured effective Resolver graph or a detached current-model resolution. Detached provenance describes only that request-local resolution. Its separate summary reports `PLANNED_CODE_ABSENT` when all attributed classes for a complete declared code group are planned for removal. This is a forecast, not proof that an output archive lacks the code, a scanner finding will disappear, or a CVE is mitigated. Analyze does not publish VEX, trim archives, or output-manifest/generation state. MRJAR analysis may create temporary classpath projections in an operation-owned directory; that directory is removed when prediction completes or fails. The transcript invocation places the class-usage report under ignored `.scratch/`:
 
 With or without the core extension, `analyze` can predict strict `banishedDependencies` for supported compile/runtime JARs, using either a detached current-model Resolver graph or the captured effective graph with a complete original-input audit. The schema-1 `dependencyPrediction.banPlan` records each request as matched (`FORCED_ABSENT_AFTER_RESOLUTION`), excluded before resolution (`EXCLUDED_BEFORE_RESOLUTION`), or unmatched (`UNMATCHED`); every prediction row has `applied=false`. Matched and pre-resolution-excluded requests require complete source roots (`elide.sourceRootsComplete=true`) or complete production class output (`elide.productionClassesComplete=true`); the two assertions are mutually exclusive. A request matching an unsupported scope or type fails closed. The plan also fails if runtime trace, source, production bytecode, dynamic metadata, retained-resource/provider closure, or graph protection requires a banned artifact. An unmatched entry is not an absence proof. Analyze replaces the report only after prediction and vulnerability assessment succeed; it never changes Maven artifact views.
 
@@ -822,33 +767,61 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:analyze (default-cli) @ example-basic-app ---
-[INFO] Dependency Elider analysis summary
-[INFO]   Artifacts that would be elided by this analysis: 2 / 13 (15.4%)
-[INFO]   Estimated original JAR bytes for those artifacts: 942.11 KiB (sum of original on-disk input JAR sizes; final package delta may differ)
-[INFO]   Program class entries in JARs that would be dropped: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
-[INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
-[INFO]   Vulnerability findings (analysis only; no trim proof):
-[INFO]     CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4: AFFECTED; UNVERIFIED; PLANNED_UNVERIFIED
-[INFO]   Vulnerability sources:
-[INFO]     OSV: CURRENT
-[INFO]     CVE_LIST: CURRENT
-[INFO]   Repeated POM exclusions (advisory only):
+[INFO] Dependency Elider report
+[INFO] Project: io.github.spockz:example-basic-app:0.1.0-SNAPSHOT
+[INFO] Snapshot: analysis prediction at <TIMESTAMP>
+[INFO] Analysis target JDK release: 21
+[INFO] Elider runtime JDK release: <RUNTIME_RELEASE>
+[INFO] Policy: retained=[commons-io:commons-io::jar:, org.apache.commons:commons-lang3::jar:], banished=[]
+[INFO] The snapshot does not revalidate changed inputs when this goal runs.
+[INFO] Conventional Java source layout assumption saved for this run: true
+[INFO] Whole artifacts that would be dropped: 2 / 13 (original JAR file bytes: 942.11 KiB)
+[INFO] Program classes that would be removed with dropped JARs: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
+[INFO]   - commons-codec:commons-codec:jar:1.19.0 (compile): 365.93 KiB original JAR, 115 class entries, 413.65 KiB
+[INFO]   - org.apache.httpcomponents:httpclient:jar:4.3.4 (compile): 576.18 KiB original JAR, 420 class entries, 1.11 MiB
+[INFO] Raw trace decision drops before graph safety: 2
+[INFO] Planned bans: none
+[INFO] Program classes that would be pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: unknown; excludes module descriptors and archive metadata)
+[INFO]   - org.apache.commons:commons-compress:jar:1.28.0 (compile): 535 classes, unknown
+[INFO]     Would remove classes: [org.apache.commons.compress.CompressException, org.apache.commons.compress.CompressFilterOutputStream, org.apache.commons.compress.MemoryLimitException, org.apache.commons.compress.PasswordRequiredException, org.apache.commons.compress.archivers.ArchiveException, org.apache.commons.compress.archivers.ArchiveInputStream, org.apache.commons.compress.archivers.ArchiveInputStream$ArchiveEntryIOIterator, org.apache.commons.compress.archivers.ArchiveOutputStream, org.apache.commons.compress.archivers.ArchiveStreamFactory, org.apache.commons.compress.archivers.ArchiveStreamProvider, org.apache.commons.compress.archivers.Lister, org.apache.commons.compress.archivers.StreamingNotSupportedException, org.apache.commons.compress.archivers.ar.ArArchiveEntry, org.apache.commons.compress.archivers.ar.ArArchiveInputStream, org.apache.commons.compress.archivers.ar.ArArchiveOutputStream, org.apache.commons.compress.archivers.ar.package-info, org.apache.commons.compress.archivers.arj.ArjArchiveEntry, org.apache.commons.compress.archivers.arj.ArjArchiveEntry$HostOs, org.apache.commons.compress.archivers.arj.ArjArchiveInputStream, org.apache.commons.compress.archivers.arj.LocalFileHeader, org.apache.commons.compress.archivers.arj.LocalFileHeader$FileTypes, org.apache.commons.compress.archivers.arj.LocalFileHeader$Flags, org.apache.commons.compress.archivers.arj.LocalFileHeader$Methods, org.apache.commons.compress.archivers.arj.MainHeader, org.apache.commons.compress.archivers.arj.MainHeader$Flags, org.apache.commons.compress.archivers.arj.MainHeader$HostOS, org.apache.commons.compress.archivers.arj.package-info, org.apache.commons.compress.archivers.cpio.CpioArchiveEntry, org.apache.commons.compress.archivers.cpio.CpioArchiveInputStream, org.apache.commons.compress.archivers.cpio.CpioArchiveOutputStream, org.apache.commons.compress.archivers.cpio.CpioConstants, org.apache.commons.compress.archivers.cpio.CpioUtil, org.apache.commons.compress.archivers.cpio.package-info, org.apache.commons.compress.archivers.dump.Dirent, org.apache.commons.compress.archivers.dump.DumpArchiveConstants, org.apache.commons.compress.archivers.dump.DumpArchiveConstants$COMPRESSION_TYPE, org.apache.commons.compress.archivers.dump.DumpArchiveConstants$SEGMENT_TYPE, org.apache.commons.compress.archivers.dump.DumpArchiveEntry, org.apache.commons.compress.archivers.dump.DumpArchiveEntry$PERMISSION, org.apache.commons.compress.archivers.dump.DumpArchiveEntry$TYPE, org.apache.commons.compress.archivers.dump.DumpArchiveEntry$TapeSegmentHeader, org.apache.commons.compress.archivers.dump.DumpArchiveException, org.apache.commons.compress.archivers.dump.DumpArchiveInputStream, org.apache.commons.compress.archivers.dump.DumpArchiveSummary, org.apache.commons.compress.archivers.dump.DumpArchiveUtil, org.apache.commons.compress.archivers.dump.InvalidFormatException, org.apache.commons.compress.archivers.dump.ShortFileException, org.apache.commons.compress.archivers.dump.TapeInputStream, org.apache.commons.compress.archivers.dump.TapeInputStream$1, org.apache.commons.compress.archivers.dump.UnrecognizedFormatException, org.apache.commons.compress.archivers.dump.UnsupportedCompressionAlgorithmException, org.apache.commons.compress.archivers.dump.package-info, org.apache.commons.compress.archivers.examples.Archiver, org.apache.commons.compress.archivers.examples.Archiver$1, org.apache.commons.compress.archivers.examples.Archiver$ArchiverFileVisitor, org.apache.commons.compress.archivers.examples.CloseableConsumer, org.apache.commons.compress.archivers.examples.CloseableConsumerAdapter, org.apache.commons.compress.archivers.examples.Expander, org.apache.commons.compress.archivers.examples.Expander$ArchiveEntryBiConsumer, org.apache.commons.compress.archivers.examples.Expander$ArchiveEntrySupplier, org.apache.commons.compress.archivers.examples.package-info, org.apache.commons.compress.archivers.jar.JarArchiveEntry, org.apache.commons.compress.archivers.jar.JarArchiveInputStream, org.apache.commons.compress.archivers.jar.JarArchiveOutputStream, org.apache.commons.compress.archivers.jar.package-info, org.apache.commons.compress.archivers.package-info, org.apache.commons.compress.archivers.sevenz.AES256Options, org.apache.commons.compress.archivers.sevenz.AES256SHA256Decoder, org.apache.commons.compress.archivers.sevenz.AES256SHA256Decoder$1, org.apache.commons.compress.archivers.sevenz.AES256SHA256Decoder$AES256SHA256DecoderInputStream, org.apache.commons.compress.archivers.sevenz.AES256SHA256Decoder$AES256SHA256DecoderOutputStream, org.apache.commons.compress.archivers.sevenz.AbstractCoder, org.apache.commons.compress.archivers.sevenz.Archive, org.apache.commons.compress.archivers.sevenz.BindPair, org.apache.commons.compress.archivers.sevenz.BoundedSeekableByteChannelInputStream, org.apache.commons.compress.archivers.sevenz.CLI, org.apache.commons.compress.archivers.sevenz.CLI$1, org.apache.commons.compress.archivers.sevenz.CLI$Mode, org.apache.commons.compress.archivers.sevenz.CLI$Mode$1, org.apache.commons.compress.archivers.sevenz.Coder, org.apache.commons.compress.archivers.sevenz.Coders, org.apache.commons.compress.archivers.sevenz.Coders$1, org.apache.commons.compress.archivers.sevenz.Coders$BCJDecoder, org.apache.commons.compress.archivers.sevenz.Coders$BZIP2Decoder, org.apache.commons.compress.archivers.sevenz.Coders$CopyDecoder, org.apache.commons.compress.archivers.sevenz.Coders$Deflate64Decoder, org.apache.commons.compress.archivers.sevenz.Coders$DeflateDecoder, org.apache.commons.compress.archivers.sevenz.Coders$DeflateDecoder$DeflateDecoderInputStream, org.apache.commons.compress.archivers.sevenz.Coders$DeflateDecoder$DeflateDecoderOutputStream, org.apache.commons.compress.archivers.sevenz.DeltaDecoder, org.apache.commons.compress.archivers.sevenz.Folder, org.apache.commons.compress.archivers.sevenz.LZMA2Decoder, org.apache.commons.compress.archivers.sevenz.LZMADecoder, org.apache.commons.compress.archivers.sevenz.NID, org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry, org.apache.commons.compress.archivers.sevenz.SevenZFile, org.apache.commons.compress.archivers.sevenz.SevenZFile$1, org.apache.commons.compress.archivers.sevenz.SevenZFile$2, org.apache.commons.compress.archivers.sevenz.SevenZFile$ArchiveStatistics, org.apache.commons.compress.archivers.sevenz.SevenZFile$Builder, org.apache.commons.compress.archivers.sevenz.SevenZFileOptions, org.apache.commons.compress.archivers.sevenz.SevenZFileOptions$1, org.apache.commons.compress.archivers.sevenz.SevenZFileOptions$Builder, org.apache.commons.compress.archivers.sevenz.SevenZMethod, org.apache.commons.compress.archivers.sevenz.SevenZMethodConfiguration, org.apache.commons.compress.archivers.sevenz.SevenZOutputFile, org.apache.commons.compress.archivers.sevenz.SevenZOutputFile$1, org.apache.commons.compress.archivers.sevenz.SevenZOutputFile$OutputStreamWrapper, org.apache.commons.compress.archivers.sevenz.StartHeader, org.apache.commons.compress.archivers.sevenz.StreamMap, org.apache.commons.compress.archivers.sevenz.SubStreamsInfo, org.apache.commons.compress.archivers.sevenz.package-info, org.apache.commons.compress.archivers.tar.TarArchiveEntry, org.apache.commons.compress.archivers.tar.TarArchiveInputStream, org.apache.commons.compress.archivers.tar.TarArchiveOutputStream, org.apache.commons.compress.archivers.tar.TarArchiveSparseEntry, org.apache.commons.compress.archivers.tar.TarArchiveSparseZeroInputStream, org.apache.commons.compress.archivers.tar.TarArchiveStructSparse, org.apache.commons.compress.archivers.tar.TarConstants, org.apache.commons.compress.archivers.tar.TarFile, org.apache.commons.compress.archivers.tar.TarFile$BoundedTarEntryInputStream, org.apache.commons.compress.archivers.tar.TarGnuSparseKeys, org.apache.commons.compress.archivers.tar.TarUtils, org.apache.commons.compress.archivers.tar.TarUtils$1, org.apache.commons.compress.archivers.tar.package-info, org.apache.commons.compress.archivers.zip.BinaryTree, org.apache.commons.compress.archivers.zip.BitStream, org.apache.commons.compress.archivers.zip.CircularBuffer, org.apache.commons.compress.archivers.zip.DefaultBackingStoreSupplier, org.apache.commons.compress.archivers.zip.ExplodingInputStream, org.apache.commons.compress.archivers.zip.FileRandomAccessOutputStream, org.apache.commons.compress.archivers.zip.InflaterInputStreamWithStatistics, org.apache.commons.compress.archivers.zip.ParallelScatterZipCreator, org.apache.commons.compress.archivers.zip.ParallelScatterZipCreator$1, org.apache.commons.compress.archivers.zip.RandomAccessOutputStream, org.apache.commons.compress.archivers.zip.ScatterStatistics, org.apache.commons.compress.archivers.zip.ScatterZipOutputStream, org.apache.commons.compress.archivers.zip.ScatterZipOutputStream$CompressedEntry, org.apache.commons.compress.archivers.zip.ScatterZipOutputStream$ZipEntryWriter, org.apache.commons.compress.archivers.zip.SeekableChannelRandomAccessOutputStream, org.apache.commons.compress.archivers.zip.StreamCompressor, org.apache.commons.compress.archivers.zip.StreamCompressor$DataOutputCompressor, org.apache.commons.compress.archivers.zip.StreamCompressor$OutputStreamCompressor, org.apache.commons.compress.archivers.zip.StreamCompressor$ScatterGatherBackingStoreCompressor, org.apache.commons.compress.archivers.zip.StreamCompressor$SeekableByteChannelCompressor, org.apache.commons.compress.archivers.zip.UnshrinkingInputStream, org.apache.commons.compress.archivers.zip.Zip64Mode, org.apache.commons.compress.archivers.zip.Zip64RequiredException, org.apache.commons.compress.archivers.zip.ZipArchiveEntryPredicate, org.apache.commons.compress.archivers.zip.ZipArchiveEntryRequest, org.apache.commons.compress.archivers.zip.ZipArchiveEntryRequestSupplier, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$BoundCountInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$CurrentEntry, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream$CurrentEntry, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream$EntryMetaData, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream$UnicodeExtraFieldPolicy, org.apache.commons.compress.archivers.zip.ZipFile, org.apache.commons.compress.archivers.zip.ZipFile$1, org.apache.commons.compress.archivers.zip.ZipFile$2, org.apache.commons.compress.archivers.zip.ZipFile$BoundedFileChannelInputStream, org.apache.commons.compress.archivers.zip.ZipFile$Builder, org.apache.commons.compress.archivers.zip.ZipFile$Entry, org.apache.commons.compress.archivers.zip.ZipFile$NameAndComment, org.apache.commons.compress.archivers.zip.ZipFile$StoredStatisticsStream, org.apache.commons.compress.archivers.zip.ZipIoUtil, org.apache.commons.compress.archivers.zip.ZipSplitOutputStream, org.apache.commons.compress.archivers.zip.ZipSplitReadOnlySeekableByteChannel, org.apache.commons.compress.archivers.zip.ZipSplitReadOnlySeekableByteChannel$1, org.apache.commons.compress.archivers.zip.ZipSplitReadOnlySeekableByteChannel$ZipSplitSegmentComparator, org.apache.commons.compress.archivers.zip.package-info, org.apache.commons.compress.changes.Change, org.apache.commons.compress.changes.Change$ChangeType, org.apache.commons.compress.changes.ChangeSet, org.apache.commons.compress.changes.ChangeSetPerformer, org.apache.commons.compress.changes.ChangeSetPerformer$ArchiveEntryIterator, org.apache.commons.compress.changes.ChangeSetPerformer$ArchiveInputStreamIterator, org.apache.commons.compress.changes.ChangeSetPerformer$ZipFileIterator, org.apache.commons.compress.changes.ChangeSetResults, org.apache.commons.compress.changes.package-info, org.apache.commons.compress.compressors.CompressorException, org.apache.commons.compress.compressors.CompressorInputStream, org.apache.commons.compress.compressors.CompressorOutputStream, org.apache.commons.compress.compressors.CompressorStreamFactory, org.apache.commons.compress.compressors.CompressorStreamProvider, org.apache.commons.compress.compressors.FileNameUtil, org.apache.commons.compress.compressors.brotli.BrotliCompressorInputStream, org.apache.commons.compress.compressors.brotli.BrotliUtils, org.apache.commons.compress.compressors.brotli.BrotliUtils$CachedAvailability, org.apache.commons.compress.compressors.brotli.package-info, org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream, org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream$Data, org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream, org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream$Data, org.apache.commons.compress.compressors.bzip2.BZip2Constants, org.apache.commons.compress.compressors.bzip2.BZip2Utils, org.apache.commons.compress.compressors.bzip2.BlockSort, org.apache.commons.compress.compressors.bzip2.CRC, org.apache.commons.compress.compressors.bzip2.Rand, org.apache.commons.compress.compressors.bzip2.package-info, org.apache.commons.compress.compressors.deflate.DeflateCompressorInputStream, org.apache.commons.compress.compressors.deflate.DeflateCompressorOutputStream, org.apache.commons.compress.compressors.deflate.DeflateParameters, org.apache.commons.compress.compressors.deflate.package-info, org.apache.commons.compress.compressors.deflate64.Deflate64CompressorInputStream, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$1, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$BinaryTreeNode, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$DecoderState, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$DecodingMemory, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$HuffmanCodes, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$InitialState, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$UncompressedState, org.apache.commons.compress.compressors.deflate64.HuffmanState, org.apache.commons.compress.compressors.deflate64.package-info, org.apache.commons.compress.compressors.gzip.ExtraField, org.apache.commons.compress.compressors.gzip.ExtraField$SubField, org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream, org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream$1, org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream$Builder, org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream, org.apache.commons.compress.compressors.gzip.GzipParameters, org.apache.commons.compress.compressors.gzip.GzipParameters$OS, org.apache.commons.compress.compressors.gzip.GzipUtils, org.apache.commons.compress.compressors.gzip.package-info, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorInputStream, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorInputStream$State, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorOutputStream, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorOutputStream$1, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorOutputStream$Pair, org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorInputStream, org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream, org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream$BlockSize, org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream$Parameters, org.apache.commons.compress.compressors.lz4.XXHash32, org.apache.commons.compress.compressors.lz4.package-info, org.apache.commons.compress.compressors.lz77support.AbstractLZ77CompressorInputStream, org.apache.commons.compress.compressors.lz77support.LZ77Compressor, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$AbstractReference, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$BackReference, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$Block, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$Block$BlockType, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$Callback, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$EOD, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$LiteralBlock, org.apache.commons.compress.compressors.lz77support.Parameters, org.apache.commons.compress.compressors.lz77support.Parameters$1, org.apache.commons.compress.compressors.lz77support.Parameters$Builder, org.apache.commons.compress.compressors.lz77support.package-info, org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream, org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream$1, org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream$Builder, org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream, org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream$1, org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream$Builder, org.apache.commons.compress.compressors.lzma.LZMAUtils, org.apache.commons.compress.compressors.lzma.LZMAUtils$CachedAvailability, org.apache.commons.compress.compressors.lzma.package-info, org.apache.commons.compress.compressors.lzw.LZWInputStream, org.apache.commons.compress.compressors.lzw.package-info, org.apache.commons.compress.compressors.pack200.AbstractStreamBridge, org.apache.commons.compress.compressors.pack200.InMemoryCachingStreamBridge, org.apache.commons.compress.compressors.pack200.Pack200CompressorInputStream, org.apache.commons.compress.compressors.pack200.Pack200CompressorOutputStream, org.apache.commons.compress.compressors.pack200.Pack200Strategy, org.apache.commons.compress.compressors.pack200.Pack200Strategy$1, org.apache.commons.compress.compressors.pack200.Pack200Strategy$2, org.apache.commons.compress.compressors.pack200.Pack200Utils, org.apache.commons.compress.compressors.pack200.TempFileCachingStreamBridge, org.apache.commons.compress.compressors.pack200.TempFileCachingStreamBridge$1, org.apache.commons.compress.compressors.pack200.package-info, org.apache.commons.compress.compressors.package-info, org.apache.commons.compress.compressors.snappy.FramedSnappyCompressorInputStream, org.apache.commons.compress.compressors.snappy.FramedSnappyCompressorOutputStream, org.apache.commons.compress.compressors.snappy.FramedSnappyDialect, org.apache.commons.compress.compressors.snappy.SnappyCompressorInputStream, org.apache.commons.compress.compressors.snappy.SnappyCompressorInputStream$State, org.apache.commons.compress.compressors.snappy.SnappyCompressorOutputStream, org.apache.commons.compress.compressors.snappy.SnappyCompressorOutputStream$1, org.apache.commons.compress.compressors.snappy.package-info, org.apache.commons.compress.compressors.xz.XZCompressorInputStream, org.apache.commons.compress.compressors.xz.XZCompressorInputStream$1, org.apache.commons.compress.compressors.xz.XZCompressorInputStream$Builder, org.apache.commons.compress.compressors.xz.XZCompressorOutputStream, org.apache.commons.compress.compressors.xz.XZCompressorOutputStream$1, org.apache.commons.compress.compressors.xz.XZCompressorOutputStream$Builder, org.apache.commons.compress.compressors.xz.XZUtils, org.apache.commons.compress.compressors.xz.XZUtils$CachedAvailability, org.apache.commons.compress.compressors.xz.package-info, org.apache.commons.compress.compressors.z.ZCompressorInputStream, org.apache.commons.compress.compressors.z.package-info, org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream, org.apache.commons.compress.compressors.zstandard.ZstdCompressorOutputStream, org.apache.commons.compress.compressors.zstandard.ZstdCompressorOutputStream$1, org.apache.commons.compress.compressors.zstandard.ZstdCompressorOutputStream$Builder, org.apache.commons.compress.compressors.zstandard.ZstdConstants, org.apache.commons.compress.compressors.zstandard.ZstdUtils, org.apache.commons.compress.compressors.zstandard.ZstdUtils$CachedAvailability, org.apache.commons.compress.compressors.zstandard.package-info, org.apache.commons.compress.harmony.archive.internal.nls.Messages, org.apache.commons.compress.harmony.archive.internal.nls.package-info, org.apache.commons.compress.harmony.pack200.Archive, org.apache.commons.compress.harmony.pack200.Archive$PackingFile, org.apache.commons.compress.harmony.pack200.Archive$SegmentUnit, org.apache.commons.compress.harmony.pack200.AttributeDefinitionBands, org.apache.commons.compress.harmony.pack200.AttributeDefinitionBands$AttributeDefinition, org.apache.commons.compress.harmony.pack200.BHSDCodec, org.apache.commons.compress.harmony.pack200.BandSet, org.apache.commons.compress.harmony.pack200.BandSet$BandAnalysisResults, org.apache.commons.compress.harmony.pack200.BandSet$BandData, org.apache.commons.compress.harmony.pack200.BcBands, org.apache.commons.compress.harmony.pack200.CPClass, org.apache.commons.compress.harmony.pack200.CPConstant, org.apache.commons.compress.harmony.pack200.CPDouble, org.apache.commons.compress.harmony.pack200.CPFloat, org.apache.commons.compress.harmony.pack200.CPInt, org.apache.commons.compress.harmony.pack200.CPLong, org.apache.commons.compress.harmony.pack200.CPMethodOrField, org.apache.commons.compress.harmony.pack200.CPNameAndType, org.apache.commons.compress.harmony.pack200.CPSignature, org.apache.commons.compress.harmony.pack200.CPString, org.apache.commons.compress.harmony.pack200.CPUTF8, org.apache.commons.compress.harmony.pack200.CanonicalCodecFamilies, org.apache.commons.compress.harmony.pack200.ClassBands, org.apache.commons.compress.harmony.pack200.ClassBands$TempParamAnnotation, org.apache.commons.compress.harmony.pack200.Codec, org.apache.commons.compress.harmony.pack200.CodecEncoding, org.apache.commons.compress.harmony.pack200.ConstantPoolEntry, org.apache.commons.compress.harmony.pack200.CpBands, org.apache.commons.compress.harmony.pack200.FileBands, org.apache.commons.compress.harmony.pack200.IcBands, org.apache.commons.compress.harmony.pack200.IcBands$IcTuple, org.apache.commons.compress.harmony.pack200.IntList, org.apache.commons.compress.harmony.pack200.MetadataBandGroup, org.apache.commons.compress.harmony.pack200.NewAttribute, org.apache.commons.compress.harmony.pack200.NewAttribute$ErrorAttribute, org.apache.commons.compress.harmony.pack200.NewAttribute$PassAttribute, org.apache.commons.compress.harmony.pack200.NewAttribute$StripAttribute, org.apache.commons.compress.harmony.pack200.NewAttributeBands, org.apache.commons.compress.harmony.pack200.NewAttributeBands$AttributeLayoutElement, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Call, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Callable, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Integral, org.apache.commons.compress.harmony.pack200.NewAttributeBands$LayoutElement, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Reference, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Replication, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Union, org.apache.commons.compress.harmony.pack200.NewAttributeBands$UnionCase, org.apache.commons.compress.harmony.pack200.Pack200Adapter, org.apache.commons.compress.harmony.pack200.Pack200ClassReader, org.apache.commons.compress.harmony.pack200.Pack200Exception, org.apache.commons.compress.harmony.pack200.Pack200PackerAdapter, org.apache.commons.compress.harmony.pack200.PackingOptions, org.apache.commons.compress.harmony.pack200.PackingUtils, org.apache.commons.compress.harmony.pack200.PackingUtils$PackingLogger, org.apache.commons.compress.harmony.pack200.PopulationCodec, org.apache.commons.compress.harmony.pack200.RunCodec, org.apache.commons.compress.harmony.pack200.Segment, org.apache.commons.compress.harmony.pack200.Segment$ArrayVisitor, org.apache.commons.compress.harmony.pack200.Segment$PassException, org.apache.commons.compress.harmony.pack200.Segment$SegmentAnnotationVisitor, org.apache.commons.compress.harmony.pack200.Segment$SegmentAnnotationVisitor$1, org.apache.commons.compress.harmony.pack200.Segment$SegmentFieldVisitor, org.apache.commons.compress.harmony.pack200.Segment$SegmentMethodVisitor, org.apache.commons.compress.harmony.pack200.SegmentHeader, org.apache.commons.compress.harmony.pack200.SegmentHeader$1, org.apache.commons.compress.harmony.pack200.SegmentHeader$Counter, org.apache.commons.compress.harmony.pack200.package-info, org.apache.commons.compress.harmony.package-info, org.apache.commons.compress.harmony.unpack200.Archive, org.apache.commons.compress.harmony.unpack200.AttrDefinitionBands, org.apache.commons.compress.harmony.unpack200.AttributeLayout, org.apache.commons.compress.harmony.unpack200.AttributeLayoutMap, org.apache.commons.compress.harmony.unpack200.BandSet, org.apache.commons.compress.harmony.unpack200.BcBands, org.apache.commons.compress.harmony.unpack200.ClassBands, org.apache.commons.compress.harmony.unpack200.CpBands, org.apache.commons.compress.harmony.unpack200.FileBands, org.apache.commons.compress.harmony.unpack200.IMatcher, org.apache.commons.compress.harmony.unpack200.IcBands, org.apache.commons.compress.harmony.unpack200.IcTuple, org.apache.commons.compress.harmony.unpack200.MetadataBandGroup, org.apache.commons.compress.harmony.unpack200.NewAttributeBands, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$1, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$AttributeLayoutElement, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Call, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Callable, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Integral, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$LayoutElement, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Reference, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Replication, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Union, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$UnionCase, org.apache.commons.compress.harmony.unpack200.Pack200UnpackerAdapter, org.apache.commons.compress.harmony.unpack200.Segment, org.apache.commons.compress.harmony.unpack200.SegmentConstantPool, org.apache.commons.compress.harmony.unpack200.SegmentConstantPoolArrayCache, org.apache.commons.compress.harmony.unpack200.SegmentConstantPoolArrayCache$CachedArray, org.apache.commons.compress.harmony.unpack200.SegmentHeader, org.apache.commons.compress.harmony.unpack200.SegmentOptions, org.apache.commons.compress.harmony.unpack200.SegmentUtils, org.apache.commons.compress.harmony.unpack200.bytecode.AnnotationDefaultAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.AnnotationsAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.AnnotationsAttribute$Annotation, org.apache.commons.compress.harmony.unpack200.bytecode.AnnotationsAttribute$ElementValue, org.apache.commons.compress.harmony.unpack200.bytecode.Attribute, org.apache.commons.compress.harmony.unpack200.bytecode.BCIRenumberedAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.ByteCode, org.apache.commons.compress.harmony.unpack200.bytecode.CPClass, org.apache.commons.compress.harmony.unpack200.bytecode.CPConstant, org.apache.commons.compress.harmony.unpack200.bytecode.CPConstantNumber, org.apache.commons.compress.harmony.unpack200.bytecode.CPDouble, org.apache.commons.compress.harmony.unpack200.bytecode.CPField, org.apache.commons.compress.harmony.unpack200.bytecode.CPFieldRef, org.apache.commons.compress.harmony.unpack200.bytecode.CPFloat, org.apache.commons.compress.harmony.unpack200.bytecode.CPInteger, org.apache.commons.compress.harmony.unpack200.bytecode.CPInterfaceMethodRef, org.apache.commons.compress.harmony.unpack200.bytecode.CPLong, org.apache.commons.compress.harmony.unpack200.bytecode.CPMember, org.apache.commons.compress.harmony.unpack200.bytecode.CPMethod, org.apache.commons.compress.harmony.unpack200.bytecode.CPMethodRef, org.apache.commons.compress.harmony.unpack200.bytecode.CPNameAndType, org.apache.commons.compress.harmony.unpack200.bytecode.CPRef, org.apache.commons.compress.harmony.unpack200.bytecode.CPString, org.apache.commons.compress.harmony.unpack200.bytecode.CPUTF8, org.apache.commons.compress.harmony.unpack200.bytecode.ClassConstantPool, org.apache.commons.compress.harmony.unpack200.bytecode.ClassFile, org.apache.commons.compress.harmony.unpack200.bytecode.ClassFileEntry, org.apache.commons.compress.harmony.unpack200.bytecode.CodeAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.ConstantPoolEntry, org.apache.commons.compress.harmony.unpack200.bytecode.ConstantValueAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.DeprecatedAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.EnclosingMethodAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.ExceptionTableEntry, org.apache.commons.compress.harmony.unpack200.bytecode.ExceptionsAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.InnerClassesAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.InnerClassesAttribute$InnerClassesEntry, org.apache.commons.compress.harmony.unpack200.bytecode.LineNumberTableAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.LocalVariableTableAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.LocalVariableTypeTableAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$1, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$AbstractBcValue, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$BCIndex, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$BCLength, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$BCOffset, org.apache.commons.compress.harmony.unpack200.bytecode.OperandManager, org.apache.commons.compress.harmony.unpack200.bytecode.RuntimeVisibleorInvisibleAnnotationsAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.RuntimeVisibleorInvisibleParameterAnnotationsAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.RuntimeVisibleorInvisibleParameterAnnotationsAttribute$ParameterAnnotation, org.apache.commons.compress.harmony.unpack200.bytecode.SignatureAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.SourceFileAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ByteCodeForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ByteForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ClassRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ClassSpecificReferenceForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.DoubleForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.FieldRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.FloatRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.IMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.IincForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.InitMethodReferenceForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.IntRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.LabelForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.LocalForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.LongForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.LookupSwitchForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.MethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.MultiANewArrayForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.NarrowClassRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.NewClassRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.NewInitMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.NoArgumentForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ReferenceForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ShortForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SingleByteReferenceForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.StringRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SuperFieldRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SuperInitMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SuperMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SwitchForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.TableSwitchForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ThisFieldRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ThisInitMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ThisMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.VariableInstructionForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.WideForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.package-info, org.apache.commons.compress.harmony.unpack200.bytecode.package-info, org.apache.commons.compress.harmony.unpack200.package-info, org.apache.commons.compress.java.util.jar.Pack200, org.apache.commons.compress.java.util.jar.Pack200$Packer, org.apache.commons.compress.java.util.jar.Pack200$Unpacker, org.apache.commons.compress.java.util.jar.package-info, org.apache.commons.compress.package-info, org.apache.commons.compress.parallel.FileBasedScatterGatherBackingStore, org.apache.commons.compress.parallel.InputStreamSupplier, org.apache.commons.compress.parallel.ScatterGatherBackingStore, org.apache.commons.compress.parallel.ScatterGatherBackingStoreSupplier, org.apache.commons.compress.parallel.package-info, org.apache.commons.compress.utils.ArchiveUtils, org.apache.commons.compress.utils.BitInputStream, org.apache.commons.compress.utils.BoundedArchiveInputStream, org.apache.commons.compress.utils.BoundedInputStream, org.apache.commons.compress.utils.BoundedSeekableByteChannelInputStream, org.apache.commons.compress.utils.CRC32VerifyingInputStream, org.apache.commons.compress.utils.CharsetNames, org.apache.commons.compress.utils.Charsets, org.apache.commons.compress.utils.ChecksumCalculatingInputStream, org.apache.commons.compress.utils.ChecksumVerifyingInputStream, org.apache.commons.compress.utils.CloseShieldFilterInputStream, org.apache.commons.compress.utils.CountingInputStream, org.apache.commons.compress.utils.CountingOutputStream, org.apache.commons.compress.utils.ExactMath, org.apache.commons.compress.utils.FileNameUtils, org.apache.commons.compress.utils.FixedLengthBlockOutputStream, org.apache.commons.compress.utils.FixedLengthBlockOutputStream$1, org.apache.commons.compress.utils.FixedLengthBlockOutputStream$BufferAtATimeOutputChannel, org.apache.commons.compress.utils.FlushShieldFilterOutputStream, org.apache.commons.compress.utils.IOUtils, org.apache.commons.compress.utils.InputStreamStatistics, org.apache.commons.compress.utils.Iterators, org.apache.commons.compress.utils.Lists, org.apache.commons.compress.utils.MultiReadOnlySeekableByteChannel, org.apache.commons.compress.utils.OsgiUtils, org.apache.commons.compress.utils.ParsingUtils, org.apache.commons.compress.utils.SeekableInMemoryByteChannel, org.apache.commons.compress.utils.ServiceLoaderIterator, org.apache.commons.compress.utils.Sets, org.apache.commons.compress.utils.SkipShieldingInputStream, org.apache.commons.compress.utils.TimeUtils, org.apache.commons.compress.utils.package-info]
+[INFO] Analysis only: no trim proof or published changes
+[INFO] Vulnerability findings: 1
+[INFO]   - CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [PLANNED_UNVERIFIED]
+[INFO]     Aliases: [CVE-2014-3577, GHSA-transcript-httpclient]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Declared code: [org.apache.http.conn.ssl.AbstractVerifier] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [org.apache.http.conn.ssl.AbstractVerifier]
+[INFO]     Sources: [OSV]
+[INFO] CVE Sources:
+[INFO]   - CVE_LIST CURRENT
+[INFO]   - OSV CURRENT
+[INFO] POM exclusion review (advisory only):
+[INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven
 [INFO]   supplied no source location/identity or the location matched zero or multiple
 [INFO]   original POM rows. This advisory review does not affect elision.
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 0 (io.github.spockz:elider-core)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 1 (org.apache.maven:maven-plugin-api)
-[INFO]     Incomplete or ambiguous provenance: Maven did not provide a source location
-[INFO]     for dependency-management row 2 (org.apache.maven:maven-core)
 [INFO]   Full evidence is in the JSON snapshot fields
 [INFO]   exclusionReview.snapshot.dependencies and
 [INFO]   exclusionReview.snapshot.diagnostics.
-[INFO]   Review only: Maven path exclusions change dependency collection and mediation;
-[INFO]   a global ban changes this project's output and may remove content needed by
-[INFO]   downstream consumers.
+[INFO] Mediated TEST dependency graph (captured and saved by the analyze goal):
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) {nodeId=n2} [RETAINED, WOULD_TRIM]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) {nodeId=n1} [WOULD_DROP]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) {nodeId=n3} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) -> commons-codec:commons-codec:jar:1.19.0 (compile) {nodeId=n4} [WOULD_DROP]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) -> commons-io:commons-io:jar:2.20.0 (compile) {nodeId=n5} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-compress:jar:1.28.0 (compile) -> org.apache.commons:commons-lang3:jar:3.18.0 (compile) {nodeId=n6} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.11.4 (test) {nodeId=n7} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-engine:jar:5.11.4 (test) {nodeId=n9} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-params:jar:5.11.4 (test) {nodeId=n8} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.11.4 (test) -> org.apiguardian:apiguardian-api:jar:1.1.2 (test) {nodeId=n12} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.11.4 (test) -> org.junit.platform:junit-platform-commons:jar:1.11.4 (test) {nodeId=n11} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.11.4 (test) -> org.opentest4j:opentest4j:jar:1.3.0 (test) {nodeId=n10} [RETAINED]
+[INFO]   - io.github.spockz:example-basic-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-engine:jar:5.11.4 (test) -> org.junit.platform:junit-platform-engine:jar:1.11.4 (test) {nodeId=n13} [RETAINED]
+[INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
+[INFO]   Analysis report: <PROJECT_ROOT>/examples/example-basic-app/target/dependency-elider-analysis-report.json
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-basic-app-class-usage.json
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------

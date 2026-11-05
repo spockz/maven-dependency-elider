@@ -34,7 +34,7 @@ record MavenElisionReportSnapshot(
     List<DroppedArtifact> droppedArtifacts,
     List<String> rawDroppedCoordinates,
     int programClassesPruned,
-    long uncompressedProgramClassBytesPruned,
+    Long uncompressedProgramClassBytesPruned,
     List<TrimmedArtifact> trimmedArtifacts,
     MediatedGraphReport mediatedGraph,
     boolean assumeConventionalJavaSourceLayout,
@@ -43,8 +43,16 @@ record MavenElisionReportSnapshot(
     List<AppliedBan> appliedBans,
     List<ToleratedDuplicateClass> toleratedDuplicates,
     @com.fasterxml.jackson.annotation.JsonIgnore List<GenericFindingAssessment> genericFindings,
-    @com.fasterxml.jackson.annotation.JsonIgnore
-        List<FindingSourceObservation> sourceObservations) {
+    @com.fasterxml.jackson.annotation.JsonIgnore List<FindingSourceObservation> sourceObservations,
+    Mode mode,
+    int inputArtifactCount,
+    String sourceAttributionFallback) {
+  /** Distinguishes forecast from applied output. */
+  enum Mode {
+    ANALYSIS,
+    APPLIED
+  }
+
   /** Current persisted JSON format version. */
   static final int SCHEMA_VERSION = 1;
 
@@ -71,6 +79,8 @@ record MavenElisionReportSnapshot(
                         .thenComparing(value -> Objects.toString(value.revision(), ""))
                         .thenComparing(value -> Objects.toString(value.diagnostic(), "")))
                 .toList();
+    Objects.requireNonNull(mode, "mode");
+    require(inputArtifactCount >= 0, "inputArtifactCount must not be negative");
     require(schemaVersion == SCHEMA_VERSION, "Unsupported report snapshot schema version");
     requireNonBlank(projectGroupId, "projectGroupId");
     requireNonBlank(projectArtifactId, "projectArtifactId");
@@ -90,6 +100,11 @@ record MavenElisionReportSnapshot(
     Objects.requireNonNull(policy, "policy");
     Objects.requireNonNull(exclusionReview, "exclusionReview");
     appliedBans = List.copyOf(Objects.requireNonNull(appliedBans, "appliedBans"));
+    for (final AppliedBan ban : appliedBans) {
+      require(
+          ban.applied() == (mode == Mode.APPLIED && !"UNMATCHED".equals(ban.status())),
+          "Ban applied flag disagrees with report mode");
+    }
     toleratedDuplicates =
         Objects.requireNonNull(toleratedDuplicates, "toleratedDuplicates").stream()
             .sorted(Comparator.comparing(ToleratedDuplicateClass::className))
@@ -108,7 +123,7 @@ record MavenElisionReportSnapshot(
     require(droppedProgramClassBytes >= 0, "droppedProgramClassBytes must not be negative");
     require(programClassesPruned >= 0, "programClassesPruned must not be negative");
     require(
-        uncompressedProgramClassBytesPruned >= 0,
+        uncompressedProgramClassBytesPruned == null || uncompressedProgramClassBytesPruned >= 0,
         "uncompressedProgramClassBytesPruned must not be negative");
     require(
         wholeArtifactsDropped == droppedArtifacts.size(), "Dropped artifact count is inconsistent");
@@ -125,16 +140,100 @@ record MavenElisionReportSnapshot(
         programClassesPruned == sumPrunedClassCounts(trimmedArtifacts),
         "Class count is inconsistent");
     require(
-        uncompressedProgramClassBytesPruned == sumPrunedClassBytes(trimmedArtifacts),
+        mode == Mode.ANALYSIS
+            ? uncompressedProgramClassBytesPruned == null
+            : uncompressedProgramClassBytesPruned != null
+                && uncompressedProgramClassBytesPruned == sumPrunedClassBytes(trimmedArtifacts),
         "Pruned class byte total is inconsistent");
+    require(
+        trimmedArtifacts.stream()
+                .map(
+                    value ->
+                        MavenElisionReportSourceCoordinateValidator.parseCanonical(
+                                value.coordinate())
+                            .toId())
+                .distinct()
+                .count()
+            == trimmedArtifacts.size(),
+        "Multiple trim rows for one component");
+    for (final TrimmedArtifact trim : trimmedArtifacts) {
+      require(
+          (mode == Mode.ANALYSIS)
+              == (trim.plannedClasses() != null
+                  && trim.uncompressedProgramClassBytesPruned() == null),
+          "Trim row disagrees with report mode");
+      if (mode == Mode.APPLIED) {
+        require(
+            trim.uncompressedProgramClassBytesPruned() != null && trim.plannedClasses() == null,
+            "Applied trim needs measured bytes");
+      }
+    }
     require(
         droppedAndTrimmedArtifactsAreDisjoint(droppedArtifacts, trimmedArtifacts),
         "An artifact cannot be both dropped and class-trimmed");
+    require(
+        (long) droppedArtifacts.size() + trimmedArtifacts.size() <= inputArtifactCount,
+        "Output artifacts exceed input artifact count");
     MediatedGraphReportCoverageValidator.validateSnapshotOutputs(
         mediatedGraph,
         droppedArtifacts,
         trimmedArtifacts,
         projectGroupId + ":" + projectArtifactId + ":" + projectVersion);
+  }
+
+  MavenElisionReportSnapshot(
+      final int schemaVersion,
+      final String projectGroupId,
+      final String projectArtifactId,
+      final String projectVersion,
+      final String projectBaseDirectory,
+      final String generatedAt,
+      final TrimExecutionEnvironment executionEnvironment,
+      final int wholeArtifactsDropped,
+      final long originalJarBytesDropped,
+      final int droppedProgramClassEntries,
+      final long droppedProgramClassBytes,
+      final List<DroppedArtifact> droppedArtifacts,
+      final List<String> rawDroppedCoordinates,
+      final int programClassesPruned,
+      final long uncompressedProgramClassBytesPruned,
+      final List<TrimmedArtifact> trimmedArtifacts,
+      final MediatedGraphReport mediatedGraph,
+      final boolean assumeConventionalJavaSourceLayout,
+      final MavenElisionPolicyIdentity policy,
+      final ExclusionReview exclusionReview,
+      final List<AppliedBan> appliedBans,
+      final List<ToleratedDuplicateClass> toleratedDuplicates,
+      final List<GenericFindingAssessment> genericFindings,
+      final List<FindingSourceObservation> sourceObservations) {
+    this(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        executionEnvironment,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        policy,
+        exclusionReview,
+        appliedBans,
+        toleratedDuplicates,
+        genericFindings,
+        sourceObservations,
+        Mode.APPLIED,
+        wholeArtifactsDropped + trimmedArtifacts.size(),
+        null);
   }
 
   MavenElisionReportSnapshot(
@@ -218,6 +317,62 @@ record MavenElisionReportSnapshot(
 
   static MavenElisionReportSnapshot from(
       final org.apache.maven.project.MavenProject project,
+      final AnalyzePrediction prediction,
+      final MavenVulnerabilityAssessment.Result assessment,
+      final ExclusionReview review)
+      throws IOException {
+    final DroppedArtifactSummary dropped = droppedArtifactSummary(prediction);
+    final List<TrimmedArtifact> trims =
+        prediction.plannedTrims().stream()
+            .map(
+                value ->
+                    new TrimmedArtifact(
+                        value.coordinate().toString(),
+                        value.removedClasses().size(),
+                        null,
+                        value.removedClasses().stream().sorted().toList()))
+            .toList();
+    return new MavenElisionReportSnapshot(
+        SCHEMA_VERSION,
+        project.getGroupId(),
+        project.getArtifactId(),
+        project.getVersion(),
+        canonicalProjectDirectory(project).toString(),
+        Instant.now().toString(),
+        prediction.executionEnvironment(),
+        dropped.artifacts().size(),
+        dropped.originalJarBytes(),
+        dropped.programClassesRemoved(),
+        dropped.uncompressedProgramClassBytesRemoved(),
+        dropped.artifacts(),
+        prediction.rawDroppedCoordinates(),
+        sumPrunedClassCounts(trims),
+        null,
+        trims,
+        prediction.mediatedGraph(),
+        assessment.conventionalLayoutAssumed(),
+        prediction.policy(),
+        review,
+        prediction.banPlan().entries().stream()
+            .map(
+                entry ->
+                    new AppliedBan(
+                        entry.dependency().toString(),
+                        entry.status().name(),
+                        entry.artifacts().stream().map(Object::toString).sorted().toList(),
+                        entry.originalArtifacts().stream().map(Object::toString).sorted().toList(),
+                        false))
+            .toList(),
+        prediction.toleratedDuplicates(),
+        assessment.genericFindings(),
+        assessment.sourceObservations(),
+        Mode.ANALYSIS,
+        prediction.inputArtifacts().size(),
+        prediction.evidence().sourceAttributionFallback());
+  }
+
+  static MavenElisionReportSnapshot from(
+      final org.apache.maven.project.MavenProject project,
       final ElisionAnalysisModel.Analysis analysis)
       throws IOException {
     return from(project, analysis, null);
@@ -281,7 +436,10 @@ record MavenElisionReportSnapshot(
             .map(ToleratedDuplicateClass::from)
             .toList(),
         vulnerabilityAssessment == null ? List.of() : vulnerabilityAssessment.genericFindings(),
-        vulnerabilityAssessment == null ? List.of() : vulnerabilityAssessment.sourceObservations());
+        vulnerabilityAssessment == null ? List.of() : vulnerabilityAssessment.sourceObservations(),
+        Mode.APPLIED,
+        analysis.artifacts().resolvedSnapshots().size(),
+        analysis.evidence().sourceAttributionFallback());
   }
 
   MavenElisionReportSnapshot withGenericFindings(
@@ -332,7 +490,10 @@ record MavenElisionReportSnapshot(
         bans,
         duplicates,
         findings,
-        observations);
+        observations,
+        mode,
+        inputArtifactCount,
+        sourceAttributionFallback);
   }
 
   static TrimmedArtifact trimmedArtifact(final ArtifactTrimRecord record) {
@@ -563,12 +724,24 @@ record MavenElisionReportSnapshot(
 
   /** Program classes removed from one retained JAR. */
   record TrimmedArtifact(
-      String coordinate, int programClassesPruned, long uncompressedProgramClassBytesPruned) {
+      String coordinate,
+      int programClassesPruned,
+      Long uncompressedProgramClassBytesPruned,
+      List<String> plannedClasses) {
+    TrimmedArtifact(final String coordinate, final int count, final long bytes) {
+      this(coordinate, count, bytes, null);
+    }
+
     TrimmedArtifact {
+      if (plannedClasses != null) {
+        plannedClasses = sortedDistinctNonBlank(plannedClasses, "plannedClasses");
+        require(
+            plannedClasses.size() == programClassesPruned, "Planned classes disagree with count");
+      }
       requireNonBlank(coordinate, "coordinate");
       require(programClassesPruned >= 0, "programClassesPruned must not be negative");
       require(
-          uncompressedProgramClassBytesPruned >= 0,
+          uncompressedProgramClassBytesPruned == null || uncompressedProgramClassBytesPruned >= 0,
           "uncompressedProgramClassBytesPruned must not be negative");
     }
   }
@@ -616,9 +789,7 @@ record MavenElisionReportSnapshot(
       final MavenBanPlan.Entry.Status parsedStatus = parseStatus(status);
       matchedArtifacts = sortedDistinctNonBlank(matchedArtifacts, "matchedArtifacts");
       originalArtifacts = sortedDistinctNonBlank(originalArtifacts, "originalArtifacts");
-      require(
-          applied == (parsedStatus != MavenBanPlan.Entry.Status.UNMATCHED),
-          "Ban applied flag disagrees with its status");
+
       if (parsedStatus == MavenBanPlan.Entry.Status.FORCED_ABSENT_AFTER_RESOLUTION) {
         require(!matchedArtifacts.isEmpty(), "Forced-absent ban has no effective match");
       } else if (parsedStatus == MavenBanPlan.Entry.Status.EXCLUDED_BEFORE_RESOLUTION) {

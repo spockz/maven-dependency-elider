@@ -10,6 +10,8 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.scanner.JarIndexScanner;
+import io.github.spockz.elider.trimmer.ArchiveSanitizer;
+import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
@@ -26,6 +29,9 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -34,6 +40,8 @@ import org.objectweb.asm.Opcodes;
 @SuppressWarnings({
   "PMD.AtLeastOneConstructor",
   "PMD.CommentRequired",
+  "PMD.ExcessiveImports",
+  "PMD.CouplingBetweenObjects",
   "PMD.TooManyMethods",
   "PMD.AvoidDuplicateLiterals"
 })
@@ -87,6 +95,85 @@ final class ForcedUnchangedSiblingClosureTest {
         () -> assertPromotedClosure(fixture(false, true, true)));
   }
 
+  @ParameterizedTest
+  @CsvSource({"provided,false", "provided,true", "system,false", "system,true"})
+  void unchangedScopeRetainsBytecodeClosureDespiteOptionalReference(
+      final String scope, final boolean tiered) throws Exception {
+    assertPromotedClosure(fixture(false, true, tiered, scope, true, false));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"provided,false", "provided,true", "system,false", "system,true"})
+  void unchangedScopeContributesDynamicRoots(final String scope, final boolean tiered)
+      throws Exception {
+    assertPromotedClosure(fixture(false, true, tiered, scope, false, true));
+  }
+
+  @ParameterizedTest
+  @CsvSource({"provided,false", "provided,true", "system,false", "system,true"})
+  void transformedSiblingRemainsStrictWhenReachedFromUnchangedScope(
+      final String scope, final boolean tiered) throws Exception {
+    final Fixture fixture = fixture(true, true, tiered, scope, true, false);
+    assertThatThrownBy(fixture::analyze)
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("candidate/Linked -> class missing/RequiredType");
+  }
+
+  @Test
+  void emittedMultiReleaseJarPreservesLinkFromProvidedDependency() throws Exception {
+    final Fixture fixture = fixture(false, true, true, "provided", false, false);
+    final TrimAnalysisResult result = fixture.analyze();
+    final Path original = tempDir.resolve("candidate.jar");
+    final Path trimmed = tempDir.resolve("candidate-trimmed.jar");
+    final io.github.spockz.elider.trimmer.DependencyJarTrimmer.TrimAnalysis analysis =
+        result.candidateAnalyses().get(fixture.candidate());
+    final MultiReleaseArchivePlan plan =
+        MultiReleaseArchivePlan.create(
+            original, result.targetRelease(), analysis.retainedClasses(), Set.of());
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput output =
+        sanitizer.prepareMultiRelease(original, trimmed, fixture.candidate(), analysis, plan, null);
+    sanitizer.publish(output);
+    assertAll(
+        () -> {
+          try (JarFile jar = new JarFile(trimmed.toFile())) {
+            assertAll(
+                () -> assertThat(jar.getJarEntry(LINKED + ".class")).isNotNull(),
+                () -> assertThat(jar.getJarEntry("candidate/Drop.class")).isNull());
+          }
+        },
+        () -> {
+          try (java.net.URLClassLoader loader =
+              new java.net.URLClassLoader(
+                  new java.net.URL[] {
+                    tempDir.resolve("first.jar").toUri().toURL(), trimmed.toUri().toURL()
+                  },
+                  null)) {
+            loader.loadClass("first.Root").getMethod("use").invoke(null);
+          }
+        });
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"provided", "system"})
+  void multiReleaseUnchangedScopeContributesEachRuntimeTier(final String scope) throws Exception {
+    final Fixture fixture = fixture(false, true, false, scope, false, false);
+    final java.util.jar.Manifest manifest = new java.util.jar.Manifest();
+    manifest.getMainAttributes().putValue("Manifest-Version", "1.0");
+    manifest.getMainAttributes().putValue("Multi-Release", "true");
+    try (JarOutputStream output =
+        new JarOutputStream(Files.newOutputStream(tempDir.resolve("first.jar")), manifest)) {
+      output.putNextEntry(new JarEntry(FIRST + ".class"));
+      output.write(classBytes(FIRST, null, LINKED, Opcodes.V9));
+      output.closeEntry();
+      output.putNextEntry(new JarEntry("META-INF/versions/21/" + FIRST + ".class"));
+      output.write(classBytes(FIRST, null, null, Opcodes.V21));
+      output.closeEntry();
+    }
+    fixture.request().project().getProperties().setProperty("maven.compiler.release", "9");
+    assertPromotedClosure(fixture);
+  }
+
   private static void assertReachedDroppedSibling(final Fixture fixture)
       throws IOException, MojoFailureException {
     final TrimAnalysisResult result = fixture.analyze();
@@ -109,9 +196,37 @@ final class ForcedUnchangedSiblingClosureTest {
   private Fixture fixture(
       final boolean brokenCandidate, final boolean retainUnchanged, final boolean tiered)
       throws IOException {
-    final Artifact first = artifact("first", Map.of(FIRST, classBytes(FIRST, null, OWNER)));
+    return fixture(brokenCandidate, retainUnchanged, tiered, null, false, false);
+  }
+
+  @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.NPathComplexity"})
+  private Fixture fixture(
+      final boolean brokenCandidate,
+      final boolean retainUnchanged,
+      final boolean tiered,
+      final String unchangedScope,
+      final boolean optionalReference,
+      final boolean dynamicRoot)
+      throws IOException {
+    final boolean scoped = unchangedScope != null;
+    final Artifact first =
+        artifact(
+            "first",
+            Map.of(
+                FIRST,
+                classBytes(
+                    FIRST,
+                    optionalReference ? "missing/OptionalType" : null,
+                    scoped ? (dynamicRoot ? null : LINKED) : OWNER)));
+    if (scoped) {
+      first.setScope(unchangedScope);
+    }
     final Artifact unchanged =
-        artifact("unchanged", Map.of(OWNER, classBytes(OWNER, "missing/OptionalType", LINKED)));
+        artifact(
+            "unchanged",
+            Map.of(
+                OWNER,
+                classBytes(OWNER, scoped ? null : "missing/OptionalType", scoped ? null : LINKED)));
     final Artifact candidate =
         artifact(
             "candidate",
@@ -143,7 +258,12 @@ final class ForcedUnchangedSiblingClosureTest {
             .collect(
                 java.util.stream.Collectors.toMap(
                     ElisionAnalysisModel.ArtifactSnapshot::filePath,
-                    snapshot -> new DependencyDynamicRoots.RootScan(Set.of(), true)));
+                    snapshot ->
+                        new DependencyDynamicRoots.RootScan(
+                            dynamicRoot && "first".equals(snapshot.coordinate().artifactId())
+                                ? Set.of("candidate.Linked")
+                                : Set.of(),
+                            true)));
     final Set<ArtifactCoordinate> retained =
         snapshots.stream()
             .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
@@ -160,7 +280,7 @@ final class ForcedUnchangedSiblingClosureTest {
             new TrimPolicy(
                 List.of(),
                 false,
-                List.of("example:first:1.0:jar:"),
+                scoped ? List.of() : List.of("example:first:1.0:jar:"),
                 false,
                 MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
                 true,
@@ -210,8 +330,13 @@ final class ForcedUnchangedSiblingClosureTest {
 
   private static byte[] classBytes(
       final String name, final String fieldType, final String reference) {
+    return classBytes(name, fieldType, reference, Opcodes.V21);
+  }
+
+  private static byte[] classBytes(
+      final String name, final String fieldType, final String reference, final int version) {
     final ClassWriter writer = new ClassWriter(0);
-    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+    writer.visit(version, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
     if (fieldType != null) {
       writer
           .visitField(Opcodes.ACC_PUBLIC, "dependency", "L" + fieldType + ";", null, null)

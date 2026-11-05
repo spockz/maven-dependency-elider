@@ -41,8 +41,12 @@ class ElisionSummaryGenericFindingTest {
             false);
     final RecordingMavenLog published = new RecordingMavenLog();
     final RecordingMavenLog predicted = new RecordingMavenLog();
-    ElisionSummaryCveReporter.report(published, assessment, false);
-    ElisionSummaryCveReporter.report(predicted, assessment, true);
+    MavenElisionReportGenericRenderer.render(
+            assessment.genericFindings(), assessment.sourceObservations())
+        .forEach(published::info);
+    MavenElisionReportGenericRenderer.render(
+            assessment.genericFindings(), assessment.sourceObservations(), true)
+        .forEach(predicted::info);
     final String actual = String.join("\n", published.messages());
     final String forecast = String.join("\n", predicted.messages());
     assertAll(
@@ -59,6 +63,38 @@ class ElisionSummaryGenericFindingTest {
         () ->
             assertThat(forecast)
                 .doesNotContain("DECLARED_CODE_ABSENT", "would be pruned", "Mitigated CVEs"));
+  }
+
+  @Test
+  void analysisAndElisionShowTheSameFindingEvidenceWithConditionalWording() {
+    final GenericFindingAssessment finding =
+        row("CVE-2026-10000", GenericFindingAssessment.Outcome.NO_PROOF);
+    final MavenVulnerabilityAssessment.Result assessment =
+        new MavenVulnerabilityAssessment.Result(List.of(), List.of(finding), List.of(), false);
+    final RecordingMavenLog elision = new RecordingMavenLog();
+    final RecordingMavenLog analysis = new RecordingMavenLog();
+
+    MavenElisionReportGenericRenderer.render(
+            assessment.genericFindings(), assessment.sourceObservations())
+        .forEach(elision::info);
+    MavenElisionReportGenericRenderer.render(
+            assessment.genericFindings(), assessment.sourceObservations(), true)
+        .forEach(analysis::info);
+
+    assertAll(
+        "both goals expose the same captured fields without implying an analysis proof",
+        () ->
+            assertThat(String.join("\n", elision.messages()))
+                .contains("Applicability: AFFECTED", "captured detail")
+                .doesNotContain("Aliases:", "Code group:", "Effective prerequisites:"),
+        () ->
+            assertThat(String.join("\n", analysis.messages()))
+                .contains("Applicability: AFFECTED", "captured detail")
+                .doesNotContain("Aliases:", "Code group:", "Effective prerequisites:"),
+        () ->
+            assertThat(String.join("\n", analysis.messages()))
+                .contains("Analysis only", "NO_PROOF")
+                .doesNotContain("DECLARED_CODE_ABSENT"));
   }
 
   private static GenericFindingAssessment row(

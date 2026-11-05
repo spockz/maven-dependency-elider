@@ -6,6 +6,7 @@ package io.github.spockz.elider.model;
 public enum EvidenceOrigin {
   POM,
   OSV,
+  SNYK,
   CVE_LIST,
   DESCRIPTION,
   REFERENCE_URL

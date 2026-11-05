@@ -183,6 +183,18 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   /** Explicit POM vulnerability mappings override cache entries. */
   @Parameter private List<VulnerabilityMappingConfig> vulnerabilityMappings;
 
+  /** Enables optional per-artifact Snyk package issue queries. */
+  @Parameter(property = "elide.snykEnabled", defaultValue = DEFAULT_FALSE)
+  private boolean snykEnabled;
+
+  /** Snyk organization ID; falls back to SNYK_ORG_ID. */
+  @Parameter(property = "elide.snykOrgId")
+  private String snykOrgId;
+
+  /** Official Snyk regional package API origin. */
+  @Parameter(property = "elide.snykApiBaseUri", defaultValue = "https://api.snyk.io")
+  private String snykApiBaseUri;
+
   /**
    * Persisted elision snapshot for {@code report}, defaulting to
    * target/dependency-elider-report.json.
@@ -255,6 +267,8 @@ public final class ElideMojo extends PluginCacheMojoSupport {
             planPublication,
             vulnerabilityCacheConfig(),
             configuredVulnerabilityMappings(),
+            SnykPackageIssuesIntegration.Configuration.configured(
+                snykEnabled, session != null && session.isOffline(), snykOrgId, snykApiBaseUri),
             trimJars && preconditionClassPathComplete,
             assumeConventionalJavaSourceLayout,
             afterStaging,

@@ -8,6 +8,7 @@ MAVEN_THREADS ?= $(MAKE_JOBS)
 MARKDOWNLINT ?= .scratch/tools/node_modules/.bin/markdownlint-cli2
 NODE ?= node
 GO ?= go
+GOFMT ?= gofmt
 OSV_SCANNER ?= osv-scanner
 DEPENDENCY_CHECK_VERSION ?= 13.0.0
 SERVE_PORT ?= 8080
@@ -23,7 +24,7 @@ endif
 
 .DEFAULT_GOAL := check
 
-.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all coverage test-examples test-reactor-example test-example-scheduler test-sbom-comparison scan-sbom verify-docs site serve
+.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all coverage test-examples test-reactor-example test-example-scheduler test-format test-sbom-comparison scan-sbom verify-docs site serve
 
 check: ## Format, run Java checks/tests and Markdown lint concurrently, then verify command transcripts
 	$(MAKE) --no-print-directory fmt
@@ -37,7 +38,7 @@ check-transcripts: ## Verify configured command transcripts without rewriting do
 	$(GO) test scripts/update-transcripts.go scripts/update-transcripts_test.go
 	$(GO) run scripts/update-transcripts.go --check
 
-check-parallel: java-check lint-markdown test-example-scheduler test-sbom-comparison
+check-parallel: java-check lint-markdown test-example-scheduler test-format test-sbom-comparison
 
 java-check:
 	$(MAKE) --no-print-directory lint-java
@@ -51,8 +52,11 @@ tools: ## Download the Markdown linter used by repository documentation checks
 
 fix: fmt ## Apply repository formatters
 
-fmt: ## Format Java sources and remove unused imports
+fmt: ## Format Java and Go sources and fix supported Markdown issues
 	$(MAVEN) $(MAVEN_ARGS) -T $(MAVEN_THREADS) spotless:apply
+	$(GOFMT) -w scripts
+	test -x "$(MARKDOWNLINT)"
+	"$(MARKDOWNLINT)" "docs/**/*.md" "*.md" "dependency-elider-maven-plugin/src/site/**/*.md" --fix
 
 lint: fmt lint-java lint-markdown ## Apply automatic formatting, then run all Java and documentation linters
 
@@ -97,6 +101,9 @@ test-reactor-example: ## Verify sequential and threaded multi-module reactor bui
 
 test-example-scheduler: ## Verify bounded standalone example fixture worker behavior
 	bash ./examples/test-fixture-scheduler.sh
+
+test-format: ## Verify automatic formatting fixes Go and Markdown inputs
+	MARKDOWNLINT="$(MARKDOWNLINT)" bash ./scripts/test-format.sh
 
 test-sbom-comparison: ## Test package-level OSV SBOM comparison behavior with a fake scanner
 	$(NODE) --test scripts/compare-sbom-inventories.test.js

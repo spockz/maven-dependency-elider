@@ -59,7 +59,7 @@ final class TierRootPlanner {
         reachable);
     resolution.addRequestedRoots(requested, projections, candidates, roots);
     resolution.addDynamicRoots(
-        inventory.passThrough().retainedLibraries(),
+        TrimPassThroughPlanner.retainedAnalysisLibraries(operation.request()),
         projections,
         candidates,
         roots,

@@ -26,14 +26,14 @@ public final class CveSourceRecordReader {
     return parseCurrentRecord(sourcePath, cveId);
   }
 
-  private static void requireCanonicalInput(final Path cveListGitDir, final String cveId)
+  /* default */ static void requireCanonicalInput(final Path cveListGitDir, final String cveId)
       throws IOException {
     if (cveListGitDir == null || cveId == null || !cveId.matches("CVE-[0-9]{4}-[0-9]{4,}")) {
       throw new IOException("A CVEList root and canonical CVE ID are required");
     }
   }
 
-  private static Path resolveCanonicalRecord(final Path cveListGitDir, final String cveId)
+  /* default */ static Path resolveCanonicalRecord(final Path cveListGitDir, final String cveId)
       throws IOException {
     final String located = OsvSnapshotIndexer.locateCveRecord(cveListGitDir, cveId);
     if (located == null) {
@@ -108,7 +108,7 @@ public final class CveSourceRecordReader {
     }
   }
 
-  private static String sha256(final byte[] bytes) throws IOException {
+  /* default */ static String sha256(final byte[] bytes) throws IOException {
     try {
       return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
     } catch (final NoSuchAlgorithmException exception) {

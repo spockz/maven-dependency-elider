@@ -78,6 +78,37 @@ record MediatedGraphReport(
     return createValidated(pair, evaluation, effectiveDrops, trimRecords, projectGav);
   }
 
+  static MediatedGraphReport createPrediction(
+      final ResolverArtifactGraphCapturePair pair,
+      final EffectiveGraphPolicy.Evaluation evaluation,
+      final Set<ArtifactCoordinate> drops,
+      final Set<ArtifactCoordinate> trims,
+      final String projectGav)
+      throws IOException {
+    if (pair == null) {
+      return unavailable(evaluation == null ? NO_GRAPH_REASON : evaluation.failClosedReason());
+    }
+    if (evaluation == null || evaluation.failClosed()) {
+      throw new IOException("Bound graph report is missing a successful policy evaluation");
+    }
+    validateSnapshot(pair);
+    final ResolverArtifactGraphSnapshot snapshot = pair.after();
+    final List<NodeStatus> statuses =
+        MediatedGraphReportOutcomeBuilder.nodeStatuses(snapshot, evaluation);
+    final List<ArtifactPath> paths =
+        MediatedGraphReportPathBuilder.build(snapshot, statuses, drops, trims, projectGav);
+    MediatedGraphReportCoverageValidator.validate(paths, drops, trims);
+    return new MediatedGraphReport(
+        true,
+        null,
+        pair.captureToken(),
+        pair.projectKey(),
+        pair.before().graphFingerprint(),
+        snapshot,
+        statuses,
+        paths);
+  }
+
   private static void validateSnapshot(final ResolverArtifactGraphCapturePair pair)
       throws IOException {
     try {

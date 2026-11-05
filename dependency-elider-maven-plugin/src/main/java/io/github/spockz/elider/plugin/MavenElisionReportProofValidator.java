@@ -25,6 +25,39 @@ final class MavenElisionReportProofValidator {
     validateRequiredEvidence(finding);
   }
 
+  /* package */ static void validateForecast(
+      final GenericFindingAssessment finding, final MavenElisionReportSnapshot snapshot)
+      throws IOException {
+    if (finding.outcome() != GenericFindingAssessment.Outcome.PLANNED_CODE_ABSENT) {
+      return;
+    }
+    if (snapshot.mode() != MavenElisionReportSnapshot.Mode.ANALYSIS
+        || !isAutomaticallyVerifiable(finding)
+        || finding.inventoryDisposition()
+            != MavenVulnerabilityAssessment.InventoryDisposition.PLANNED_TRIM) {
+      throw new IOException(
+          "Planned code absence requires affected automatic analysis of a planned trim");
+    }
+    validateDeclaredCode(finding);
+    final java.util.Set<String> required =
+        finding.codeAttribution().stream()
+            .filter(value -> value.claim().kind() == CodeClaim.Kind.DECLARED)
+            .flatMap(value -> value.classFamily().stream())
+            .collect(java.util.stream.Collectors.toSet());
+    final boolean covered =
+        snapshot.trimmedArtifacts().stream()
+            .anyMatch(
+                trim ->
+                    MavenElisionReportSourceCoordinateValidator.parseCanonical(trim.coordinate())
+                            .toId()
+                            .equals(finding.candidate().toId())
+                        && trim.plannedClasses() != null
+                        && trim.plannedClasses().containsAll(required));
+    if (!covered) {
+      throw new IOException("Planned code absence is not supported by planned class removals");
+    }
+  }
+
   private static boolean isProof(final GenericFindingAssessment.Outcome outcome) {
     return outcome == GenericFindingAssessment.Outcome.DECLARED_CODE_ABSENT
         || outcome == GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT;
@@ -53,7 +86,10 @@ final class MavenElisionReportProofValidator {
     if (finding.codeGroupStatus() != ClaimGroupStatus.DECLARED
         || declared.isEmpty()
         || declared.stream()
-            .anyMatch(value -> value.status() != CodeAttributionResolver.Status.RESOLVED)) {
+            .anyMatch(
+                value ->
+                    value.status() != CodeAttributionResolver.Status.RESOLVED
+                        || value.classFamily().isEmpty())) {
       throw new IOException("Saved code proof requires resolved declared code");
     }
   }

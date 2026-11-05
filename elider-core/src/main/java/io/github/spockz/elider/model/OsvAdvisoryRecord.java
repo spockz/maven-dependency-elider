@@ -76,7 +76,7 @@ public record OsvAdvisoryRecord(
                 scope.cveId() != null
                     && sourceId.equals(scope.cveId())
                     && (sourceId.equals(osvId) || aliases.contains(sourceId));
-            case POM -> false;
+            case POM, SNYK -> false;
           };
       if (!ownedSource) {
         throw new IllegalArgumentException("Evidence provenance must belong to this OSV record");

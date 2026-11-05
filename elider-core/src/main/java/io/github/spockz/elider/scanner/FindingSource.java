@@ -5,5 +5,6 @@ package io.github.spockz.elider.scanner;
 /** External source partitions stored in the generic finding cache. */
 public enum FindingSource {
   OSV,
-  CVE_LIST
+  CVE_LIST,
+  SNYK
 }

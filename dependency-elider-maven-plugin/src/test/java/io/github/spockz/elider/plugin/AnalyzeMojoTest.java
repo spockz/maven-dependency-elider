@@ -72,7 +72,8 @@ final class AnalyzeMojoTest {
     final Set<Artifact> artifacts =
         new LinkedHashSet<>(List.of(used, unused, excluded, testScoped, nonJar));
     final Set<Artifact> directArtifacts = new LinkedHashSet<>(Set.of(used, excluded));
-    final MavenProject project = new MavenProject();
+    final MavenProject project =
+        AnalyzeMojoTestArtifactSupport.project(tempDir, "analysis-summary");
     project.setArtifacts(artifacts);
     project.setDependencyArtifacts(directArtifacts);
     final Set<Artifact> resolvedSnapshot = Set.copyOf(project.getArtifacts());
@@ -101,11 +102,9 @@ final class AnalyzeMojoTest {
     assertThat(excluded.getFile()).isSameAs(excludedFile);
     assertThat(testScoped.getFile()).isSameAs(testScopedFile);
     assertThat(log.messages())
-        .contains(
-            "  Artifacts that would be elided by this analysis: 0 / 5 (0.0%)",
-            "  Estimated original JAR bytes for those artifacts: 0 B "
-                + "(sum of original on-disk input JAR sizes; final package delta may differ)",
-            "  JAR trim cache: unavailable (trim stage not run)");
+        .contains("Whole artifacts that would be dropped: 0 / 5 (original JAR file bytes: 0 B)");
+    assertThat(log.messages())
+        .anyMatch(line -> line.startsWith("Snapshot: analysis prediction at "));
     assertThat(log.messages())
         .noneMatch(
             line ->
@@ -193,7 +192,8 @@ final class AnalyzeMojoTest {
             "unused/Idle.class");
     final File unusedFile = unused.getFile();
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(used, unused));
-    final MavenProject project = new MavenProject();
+    final MavenProject project =
+        AnalyzeMojoTestArtifactSupport.project(tempDir, "predicted-elisions");
     project.setArtifacts(artifacts);
     final Path trace = tempDir.resolve("predicted-elisions.lst");
     Files.writeString(trace, "used/Sample\n");
@@ -219,16 +219,23 @@ final class AnalyzeMojoTest {
 
     assertThat(log.messages())
         .contains(
-            "  Artifacts that would be elided by this analysis: 1 / 2 (50.0%)",
-            "  Estimated original JAR bytes for those artifacts: "
+            "Whole artifacts that would be dropped: 1 / 2 (original JAR file bytes: "
                 + MavenElisionReportWriter.formatBytes(Files.size(unused.getFile().toPath()))
-                + " (sum of original on-disk input JAR sizes; final package delta may differ)",
-            "  Vulnerability findings (analysis only; no trim proof):");
-    assertThat(log.messages())
-        .anyMatch(
-            line ->
-                line.contains("CVE-2026-19001 org.example:unused-runtime:jar:1.0")
-                    && line.contains("UNVERIFIED"));
+                + ")",
+            "Analysis only: no trim proof or published changes",
+            "Vulnerability findings: 1");
+    assertAll(
+        "predicted removal is an affected but unverified planned finding",
+        () ->
+            assertThat(log.messages())
+                .anyMatch(
+                    line ->
+                        line.contains("CVE-2026-19001 org.example:unused-runtime:jar:1.0")
+                            && line.contains("[PLANNED_UNVERIFIED]")),
+        () ->
+            assertThat(log.messages())
+                .anyMatch(line -> line.contains("Applicability: AFFECTED; intent: AUTO_VERIFY")),
+        () -> assertThat(log.messages()).contains("CVE Sources:"));
     assertThat(project.getArtifacts()).isSameAs(artifacts).containsExactlyInAnyOrder(used, unused);
     assertThat(unused.getFile()).isSameAs(unusedFile);
     assertThat(log.messages())
@@ -246,7 +253,7 @@ final class AnalyzeMojoTest {
         AnalyzeMojoTestArtifactSupport.artifactWithClasses(
             tempDir, "runtime-cve", "runtime-cve.jar");
     final File original = runtime.getFile();
-    final MavenProject project = new MavenProject();
+    final MavenProject project = AnalyzeMojoTestArtifactSupport.project(tempDir, "trim-analysis");
     project.setArtifacts(new LinkedHashSet<>(List.of(runtime)));
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Build build = new Build();
@@ -275,14 +282,29 @@ final class AnalyzeMojoTest {
 
     mojo.execute();
 
-    assertThat(log.messages())
-        .contains("  Vulnerability findings (analysis only; no trim proof):")
-        .anyMatch(
-            line ->
-                line.contains("CVE-2026-19002 org.example:runtime-cve:jar:1.0")
-                    && line.contains("UNVERIFIED"))
-        .noneMatch(
-            line -> line.contains("CVE-2026-19002") && line.contains("DECLARED_CODE_ABSENT"));
+    assertAll(
+        "unpublished Analyze results retain the finding without declaring omission proof",
+        () ->
+            assertThat(log.messages())
+                .contains("Analysis only: no trim proof or published changes"),
+        () -> assertThat(log.messages()).contains("Vulnerability findings: 1"),
+        () ->
+            assertThat(log.messages())
+                .anyMatch(
+                    line ->
+                        line.contains("CVE-2026-19002 org.example:runtime-cve:jar:1.0")
+                            && line.contains("[RETAINED_UNCHANGED]")),
+        () ->
+            assertThat(log.messages())
+                .anyMatch(line -> line.contains("Applicability: AFFECTED; intent: AUTO_VERIFY")),
+        () -> assertThat(log.messages()).anyMatch(line -> line.contains("Outcome: NO_PROOF;")),
+        () ->
+            assertThat(log.messages())
+                .noneMatch(
+                    line ->
+                        line.contains("CVE-2026-19002")
+                            && line.contains("Outcome: DECLARED_CODE_ABSENT;")),
+        () -> assertThat(log.messages()).anyMatch(line -> line.contains("CACHE UNAVAILABLE")));
     assertThat(project.getArtifacts()).containsExactly(runtime);
     assertThat(runtime.getFile()).isSameAs(original);
     assertThat(TrimPaths.cacheManifestPath(project)).doesNotExist();
@@ -347,7 +369,8 @@ final class AnalyzeMojoTest {
   @Test
   void rejectsAnEmptyTraceList() throws ReflectiveOperationException {
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    AnalyzeMojoTestFieldSupport.set(mojo, "project", new MavenProject());
+    AnalyzeMojoTestFieldSupport.set(
+        mojo, "project", AnalyzeMojoTestArtifactSupport.project(tempDir, "skipped-analysis"));
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of());
 
@@ -392,13 +415,14 @@ final class AnalyzeMojoTest {
   @DisplayName("ADR-0011: leafOnly skips intermediate module in AnalyzeMojo")
   void leafOnlySkipsIntermediateReactorModule() throws Exception {
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    final MavenProject intermediate = new MavenProject();
+    final MavenProject intermediate =
+        AnalyzeMojoTestArtifactSupport.project(tempDir, "intermediate-core");
     intermediate.setGroupId("io.github.spockz.test");
     intermediate.setArtifactId("intermediate-core");
     intermediate.setVersion("1.0.0");
     intermediate.setPackaging("jar");
 
-    final MavenProject leaf = new MavenProject();
+    final MavenProject leaf = AnalyzeMojoTestArtifactSupport.project(tempDir, "reactor-leaf");
     leaf.setGroupId("io.github.spockz.test");
     leaf.setArtifactId("leaf-app");
     leaf.setVersion("1.0.0");

@@ -568,9 +568,10 @@ final class ElideMojoTest {
     assertThat(project.getArtifacts()).containsExactlyInAnyOrder(used, unused);
     assertThat(log.messages())
         .contains(
-            "  Classes removed: 0 / N/A (N/A; stage not run)",
-            "  Program classes removed with dropped JARs: 0 (uncompressed .class entry payload"
-                + " bytes: 0 B; excludes module descriptors and archive sanitation metadata)");
+            "Program classes removed with dropped JARs: 0 (uncompressed .class entry payload"
+                + " bytes: 0 B; excludes module descriptors and archive sanitation metadata)",
+            "Program classes pruned from retained JARs: 0 (uncompressed omitted .class payload"
+                + " bytes: 0 B; excludes module descriptors and archive metadata)");
     assertThat(project.getDependencyArtifacts()).isSameAs(direct);
     assertThat(project.getDependencyArtifacts()).containsExactlyInAnyOrder(used, unused);
     final Artifact addedLater = artifact("later", "later/Added.class");
@@ -596,7 +597,8 @@ final class ElideMojoTest {
     execute(project, "sample.App\nused.Entry\n", log);
 
     assertThat(project.getArtifacts()).contains(used);
-    assertThat(log.messages()).contains("  Whole artifacts: 0 / 1 (0.0%)");
+    assertThat(log.messages())
+        .contains("Whole artifacts dropped: 0 / 1 (original JAR file bytes: 0 B)");
   }
 
   @Test
@@ -677,21 +679,36 @@ final class ElideMojoTest {
     assertThat(runtime.getFile().toPath()).isNotEqualTo(original).isRegularFile();
     assertThat(log.messages())
         .contains(
-            "  Program classes pruned from retained JARs: 1 (uncompressed omitted .class "
-                + "entry payload bytes: "
+            "Program classes pruned from retained JARs: 1 (uncompressed omitted .class payload"
+                + " bytes: "
                 + MavenElisionReportWriter.formatBytes(
                     classEntrySize(original, "sample/Drop.class"))
-                + "; excludes module descriptors and archive sanitation metadata)");
+                + "; excludes module descriptors and archive metadata)");
     assertThat(log.messages()).doesNotContain("  Classes removed: 0 / N/A (N/A; stage not run)");
-    assertThat(log.messages())
-        .noneMatch(message -> message.contains("POM vulnerability mapping overrides cached"))
-        .noneMatch(message -> message.contains("sample.Drop"));
-    assertThat(log.messages())
-        .contains("  Vulnerability findings:")
-        .anyMatch(
-            line ->
-                line.contains("CVE-2026-10001 org.example:runtime-dependency:jar:1.0")
-                    && line.contains("DECLARED_CODE_ABSENT"));
+    assertAll(
+        "trim summary preserves the finding and physical omission result",
+        () -> assertThat(log.messages()).contains("Vulnerability findings: 1"),
+        () ->
+            assertThat(log.messages())
+                .anyMatch(
+                    line ->
+                        line.contains("CVE-2026-10001 org.example:runtime-dependency:jar:1.0")
+                            && line.contains("[RETAINED_AND_TRIMMED]")),
+        () ->
+            assertThat(log.messages())
+                .anyMatch(line -> line.contains("Applicability: AFFECTED; intent: AUTO_VERIFY")),
+        () ->
+            assertThat(log.messages())
+                .anyMatch(line -> line.contains("Outcome: DECLARED_CODE_ABSENT;")),
+        () ->
+            assertThat(log.messages())
+                .anyMatch(line -> line.contains("Declared code: [sample.Drop] RESOLVED")),
+        () -> assertThat(log.messages()).contains("CVE Sources:"),
+        () -> assertThat(log.messages()).anyMatch(line -> line.contains("CACHE ERROR")),
+        () ->
+            assertThat(log.messages())
+                .noneMatch(
+                    message -> message.contains("POM vulnerability mapping overrides cached")));
     assertThat(directRuntime.getFile().toPath()).isEqualTo(runtime.getFile().toPath());
     assertThat(project.getArtifacts()).contains(runtime);
     assertThat(project.getArtifacts()).contains(unusedRuntime);

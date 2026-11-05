@@ -100,6 +100,28 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
+  void rejectsInputCountsSmallerThanDistinctOutputArtifacts() throws IOException {
+    final ArtifactCoordinate dropped = ArtifactCoordinate.of("example", "old", "1.0");
+    final ArtifactCoordinate trimmed = ArtifactCoordinate.of("example", "trimmed", "1.0");
+    final ObjectNode dropOnly = currentReportShapeWithDroppedRow();
+    setGraph(
+        dropOnly,
+        MediatedGraphReportTestSupport.reportForDroppedOutput(dropped, "example:consumer:1.0"));
+    dropOnly.put("inputArtifactCount", 0);
+    final ObjectNode dropAndTrim = currentReportShapeWithDroppedRow();
+    addTrimmedArtifact(dropAndTrim, trimmed.toString());
+    setGraph(
+        dropAndTrim,
+        MediatedGraphReportTestSupport.reportForOutputs(dropped, trimmed, "example:consumer:1.0"));
+    dropAndTrim.put("inputArtifactCount", 1);
+    assertAll(
+        () -> assertInvalidEnvironment("drop-exceeds-input.json", dropOnly, "input artifact count"),
+        () ->
+            assertInvalidEnvironment(
+                "outputs-exceed-input.json", dropAndTrim, "input artifact count"));
+  }
+
+  @Test
   void rejectsMissingOrMalformedExecutionEnvironmentFields() {
     final ObjectNode missingEnvironment = currentReportShapeWithDroppedRow();
     missingEnvironment.remove("executionEnvironment");
@@ -404,7 +426,8 @@ final class MavenElisionReportSchemaTest {
         .addObject()
         .put("coordinate", "example:drop:jar:1.0 (runtime)")
         .put(TRIMMED_CLASSES, 0)
-        .put(TRIMMED_CLASS_BYTES, 0);
+        .put(TRIMMED_CLASS_BYTES, 0)
+        .putNull("plannedClasses");
     final Path trimmedPath = temporaryDirectory.resolve("ban-also-trimmed.json");
     JSON.writeValue(trimmedPath.toFile(), trimmed);
 
@@ -555,7 +578,8 @@ final class MavenElisionReportSchemaTest {
         .addObject()
         .put("coordinate", coordinate)
         .put(TRIMMED_CLASSES, 0)
-        .put(TRIMMED_CLASS_BYTES, 0);
+        .put(TRIMMED_CLASS_BYTES, 0)
+        .putNull("plannedClasses");
   }
 
   private ObjectNode appliedBanReport(final String dependency, final String coordinate)
@@ -650,7 +674,8 @@ final class MavenElisionReportSchemaTest {
             .addObject()
             .put("coordinate", "example:trimmed:jar:1.0")
             .put(TRIMMED_CLASSES, 1)
-            .put(TRIMMED_CLASS_BYTES, 10);
+            .put(TRIMMED_CLASS_BYTES, 10)
+            .putNull("plannedClasses");
     trimmed.putNull(TRIMMED_CLASSES);
     final Path previous = temporaryDirectory.resolve("null-trimmed-metric.json");
     JSON.writeValue(previous.toFile(), payload);
@@ -668,7 +693,8 @@ final class MavenElisionReportSchemaTest {
         .addObject()
         .put("coordinate", 7)
         .put(TRIMMED_CLASSES, 1)
-        .put(TRIMMED_CLASS_BYTES, 10);
+        .put(TRIMMED_CLASS_BYTES, 10)
+        .putNull("plannedClasses");
     final Path previous = temporaryDirectory.resolve("non-text-coordinate.json");
     JSON.writeValue(previous.toFile(), payload);
 
@@ -736,6 +762,9 @@ final class MavenElisionReportSchemaTest {
   static ObjectNode currentReportShapeWithDroppedRow() {
     final ObjectNode payload = JSON.createObjectNode();
     payload.put("schemaVersion", 1);
+    payload.put("mode", "APPLIED");
+    payload.put("inputArtifactCount", 1);
+    payload.putNull("sourceAttributionFallback");
     payload.put("projectGroupId", "example");
     payload.put("projectArtifactId", "consumer");
     payload.put("projectVersion", "1.0");
