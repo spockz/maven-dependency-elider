@@ -41,8 +41,6 @@ final class MavenElisionReportWriter {
 
   static void write(final Path output, final MavenElisionReportSnapshot snapshot)
       throws IOException {
-    MavenElisionReportSourceReviewValidator.validate(
-        snapshot.sourceReviewFindings(), snapshot.assumeConventionalJavaSourceLayout());
     final Path absolute = output.toAbsolutePath().normalize();
     final Path parent = absolute.getParent();
     if (parent == null) {
@@ -51,7 +49,13 @@ final class MavenElisionReportWriter {
     Files.createDirectories(parent);
     final Path temporary = Files.createTempFile(parent, ".elision-report-", ".json.tmp");
     try {
-      JSON.writeValue(temporary.toFile(), snapshot);
+      final com.fasterxml.jackson.databind.node.ObjectNode payload = JSON.valueToTree(snapshot);
+      payload.set(
+          "genericFindings", MavenElisionReportGenericPayload.findings(snapshot.genericFindings()));
+      payload.set(
+          "sourceObservations",
+          MavenElisionReportGenericPayload.observations(snapshot.sourceObservations()));
+      JSON.writeValue(temporary.toFile(), payload);
       try {
         Files.move(
             temporary,
@@ -90,18 +94,21 @@ final class MavenElisionReportWriter {
     MavenElisionReportPayloadValidator.validate(payload);
     final MavenElisionReportSnapshot snapshot;
     try {
-      snapshot = JSON.treeToValue(payload, MavenElisionReportSnapshot.class);
+      final List<GenericFindingAssessment> findings =
+          MavenElisionReportGenericPayload.readFindings(payload.get("genericFindings"));
+      final List<FindingSourceObservation> observations =
+          MavenElisionReportGenericPayload.readObservations(payload.get("sourceObservations"));
+      final com.fasterxml.jackson.databind.node.ObjectNode internal =
+          ((com.fasterxml.jackson.databind.node.ObjectNode) payload).deepCopy();
+      internal.remove(List.of("genericFindings", "sourceObservations"));
+      snapshot =
+          JSON.treeToValue(internal, MavenElisionReportSnapshot.class)
+              .withGenericFindings(findings, observations);
     } catch (final IllegalArgumentException exception) {
       throw new IOException("Invalid elision report snapshot: " + absolute, exception);
     }
     if (snapshot == null) {
       throw new IOException("Elision report snapshot is empty: " + absolute);
-    }
-    try {
-      MavenElisionReportSourceReviewValidator.validate(
-          snapshot.sourceReviewFindings(), snapshot.assumeConventionalJavaSourceLayout());
-    } catch (final IllegalArgumentException exception) {
-      throw new IOException("Invalid elision report source-review data: " + absolute, exception);
     }
     return snapshot;
   }

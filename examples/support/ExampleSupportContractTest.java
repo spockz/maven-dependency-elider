@@ -99,6 +99,7 @@ public final class ExampleSupportContractTest {
       ExampleSupport.validateClassUsageReport(reportWithValidPrediction(productionOutput), productionOutput);
       verifiesBanPlanValidation(productionOutput);
       verifiesExclusionReviewValidation(productionOutput);
+      verifiesGenericFindingReportValidation();
     } finally {
       Files.deleteIfExists(productionOutput);
     }
@@ -111,7 +112,7 @@ public final class ExampleSupportContractTest {
 
     final ObjectNode missing = unavailable.deepCopy();
     missing.remove("exclusionReview");
-    rejects(missing, productionOutput, "Invalid exclusionReview payload");
+    ExampleSupport.validateClassUsageReport(missing, productionOutput);
 
     final ObjectNode malformed = unavailable.deepCopy();
     ((ObjectNode) malformed.path("exclusionReview")).put("available", "false");
@@ -148,6 +149,52 @@ public final class ExampleSupportContractTest {
                 .path("declaration"))
         .put("ordinal", 0);
     rejects(repeatedOrdinal, productionOutput, "declaration ordinals are not canonical");
+  }
+
+  private static void verifiesGenericFindingReportValidation() throws IOException {
+    final ObjectNode report = JSON.createObjectNode();
+    final ObjectNode finding = report.putArray("genericFindings").addObject();
+    finding.put("vulnerabilityId", "CVE-2026-10001");
+    finding.put("applicability", "AFFECTED");
+    finding.put("outcome", "DECLARED_CODE_ABSENT");
+    finding.put("inventoryDisposition", "RETAINED_AND_TRIMMED");
+    finding.put("detail", "All declared vulnerable classes were absent from the trimmed artifact.");
+    final ObjectNode coordinate = finding.putObject("candidate");
+    coordinate.put("groupId", "org.example");
+    coordinate.put("artifactId", "library");
+    coordinate.put("version", "1.2.3");
+    coordinate.put("type", "jar");
+    coordinate.put("classifier", "");
+    coordinate.put("scope", "compile");
+    report.putArray("sourceObservations");
+
+    ExampleSupport.validateGenericFindingReport(report);
+
+    final ObjectNode missingRows = JSON.createObjectNode();
+    missingRows.putArray("sourceObservations");
+    rejectsGenericFindingReport(missingRows, "genericFindings must be an array");
+
+    final ObjectNode invalidOutcome = report.deepCopy();
+    ((ObjectNode) invalidOutcome.path("genericFindings").get(0)).put("outcome", "MITIGATED");
+    rejectsGenericFindingReport(invalidOutcome, "finding outcome is unsupported");
+
+    final ObjectNode incompleteCoordinate = report.deepCopy();
+    ((ObjectNode) incompleteCoordinate.path("genericFindings").get(0).path("candidate"))
+        .remove("version");
+    rejectsGenericFindingReport(incompleteCoordinate, "candidate coordinate is incomplete");
+  }
+
+  private static void rejectsGenericFindingReport(final JsonNode report, final String expected)
+      throws IOException {
+    try {
+      ExampleSupport.validateGenericFindingReport(report);
+    } catch (final IOException exception) {
+      if (exception.getMessage().contains(expected)) {
+        return;
+      }
+      throw new AssertionError("Unexpected generic report validation error", exception);
+    }
+    throw new AssertionError("Malformed generic finding report was accepted: " + report);
   }
 
   private static ObjectNode availableReview() {

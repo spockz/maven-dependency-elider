@@ -59,40 +59,11 @@ public final class VexAttestation {
   /** Fingerprint of the complete declared class inventory. */
   private final String inventorySha256;
 
-  /** Live source origin retained only for verified structured omitted-code evidence. */
-  private final StructuredProofProvenance structuredProofProvenance;
-
   /** Display-only source labels. */
   private final Set<String> sourceLabels;
 
   /** Display-only source records. */
   private final Set<AdvisoryProvenance> sourceProvenance;
-
-  /** Only the model-package proof engine can construct a verified attestation. */
-  VexAttestation(
-      final String cveId,
-      final ArtifactCoordinate coordinate,
-      final String justification,
-      final String impactDetail,
-      final Set<String> evidenceSymbols,
-      final String originalSha256,
-      final String trimmedSha256) {
-    this(
-        cveId,
-        coordinate,
-        justification,
-        impactDetail,
-        evidenceSymbols,
-        originalSha256,
-        trimmedSha256,
-        Set.of(),
-        null,
-        null,
-        null,
-        null,
-        Set.of(),
-        Set.of());
-  }
 
   private VexAttestation(
       final String cveId,
@@ -106,7 +77,6 @@ public final class VexAttestation {
       final Path affectedArtifactPath,
       final String postElisionSha256,
       final String inventorySha256,
-      final StructuredProofProvenance structuredProofProvenance,
       final Set<String> sourceLabels,
       final Set<AdvisoryProvenance> sourceProvenance) {
     this.cveId = Objects.requireNonNull(cveId, "cveId");
@@ -149,89 +119,8 @@ public final class VexAttestation {
     this.affectedArtifactPath = boundArtifactPath;
     this.postElisionSha256 = postElisionSha256;
     this.inventorySha256 = inventorySha256;
-    validateProvenance(justification, structuredProofProvenance);
-    this.structuredProofProvenance = structuredProofProvenance;
     this.sourceLabels = Collections.unmodifiableSet(new TreeSet<>(sourceLabels));
     this.sourceProvenance = Set.copyOf(sourceProvenance);
-  }
-
-  /** Creates structured omitted-code evidence after live validation. */
-  static VexAttestation structuredOmittedCode(
-      final String cveId,
-      final ArtifactCoordinate coordinate,
-      final String impactDetail,
-      final Set<String> evidenceSymbols,
-      final String originalSha256,
-      final String trimmedSha256,
-      final StructuredProofProvenance provenance) {
-    return new VexAttestation(
-        cveId,
-        coordinate,
-        OMITTED_CODE_JUSTIFICATION,
-        impactDetail,
-        evidenceSymbols,
-        originalSha256,
-        trimmedSha256,
-        Set.of(),
-        null,
-        null,
-        null,
-        Objects.requireNonNull(provenance, "provenance"),
-        Set.of(),
-        Set.of());
-  }
-
-  private static void validateProvenance(
-      final String justification, final StructuredProofProvenance provenance) {
-    if (PRECONDITION_JUSTIFICATION.equals(justification) && provenance != null) {
-      throw new IllegalArgumentException("Precondition evidence cannot carry CNA provenance");
-    }
-  }
-
-  /** Creates precondition evidence after the inventory proof succeeds. */
-  static VexAttestation precondition(
-      final String cveId,
-      final ArtifactCoordinate coordinate,
-      final String impactDetail,
-      final String requiredDependency,
-      final String requiredClass,
-      final Path affectedArtifactPath,
-      final String postElisionSha256,
-      final String inventorySha256) {
-    return precondition(
-        cveId,
-        coordinate,
-        impactDetail,
-        Set.of(new PrerequisiteClaim(requiredDependency, requiredClass)),
-        affectedArtifactPath,
-        postElisionSha256,
-        inventorySha256);
-  }
-
-  /** Creates evidence for every verified prerequisite pair. */
-  static VexAttestation precondition(
-      final String vulnerabilityId,
-      final ArtifactCoordinate coordinate,
-      final String impactDetail,
-      final Set<PrerequisiteClaim> requiredPrerequisites,
-      final Path affectedArtifactPath,
-      final String postElisionSha256,
-      final String inventorySha256) {
-    return new VexAttestation(
-        vulnerabilityId,
-        coordinate,
-        PRECONDITION_JUSTIFICATION,
-        impactDetail,
-        Set.of(),
-        null,
-        null,
-        requiredPrerequisites,
-        affectedArtifactPath,
-        postElisionSha256,
-        inventorySha256,
-        null,
-        Set.of(),
-        Set.of());
   }
 
   /** Creates verified omission evidence with source metadata. */
@@ -251,7 +140,6 @@ public final class VexAttestation {
         original,
         trimmed,
         Set.of(),
-        null,
         null,
         null,
         null,
@@ -280,7 +168,6 @@ public final class VexAttestation {
         path,
         digest,
         inventoryDigest,
-        null,
         finding.provenance(),
         sources(finding));
   }
@@ -320,7 +207,6 @@ public final class VexAttestation {
         affectedArtifactPath,
         postElisionSha256,
         inventorySha256,
-        structuredProofProvenance,
         labels,
         sources);
   }
@@ -396,11 +282,6 @@ public final class VexAttestation {
   /** Returns the complete class inventory fingerprint for precondition evidence. */
   public String inventorySha256() {
     return inventorySha256;
-  }
-
-  /** Returns live CNA/source-build provenance for structured proof, when applicable. */
-  public java.util.Optional<StructuredProofProvenance> structuredProofProvenance() {
-    return java.util.Optional.ofNullable(structuredProofProvenance);
   }
 
   private static void requireSha256(final String value, final String name) {

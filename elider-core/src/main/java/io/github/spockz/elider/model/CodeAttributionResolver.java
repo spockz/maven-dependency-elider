@@ -346,6 +346,7 @@ public final class CodeAttributionResolver {
   /** Stable explanation for unresolved, partial, or review-only attribution. */
   public enum Reason {
     HEURISTIC_REQUIRES_REVIEW,
+    ARCHIVE_UNAVAILABLE,
     INVALID_CLASS_NAME,
     CLASS_NOT_FOUND,
     INVALID_SOURCE_PATH,

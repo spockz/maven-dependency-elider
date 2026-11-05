@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WHY: Activates the packaged production graph capture used by elide and saved-report replay. -->
+<extensions>
+  <extension>
+    <groupId>io.github.spockz</groupId>
+    <artifactId>dependency-elider-maven-plugin</artifactId>
+    <version>@PLUGIN_VERSION@</version>
+  </extension>
+</extensions>

@@ -107,7 +107,7 @@ final class LiveStructuredSourceBoundaryTest {
   }
 
   @Test
-  void structuredProofRebindsLiveEvidenceBeforeAttemptingSourceReproduction() throws Exception {
+  void genericProofRejectsMissingOriginalArchive() throws Exception {
     final LiveStructuredSourceValidatorTest.Fixture fixture =
         LiveStructuredSourceValidatorTest.fixture(
             temporaryDirectory,
@@ -115,9 +115,17 @@ final class LiveStructuredSourceBoundaryTest {
                 LiveStructuredSourceValidatorTest.AFFECTED_STATUS, false));
     final ArtifactTrimRecord trimRecord = unmaterializedTrimRecord(fixture.request());
 
-    assertThatThrownBy(() -> OmittedCodeProof.proveStructured(fixture.request(), trimRecord))
+    final VulnerabilitySymbolMapping mapping =
+        new VulnerabilitySymbolMapping(
+            CVE_ID,
+            fixture.request().candidate(),
+            "[" + fixture.request().candidate().version() + "]",
+            java.util.Set.of("org.example.Missing"),
+            null,
+            ConfidenceLevel.HIGH);
+    assertThatThrownBy(() -> GenericProofTestSupport.classProof(mapping, trimRecord))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("original artifact must be a regular JAR file");
+        .hasMessageContaining("original.jar");
   }
 
   private ArtifactTrimRecord unmaterializedTrimRecord(final StructuredSourceProofRequest request) {

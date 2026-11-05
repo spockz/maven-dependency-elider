@@ -102,14 +102,14 @@ final class ReportMojoTest {
         3,
         1536,
         List.of(new MavenElisionReportSnapshot.TrimmedArtifact(trimmed.toString(), 3, 1536)),
-        List.of(),
-        List.of(),
-        List.of(),
-        List.of(),
         graph,
         layoutAssumed,
+        MavenElisionPolicyIdentityTestSupport.emptyPolicy(),
+        ExclusionReview.unavailable("No pre-injection declaration capture is available"),
         List.of(),
-        MavenElisionPolicyIdentityTestSupport.emptyPolicy());
+        List.of(),
+        List.of(),
+        List.of());
   }
 
   private static ArtifactCoordinate coordinate(final String artifactId) {

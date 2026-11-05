@@ -61,19 +61,6 @@ public final class PreconditionProof {
 
   private PreconditionProof() {}
 
-  /** Returns precondition evidence or fails closed when any proof gate is unmet. */
-  public static VexAttestation prove(
-      final ExplicitPrerequisiteEvidence evidence, final PreconditionClassInventory inventory)
-      throws IOException {
-    final VulnerabilitySymbolMapping mapping = requireEvidence(evidence);
-    return prove(
-        mapping.cveId(),
-        mapping.affectedCoordinate(),
-        Set.of(new PrerequisiteClaim(mapping.requiresDependency(), mapping.requiresClass())),
-        inspect(inventory),
-        null);
-  }
-
   /** Checks effective prerequisites for the exact candidate. */
   public static VexAttestation prove(
       final GenericVulnerabilityFinding finding,
@@ -94,7 +81,6 @@ public final class PreconditionProof {
       throw new IllegalArgumentException("Precondition proof requires declared prerequisite pairs");
     }
     return prove(
-        finding.vulnerabilityId(),
         candidate,
         Set.copyOf(finding.effectivePrerequisitesFor(candidate.version())),
         inspection,
@@ -102,7 +88,6 @@ public final class PreconditionProof {
   }
 
   private static VexAttestation prove(
-      final String vulnerabilityId,
       final ArtifactCoordinate candidate,
       final Set<PrerequisiteClaim> prerequisites,
       final InventoryInspection inspection,
@@ -140,18 +125,8 @@ public final class PreconditionProof {
                 .collect(java.util.stream.Collectors.joining("; "))
             + " are absent from the complete declared Maven inventory. The proof does not cover "
             + "providers introduced outside that inventory.";
-    if (finding != null) {
-      return VexAttestation.genericPrecondition(
-          finding,
-          affected.coordinate(),
-          impactDetail,
-          prerequisites,
-          affected.path(),
-          affected.sha256(),
-          inspection.inventory.fingerprint());
-    }
-    return VexAttestation.precondition(
-        vulnerabilityId,
+    return VexAttestation.genericPrecondition(
+        finding,
         affected.coordinate(),
         impactDetail,
         prerequisites,
@@ -204,14 +179,6 @@ public final class PreconditionProof {
       this.availableClasses = Set.copyOf(availableClasses);
       this.availableDependencies = Set.copyOf(availableDependencies);
     }
-  }
-
-  private static VulnerabilitySymbolMapping requireEvidence(
-      final ExplicitPrerequisiteEvidence evidence) {
-    if (evidence == null) {
-      throw new IllegalArgumentException("Explicit prerequisite evidence is required");
-    }
-    return evidence.mapping();
   }
 
   private static RequiredDependency parseRequiredDependency(final String value) {

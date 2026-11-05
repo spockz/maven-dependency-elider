@@ -100,15 +100,25 @@ Each dependency remains a distinct JAR keyed to its Maven coordinate. This prese
 
 ### How are advisories with multiple vulnerable classes handled across version ranges?
 
-Currently, `OmittedCodeProof` requires that all mapped vulnerable classes exist in the original JAR (`originalArchiveClasses.containsAll(vulnerableClasses)`). If an advisory maps multiple classes but the target artifact version does not contain all of them, proof fails closed.
+`OmittedCodeProof` resolves every effective declared code claim against the original JAR and verifies that its attributed class family is absent from the result. Missing original classes, ambiguous attribution or a retained nested class prevent aggregate code-omission proof. Package coverage can be broader than the versions for which code was declared, so applicability alone does not extend a mapping to another version.
 
-For example, in Jackson Core (`CVE-2026-68494` / `GHSA-r7wm-3cxj-wff9`), the fix commit touches both `com.fasterxml.jackson.core.async.ByteArrayFeeder` and `com.fasterxml.jackson.core.exc.StreamConstraintsException`. The advisory marks Jackson Core versions `(,2.18.8)` as vulnerable. However, `StreamConstraintsException` was only introduced in Jackson 2.15.0; older vulnerable versions (such as 2.14.x) lack that class entirely. Under the current strict rules, an elision proof for Jackson 2.14.x cannot be established. We are still evaluating what multiple vulnerable classes mean semantically (e.g., whether presence of any class indicates exposure or whether all must interact) and whether the engine should remain as strict as it is today.
+The Jackson investigation in [RQ-0020](research/RQ-0020-advisory-source-coverage-and-scanner-finding-projections.md) illustrates broad mappings that mention classes absent from an older artifact. A checked manual correction can replace the code group within a precise version scope. It follows the same attribution and physical checks. This proves absence of the effective declared code; it neither establishes that the publisher enumerated all vulnerable code nor decides whether a package scanner will drop its finding.
 
 ### Why are manual mappings prioritized if assessment is source-independent?
 
 Manual priority is an explicit merge policy: it selects supplied effective fields within the matching vulnerability/component/version scope. Omitted fields can be enriched. Assessment receives the resulting common facts without a POM-specific authority path. Code override is one logical group across class/file/routine representations; a lower-priority automatic path must not reintroduce a superseded mapping. Prerequisite dependency/class pairs stay together. See [ADR-0014](adr/0014-source-independent-vulnerability-findings.md).
 
 Review intent is separate from descriptive confidence. Manual LOW/MEDIUM retains REVIEW_ONLY policy, including when its omitted code is enriched. Higher priority, HIGH confidence and changed source labels cannot bypass exact binding, attribution, archive identity or complete prerequisite-inventory checks. Generic cache entries retain facts and integrity context, not reconstructed verified capabilities.
+
+### How are conflicting CVE aliases handled?
+
+Reconcile the complete original contribution set before component grouping. A unique CVE association can join advisory and CVE contributions. A later alias bridge to a second CVE revokes the derived association; it cannot merge the two CVEs. Keep original identifiers and alias edges so refresh and replay can reproduce that decision.
+
+An advisory primary identifier shared by assertions naming different CVEs remains visible as a review-only finding. Manual priority cannot replace declarations across that unresolved identity. Direct CVE findings retain their scoped manual rules. The [reconciliation tests](../elider-core/src/test/java/io/github/spockz/elider/model/GenericFindingReconcilerTest.java) cover late bridges, ambiguous shared advisory identifiers, original-input preservation and exact component discriminators. Production wiring and complete work-package status remain tracked separately.
+
+### Why are code and prerequisite proof results independent?
+
+Each group establishes a different bounded observation. An unresolved code declaration cannot invalidate a separately verified complete-inventory prerequisite proof, and an unresolved prerequisite cannot invalidate physically verified absence of every effective declared class. Applicability and review intent still gate both groups. When both proofs succeed for the same finding/component, publish one certificate, preferring declared-code absence. Saved-report validation checks that a claimed outcome has consistent corresponding fields without reading current archives or repeating assessment.
 
 ## Updating This Page
 

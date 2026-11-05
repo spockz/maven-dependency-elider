@@ -175,7 +175,6 @@ final class MavenElideExecution {
             publication.vulnerabilityMappings(),
             publication.preconditionProofEnabled(),
             publication.assumeConventionalJavaSourceLayout(),
-            publication.sourceClassifierResolver(),
             publication.afterStaging(),
             banPlan,
             applicationBinding));

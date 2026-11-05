@@ -4,7 +4,6 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactFileRef;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
 import java.io.IOException;
@@ -132,14 +131,7 @@ final class MavenElisionOutputPublisher {
       final Request request, final MavenPreconditionInventory.Snapshot inventory)
       throws IOException {
     return new MavenVulnerabilityAssessment(
-            request.log(),
-            new VulnerabilityCacheManager(),
-            request.assumeConventionalJavaSourceLayout(),
-            MavenSourceCorrespondenceAssessment.configured(
-                request.project(),
-                request.session(),
-                request.sourceClassifierResolver(),
-                request.assumeConventionalJavaSourceLayout()))
+            request.log(), request.assumeConventionalJavaSourceLayout())
         .assess(
             request.cacheConfig(), request.vulnerabilityMappings(), request.analysis(), inventory);
   }
@@ -474,7 +466,6 @@ final class MavenElisionOutputPublisher {
       ConfiguredVulnerabilityMappings vulnerabilityMappings,
       boolean preconditionProofEnabled,
       boolean assumeConventionalJavaSourceLayout,
-      Optional<MavenSourceClassifierResolver> sourceClassifierResolver,
       AfterStaging afterStaging,
       MavenBanPlan banPlan,
       MavenArtifactViewBinding applicationBinding) {

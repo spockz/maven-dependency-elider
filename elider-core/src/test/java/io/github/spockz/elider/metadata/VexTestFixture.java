@@ -6,10 +6,8 @@ package io.github.spockz.elider.metadata;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ConfidenceLevel;
-import io.github.spockz.elider.model.ExplicitEvidenceTestSupport;
-import io.github.spockz.elider.model.OmittedCodeProof;
+import io.github.spockz.elider.model.GenericProofTestSupport;
 import io.github.spockz.elider.model.PreconditionClassInventory;
-import io.github.spockz.elider.model.PreconditionProof;
 import io.github.spockz.elider.model.VexAttestation;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -68,8 +66,7 @@ record VexTestFixture(
             Set.of("org.example.Vulnerable"),
             java.net.URI.create("https://example.org/advisory/CVE-2025-12345"),
             ConfidenceLevel.HIGH);
-    VexAttestation attestation =
-        OmittedCodeProof.prove(ExplicitEvidenceTestSupport.classEvidence(mapping), trimRecord);
+    VexAttestation attestation = GenericProofTestSupport.classProof(mapping, trimRecord);
     return new VexTestFixture(coordinate, trimRecord, inventory, attestation);
   }
 
@@ -94,8 +91,7 @@ record VexTestFixture(
             ConfidenceLevel.HIGH,
             "org.example:optional",
             requiredClass);
-    return PreconditionProof.prove(
-        ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping), inventory);
+    return GenericProofTestSupport.prerequisiteProof(mapping, inventory);
   }
 
   private static void writeJar(Path path, String... entries) throws IOException {

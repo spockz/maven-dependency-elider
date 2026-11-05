@@ -15,12 +15,10 @@ import io.github.spockz.elider.model.CveSourceRecordMetadata;
 import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
-import io.github.spockz.elider.model.MavenPackageIdentity;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
-import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -230,43 +228,8 @@ public final class OsvSnapshotIndexer {
     final String osvDigest = sha256(sourceBytes);
     final List<OsvAffectedPackage> affectedPackages = new ArrayList<>();
     final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence = new ArrayList<>();
-    final List<AdvisoryScope> scopes =
-        readAffectedEntries(root, cveId, osvId, osvDigest, affectedPackages, evidence);
+    readAffectedEntries(root, cveId, osvId, osvDigest, affectedPackages, evidence);
     final List<CveAffectedEntryContext> cnaEntries = new ArrayList<>();
-    final String cvePath = locateCveRecord(cveListGitDir, cveId);
-    if (cvePath != null) {
-      final Path path = Path.of(cvePath);
-      try {
-        final byte[] cveBytes = Files.readAllBytes(path);
-        final JsonNode cveRoot = readSingleJsonDocument(cveBytes, "CVE source record");
-        if (!cveRoot.isObject()) {
-          throw new IllegalArgumentException("CVE source record must be a JSON object");
-        }
-        validateCveSourceShape(cveRoot);
-        final String cveDigest = sha256(cveBytes);
-        final CveSourceRecordMetadata sourceMetadata = readCveSourceMetadata(cveRoot, cveDigest);
-        final JsonNode affected = cveRoot.path(CONTAINERS_FIELD).path("cna").path("affected");
-        if (affected.isArray()) {
-          for (int index = 0; index < affected.size(); index++) {
-            final JsonNode entry = affected.get(index);
-            final CveAffectedEntryContext context = readCnaContext(entry, index, sourceMetadata);
-            cnaEntries.add(context);
-            for (final AdvisoryScope scope : scopes) {
-              if (sourceMetadata.authorizesStructuredClaims(cveId, osvId, aliases)
-                  && matchesCnaProduct(context, scope)) {
-                addStructuredEvidence(
-                    entry, context.entryIdentity(), scope, cveId, cveDigest, evidence);
-              }
-            }
-          }
-        }
-        if (sourceMetadata.authorizesStructuredClaims(cveId, osvId, aliases)) {
-          addCveTextEvidence(cveRoot, scopes, cveId, cveDigest, evidence);
-        }
-      } catch (final IOException exception) {
-        throw new IllegalArgumentException("Could not read CVE source record " + cveId, exception);
-      }
-    }
     return new OsvAdvisoryRecord(osvId, modified, aliases, affectedPackages, cnaEntries, evidence);
   }
 
@@ -510,75 +473,18 @@ public final class OsvSnapshotIndexer {
     }
   }
 
-  private static void addCveTextEvidence(
-      final JsonNode root,
-      final List<AdvisoryScope> scopes,
-      final String cveId,
-      final String digest,
-      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
-    final JsonNode cna = root.path(CONTAINERS_FIELD).path("cna");
-    final JsonNode descriptions = cna.path("descriptions");
-    if (descriptions.isArray()) {
-      for (int index = 0; index < descriptions.size(); index++) {
-        final String text = descriptions.get(index).path("value").asText("");
-        addCveCandidateText(text, cveId + "#description:" + index, null, scopes, digest, evidence);
-      }
-    }
-    final JsonNode references = cna.path("references");
-    if (references.isArray()) {
-      for (int index = 0; index < references.size(); index++) {
-        final String value = references.get(index).path("url").asText("");
-        try {
-          final URI url = URI.create(value);
-          if (url.isAbsolute()
-              && ("http".equalsIgnoreCase(url.getScheme())
-                  || "https".equalsIgnoreCase(url.getScheme()))) {
-            addCveCandidateText("", cveId + "#reference:" + index, url, scopes, digest, evidence);
-          }
-        } catch (final IllegalArgumentException ignored) {
-          // Invalid reference URLs are not evidence provenance.
-        }
-      }
-    }
-  }
-
-  private static void addCveCandidateText(
-      final String text,
-      final String sourceId,
-      final URI sourceUrl,
-      final List<AdvisoryScope> scopes,
-      final String digest,
-      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
-    for (final AdvisoryScope scope : scopes) {
-      final Set<String> classes = new TreeSet<>();
-      extractClassesFromText(
-          text,
-          scope.affectedCoordinate().groupId(),
-          scope.affectedCoordinate().artifactId(),
-          classes);
-      if (sourceUrl != null) {
-        extractClassesFromCommitUrl(
-            sourceUrl.toString(),
-            scope.affectedCoordinate().groupId(),
-            scope.affectedCoordinate().artifactId(),
-            classes);
-      }
-      evidence.add(
-          new HeuristicCandidateEvidence(
-              scope,
-              new AdvisoryProvenance(
-                  sourceUrl == null ? EvidenceOrigin.DESCRIPTION : EvidenceOrigin.REFERENCE_URL,
-                  sourceId,
-                  sourceUrl,
-                  digest),
-              classes,
-              Set.of(scope.packageName())));
-    }
-  }
-
   /** Shares indexed CNA entry decoding with the live CVE source reader. */
   static CveAffectedEntryContext readCnaContext(
       final JsonNode entry, final int index, final CveSourceRecordMetadata sourceRecord) {
+    return readCveAffectedContext(entry, "containers.cna", index, sourceRecord);
+  }
+
+  /** Decodes one CVE affected entry while retaining the container that supplied it. */
+  static CveAffectedEntryContext readCveAffectedContext(
+      final JsonNode entry,
+      final String containerPath,
+      final int index,
+      final CveSourceRecordMetadata sourceRecord) {
     final String product = entry.path("product").textValue();
     final List<CveVersionClaim> versions = new ArrayList<>();
     final JsonNode versionsNode = entry.path(VERSIONS_FIELD);
@@ -600,7 +506,7 @@ public final class OsvSnapshotIndexer {
       }
     }
     return new CveAffectedEntryContext(
-        "containers.cna.affected[" + index + "]",
+        containerPath + ".affected[" + index + "]",
         sourceRecord,
         entry.path("vendor").asText(null),
         product,
@@ -613,33 +519,47 @@ public final class OsvSnapshotIndexer {
         readRoutineNames(entry.path("programRoutines")));
   }
 
-  /** Applies the indexer's structural CNA checks to a live source record. */
+  /** Applies structural checks to supported affected entries in a live source record. */
   static void validateCveSourceShape(final JsonNode root) {
     final JsonNode containers = optionalObject(root, CONTAINERS_FIELD, CONTAINERS_FIELD);
     if (containers == null) {
       return;
     }
     final JsonNode cna = optionalObject(containers, "cna", "containers.cna");
-    if (cna == null) {
-      return;
+    if (cna != null) {
+      validateAffectedEntries(cna, "containers.cna");
     }
-    final JsonNode affected = optionalArray(cna, "affected", "containers.cna.affected");
-    if (affected == null) {
-      return;
-    }
-    for (int index = 0; index < affected.size(); index++) {
-      validateCnaAffectedEntry(affected.get(index), index);
+    final JsonNode adp = optionalArray(containers, "adp", "containers.adp");
+    if (adp != null) {
+      for (int adpIndex = 0; adpIndex < adp.size(); adpIndex++) {
+        final JsonNode adpContainer = adp.get(adpIndex);
+        if (!adpContainer.isObject()) {
+          throw new IllegalArgumentException("containers.adp[" + adpIndex + "] must be an object");
+        }
+        validateAffectedEntries(adpContainer, "containers.adp[" + adpIndex + "]");
+      }
     }
   }
 
-  private static void validateCnaAffectedEntry(final JsonNode entry, final int index) {
-    final String context = "containers.cna.affected[" + index + "]";
+  private static void validateAffectedEntries(
+      final JsonNode container, final String containerPath) {
+    final JsonNode affected = optionalArray(container, "affected", containerPath + ".affected");
+    if (affected != null) {
+      for (int index = 0; index < affected.size(); index++) {
+        validateCnaAffectedEntry(affected.get(index), index, containerPath);
+      }
+    }
+  }
+
+  private static void validateCnaAffectedEntry(
+      final JsonNode entry, final int index, final String containerPath) {
+    final String context = containerPath + ".affected[" + index + "]";
     if (!entry.isObject()) {
       throw new IllegalArgumentException(context + " must be an object");
     }
-    requiredCnaText(entry, "product", context);
     for (final String field :
-        List.of("vendor", "packageURL", "collectionURL", "packageName", "defaultStatus")) {
+        List.of(
+            "product", "vendor", "packageURL", "collectionURL", "packageName", "defaultStatus")) {
       optionalCnaText(entry, field, context);
     }
     final JsonNode versions = optionalArray(entry, VERSIONS_FIELD, context + ".versions");
@@ -752,11 +672,6 @@ public final class OsvSnapshotIndexer {
     }
   }
 
-  private static boolean matchesCnaProduct(
-      final CveAffectedEntryContext entry, final AdvisoryScope scope) {
-    return MavenPackageIdentity.matchesCnaScope(entry, scope.affectedCoordinate());
-  }
-
   /** Shares source metadata decoding with the live CVE source reader. */
   static CveSourceRecordMetadata readCveSourceMetadata(
       final JsonNode root, final String sourceRecordSha256) {
@@ -789,47 +704,6 @@ public final class OsvSnapshotIndexer {
 
   private static boolean isInvalidNullableSourceText(final JsonNode value) {
     return value != null && !value.isNull() && !value.isTextual();
-  }
-
-  private static void addStructuredEvidence(
-      final JsonNode entry,
-      final String entryIdentity,
-      final AdvisoryScope scope,
-      final String cveId,
-      final String cveDigest,
-      final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence) {
-    final Set<String> files = readTextArray(entry.path("programFiles"));
-    final Set<String> routines = readRoutineNames(entry.path("programRoutines"));
-    if (files.isEmpty() && routines.isEmpty()) {
-      return;
-    }
-    final Map<String, Set<String>> fileClasses = new LinkedHashMap<>();
-    for (final String file : files) {
-      fileClasses.put(file, classesForProgramFile(file, scope));
-    }
-    final Map<String, Set<String>> routineClasses = new LinkedHashMap<>();
-    routines.forEach(routine -> routineClasses.put(routine, Set.of()));
-    final String product = entry.path("product").asText("unknown");
-    evidence.add(
-        new StructuredSourceClassEvidence(
-            scope,
-            new AdvisoryProvenance(EvidenceOrigin.CVE_LIST, cveId, null, cveDigest),
-            entryIdentity,
-            entry.path("vendor").asText("") + ":" + product,
-            files,
-            routines,
-            fileClasses,
-            routineClasses));
-  }
-
-  private static Set<String> classesForProgramFile(final String file, final AdvisoryScope scope) {
-    final Set<String> classes = new TreeSet<>();
-    extractClassesFromCommitUrl(
-        file,
-        scope.affectedCoordinate().groupId(),
-        scope.affectedCoordinate().artifactId(),
-        classes);
-    return Set.copyOf(classes);
   }
 
   private static Set<String> readTextArray(final JsonNode node) {

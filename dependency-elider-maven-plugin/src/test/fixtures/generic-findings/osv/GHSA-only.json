@@ -1,0 +1,14 @@
+{
+  "id": "GHSA-2026-10001",
+  "modified": "2026-11-04T00:00:00Z",
+  "affected": [
+    {
+      "package": {
+        "ecosystem": "Maven",
+        "name": "io.github.spockz.elider.test:generic-findings-fixture",
+        "purl": "pkg:maven/io.github.spockz.elider.test/generic-findings-fixture"
+      },
+      "versions": ["1.0.0"]
+    }
+  ]
+}

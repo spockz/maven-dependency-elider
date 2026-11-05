@@ -25,7 +25,9 @@ public record CveAffectedEntryContext(
   public CveAffectedEntryContext {
     requireText(entryIdentity, "entryIdentity");
     Objects.requireNonNull(sourceRecord, "sourceRecord");
-    requireText(product, "product");
+    if (product != null && product.isBlank()) {
+      throw new IllegalArgumentException("product must not be blank when present");
+    }
     if (defaultStatus != null && defaultStatus.isBlank()) {
       throw new IllegalArgumentException("defaultStatus must not be blank when present");
     }

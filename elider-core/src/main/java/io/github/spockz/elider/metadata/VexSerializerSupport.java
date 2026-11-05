@@ -45,10 +45,7 @@ final class VexSerializerSupport {
         && left.requiredPrerequisites().equals(right.requiredPrerequisites())
         && Objects.equals(left.affectedArtifactPath(), right.affectedArtifactPath())
         && Objects.equals(left.postElisionSha256(), right.postElisionSha256())
-        && Objects.equals(left.inventorySha256(), right.inventorySha256())
-        && Objects.equals(
-            left.structuredProofProvenance().orElse(null),
-            right.structuredProofProvenance().orElse(null));
+        && Objects.equals(left.inventorySha256(), right.inventorySha256());
   }
 
   /** Keeps proof types separate until each type's conflicts have been checked. */

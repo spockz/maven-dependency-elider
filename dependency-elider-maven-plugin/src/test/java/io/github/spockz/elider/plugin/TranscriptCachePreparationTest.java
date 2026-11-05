@@ -6,14 +6,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.CacheProducerIdentity;
+import io.github.spockz.elider.model.CodeReference;
+import io.github.spockz.elider.model.GenericFindingReconciler;
+import io.github.spockz.elider.model.GenericVulnerabilityFinding;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
+import io.github.spockz.elider.model.VulnerabilityFindingContribution;
 import io.github.spockz.elider.scanner.AdvisoryEvidenceReader;
-import io.github.spockz.elider.scanner.AdvisoryEvidenceWriter;
-import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeReader;
-import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
+import io.github.spockz.elider.scanner.FindingSource;
+import io.github.spockz.elider.scanner.FindingSourceSnapshot;
+import io.github.spockz.elider.scanner.GenericFindingCacheEnvelope;
+import io.github.spockz.elider.scanner.GenericFindingCacheEnvelopeReader;
+import io.github.spockz.elider.scanner.GenericFindingCacheEnvelopeWriter;
+import io.github.spockz.elider.scanner.OsvVulnerabilityFindingAdapter;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,7 +39,7 @@ import org.apache.maven.plugin.descriptor.PluginDescriptorBuilder;
 import org.junit.jupiter.api.Test;
 
 /** Builds the producer-bound transcript fixture. */
-@SuppressWarnings("PMD.AtLeastOneConstructor")
+@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.ExcessiveImports"})
 class TranscriptCachePreparationTest {
   /** System property selecting the producer-free advisory fixture. */
   private static final String INPUT_PROPERTY = "elide.transcriptCacheFixtureInput";
@@ -92,21 +97,36 @@ class TranscriptCachePreparationTest {
                             .diagnostic()
                             .orElse("Installed plugin cache identity is unavailable")));
     final List<OsvAdvisoryRecord> records = readFixture(Path.of(inputSetting));
-    final byte[] encoded = new VulnerabilityCacheEnvelopeWriter().encode(producer, records);
-    verifyEnvelope(encoded, producer, records);
+    final OsvVulnerabilityFindingAdapter adapter = new OsvVulnerabilityFindingAdapter();
+    final List<VulnerabilityFindingContribution> contributions =
+        records.stream().flatMap(record -> adapter.contributions(record).stream()).toList();
+    final GenericFindingCacheEnvelope envelope =
+        new GenericFindingCacheEnvelope(
+            producer,
+            java.util.Map.of(
+                FindingSource.OSV,
+                    new FindingSourceSnapshot(
+                        FindingSource.OSV,
+                        "transcript-osv-fixture",
+                        FIXTURE_TIMESTAMP,
+                        FindingSourceSnapshot.Status.CURRENT,
+                        null,
+                        contributions,
+                        List.of()),
+                FindingSource.CVE_LIST,
+                    new FindingSourceSnapshot(
+                        FindingSource.CVE_LIST,
+                        "transcript-empty-cve-fixture",
+                        FIXTURE_TIMESTAMP,
+                        FindingSourceSnapshot.Status.CURRENT,
+                        null,
+                        List.of(),
+                        List.of())));
+    final byte[] encoded = new GenericFindingCacheEnvelopeWriter().encode(envelope);
+    verifyEnvelope(encoded, producer);
     final Path output = Path.of(outputSetting);
     Files.createDirectories(output.toAbsolutePath().getParent());
     Files.write(output, encoded);
-    Files.writeString(output.resolveSibling("index.meta"), cacheMetadata());
-  }
-
-  private static String cacheMetadata() {
-    final ObjectMapper mapper = new ObjectMapper();
-    final ObjectNode metadata = mapper.createObjectNode();
-    metadata.put("schemaVersion", 1);
-    metadata.put("zipTimestamp", FIXTURE_TIMESTAMP.toString());
-    metadata.put("lastSyncTimestamp", FIXTURE_TIMESTAMP.toString());
-    return metadata.toString();
   }
 
   private static Path installedArtifact(
@@ -158,20 +178,32 @@ class TranscriptCachePreparationTest {
     }
   }
 
-  private static void verifyEnvelope(
-      final byte[] encoded,
-      final CacheProducerIdentity producer,
-      final List<OsvAdvisoryRecord> expectedRecords)
+  private static void verifyEnvelope(final byte[] encoded, final CacheProducerIdentity producer)
       throws IOException {
     try (ByteArrayInputStream input = new ByteArrayInputStream(encoded)) {
-      final io.github.spockz.elider.scanner.VulnerabilityCacheEnvelope decoded =
-          new VulnerabilityCacheEnvelopeReader().read(input, producer);
+      final GenericFindingCacheEnvelope decoded =
+          new GenericFindingCacheEnvelopeReader().read(input, producer);
+      final List<GenericVulnerabilityFinding> findings =
+          GenericFindingReconciler.reconcile(decoded.contributions()).findings();
       assertAll(
           "generated transcript envelope is bound to the installed producer",
           () -> assertThat(decoded.producer()).isEqualTo(producer),
           () ->
-              assertThat(new AdvisoryEvidenceWriter().encode(decoded.records()))
-                  .containsExactly(new AdvisoryEvidenceWriter().encode(expectedRecords)));
+              assertThat(decoded.sources())
+                  .containsOnlyKeys(FindingSource.OSV, FindingSource.CVE_LIST),
+          () -> assertThat(decoded.sources().get(FindingSource.CVE_LIST).contributions()).isEmpty(),
+          () ->
+              assertThat(findings)
+                  .extracting(GenericVulnerabilityFinding::vulnerabilityId)
+                  .containsExactly("CVE-2014-3577", "CVE-2022-42889"),
+          () ->
+              assertThat(findings.getFirst().heuristicLeadsFor("4.3.4"))
+                  .containsExactly(
+                      CodeReference.className("org.apache.http.conn.ssl.AbstractVerifier")),
+          () ->
+              assertThat(findings)
+                  .allSatisfy(
+                      finding -> assertThat(finding.effectiveCodeClaimsFor("1.0")).isEmpty()));
     }
   }
 

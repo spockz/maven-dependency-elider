@@ -86,28 +86,11 @@ Process exit status: 0
 [INFO]   Estimated original JAR bytes for those artifacts: 0 B (sum of original on-disk input JAR sizes; final package delta may differ)
 [INFO]   Program class entries in JARs that would be dropped: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
 [INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
-[INFO]   Advisories associated with components that would be removed: none verified by published trim evidence
-[INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming): no published omission proof
-[INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: no precondition proof available
-[INFO]   Vulnerability mappings that remain unverified by the in-memory Analyze prediction:
-[INFO]     CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
-[INFO]       Reason: Analyze did not publish a trimmed archive, so this vulnerability mapping remains unresolved and no omitted-code proof is claimed.
-[INFO]       Actionable POM override to certify if absent classes do not apply to your version:
-[INFO]         <configuration>
-[INFO]           <vulnerabilityMappings>
-[INFO]             <vulnerabilityMapping>
-[INFO]               <cveId>CVE-2022-42889</cveId>
-[INFO]               <groupId>org.apache.commons</groupId>
-[INFO]               <artifactId>commons-text</artifactId>
-[INFO]               <versionRangeSpec>[1.0,1.10.0)</versionRangeSpec>
-[INFO]               <vulnerableClasses>
-[INFO]                 <vulnerableClass>org.apache.commons.text.lookup.StringLookup</vulnerableClass>
-[INFO]               </vulnerableClasses>
-[INFO]               <sourceAdvisoryUrl>https://nvd.nist.gov/vuln/detail/CVE-2022-42889</sourceAdvisoryUrl>
-[INFO]               <confidenceLevel>HIGH</confidenceLevel>
-[INFO]             </vulnerabilityMapping>
-[INFO]           </vulnerabilityMappings>
-[INFO]         </configuration>
+[INFO]   Vulnerability findings (analysis only; no trim proof):
+[INFO]     CVE-2022-42889 org.apache.commons:commons-text:jar:1.9: AFFECTED; UNVERIFIED; RETAINED_UNCHANGED
+[INFO]   Vulnerability sources:
+[INFO]     OSV: CURRENT
+[INFO]     CVE_LIST: CURRENT
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
@@ -260,7 +243,7 @@ Quote glob arguments so the shell passes them unchanged. The equivalent POM list
 Set `-Delide.trimWorkers=2` to cap trimming at two workers. This setting limits the plugin's trimming concurrency; it does not reserve CPU cores or limit other Maven work. The JVM option `-XX:ActiveProcessorCount=N` changes the processor count reported to all Maven code, so it is a Maven-wide limit rather than a plugin-only setting.
 
 * **Framework Roots**: Service providers (`META-INF/services`), Spring factories, and GraalVM native-image configs automatically protect declaring and provider JARs from whole-artifact removal.
-* **ServiceLoader SPI Dynamic Roots**: Application bytecode is scanned for constant `ServiceLoader.load` invocations to prove SPI usage. When `conservativeServiceLoaderRoots` is `true` (default), unproven SPI providers are retained for runtime safety, but any CVEs retained solely by unproven SPI entries are excluded from mitigation into `Potentially conservative CVE exclusions`. Set `conservativeServiceLoaderRoots` to `false` to prune unproven SPI entries.
+* **ServiceLoader SPI Dynamic Roots**: Application bytecode is scanned for constant `ServiceLoader.load` invocations to prove SPI usage. When `conservativeServiceLoaderRoots` is `true` (default), unproven SPI providers are retained for runtime safety. Set it to `false` to permit pruning unproven providers when your application does not need them. Retained declared code prevents omission proof under the common finding checks.
 * **Intra-JAR Trimming**: Trimmed JARs are written to `target/elided-artifacts/` with original JARs left untouched. Digital signatures are stripped to maintain archive validity, while resources, licenses, and SPI descriptors are preserved.
 * **Multi-Release and Module Descriptors**: With JAR trimming enabled, Elider selects the effective compiler release, then target, as its analysis target; if neither is configured, it uses the active runtime feature as an analysis default. The selected target view is elevated and trimmed. All higher-tier entries remain byte-identical except versioned `module-info.class`, which is removed. Bodies at class-tier breakpoints through the Maven runtime release contribute to sibling closure; tiers above that runtime remain outside the verified linkage boundary. The active JDK class table comes from Maven's runtime and does not emulate a historical target API. Set `elide.mrjarStrategy=pass-through` to preserve the whole source archive. Root module descriptors keep the existing classpath pass-through behavior.
 * **Exact Pass-Through (`trimSkipArtifacts`)**: Pins specified dependencies byte-identical while allowing their classes to resolve external links into trimmed sibling dependencies.
@@ -325,7 +308,11 @@ mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:update-cve-in
 
 * **Cache location**: Stored in the OS user cache directory (outside `~/.m2`); override via `-Delide.cveCacheDirectory=/path/to/cache`.
 * **Freshness TTL**: Defaults to 24 hours (`-Delide.cveCacheTtlHours=24`). Use `-Delide.cveForceSync=true` to force synchronization.
-* **Offline resilience**: Normal builds skip network synchronization when offline. Only a producer-compatible cache with valid source metadata and advisory ranges is reusable; missing or invalid cache state falls back to the bundled seed.
+* **Offline resilience**: Offline builds read a validated, producer-compatible generic cache without network access or CVE checkout scanning. Missing or invalid cache state is reported as unavailable, rather than successful empty coverage. Project-local manual mappings can still be assessed.
+
+OSV and CVE List keep independent last-good observations. A failed refresh retains that source's last-good claims with a stale/error diagnostic while another source can advance. A successful empty source snapshot is distinct from a failure. A failed cache publication preserves the previous published generic snapshot. No project's manual mappings are written to this shared cache.
+
+The following ZIP and CSV refresh rules describe OSV synchronization. CVE List separately reuses a current partition within its TTL, checks the Git revision when due, and reuses indexed contributions when that revision is unchanged. Offline assessment does not scan the checkout.
 
 The 24-hour TTL measures time since the last successful local synchronization. On a due online refresh with a reusable cached snapshot, the plugin checks the OSV ZIP object's `Last-Modified` metadata with a HEAD request. It downloads the ZIP when source metadata is absent or incompatible, the source timestamp differs, the advertised ZIP timestamp is at least 24 hours old, or `-Delide.cveForceSync=true`; otherwise it reuses the cached snapshot. Any full download uses `Last-Modified` from its successful ZIP GET response as that snapshot's source timestamp, including cold and forced downloads. Each due refresh downloads the complete `Maven/modified_id.csv` and fetches records whose source `modified` value is newer than the staged owner record. Successful responses replace that OSV record's associations; explicit withdrawals remove that owner.
 

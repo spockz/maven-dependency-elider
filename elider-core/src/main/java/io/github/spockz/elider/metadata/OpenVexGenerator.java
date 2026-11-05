@@ -188,7 +188,7 @@ public final class OpenVexGenerator {
     if (!VexSerializerSupport.isPrecondition(attestation)) {
       statement.put("justification", VULNERABLE_CODE_NOT_PRESENT);
     }
-    statement.put("impact_statement", StructuredProofDetailFormatter.format(attestation));
+    statement.put("impact_statement", VexProofDetailFormatter.format(attestation));
   }
 
   private static String validateAttestation(

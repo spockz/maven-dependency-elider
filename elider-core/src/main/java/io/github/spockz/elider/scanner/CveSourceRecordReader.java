@@ -50,6 +50,8 @@ public final class CveSourceRecordReader {
     return sourcePath;
   }
 
+  @SuppressWarnings("PMD.ExceptionAsFlowControl")
+  // Decode failures become invalid-current-record errors at this boundary.
   private static ObservedSource parseCurrentRecord(final Path sourcePath, final String cveId)
       throws IOException {
     final byte[] bytes = Files.readAllBytes(sourcePath);
@@ -63,6 +65,9 @@ public final class CveSourceRecordReader {
       final String digest = sha256(bytes);
       final CveSourceRecordMetadata metadata =
           OsvSnapshotIndexer.readCveSourceMetadata(root, digest);
+      if (!cveId.equals(metadata.cveId())) {
+        throw new IllegalArgumentException("CVE record identity does not match requested ID");
+      }
       final List<CveAffectedEntryContext> entries = readAffectedEntries(root, metadata);
       return new ObservedSource(sourcePath, digest, metadata, entries);
     } catch (final IllegalArgumentException exception) {
@@ -72,14 +77,35 @@ public final class CveSourceRecordReader {
 
   private static List<CveAffectedEntryContext> readAffectedEntries(
       final JsonNode root, final CveSourceRecordMetadata metadata) {
-    final JsonNode affected = root.path("containers").path("cna").path("affected");
     final List<CveAffectedEntryContext> entries = new ArrayList<>();
-    if (affected.isArray()) {
-      for (int index = 0; index < affected.size(); index++) {
-        entries.add(OsvSnapshotIndexer.readCnaContext(affected.get(index), index, metadata));
+    final JsonNode containers = root.path("containers");
+    final JsonNode cnaAffected = containers.path("cna").path("affected");
+    appendAffectedEntries(entries, cnaAffected, "containers.cna", metadata);
+    final JsonNode adp = containers.path("adp");
+    if (adp.isArray()) {
+      for (int adpIndex = 0; adpIndex < adp.size(); adpIndex++) {
+        appendAffectedEntries(
+            entries,
+            adp.get(adpIndex).path("affected"),
+            "containers.adp[" + adpIndex + "]",
+            metadata);
       }
     }
     return List.copyOf(entries);
+  }
+
+  private static void appendAffectedEntries(
+      final List<CveAffectedEntryContext> entries,
+      final JsonNode affected,
+      final String containerPath,
+      final CveSourceRecordMetadata metadata) {
+    if (affected.isArray()) {
+      for (int index = 0; index < affected.size(); index++) {
+        entries.add(
+            OsvSnapshotIndexer.readCveAffectedContext(
+                affected.get(index), containerPath, index, metadata));
+      }
+    }
   }
 
   private static String sha256(final byte[] bytes) throws IOException {

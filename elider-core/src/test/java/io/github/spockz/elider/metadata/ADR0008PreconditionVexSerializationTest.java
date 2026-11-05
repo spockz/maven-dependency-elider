@@ -94,7 +94,10 @@ class ADR0008PreconditionVexSerializationTest {
     assertThat(vulnerability.path("analysis").path("justification").asText())
         .isEqualTo("requires_dependency");
     assertThat(vulnerability.path("analysis").path("detail").asText())
-        .isEqualTo(fixture.attestation().impactDetail());
+        .contains(
+            fixture.attestation().impactDetail(),
+            "test mapping",
+            fixture.attestation().inventorySha256());
     final JsonNode component = bom.path("components").get(0);
     assertThat(component.path("hashes").get(0).path("content").asText())
         .isEqualTo(fixture.attestation().postElisionSha256());
@@ -112,7 +115,10 @@ class ADR0008PreconditionVexSerializationTest {
     assertThat(statement.path("status").asText()).isEqualTo("not_affected");
     assertThat(statement.has("justification")).isFalse();
     assertThat(statement.path("impact_statement").asText())
-        .isEqualTo(fixture.attestation().impactDetail());
+        .contains(
+            fixture.attestation().impactDetail(),
+            "test mapping",
+            fixture.attestation().inventorySha256());
     final JsonNode subcomponent = statement.path("products").get(0).path("subcomponents").get(0);
     assertThat(subcomponent.path("hashes").path("sha-256").asText())
         .isEqualTo(fixture.attestation().postElisionSha256());

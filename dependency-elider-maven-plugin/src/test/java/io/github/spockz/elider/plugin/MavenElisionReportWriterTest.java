@@ -28,7 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Tests report snapshots independently from Maven dependency analysis. */
-@SuppressWarnings({"PMD.UnitTestContainsTooManyAsserts", "PMD.TooManyMethods"})
+@SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
 final class MavenElisionReportWriterTest {
   /** Maven group used in synthetic test coordinates. */
   private static final String GROUP_ID = "org.example";
@@ -173,9 +173,8 @@ final class MavenElisionReportWriterTest {
                           "Program classes pruned from retained JARs: 4 (uncompressed omitted"
                               + " .class payload bytes: "
                               + "3.02 KiB; excludes module descriptors and archive metadata)",
-                          "Advisories associated with removed components: none",
-                          "Mitigated CVEs (vulnerable code pruned by trimming): none",
-                          "CVEs inactive due to unmet prerequisite dependencies: none",
+                          "Vulnerability findings: none",
+                          "Source observations: none",
                           "Mediated TEST dependency graph (captured and saved by the elide goal):"),
               () ->
                   assertThat(rendered)
@@ -241,113 +240,8 @@ final class MavenElisionReportWriterTest {
             "Program classes pruned from retained JARs: 0 (uncompressed omitted"
                 + " .class payload bytes: "
                 + "0 B; excludes module descriptors and archive metadata)",
-            "Advisories associated with removed components: none",
-            "Mitigated CVEs (vulnerable code pruned by trimming): none",
-            "CVEs inactive due to unmet prerequisite dependencies: none");
-  }
-
-  @Test
-  void writesReadsAndRendersPopulatedCveFindings() throws IOException {
-    final MavenElisionReportSnapshot base = snapshot();
-    final MavenElisionReportSnapshot.ConservativeCveFinding conservative =
-        new MavenElisionReportSnapshot.ConservativeCveFinding(
-            "CVE-2026-68494",
-            "com.fasterxml.jackson.core:jackson-core:jar:2.14.3",
-            "Advisory mapping requires multiple symbols, but class(es)"
-                + " [com.fasterxml.jackson.core.exc.StreamConstraintsException] are absent from"
-                + " original archive while [com.fasterxml.jackson.core.async.ByteArrayFeeder] were"
-                + " pruned.",
-            "<configuration>\n"
-                + "  <vulnerabilityMappings>\n"
-                + "    <vulnerabilityMapping>\n"
-                + "      <cveId>CVE-2026-68494</cveId>\n"
-                + "    </vulnerabilityMapping>\n"
-                + "  </vulnerabilityMappings>\n"
-                + "</configuration>");
-    final MavenElisionReportSnapshot populated =
-        new MavenElisionReportSnapshot(
-                base.schemaVersion(),
-                base.projectGroupId(),
-                base.projectArtifactId(),
-                base.projectVersion(),
-                base.projectBaseDirectory(),
-                base.generatedAt(),
-                base.executionEnvironment(),
-                base.wholeArtifactsDropped(),
-                base.originalJarBytesDropped(),
-                base.droppedProgramClassEntries(),
-                base.droppedProgramClassBytes(),
-                base.droppedArtifacts(),
-                base.rawDroppedCoordinates(),
-                base.programClassesPruned(),
-                base.uncompressedProgramClassBytesPruned(),
-                base.trimmedArtifacts(),
-                List.of(
-                    new MavenElisionReportSnapshot.CveFinding(
-                        "CVE-2026-10001", "org.example:removed:jar:1.0")),
-                List.of(
-                    new MavenElisionReportSnapshot.CveFinding(
-                        "CVE-2025-11226", "org.example:trimmed:jar:2.0")),
-                List.of(
-                    new MavenElisionReportSnapshot.CveFinding(
-                        "CVE-2025-11227",
-                        "ch.qos.logback:logback-core:jar:1.5.15",
-                        List.of(
-                            new MavenMissingPrerequisite(
-                                "org.codehaus.janino:janino",
-                                "org.codehaus.janino.ClassBodyEvaluator")))),
-                List.of(conservative),
-                base.mediatedGraph(),
-                base.policy())
-            .withAppliedBans(base.appliedBans());
-    final Path output = temporaryDirectory.resolve("target/cve-report.json");
-
-    MavenElisionReportWriter.write(output, populated);
-    final MavenElisionReportSnapshot reread = MavenElisionReportWriter.read(output);
-
-    assertThat(reread).isEqualTo(populated);
-    assertThat(reread.removedCveComponents())
-        .containsExactly(
-            new MavenElisionReportSnapshot.CveFinding(
-                "CVE-2026-10001", "org.example:removed:jar:1.0"));
-    assertThat(reread.provenAbsentCves())
-        .containsExactly(
-            new MavenElisionReportSnapshot.CveFinding(
-                "CVE-2025-11226", "org.example:trimmed:jar:2.0"));
-    assertThat(reread.inactivePreconditionCves())
-        .containsExactly(
-            new MavenElisionReportSnapshot.CveFinding(
-                "CVE-2025-11227",
-                "ch.qos.logback:logback-core:jar:1.5.15",
-                List.of(
-                    new MavenMissingPrerequisite(
-                        "org.codehaus.janino:janino", "org.codehaus.janino.ClassBodyEvaluator"))));
-    assertThat(reread.potentiallyConservativeCves()).containsExactly(conservative);
-    assertThat(MavenElisionReportWriter.render(reread))
-        .contains(
-            "Advisories associated with removed components:",
-            "  - CVE-2026-10001 org.example:removed:jar:1.0",
-            "Mitigated CVEs (vulnerable code pruned by trimming):",
-            "  - CVE-2025-11226 org.example:trimmed:jar:2.0",
-            "CVEs inactive due to unmet prerequisite dependencies:",
-            "  - CVE-2025-11227 ch.qos.logback:logback-core:jar:1.5.15; inactive because",
-            "    missing prerequisite dependencies: org.codehaus.janino:janino (class",
-            "    org.codehaus.janino.ClassBodyEvaluator)",
-            "Potentially conservative CVE exclusions:",
-            "  - CVE-2026-68494 com.fasterxml.jackson.core:jackson-core:jar:2.14.3",
-            "    Reason: Advisory mapping requires multiple symbols, but class(es)",
-            "    [com.fasterxml.jackson.core.exc.StreamConstraintsException] are absent from",
-            "    original archive while [com.fasterxml.jackson.core.async.ByteArrayFeeder]",
-            "    were pruned.",
-            "    Actionable POM override to certify if absent classes do not apply to your",
-            "    version:",
-            "      <configuration>",
-            "        <vulnerabilityMappings>",
-            "          <vulnerabilityMapping>",
-            "            <cveId>CVE-2026-68494</cveId>",
-            "          </vulnerabilityMapping>",
-            "        </vulnerabilityMappings>",
-            "      </configuration>");
+            "Vulnerability findings: none",
+            "Source observations: none");
   }
 
   @Test

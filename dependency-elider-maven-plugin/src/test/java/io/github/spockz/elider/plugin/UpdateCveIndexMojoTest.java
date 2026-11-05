@@ -46,7 +46,8 @@ final class UpdateCveIndexMojoTest {
   }
 
   @Test
-  void publishesTypedSnapshotAndChecksModifiedIndex() throws IOException, MojoExecutionException {
+  void publishesGenericSourceSnapshotAndChecksModifiedIndex()
+      throws IOException, MojoExecutionException {
     final Path cache = temporaryDirectory.resolve("fresh-cache");
     final AtomicInteger snapshotRequests = new AtomicInteger();
     final AtomicInteger deltaRequests = new AtomicInteger();
@@ -56,11 +57,11 @@ final class UpdateCveIndexMojoTest {
       newMojo(cache, endpoint(server)).execute();
       final String persisted = Files.readString(cache.resolve("index.json"));
       assertAll(
-          "the update publishes typed records from the snapshot and delta path",
+          "the update publishes a generic source partition from the snapshot and delta path",
           () ->
               assertThat(persisted)
-                  .contains("\"schemaVersion\":1", "\"records\"", "GHSA-typed")
-                  .doesNotContain("mappings"),
+                  .contains("\"schemaVersion\":1", "\"sources\"", "\"OSV\"", "GHSA-typed")
+                  .doesNotContain("\"records\"", "\"mappings\""),
           () -> assertThat(snapshotRequests).hasValue(1),
           () -> assertThat(deltaRequests).hasValue(1));
     } finally {
@@ -69,24 +70,28 @@ final class UpdateCveIndexMojoTest {
   }
 
   @Test
-  void refreshFailureDoesNotReplaceLastGoodCache() throws IOException {
+  void failedRefreshPublishesAnExplicitErrorPartition() throws IOException {
     final Path cache = temporaryDirectory.resolve("failed-cache");
-    Files.createDirectories(cache);
-    final Path index = cache.resolve("index.json");
-    final String prior = "{\"schemaVersion\":1,\"records\":[]}";
-    Files.writeString(index, prior);
     final AtomicInteger snapshotRequests = new AtomicInteger();
     final AtomicInteger deltaRequests = new AtomicInteger();
     final HttpServer server = server(503, "unavailable", snapshotRequests, deltaRequests);
     server.start();
     try {
       assertAll(
-          "failed refresh preserves prior state and avoids deltas",
+          "failed source refresh is reported and persisted as generic source health",
           () ->
               assertThatThrownBy(() -> newMojo(cache, endpoint(server)).execute())
                   .isInstanceOf(MojoExecutionException.class)
                   .hasMessageContaining("HTTP 503"),
-          () -> assertThat(Files.readString(index)).isEqualTo(prior),
+          () ->
+              assertThat(Files.readString(cache.resolve("index.json")))
+                  .contains(
+                      "\"schemaVersion\":1",
+                      "\"sources\"",
+                      "\"OSV\"",
+                      "\"status\":\"STALE\"",
+                      "HTTP 503")
+                  .doesNotContain("\"records\"", "\"mappings\""),
           () -> assertThat(snapshotRequests).hasValue(1),
           () -> assertThat(deltaRequests).hasValue(0));
     } finally {
@@ -115,6 +120,7 @@ final class UpdateCveIndexMojoTest {
     try {
       set(mojo, "cacheDirectory", cache.toFile());
       set(mojo, "osvSnapshotUri", uri);
+      set(mojo, "cveListGitUri", "");
       set(mojo, "pluginDescriptor", MavenPluginDescriptorFixtures.releasedPluginDescriptor());
     } catch (final ReflectiveOperationException exception) {
       throw new IllegalStateException("Could not initialize update-goal fixture", exception);

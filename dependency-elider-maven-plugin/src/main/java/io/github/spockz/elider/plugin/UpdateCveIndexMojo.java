@@ -2,15 +2,15 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
+import io.github.spockz.elider.scanner.GenericFindingCacheManager;
+import io.github.spockz.elider.scanner.GenericFindingCacheManager.CacheResult;
+import io.github.spockz.elider.scanner.GenericFindingCacheManager.Source;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheResult;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
-import java.util.List;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Mojo;
@@ -58,8 +58,8 @@ public final class UpdateCveIndexMojo extends PluginCacheMojoSupport {
       getLog()
           .info(
               "Loaded "
-                  + result.records().size()
-                  + " OSV advisory record(s) from "
+                  + result.contributions().size()
+                  + " generic finding contribution(s) from "
                   + result.source());
     }
   }
@@ -90,16 +90,17 @@ public final class UpdateCveIndexMojo extends PluginCacheMojoSupport {
       throws MojoExecutionException {
     try {
       final CacheResult result =
-          new VulnerabilityCacheManager()
-              .load(
-                  cacheConfig(osvSource, cveListGit),
-                  records -> validateRecords(records, "downloaded vulnerability index"));
+          new GenericFindingCacheManager().load(cacheConfig(osvSource, cveListGit));
       if (result.refreshFailure().isPresent()) {
         throw new MojoExecutionException(
             "Could not update vulnerability mapping index: "
                 + result.refreshFailure().orElseThrow());
       }
-      validateRecords(result.records(), "cached index");
+      if (result.source() == Source.UNAVAILABLE) {
+        throw new MojoExecutionException(
+            "Could not update vulnerability mapping index: "
+                + result.refreshFailure().orElse("generic finding cache is unavailable"));
+      }
       return result;
     } catch (final IOException | IllegalArgumentException exception) {
       throw new MojoExecutionException("Could not load vulnerability mapping index", exception);
@@ -116,11 +117,5 @@ public final class UpdateCveIndexMojo extends PluginCacheMojoSupport {
         Duration.ofHours(ttlHours),
         true,
         false);
-  }
-
-  private void validateRecords(
-      final List<io.github.spockz.elider.model.OsvAdvisoryRecord> records, final String source)
-      throws IOException {
-    MavenVersionRangeMatcher.validateAdvisoryRecords(records, source);
   }
 }

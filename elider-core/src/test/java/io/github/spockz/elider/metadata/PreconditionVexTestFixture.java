@@ -5,9 +5,8 @@ package io.github.spockz.elider.metadata;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ConfidenceLevel;
-import io.github.spockz.elider.model.ExplicitEvidenceTestSupport;
+import io.github.spockz.elider.model.GenericProofTestSupport;
 import io.github.spockz.elider.model.PreconditionClassInventory;
-import io.github.spockz.elider.model.PreconditionProof;
 import io.github.spockz.elider.model.VexAttestation;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import java.io.IOException;
@@ -42,8 +41,7 @@ record PreconditionVexTestFixture(
             "org.example:optional",
             "org.example.RequiredApi");
     final VexAttestation attestation =
-        PreconditionProof.prove(
-            ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping), inventory);
+        GenericProofTestSupport.prerequisiteProof(mapping, inventory);
     return new PreconditionVexTestFixture(
         affected, ArtifactFileRef.fromPath(affected, affectedPath), attestation);
   }

@@ -223,14 +223,12 @@ final class AnalyzeMojoTest {
             "  Estimated original JAR bytes for those artifacts: "
                 + MavenElisionReportWriter.formatBytes(Files.size(unused.getFile().toPath()))
                 + " (sum of original on-disk input JAR sizes; final package delta may differ)",
-            "  Advisories associated with components that would be removed: "
-                + "none verified by published trim evidence",
-            "  Mitigated CVEs (vulnerable code that would be pruned by trimming): "
-                + "no published omission proof",
-            "  CVEs that would be inactive due to unmet prerequisite dependencies: "
-                + "no precondition proof available",
-            "  Vulnerability mappings that remain unverified by the in-memory Analyze prediction:",
-            "    CVE-2026-19001 org.example:unused-runtime:jar:1.0");
+            "  Vulnerability findings (analysis only; no trim proof):");
+    assertThat(log.messages())
+        .anyMatch(
+            line ->
+                line.contains("CVE-2026-19001 org.example:unused-runtime:jar:1.0")
+                    && line.contains("UNVERIFIED"));
     assertThat(project.getArtifacts()).isSameAs(artifacts).containsExactlyInAnyOrder(used, unused);
     assertThat(unused.getFile()).isSameAs(unusedFile);
     assertThat(log.messages())
@@ -278,14 +276,13 @@ final class AnalyzeMojoTest {
     mojo.execute();
 
     assertThat(log.messages())
-        .contains(
-            "  Vulnerability mappings that remain unverified by the in-memory Analyze prediction:",
-            "    CVE-2026-19002 org.example:runtime-cve:jar:1.0")
-        .noneMatch(
+        .contains("  Vulnerability findings (analysis only; no trim proof):")
+        .anyMatch(
             line ->
-                line.startsWith(
-                        "  Mitigated CVEs (vulnerable code that would be pruned by trimming):")
-                    && line.contains("CVE-2026-19002"));
+                line.contains("CVE-2026-19002 org.example:runtime-cve:jar:1.0")
+                    && line.contains("UNVERIFIED"))
+        .noneMatch(
+            line -> line.contains("CVE-2026-19002") && line.contains("DECLARED_CODE_ABSENT"));
     assertThat(project.getArtifacts()).containsExactly(runtime);
     assertThat(runtime.getFile()).isSameAs(original);
     assertThat(TrimPaths.cacheManifestPath(project)).doesNotExist();

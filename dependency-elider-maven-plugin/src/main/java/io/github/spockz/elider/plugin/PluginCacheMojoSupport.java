@@ -8,21 +8,15 @@ import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
-import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Parameter;
-import org.eclipse.aether.RepositorySystem;
 
 /** Supports Maven goals that use the local advisory cache. */
 abstract class PluginCacheMojoSupport extends AbstractMojo {
   /** Installed producer metadata, independent of the consumer project. */
   @Parameter(defaultValue = "${plugin}", readonly = true)
   private PluginDescriptor pluginDescriptor;
-
-  /** Maven's resolver used only to locate exact-version sources artifacts. */
-  @Component private RepositorySystem repositorySystem;
 
   /** Reused because SNAPSHOT identity hashing reads both installed JARs. */
   private PluginCacheProducerIdentityResolver.Resolution producerResolution;
@@ -54,11 +48,6 @@ abstract class PluginCacheMojoSupport extends AbstractMojo {
       producerResolution = PluginCacheProducerIdentityResolver.resolve(pluginDescriptor);
     }
     return producerResolution;
-  }
-
-  /** Returns the Maven resolver when running inside the plugin container. */
-  protected final Optional<MavenSourceClassifierResolver> sourceClassifierResolver() {
-    return Optional.ofNullable(repositorySystem).map(MavenSourceClassifierResolver::new);
   }
 
   /** Builds trim settings with the shared installed-producer identity policy. */

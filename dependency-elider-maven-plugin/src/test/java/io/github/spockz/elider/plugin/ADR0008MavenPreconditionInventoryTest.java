@@ -327,7 +327,9 @@ final class ADR0008MavenPreconditionInventoryTest {
       assertThatThrownBy(
               () ->
                   PreconditionProof.prove(
-                      ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping), inventory))
+                      ExplicitEvidenceTestSupport.genericPrerequisiteFinding(mapping),
+                      mapping.affectedCoordinate(),
+                      inventory))
           .isInstanceOf(IOException.class)
           .hasMessageContaining("Javac plugin service provider");
     }
@@ -355,7 +357,8 @@ final class ADR0008MavenPreconditionInventoryTest {
       assertThatThrownBy(
               () ->
                   PreconditionProof.prove(
-                      ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                      ExplicitEvidenceTestSupport.genericPrerequisiteFinding(mapping),
+                      mapping.affectedCoordinate(),
                       snapshot.classProviders()))
           .isInstanceOf(IOException.class)
           .hasMessageContaining("Javac plugin service provider");
@@ -2010,7 +2013,8 @@ final class ADR0008MavenPreconditionInventoryTest {
     assertThatThrownBy(
             () ->
                 PreconditionProof.prove(
-                    ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                    ExplicitEvidenceTestSupport.genericPrerequisiteFinding(mapping),
+                    mapping.affectedCoordinate(),
                     snapshot.classProviders()))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
@@ -2089,7 +2093,8 @@ final class ADR0008MavenPreconditionInventoryTest {
     assertThatThrownBy(
             () ->
                 PreconditionProof.prove(
-                    ExplicitEvidenceTestSupport.prerequisiteEvidence(mapping),
+                    ExplicitEvidenceTestSupport.genericPrerequisiteFinding(mapping),
+                    mapping.affectedCoordinate(),
                     snapshot.classProviders()))
         .isInstanceOf(IllegalArgumentException.class);
   }

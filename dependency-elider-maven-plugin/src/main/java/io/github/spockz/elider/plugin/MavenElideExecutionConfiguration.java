@@ -7,7 +7,6 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.IOException;
 import java.util.List;
-import java.util.Optional;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.logging.Log;
@@ -36,7 +35,6 @@ record MavenElideExecutionConfiguration(
       ConfiguredVulnerabilityMappings vulnerabilityMappings,
       boolean preconditionProofEnabled,
       boolean assumeConventionalJavaSourceLayout,
-      Optional<MavenSourceClassifierResolver> sourceClassifierResolver,
       MavenElisionOutputPublisher.AfterStaging afterStaging,
       MavenElisionOutputPublisher.AfterStaging afterGenerationStaging) {}
 

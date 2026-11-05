@@ -29,7 +29,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
-import java.util.regex.Pattern;
 
 public final class ExampleSupport {
   private static final ObjectMapper JSON = new ObjectMapper();
@@ -235,7 +234,9 @@ public final class ExampleSupport {
     if (!Path.of(reportProductionOutput.textValue()).toRealPath().equals(productionOutput)) {
       throw new IOException("Report does not identify the copied baseline production output");
     }
-    validateExclusionReview(report.get("exclusionReview"));
+    if (report.has("exclusionReview")) {
+      validateExclusionReview(report.get("exclusionReview"));
+    }
     final JsonNode groups = report.path("groups");
     validateDependencyPrediction(report.get("dependencyPrediction"));
     final Set<String> neither = names(groups.path("neitherReferencedNorObserved"));
@@ -257,6 +258,76 @@ public final class ExampleSupport {
       throw new IOException(
           "Unused Commons Codec Hex was not classified as neither observed nor referenced");
     }
+  }
+
+  static JsonNode validateGenericFindingReport(final JsonNode report) throws IOException {
+    final JsonNode findings = report.path("genericFindings");
+    if (!findings.isArray()) {
+      throw new IOException("genericFindings must be an array");
+    }
+    final JsonNode observations = report.path("sourceObservations");
+    if (!observations.isArray()) {
+      throw new IOException("sourceObservations must be an array");
+    }
+    for (final JsonNode finding : findings) {
+      if (!finding.isObject()
+          || !nonblankText(finding, "vulnerabilityId")
+          || !nonblankText(finding, "applicability")
+          || !nonblankText(finding, "outcome")
+          || !nonblankText(finding, "inventoryDisposition")
+          || !nonblankText(finding, "detail")) {
+        throw new IOException("generic finding has missing required fields");
+      }
+      if (!Set.of("AFFECTED", "NOT_AFFECTED", "UNRESOLVED")
+          .contains(finding.path("applicability").asText())) {
+        throw new IOException("finding applicability is unsupported");
+      }
+      if (!Set.of(
+              "NOT_AFFECTED",
+              "UNRESOLVED",
+              "REVIEW_ONLY",
+              "DECLARED_CODE_ABSENT",
+              "PREREQUISITES_ABSENT",
+              "NO_PROOF")
+          .contains(finding.path("outcome").asText())) {
+        throw new IOException("finding outcome is unsupported");
+      }
+      if (!Set.of(
+              "REMOVED",
+              "RETAINED_AND_TRIMMED",
+              "RETAINED_UNCHANGED",
+              "PLANNED_UNVERIFIED")
+          .contains(finding.path("inventoryDisposition").asText())) {
+        throw new IOException("finding inventory disposition is unsupported");
+      }
+      final JsonNode candidate = finding.path("candidate");
+      if (!candidate.isObject()
+          || !nonblankText(candidate, "groupId")
+          || !nonblankText(candidate, "artifactId")
+          || !nonblankText(candidate, "version")
+          || !nonblankText(candidate, "type")
+          || !candidate.path("classifier").isTextual()
+          || !nonblankText(candidate, "scope")) {
+        throw new IOException("candidate coordinate is incomplete");
+      }
+    }
+    for (final JsonNode observation : observations) {
+      final JsonNode source = observation.path("source");
+      if (!observation.isObject()
+          || !Set.of("CURRENT", "STALE", "ERROR", "UNAVAILABLE")
+              .contains(observation.path("status").asText())
+          || !(source.isNull()
+              || source.isMissingNode()
+              || Set.of("OSV", "CVE_LIST").contains(source.asText()))) {
+        throw new IOException("source observation is invalid");
+      }
+    }
+    return findings;
+  }
+
+  private static boolean nonblankText(final JsonNode object, final String field) {
+    final JsonNode value = object.path(field);
+    return value.isTextual() && !value.textValue().isBlank();
   }
 
   private static void validateExclusionReview(final JsonNode review) throws IOException {
@@ -973,15 +1044,7 @@ public final class ExampleSupport {
         throw new IOException("Effective graph drop path is not marked SAFE_ELIDED: " + disposition);
       }
     }
-    if (!report.path("removedCveComponents").isArray()) {
-      throw new IOException("Report snapshot missing valid removedCveComponents list");
-    }
-    if (!report.path("provenAbsentCves").isArray()) {
-      throw new IOException("Report snapshot missing valid provenAbsentCves list");
-    }
-    if (!report.path("inactivePreconditionCves").isArray()) {
-      throw new IOException("Report snapshot missing valid inactivePreconditionCves list");
-    }
+    validateGenericFindingReport(report);
   }
 
   private static void verifyNoWholeArtifactDrops(final String[] arguments) throws IOException {
@@ -1188,246 +1251,122 @@ public final class ExampleSupport {
 
     final JsonNode report = JSON.readTree(reportJsonPath.toFile());
     final String output = Files.readString(reportOutputPath);
-
-    final JsonNode removedCves = report.path("removedCveComponents");
-    final JsonNode provenCves = report.path("provenAbsentCves");
-    final JsonNode inactiveCves = report.path("inactivePreconditionCves");
-    final JsonNode conservativeCves = report.path("potentiallyConservativeCves");
-    if (!removedCves.isArray()) {
-      throw new IOException(
-          "[" + fixture + "] dependency-elider-report.json missing valid 'removedCveComponents' array");
+    final JsonNode findings = validateGenericFindingReport(report);
+    if (!output.contains("[INFO] Vulnerability findings:")) {
+      throw new IOException("[" + fixture + "] Report output has no vulnerability findings section");
     }
-    if (!provenCves.isArray()) {
-      throw new IOException(
-          "[" + fixture + "] dependency-elider-report.json missing valid 'provenAbsentCves' array");
+    if (!output.contains("[INFO] Source observations:")) {
+      throw new IOException("[" + fixture + "] Report output has no source observations section");
     }
-    if (!inactiveCves.isArray()) {
-      throw new IOException(
-          "[" + fixture + "] dependency-elider-report.json missing valid 'inactivePreconditionCves' array");
-    }
-    if (!conservativeCves.isArray()) {
-      throw new IOException(
-          "[" + fixture + "] dependency-elider-report.json missing valid 'potentiallyConservativeCves' array");
+    if (findings.isEmpty() && !output.contains("[INFO] Vulnerability findings: none")) {
+      throw new IOException("[" + fixture + "] Empty findings must be explicit in report output");
     }
 
-    final Pattern cvePattern = Pattern.compile("^CVE-[0-9]{4}-[0-9]{4,}$");
     final List<String> removedIds = new ArrayList<>();
-    for (final JsonNode item : removedCves) {
-      final String cveId = item.path("cveId").asText("");
-      final String coordinate = item.path("coordinate").asText("");
-      if (!cvePattern.matcher(cveId).matches() || coordinate.isBlank()) {
-        throw new IOException("[" + fixture + "] Malformed removedCveComponents entry: " + item);
-      }
-      removedIds.add(cveId);
-    }
-
     final List<String> provenIds = new ArrayList<>();
-    for (final JsonNode item : provenCves) {
-      final String cveId = item.path("cveId").asText("");
-      final String coordinate = item.path("coordinate").asText("");
-      if (!cvePattern.matcher(cveId).matches() || coordinate.isBlank()) {
-        throw new IOException("[" + fixture + "] Malformed provenAbsentCves entry: " + item);
-      }
-      provenIds.add(cveId);
-    }
-
     final List<String> inactiveIds = new ArrayList<>();
-    for (final JsonNode item : inactiveCves) {
-      final String cveId = item.path("cveId").asText("");
-      final String coordinate = item.path("coordinate").asText("");
-      if (!cvePattern.matcher(cveId).matches() || coordinate.isBlank()) {
-        throw new IOException("[" + fixture + "] Malformed inactivePreconditionCves entry: " + item);
-      }
-      final JsonNode missingPrerequisites = item.path("missingPrerequisites");
-      if (!missingPrerequisites.isArray() || missingPrerequisites.isEmpty()) {
-        throw new IOException(
-            "[" + fixture + "] Inactive precondition finding has no missing prerequisite details");
-      }
-      final List<String> prerequisiteDetails = new ArrayList<>();
-      for (final JsonNode prerequisite : missingPrerequisites) {
-        final String dependency = prerequisite.path("dependency").asText("");
-        final String requiredClass = prerequisite.path("requiredClass").asText("");
-        if (dependency.isBlank() || requiredClass.isBlank()) {
-          throw new IOException(
-              "[" + fixture + "] Malformed inactive prerequisite details: " + prerequisite);
-        }
-        prerequisiteDetails.add(dependency + " (class " + requiredClass + ")");
-      }
-      final String expectedLine =
+    for (final JsonNode finding : findings) {
+      final String id = finding.path("vulnerabilityId").asText();
+      final String coordinate = renderCandidate(finding.path("candidate"));
+      final String line =
           "[INFO]   - "
-              + cveId
+              + id
               + " "
               + coordinate
-              + "; inactive because missing prerequisite dependencies: "
-              + String.join(", ", prerequisiteDetails);
-      if (!output.contains(expectedLine)) {
-        throw new IOException(
-            "[" + fixture + "] Missing inactive prerequisite cause in report output: " + expectedLine);
+              + " ["
+              + finding.path("inventoryDisposition").asText()
+              + "]";
+      final String applicabilityLine =
+          "[INFO]     Applicability: " + finding.path("applicability").asText();
+      final String outcomeLine =
+          "[INFO]     Outcome: "
+              + finding.path("outcome").asText()
+              + "; "
+              + finding.path("detail").asText();
+      if (!output.contains(line)
+          || !output.contains(applicabilityLine)
+          || !output.contains(outcomeLine)) {
+        throw new IOException("[" + fixture + "] Missing generic finding details: " + line);
       }
-      inactiveIds.add(cveId);
-    }
-
-    final List<String> conservativeIds = new ArrayList<>();
-    for (final JsonNode item : conservativeCves) {
-      final String cveId = item.path("cveId").asText("");
-      final String coordinate = item.path("coordinate").asText("");
-      final String reason = item.path("reason").asText("");
-      final String pomOverride = item.path("pomOverrideSnippet").asText("");
-      if (!cvePattern.matcher(cveId).matches() || coordinate.isBlank() || reason.isBlank() || pomOverride.isBlank()) {
-        throw new IOException("[" + fixture + "] Malformed potentiallyConservativeCves entry: " + item);
+      switch (finding.path("inventoryDisposition").asText()) {
+        case "REMOVED" -> removedIds.add(id);
+        default -> {}
       }
-      conservativeIds.add(cveId);
-    }
-
-    if (!output.contains("[INFO] Advisories associated with removed components:")) {
-      throw new IOException(
-          "["
-              + fixture
-              + "] Report output missing 'Advisories associated with removed components:' heading");
-    }
-    if (!output.contains("[INFO] Mitigated CVEs (vulnerable code pruned by trimming):")) {
-      throw new IOException(
-          "["
-              + fixture
-              + "] Report output missing 'Mitigated CVEs (vulnerable code pruned by trimming):' heading");
-    }
-    if (!output.contains("[INFO] CVEs inactive due to unmet prerequisite dependencies:")) {
-      throw new IOException(
-          "["
-              + fixture
-              + "] Report output missing 'CVEs inactive due to unmet prerequisite dependencies:' heading");
-    }
-    if (!output.contains("[INFO] Potentially conservative CVE exclusions:")) {
-      throw new IOException(
-          "[" + fixture + "] Report output missing 'Potentially conservative CVE exclusions:' heading");
-    }
-
-    if (removedCves.isEmpty()) {
-      if (!output.contains("[INFO] Advisories associated with removed components: none")) {
-        throw new IOException(
-            "[" + fixture + "] Expected no removed-component advisory findings");
-      }
-    } else {
-      for (final JsonNode item : removedCves) {
-        final String line =
-            "[INFO]   - " + item.path("cveId").asText() + " " + item.path("coordinate").asText();
-        if (!output.contains(line)) {
-          throw new IOException(
-              "[" + fixture + "] Missing expected removed CVE line in report output: " + line);
+      switch (finding.path("outcome").asText()) {
+        case "DECLARED_CODE_ABSENT" -> provenIds.add(id);
+        case "PREREQUISITES_ABSENT" -> {
+          inactiveIds.add(id);
+          final JsonNode prerequisites = finding.path("effectivePrerequisites");
+          if (!prerequisites.isArray() || prerequisites.isEmpty()) {
+            throw new IOException("[" + fixture + "] Missing effective prerequisite claims for " + id);
+          }
+          for (final JsonNode prerequisite : prerequisites) {
+            if (prerequisite.path("requiresDependency").asText().isBlank()
+                || prerequisite.path("requiresClass").asText().isBlank()) {
+              throw new IOException("[" + fixture + "] Malformed effective prerequisite: " + prerequisite);
+            }
+          }
         }
+        default -> {}
       }
     }
 
-    if (provenCves.isEmpty()) {
-      if (!output.contains("[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none")) {
-        throw new IOException(
-            "[" + fixture + "] Expected no mitigated CVE findings");
-      }
-    } else {
-      for (final JsonNode item : provenCves) {
-        final String line =
-            "[INFO]   - " + item.path("cveId").asText() + " " + item.path("coordinate").asText();
-        if (!output.contains(line)) {
-          throw new IOException(
-              "[" + fixture + "] Missing expected proven absent CVE line in report output: " + line);
-        }
-      }
-    }
-
-    if (inactiveCves.isEmpty()) {
-      if (!output.contains("[INFO] CVEs inactive due to unmet prerequisite dependencies: none")) {
-        throw new IOException(
-            "[" + fixture + "] Expected no inactive prerequisite CVE findings");
-      }
-    } else {
-      for (final JsonNode item : inactiveCves) {
-        final String line =
-            "[INFO]   - " + item.path("cveId").asText() + " " + item.path("coordinate").asText();
-        if (!output.contains(line)) {
-          throw new IOException(
-              "[" + fixture + "] Missing expected inactive prerequisite CVE line in report output: " + line);
-        }
-      }
-    }
-
-    if (conservativeCves.isEmpty()) {
-      if (!output.contains("[INFO] Potentially conservative CVE exclusions: none detected")) {
-        throw new IOException(
-            "[" + fixture
-                + "] Expected 'Potentially conservative CVE exclusions: none detected' in report output");
-      }
-    } else {
-      for (final JsonNode item : conservativeCves) {
-        final String line =
-            "[INFO]   - " + item.path("cveId").asText() + " " + item.path("coordinate").asText();
-        if (!output.contains(line)) {
-          throw new IOException(
-              "[" + fixture + "] Missing expected conservative CVE line in report output: " + line);
-        }
-        final String reasonLine = "[INFO]     Reason: " + item.path("reason").asText();
-        if (!output.contains(reasonLine)) {
-          throw new IOException(
-              "[" + fixture + "] Missing expected conservative CVE reason in report output: " + reasonLine);
-        }
-      }
-    }
-
-    // Concrete fixture-specific expected CVE assertions
     switch (fixture) {
       case "example-basic-app" -> {
-        if (!removedIds.isEmpty()) {
-          throw new IOException(
-              "example-basic-app has no validated owner evidence and must not classify removed "
-                  + "components as CVEs: "
-                  + removedIds);
-        }
-        if (!provenIds.isEmpty() || !inactiveIds.isEmpty() || !conservativeIds.isEmpty()) {
-          throw new IOException(
-              "example-basic-app expected 0 other CVEs, found: proven=" + provenIds
-                  + ", inactive=" + inactiveIds + ", conservative=" + conservativeIds);
+        if (!removedIds.contains("CVE-2014-3577") || !provenIds.isEmpty() || !inactiveIds.isEmpty()) {
+          throw new IOException("example-basic-app generic finding outcomes changed: " + findings);
         }
         final Path vexPath = reportJsonPath.getParent().resolve("dependency-elider.openvex.json");
         if (Files.exists(vexPath)) {
-          throw new IOException("example-basic-app must not emit VEX from removed-component data");
+          throw new IOException("example-basic-app must not emit VEX for a removed component without proof");
         }
       }
       case "example-cve-unused-app" -> {
-        if (!provenIds.contains("CVE-2022-42889")) {
-          throw new IOException(
-              "example-cve-unused-app expected proven absent CVE-2022-42889, found: " + provenIds);
-        }
-        if (!removedIds.isEmpty() || !inactiveIds.isEmpty() || !conservativeIds.isEmpty()) {
-          throw new IOException(
-              "example-cve-unused-app expected 0 other CVEs, found: removed=" + removedIds
-                  + ", inactive=" + inactiveIds + ", conservative=" + conservativeIds);
+        if (!provenIds.equals(List.of("CVE-2022-42889"))
+            || !removedIds.isEmpty()
+            || !inactiveIds.isEmpty()) {
+          throw new IOException("example-cve-unused-app generic finding outcomes changed: " + findings);
         }
       }
       case "example-cve-safe-class-app" -> {
-        if (!inactiveIds.contains("CVE-2025-11226")) {
-          throw new IOException(
-              "example-cve-safe-class-app expected inactive precondition CVE-2025-11226, found: "
-                  + inactiveIds);
-        }
-        if (!removedIds.isEmpty() || !provenIds.isEmpty() || !conservativeIds.isEmpty()) {
-          throw new IOException(
-              "example-cve-safe-class-app expected 0 other CVEs, found: removed=" + removedIds
-                  + ", proven=" + provenIds + ", conservative=" + conservativeIds);
+        if (!inactiveIds.equals(List.of("CVE-2025-11226"))
+            || !removedIds.isEmpty()
+            || !provenIds.isEmpty()) {
+          throw new IOException("example-cve-safe-class-app generic finding outcomes changed: " + findings);
         }
       }
       case "example-spring-boot-app" -> {
-        if (!conservativeIds.contains("CVE-2026-68494")) {
-          throw new IOException(
-              "example-spring-boot-app expected potentially conservative CVE-2026-68494, found: "
-                  + conservativeIds);
+        final JsonNode observedCve =
+            singleMatching(
+                findings,
+                value -> "CVE-2026-68494".equals(value.path("vulnerabilityId").asText()),
+                "generic Spring fixture finding");
+        if (!"AFFECTED".equals(observedCve.path("applicability").asText())
+            || !"NO_PROOF".equals(observedCve.path("outcome").asText())) {
+          throw new IOException("Spring fixture finding must remain unverified without physical proof");
         }
-        if (!removedIds.isEmpty() || !provenIds.isEmpty() || !inactiveIds.isEmpty()) {
-          throw new IOException(
-              "example-spring-boot-app expected 0 other CVEs, found: removed=" + removedIds
-                  + ", proven=" + provenIds + ", inactive=" + inactiveIds);
+        final Path vexPath = reportJsonPath.getParent().resolve("dependency-elider.openvex.json");
+        if (Files.exists(vexPath)) {
+          throw new IOException("example-spring-boot-app must not emit VEX without a proven finding");
         }
       }
       default -> {}
     }
+  }
+
+  private static String renderCandidate(final JsonNode candidate) {
+    final String classifier = candidate.path("classifier").asText();
+    return candidate.path("groupId").asText()
+        + ":"
+        + candidate.path("artifactId").asText()
+        + ":"
+        + candidate.path("type").asText()
+        + (classifier.isEmpty() ? "" : ":" + classifier)
+        + ":"
+        + candidate.path("version").asText()
+        + " ("
+        + candidate.path("scope").asText()
+        + ")";
   }
 
   private static void verifyCveSboms(final String[] arguments) throws IOException {
@@ -1455,15 +1394,7 @@ public final class ExampleSupport {
     final Set<String> before = componentNames(baseline);
     final Set<String> after = componentNames(post);
 
-    if (!report.path("removedCveComponents").isArray()) {
-      throw new IOException("report must contain removedCveComponents list");
-    }
-    if (!report.path("provenAbsentCves").isArray()) {
-      throw new IOException("report must contain provenAbsentCves list");
-    }
-    if (!report.path("inactivePreconditionCves").isArray()) {
-      throw new IOException("report must contain inactivePreconditionCves list");
-    }
+    validateGenericFindingReport(report);
 
     if ("example-cve-unused-app".equals(fixture)) {
       if (!before.contains("logback-classic")
@@ -1555,12 +1486,25 @@ public final class ExampleSupport {
     final String sha256 = componentSha256(component);
     final JsonNode finding =
         singleMatching(
-            report.path("inactivePreconditionCves"),
-            value -> "CVE-2025-11226".equals(value.path("cveId").asText()),
-            "inactive-precondition report entry");
-    if (report.path("inactivePreconditionCves").size() != 1
-        || !"ch.qos.logback:logback-core:jar:1.5.18".equals(finding.path("coordinate").asText())) {
+            report.path("genericFindings"),
+            value -> "CVE-2025-11226".equals(value.path("vulnerabilityId").asText()),
+            "generic precondition finding");
+    if (!"ch.qos.logback".equals(finding.path("candidate").path("groupId").asText())
+        || !"logback-core".equals(finding.path("candidate").path("artifactId").asText())
+        || !"1.5.18".equals(finding.path("candidate").path("version").asText())
+        || !"jar".equals(finding.path("candidate").path("type").asText())
+        || !finding.path("candidate").path("classifier").asText().isEmpty()
+        || !"PREREQUISITES_ABSENT".equals(finding.path("outcome").asText())) {
       throw new IOException("Inactive finding must target the exact Logback Core coordinate");
+    }
+    final JsonNode prerequisites = finding.path("effectivePrerequisites");
+    if (!prerequisites.isArray() || prerequisites.size() != 1) {
+      throw new IOException("Generic precondition finding must retain its atomic prerequisite pair");
+    }
+    final JsonNode prerequisite = prerequisites.get(0);
+    if (!"org.codehaus.janino:janino".equals(prerequisite.path("requiresDependency").asText())
+        || !"org.codehaus.janino.ClassBodyEvaluator".equals(prerequisite.path("requiresClass").asText())) {
+      throw new IOException("Generic precondition finding must retain its atomic prerequisite pair");
     }
 
     final JsonNode vulnerability =

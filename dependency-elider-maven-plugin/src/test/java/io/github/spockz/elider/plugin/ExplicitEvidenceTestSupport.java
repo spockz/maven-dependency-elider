@@ -1,27 +1,43 @@
-// WHY: Creates bound owner assertions in plugin tests without admitting generic cache mappings.
+// WHY: Creates generic prerequisite findings for plugin proof and assessment tests.
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
-import io.github.spockz.elider.model.ExplicitPrerequisiteEvidence;
+import io.github.spockz.elider.model.AssessmentIntent;
+import io.github.spockz.elider.model.FieldValue;
+import io.github.spockz.elider.model.GenericVulnerabilityFinding;
+import io.github.spockz.elider.model.MergePriority;
+import io.github.spockz.elider.model.PrerequisiteClaim;
+import io.github.spockz.elider.model.VersionCoverageClaim;
+import io.github.spockz.elider.model.VulnerabilityFindingContribution;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
+import java.util.List;
+import java.util.Set;
 
-/** Test-only construction helper for explicit POM prerequisite assertions. */
+/** Test-only construction helper for generic prerequisite findings. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class ExplicitEvidenceTestSupport {
   private ExplicitEvidenceTestSupport() {}
 
-  static ExplicitPrerequisiteEvidence prerequisiteEvidence(
+  static GenericVulnerabilityFinding genericPrerequisiteFinding(
       final VulnerabilitySymbolMapping mapping) {
-    return ExplicitPrerequisiteEvidence.declare(
-            mapping.cveId(),
-            mapping.affectedCoordinate(),
-            mapping.versionRangeSpec(),
-            mapping.requiresDependency(),
-            mapping.requiresClass(),
-            mapping.sourceAdvisoryUrl(),
-            mapping.confidenceLevel(),
-            "test-project-pom")
-        .bindTo(mapping.affectedCoordinate(), MavenVersionRangeMatcher::includes);
+    return GenericVulnerabilityFinding.merge(
+        List.of(
+            new VulnerabilityFindingContribution(
+                mapping.cveId(),
+                Set.of(),
+                mapping.affectedCoordinate().groupId(),
+                mapping.affectedCoordinate().artifactId(),
+                mapping.affectedCoordinate().type(),
+                mapping.affectedCoordinate().classifier(),
+                List.of(VersionCoverageClaim.affected(mapping.versionRangeSpec())),
+                FieldValue.omitted(),
+                FieldValue.supplied(
+                    Set.of(
+                        new PrerequisiteClaim(
+                            mapping.requiresDependency(), mapping.requiresClass()))),
+                MergePriority.AUTOMATIC,
+                AssessmentIntent.AUTO_VERIFY,
+                "plugin-test",
+                Set.of())));
   }
 }

@@ -117,7 +117,8 @@ final class AnalyzeMojoProductionOutputTest {
     assertThat(log.messages())
         .contains(
             "  Artifacts that would be elided by this analysis: 1 / 2 (50.0%)",
-            "    CVE-2026-19003 org.example:unused-compile:jar:1.0");
+            "    CVE-2026-19003 org.example:unused-compile:jar:1.0: "
+                + "AFFECTED; UNVERIFIED; PLANNED_UNVERIFIED");
     final com.fasterxml.jackson.databind.JsonNode reportJson =
         new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
     assertThat(reportJson.path(PRODUCTION_OUTPUT_FIELD).asText()).isEqualTo(output.toString());

@@ -45,19 +45,14 @@ final class MavenElisionReportPayloadValidator {
           PROGRAM_CLASSES_PRUNED,
           UNCOMPRESSED_PROGRAM_CLASS_BYTES_PRUNED,
           "trimmedArtifacts",
-          "removedCveComponents",
-          "provenAbsentCves",
-          "inactivePreconditionCves",
-          "potentiallyConservativeCves",
           "mediatedGraph",
           "assumeConventionalJavaSourceLayout",
-          "sourceReviewFindings",
-          "advisoryReview",
-          "verifiedStructuredProofs",
           "policy",
           "exclusionReview",
           "appliedBans",
-          "toleratedDuplicates");
+          "toleratedDuplicates",
+          "genericFindings",
+          "sourceObservations");
 
   /** Exact fields persisted for each tolerated duplicate class. */
   private static final Set<String> TOLERATED_DUPLICATE_FIELDS =
@@ -74,21 +69,6 @@ final class MavenElisionReportPayloadValidator {
   /** Exact fields for the producing policy and operation identity. */
   private static final Set<String> POLICY_FIELDS =
       Set.of("retainedArtifacts", "banishedDependencies", "operationFingerprint");
-
-  /** Exact fields for CVE finding rows. */
-  private static final Set<String> CVE_FIELDS = Set.of("cveId", "coordinate");
-
-  /** Inactive precondition rows also retain their proof-backed missing requirements. */
-  private static final Set<String> INACTIVE_CVE_FIELDS =
-      Set.of("cveId", "coordinate", "missingPrerequisites");
-
-  /** Exact fields retained for each missing precondition. */
-  private static final Set<String> MISSING_PREREQUISITE_FIELDS =
-      Set.of("dependency", "requiredClass");
-
-  /** Exact fields for conservative CVE finding rows. */
-  private static final Set<String> CONSERVATIVE_CVE_FIELDS =
-      Set.of("cveId", "coordinate", "reason", "pomOverrideSnippet");
 
   /** Whole-artifact rows retain original-JAR and removed-class metrics. */
   private static final Map<String, Long> DROPPED_METRICS =
@@ -151,19 +131,12 @@ final class MavenElisionReportPayloadValidator {
     validateMetrics(payload, SNAPSHOT_METRICS, "Elision report metric");
     validateRows(payload.get("droppedArtifacts"), DROPPED_FIELDS, DROPPED_METRICS);
     validateRows(payload.get("trimmedArtifacts"), TRIMMED_FIELDS, TRIMMED_METRICS);
-    validateCveRows(payload.get("removedCveComponents"));
-    validateCveRows(payload.get("provenAbsentCves"));
-    validateInactiveCveRows(payload.get("inactivePreconditionCves"));
-    validateConservativeCveRows(payload.get("potentiallyConservativeCves"));
     validateLayoutFlag(payload.get("assumeConventionalJavaSourceLayout"));
     validatePolicy(payload.get("policy"));
-    MavenElisionReportSourcePayloadValidator.validate(
-        payload.get("sourceReviewFindings"),
-        payload.get("assumeConventionalJavaSourceLayout").booleanValue());
-    MavenElisionReportAdvisoryPayloadValidator.validate(payload.get("advisoryReview"));
-    MavenElisionReportStructuredProofPayloadValidator.validate(
-        payload.get("verifiedStructuredProofs"),
-        payload.get("assumeConventionalJavaSourceLayout").booleanValue());
+    MavenElisionReportJsonPayloadShape.requireArray(
+        payload.get("genericFindings"), "genericFindings");
+    MavenElisionReportJsonPayloadShape.requireArray(
+        payload.get("sourceObservations"), "sourceObservations");
     ExclusionReviewPayloadValidator.validate(payload.get("exclusionReview"));
     validateAppliedBans(
         payload.get("appliedBans"), textValues(payload.path("policy").get("banishedDependencies")));
@@ -531,115 +504,6 @@ final class MavenElisionReportPayloadValidator {
   private static void validateLayoutFlag(final JsonNode value) throws IOException {
     if (value == null || !value.isBoolean()) {
       throw new IOException("Elision report layout assumption must be a JSON boolean");
-    }
-  }
-
-  private static void validateCveRows(final JsonNode rows) throws IOException {
-    if (rows == null || !rows.isArray()) {
-      throw new IOException("Elision report CVE rows must be arrays");
-    }
-    for (final JsonNode row : rows) {
-      validateCveRow(row, CVE_FIELDS);
-    }
-  }
-
-  private static void validateInactiveCveRows(final JsonNode rows) throws IOException {
-    if (rows == null || !rows.isArray()) {
-      throw new IOException("Elision report inactivePreconditionCves rows must be arrays");
-    }
-    for (final JsonNode row : rows) {
-      validateCveRow(row, INACTIVE_CVE_FIELDS);
-      final JsonNode prerequisites = row.get("missingPrerequisites");
-      if (prerequisites == null || !prerequisites.isArray() || prerequisites.isEmpty()) {
-        throw new IOException(
-            "Elision report inactive CVE rows must include missing prerequisite details");
-      }
-      for (final JsonNode prerequisite : prerequisites) {
-        validateMissingPrerequisite(prerequisite);
-      }
-    }
-  }
-
-  private static void validateCveRow(final JsonNode row, final Set<String> expectedFields)
-      throws IOException {
-    if (!row.isObject()) {
-      throw new IOException("Elision report CVE rows must be objects");
-    }
-    if (!fieldNames(row).equals(expectedFields)) {
-      throw new IOException(
-          "Elision report CVE row fields do not match schema version "
-              + MavenElisionReportSnapshot.SCHEMA_VERSION
-              + "; run dependency-elider:elide to write a current report");
-    }
-    validateCveId(row.get("cveId"));
-    validateCoordinateField(row.get("coordinate"));
-  }
-
-  private static void validateMissingPrerequisite(final JsonNode prerequisite) throws IOException {
-    if (!prerequisite.isObject() || !fieldNames(prerequisite).equals(MISSING_PREREQUISITE_FIELDS)) {
-      throw new IOException("Elision report missing prerequisite fields do not match schema");
-    }
-    final JsonNode dependency = prerequisite.get("dependency");
-    final JsonNode requiredClass = prerequisite.get("requiredClass");
-    if (dependency == null || !dependency.isTextual() || dependency.textValue().isBlank()) {
-      throw new IOException("Elision report missing prerequisite dependency must be nonblank text");
-    }
-    if (requiredClass == null
-        || !requiredClass.isTextual()
-        || requiredClass.textValue().isBlank()) {
-      throw new IOException("Elision report missing prerequisite class must be nonblank text");
-    }
-    try {
-      new MavenMissingPrerequisite(dependency.textValue(), requiredClass.textValue());
-    } catch (final IllegalArgumentException exception) {
-      throw new IOException("Elision report missing prerequisite is invalid", exception);
-    }
-  }
-
-  private static void validateCveId(final JsonNode cveId) throws IOException {
-    if (cveId == null
-        || !cveId.isTextual()
-        || !cveId.textValue().matches("CVE-[0-9]{4}-[0-9]{4,}")) {
-      throw new IOException("Elision report CVE row cveId must be a valid CVE identifier");
-    }
-  }
-
-  private static void validateCoordinateField(final JsonNode coordinate) throws IOException {
-    if (coordinate == null || !coordinate.isTextual() || coordinate.textValue().isBlank()) {
-      throw new IOException("Elision report CVE row coordinate must be nonblank text");
-    }
-  }
-
-  private static void validateConservativeCveRows(final JsonNode rows) throws IOException {
-    if (rows == null || !rows.isArray()) {
-      throw new IOException("Elision report potentiallyConservativeCves rows must be arrays");
-    }
-    for (final JsonNode row : rows) {
-      validateConservativeCveRow(row);
-    }
-  }
-
-  private static void validateConservativeCveRow(final JsonNode row) throws IOException {
-    if (!row.isObject()) {
-      throw new IOException("Elision report conservative CVE rows must be objects");
-    }
-    if (!fieldNames(row).equals(CONSERVATIVE_CVE_FIELDS)) {
-      throw new IOException(
-          "Elision report conservative CVE row fields do not match schema version "
-              + MavenElisionReportSnapshot.SCHEMA_VERSION
-              + "; run dependency-elider:elide to write a current report");
-    }
-    validateCveId(row.get("cveId"));
-    validateCoordinateField(row.get("coordinate"));
-    validateTextField(row.get("reason"), "reason");
-    validateTextField(row.get("pomOverrideSnippet"), "pomOverrideSnippet");
-  }
-
-  private static void validateTextField(final JsonNode field, final String name)
-      throws IOException {
-    if (field == null || !field.isTextual() || field.textValue().isBlank()) {
-      throw new IOException(
-          "Elision report conservative CVE " + name + " must be a non-blank string");
     }
   }
 

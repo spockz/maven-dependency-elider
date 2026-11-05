@@ -7,7 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.spockz.elider.model.CveSourceRecordMetadata;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
@@ -28,10 +27,7 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CommentDefaultAccessModifier",
   "PMD.AtLeastOneConstructor",
   "PMD.CommentRequired",
-  "PMD.LiteralsFirstInComparisons",
-  "PMD.LambdaCanBeMethodReference",
-  "PMD.ShortVariable",
-  "PMD.AvoidInstantiatingObjectsInLoops"
+  "PMD.ShortVariable"
 })
 class OsvSnapshotIndexerTest {
   private static final String SHARED_CVE_ALIAS = "CVE-2025-12345";
@@ -196,7 +192,7 @@ class OsvSnapshotIndexerTest {
             .toList();
 
     assertAll(
-        "each OSV record retains its own aliases and package scopes",
+        "OSV projections retain OSV facts and leave CVE claims to the independent adapter",
         () -> assertThat(records).hasSize(3),
         () -> assertThat(firstRecord.modified()).isEqualTo("2026-10-30T12:00:00Z"),
         () -> assertThat(noCveRecord.modified()).isEqualTo("2026-10-30T12:00:00Z"),
@@ -216,12 +212,10 @@ class OsvSnapshotIndexerTest {
             assertThat(firstRecord.evidence())
                 .extracting(value -> value.provenance().origin())
                 .contains(
-                    EvidenceOrigin.OSV,
-                    EvidenceOrigin.DESCRIPTION,
-                    EvidenceOrigin.REFERENCE_URL,
-                    EvidenceOrigin.CVE_LIST),
-        () -> assertThat(structuredEvidence).hasSize(2),
-        () -> assertThat(referenceCandidates).hasSize(4),
+                    EvidenceOrigin.OSV, EvidenceOrigin.DESCRIPTION, EvidenceOrigin.REFERENCE_URL),
+        () -> assertThat(structuredEvidence).isEmpty(),
+        () -> assertThat(firstRecord.cnaAffectedEntries()).isEmpty(),
+        () -> assertThat(referenceCandidates).hasSize(2),
         () ->
             assertThat(referenceCandidates)
                 .allSatisfy(
@@ -231,64 +225,38 @@ class OsvSnapshotIndexerTest {
                             () ->
                                 assertThat(value.provenance().origin())
                                     .isEqualTo(EvidenceOrigin.REFERENCE_URL))),
-        () ->
-            assertThat(structuredEvidence)
-                .filteredOn(
-                    value -> value.scope().affectedCoordinate().artifactId().equals("library-one"))
-                .singleElement()
-                .satisfies(
-                    value ->
-                        assertThat(value.programFiles())
-                            .contains("src/main/java/org/example/One.java")),
-        () ->
-            assertThat(structuredEvidence)
-                .filteredOn(
-                    value -> value.scope().affectedCoordinate().artifactId().equals("library-two"))
-                .singleElement()
-                .satisfies(
-                    value ->
-                        assertAll(
-                            () -> assertThat(value.programRoutines()).contains("decode"),
-                            () ->
-                                assertThat(value.cnaAffectedEntryIdentity())
-                                    .isEqualTo("containers.cna.affected[1]"))),
-        () ->
-            assertThat(firstRecord.cnaAffectedEntries())
-                .extracting(value -> value.entryIdentity())
-                .containsExactly(
-                    "containers.cna.affected[0]",
-                    "containers.cna.affected[1]",
-                    "containers.cna.affected[2]"),
-        () ->
-            assertThat(firstRecord.cnaAffectedEntries().get(2).programRoutines())
-                .containsExactly("unmatchedRoutine"),
-        () ->
-            assertThat(structuredEvidence)
-                .noneMatch(value -> value.programRoutines().contains("unmatchedRoutine")),
-        () ->
-            assertThat(
-                    firstRecord.cnaAffectedEntries().getFirst().versions().getFirst().versionType())
-                .isEqualTo("semver"),
-        () ->
-            assertThat(firstRecord.cnaAffectedEntries().getFirst().defaultStatus())
-                .isEqualTo("affected"),
-        () ->
-            assertThat(firstRecord.cnaAffectedEntries().getFirst().versions().getFirst())
-                .satisfies(
-                    claim ->
-                        assertAll(
-                            () -> assertThat(claim.lessThan()).isEqualTo("2.0"),
-                            () -> assertThat(claim.lessThanOrEqual()).isNull(),
-                            () ->
-                                assertThat(claim.changes())
-                                    .containsExactly(
-                                        java.util.Map.of("at", "1.5", "status", "unaffected")))),
         () -> assertThat(noCveRecord.aliases()).containsExactly("GHSA-alias-only"),
         () -> assertThat(noCveRecord.evidence()).isEmpty(),
         () ->
             assertThat(noCveRecord.affectedPackages())
                 .singleElement()
                 .satisfies(value -> assertThat(value.versions()).containsExactly("3.1")));
+  }
+
+  @Test
+  void cveChangesAndWithdrawalCannotChangeOsvOwnedRecord() throws IOException {
+    final String osv = OsvSnapshotFixtures.osvJson("GHSA-independent-source", SHARED_CVE_ALIAS);
+    final byte[] zip = createZip(List.of(new ZipItem("record.json", osv)));
+    final Path cvePath = tempDir.resolve("cves/2025/12xxx/CVE-2025-12345.json");
+    Files.createDirectories(cvePath.getParent());
+    Files.writeString(cvePath, cveSourceJson(SHARED_CVE_ALIAS, "PUBLISHED"));
+    final OsvAdvisoryRecord first =
+        new OsvSnapshotIndexer().indexZip(new ByteArrayInputStream(zip), tempDir).getFirst();
+
+    Files.writeString(cvePath, cveSourceJson(SHARED_CVE_ALIAS, "REJECTED"));
+    final OsvAdvisoryRecord changed =
+        new OsvSnapshotIndexer().indexZip(new ByteArrayInputStream(zip), tempDir).getFirst();
+    Files.delete(cvePath);
+    final OsvAdvisoryRecord withdrawn =
+        new OsvSnapshotIndexer().indexZip(new ByteArrayInputStream(zip), tempDir).getFirst();
+
+    assertAll(
+        "CVE claims have their own lifecycle and do not persist inside OSV projections",
+        () -> assertThat(first.cnaAffectedEntries()).isEmpty(),
+        () ->
+            assertThat(first.evidence()).noneMatch(StructuredSourceClassEvidence.class::isInstance),
+        () -> assertThat(changed).isEqualTo(first),
+        () -> assertThat(withdrawn).isEqualTo(first));
   }
 
   @Test
@@ -308,42 +276,6 @@ class OsvSnapshotIndexerTest {
         () -> assertThat(sourceRecord.modified()).isEqualTo("2026-10-31T00:00:00Z"),
         () -> assertThat(indexed.modified()).isEqualTo(sourceRecord.modified()),
         () -> assertThat(decoded.modified()).isEqualTo(indexed.modified()));
-  }
-
-  @Test
-  void retainsMismatchedOrNonPublishedCveMetadataWithoutStructuredEvidence() throws IOException {
-    assertAll(
-        "CVE source identity and state remain visible but do not authorize structured claims",
-        () -> assertReviewOnlySourceMetadata("CVE-2025-99999", "PUBLISHED", "CVE-2025-99999"),
-        () -> assertReviewOnlySourceMetadata(SHARED_CVE_ALIAS, "REJECTED", SHARED_CVE_ALIAS));
-  }
-
-  private void assertReviewOnlySourceMetadata(
-      final String sourceCveId, final String state, final String expectedSourceCveId)
-      throws IOException {
-    final Path cvePath = tempDir.resolve("cves/2025/12xxx/CVE-2025-12345.json");
-    Files.createDirectories(cvePath.getParent());
-    Files.writeString(cvePath, cveSourceJson(sourceCveId, state));
-    final String osv = OsvSnapshotFixtures.osvJson("GHSA-source-metadata", SHARED_CVE_ALIAS);
-    final OsvAdvisoryRecord record =
-        new OsvSnapshotIndexer()
-            .indexZip(
-                new ByteArrayInputStream(createZip(List.of(new ZipItem("record.json", osv)))),
-                tempDir)
-            .getFirst();
-    final CveSourceRecordMetadata retainedSource =
-        record.cnaAffectedEntries().getFirst().sourceRecord();
-
-    assertAll(
-        "mismatched or unpublished source is retained but cannot mint structured evidence",
-        () -> assertThat(retainedSource.cveId()).isEqualTo(expectedSourceCveId),
-        () -> assertThat(retainedSource.state()).isEqualTo(state),
-        () ->
-            assertThat(record.evidence())
-                .noneMatch(StructuredSourceClassEvidence.class::isInstance),
-        () ->
-            assertThat(record.evidence())
-                .noneMatch(value -> value.provenance().origin() == EvidenceOrigin.CVE_LIST));
   }
 
   private static String cveSourceJson(final String cveId, final String state) {
@@ -369,12 +301,16 @@ class OsvSnapshotIndexerTest {
     final ByteArrayOutputStream output = new ByteArrayOutputStream();
     try (ZipOutputStream zip = new ZipOutputStream(output)) {
       for (final ZipItem item : items) {
-        zip.putNextEntry(new ZipEntry(item.name()));
+        zip.putNextEntry(zipEntry(item.name()));
         zip.write(item.content().getBytes(StandardCharsets.UTF_8));
         zip.closeEntry();
       }
     }
     return output.toByteArray();
+  }
+
+  private static ZipEntry zipEntry(final String name) {
+    return new ZipEntry(name);
   }
 
   private record ZipItem(String name, String content) {}

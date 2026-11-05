@@ -89,7 +89,7 @@ Native Image resource-bundle names from `-H:IncludeResourceBundles` and configur
 
 Not necessarily. Package scanners can continue reporting the same artifact coordinates and version after classes are removed. Dependency Elider assesses effective vulnerability declarations through the same checks regardless of their source. Omitted-code proof requires exact component/version binding, attributable declared classes in the original JAR, and their physical absence from the resulting artifact. A package match, heuristic hint, confidence label or higher merge priority cannot establish that proof. A verified observation covers the declared classes; it does not independently verify the vulnerability or the completeness of the declaration.
 
-Precondition proof additionally requires an exact prerequisite coordinate and class and `elide.preconditionClassPathComplete=true`, with a complete verified declared inventory. Missing inputs, a retained prerequisite class, unresolved code attribution or review-only intent prevent the corresponding attestation. The inventory assertion does not cover providers added by later packaging or deployment mechanisms. Inspect and scan the final packaged artifact separately. See [RQ-0008](research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) and [RQ-0013](research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
+Precondition proof requires every effective prerequisite coordinate/class pair to be absent and `elide.preconditionClassPathComplete=true`, with a complete verified declared inventory. Missing inventory inputs, a retained prerequisite, unresolved prerequisite scope or review-only intent prevent that attestation. Code and prerequisite groups are independent, so an unresolved code mapping does not invalidate a separately verified prerequisite proof. The inventory assertion does not cover providers added by later packaging or deployment mechanisms. Inspect and scan the final packaged artifact separately. See [RQ-0008](research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) and [RQ-0013](research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
 
 ### Which sources produce vulnerability findings?
 
@@ -123,9 +123,9 @@ emulate a historical target API.
 
 ### What happens if an advisory maps multiple vulnerable classes that do not exist in an older version?
 
-The verification engine currently fails closed: `OmittedCodeProof` requires all mapped vulnerable classes to be present in the original dependency JAR before certifying that trimming removed them. In cases like Jackson Core (`CVE-2026-68494`), a vulnerability fix across a broad version range touches classes that were only introduced in later minor versions (such as `StreamConstraintsException` added in Jackson 2.15), meaning older affected versions (like Jackson 2.14) do not contain all mapped symbols. In such cases, the elider conservatively omits the CVE from being considered "avoided" or emitting a VEX statement.
+Omitted-code proof requires every effective declared class to be attributable to the original dependency JAR before certifying its absence from the result. A broad mapping that names classes missing from an older JAR remains unresolved for that JAR. The finding stays visible, but that code group cannot produce omission proof.
 
-If an engineer deems this overly conservative because the absent class is irrelevant to their version, they can override the mapping directly in `pom.xml` under `<configuration><vulnerabilityMappings>`:
+After checking the declaration against the exact artifact version, an engineer can supply a scoped correction in `pom.xml` under `<configuration><vulnerabilityMappings>`:
 
 ```xml
 <vulnerabilityMappings>
@@ -143,20 +143,20 @@ If an engineer deems this overly conservative because the absent class is irrele
 </vulnerabilityMappings>
 ```
 
-We are actively evaluating how to interpret multiple mapped classes (e.g. conjunction vs. disjunction) across version ranges and whether the elider must remain as strict as it is today.
+The manual code set replaces automatic code mappings only within its version scope. Every class in the effective set, including its nested classes, must pass physical verification. An explicitly empty `<vulnerableClasses/>` clears the mapping in scope and produces no omission proof; omitting that element permits enrichment from automatic declarations.
 
-### Why is vulnerable code retained due to `META-INF/services/` (ServiceLoader SPI), and how do conservative exclusions work?
+### Why can `META-INF/services/` retain declared vulnerable code?
 
 Java Service Provider Interface (SPI) entries in `META-INF/services/` declare provider implementations loaded dynamically at runtime via `java.util.ServiceLoader`. Omitting these providers without proof can cause runtime `ServiceConfigurationError` exceptions.
 
-However, treating every declared SPI provider as an unconditional root retains unused transitive functionality. For example, `com.fasterxml.jackson.core:jackson-core` declares `JsonFactory` in `META-INF/services/com.fasterxml.jackson.core.JsonFactory`. Retaining `JsonFactory` forces retention of `NonBlockingJsonParser` and its interface `ByteArrayFeeder`, preventing trimming-based remediation of CVE-2026-68494 even when `ServiceLoader` is never invoked.
+Keeping a service provider can also keep classes it references, including code named by a vulnerability declaration.
 
-Maven Dependency Elider uses static analysis (similar to GraalVM SubstrateVM) to detect positive proof of `ServiceLoader` usage:
+Maven Dependency Elider analyzes `ServiceLoader` usage:
 
 1. **Positive Proof of Use**: The scanner analyzes application bytecode for calls to `ServiceLoader.load(...)` or `ServiceLoader.loadInstalled(...)` where the service parameter is either a constant class/string literal or points to a `static final` constant field. When a service factory in a dependency JAR matches an observed call, the SPI entry is proven in use and retained as a legitimate root.
 2. **Conservative Fallback (`elide.conservativeServiceLoaderRoots`, default `true`)**: When negative proof is unavailable (the service interface is not observed statically, but reflection or dynamic loading might still occur), unproven SPI providers are retained by default for runtime safety.
-3. **Conservative CVE Exclusions**: If a CVE's vulnerable code survives in a trimmed JAR solely because unproven SPI roots preserved it, the CVE is excluded from "Mitigated CVEs" and instead reported under `Potentially conservative CVE exclusions:` with the unproven SPI roots identified and an actionable POM override snippet.
-4. **Disabling Conservative Fallback**: If you know your application does not use dynamic SPI lookups for that library, disable the fallback to prune unproven SPI entries and allow vulnerable code to be trimmed:
+3. **Vulnerability findings**: Retained effective declared code prevents the corresponding omission proof. The common finding reports its attribution and outcome regardless of which source supplied the declaration.
+4. **Disabling Conservative Fallback**: If your application does not require unobserved dynamic SPI lookups for that library, disable the fallback to allow those providers to be pruned:
 
 ```xml
 <configuration>
@@ -164,7 +164,7 @@ Maven Dependency Elider uses static analysis (similar to GraalVM SubstrateVM) to
 </configuration>
 ```
 
-Or pass `-Delide.conservativeServiceLoaderRoots=false` on the command line. When disabled, unproven SPI entries are not treated as roots, allowing unused classes (such as Jackson's `ByteArrayFeeder`) to be pruned and the CVE to be proven absent.
+Or pass `-Delide.conservativeServiceLoaderRoots=false` on the command line. This changes retention policy; the resulting classes must still satisfy the same attribution and physical verification checks before any proof is emitted.
 
 ## Compatibility and Performance
 

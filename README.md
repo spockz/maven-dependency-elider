@@ -91,7 +91,7 @@ Execute `analyze` to preview removable dependencies and estimated byte savings w
   -Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
 ```
 
-On this Basic fixture, `analyze` identifies two whole-artifact candidates out of thirteen (942.11 KiB of original JAR bytes). The pinned typed cache retains the `CVE-2014-3577` package advisory and its commit-derived `AbstractVerifier` review candidate, but neither cached claim creates a CVE classification or VEX.
+On this Basic fixture, `analyze` identifies two whole-artifact candidates out of thirteen (942.11 KiB of original JAR bytes). The pinned cache retains the `CVE-2014-3577` package finding and its commit-derived `AbstractVerifier` review candidate. Analysis reports these findings without trim proof or VEX.
 
 ### 5. Build with Elision (`elide`)
 
@@ -248,7 +248,7 @@ Removing an artifact or class removes package bloat, but a formal VEX statement 
 * Precondition VEX requires an exact prerequisite class as well as its coordinate, plus explicit `-Delide.preconditionClassPathComplete=true` confirmation that the declared Maven build inventory is complete. The opt-in cannot override detected downstream generators: both `compile` and `testCompile` must explicitly resolve `maven.compiler.proc=none` under a known Maven Compiler Plugin version from 3.13 through 3.x, with Java release or source/target at least 11. Processor paths, processor lists, compiler arguments other than the exact diagnostic-only `-Xlint:all`, custom compiler/executable modes, compiler plugin dependencies, and missing, unresolved, or conflicting settings leave proof incomplete. Unmodeled plugin executions before or after `INITIALIZE`, configured clean/site executions with unmodeled ordering, Enforcer executions at or after inventory capture or with unknown phases, filtered resources, resource plugin dependencies, unsupported packaging/extensions, and custom compiler/resource roots also suppress proof. Proof supports `jar` and `pom` packaging; `war` and `maven-plugin` packaging remain incomplete because their provider-generation paths are not modeled. The inventory includes `<build.directory>/generated-sources/annotations` and `<build.directory>/generated-test-sources/test-annotations`; custom generated-source directories suppress proof. Pre-capture Enforcer rules are limited to verified built-ins, without custom implementation attributes or plugin dependencies. Interface assertions are also rejected because javac can emit an additional helper class for them. The Maven request must contain one default-lifecycle goal, optionally preceded by `clean`; direct plugin goals and multiple lifecycle segments suppress proof. The publisher revalidates provider membership and digests before commit; serializers recheck the affected component path and digest. Unchanged plugin-owned OpenVEX is removed when no qualifying evidence remains. Modified or unowned output is preserved. With `elide.trimJars=false`, SBOM/VEX publication and stale VEX cleanup do not run. The claim does not cover providers added by later packaging or deployment runtime mechanisms. See [RQ-0013](docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
 The guard models packaging only for maven-shade-plugin 3.6.0 with one `package`/`shade` execution and a built-in manifest transformer with a resolved main class. Any request that reaches a modeled JAR package execution must include `clean` first so the standard JAR plugin cannot reuse an older archive; Shade packaging is covered as an additional package path. Clean skip/exclusion/failure overrides and deferred clean modes suppress proof. It accepts only the inherited signature-resource exclusions shown in the examples; custom Shade filters, transformers, inputs, dependencies, source-JAR properties, and custom JAR plugin configuration suppress proof.
 If the requested lifecycle reaches `test`, exact-class proof also requires the standard Maven Surefire Plugin 3.5.2 `default-test` execution and explicit `-DskipTests=true`. Maven still compiles test sources so they remain inventoried; the example harness runs baseline tests normally.
-* The inactive-precondition report category is populated only when a complete opted-in inventory proves the exact prerequisite coordinate and class absent for the exact affected version. Missing, incomplete, low-confidence, or contradictory evidence produces neither that classification nor a precondition attestation. Overlapping applicable mappings must agree on confidence, vulnerable classes, prerequisite coordinate, and prerequisite class; conflicts suppress VEX evidence and report classifications for that CVE and component.
+* `PREREQUISITES_ABSENT` requires a complete opted-in inventory proving every effective prerequisite coordinate/class pair absent for the exact affected version. Same-priority pairs combine as sets, and manual supplied pairs replace automatic pairs within scope. Missing or unresolved prerequisites and review-only intent prevent that proof. Code and prerequisite groups are assessed independently; if both proofs succeed, omitted-code evidence is published once.
 * Run `make scan-sbom` to run OSV-Scanner offline against baseline and post-elision SBOMs, producing a hash-backed comparison report in `target/sbom-comparison/`.
 * A finding is marked eliminated only when its package component is absent from the post-elision SBOM.
 
@@ -298,7 +298,7 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 | JDK platform resolution | Active-runtime modules; target API availability is not emulated | Standard module APIs load hierarchy and member declarations from the JVM running Maven. Missing active-runtime references remain unresolved; the compiler target is separate. |
 | Kotlin/JVM libraries and source roots | Partial; JVM bytecode only | Kotlin-compiled dependency bytecode is analyzed through ordinary JVM references. Kotlin metadata is parsed for sibling class isolation but metadata-only references are not closure roots; Kotlin sources are not scanned. See the [Kotlin support matrix](docs/faq.md#what-kotlin-features-are-supported). |
 | JARs with root `module-info.class` | Conservative pass-through on classpath | Retained JARs with root module descriptors are not trimmed. JPMS module-path linkage is unsupported. |
-| ServiceLoader SPI roots and conservative exclusion | Supported; positive proof with conservative fallback | Detects constant `ServiceLoader` calls in application bytecode. Unproven SPI roots are retained by default (`<conservativeServiceLoaderRoots>true`); if vulnerable code is kept due to unproven SPI roots, the CVE is reported under conservative exclusions with POM override guidance. |
+| ServiceLoader SPI roots | Supported; positive proof with conservative fallback | Detects constant `ServiceLoader` calls in application bytecode. Unproven SPI roots are retained by default (`<conservativeServiceLoaderRoots>true`); retained declared code prevents omission proof and stays visible in the common finding. |
 | Multi-symbol vulnerability interpretation | Strict fail-closed (open design question) | When an advisory maps multiple vulnerable classes across wide version ranges (e.g. Jackson Core `CVE-2026-68494`), all mapped classes must be present in the original JAR for proof of absence. |
 | Persisted report and CycloneDX pedigree | Unit tested; fixture verified | Verifies report structure, graph data, class and byte metrics, and example pedigree output. |
 | Maven multi-module reactor with active elision | One strict three-module chain verified on Maven CLI 3.9.11 and GraalVM JDK 21.0.12 | By default, elision executes only on leaf modules (`elide.leafOnly=true`). With `leafOnly=false`, sequential and `-T 4` `clean verify` builds pass with module-local schema-1 reports. The chain has no independent siblings, so broader reactor concurrency remains unverified. |
@@ -311,7 +311,7 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 * **Source Roots (`elide.sourceRootsComplete`)**: Defaults to `false` (conservatively retains all compile-classpath JARs and classes). Set to `true` only when all production and generated sources exist before `INITIALIZE` with no downstream generation.
 * **Reactor Leaf Modules (`elide.leafOnly`)**: Defaults to `true`. In multi-module Maven reactors, the plugin by default only elides leaf modules (modules with no downstream dependents in the reactor DAG, such as packaging applications, fat JARs, and Native Images). Intermediate library modules skip elision, ensuring internal libraries build and test against standard dependencies while the leaf module performs definitive elision across the unified dependency graph. Set `-Delide.leafOnly=false` (or `<elide.leafOnly>false</elide.leafOnly>`) to run elision across every submodule.
 * **Production Bytecode (`elide.productionClassesComplete`)**: For generated production code, enable the Maven extension and set this property to `true` to rebind the default `elide` execution from `initialize` to `process-classes`. The output directory must contain compiled production classes. Analysis derives production roots directly from emitted bytecode in `target/classes`; dependencies referenced exclusively through compile-time-inlined primitive or String constants are retained explicitly via `<retainedArtifacts>`. Source roots do not count as runtime evidence, and test-only references are not guaranteed. A direct `dependency-elider:elide` invocation does not establish trusted lifecycle capture; bind the goal to `process-classes` or run the normal lifecycle. Unknown writers at `process-classes` or later remain unsupported, and `skipTests` does not skip `testCompile` safeguards.
-* **Conservative ServiceLoader Roots (`elide.conservativeServiceLoaderRoots`)**: Defaults to `true`. Scans application bytecode for constant `ServiceLoader.load` calls. When enabled, unproven SPI providers are retained for runtime safety; any CVE whose vulnerable code is preserved solely by unproven SPI roots is excluded from mitigation and reported under `Potentially conservative CVE exclusions`. Set to `false` (or `-Delide.conservativeServiceLoaderRoots=false`) to prune unproven SPI providers and eliminate dormant vulnerable code.
+* **Conservative ServiceLoader Roots (`elide.conservativeServiceLoaderRoots`)**: Defaults to `true`. Scans application bytecode for constant `ServiceLoader.load` calls. When enabled, unproven SPI providers are retained for runtime safety. Set to `false` (or `-Delide.conservativeServiceLoaderRoots=false`) to permit pruning those providers when they are unnecessary for your application. Vulnerability attribution and physical proof checks still apply.
 * **Framework Metadata Protection**: Service providers (`META-INF/services`), Spring factories, and GraalVM reflection configs automatically protect declaring and provider JARs from whole-artifact removal.
 * **Bytecode Sanitization**: Trimmed JARs are written to `target/elided-artifacts/` with original files untouched. JAR digital signatures are removed to avoid signature validation failures.
 * **Artifact Fingerprinting**: Maven's resolved and direct artifact views are fingerprinted before mutation. Any unexpected change aborts publication.
@@ -369,7 +369,7 @@ The repository includes end-to-end integration fixtures under `examples/`:
 
 | Fixture | Architecture | Target Demonstration |
 | :--- | :--- | :--- |
-| **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec` and `httpclient`, retains the cached `AbstractVerifier` source candidate for review, and emits no cache-derived CVE classification; produces a shrunken shaded JAR. |
+| **`example-basic-app`** | Plain Java + Shade | Elides unused `commons-codec` and `httpclient`, retains the cached package finding and `AbstractVerifier` candidate for review, and produces a shrunken shaded JAR. |
 | **`example-spring-boot-app`** | Spring Boot 3 Web | Trims Spring MVC under `BOOT-INF/lib` and exercises Spring Boot repackaging of the application and its dependencies. |
 | **`example-cve-unused-app`** | Standalone CVE test | Uses a validated explicit POM `HIGH` assertion for `StringLookup` on Commons Text versions below 1.10.0, proves that class physically absent after trimming, and emits OpenVEX. |
 | **`example-multi-module-reactor`** | Three-module Maven reactor with Shade | Exercises module-local reports and dependency elision for `reactor-common` → `reactor-service` → `reactor-app`, under sequential and `-T 4` builds. |
@@ -421,11 +421,11 @@ The transcripts below come from configured Maven invocations. Run `make update-t
 
 The pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md) supplies two package-advisory contexts and a commit-derived class candidate for stable examples. These package and heuristic rows remain review-only. Effective declared code from any input uses the same attribution and physical checks; manual `LOW`/`MEDIUM` retains review-only intent.
 
-Read each report from the elision totals through its CVE findings and advisory review. The examples show different evidence outcomes: review-only candidates do not establish impact, omitted-code proof can support mitigation, and a complete-inventory precondition proof can show why a retained library is inactive for a CVE.
+Read each report from the elision totals through its vulnerability findings and source observations. The examples distinguish package matches and heuristic leads from verified declared-code absence and complete-inventory prerequisite absence. These outcomes retain their scope and do not predict what every package scanner will report.
 
 #### example-basic-app
 
-Look at the dropped-artifact and trimmed-class totals, then the advisory association for HttpClient. This example shows that cached package and source candidates remain review-only: they do not create a CVE classification or VEX. The dependency graph is abbreviated, with the digest identifying omitted rows.
+Look at the dropped-artifact and trimmed-class totals, then the finding for HttpClient. Its package match and heuristic class candidate provide review information without physical proof or VEX. The dependency graph is abbreviated, with the digest identifying omitted rows.
 
 <!-- BEGIN:transcript:report-basic-app -->
 
@@ -461,41 +461,29 @@ Process exit status: 0
 [INFO]   - org.apache.httpcomponents:httpclient:jar:4.3.4 (compile): 576.18 KiB original JAR, 420 class entries, 1.11 MiB
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
 [INFO]   - org.apache.commons:commons-compress:jar:1.28.0 (compile): 535 classes, 1.93 MiB
-[INFO] Advisories associated with removed components: none
-[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none
-[INFO] CVEs inactive due to unmet prerequisite dependencies: none
-[INFO] Potentially conservative CVE exclusions: none detected
-[INFO] Advisory associations (review only; inventory disposition is not impact proof):
-[INFO]     Heuristic candidates are review leads; they do not establish a complete
-[INFO]     affected class set.
-[INFO]     Add a POM mapping with HIGH only after verifying the source applies to the
-[INFO]     exact artifact version and the listed classes form the complete affected
-[INFO]     set.
-[INFO]     The elider still checks the original and trimmed artifacts before publishing
-[INFO]     VEX. Keep unverified candidates review-only.
-[INFO]     REMOVED means excluded from this project's subsequent classpaths; the cached
-[INFO]     JAR is not deleted.
-[INFO]   - GHSA-transcript-httpclient / CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
-[INFO]     Heuristic origin: REFERENCE_URL / GHSA-transcript-httpclient#reference:0 (MEDIUM)
-[INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
-[INFO]     Heuristic candidate scope: (,4.3.5) (not used as raw OSV applicability)
-[INFO]     Source URL: https://github.com/apache/httpcomponents-client/commit/51cc67567765d67f878f0dcef61b5ded454d3122
-[INFO]     Candidate classes: [org.apache.http.conn.ssl.AbstractVerifier]
-[INFO]     Candidate dependencies: [org.apache.httpcomponents:httpclient]
-[INFO]     POM mapping template for this candidate:
-[INFO]       <vulnerabilityMappings>
-[INFO]         <vulnerabilityMapping>
-[INFO]           <cveId>CVE-2014-3577</cveId>
-[INFO]           <groupId>org.apache.httpcomponents</groupId>
-[INFO]           <artifactId>httpclient</artifactId>
-[INFO]           <versionRangeSpec>[4.3.4]</versionRangeSpec>
-[INFO]           <vulnerableClasses>
-[INFO]             <vulnerableClass>org.apache.http.conn.ssl.AbstractVerifier</vulnerableClass>
-[INFO]           </vulnerableClasses>
-[INFO]           <sourceAdvisoryUrl>https://github.com/apache/httpcomponents-client/commit/51cc67567765d67f878f0dcef61b5ded454d3122</sourceAdvisoryUrl>
-[INFO]           <confidenceLevel>HIGH</confidenceLevel>
-[INFO]         </vulnerabilityMapping>
-[INFO]       </vulnerabilityMappings>
+[INFO] Vulnerability findings: 1
+[INFO]   - CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
+[INFO]     Aliases: [CVE-2014-3577, GHSA-transcript-httpclient]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Code group: OMITTED; prerequisite group: OMITTED
+[INFO]     Declared code: [org.apache.http.conn.ssl.AbstractVerifier] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [CodeReference[kind=CLASS_NAME, value=org.apache.http.conn.ssl.AbstractVerifier, originalValues=[org.apache.http.conn.ssl.AbstractVerifier]]]
+[INFO]     Effective prerequisites: []
+[INFO]     Unresolved coverage: []
+[INFO]     Overridden fields: []
+[INFO]     Enriched fields: []
+[INFO]     Source: osv:GHSA-transcript-httpclient#heuristic:GHSA-transcript-httpclient#reference:0; records: [AdvisoryProvenance[origin=REFERENCE_URL, sourceRecordId=GHSA-transcript-httpclient#reference:0, sourceUrl=https://github.com/apache/httpcomponents-client/commit/51cc67567765d67f878f0dcef61b5ded454d3122, sourceRecordSha256=null]]
+[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=(,4.3.5), normalizedMavenRange=(,4.3.5), status=AFFECTED, diagnostic=null]]
+[INFO]       Original code: FieldValue[supplied=true, value=[CodeClaim[kind=HEURISTIC, reference=CodeReference[kind=CLASS_NAME, value=org.apache.http.conn.ssl.AbstractVerifier, originalValues=[org.apache.http.conn.ssl.AbstractVerifier]]]]]; prerequisites: FieldValue[supplied=false, value=null]
+[INFO]       Priority: AUTOMATIC; intent: AUTO_VERIFY
+[INFO]     Source: osv:GHSA-transcript-httpclient#org.apache.httpcomponents:httpclient; records: [AdvisoryProvenance[origin=OSV, sourceRecordId=GHSA-transcript-httpclient, sourceUrl=null, sourceRecordSha256=null], AdvisoryProvenance[origin=REFERENCE_URL, sourceRecordId=GHSA-transcript-httpclient#reference:0, sourceUrl=https://github.com/apache/httpcomponents-client/commit/51cc67567765d67f878f0dcef61b5ded454d3122, sourceRecordSha256=null]]
+[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=(,4.3.5), normalizedMavenRange=(,4.3.5), status=AFFECTED, diagnostic=null]]
+[INFO]       Original code: FieldValue[supplied=false, value=null]; prerequisites: FieldValue[supplied=false, value=null]
+[INFO]       Priority: AUTOMATIC; intent: AUTO_VERIFY
+[INFO] Source observations: 2
+[INFO]   - CVE_LIST CURRENT; revision: transcript-empty-cve-fixture; last success: 2026-10-31T00:00:00Z; contributions: 0
+[INFO]   - OSV CURRENT; revision: transcript-osv-fixture; last success: 2026-10-31T00:00:00Z; contributions: 3
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven
@@ -584,10 +572,10 @@ Process exit status: 0
 [INFO]   - org.springframework:spring-webmvc:jar:6.1.14 (compile): 146 classes, 524.46 KiB
 [INFO]   - org.webjars:webjars-locator-core:jar:0.58 (runtime): 1 classes, 10.66 KiB
 [INFO]   - org.yaml:snakeyaml:jar:2.2 (compile): 0 classes, 2.65 KiB
-[INFO] Advisories associated with removed components: none
-[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none
-[INFO] CVEs inactive due to unmet prerequisite dependencies: none
-[INFO] Potentially conservative CVE exclusions: none detected
+[INFO] Vulnerability findings: none
+[INFO] Source observations: 2
+[INFO]   - CVE_LIST CURRENT; revision: transcript-empty-cve-fixture; last success: 2026-10-31T00:00:00Z; contributions: 0
+[INFO]   - OSV CURRENT; revision: transcript-osv-fixture; last success: 2026-10-31T00:00:00Z; contributions: 3
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 1529 dependency or exclusion origins.
@@ -621,7 +609,7 @@ Process exit status: 0
 
 #### example-cve-unused-app
 
-Look at the `Mitigated CVEs` row for `CVE-2022-42889`. An explicit POM mapping identifies `StringLookup` and requests verification with `HIGH`; trimming removes that class from Commons Text, allowing the common checks to prove the declared code absent and publish VEX. The fixture's package and heuristic claims provide review context.
+Look at the `DECLARED_CODE_ABSENT` finding for `CVE-2022-42889`. An explicit POM mapping identifies `StringLookup` and requests verification with `HIGH`; trimming removes that class from Commons Text, allowing the common checks to prove the declared code absent and publish VEX. The fixture's package and heuristic claims provide review context.
 
 <!-- BEGIN:transcript:report-cve-unused-app -->
 
@@ -660,17 +648,29 @@ Process exit status: 0
 [INFO]   - org.codehaus.janino:commons-compiler:jar:3.1.12 (compile): 51 classes, 96.78 KiB
 [INFO]   - org.codehaus.janino:janino:jar:3.1.12 (compile): 52 classes, 330.49 KiB
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
-[INFO] Advisories associated with removed components: none
-[INFO] Mitigated CVEs (vulnerable code pruned by trimming):
-[INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9
-[INFO] CVEs inactive due to unmet prerequisite dependencies: none
-[INFO] Potentially conservative CVE exclusions: none detected
-[INFO] Advisory associations (review only; inventory disposition is not impact proof):
-[INFO]   - GHSA-transcript-commons-text org.apache.commons:commons-text:jar:1.9 (compile) [RETAINED_AND_TRIMMED]
-[INFO]     Origin: OSV Maven / org.apache.commons:commons-text
-[INFO]     Aliases: [CVE-2022-42889]
-[INFO]     Affected-version applicability: APPLICABLE (Candidate is inside a supported raw OSV range)
-[INFO]     OSV ranges: ECOSYSTEM range: introduced at 1.5; fixed at 1.10.0
+[INFO] Vulnerability findings: 1
+[INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2022-42889, GHSA-transcript-commons-text]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: DECLARED_CODE_ABSENT; All effective declared code and its nested classes are absent from the trimmed artifact. This observation is limited to the declared code and does not establish declaration completeness.
+[INFO]     Code group: DECLARED; prerequisite group: OMITTED
+[INFO]     Declared code: [org.apache.commons.text.lookup.StringLookup] RESOLVED; classes: [org.apache.commons.text.lookup.StringLookup]; reasons: []
+[INFO]     Heuristic leads: []
+[INFO]     Effective prerequisites: []
+[INFO]     Unresolved coverage: []
+[INFO]     Overridden fields: [intent]
+[INFO]     Enriched fields: [code]
+[INFO]     Source: effective-project-pom:vulnerabilityMappings[0]; records: [AdvisoryProvenance[origin=POM, sourceRecordId=effective-project-pom:vulnerabilityMappings[0], sourceUrl=https://nvd.nist.gov/vuln/detail/CVE-2022-42889, sourceRecordSha256=null]]
+[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=[1.0,1.10.0), normalizedMavenRange=[1.0,1.10.0), status=AFFECTED, diagnostic=null]]
+[INFO]       Original code: FieldValue[supplied=true, value=[CodeClaim[kind=DECLARED, reference=CodeReference[kind=CLASS_NAME, value=org.apache.commons.text.lookup.StringLookup, originalValues=[org.apache.commons.text.lookup.StringLookup]]]]]; prerequisites: FieldValue[supplied=false, value=null]
+[INFO]       Priority: MANUAL; intent: AUTO_VERIFY
+[INFO]     Source: osv:GHSA-transcript-commons-text#org.apache.commons:commons-text; records: [AdvisoryProvenance[origin=OSV, sourceRecordId=GHSA-transcript-commons-text, sourceUrl=null, sourceRecordSha256=null]]
+[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=[1.5,1.10.0), normalizedMavenRange=[1.5,1.10.0), status=AFFECTED, diagnostic=null]]
+[INFO]       Original code: FieldValue[supplied=false, value=null]; prerequisites: FieldValue[supplied=false, value=null]
+[INFO]       Priority: AUTOMATIC; intent: AUTO_VERIFY
+[INFO] Source observations: 2
+[INFO]   - CVE_LIST CURRENT; revision: transcript-empty-cve-fixture; last success: 2026-10-31T00:00:00Z; contributions: 0
+[INFO]   - OSV CURRENT; revision: transcript-osv-fixture; last success: 2026-10-31T00:00:00Z; contributions: 3
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
@@ -738,13 +738,24 @@ Process exit status: 0
 [INFO] Applied bans: none
 [INFO] Program classes pruned from retained JARs: 5 (uncompressed omitted .class payload bytes: 6.38 KiB; excludes module descriptors and archive metadata)
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
-[INFO] Advisories associated with removed components: none
-[INFO] Mitigated CVEs (vulnerable code pruned by trimming): none
-[INFO] CVEs inactive due to unmet prerequisite dependencies:
-[INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18; inactive because
-[INFO]     missing prerequisite dependencies: org.codehaus.janino:janino (class
-[INFO]     org.codehaus.janino.ClassBodyEvaluator)
-[INFO] Potentially conservative CVE exclusions: none detected
+[INFO] Vulnerability findings: 1
+[INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-11226]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: PREREQUISITES_ABSENT; Required prerequisite pairs org.codehaus.janino:janino / org.codehaus.janino.ClassBodyEvaluator are absent from the complete declared Maven inventory. The proof does not cover providers introduced outside that inventory.
+[INFO]     Code group: OMITTED; prerequisite group: DECLARED
+[INFO]     Heuristic leads: []
+[INFO]     Effective prerequisites: [PrerequisiteClaim[requiresDependency=org.codehaus.janino:janino, requiresClass=org.codehaus.janino.ClassBodyEvaluator]]
+[INFO]     Unresolved coverage: []
+[INFO]     Overridden fields: []
+[INFO]     Enriched fields: []
+[INFO]     Source: effective-project-pom:vulnerabilityMappings[0]; records: [AdvisoryProvenance[origin=POM, sourceRecordId=effective-project-pom:vulnerabilityMappings[0], sourceUrl=null, sourceRecordSha256=null]]
+[INFO]       Coverage: [VersionCoverageClaim[rawPredicate=(,1.6.0), normalizedMavenRange=(,1.6.0), status=AFFECTED, diagnostic=null]]
+[INFO]       Original code: FieldValue[supplied=false, value=null]; prerequisites: FieldValue[supplied=true, value=[PrerequisiteClaim[requiresDependency=org.codehaus.janino:janino, requiresClass=org.codehaus.janino.ClassBodyEvaluator]]]
+[INFO]       Priority: MANUAL; intent: AUTO_VERIFY
+[INFO] Source observations: 2
+[INFO]   - CVE_LIST CURRENT; revision: transcript-empty-cve-fixture; last success: 2026-10-31T00:00:00Z; contributions: 0
+[INFO]   - OSV CURRENT; revision: transcript-osv-fixture; last success: 2026-10-31T00:00:00Z; contributions: 3
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
@@ -816,10 +827,11 @@ Process exit status: 0
 [INFO]   Estimated original JAR bytes for those artifacts: 942.11 KiB (sum of original on-disk input JAR sizes; final package delta may differ)
 [INFO]   Program class entries in JARs that would be dropped: 535 (uncompressed .class entry payload bytes: 1.52 MiB; excludes module descriptors and archive sanitation metadata)
 [INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
-[INFO]   Advisories associated with components that would be removed: none verified by published trim evidence
-[INFO]   Mitigated CVEs (vulnerable code that would be pruned by trimming): no published omission proof
-[INFO]   CVEs that would be inactive due to unmet prerequisite dependencies: no precondition proof available
-[INFO]   Vulnerability mappings that remain unverified by the in-memory Analyze prediction: none detected
+[INFO]   Vulnerability findings (analysis only; no trim proof):
+[INFO]     CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4: AFFECTED; UNVERIFIED; PLANNED_UNVERIFIED
+[INFO]   Vulnerability sources:
+[INFO]     OSV: CURRENT
+[INFO]     CVE_LIST: CURRENT
 [INFO]   Repeated POM exclusions (advisory only):
 [INFO]     none found across effective dependency paths
 [INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven

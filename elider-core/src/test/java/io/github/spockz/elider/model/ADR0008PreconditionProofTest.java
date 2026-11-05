@@ -65,12 +65,13 @@ final class ADR0008PreconditionProofTest {
         PreconditionClassInventory.complete(List.of(retained, resource, affected));
 
     final VexAttestation attestation =
-        PreconditionProof.prove(mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory);
+        GenericProofTestSupport.prerequisiteProof(
+            mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory);
 
     assertThat(attestation.justification()).isEqualTo("requires_dependency");
     assertThat(attestation.coordinate()).isEqualTo(AFFECTED_COORDINATE);
-    assertThat(attestation.requiredDependency()).isEqualTo(REQUIRED_DEPENDENCY);
-    assertThat(attestation.requiredClass()).isEqualTo(REQUIRED_CLASS);
+    assertThat(attestation.requiredPrerequisites())
+        .containsExactly(new PrerequisiteClaim(REQUIRED_DEPENDENCY, REQUIRED_CLASS));
     assertThat(attestation.affectedArtifactPath()).isEqualTo(affected.path());
     assertThat(attestation.postElisionSha256()).isEqualTo(affected.sha256());
     assertThat(attestation.inventorySha256()).isEqualTo(inventory.fingerprint());
@@ -82,7 +83,10 @@ final class ADR0008PreconditionProofTest {
 
   @Test
   void explicitPrerequisiteEvidenceRetainsPomOrigin() {
-    assertThat(mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH").origin())
+    assertThat(
+            ExplicitEvidenceTestSupport.prerequisiteEvidence(
+                    mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"))
+                .origin())
         .isEqualTo(EvidenceOrigin.POM);
   }
 
@@ -94,7 +98,7 @@ final class ADR0008PreconditionProofTest {
     assertThat(inventory.status()).isEqualTo(PreconditionClassInventory.Status.COMPLETE);
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("exactly one retained affected artifact");
@@ -106,9 +110,11 @@ final class ADR0008PreconditionProofTest {
     final PreconditionClassInventory inventory = inventoryWithAffected();
 
     assertThatThrownBy(
-            () -> PreconditionProof.prove(mapping(null, REQUIRED_DEPENDENCY, "HIGH"), inventory))
+            () ->
+                GenericProofTestSupport.prerequisiteProof(
+                    mapping(null, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("requiresDependency and requiresClass");
+        .hasMessageContaining("requiresClass");
   }
 
   @Test
@@ -118,7 +124,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, "org.example:prerequisite:1.0", "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("group:artifact");
@@ -146,13 +152,13 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), incomplete))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("inventory is incomplete");
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), failed))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("inspection failed");
@@ -171,7 +177,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required dependency is present");
@@ -193,7 +199,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
@@ -212,7 +218,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
@@ -232,7 +238,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
@@ -256,7 +262,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Nested archive provider is not supported");
@@ -275,7 +281,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
@@ -299,7 +305,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
@@ -323,7 +329,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
@@ -346,9 +352,11 @@ final class ADR0008PreconditionProofTest {
         PreconditionClassInventory.complete(List.of(affected, unrelated));
 
     final VexAttestation attestation =
-        PreconditionProof.prove(mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory);
+        GenericProofTestSupport.prerequisiteProof(
+            mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory);
 
-    assertThat(attestation.requiredClass()).isEqualTo(REQUIRED_CLASS);
+    assertThat(attestation.requiredPrerequisites())
+        .containsExactly(new PrerequisiteClaim(REQUIRED_DEPENDENCY, REQUIRED_CLASS));
   }
 
   @Test
@@ -376,7 +384,7 @@ final class ADR0008PreconditionProofTest {
 
       assertThatThrownBy(
               () ->
-                  PreconditionProof.prove(
+                  GenericProofTestSupport.prerequisiteProof(
                       mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
           .isInstanceOf(IOException.class);
     }
@@ -401,7 +409,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Duplicate class provider entry");
@@ -420,7 +428,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Required class is present");
@@ -440,7 +448,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("digest changed");
@@ -488,7 +496,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("digest changed");
@@ -508,7 +516,7 @@ final class ADR0008PreconditionProofTest {
 
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
         .isInstanceOf(IOException.class);
   }
@@ -530,10 +538,7 @@ final class ADR0008PreconditionProofTest {
             REQUIRED_DEPENDENCY,
             REQUIRED_CLASS);
 
-    assertThatThrownBy(
-            () ->
-                PreconditionProof.prove(
-                    ExplicitEvidenceTestSupport.prerequisiteEvidence(mismatched), inventory))
+    assertThatThrownBy(() -> GenericProofTestSupport.prerequisiteProof(mismatched, inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("exactly one retained affected artifact");
   }
@@ -546,10 +551,10 @@ final class ADR0008PreconditionProofTest {
       final String confidence, final PreconditionClassInventory inventory) {
     assertThatThrownBy(
             () ->
-                PreconditionProof.prove(
+                GenericProofTestSupport.prerequisiteProof(
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, confidence), inventory))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("HIGH confidence");
+        .hasMessageContaining("review");
   }
 
   private Provider affectedProvider() throws IOException {
@@ -557,18 +562,17 @@ final class ADR0008PreconditionProofTest {
         AFFECTED_COORDINATE, archive("affected-" + System.nanoTime() + ".jar", Map.of()));
   }
 
-  private static ExplicitPrerequisiteEvidence mapping(
+  private static VulnerabilitySymbolMapping mapping(
       final String requiredClass, final String requiredDependency, final String confidence) {
-    return ExplicitEvidenceTestSupport.prerequisiteEvidence(
-        new VulnerabilitySymbolMapping(
-            "CVE-2025-12345",
-            AFFECTED_COORDINATE,
-            "[1.0]",
-            Set.of(),
-            null,
-            ConfidenceLevel.valueOf(confidence),
-            requiredDependency,
-            requiredClass));
+    return new VulnerabilitySymbolMapping(
+        "CVE-2025-12345",
+        AFFECTED_COORDINATE,
+        "[1.0]",
+        Set.of(),
+        null,
+        ConfidenceLevel.valueOf(confidence),
+        requiredDependency,
+        requiredClass);
   }
 
   private Path archive(final String fileName, final Map<String, byte[]> entries)

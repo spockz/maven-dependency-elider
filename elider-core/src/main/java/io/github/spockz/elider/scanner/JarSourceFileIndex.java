@@ -187,7 +187,11 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
     if (!logicalPath.endsWith(".class")) {
       return null;
     }
-    return new EntryIdentity(logicalPath.substring(0, logicalPath.length() - 6), tier);
+    final String internalName = logicalPath.substring(0, logicalPath.length() - 6);
+    if (internalName.isBlank()) {
+      throw new IOException("Malformed class entry identity");
+    }
+    return new EntryIdentity(internalName, tier);
   }
 
   private static int multiReleaseTier(final String physicalPath) throws IOException {

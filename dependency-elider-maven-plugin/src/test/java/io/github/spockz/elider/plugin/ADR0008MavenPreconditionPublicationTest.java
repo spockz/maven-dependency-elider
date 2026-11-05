@@ -97,14 +97,19 @@ final class ADR0008MavenPreconditionPublicationTest {
         .contains("org.example/affected@1.0");
     assertThat(subcomponent.path("hashes").path("sha-256").asText()).isEqualTo(sha256);
     final MavenElisionReportSnapshot report = MavenElisionReportWriter.read(fixture.summary());
-    assertThat(report.inactivePreconditionCves())
-        .containsExactly(
-            new MavenElisionReportSnapshot.CveFinding(
-                "CVE-2026-12345",
-                "org.example:affected:jar:1.0",
-                List.of(
-                    new MavenMissingPrerequisite(
-                        "org.example:prerequisite", "org.example.prerequisite.EntryPoint"))));
+    assertThat(report.genericFindings())
+        .singleElement()
+        .satisfies(
+            finding -> {
+              assertThat(finding.vulnerabilityId()).isEqualTo("CVE-2026-12345");
+              assertThat(finding.candidate().toId()).isEqualTo("org.example:affected:jar:1.0");
+              assertThat(finding.outcome())
+                  .isEqualTo(GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT);
+              assertThat(finding.effectivePrerequisites())
+                  .containsExactly(
+                      new io.github.spockz.elider.model.PrerequisiteClaim(
+                          "org.example:prerequisite", "org.example.prerequisite.EntryPoint"));
+            });
     assertThat(report.trimmedArtifacts()).isEmpty();
   }
 
@@ -114,15 +119,14 @@ final class ADR0008MavenPreconditionPublicationTest {
     configure(retainedCoordinate, true);
     retainedCoordinate.mojo().execute();
     assertThat(retainedCoordinate.vex()).doesNotExist();
-    assertThat(
-            MavenElisionReportWriter.read(retainedCoordinate.summary()).inactivePreconditionCves())
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(retainedCoordinate.summary())))
         .isEmpty();
 
     final Fixture sourceProvider = fixture("source-provider", false, true);
     configure(sourceProvider, true);
     sourceProvider.mojo().execute();
     assertThat(sourceProvider.vex()).doesNotExist();
-    assertThat(MavenElisionReportWriter.read(sourceProvider.summary()).inactivePreconditionCves())
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(sourceProvider.summary())))
         .isEmpty();
   }
 
@@ -135,8 +139,7 @@ final class ADR0008MavenPreconditionPublicationTest {
     fixture.mojo().execute();
 
     assertThat(fixture.vex()).doesNotExist();
-    assertThat(MavenElisionReportWriter.read(fixture.summary()).inactivePreconditionCves())
-        .isEmpty();
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(fixture.summary()))).isEmpty();
   }
 
   @Test
@@ -149,8 +152,7 @@ final class ADR0008MavenPreconditionPublicationTest {
 
     assertThat(fixture.vex()).doesNotExist();
     assertThat(fixture.summary()).exists();
-    assertThat(MavenElisionReportWriter.read(fixture.summary()).inactivePreconditionCves())
-        .isEmpty();
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(fixture.summary()))).isEmpty();
   }
 
   @Test
@@ -164,8 +166,7 @@ final class ADR0008MavenPreconditionPublicationTest {
       fixture.mojo().execute();
 
       assertThat(fixture.vex()).doesNotExist();
-      assertThat(MavenElisionReportWriter.read(fixture.summary()).inactivePreconditionCves())
-          .isEmpty();
+      assertThat(prerequisiteFindings(MavenElisionReportWriter.read(fixture.summary()))).isEmpty();
     }
   }
 
@@ -192,8 +193,7 @@ final class ADR0008MavenPreconditionPublicationTest {
     fixture.mojo().execute();
 
     assertThat(fixture.vex()).doesNotExist();
-    assertThat(MavenElisionReportWriter.read(fixture.summary()).inactivePreconditionCves())
-        .isEmpty();
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(fixture.summary()))).isEmpty();
   }
 
   @Test
@@ -325,7 +325,7 @@ final class ADR0008MavenPreconditionPublicationTest {
         MavenGeneratedOutputs.manifestPath(owned.project()), List.of(owned.vex()));
     owned.mojo().execute();
     assertThat(owned.vex()).doesNotExist();
-    assertThat(MavenElisionReportWriter.read(owned.summary()).inactivePreconditionCves()).isEmpty();
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(owned.summary()))).isEmpty();
 
     final Fixture modified = fixture("modified-stale-vex", false, false);
     configure(modified, false);
@@ -677,6 +677,14 @@ final class ADR0008MavenPreconditionPublicationTest {
     final ElideMojo mojo = new ElideMojo();
     set(mojo, "session", session);
     return mojo;
+  }
+
+  private static List<GenericFindingAssessment> prerequisiteFindings(
+      final MavenElisionReportSnapshot report) {
+    return report.genericFindings().stream()
+        .filter(
+            finding -> finding.outcome() == GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT)
+        .toList();
   }
 
   @SuppressWarnings("PMD.UseProperClassLoader")

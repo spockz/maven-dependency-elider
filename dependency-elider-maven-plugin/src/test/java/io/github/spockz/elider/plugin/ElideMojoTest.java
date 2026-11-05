@@ -687,8 +687,11 @@ final class ElideMojoTest {
         .noneMatch(message -> message.contains("POM vulnerability mapping overrides cached"))
         .noneMatch(message -> message.contains("sample.Drop"));
     assertThat(log.messages())
-        .anyMatch(line -> line.startsWith("  Mitigated CVEs (vulnerable code pruned by trimming):"))
-        .contains("    CVE-2026-10001 org.example:runtime-dependency:jar:1.0");
+        .contains("  Vulnerability findings:")
+        .anyMatch(
+            line ->
+                line.contains("CVE-2026-10001 org.example:runtime-dependency:jar:1.0")
+                    && line.contains("DECLARED_CODE_ABSENT"));
     assertThat(directRuntime.getFile().toPath()).isEqualTo(runtime.getFile().toPath());
     assertThat(project.getArtifacts()).contains(runtime);
     assertThat(project.getArtifacts()).contains(unusedRuntime);
@@ -723,9 +726,7 @@ final class ElideMojoTest {
                       .isEqualTo("vulnerable_code_not_present"),
               () ->
                   assertThat(vexStatement.path("impact_statement").asText())
-                      .contains(
-                          "Mapped vulnerable classes and their original nested "
-                              + "classes are absent"));
+                      .contains("All effective declared code and its nested classes are absent"));
         });
     assertThat(tempDir.resolve("build/classes/META-INF/sbom/application.cdx.json")).isRegularFile();
     assertThat(tempDir.resolve("build/classes/META-INF/native-image/sbom.json")).isRegularFile();
