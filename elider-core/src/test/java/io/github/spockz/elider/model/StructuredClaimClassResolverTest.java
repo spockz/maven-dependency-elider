@@ -80,7 +80,7 @@ final class StructuredClaimClassResolverTest {
                     "org.example.Outer",
                     0,
                     "Outer.java",
-                    Set.of("run"))));
+                    Set.of(new JarSourceFileIndex.MethodIdentity("run", "()V")))));
 
     final StructuredClaimClassResolver.Result result =
         StructuredClaimClassResolver.derive(FixtureData.routineEntry(), index, jar, true);

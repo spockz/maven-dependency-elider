@@ -37,7 +37,7 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
       String classEntry,
       int multiReleaseTier,
       String sourceFile,
-      Set<String> declaredMethods) {
+      Set<MethodIdentity> declaredMethods) {
     /** Compact constructor. */
     public ClassSourceFile {
       declaredMethods = declaredMethods == null ? Set.of() : Set.copyOf(declaredMethods);
@@ -60,6 +60,25 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
     }
   }
 
+  /** One method name and its JVM descriptor. */
+  public record MethodIdentity(String name, String descriptor)
+      implements Comparable<MethodIdentity> {
+    /** Validates the class-file method identity. */
+    public MethodIdentity {
+      Objects.requireNonNull(name, "name");
+      Objects.requireNonNull(descriptor, "descriptor");
+      if (name.isBlank() || descriptor.isBlank()) {
+        throw new IllegalArgumentException("method name and descriptor must not be blank");
+      }
+    }
+
+    @Override
+    public int compareTo(final MethodIdentity other) {
+      final int nameOrder = name.compareTo(other.name);
+      return nameOrder == 0 ? descriptor.compareTo(other.descriptor) : nameOrder;
+    }
+  }
+
   /** Keeps a physical entry path separate from its logical class name. */
   private record EntryIdentity(String internalClassName, int multiReleaseTier) {}
 
@@ -72,16 +91,12 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
     classFiles = List.copyOf(classFiles);
   }
 
-  /** Reads SourceFile metadata while rejecting archives changed during the scan. */
+  /** Reads metadata and digest for this archive. */
   public static JarSourceFileIndex read(final Path path) throws IOException {
-    final ArtifactDigests before = ArtifactDigests.read(path);
+    final ArtifactDigests digest = ArtifactDigests.read(path);
     final List<ClassSourceFile> classes = readClassFiles(path);
-    final ArtifactDigests after = ArtifactDigests.read(path);
-    if (!before.sha256().equals(after.sha256())) {
-      throw new IOException("Artifact archive changed while source metadata was read");
-    }
     classes.sort(Comparator.comparing(ClassSourceFile::physicalJarEntry));
-    return new JarSourceFileIndex(before.sha256(), classes);
+    return new JarSourceFileIndex(digest.sha256(), classes);
   }
 
   private static List<ClassSourceFile> readClassFiles(final Path path) throws IOException {
@@ -117,7 +132,7 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
         throw new IOException("Class entry path does not match class-file identity");
       }
       final String[] sourceFile = {null};
-      final Set<String> declaredMethods = new HashSet<>();
+      final Set<MethodIdentity> declaredMethods = new HashSet<>();
       reader.accept(
           new ClassVisitor(Opcodes.ASM9) {
             @Override
@@ -132,7 +147,7 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
                 final String descriptor,
                 final String signature,
                 final String[] exceptions) {
-              declaredMethods.add(name);
+              declaredMethods.add(new MethodIdentity(name, descriptor));
               return null;
             }
           },

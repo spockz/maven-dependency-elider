@@ -7,7 +7,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
+/** Guards the identity shared by canonical and original source locators. */
 class CodeReferenceTest {
+  /** Creates a test instance. */
+  /* package */
+  CodeReferenceTest() {
+    super();
+  }
+
   @Test
   void rejectsOriginalSourcePathsThatDoNotNormalizeToTheDeclaredIdentity() {
     assertThatThrownBy(

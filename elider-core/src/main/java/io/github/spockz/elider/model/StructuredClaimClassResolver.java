@@ -64,7 +64,8 @@ final class StructuredClaimClassResolver {
     for (final String routine : entry.programRoutines().stream().sorted().toList()) {
       final List<JarSourceFileIndex.ClassSourceFile> owners = new ArrayList<>();
       for (final JarSourceFileIndex.ClassSourceFile classFile : sourceIndex.classFiles()) {
-        if (classFile.declaredMethods().contains(routine)) {
+        if (classFile.declaredMethods().stream()
+            .anyMatch(method -> method.name().equals(routine))) {
           owners.add(classFile);
         }
       }
