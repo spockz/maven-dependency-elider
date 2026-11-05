@@ -1405,3 +1405,7 @@ Independent review identified three reproducible scope and refresh defects. Test
 - `make check` passed with 418 core tests, 765 plugin unit tests (one expected skip), 29 Maven lifecycle tests, coverage, static analysis, Markdown lint and transcript drift checks. `make test-examples` and `make update-transcripts` passed. On JDK 25, 66 focused finding, cache, proof and report tests passed.
 - Architecture, adapter/cache, report/proof and example-verifier review receipts approve the corrected bounded scopes. `gemini_review_diff` was unavailable; the skill's external-review fallback was recorded. The versioned closeout is `docs/handovers/2026-11-04-source-independent-vulnerability-findings-plan-closeout.md`.
 - Local-main delivery is pending the committed track and final integration gate; the preceding partial-status matrix is retained as its historical checkpoint, not a claim that the now-verified implementations are absent.
+
+### WP-FINDINGS-01 local-main delivery
+
+The reviewed implementation was fast-forwarded from `ca77b55` to `dc50b7ab4ae2c76fac270572f4a80bd76791d2a7` on local `main`. The post-integration `make check` passed: 418 core tests, 765 plugin unit tests with one expected skip, 29 lifecycle integration tests, coverage, static checks and transcript verification. The JDK 25 focused suite passed 66 tests before integration. The final review approved GF-01 through GF-10; the closeout record preserves the evidence and the remaining research boundaries. No remote push was requested.

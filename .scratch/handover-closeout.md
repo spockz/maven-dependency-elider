@@ -77,3 +77,54 @@ post-fast-forward review approved with no findings; receipt:
 12 tracked modifications and four unrelated untracked paths were restored from
 the retained recovery stash; the older WP-POLICY handover was replaced by the
 final committed version.
+
+
+---
+
+<!-- WHY: Preserves the implemented finding contract, verification evidence and remaining research with the approved work package. -->
+# Source-independent vulnerability findings: closeout
+
+## Scope and status
+
+The [approved plan](2026-11-04-source-independent-vulnerability-findings-plan.md) and the user's subsequent decisions cover OSV Maven, CVE List v5 and effective-POM manual mappings. They require normalized code-set union, affected-version union with disjoint gaps preserved, scoped manual supplied-field priority, and common source-independent assessment and proof. Source attribution remains reporting metadata. Severity, new providers, Git release association and distributed mapping catalogs are outside this implementation.
+
+The combined implementation and examples passed the checks listed below. Independent architecture, adapter/cache, proof/report and example-verifier reviews approved their bounded scopes after the corrections described below. Delivery to local `main` is recorded in the orchestration ledger; this document does not assert remote publication.
+
+## Requirement evidence
+
+| Requirement | Implementation and representative evidence |
+| --- | --- |
+| GF-01 | Independent [OSV adapter](../../elider-core/src/main/java/io/github/spockz/elider/scanner/OsvVulnerabilityFindingAdapter.java), [CVE adapter](../../elider-core/src/main/java/io/github/spockz/elider/scanner/CveVulnerabilityFindingAdapter.java), and [manual adapter](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/ManualVulnerabilityMappingContributionAdapter.java); [Maven lifecycle fixture](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/GenericFindingsLifecycleIT.java). |
+| GF-02 | [Common reconciler](../../elider-core/src/main/java/io/github/spockz/elider/model/GenericFindingReconciler.java), assessment and proof paths; provenance permutation and physical-proof tests. |
+| GF-03 | [Generic merge tests](../../elider-core/src/test/java/io/github/spockz/elider/model/GenericFindingMergeTest.java), [manual mapping tests](../../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/ConfiguredVulnerabilityMappingsTest.java), actual omitted/empty Maven parameter binding and lifecycle fixture. |
+| GF-04 | Version-scoped generic contributions, gap-preserving union and alias reconciliation; CVE default/change/unknown and OSV intersection regressions in the adapter tests. |
+| GF-05 | [Code attribution resolver](../../elider-core/src/main/java/io/github/spockz/elider/model/CodeAttributionResolver.java) and real-JAR path, owner, routine, nested-class and completeness fixtures. |
+| GF-06 | Common [omitted-code](../../elider-core/src/main/java/io/github/spockz/elider/model/OmittedCodeProof.java) and [prerequisite](../../elider-core/src/main/java/io/github/spockz/elider/model/PreconditionProof.java) proofs and physical/refusal tests, plus both VEX serializers. |
+| GF-07 | [Generic cache manager](../../elider-core/src/main/java/io/github/spockz/elider/scanner/GenericFindingCacheManager.java) and lifecycle tests cover independent refresh, withdrawal, stale data, publication failure and bounded changed-record processing. Manual rows stay invocation-local. |
+| GF-08 | Strict generic cache and report readers/writers; malformed-input, producer-identity, source-observation and saved-report replay tests, including replay without archives. |
+| GF-09 | Analyze, elide, update-index and saved-report goals use generic results. The Maven lifecycle fixture checks real goals, explicit empty fields, physical trimming, GHSA-only identity and OpenVEX. |
+| GF-10 | Full JDK 21 repository gate and focused JDK 25 run passed. CVE source tests cover unchanged-revision reuse and incremental record counts; no exact JDK vendor or patch identity is required. |
+
+## Verification and corrections
+
+- `make check` passed with 418 core tests, 765 plugin unit tests (one expected skip), 29 Maven lifecycle integration tests, coverage, formatting, Checkstyle, PMD, SpotBugs, Markdown lint and transcript drift verification.
+- `make test-examples` passed the standalone examples and multi-module reactor, including report, artifact, SBOM and VEX checks. Generated transcripts were refreshed with `make update-transcripts`.
+- A focused JDK 25 run passed 66 core and plugin finding, cache, proof and report tests. This is a second-runtime check, not a claim that every JDK 25 scenario was run.
+- Review findings were reproduced with failing tests before fixes: exact CVE unknown-version scope; disjoint OSV exact-version heuristic intersections; lost source-limit diagnostics across refreshes; and loss of refresh/publication failure details on saved-report replay. Repeated incremental/no-op refresh tests also failed before their fixes. The corrected focused suites passed.
+- The first complete core run exposed an obsolete test assumption that an invalid CVE record must block a valid OSV refresh. Malformed CVE records still have direct refusal coverage; a generic-cache test verifies stale CVE retention independently of the OSV partition.
+- The first complete plugin run exposed a stale analysis-summary assertion. The updated assertion checks the generic finding's affected and unverified status. Example verifier review also corrected report-renderer expectations and preserved exact component, prerequisite, SBOM, VEX and digest checks.
+
+The optional Gemini review bridge and language-aware editing tools were unavailable in this environment; independent in-session reviews and standard repository tools were used. Full integration review and detailed receipts are retained in `.scratch/reviews/` and `.scratch/orchestration-status.md`.
+
+## Remaining boundaries
+
+Machine-readable Maven identity and supported version evidence are still required for a Maven finding. A Git-only advisory does not acquire a Maven association by product-name similarity. Package-only and heuristic observations do not establish physical omission proof, and verified declared-code absence does not establish that a publisher's code list is complete or predict every scanner's output. Failed source or cache observations remain visible; last-good claims are retained where available.
+
+Future advisory-coverage, scanner-projection and Git release-association research remains in [RQ-0020](../research/RQ-0020-advisory-source-coverage-and-scanner-finding-projections.md). Future centrally distributed mapping catalogs remain in [RQ-0021](../research/RQ-0021-centrally-distributed-vulnerability-mapping-dependencies.md).
+
+## Session evidence and delivery
+
+- Worktree review receipts are retained under `.scratch/reviews/`, including the architect's final review, adapter/cache review, proof/report review and example verifier review. External Gemini review and semantic editing tools were unavailable; ordinary repository search and patch tools were used.
+- The reviewed implementation was fast-forwarded from `ca77b55` to `dc50b7a` on local `main`. The post-integration `make check` passed, including coverage, static checks, Maven lifecycle tests and transcript verification.
+- Worktree Java, documentation and fixture edits used normal patch and formatter workflows. Track-level tool logs are in `.scratch/manual-edits/findings.md` and `.scratch/suboptimal-tools/findings.md`. Detailed per-agent wall-clock comparisons were not recorded, so no tool-efficiency estimate is claimed.
+- The full worktree check, alternate-JDK focused check and example-cycle evidence are summarized in the versioned closeout. Logs from this session are retained in `/tmp/findings-final-make-check2.log`, `/tmp/findings-jdk25-focused.log` and `/tmp/findings-main-integration-check.log` while the environment persists.
