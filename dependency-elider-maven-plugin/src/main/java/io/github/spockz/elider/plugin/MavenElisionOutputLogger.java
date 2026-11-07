@@ -22,6 +22,7 @@ final class MavenElisionOutputLogger {
             .withExclusionReview(exclusionReview);
     final ElisionAnalysisModel.Analysis analysis = request.analysis();
     final Log log = request.log();
+    dynamicRootWarnings(log, analysis.evidence());
     if (log.isInfoEnabled()) {
       if (request.files().trimJars()) {
         final String message =
@@ -53,6 +54,13 @@ final class MavenElisionOutputLogger {
       log.info(
           "  Class usage report: "
               + request.files().classUsage().toPath().toAbsolutePath().normalize());
+    }
+  }
+
+  /* package */ static void dynamicRootWarnings(
+      final Log log, final ElisionAnalysisModel.AnalysisEvidence evidence) {
+    if (log.isWarnEnabled()) {
+      evidence.unresolvedDynamicRootDiagnostics().forEach(log::warn);
     }
   }
 

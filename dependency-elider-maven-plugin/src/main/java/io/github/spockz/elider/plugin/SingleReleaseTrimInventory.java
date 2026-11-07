@@ -273,14 +273,6 @@ final class SingleReleaseTrimInventory {
     return new DynamicRootPlan(rootsByOwner, droppedArtifacts);
   }
 
-  private static Set<ArtifactCoordinate> droppedArtifactCoordinates(
-      final SingleReleaseInventory inventory, final SingleReleaseLayout layout) {
-    return inventory.artifacts().stream()
-        .filter(snapshot -> !layout.retainedCoordinates().contains(snapshot.coordinate()))
-        .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
-        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-  }
-
   /* package */ static Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> candidateRoots(
       final SingleReleaseInventory inventory,
       final SingleReleaseLayout layout,
@@ -340,7 +332,6 @@ final class SingleReleaseTrimInventory {
             || platformClasses.contains(root)) {
           return;
         }
-        droppedArtifacts.addAll(droppedArtifactCoordinates(inventory, layout));
         return;
       }
       if (layout.retainedCoordinates().contains(owner.coordinate())) {

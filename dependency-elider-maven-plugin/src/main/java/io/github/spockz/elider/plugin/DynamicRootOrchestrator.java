@@ -211,9 +211,7 @@ final class DynamicRootOrchestrator {
   }
 
   /* package */ static Set<ArtifactCoordinate> dynamicRootArtifactOwners(
-      final DynamicRootInputs dynamicRoots,
-      final ArtifactClassIndex index,
-      final List<ArtifactFileRef> inventory) {
+      final DynamicRootInputs dynamicRoots, final ArtifactClassIndex index) {
     final Set<String> roots =
         dynamicRoots.classNames().stream()
             .map(className -> className.replace('/', '.'))
@@ -222,7 +220,6 @@ final class DynamicRootOrchestrator {
       return Set.of();
     }
     final Set<ArtifactCoordinate> result = new HashSet<>();
-    final Set<String> unresolvedRoots = new HashSet<>(roots);
     for (final Map.Entry<ArtifactFileRef, Set<String>> artifact :
         index.classesByArtifact().entrySet()) {
       boolean ownsRoot = false;
@@ -230,15 +227,11 @@ final class DynamicRootOrchestrator {
         final String normalizedName = className.replace('/', '.');
         if (roots.contains(normalizedName)) {
           ownsRoot = true;
-          unresolvedRoots.remove(normalizedName);
         }
       }
       if (ownsRoot) {
         result.add(artifact.getKey().coordinate());
       }
-    }
-    if (!unresolvedRoots.isEmpty()) {
-      inventory.stream().map(ArtifactFileRef::coordinate).forEach(result::add);
     }
     return Set.copyOf(result);
   }

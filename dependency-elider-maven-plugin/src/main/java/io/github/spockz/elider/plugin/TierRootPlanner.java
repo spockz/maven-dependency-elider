@@ -63,8 +63,7 @@ final class TierRootPlanner {
         projections,
         candidates,
         roots,
-        reachable,
-        platformNames);
+        reachable);
     addRequiredTargetRoots(inventory.multiReleaseCandidates(), roots);
     return new RootPlan(snapshots, candidates, roots, reachable);
   }

@@ -213,9 +213,7 @@ final class MavenAnalysisPreparation {
     final DynamicRootInputs roots = evidence.dynamicRoots();
     keep.addAll(roots.declaringArtifacts());
     keep.addAll(roots.resourceProviderArtifacts());
-    keep.addAll(
-        DynamicRootOrchestrator.dynamicRootArtifactOwners(
-            roots, evidence.index(), inventory.candidates()));
+    keep.addAll(DynamicRootOrchestrator.dynamicRootArtifactOwners(roots, evidence.index()));
     if (options.trim().enabled()) {
       keep.addAll(
           ElisionArtifactPolicy.parsePassThroughCoordinates(

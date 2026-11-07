@@ -4,6 +4,8 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +41,26 @@ final class DependencyDynamicRootsTest {
 
   /** Temporary test directory. */
   @TempDir Path tempDir;
+
+  @Test
+  void ignoresSpringAutoconfigureMetadataHints() throws IOException {
+    final Path jar = tempDir.resolve("spring-metadata-hints.jar");
+    try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+      put(out, "org/example/AutoConfiguration.class", "");
+      put(
+          out,
+          "META-INF/spring-autoconfigure-metadata.properties",
+          "org.example.AutoConfiguration.ConditionalOnClass=org.example.OptionalFeature\n");
+    }
+
+    final DependencyDynamicRoots.RootScan scan = DependencyDynamicRoots.scan(jar);
+    assertAll(
+        () -> assertThat(scan.roots()).isEmpty(),
+        () -> assertFalse(scan.declaresClassRoots(), "Autoconfigure hints are not runtime roots"),
+        () ->
+            assertFalse(
+                scan.requiresArtifactRetention(), "Autoconfigure hints do not require retention"));
+  }
 
   @Test
   void readsArbitraryNamedDescriptorsAndFilesystemPredefinedSiblings() throws IOException {

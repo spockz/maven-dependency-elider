@@ -346,12 +346,33 @@ final class ElisionAnalysisModel {
       boolean productionClassesComplete,
       boolean trustedProcessClassesContext,
       String sourceAttributionFallback,
-      Set<String> projectOutputClasses) {
+      Set<String> projectOutputClasses,
+      List<String> unresolvedDynamicRootDiagnostics) {
     /* default */ AnalysisEvidence {
       unprovenServiceRoots =
           unprovenServiceRoots != null ? Map.copyOf(unprovenServiceRoots) : Map.of();
       projectOutputClasses =
           projectOutputClasses == null ? Set.of() : Set.copyOf(projectOutputClasses);
+      unresolvedDynamicRootDiagnostics = List.copyOf(unresolvedDynamicRootDiagnostics);
+    }
+
+    /* default */ AnalysisEvidence(
+        final ClassUsageReport classUsageReport,
+        final Optional<BytecodeReferenceScan> bytecodeScan,
+        final Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots,
+        final boolean productionClassesComplete,
+        final boolean trustedProcessClassesContext,
+        final String sourceAttributionFallback,
+        final Set<String> projectOutputClasses) {
+      this(
+          classUsageReport,
+          bytecodeScan,
+          unprovenServiceRoots,
+          productionClassesComplete,
+          trustedProcessClassesContext,
+          sourceAttributionFallback,
+          projectOutputClasses,
+          List.of());
     }
 
     /* package */ AnalysisEvidence(
@@ -424,7 +445,13 @@ final class ElisionAnalysisModel {
         completeness.productionClassesComplete(),
         completeness.trustedProcessClassesContext(),
         prepared.sourceAttributionFallback(),
-        prepared.projectOutputClasses());
+        prepared.projectOutputClasses(),
+        DynamicRootDiagnostics.unresolvedRoots(
+            dynamicRoots.classRootsByDeclaringArtifact(),
+            prepared.index().classesByArtifact().values().stream()
+                .flatMap(Set::stream)
+                .collect(java.util.stream.Collectors.toSet()),
+            prepared.projectOutputClasses()));
   }
 
   /* default */ record ArtifactSnapshot(

@@ -92,14 +92,12 @@ final class TierRootResolution {
       final List<TierContext> contexts,
       final Set<ElisionAnalysisModel.ArtifactSnapshot> candidates,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> candidateRoots,
-      final Set<ArtifactCoordinate> reachableArtifacts,
-      final Set<String> platformNames)
+      final Set<ArtifactCoordinate> reachableArtifacts)
       throws IOException {
     for (final ElisionAnalysisModel.ArtifactSnapshot source : retainedLibraries) {
       for (final String root :
           TrimRootPlanner.dynamicRoots(operation.request(), source.filePath())) {
-        addDynamicRoot(
-            root, contexts, candidates, candidateRoots, reachableArtifacts, platformNames);
+        addDynamicRoot(root, contexts, candidates, candidateRoots, reachableArtifacts);
       }
     }
   }
@@ -109,22 +107,11 @@ final class TierRootResolution {
       final List<TierContext> contexts,
       final Set<ElisionAnalysisModel.ArtifactSnapshot> candidates,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> candidateRoots,
-      final Set<ArtifactCoordinate> reachableArtifacts,
-      final Set<String> platformNames) {
-    boolean found = false;
+      final Set<ArtifactCoordinate> reachableArtifacts) {
     for (final TierContext context : contexts) {
       for (final ElisionAnalysisModel.ArtifactSnapshot owner : context.ownersOf(root)) {
-        found = true;
         addOwnedRoot(owner, root, candidates, candidateRoots, reachableArtifacts);
       }
-    }
-    if (!found
-        && !operation.request().evidence().projectOutputClasses().contains(root)
-        && !platformNames.contains(root)) {
-      operation.request().candidates().stream()
-          .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
-          .filter(coordinate -> !operation.request().retainedCoordinates().contains(coordinate))
-          .forEach(reachableArtifacts::add);
     }
   }
 }

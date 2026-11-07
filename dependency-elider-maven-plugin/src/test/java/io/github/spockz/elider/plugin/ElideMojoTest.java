@@ -1691,7 +1691,7 @@ final class ElideMojoTest {
 
     mojo.execute();
 
-    assertClassMetadataRootsRetained(c);
+    assertActiveDynamicRootsRetained(c);
     assertJarContains(a, "chain/Root.class");
     assertJarContains(b, "chain/Bridge.class");
     assertJarContains(b, "chain/Bridge$Helper.class");
@@ -1774,37 +1774,37 @@ final class ElideMojoTest {
     assertJarOmits(c, "cycle/UnusedC.class");
   }
 
-  private void assertClassMetadataRootsRetained(final Artifact artifact) throws IOException {
+  private void assertActiveDynamicRootsRetained(final Artifact artifact) throws IOException {
     assertJarContains(artifact, "chain/Reflected.class");
     assertJarContains(artifact, "chain/ProxyMarker.class");
     assertJarContains(artifact, "chain/SpringAuto.class");
     assertJarContains(artifact, "chain/Factory.class");
-    assertJarContains(artifact, "chain/MetadataCondition.class");
+    assertJarOmits(artifact, "chain/MetadataCondition.class");
     assertJarContains(artifact, "chain/NativeImageRoot.class");
     assertJarContains(artifact, "chain/NativeImageJniRoot.class");
     assertJarContains(artifact, "chain/NativeImageBundle.class");
     assertJarContains(artifact, "chain/NativeImageBundleCondition.class");
     assertJarContains(artifact, "chain/NativeImageBuildTime.class");
     assertJarContains(artifact, "chain/NativeImageFeature.class");
-    assertJarContains(artifact, "org/springframework/boot/autoconfigure/AutoConfiguration.class");
-    assertJarContains(
+    assertJarOmits(artifact, "org/springframework/boot/autoconfigure/AutoConfiguration.class");
+    assertJarOmits(
         artifact, "org/springframework/boot/autoconfigure/AutoConfiguration$Nested.class");
-    assertJarContains(
+    assertJarOmits(
         artifact,
         "org/springframework/boot/autoconfigure/condition/ConditionalOnCheckpointRestore.class");
-    assertJarContains(
+    assertJarOmits(
         artifact,
         "org/springframework/boot/autoconfigure/kafka/"
             + "KafkaStreamsAnnotationDrivenConfiguration.class");
-    assertJarContains(
+    assertJarOmits(
         artifact, "org/springframework/boot/autoconfigure/task/TaskSchedulingConfigurations.class");
-    assertJarContains(
+    assertJarOmits(
         artifact,
         "org/springframework/boot/autoconfigure/task/TaskSchedulingConfigurations$"
             + "TaskSchedulerConfiguration.class");
-    assertJarContains(artifact, "org/crac/Resource.class");
-    assertJarContains(artifact, "chain/BeforeAuto.class");
-    assertJarContains(artifact, "chain/AfterAuto.class");
+    assertJarOmits(artifact, "org/crac/Resource.class");
+    assertJarOmits(artifact, "chain/BeforeAuto.class");
+    assertJarOmits(artifact, "chain/AfterAuto.class");
   }
 
   @Test
@@ -1995,7 +1995,7 @@ final class ElideMojoTest {
   }
 
   @Test
-  void malformedSpringMetadataFailsBeforeArtifactMutation()
+  void unsupportedSpringAutoconfigureMetadataDoesNotBlockElidePublication()
       throws IOException, ReflectiveOperationException {
     final Artifact used = artifact("used", "used/Sample.class");
     final Path original = used.getFile().toPath();
@@ -2005,7 +2005,7 @@ final class ElideMojoTest {
                 Map.of(
                     "META-INF/spring-autoconfigure-metadata.properties", "not-a-supported-key=x\n"))
             .toFile());
-    final Path malformed = used.getFile().toPath();
+    final Path metadataJar = used.getFile().toPath();
     final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
     project.setGroupId("org.example");
     project.setArtifactId("consumer");
@@ -2017,14 +2017,17 @@ final class ElideMojoTest {
     mojo.setLog(new SystemStreamLog());
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("used.Sample\n").toFile()));
-    set(mojo, "reportFile", tempDir.resolve("malformed-report.json").toFile());
+    final Path report = tempDir.resolve("malformed-report.json");
+    set(mojo, "reportFile", report.toFile());
     set(mojo, "trimJars", true);
 
-    assertThatThrownBy(mojo::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Unsupported Spring autoconfigure metadata key");
-    assertThat(used.getFile().toPath()).isEqualTo(malformed).isNotEqualTo(original);
-    assertThat(project.getArtifacts()).contains(used);
+    assertThatCode(mojo::execute).doesNotThrowAnyException();
+
+    assertAll(
+        () -> assertThat(report).exists(),
+        () -> assertThat(used.getFile().toPath()).isEqualTo(metadataJar).isNotEqualTo(original),
+        () -> assertThat(project.getArtifacts()).contains(used),
+        () -> assertJarContains(used, "used/Sample.class"));
   }
 
   @Test

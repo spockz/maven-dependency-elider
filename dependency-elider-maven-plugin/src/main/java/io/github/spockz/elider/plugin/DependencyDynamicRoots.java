@@ -26,7 +26,6 @@ final class DependencyDynamicRoots {
   private static final String SPRING_FACTORIES = "META-INF/spring.factories";
   private static final String SPRING_IMPORTS =
       "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports";
-  private static final String SPRING_METADATA = "META-INF/spring-autoconfigure-metadata.properties";
 
   record ServiceDescriptor(String serviceInterface, Set<String> providers) {
     ServiceDescriptor {
@@ -171,7 +170,7 @@ final class DependencyDynamicRoots {
 
   static RootScan scan(final java.nio.file.Path jar, final NativeImageScanContext scanContext)
       throws IOException {
-    final ScanState state = new ScanState(jar, scanContext);
+    final ScanState state = new ScanState(scanContext);
     try (JarFile archive = new JarFile(jar.toFile())) {
       final Enumeration<JarEntry> entries = archive.entries();
       while (entries.hasMoreElements()) {
@@ -210,9 +209,6 @@ final class DependencyDynamicRoots {
     /** Complete candidate inventory used by resource and package resolution. */
     private final NativeImageScanContext scanContext;
 
-    /** Logical class names in the declaring archive. */
-    private final Set<String> jarClasses;
-
     /** Whether this archive declares class roots. */
     private boolean declaresClassRoots;
 
@@ -220,10 +216,8 @@ final class DependencyDynamicRoots {
     private boolean requiresArtifactRetention;
 
     /** Creates mutable state for one archive using the invocation resource index. */
-    private ScanState(final java.nio.file.Path jar, final NativeImageScanContext scanContext)
-        throws IOException {
+    private ScanState(final NativeImageScanContext scanContext) {
       this.scanContext = scanContext;
-      this.jarClasses = scanContext.logicalClasses(java.util.Optional.of(jar));
     }
 
     /** Dispatches one archive entry to its supported dynamic-root reader. */
@@ -265,10 +259,6 @@ final class DependencyDynamicRoots {
       } else if (SPRING_IMPORTS.equals(name)) {
         declaresClassRoots = true;
         SpringMetadataRoots.readImports(archive.getInputStream(entry), nonServiceRoots, name);
-      } else if (SPRING_METADATA.equals(name)) {
-        declaresClassRoots = true;
-        SpringMetadataRoots.readMetadata(
-            archive.getInputStream(entry), nonServiceRoots, jarClasses);
       }
     }
 

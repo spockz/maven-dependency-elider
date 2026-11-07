@@ -141,6 +141,29 @@ final class DuplicateClassMultiReleaseTest extends MavenDependencyTrimmerInMemor
                 .contains("closure/a/Extra"));
   }
 
+  @Test
+  void unresolvedDynamicRootDoesNotPromoteUnrelatedMrjarCandidates() throws Exception {
+    final Fixture fixture = fixtureWithRuntimeA();
+    fixture.addVersionedClassToC();
+    final Path declaringArchive = fixture.snapshot("a").filePath().toAbsolutePath().normalize();
+    final TrimAnalysisResult result =
+        fixture.analyze(
+            Set.of(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c")),
+            Set.of(),
+            java.util.Map.of(),
+            java.util.Map.of(declaringArchive, Set.of("closure.b.Middle", "external.Optional")),
+            List.of());
+
+    assertAll(
+        () ->
+            assertThat(result.candidateRoots().get(fixture.coordinate("b")))
+                .contains("closure.b.Middle"),
+        () -> assertThat(result.upperTierClasses()).containsKey(fixture.coordinate("c")),
+        () ->
+            assertThat(result.reachableArtifacts())
+                .doesNotContain(fixture.coordinate("d"), fixture.coordinate("e")));
+  }
+
   /** Class payloads remain isolated from later archive rewrites. */
   private record OwnerEntries(byte[] duplicate, byte[] middle) {}
 

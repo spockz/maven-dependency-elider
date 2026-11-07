@@ -254,6 +254,7 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
       final AnalyzePrediction prediction,
       final MavenElisionReportSnapshot snapshot,
       final Path summary) {
+    MavenElisionOutputLogger.dynamicRootWarnings(getLog(), prediction.evidence());
     final String fallback = prediction.evidence().sourceAttributionFallback();
     if (fallback != null && getLog().isWarnEnabled()) {
       getLog()

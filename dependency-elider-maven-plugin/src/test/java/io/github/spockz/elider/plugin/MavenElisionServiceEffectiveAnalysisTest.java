@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.TraceData;
@@ -322,7 +323,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
   }
 
   @Test
-  void unknownDynamicOwnerUsesConservativeWholeInventoryRetention() throws Exception {
+  void unknownDynamicOwnerDoesNotExpandRawKeepSetWithoutGraphProof() throws Exception {
     final Fixture fixture = fixture(false);
     final Path trace = temporaryDirectory.resolve("unknown-dynamic-root.lst");
     Files.writeString(trace, ENTRY_CLASS.replace('.', '/') + "\n");
@@ -340,12 +341,25 @@ final class MavenElisionServiceEffectiveAnalysisTest
 
     final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
 
-    assertThat(prepared.rawDecision().retainedArtifacts())
-        .containsExactlyInAnyOrderElementsOf(
-            fixture.allSnapshots().stream()
-                .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
-                .toList());
-    assertThat(effective.effectiveDecision().elidedArtifacts()).isEmpty();
+    assertAll(
+        () ->
+            assertThat(prepared.rawDecision().retainedArtifacts())
+                .contains(fixture.coordinate("a"))
+                .doesNotContain(fixture.coordinate("b"), fixture.coordinate("c")),
+        () ->
+            assertThat(prepared.rawDecision().elidedArtifacts())
+                .contains(fixture.coordinate("b"), fixture.coordinate("c")),
+        () ->
+            assertThat(effective.effectiveDecision().retainedArtifacts())
+                .containsExactlyInAnyOrderElementsOf(
+                    fixture.allSnapshots().stream()
+                        .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+                        .toList()),
+        () -> assertThat(effective.effectiveDecision().elidedArtifacts()).isEmpty(),
+        () ->
+            assertThat(effective.graphEvaluation().failClosed())
+                .as("without a bound graph, safety keeps the raw drop set")
+                .isTrue());
   }
 
   @Test
