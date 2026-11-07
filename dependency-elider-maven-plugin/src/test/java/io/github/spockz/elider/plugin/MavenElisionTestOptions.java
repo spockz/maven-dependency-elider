@@ -34,13 +34,13 @@ final class MavenElisionTestOptions {
       final List<String> retainedArtifacts,
       final File productionOutput,
       final MavenSession session,
-      final boolean sourceRootsComplete) {
+      final boolean productionClassesComplete) {
     return options(
         traceFiles,
         retainedArtifacts,
         productionOutput,
         session,
-        sourceRootsComplete,
+        productionClassesComplete,
         false,
         List.of());
   }
@@ -50,7 +50,7 @@ final class MavenElisionTestOptions {
       final List<String> retainedArtifacts,
       final File productionOutput,
       final MavenSession session,
-      final boolean sourceRootsComplete,
+      final boolean productionClassesComplete,
       final boolean trimJars,
       final List<String> explicitTrimRoots) {
     return new AnalysisOptions(
@@ -58,10 +58,29 @@ final class MavenElisionTestOptions {
         retainedArtifacts,
         productionOutput,
         session,
-        new CompletenessOptions(sourceRootsComplete, false, false, false),
+        new CompletenessOptions(false, productionClassesComplete, false, false),
         new TrimOptions(
             trimJars,
             explicitTrimRoots,
+            false,
+            List.of(),
+            false,
+            MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+            MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+        new DynamicRootOptions(true));
+  }
+
+  /* package */ static AnalysisOptions sourceRootsCompleteOptions(
+      final List<File> traceFiles, final List<String> retainedArtifacts) {
+    return new AnalysisOptions(
+        traceFiles,
+        retainedArtifacts,
+        null,
+        null,
+        new CompletenessOptions(true, false, false, false),
+        new TrimOptions(
+            false,
+            List.of(),
             false,
             List.of(),
             false,

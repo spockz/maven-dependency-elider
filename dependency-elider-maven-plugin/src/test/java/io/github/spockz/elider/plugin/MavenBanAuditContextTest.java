@@ -259,7 +259,7 @@ final class MavenBanAuditContextTest {
             List.of("fixture:" + EXCLUDED_BEFORE_RESOLUTION),
             null,
             null,
-            new CompletenessOptions(true, false, false, true),
+            new CompletenessOptions(false, false, false, true),
             new TrimOptions(
                 false,
                 List.of(),
@@ -340,7 +340,7 @@ final class MavenBanAuditContextTest {
             List.of("fixture:banned"),
             null,
             null,
-            new CompletenessOptions(true, false, false, true),
+            new CompletenessOptions(false, false, false, true),
             new TrimOptions(
                 true,
                 List.of(),
@@ -504,7 +504,7 @@ final class MavenBanAuditContextTest {
             List.of(),
             null,
             null,
-            new CompletenessOptions(true, false, false, true),
+            new CompletenessOptions(false, false, false, true),
             new TrimOptions(
                 false,
                 List.of(),

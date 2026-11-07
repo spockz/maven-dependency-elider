@@ -8,17 +8,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.IOException;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.building.DefaultModelBuilderFactory;
 import org.apache.maven.model.building.DefaultModelBuildingRequest;
 import org.apache.maven.model.building.ModelBuildingException;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.toolchain.DefaultToolchainManager;
+import org.codehaus.plexus.PlexusContainer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -276,6 +280,10 @@ final class MavenCompilerTargetSelectionTest {
   @Test
   void capturedTargetPropertyPrecedenceIsUserThenSystemThenProject() throws IOException {
     final MavenProject project = new MavenProject();
+    project.setGroupId("example");
+    project.setArtifactId("compiler-target");
+    project.setVersion("1");
+    project.setFile(temporaryDirectory.resolve("captured-target-precedence-pom.xml").toFile());
     project.setBuild(new Build());
     project.getProperties().setProperty(TARGET_PROPERTY, "8");
     final AnalysisEnvironment userEnvironment =
@@ -296,18 +304,57 @@ final class MavenCompilerTargetSelectionTest {
   @Test
   void inheritedUserReleasePropertyOverridesProjectRelease() throws IOException {
     final MavenProject project = new MavenProject();
+    project.setGroupId("example");
+    project.setArtifactId("compiler-target");
+    project.setVersion("1");
+    project.setFile(temporaryDirectory.resolve("inherited-release-pom.xml").toFile());
     project.setBuild(new Build());
     project.getProperties().setProperty("maven.compiler.release", "8");
     final Properties defaults = new Properties();
     defaults.setProperty("maven.compiler.release", "11");
     final Properties userProperties = new Properties(defaults);
-    final AnalysisEnvironment environment =
-        environment(
-            Map.of(),
-            Map.of("maven.compiler.release", userProperties.getProperty("maven.compiler.release")));
+    final MavenSession session = session(project, userProperties);
+    final AnalysisEnvironment inherited = AnalysisEnvironment.capture(project, session);
+    final List<String> inheritedOptions =
+        MavenCompilerSettings.platformReleaseOptionsWithEnvironment(project, inherited);
+    userProperties.setProperty("maven.compiler.release", "13");
+    final AnalysisEnvironment overridden = AnalysisEnvironment.capture(project, session);
 
-    assertThat(MavenCompilerSettings.platformReleaseOptionsWithEnvironment(project, environment))
-        .containsExactly(RELEASE_OPTION, "11");
+    assertAll(
+        "Maven capture preserves inherited user defaults and explicit user precedence",
+        () ->
+            assertThat(inherited.userPropertiesAsProperties().getProperty("maven.compiler.release"))
+                .isEqualTo("11"),
+        () -> assertThat(inheritedOptions).containsExactly(RELEASE_OPTION, "11"),
+        () ->
+            assertThat(
+                    MavenCompilerSettings.platformReleaseOptionsWithEnvironment(
+                        project, overridden))
+                .containsExactly(RELEASE_OPTION, "13"),
+        () ->
+            assertThat(MavenCompilerSettings.analysisTargetOptions(project, session))
+                .containsExactly(RELEASE_OPTION, "13"));
+  }
+
+  private static MavenSession session(final MavenProject project, final Properties userProperties) {
+    final DefaultMavenExecutionRequest request =
+        new DefaultMavenExecutionRequest() {
+          @Override
+          public Properties getUserProperties() {
+            return userProperties;
+          }
+        };
+    request.setBaseDirectory(project.getBasedir());
+    final PlexusContainer container =
+        (PlexusContainer)
+            Proxy.newProxyInstance(
+                Thread.currentThread().getContextClassLoader(),
+                new Class<?>[] {PlexusContainer.class},
+                (proxy, method, arguments) ->
+                    "lookup".equals(method.getName()) ? new DefaultToolchainManager() : null);
+    final MavenSession session = new MavenSession(container, null, request, null);
+    session.setCurrentProject(project);
+    return session;
   }
 
   private MavenProject effectiveProject(final String fileName, final String pomXml)

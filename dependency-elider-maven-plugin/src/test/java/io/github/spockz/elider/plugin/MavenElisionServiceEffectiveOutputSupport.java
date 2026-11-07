@@ -113,15 +113,20 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       final String mrjarStrategy,
       final PluginCacheProducerIdentityResolver.Resolution producerResolution)
       throws IOException, MojoFailureException {
-    completeSourceRoots(fixture);
+    final File completeOutput =
+        completeProductionClasses(
+            fixture,
+            productionOutput == null
+                ? Path.of(fixture.mavenProject().getBuild().getDirectory(), "classes")
+                : productionOutput.toPath());
     final MavenElisionService service = new MavenElisionService();
     final ElisionAnalysisModel.AnalysisOptions options =
         new ElisionAnalysisModel.AnalysisOptions(
             List.of(traceFile.toFile()),
             retainedArtifacts,
-            productionOutput,
+            completeOutput,
             null,
-            new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
+            new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
             new ElisionAnalysisModel.TrimOptions(
                 trimJars,
                 List.of(),
@@ -151,13 +156,15 @@ abstract class MavenElisionServiceEffectiveOutputSupport
         service, MavenElisionServiceEffectiveAnalysisFixtures.withBinding(prepared, binding));
   }
 
-  private void completeSourceRoots(final Fixture fixture) throws IOException {
-    final Path root = Files.createDirectories(temporaryDirectory.resolve("complete-source"));
-    final Path entry = root.resolve("closure/a/Entry.java");
-    Files.createDirectories(entry.getParent());
-    Files.writeString(entry, "package closure.a; public class Entry {}\n");
-    fixture.mavenProject().getBuild().setSourceDirectory(root.toString());
-    fixture.mavenProject().addCompileSourceRoot(root.toString());
+  private File completeProductionClasses(final Fixture fixture, final Path output)
+      throws IOException {
+    final Path sourceRoot = Files.createDirectories(temporaryDirectory.resolve("complete-source"));
+    final Path seed = sourceRoot.resolve("fixture/Seed.java");
+    Files.createDirectories(seed.getParent());
+    Files.writeString(seed, "package fixture; public class Seed {}\n");
+    io.github.spockz.elider.test.CompilationFixtureSupport.compile(output, List.of(seed));
+    fixture.mavenProject().getBuild().setOutputDirectory(output.toString());
+    return output.toFile();
   }
 
   /** Runs the isolated effective output engine without changing Maven project views. */

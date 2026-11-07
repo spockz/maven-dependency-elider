@@ -114,7 +114,8 @@ final class ADR0008MavenPreconditionPublicationTest {
   }
 
   @Test
-  void retainedCoordinateOrApplicationSourceClassBlocksPreconditionPublication() throws Exception {
+  void retainedCoordinateOrCompiledApplicationClassBlocksPreconditionPublication()
+      throws Exception {
     final Fixture retainedCoordinate = fixture("retained-coordinate", true, false);
     configure(retainedCoordinate, true);
     retainedCoordinate.mojo().execute();
@@ -122,19 +123,19 @@ final class ADR0008MavenPreconditionPublicationTest {
     assertThat(prerequisiteFindings(MavenElisionReportWriter.read(retainedCoordinate.summary())))
         .isEmpty();
 
-    final Fixture sourceProvider = fixture("source-provider", false, true);
-    configure(sourceProvider, true);
-    sourceProvider.mojo().execute();
-    assertThat(sourceProvider.vex()).doesNotExist();
-    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(sourceProvider.summary())))
+    final Fixture compiledProvider = fixture("compiled-provider", false, true);
+    configure(compiledProvider, true);
+    compiledProvider.mojo().execute();
+    assertThat(compiledProvider.vex()).doesNotExist();
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(compiledProvider.summary())))
         .isEmpty();
   }
 
   @Test
   void incompleteInventorySuppressesProofAndDoesNotEmitOpenVex() throws Exception {
     final Fixture fixture = fixture("incomplete", false, false);
-    Files.writeString(fixture.sourceRoot().resolve("Unknown.scala"), "class Unknown\n");
     configure(fixture, true);
+    addUnknownGenerator(fixture, "process-classes");
 
     fixture.mojo().execute();
 
@@ -399,11 +400,11 @@ final class ADR0008MavenPreconditionPublicationTest {
   }
 
   private Fixture fixture(
-      final String name, final boolean retainedCoordinate, final boolean sourceProvider)
+      final String name, final boolean retainedCoordinate, final boolean compiledProvider)
       throws IOException {
     final Path basedir = temporaryDirectory.resolve(name);
     final ProjectRoots roots = createProjectRoots(basedir);
-    writeSourceProvider(roots.sourceRoot(), sourceProvider);
+    writeCompiledProvider(roots.productionOutput(), compiledProvider);
     final ArtifactSet artifactSet = createArtifacts(basedir, retainedCoordinate);
     final MavenProject project = createProject(basedir, roots, artifactSet.artifacts());
     final MavenSession session = newSession(project);
@@ -447,15 +448,18 @@ final class ADR0008MavenPreconditionPublicationTest {
     return roots;
   }
 
-  private static void writeSourceProvider(final Path sourceRoot, final boolean enabled)
+  private static void writeCompiledProvider(final Path productionOutput, final boolean enabled)
       throws IOException {
     if (!enabled) {
       return;
     }
-    final Path source = sourceRoot.resolve("org/example/prerequisite/EntryPoint.java");
-    Files.createDirectories(source.getParent());
-    Files.writeString(
-        source, "package org.example.prerequisite; public final class EntryPoint {}\n");
+    final String className = "org/example/prerequisite/EntryPoint";
+    final Path classFile = productionOutput.resolve(className + ".class");
+    Files.createDirectories(classFile.getParent());
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, className, null, "java/lang/Object", null);
+    writer.visitEnd();
+    Files.write(classFile, writer.toByteArray());
   }
 
   private static ArtifactSet createArtifacts(final Path basedir, final boolean retainPrerequisite)

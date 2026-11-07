@@ -46,6 +46,7 @@ final class MavenElisionServicePredictionFixtures {
     build.setDirectory(fixtureDirectory.resolve("target").toString());
     build.setOutputDirectory(fixtureDirectory.resolve("classes").toString());
     project.setBuild(build);
+    createProductionOutputClass(Path.of(build.getOutputDirectory()));
     final Path archive = multiReleaseArchive(fixtureDirectory);
     final DefaultArtifactHandler handler = new DefaultArtifactHandler("jar");
     handler.setAddedToClasspath(true);
@@ -75,7 +76,7 @@ final class MavenElisionServicePredictionFixtures {
             List.of(),
             null,
             session,
-            new CompletenessOptions(true, false, false, true),
+            new CompletenessOptions(false, true, false, true),
             new TrimOptions(
                 true,
                 List.of(),

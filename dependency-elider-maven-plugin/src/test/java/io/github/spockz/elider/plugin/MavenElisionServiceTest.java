@@ -405,6 +405,8 @@ final class MavenElisionServiceTest {
     project.getBuild().addPlugin(enforcer);
     final String usedJarPath = used.getFile().getPath();
     assertThat(project.getCompileClasspathElements()).contains(usedJarPath);
+    final Path output = Files.createDirectories(tempDir.resolve("complete-source-classes"));
+    CompilationFixtureSupport.compile(output, List.of(source), "-classpath", usedJarPath);
     final Path trace = tempDir.resolve("complete-source-runtime.lst");
     Files.writeString(trace, "observed/Entry\n");
 
@@ -413,7 +415,7 @@ final class MavenElisionServiceTest {
             .analyze(
                 project,
                 MavenElisionTestOptions.options(
-                    List.of(trace.toFile()), List.of(), null, null, true));
+                    List.of(trace.toFile()), List.of(), output.toFile(), null, true));
 
     assertThat(analysis.decision().retainedArtifacts())
         .containsExactlyInAnyOrder(
@@ -454,10 +456,11 @@ final class MavenElisionServiceTest {
                 new MavenElisionService()
                     .analyze(
                         project,
-                        MavenElisionTestOptions.options(
-                            List.of(trace.toFile()), List.of(), null, null, true)))
+                        MavenElisionTestOptions.sourceRootsCompleteOptions(
+                            List.of(trace.toFile()), List.of())))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("source-generation lifecycle execution");
+        .hasMessageContaining("elide.sourceRootsComplete is no longer supported")
+        .hasMessageContaining("bind elide to process-classes");
   }
 
   @Test
@@ -682,7 +685,8 @@ final class MavenElisionServiceTest {
 
     assertThatThrownBy(() -> new MavenElisionService().prepare(new MavenProject(), options))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("are mutually exclusive");
+        .hasMessageContaining("elide.sourceRootsComplete is no longer supported")
+        .hasMessageContaining("bind elide to process-classes");
   }
 
   @Test
@@ -729,7 +733,8 @@ final class MavenElisionServiceTest {
 
     assertThatThrownBy(() -> new MavenElisionService().analyze(project, options))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("source-generation lifecycle execution");
+        .hasMessageContaining("elide.sourceRootsComplete is no longer supported")
+        .hasMessageContaining("bind elide to process-classes");
   }
 
   @Test

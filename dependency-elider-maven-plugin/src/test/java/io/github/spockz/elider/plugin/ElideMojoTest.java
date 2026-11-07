@@ -18,6 +18,7 @@ import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassTableReader;
 import io.github.spockz.elider.trimmer.TrimAnalysisSession;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
@@ -375,6 +376,7 @@ final class ElideMojoTest {
         project(first, new LinkedHashSet<>(List.of(first, second)), second);
     final Build build = new Build();
     build.setDirectory(tempDir.resolve(name + "-build").toString());
+    build.setOutputDirectory(createProductionOutput(name + "-duplicate-classes").toString());
     project.setBuild(build);
     final Path productionSources = tempDir.resolve(name + "-sources");
     Files.createDirectories(productionSources);
@@ -390,9 +392,9 @@ final class ElideMojoTest {
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(trace.toFile()));
     set(mojo, "trimJars", trimJars);
+    set(mojo, "productionClassesComplete", true);
     set(mojo, "reportFile", reportFile.toFile());
     set(mojo, "summaryFile", summaryFile.toFile());
-    set(mojo, "sourceRootsComplete", true);
     set(
         mojo,
         retainOwners ? "retainDuplicateClassOwners" : "trimDuplicateClassOwners",
@@ -1427,7 +1429,7 @@ final class ElideMojoTest {
       final MavenProject project,
       final String traceClasses,
       final PluginCacheProducerIdentityResolver.Resolution producerResolution,
-      final boolean sourceRootsComplete)
+      final boolean productionClassesComplete)
       throws IOException, MojoFailureException {
     return new MavenElisionService()
         .analyze(
@@ -1435,10 +1437,12 @@ final class ElideMojoTest {
             new ElisionAnalysisModel.AnalysisOptions(
                 List.of(writeTrace(traceClasses).toFile()),
                 List.of(),
-                null,
+                productionClassesComplete
+                    ? new File(project.getBuild().getOutputDirectory())
+                    : null,
                 null,
                 new ElisionAnalysisModel.CompletenessOptions(
-                    sourceRootsComplete, false, false, false),
+                    false, productionClassesComplete, false, false),
                 new ElisionAnalysisModel.TrimOptions(
                     true,
                     List.of(),
@@ -1740,6 +1744,7 @@ final class ElideMojoTest {
     project.addCompileSourceRoot(productionSources.toString());
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("cycle-build").toString());
+    build.setOutputDirectory(createProductionOutput("cycle-classes").toString());
     project.setBuild(build);
     final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
@@ -1749,7 +1754,7 @@ final class ElideMojoTest {
     set(mojo, "reportFile", tempDir.resolve("cycle-report.json").toFile());
     set(mojo, "sbomFile", tempDir.resolve("cycle-build/cycle-sbom.json").toFile());
     set(mojo, "trimJars", true);
-    set(mojo, "sourceRootsComplete", true);
+    set(mojo, "productionClassesComplete", true);
     set(mojo, "trimRoots", List.of("cycle.BaselineB", "cycle.BaselineC"));
 
     mojo.execute();
@@ -2301,6 +2306,7 @@ final class ElideMojoTest {
     project.getProperties().setProperty("maven.compiler.release", "21");
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("snapshot-producer-build").toString());
+    build.setOutputDirectory(createProductionOutput("snapshot-producer-classes").toString());
     project.setBuild(build);
     final Path sourceRoot = Files.createDirectories(tempDir.resolve("snapshot-producer-sources"));
     Files.writeString(sourceRoot.resolve("Consumer.java"), "class Consumer {}\n");
@@ -2424,6 +2430,7 @@ final class ElideMojoTest {
     project.addCompileSourceRoot(sourceRoot.toString());
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("ephemeral-build").toString());
+    build.setOutputDirectory(createProductionOutput("ephemeral-classes").toString());
     project.setBuild(build);
     final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
@@ -2435,7 +2442,7 @@ final class ElideMojoTest {
     set(mojo, "reportFile", tempDir.resolve("ephemeral-report.json").toFile());
     set(mojo, "sbomFile", tempDir.resolve("ephemeral-build/ephemeral-sbom.json").toFile());
     set(mojo, "trimJars", true);
-    set(mojo, "sourceRootsComplete", true);
+    set(mojo, "productionClassesComplete", true);
 
     mojo.execute();
 
@@ -2493,6 +2500,7 @@ final class ElideMojoTest {
     project.addCompileSourceRoot(sourceRoot.toString());
     final Build build = new Build();
     build.setDirectory(tempDir.resolve("explicit-build").toString());
+    build.setOutputDirectory(createProductionOutput("explicit-classes").toString());
     project.setBuild(build);
     final ElideMojo mojo = newMojo();
     mojo.setLog(new SystemStreamLog());
@@ -2501,7 +2509,7 @@ final class ElideMojoTest {
     set(mojo, "reportFile", tempDir.resolve("explicit-report.json").toFile());
     set(mojo, "sbomFile", tempDir.resolve("explicit-build/explicit-sbom.json").toFile());
     set(mojo, "trimJars", true);
-    set(mojo, "sourceRootsComplete", true);
+    set(mojo, "productionClassesComplete", true);
 
     mojo.execute();
 
@@ -2529,7 +2537,7 @@ final class ElideMojoTest {
     set(retry, "reportFile", tempDir.resolve("explicit-retry-report.json").toFile());
     set(retry, "sbomFile", tempDir.resolve("explicit-build/explicit-retry-sbom.json").toFile());
     set(retry, "trimJars", true);
-    set(retry, "sourceRootsComplete", true);
+    set(retry, "productionClassesComplete", true);
 
     assertThatThrownBy(retry::execute)
         .isInstanceOf(MojoFailureException.class)
@@ -3155,6 +3163,17 @@ final class ElideMojoTest {
     return trace;
   }
 
+  private Path createProductionOutput(final String name) throws IOException {
+    final Path output = Files.createDirectories(tempDir.resolve(name));
+    final Path classFile = output.resolve("fixture/Seed.class");
+    Files.createDirectories(classFile.getParent());
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "fixture/Seed", null, "java/lang/Object", null);
+    writer.visitEnd();
+    Files.write(classFile, writer.toByteArray());
+    return output;
+  }
+
   @Test
   void preservesAbsentAndPresentEmptyDirectViews()
       throws IOException, ReflectiveOperationException, MojoFailureException {
@@ -3229,6 +3248,18 @@ final class ElideMojoTest {
     project.setVersion("1.0");
     project.getProperties().setProperty("maven.compiler.release", "21");
     return project;
+  }
+
+  @Test
+  void sourceRootsCompleteFailsBeforeElisionWithMigrationGuidance() throws Exception {
+    final ElideMojo mojo = newMojo();
+    set(mojo, "project", newProject());
+    set(mojo, "sourceRootsComplete", true);
+
+    assertThatThrownBy(mojo::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("elide.sourceRootsComplete is no longer supported")
+        .hasMessageContaining("bind elide to process-classes");
   }
 
   private MavenElisionReportSnapshot previousSnapshot() throws IOException {

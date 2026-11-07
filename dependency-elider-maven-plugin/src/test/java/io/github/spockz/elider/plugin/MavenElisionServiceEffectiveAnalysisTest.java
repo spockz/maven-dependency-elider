@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.test.CompilationFixtureSupport;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -278,7 +279,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
   }
 
   @Test
-  void sourceDefinedTypesAreRecognizedWithoutProductionOutput() throws Exception {
+  void compiledProductionTypesAreRecognizedWithoutSourceScanning() throws Exception {
     final Fixture fixture = fixture(false);
     final Path sourceRoot =
         Files.createDirectories(temporaryDirectory.resolve("source-provenance"));
@@ -288,6 +289,9 @@ final class MavenElisionServiceEffectiveAnalysisTest
     Files.writeString(
         sourceRoot.resolve("Helper.java"), "package sample; public class Helper {}\n");
     fixture.mavenProject().addCompileSourceRoot(sourceRoot.toString());
+    final Path output = Files.createDirectories(temporaryDirectory.resolve("compiled-provenance"));
+    CompilationFixtureSupport.compile(
+        output, List.of(sourceRoot.resolve("App.java"), sourceRoot.resolve("Helper.java")));
     final Path trace = temporaryDirectory.resolve("source-provenance.lst");
     Files.writeString(trace, "sample.App\n" + ENTRY_CLASS.replace('.', '/') + "\n");
     final MavenElisionService service = new MavenElisionService();
@@ -295,9 +299,9 @@ final class MavenElisionServiceEffectiveAnalysisTest
         new ElisionAnalysisModel.AnalysisOptions(
             List.of(trace.toFile()),
             List.of(),
+            output.toFile(),
             null,
-            null,
-            new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
+            new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
             new ElisionAnalysisModel.TrimOptions(
                 false,
                 List.of(),

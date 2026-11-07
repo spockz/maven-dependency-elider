@@ -67,7 +67,7 @@ import org.junit.jupiter.api.Test;
                 List.of(),
                 null,
                 null,
-                new ElisionAnalysisModel.CompletenessOptions(true, false, false, true),
+                new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
                 new ElisionAnalysisModel.TrimOptions(
                     true,
                     List.of(),

@@ -244,7 +244,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
     AnalyzeMojoTestFieldSupport.set(mojo, "session", fixture.session());
     AnalyzeMojoTestFieldSupport.set(mojo, "projectDependenciesResolver", fixture.resolver());
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(fixture.trace().toFile()));
-    AnalyzeMojoTestFieldSupport.set(mojo, "sourceRootsComplete", true);
+    AnalyzeMojoTestFieldSupport.set(mojo, "productionClassesComplete", true);
+    AnalyzeMojoTestFieldSupport.set(mojo, "productionOutput", fixture.productionOutput().toFile());
     AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
     AnalyzeMojoTestFieldSupport.set(
         mojo, "retainDuplicateClassOwners", List.of(DUPLICATE_CLASS_PATTERN));
@@ -264,7 +265,9 @@ final class NoExtensionAnalyzeBanPredictionTest {
     AnalyzeMojoTestFieldSupport.set(trimMojo, "session", fixture.session());
     AnalyzeMojoTestFieldSupport.set(trimMojo, "projectDependenciesResolver", fixture.resolver());
     AnalyzeMojoTestFieldSupport.set(trimMojo, "traceFiles", List.of(fixture.trace().toFile()));
-    AnalyzeMojoTestFieldSupport.set(trimMojo, "sourceRootsComplete", true);
+    AnalyzeMojoTestFieldSupport.set(trimMojo, "productionClassesComplete", true);
+    AnalyzeMojoTestFieldSupport.set(
+        trimMojo, "productionOutput", fixture.productionOutput().toFile());
     AnalyzeMojoTestFieldSupport.set(trimMojo, "reportFile", trimReport.toFile());
     AnalyzeMojoTestFieldSupport.set(trimMojo, "trimJars", true);
     AnalyzeMojoTestFieldSupport.set(trimMojo, "retainDuplicateClassOwners", List.of("unused.**"));
@@ -467,7 +470,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
           fixtureResolver(fixture.root(), List.of(fixture.usedDependency(), blankTypeDependency)),
           fixture.trace(),
           fixture.root(),
-          fixture.usedDependency());
+          fixture.usedDependency(),
+          fixture.productionOutput());
     }
   }
 
@@ -827,7 +831,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
     set(mojo, "projectDependenciesResolver", fixture.resolver());
     set(mojo, "traceFiles", List.of(fixture.trace().toFile()));
     set(mojo, "banishedDependencies", List.of(BAN));
-    set(mojo, "sourceRootsComplete", true);
+    set(mojo, "productionClassesComplete", true);
     set(mojo, "trimJars", trim);
     set(mojo, "leafOnly", false);
     set(mojo, "reportFile", fixture.trace().getParent().resolve(CLASS_USAGE_FILENAME).toFile());
@@ -1051,7 +1055,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
         resolver,
         fixture.trace(),
         fixture.root(),
-        fixture.usedDependency());
+        fixture.usedDependency(),
+        fixture.productionOutput());
   }
 
   private Fixture activeExcludedFixture(final String traceContents) throws IOException {
@@ -1128,7 +1133,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
         activeResolver,
         fixture.trace(),
         (DefaultDependencyNode) originalRoot,
-        fixture.usedDependency());
+        fixture.usedDependency(),
+        fixture.productionOutput());
   }
 
   private Fixture fixture(final String traceContents, final boolean usedReferencesBanned)
@@ -1170,6 +1176,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
     project.getProperties().setProperty("maven.compiler.release", "17");
     final Build build = new Build();
     build.setDirectory(directory.resolve("target").toString());
+    final Path productionOutput = Files.createDirectories(directory.resolve("target/classes"));
+    build.setOutputDirectory(productionOutput.toString());
     project.setBuild(build);
     final Dependency declared = new Dependency();
     declared.setGroupId(GROUP_ID);
@@ -1180,6 +1188,11 @@ final class NoExtensionAnalyzeBanPredictionTest {
     Files.writeString(
         sourceRoot.resolve("App.java"), "public class App { private used.Api value; }\n");
     project.addCompileSourceRoot(sourceRoot.toString());
+    final ClassWriter consumer = new ClassWriter(0);
+    consumer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "App", null, "java/lang/Object", null);
+    consumer.visitField(Opcodes.ACC_PRIVATE, "value", "Lused/Api;", null, null).visitEnd();
+    consumer.visitEnd();
+    Files.write(productionOutput.resolve("App.class"), consumer.toByteArray());
     final org.eclipse.aether.artifact.Artifact used = resolverArtifact(USED_ARTIFACT_ID, usedJar);
     final org.eclipse.aether.artifact.Artifact banned =
         resolverArtifact(BANNED_ARTIFACT_ID, bannedJar);
@@ -1218,7 +1231,15 @@ final class NoExtensionAnalyzeBanPredictionTest {
         fixtureResolver(root, List.of(usedDependency, bannedDependency));
     final Path trace = directory.resolve("trace.lst");
     Files.writeString(trace, traceContents);
-    return new Fixture(project, session, repositorySession, resolver, trace, root, usedDependency);
+    return new Fixture(
+        project,
+        session,
+        repositorySession,
+        resolver,
+        trace,
+        root,
+        usedDependency,
+        productionOutput);
   }
 
   private static Path jar(
@@ -1338,7 +1359,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
       ProjectDependenciesResolver resolver,
       Path trace,
       DefaultDependencyNode root,
-      org.eclipse.aether.graph.Dependency usedDependency) {
+      org.eclipse.aether.graph.Dependency usedDependency,
+      Path productionOutput) {
     private AnalysisOptions options(final List<String> bans) {
       return options(bans, false);
     }
@@ -1353,9 +1375,9 @@ final class NoExtensionAnalyzeBanPredictionTest {
           List.of(trace.toFile()),
           List.of(),
           bans,
-          null,
+          productionOutput.toFile(),
           session,
-          new CompletenessOptions(true, false, false, true),
+          new CompletenessOptions(false, true, false, true),
           new TrimOptions(
               trim,
               List.of(),

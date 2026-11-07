@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ConfidenceLevel;
@@ -887,19 +888,28 @@ final class ADR0008MavenPreconditionInventoryTest {
           MavenPreconditionInventory.capture(
               fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
 
-      assertThat(beforeTestCompile.complete()).isFalse();
-      assertThat(beforeTestCompile.classProviders().detail())
-          .contains("Maven test compilation can add providers after process-classes");
-      assertThat(beforeTestCompile.classProviders().providers())
-          .noneMatch(provider -> provider.path().equals(testOnlySource));
+      assertAll(
+          "test-only source keeps the process-classes proof incomplete before test compilation",
+          () -> assertThat(beforeTestCompile.complete()).isFalse(),
+          () ->
+              assertThat(beforeTestCompile.classProviders().detail())
+                  .contains("Maven test compilation can add providers after process-classes"),
+          () ->
+              assertThat(beforeTestCompile.classProviders().providers())
+                  .noneMatch(provider -> provider.path().equals(testOnlySource)));
 
       testSession.getUserProperties().setProperty("maven.test.skip", TRUE);
       final MavenPreconditionInventory.Snapshot testCompilationSkipped =
           MavenPreconditionInventory.capture(
               fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
-      assertThat(testCompilationSkipped.complete()).isTrue();
-      assertThat(testCompilationSkipped.classProviders().providers())
-          .anySatisfy(provider -> assertThat(provider.path()).isEqualTo(compiledTestClass));
+      assertAll(
+          "skipping Maven test compilation permits proof while existing test output remains"
+              + " scanned",
+          () -> assertThat(testCompilationSkipped.complete()).isTrue(),
+          () ->
+              assertThat(testCompilationSkipped.classProviders().providers())
+                  .anySatisfy(
+                      provider -> assertThat(provider.path()).isEqualTo(compiledTestClass)));
 
       final Plugin compiler = compilerPlugin();
       final PluginExecution testCompile = new PluginExecution();
@@ -910,16 +920,21 @@ final class ADR0008MavenPreconditionInventoryTest {
       final MavenPreconditionInventory.Snapshot unmodeledCompilerSkip =
           MavenPreconditionInventory.capture(
               fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
-      assertThat(unmodeledCompilerSkip.complete()).isFalse();
-      assertThat(unmodeledCompilerSkip.classProviders().detail())
-          .contains("Maven Compiler Plugin test skip configuration is not modeled");
+      assertAll(
+          "plugin-local testCompile skip is conservatively incomplete",
+          () -> assertThat(unmodeledCompilerSkip.complete()).isFalse(),
+          () ->
+              assertThat(unmodeledCompilerSkip.classProviders().detail())
+                  .contains("Maven Compiler Plugin test skip configuration is not modeled"));
 
       final MavenSession processClassesSession =
           sessionForGoals(fixture.project(), GOAL_CLEAN, PROCESS_CLASSES_PHASE);
       final MavenPreconditionInventory.Snapshot beforeTestPhaseRequested =
           MavenPreconditionInventory.capture(
               fixture.project(), processClassesSession, fixture.plan(), trusted, true, List.of());
-      assertThat(beforeTestPhaseRequested.complete()).isTrue();
+      assertAll(
+          "process-classes is eligible before test compilation is requested",
+          () -> assertThat(beforeTestPhaseRequested.complete()).isTrue());
     }
 
     private static ElisionAnalysisModel.Analysis trustedProcessClassesAnalysis(

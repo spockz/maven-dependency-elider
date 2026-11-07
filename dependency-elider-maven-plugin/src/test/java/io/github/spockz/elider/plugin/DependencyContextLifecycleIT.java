@@ -229,7 +229,7 @@ final class DependencyContextLifecycleIT {
             <configuration>
               <traceFiles>${project.basedir}/trace.txt</traceFiles>
               <reportFile>${project.build.directory}/class-usage.json</reportFile>
-              <leafOnly>false</leafOnly><trimJars>true</trimJars><sourceRootsComplete>true</sourceRootsComplete>
+              <leafOnly>false</leafOnly><trimJars>true</trimJars><productionClassesComplete>true</productionClassesComplete>
             </configuration>
           </plugin></plugins></build>
         </project>
@@ -797,7 +797,7 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
-  void activeExtensionAppliesTransitiveBanAtInitializeWithCompleteSources() throws Exception {
+  void activeExtensionRejectsCompleteSourceRootsAtInitialize() throws Exception {
     final BanLifecycleFixture fixture =
         banLifecycleFixture("ban-initialize", "keep-library", "initialize", true);
     addDropAsKeepLibraryDependency(fixture.localRepository());
@@ -808,16 +808,14 @@ final class DependencyContextLifecycleIT {
         "package app; public final class App { "
             + "private io.github.spockz.elider.fixture.keep.KeepEntry keep; }\n");
 
-    final String output = runBanLifecycleFixture(fixture, "initialize", POST_ELIDE_PROBE_GOAL);
-    final JsonNode summary = lifecycleBanSummary(fixture.consumer());
-    final List<String> views = lifecycleBanViews(fixture.consumer());
-
+    final String output =
+        runBanLifecycleFixtureExpectingFailure(fixture, "initialize", POST_ELIDE_PROBE_GOAL);
     assertAll(
-        "initialize applies a collection-excluded transitive ban with complete source evidence",
-        () -> assertThat(output).contains(BUILD_SUCCESS),
-        () -> assertExcludedBan(summary),
-        () -> assertThat(views).noneMatch(row -> row.contains("drop-library")),
-        () -> assertThat(views).anyMatch(row -> row.contains("keep-library")));
+        "source-root completeness is rejected before initialize-time analysis",
+        () -> assertThat(output).contains("elide.sourceRootsComplete is no longer supported"),
+        () -> assertThat(output).contains("bind elide to process-classes"),
+        () -> assertThat(output).doesNotContain(BUILD_SUCCESS),
+        () -> assertThat(fixture.consumer().resolve("target/class-usage.json")).doesNotExist());
   }
 
   @Test
