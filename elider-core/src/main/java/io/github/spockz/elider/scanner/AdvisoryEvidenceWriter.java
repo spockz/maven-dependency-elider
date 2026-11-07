@@ -123,17 +123,17 @@ public final class AdvisoryEvidenceWriter {
 
   private ObjectNode writeEvidence(final AdvisoryEvidence evidence) {
     final ObjectNode node = mapper.createObjectNode();
-    if (evidence instanceof HeuristicCandidateEvidence heuristic) {
-      node.put("kind", "heuristic-candidate");
-      writeCommon(node, heuristic.scope(), heuristic.provenance());
-      writeStrings(node.putArray("candidateClasses"), heuristic.candidateClasses());
-      writeStrings(node.putArray("candidateDependencies"), heuristic.candidateDependencies());
-    } else if (evidence instanceof PackageAdvisoryEvidence packageAdvisory) {
-      node.put("kind", "package-advisory");
-      writeCommon(node, packageAdvisory.scope(), packageAdvisory.provenance());
-    } else {
-      throw new IllegalArgumentException(
-          "Owner proof evidence is not part of the cacheable advisory document");
+    switch (evidence) {
+      case HeuristicCandidateEvidence heuristic -> {
+        node.put("kind", "heuristic-candidate");
+        writeCommon(node, heuristic.scope(), heuristic.provenance());
+        writeStrings(node.putArray("candidateClasses"), heuristic.candidateClasses());
+        writeStrings(node.putArray("candidateDependencies"), heuristic.candidateDependencies());
+      }
+      case PackageAdvisoryEvidence packageAdvisory -> {
+        node.put("kind", "package-advisory");
+        writeCommon(node, packageAdvisory.scope(), packageAdvisory.provenance());
+      }
     }
     return node;
   }
