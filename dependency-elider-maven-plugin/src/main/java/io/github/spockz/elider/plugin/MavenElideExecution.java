@@ -145,8 +145,6 @@ final class MavenElideExecution {
       final EffectiveAnalysis effective = service.finishAnalysis(preparation.analysis());
       final Analysis unboundAnalysis = service.finishEffectiveOutputs(effective);
       configuration.publication().afterGenerationStaging().run(unboundAnalysis);
-      applicationBinding.verifyFresh(project);
-      plan.verifyAuditFresh(project, lifecycle.session());
       final Analysis analysis = applicationBinding.bindAnalysis(unboundAnalysis);
       publish(configuration, service, analysis, plan, applicationBinding);
     }

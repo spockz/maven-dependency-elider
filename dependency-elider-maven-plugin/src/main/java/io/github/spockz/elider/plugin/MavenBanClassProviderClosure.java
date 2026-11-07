@@ -3,10 +3,16 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.maven.artifact.Artifact;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.project.MavenProject;
 
 /** Shares provider resolution across both ban checks. */
 final class MavenBanClassProviderClosure {
@@ -14,6 +20,65 @@ final class MavenBanClassProviderClosure {
   private static final int ONE_PROVIDER = 1;
 
   private MavenBanClassProviderClosure() {}
+
+  /* package */ static void verifyPublication(
+      final MavenBanPlan banPlan,
+      final MavenArtifactViewBinding binding,
+      final ElisionAnalysisModel.ApplyPlan applyPlan,
+      final ElisionAnalysisModel.Analysis analysis,
+      final MavenProject project,
+      final MavenSession session)
+      throws IOException, MojoFailureException {
+    banPlan.verifyContext(binding.resolutionContext());
+    binding.verifyFresh(project);
+    banPlan.verifyAuditFresh(project, session);
+    verifyPlannedMembership(banPlan, applyPlan, analysis.trimResult().records());
+    ResolverArtifactGraphProjection.verifyBanPublication(
+        banPlan, binding, analysis.graphProjection());
+    MavenBanPublicationArtifactPaths.verify(binding, applyPlan, analysis.trimResult().records());
+    MavenBanFinalBytecodeClosure.verify(
+        analysis.banPlan(),
+        new ArrayList<>(applyPlan.resolvedArtifacts()),
+        analysis.trimResult().records(),
+        analysis);
+  }
+
+  private static void verifyPlannedMembership(
+      final MavenBanPlan banPlan,
+      final ElisionAnalysisModel.ApplyPlan applyPlan,
+      final List<ArtifactTrimRecord> records)
+      throws MojoFailureException {
+    rejectBanArtifacts(
+        banPlan, new ArrayList<>(applyPlan.resolvedArtifacts()), "final resolved view");
+    rejectBanArtifacts(banPlan, new ArrayList<>(applyPlan.directArtifacts()), "final direct view");
+    for (final ArtifactTrimRecord record : records) {
+      for (final MavenBanPlan.Entry entry : banPlan.entries()) {
+        if (sameDependencyIdentity(entry.dependency(), record.coordinate())) {
+          throw conflict(
+              record.coordinate(), "requested dependency is present in trim output membership");
+        }
+      }
+    }
+  }
+
+  private static void rejectBanArtifacts(
+      final MavenBanPlan banPlan, final List<Artifact> artifacts, final String location)
+      throws MojoFailureException {
+    for (final Artifact artifact : artifacts) {
+      final ArtifactCoordinate coordinate = MavenArtifactInventory.toCoordinate(artifact);
+      for (final MavenBanPlan.Entry entry : banPlan.entries()) {
+        if (sameDependencyIdentity(entry.dependency(), coordinate)) {
+          throw conflict(coordinate, "requested dependency is present in " + location);
+        }
+      }
+    }
+  }
+
+  private static boolean sameDependencyIdentity(
+      final BanishedDependency dependency, final ArtifactCoordinate coordinate) {
+    return dependency.groupId().equals(coordinate.groupId())
+        && dependency.artifactId().equals(coordinate.artifactId());
+  }
 
   /* package */ static void verifyReference(
       final String className,

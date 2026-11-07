@@ -1,6 +1,4 @@
-// WHY: Checks retained final archive references against the actual effective and absent class
-// providers immediately before plan publication. It runs under the repository's single-writer
-// analysis model, so local maps do not need concurrent implementations.
+// WHY: Checks the bytecode providers that will remain after the planned Maven view is applied.
 
 package io.github.spockz.elider.plugin;
 
@@ -22,8 +20,8 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.MojoFailureException;
 
 @SuppressWarnings({"PMD.CommentRequired", "PMD.UseConcurrentHashMap"})
-final class MavenBanRetainedProviderClosure {
-  private MavenBanRetainedProviderClosure() {}
+final class MavenBanFinalBytecodeClosure {
+  private MavenBanFinalBytecodeClosure() {}
 
   /* package */ static void verify(
       final MavenBanPlan banPlan,
@@ -31,7 +29,6 @@ final class MavenBanRetainedProviderClosure {
       final List<ArtifactTrimRecord> trimRecords,
       final ElisionAnalysisModel.Analysis analysis)
       throws IOException, MojoFailureException {
-    banPlan.verifyAuditBytesFresh();
     final Map<String, List<ArtifactCoordinate>> absentOwners = absentOwners(banPlan);
     if (absentOwners.isEmpty()) {
       return;
@@ -42,8 +39,15 @@ final class MavenBanRetainedProviderClosure {
     final Set<String> requiredClasses = retainedBytecodeReferences(providers, analysis);
     final Map<String, List<ArtifactCoordinate>> effectiveOwners = ownersByClass(providers);
     final Set<ArtifactCoordinate> retainedCoordinates = retainedCoordinates(finalSnapshots);
-    verifyRequiredClasses(
-        requiredClasses, absentOwners, effectiveOwners, retainedCoordinates, analysis);
+    for (final String required : requiredClasses) {
+      MavenBanClassProviderClosure.verifyReference(
+          required,
+          "final retained bytecode",
+          absentOwners,
+          effectiveOwners,
+          retainedCoordinates,
+          analysis.evidence().projectOutputClasses());
+    }
   }
 
   private static List<ElisionAnalysisModel.ArtifactSnapshot> finalSnapshots(
@@ -101,26 +105,19 @@ final class MavenBanRetainedProviderClosure {
       }
       references.addAll(scan.referencedClasses());
     }
-    addProductionReferences(references, analysis);
+    if (analysis.evidence().productionClassesComplete()) {
+      final BytecodeReferenceScan production =
+          analysis
+              .evidence()
+              .bytecodeScan()
+              .orElseThrow(
+                  () -> new IOException("Complete production bytecode evidence disappeared"));
+      if (!production.complete()) {
+        throw new IOException("Production bytecode evidence is incomplete during ban publication");
+      }
+      references.addAll(production.referencedClasses());
+    }
     return Set.copyOf(references);
-  }
-
-  private static void addProductionReferences(
-      final Set<String> references, final ElisionAnalysisModel.Analysis analysis)
-      throws IOException {
-    if (!analysis.evidence().productionClassesComplete()) {
-      return;
-    }
-    final BytecodeReferenceScan production =
-        analysis
-            .evidence()
-            .bytecodeScan()
-            .orElseThrow(
-                () -> new IOException("Complete production bytecode evidence disappeared"));
-    if (!production.complete()) {
-      throw new IOException("Production bytecode evidence is incomplete during ban publication");
-    }
-    references.addAll(production.referencedClasses());
   }
 
   private static Map<String, List<ArtifactCoordinate>> ownersByClass(
@@ -145,24 +142,6 @@ final class MavenBanRetainedProviderClosure {
     return snapshots.stream()
         .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
         .collect(java.util.stream.Collectors.toUnmodifiableSet());
-  }
-
-  private static void verifyRequiredClasses(
-      final Set<String> requiredClasses,
-      final Map<String, List<ArtifactCoordinate>> absentOwners,
-      final Map<String, List<ArtifactCoordinate>> effectiveOwners,
-      final Set<ArtifactCoordinate> retainedCoordinates,
-      final ElisionAnalysisModel.Analysis analysis)
-      throws MojoFailureException {
-    for (final String required : requiredClasses) {
-      MavenBanClassProviderClosure.verifyReference(
-          required,
-          "final retained bytecode",
-          absentOwners,
-          effectiveOwners,
-          retainedCoordinates,
-          analysis.evidence().projectOutputClasses());
-    }
   }
 
   private static Map<String, List<ArtifactCoordinate>> absentOwners(final MavenBanPlan banPlan) {

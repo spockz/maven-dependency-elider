@@ -310,7 +310,7 @@ record MavenBanPlan(
       final org.apache.maven.project.MavenProject project,
       final org.apache.maven.execution.MavenSession session)
       throws IOException {
-    MavenBanAuditFreshnessVerifier.verify(auditContext, project, session);
+    MavenOriginalInputAudit.verifyBanFreshness(auditContext, project, session);
   }
 
   void verifyAuditBytesFresh() throws IOException {

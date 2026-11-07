@@ -75,6 +75,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
   private static final String JAR_TYPE = "jar";
   private static final String VERSION = "1.0";
   private static final String RUNTIME_SCOPE = "runtime";
+  private static final String COMPILE_SCOPE = "compile";
+  private static final String USED_UNUSED_ENTRY = "used/Unused";
   private static final String BANNED_ARTIFACT_ID = "banned";
   private static final String BANNED_IDLE_CLASS = "banned.Idle";
   private static final String BANNED_IDLE_ENTRY = "banned/Idle";
@@ -207,7 +209,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
                 withDuplicatePolicy(fixture, trimPolicy, true),
                 fixture.resolver());
     final ArtifactCoordinate usedCoordinate =
-        new ArtifactCoordinate(GROUP_ID, USED_ARTIFACT_ID, VERSION, JAR_TYPE, "", "compile");
+        new ArtifactCoordinate(GROUP_ID, USED_ARTIFACT_ID, VERSION, JAR_TYPE, "", COMPILE_SCOPE);
     final ArtifactCoordinate otherCoordinate =
         new ArtifactCoordinate(GROUP_ID, BANNED_ARTIFACT_ID, VERSION, JAR_TYPE, "", RUNTIME_SCOPE);
     final Path report = temporaryDirectory.resolve("duplicate-analysis.json");
@@ -606,7 +608,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
   void removedRetainedClassReferenceDoesNotBlockBanPublication() throws Exception {
     final Fixture fixture = basicFixture(USED_TRACE);
     final Path originalUsedJar = fixture.usedDependency().getArtifact().getFile().toPath();
-    addClassToJar(originalUsedJar, "used/Unused", BANNED_IDLE_ENTRY);
+    addClassToJar(originalUsedJar, USED_UNUSED_ENTRY, BANNED_IDLE_ENTRY);
     checkOriginalProviderReferencesBannedClass(originalUsedJar);
     final ElideMojo mojo = elideMojo(fixture, true);
     final org.apache.maven.artifact.Artifact banned =
@@ -679,7 +681,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
   @Test
   void stagedBannedArchiveConflictIsRejectedBeforeReportOrViewPublication() throws Exception {
     final Fixture fixture = basicFixture(USED_TRACE);
-    addClassToJar(fixture.usedDependency().getArtifact().getFile().toPath(), "used/Unused");
+    addClassToJar(fixture.usedDependency().getArtifact().getFile().toPath(), USED_UNUSED_ENTRY);
     final ElideMojo mojo = elideMojo(fixture, true);
     final Path directory = fixture.trace().getParent();
     final Path reportDirectory = Files.createDirectory(directory.resolve(CLASS_USAGE_FILENAME));
@@ -789,7 +791,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
             .filter(artifact -> USED_ARTIFACT_ID.equals(artifact.getArtifactId()))
             .findFirst()
             .orElseThrow();
-    addClassToJar(used.getFile().toPath(), "used/Unused");
+    addClassToJar(used.getFile().toPath(), USED_UNUSED_ENTRY);
     final ElideMojo mojo = elideMojo(fixture, true);
     final Path directory = fixture.trace().getParent();
     final Path report = directory.resolve(CLASS_USAGE_FILENAME);
@@ -1311,7 +1313,22 @@ final class NoExtensionAnalyzeBanPredictionTest {
       final boolean retainedServiceProvider,
       final boolean bannedServiceProvider)
       throws IOException {
-    final Path directory = Files.createTempDirectory(temporaryDirectory, "ban-");
+    return fixture(
+        temporaryDirectory,
+        traceContents,
+        usedReferencesBanned,
+        retainedServiceProvider,
+        bannedServiceProvider);
+  }
+
+  private static Fixture fixture(
+      final Path fixtureParent,
+      final String traceContents,
+      final boolean usedReferencesBanned,
+      final boolean retainedServiceProvider,
+      final boolean bannedServiceProvider)
+      throws IOException {
+    final Path directory = Files.createTempDirectory(fixtureParent, "ban-");
     final Path usedJar =
         jar(
             directory.resolve("used.jar"),
@@ -1354,12 +1371,12 @@ final class NoExtensionAnalyzeBanPredictionTest {
     final org.eclipse.aether.artifact.Artifact banned =
         resolverArtifact(BANNED_ARTIFACT_ID, bannedJar);
     final org.eclipse.aether.graph.Dependency usedDependency =
-        new org.eclipse.aether.graph.Dependency(used, "compile");
+        new org.eclipse.aether.graph.Dependency(used, COMPILE_SCOPE);
     final org.eclipse.aether.graph.Dependency bannedDependency =
         new org.eclipse.aether.graph.Dependency(banned, RUNTIME_SCOPE);
     final org.apache.maven.artifact.Artifact liveUsed =
         org.apache.maven.RepositoryUtils.toArtifact(used);
-    liveUsed.setScope("compile");
+    liveUsed.setScope(COMPILE_SCOPE);
     final org.apache.maven.artifact.Artifact liveBanned =
         org.apache.maven.RepositoryUtils.toArtifact(banned);
     liveBanned.setScope(RUNTIME_SCOPE);
@@ -1397,6 +1414,11 @@ final class NoExtensionAnalyzeBanPredictionTest {
         root,
         usedDependency,
         productionOutput);
+  }
+
+  /** WHY: Shares the detached Analyze fixture with direct publisher boundary checks. */
+  /* package */ static Fixture publicationFixture(final Path fixtureParent) throws IOException {
+    return fixture(fixtureParent, USED_TRACE, false, false, false);
   }
 
   private static Path jar(
@@ -1450,7 +1472,9 @@ final class NoExtensionAnalyzeBanPredictionTest {
     return path;
   }
 
-  private static void addClassToJar(final Path path, final String className) throws IOException {
+  /** WHY: Shares the fixture archive writer with focused boundary checks. */
+  /* package */ static void addClassToJar(final Path path, final String className)
+      throws IOException {
     addClassToJar(path, className, null);
   }
 
@@ -1550,7 +1574,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
     };
   }
 
-  private record Fixture(
+  /* default */ record Fixture(
       MavenProject project,
       MavenSession session,
       DefaultRepositorySystemSession repositorySession,
@@ -1559,15 +1583,15 @@ final class NoExtensionAnalyzeBanPredictionTest {
       DefaultDependencyNode root,
       org.eclipse.aether.graph.Dependency usedDependency,
       Path productionOutput) {
-    private AnalysisOptions options(final List<String> bans) {
+    /* package */ AnalysisOptions options(final List<String> bans) {
       return options(bans, false);
     }
 
-    private AnalysisOptions options(final List<String> bans, final boolean trim) {
+    /* package */ AnalysisOptions options(final List<String> bans, final boolean trim) {
       return options(bans, trim, false);
     }
 
-    private AnalysisOptions options(
+    /* package */ AnalysisOptions options(
         final List<String> bans, final boolean trim, final boolean conservativeServiceRoots) {
       return new AnalysisOptions(
           List.of(trace.toFile()),

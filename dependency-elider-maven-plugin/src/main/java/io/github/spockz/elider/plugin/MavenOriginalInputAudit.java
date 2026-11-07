@@ -72,6 +72,18 @@ final class MavenOriginalInputAudit {
     }
   }
 
+  static void verifyBanFreshness(
+      final MavenBanAuditContext auditContext,
+      final MavenProject project,
+      final MavenSession session)
+      throws IOException {
+    auditContext.verifyArtifactBytes();
+    final Inventory inventory = auditContext.inventory();
+    if (inventory != null) {
+      verifyCaptureFresh(inventory, project, session);
+    }
+  }
+
   private static BanishedDependencyOriginalModel requireCapture(
       final MavenProject liveProject, final MavenSession session) throws IOException {
     Objects.requireNonNull(liveProject, "liveProject");

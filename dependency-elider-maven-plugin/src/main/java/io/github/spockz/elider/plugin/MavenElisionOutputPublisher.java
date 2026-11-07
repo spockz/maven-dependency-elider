@@ -22,7 +22,7 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 
 /** Publishes effective analysis reports, Maven views, and the resolver plan. */
-@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.GodClass", "PMD.TooManyMethods"})
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 // Coordinates independent per-file outputs with the final Maven-view update.
 final class MavenElisionOutputPublisher {
   private MavenElisionOutputPublisher() {
@@ -30,22 +30,22 @@ final class MavenElisionOutputPublisher {
   }
 
   static void publish(final Request request) throws IOException, MojoFailureException {
-    if (request.banPlan().requested()) {
-      if (request.applicationBinding() == null) {
-        throw new MojoFailureException("Elide ban publication has no live Maven view binding");
-      }
-      request.banPlan().verifyContext(request.applicationBinding().resolutionContext());
-      request.applicationBinding().verifyFresh(request.project());
-      request.banPlan().verifyAuditFresh(request.project(), request.session());
-    }
     MavenElisionOutputLogger.passThroughWarnings(request.log(), request.analysis());
     final ExclusionReview exclusionReview =
         ExclusionReview.capture(request.project(), request.session());
     final ElisionAnalysisModel.ApplyPlan plan =
         MavenArtifactInventory.plan(request.project(), request.analysis());
     if (request.banPlan().requested()) {
-      MavenBanPublicationVerifier.verify(
-          request.banPlan(), request.applicationBinding(), plan, request.analysis());
+      if (request.applicationBinding() == null) {
+        throw new MojoFailureException("Elide ban publication has no live Maven view binding");
+      }
+      MavenBanClassProviderClosure.verifyPublication(
+          request.banPlan(),
+          request.applicationBinding(),
+          plan,
+          request.analysis(),
+          request.project(),
+          request.session());
     }
     final MavenVulnerabilityAssessment.Result assessment =
         publishReportsAndViews(request, plan, exclusionReview);
@@ -268,10 +268,6 @@ final class MavenElisionOutputPublisher {
     final Set<Artifact> originalResolvedArtifacts = resolvedArtifactView(project);
     final Map<Artifact, File> originalFiles = originalArtifactFiles(plan);
     try {
-      if (request.banPlan().requested()) {
-        request.applicationBinding().verifyFresh(project);
-        request.banPlan().verifyAuditFresh(project, request.session());
-      }
       MavenArtifactViewUpdater.apply(plan, request.analysis().trimResult().records());
       final Set<Artifact> retained = new LinkedHashSet<>(plan.resolvedArtifacts());
       project.setResolvedArtifacts(retained);
