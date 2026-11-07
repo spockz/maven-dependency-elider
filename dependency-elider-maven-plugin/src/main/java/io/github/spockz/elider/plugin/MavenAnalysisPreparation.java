@@ -188,10 +188,9 @@ final class MavenAnalysisPreparation {
 
   private static void verifyCompleteness(final CompletenessOptions completeness)
       throws IOException {
-    if (completeness.sourceRootsComplete() && completeness.productionClassesComplete()) {
+    if (completeness.sourceRootsComplete()) {
       throw new IOException(
-          "elide.sourceRootsComplete=true and "
-              + "elide.productionClassesComplete=true are mutually exclusive");
+          "elide.sourceRootsComplete is no longer supported; bind elide to process-classes");
     }
   }
 

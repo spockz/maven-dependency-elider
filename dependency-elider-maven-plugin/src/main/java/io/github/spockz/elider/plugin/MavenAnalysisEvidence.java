@@ -47,11 +47,8 @@ final class MavenAnalysisEvidence {
     final ProductionAnalysisInputs.CompilerInputs compiler =
         ProductionAnalysisInputs.compilerInputs(
             project,
-            options.session(),
-            options.environment(),
             candidates,
             index,
-            completeness.sourceRootsComplete(),
             completeness.productionClassesComplete(),
             production.scan(),
             production.outputClassNames());

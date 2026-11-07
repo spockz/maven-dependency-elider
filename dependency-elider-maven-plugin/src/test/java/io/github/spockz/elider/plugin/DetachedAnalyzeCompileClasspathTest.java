@@ -92,15 +92,7 @@ final class DetachedAnalyzeCompileClasspathTest {
 
     final ProductionAnalysisInputs.CompilerInputs inputs =
         ProductionAnalysisInputs.compilerInputs(
-            detached,
-            null,
-            environment,
-            List.of(artifact),
-            index,
-            true,
-            false,
-            Optional.empty(),
-            Set.of());
+            detached, List.of(artifact), index, false, Optional.empty(), Set.of());
 
     assertAll(
         "detached compile classpath preserves source attribution and leaves the live model alone",

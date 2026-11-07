@@ -42,6 +42,10 @@ final class MavenElideExecution {
         return;
       }
       final MavenElideExecutionConfiguration configuration = configurationFactory.get();
+      if (configuration.analysisOptions().completeness().sourceRootsComplete()) {
+        throw new IOException(
+            "elide.sourceRootsComplete is no longer supported; bind elide to process-classes");
+      }
       BanishedDependencyLifecycleActivation.verifyElideConfiguration(
           session, project, mojoExecution, lifecycle.banishedDependencies());
       executeAnalysis(configuration);

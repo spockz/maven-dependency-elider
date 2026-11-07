@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.building.DefaultModelBuilderFactory;
@@ -290,6 +291,23 @@ final class MavenCompilerTargetSelectionTest {
         () ->
             assertThat(MavenCompilerSettings.analysisTargetOptions(project, systemEnvironment))
                 .containsExactly(TARGET_OPTION, "17"));
+  }
+
+  @Test
+  void inheritedUserReleasePropertyOverridesProjectRelease() throws IOException {
+    final MavenProject project = new MavenProject();
+    project.setBuild(new Build());
+    project.getProperties().setProperty("maven.compiler.release", "8");
+    final Properties defaults = new Properties();
+    defaults.setProperty("maven.compiler.release", "11");
+    final Properties userProperties = new Properties(defaults);
+    final AnalysisEnvironment environment =
+        environment(
+            Map.of(),
+            Map.of("maven.compiler.release", userProperties.getProperty("maven.compiler.release")));
+
+    assertThat(MavenCompilerSettings.platformReleaseOptionsWithEnvironment(project, environment))
+        .containsExactly(RELEASE_OPTION, "11");
   }
 
   private MavenProject effectiveProject(final String fileName, final String pomXml)

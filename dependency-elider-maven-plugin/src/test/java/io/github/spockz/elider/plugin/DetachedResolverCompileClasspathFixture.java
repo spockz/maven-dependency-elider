@@ -116,15 +116,7 @@ final class DetachedResolverCompileClasspathFixture {
     final ArtifactClassIndex index = new JarIndexScanner().scan(List.of(artifact));
     final ProductionAnalysisInputs.CompilerInputs inputs =
         ProductionAnalysisInputs.compilerInputs(
-            context.project(),
-            null,
-            environment,
-            List.of(artifact),
-            index,
-            true,
-            false,
-            Optional.empty(),
-            Set.of());
+            context.project(), List.of(artifact), index, false, Optional.empty(), Set.of());
     return new Fixture(live, context, coordinate, library, nonClasspathArchive, inputs);
   }
 

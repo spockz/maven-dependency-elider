@@ -180,6 +180,10 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   @Override
   public void execute() throws MojoFailureException {
     LegacyRetentionSetting.rejectIfConfigured(project, session, mojoExecution);
+    if (sourceRootsComplete) {
+      throw new MojoFailureException(
+          "elide.sourceRootsComplete is no longer supported; bind elide to process-classes");
+    }
     if (shouldSkipAnalysis()) {
       return;
     }

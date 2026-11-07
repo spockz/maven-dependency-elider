@@ -169,7 +169,7 @@ final class ADR0008MavenPreconditionInventoryTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void capturesProductionAndTestSourceClassesAndAllDeclaredFileRoots() throws IOException {
+  void capturesCompiledOutputAndDeclaredResourcesWithoutScanningSourceRoots() throws IOException {
     final Fixture fixture = fixture();
     final Path productionSource =
         writeSource(
@@ -194,18 +194,10 @@ final class ADR0008MavenPreconditionInventoryTest {
 
     assertThat(snapshot.complete()).isTrue();
     assertThat(snapshot.classProviders().providers())
-        .anySatisfy(
-            provider -> {
-              assertThat(provider.path()).isEqualTo(productionSource);
-              assertThat(provider.kind()).isEqualTo(ProviderKind.APPLICATION_SOURCE_FILE);
-              assertThat(provider.discoveredClassNames()).contains("app.Main", "app.Main$Nested");
-            })
-        .anySatisfy(
-            provider -> {
-              assertThat(provider.path()).isEqualTo(testSource);
-              assertThat(provider.kind()).isEqualTo(ProviderKind.APPLICATION_SOURCE_FILE);
-              assertThat(provider.discoveredClassNames()).contains("test.TestOnly");
-            })
+        .noneMatch(
+            provider ->
+                provider.path().equals(productionSource) || provider.path().equals(testSource));
+    assertThat(snapshot.classProviders().providers())
         .anySatisfy(
             provider -> {
               assertThat(provider.path()).isEqualTo(outputClass);
@@ -365,7 +357,7 @@ final class ADR0008MavenPreconditionInventoryTest {
     }
 
     @Test
-    void compilerGeneratedDefaultSourceRootsAreInventoriedAndRevalidated() throws IOException {
+    void generatedSourceRootsAreNotScannedOrRevalidatedAtProcessClasses() throws IOException {
       final Fixture fixture = fixture("compiler-generated-default-roots");
       final Path productionRoot =
           fixture.productionOutput().getParent().resolve("generated-sources/annotations");
@@ -386,22 +378,14 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       assertThat(snapshot.complete()).isTrue();
       assertThat(snapshot.classProviders().providers())
-          .anySatisfy(
-              provider -> {
-                assertThat(provider.path()).isEqualTo(productionSource);
-                assertThat(provider.discoveredClassNames()).contains("generated.Generated");
-              })
-          .anySatisfy(
-              provider -> {
-                assertThat(provider.path()).isEqualTo(testSource);
-                assertThat(provider.discoveredClassNames()).contains("generated.GeneratedTest");
-              });
+          .noneMatch(
+              provider ->
+                  provider.path().equals(productionSource) || provider.path().equals(testSource));
 
       writeSource(testRoot, "AddedLater.java", "package generated; public class AddedLater {}\n");
 
-      assertThatThrownBy(() -> verifyFresh(fixture, snapshot, List.of(), List.of()))
-          .isInstanceOf(IOException.class)
-          .hasMessageContaining(INVENTORY_CHANGED);
+      assertThatCode(() -> verifyFresh(fixture, snapshot, List.of(), List.of()))
+          .doesNotThrowAnyException();
     }
 
     @Test
@@ -437,7 +421,7 @@ final class ADR0008MavenPreconditionInventoryTest {
     }
 
     @Test
-    void interfaceAssertionHelperClassMakesSourceInventoryIncomplete() throws IOException {
+    void interfaceAssertionHelperClassIsCoveredByCompiledClassOutput() throws IOException {
       final Fixture fixture = fixture("interface-assertion");
       final Path source =
           writeSource(
@@ -466,9 +450,12 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
 
-      assertThat(snapshot.complete()).isFalse();
-      assertThat(snapshot.classProviders().detail())
-          .contains("assertions in interfaces can create compiler-generated class providers");
+      assertThat(snapshot.complete()).isTrue();
+      assertThat(snapshot.classProviders().providers())
+          .anySatisfy(
+              provider ->
+                  assertThat(provider.path())
+                      .isEqualTo(fixture.productionOutput().resolve("app/Assertive$1.class")));
     }
   }
 
@@ -825,9 +812,8 @@ final class ADR0008MavenPreconditionInventoryTest {
 
     @Test
     @DisplayName(
-        "ADR-0008/trusted COMPLETE inventory preserves generated sources with compile processors")
-    void trustedCompleteInventoryCapturesGeneratedSourcesWithCompileProcessorPaths()
-        throws IOException {
+        "ADR-0008/trusted COMPLETE inventory uses compiled providers with compile processors")
+    void trustedCompleteInventoryIgnoresSourceRootsWithCompileProcessorPaths() throws IOException {
       final Fixture fixture = fixture("trusted-complete-generated-processor");
       Files.writeString(
           fixture.productionSources().resolve("Generated.java"),
@@ -864,10 +850,9 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       assertThat(snapshot.complete()).isTrue();
       assertThat(snapshot.classProviders().providers())
-          .anySatisfy(
+          .noneMatch(
               provider ->
-                  assertThat(provider.path())
-                      .isEqualTo(fixture.productionSources().resolve("Generated.java")));
+                  provider.path().equals(fixture.productionSources().resolve("Generated.java")));
 
       testCompile.setConfiguration(new Xpp3Dom(CONFIGURATION_ELEMENT));
       final MavenPreconditionInventory.Snapshot unsafe =
@@ -880,6 +865,61 @@ final class ADR0008MavenPreconditionInventoryTest {
               List.of());
       assertThat(unsafe.complete()).isFalse();
       assertThat(unsafe.classProviders().detail()).contains("default-testCompile");
+    }
+
+    @Test
+    void testOnlySourceSuppressesProofUntilTestCompilationIsSkipped() throws IOException {
+      final Fixture fixture = fixture("future-test-source");
+      final Path testOnlySource =
+          writeSource(
+              fixture.testSources(),
+              "FuturePrerequisite.java",
+              "package testonly; public final class FuturePrerequisite {}\n");
+      final ElisionAnalysisModel.Analysis trusted =
+          trustedProcessClassesAnalysis(fixture.analysis());
+      fixture.project().getProperties().setProperty("maven.test.skip", TRUE);
+      final Path compiledTestClass = fixture.testOutput().resolve("testonly/Compiled.class");
+      writeClass(compiledTestClass, "testonly/Compiled");
+      final MavenSession testSession = sessionForGoals(fixture.project(), GOAL_CLEAN, "test");
+      testSession.getUserProperties().setProperty("maven.test.skip", FALSE);
+
+      final MavenPreconditionInventory.Snapshot beforeTestCompile =
+          MavenPreconditionInventory.capture(
+              fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
+
+      assertThat(beforeTestCompile.complete()).isFalse();
+      assertThat(beforeTestCompile.classProviders().detail())
+          .contains("Maven test compilation can add providers after process-classes");
+      assertThat(beforeTestCompile.classProviders().providers())
+          .noneMatch(provider -> provider.path().equals(testOnlySource));
+
+      testSession.getUserProperties().setProperty("maven.test.skip", TRUE);
+      final MavenPreconditionInventory.Snapshot testCompilationSkipped =
+          MavenPreconditionInventory.capture(
+              fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
+      assertThat(testCompilationSkipped.complete()).isTrue();
+      assertThat(testCompilationSkipped.classProviders().providers())
+          .anySatisfy(provider -> assertThat(provider.path()).isEqualTo(compiledTestClass));
+
+      final Plugin compiler = compilerPlugin();
+      final PluginExecution testCompile = new PluginExecution();
+      testCompile.setId(DEFAULT_TEST_COMPILE);
+      testCompile.setConfiguration(configuration("skip", TRUE));
+      compiler.addExecution(testCompile);
+      fixture.project().getBuild().addPlugin(compiler);
+      final MavenPreconditionInventory.Snapshot unmodeledCompilerSkip =
+          MavenPreconditionInventory.capture(
+              fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
+      assertThat(unmodeledCompilerSkip.complete()).isFalse();
+      assertThat(unmodeledCompilerSkip.classProviders().detail())
+          .contains("Maven Compiler Plugin test skip configuration is not modeled");
+
+      final MavenSession processClassesSession =
+          sessionForGoals(fixture.project(), GOAL_CLEAN, PROCESS_CLASSES_PHASE);
+      final MavenPreconditionInventory.Snapshot beforeTestPhaseRequested =
+          MavenPreconditionInventory.capture(
+              fixture.project(), processClassesSession, fixture.plan(), trusted, true, List.of());
+      assertThat(beforeTestPhaseRequested.complete()).isTrue();
     }
 
     private static ElisionAnalysisModel.Analysis trustedProcessClassesAnalysis(
@@ -1337,6 +1377,7 @@ final class ADR0008MavenPreconditionInventoryTest {
     void trustedCaptureKeepsRequestedPackageValidation() throws IOException {
       final Fixture packageWithoutClean = fixture("trusted-package-without-clean");
       final MavenSession packageSession = sessionForGoals(packageWithoutClean.project(), "package");
+      packageSession.getUserProperties().setProperty("maven.test.skip", TRUE);
       assertThatThrownBy(
               () ->
                   MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
@@ -1351,6 +1392,7 @@ final class ADR0008MavenPreconditionInventoryTest {
       unsafeShade.project().getBuild().addPlugin(shade);
       final MavenSession cleanPackageSession =
           sessionForGoals(unsafeShade.project(), GOAL_CLEAN, "package");
+      cleanPackageSession.getUserProperties().setProperty("maven.test.skip", TRUE);
       assertThatThrownBy(
               () ->
                   MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
@@ -1836,7 +1878,7 @@ final class ADR0008MavenPreconditionInventoryTest {
   }
 
   @Test
-  void revalidationRejectsChangedJavaSourceBytes() throws IOException {
+  void revalidationIgnoresJavaSourceBytesOutsideProviderRoots() throws IOException {
     final Fixture fixture = fixture();
     final Path source =
         writeSource(
@@ -1844,9 +1886,8 @@ final class ADR0008MavenPreconditionInventoryTest {
     final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
     Files.writeString(source, "package app; class Snapshot { static class Added {} }\n");
 
-    assertThatThrownBy(() -> verifyFresh(fixture, snapshot, List.of(), List.of()))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining(INVENTORY_CHANGED);
+    assertThatCode(() -> verifyFresh(fixture, snapshot, List.of(), List.of()))
+        .doesNotThrowAnyException();
   }
 
   @Test
@@ -1894,7 +1935,7 @@ final class ADR0008MavenPreconditionInventoryTest {
   }
 
   @Test
-  void indeterminateRootExistenceMakesInventoryIncomplete() throws IOException {
+  void indeterminateSourceRootExistenceDoesNotAffectProviderInventory() throws IOException {
     assumeUnixEnvironment();
     final Fixture fixture = fixture();
     final Path unqueryableRoot = fixture.productionSources().resolve("x".repeat(300));
@@ -1904,9 +1945,7 @@ final class ADR0008MavenPreconditionInventoryTest {
 
     final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
 
-    assertThat(snapshot.complete()).isFalse();
-    assertThat(snapshot.classProviders().detail())
-        .contains("Cannot determine declared Maven provider root state");
+    assertThat(snapshot.complete()).isTrue();
   }
 
   @Test
@@ -2021,7 +2060,7 @@ final class ADR0008MavenPreconditionInventoryTest {
   }
 
   @Test
-  void nonJavaSourceRootMemberIsRetainedAsAHashedResourceProvider() throws IOException {
+  void nonJavaSourceRootMemberIsNotACompiledResourceProvider() throws IOException {
     final Fixture fixture = fixture();
     Files.createDirectories(fixture.productionSources());
     Files.writeString(fixture.productionSources().resolve("resource.txt"), "resource body");
@@ -2030,27 +2069,29 @@ final class ADR0008MavenPreconditionInventoryTest {
 
     assertThat(snapshot.complete()).isTrue();
     assertThat(snapshot.classProviders().providers())
-        .anySatisfy(
+        .noneMatch(
             provider ->
-                assertThat(provider.path())
-                    .isEqualTo(fixture.productionSources().resolve("resource.txt")));
+                provider.path().equals(fixture.productionSources().resolve("resource.txt")));
   }
 
   @Test
-  @DisplayName("ADR-0008/unparsed source languages keep untrusted inventories incomplete")
-  void unparsedSourceLanguageKeepsInventoryIncomplete() throws IOException {
+  @DisplayName("ADR-0008/uncompiled source files are outside provider inventory")
+  void unparsedSourceLanguageDoesNotEnterProviderInventory() throws IOException {
     final Fixture fixture = fixture();
     Files.createDirectories(fixture.productionSources());
     Files.writeString(fixture.productionSources().resolve("generated.scala"), "class Unknown");
 
     final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
 
-    assertThat(snapshot.complete()).isFalse();
-    assertThat(snapshot.classProviders().detail()).contains("Unsupported non-Java source");
+    assertThat(snapshot.complete()).isTrue();
+    assertThat(snapshot.classProviders().providers())
+        .noneMatch(
+            provider ->
+                provider.path().equals(fixture.productionSources().resolve("generated.scala")));
   }
 
   @Test
-  void localAndAnonymousJavaClassesMakeInventoryIncomplete() throws IOException {
+  void localAndAnonymousJavaSourceIsNotScannedBeforeCompilation() throws IOException {
     final Fixture fixture = fixture();
     writeSource(
         fixture.productionSources(),
@@ -2060,14 +2101,15 @@ final class ADR0008MavenPreconditionInventoryTest {
 
     final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
 
-    assertThat(snapshot.complete()).isFalse();
-    assertThat(snapshot.classProviders().detail())
-        .contains("Unsupported Java source declaration")
-        .containsAnyOf("local classes", "anonymous classes");
+    assertThat(snapshot.complete()).isTrue();
+    assertThat(snapshot.classProviders().providers())
+        .noneMatch(
+            provider ->
+                provider.path().equals(fixture.productionSources().resolve("LocalTypes.java")));
   }
 
   @Test
-  void enumSwitchCompilerGeneratedClassWithoutOutputMakesInventoryIncomplete() throws IOException {
+  void enumSwitchSourceWithoutCompiledOutputIsNotInventoried() throws IOException {
     final Fixture fixture = fixture();
     writeSource(
         fixture.productionSources(),
@@ -2075,28 +2117,12 @@ final class ADR0008MavenPreconditionInventoryTest {
         "package app; enum Mode { A, B } "
             + "class Holder { int value(Mode mode) { return switch (mode) { "
             + "case A -> 1; case B -> 2; }; } }\n");
-    final VulnerabilitySymbolMapping mapping =
-        new VulnerabilitySymbolMapping(
-            TEST_CVE,
-            fixture.coordinate(),
-            TEST_RANGE,
-            Set.of(),
-            null,
-            ConfidenceLevel.HIGH,
-            PREREQUISITE_COORDINATE,
-            "app.Holder$1");
-
     final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
 
-    assertThat(snapshot.complete()).isFalse();
-    assertThat(snapshot.classProviders().detail()).contains("compiler-generated class providers");
-    assertThatThrownBy(
-            () ->
-                PreconditionProof.prove(
-                    ExplicitEvidenceTestSupport.genericPrerequisiteFinding(mapping),
-                    mapping.affectedCoordinate(),
-                    snapshot.classProviders()))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(snapshot.complete()).isTrue();
+    assertThat(snapshot.classProviders().providers())
+        .noneMatch(
+            provider -> provider.path().equals(fixture.productionSources().resolve("Holder.java")));
   }
 
   @Test

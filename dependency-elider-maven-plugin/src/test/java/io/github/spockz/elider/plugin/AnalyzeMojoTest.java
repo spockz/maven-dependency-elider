@@ -14,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
@@ -39,6 +40,33 @@ final class AnalyzeMojoTest {
 
   /** Temporary directory for ZIP fixtures and explicit trace files. */
   @TempDir private Path tempDir;
+
+  @Test
+  void sourceRootsCompleteFailsBeforeAnalysisWithMigrationGuidance() throws Exception {
+    final MavenProject project = AnalyzeMojoTestArtifactSupport.project(tempDir, "early-rejection");
+    final AnalyzeMojo mojo = new AnalyzeMojo();
+    final AtomicBoolean analysisStarted = new AtomicBoolean();
+    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, "sourceRootsComplete", true);
+    AnalyzeMojoTestFieldSupport.set(
+        mojo,
+        "predictionService",
+        (AnalyzePredictionService)
+            (currentProject, options, resolver) -> {
+              analysisStarted.set(true);
+              return null;
+            });
+
+    final Throwable failure = Assertions.catchThrowable(mojo::execute);
+    assertAll(
+        "obsolete source completeness fails before prediction",
+        () ->
+            assertThat(failure)
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("elide.sourceRootsComplete is no longer supported")
+                .hasMessageContaining("bind elide to process-classes"),
+        () -> assertThat(analysisStarted).isFalse());
+  }
 
   @Test
   @SuppressWarnings("PMD.AvoidDuplicateLiterals")

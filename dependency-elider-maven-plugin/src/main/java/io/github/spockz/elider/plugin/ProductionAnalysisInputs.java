@@ -17,7 +17,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
-import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 
 /** Resolves compiler and production bytecode roots before artifact pruning. */
@@ -29,36 +28,11 @@ final class ProductionAnalysisInputs {
 
   private ProductionAnalysisInputs() {}
 
-  /** Resolves source roots or retains all compiler-visible classes. */
+  /** Retains all compiler-visible classes or resolves compiled production output. */
   /* default */ static CompilerInputs compilerInputs(
       final MavenProject project,
-      final MavenSession session,
       final List<ArtifactFileRef> candidates,
       final ArtifactClassIndex index,
-      final boolean sourceRootsComplete,
-      final boolean productionClassesComplete,
-      final Optional<BytecodeReferenceScan> bytecodeScan,
-      final Set<String> outputClassNames)
-      throws IOException {
-    return compilerInputs(
-        project,
-        session,
-        null,
-        candidates,
-        index,
-        sourceRootsComplete,
-        productionClassesComplete,
-        bytecodeScan,
-        outputClassNames);
-  }
-
-  /* default */ static CompilerInputs compilerInputs(
-      final MavenProject project,
-      final MavenSession session,
-      final AnalysisEnvironment environment,
-      final List<ArtifactFileRef> candidates,
-      final ArtifactClassIndex index,
-      final boolean sourceRootsComplete,
       final boolean productionClassesComplete,
       final Optional<BytecodeReferenceScan> bytecodeScan,
       final Set<String> outputClassNames)
@@ -74,27 +48,7 @@ final class ProductionAnalysisInputs {
         compileVisibleArtifacts(candidates, normalizedPaths(classpath));
     final Set<String> requiredClasses = new HashSet<>();
     final Map<ArtifactFileRef, Set<String>> indexedClasses = index.classesByArtifact();
-    if (sourceRootsComplete) {
-      final List<Path> sources =
-          JavaSourceReferenceScanner.sourceFiles(project.getCompileSourceRoots());
-      if (environment == null) {
-        SourceRootCompleteness.verifySourceRootsComplete(project, session, sources);
-      } else {
-        SourceRootCompleteness.verifySourceRootsComplete(project, environment, sources);
-      }
-      if (sources.stream().anyMatch(ProductionAnalysisInputs::isModuleDescriptor)) {
-        throw new IOException("Source attribution does not support Java module descriptors");
-      }
-      final List<String> options =
-          environment == null
-              ? MavenCompilerSettings.options(project, session, classpath)
-              : MavenCompilerSettings.optionsWithEnvironment(project, environment, classpath);
-      final JavaSourceReferenceScanner.SourceScan sourceScan =
-          new JavaSourceReferenceScanner().scanFilesDetailed(sources, classpath, options);
-      requiredClasses.addAll(sourceScan.referencedTypes());
-      return inputsForRequiredClasses(
-          compileVisibleArtifacts, indexedClasses, requiredClasses, sourceScan.declaredTypes());
-    } else if (productionClassesComplete) {
+    if (productionClassesComplete) {
       return postCompileBytecodeInputs(
           compileVisibleArtifacts, indexedClasses, bytecodeScan, outputClassNames);
     } else {
@@ -168,11 +122,6 @@ final class ProductionAnalysisInputs {
       final Map<ArtifactFileRef, Set<String>> indexedClasses) {
     return indexedClasses.getOrDefault(artifact, Set.of()).stream()
         .anyMatch(requiredClasses::contains);
-  }
-
-  /* package */ static boolean isModuleDescriptor(final Path source) {
-    final Path fileName = source.getFileName();
-    return fileName != null && "module-info.java".equals(fileName.toString());
   }
 
   /* package */ static Set<Path> normalizedPaths(final List<String> classpath) throws IOException {

@@ -115,6 +115,12 @@ final class MavenPreconditionGenerationGuard {
   /** WHY: The standard test compiler goal is inspected. */
   private static final String GOAL_TEST_COMPILE = "testCompile";
 
+  /** WHY: Maven skips test compilation only when this property is true. */
+  private static final String MAVEN_TEST_SKIP = "maven.test.skip";
+
+  /** WHY: Test compilation is a later default lifecycle boundary. */
+  private static final String PHASE_TEST_COMPILE = "test-compile";
+
   /** WHY: Maven lifecycle execution IDs identify built-in goals. */
   private static final String EXEC_DEFAULT_COMPILE = "default-compile";
 
@@ -300,6 +306,10 @@ final class MavenPreconditionGenerationGuard {
     }
     requireSafeGoalOrder(session);
     final int requestedPhaseIndex = LIFECYCLE_PHASES.indexOf(requestedDefaultPhase(session));
+    if (trustedProcessClasses
+        && requestedPhaseIndex >= LIFECYCLE_PHASES.indexOf(PHASE_TEST_COMPILE)) {
+      requireTestCompilationSkipped(project, session);
+    }
     requireSafeSurefireIfTestsRun(project, session, build);
     requireDeclaredRootsAndResourcesAreModeled(build);
     final boolean shadePackageWillRun =
@@ -578,6 +588,64 @@ final class MavenPreconditionGenerationGuard {
       requireManagedSurefireExecutions(activePlugin, managedPlugin);
     }
     requireSurefireVersion(activePlugin, managed);
+  }
+
+  private static void requireTestCompilationSkipped(
+      final MavenProject project, final MavenSession session) throws IOException {
+    if (hasCompilerTestSkipConfiguration(project)) {
+      throw unsupported("Maven Compiler Plugin test skip configuration is not modeled");
+    }
+    final String effectiveValue =
+        propertyValue(
+            project.getProperties(),
+            requestSystemProperties(session),
+            session.getSystemProperties(),
+            requestUserProperties(session),
+            session.getUserProperties());
+    if (!BOOLEAN_TRUE.equals(effectiveValue)) {
+      throw unsupported(
+          "Maven test compilation can add providers after process-classes; use"
+              + " maven.test.skip=true");
+    }
+  }
+
+  private static String propertyValue(final Properties... sources) {
+    String value = null;
+    for (final Properties source : sources) {
+      if (source != null && source.getProperty(MAVEN_TEST_SKIP) != null) {
+        value = source.getProperty(MAVEN_TEST_SKIP);
+      }
+    }
+    return value;
+  }
+
+  private static boolean hasCompilerTestSkipConfiguration(final MavenProject project) {
+    final Build build = project.getBuild();
+    final List<Plugin> plugins = new ArrayList<>(build.getPlugins());
+    if (build.getPluginManagement() != null) {
+      plugins.addAll(build.getPluginManagement().getPlugins());
+    }
+    for (final Plugin plugin : plugins) {
+      if (!isPlugin(plugin, COMPILER)) {
+        continue;
+      }
+      if (hasSkipValue(plugin.getConfiguration())) {
+        return true;
+      }
+      for (final PluginExecution execution : plugin.getExecutions()) {
+        if (EXEC_DEFAULT_TEST_COMPILE.equals(execution.getId())
+            || execution.getGoals().contains(GOAL_TEST_COMPILE)) {
+          if (hasSkipValue(execution.getConfiguration())) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasSkipValue(final Object configuration) {
+    return configuration instanceof Xpp3Dom dom && dom.getChild("skip") != null;
   }
 
   private static boolean isSurefire(final Plugin plugin) {
