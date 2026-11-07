@@ -6,46 +6,19 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.Analysis;
-import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
-import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.EffectiveAnalysis;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.PreparedAnalysis;
 import java.io.IOException;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.plugin.MojoFailureException;
 
 /** Computes effective graph reachability before staging outputs. */
 final class ElisionReachabilityEngine {
   private ElisionReachabilityEngine() {}
-
-  /* default */ static boolean requiresTierAwareMrjarTrim(final PreparedAnalysis prepared)
-      throws IOException {
-    final AnalysisOptions options = prepared.options();
-    if (!options.trim().enabled()) {
-      return false;
-    }
-    final Set<ArtifactCoordinate> retained = prepared.rawDecision().retainedArtifacts();
-    boolean hasMultiRelease = false;
-    boolean hasOtherCandidate = false;
-    for (final ArtifactSnapshot snapshot : prepared.resolvedSnapshots()) {
-      if (!retained.contains(snapshot.coordinate())
-          || !"jar".equals(snapshot.coordinate().type())
-          || !Set.of("compile", "runtime").contains(snapshot.coordinate().scope())) {
-        continue;
-      }
-      if (MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath())) {
-        hasMultiRelease = true;
-        if (MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING.equals(options.trim().mrjarStrategy())) {
-          return true;
-        }
-      } else {
-        hasOtherCandidate = true;
-      }
-    }
-    return hasMultiRelease && hasOtherCandidate;
-  }
 
   /* default */ static EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)
       throws IOException, MojoFailureException {
@@ -60,14 +33,26 @@ final class ElisionReachabilityEngine {
     MavenArtifactInventory.verifyPreparedInventory(prepared);
     ElisionDecision policyInput = rawDecision;
     ElisionDecision effectiveDecision = evaluation.effectiveDecision(rawDecision);
-    final Set<ArtifactCoordinate> forcedUnchanged =
-        initialUnchanged(prepared, evaluation, effectiveDecision);
+    final Set<ArtifactCoordinate> forcedUnchanged = initialUnchanged(evaluation);
+    final Optional<EffectiveAnalysis> noTrimResult =
+        failClosedNoTrimResult(
+            prepared,
+            banPlan,
+            evaluation,
+            rawDecision,
+            effectiveDecision,
+            forcedUnchanged,
+            binding);
+    if (noTrimResult.isPresent()) {
+      return noTrimResult.orElseThrow();
+    }
+    final Set<String> closureRoots = closureRoots(prepared, binding, effectiveDecision);
     Map<TrimArtifactRootKey, Set<String>> discoveredRoots = Map.of();
     TrimAnalysisResult analysis;
     while (true) {
       final TrimRequest trimRequest =
           TrimRequestFactory.fromPreparedAnalysis(
-              prepared, effectiveDecision.retainedArtifacts(), prepared.sourceRequiredClasses());
+              prepared, effectiveDecision.retainedArtifacts(), closureRoots);
       analysis =
           MavenDependencyTrimmer.analyzeInMemory(trimRequest, discoveredRoots, forcedUnchanged);
       banPlan.verifyRetainedClosure(prepared, effectiveDecision, analysis, forcedUnchanged);
@@ -102,6 +87,48 @@ final class ElisionReachabilityEngine {
     }
   }
 
+  private static Optional<EffectiveAnalysis> failClosedNoTrimResult(
+      final PreparedAnalysis prepared,
+      final MavenBanPlan banPlan,
+      final EffectiveGraphPolicy.Evaluation evaluation,
+      final ElisionDecision rawDecision,
+      final ElisionDecision effectiveDecision,
+      final Set<ArtifactCoordinate> forcedUnchanged,
+      final MavenElisionGraphBinding.Result binding)
+      throws IOException {
+    if (prepared.options().trim().enabled() || !evaluation.failClosed() || banPlan.requested()) {
+      return Optional.empty();
+    }
+    final TrimRequest request =
+        TrimRequestFactory.fromPreparedAnalysis(
+            prepared, effectiveDecision.retainedArtifacts(), prepared.sourceRequiredClasses());
+    final TrimExecutionEnvironment environment =
+        MavenDependencyTrimmer.executionEnvironment(request);
+    final TrimAnalysisResult analysis =
+        new TrimAnalysisResult(
+            Map.of(),
+            Map.of(),
+            Set.of(),
+            0,
+            environment.targetRelease(),
+            environment.runtimeRelease(),
+            List.of(),
+            List.of(),
+            Map.of());
+    return Optional.of(
+        new EffectiveAnalysis(
+            prepared,
+            banPlan,
+            evaluation,
+            rawDecision,
+            effectiveDecision,
+            forcedUnchanged,
+            analysis,
+            binding.inventoryFingerprint(),
+            binding.operationFingerprint(),
+            projection(binding, evaluation)));
+  }
+
   /* package */ static Analysis finishEffectiveOutputs(final EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
     return MavenEffectiveAnalysisReport.create(
@@ -109,15 +136,35 @@ final class ElisionReachabilityEngine {
   }
 
   private static Set<ArtifactCoordinate> initialUnchanged(
-      final PreparedAnalysis prepared,
-      final EffectiveGraphPolicy.Evaluation evaluation,
-      final ElisionDecision decision) {
+      final EffectiveGraphPolicy.Evaluation evaluation) {
     final Set<ArtifactCoordinate> unchanged = new LinkedHashSet<>();
     addUnchangedPolicyArtifacts(evaluation, unchanged);
-    if (!prepared.options().trim().enabled()) {
-      unchanged.addAll(decision.retainedArtifacts());
-    }
     return unchanged;
+  }
+
+  private static Set<String> closureRoots(
+      final PreparedAnalysis prepared,
+      final MavenElisionGraphBinding.Result binding,
+      final ElisionDecision decision) {
+    final Set<String> roots = new LinkedHashSet<>(prepared.sourceRequiredClasses());
+    if (!prepared.options().trim().enabled()
+        && binding.pair() != null
+        && !decision.elidedArtifacts().isEmpty()) {
+      prepared
+          .index()
+          .classesByArtifact()
+          .forEach(
+              (artifact, classes) -> {
+                final ArtifactCoordinate coordinate = artifact.coordinate();
+                if (decision.retainedArtifacts().contains(coordinate)
+                    && MavenDependencyTrimmer.JAR_TYPE.equals(coordinate.type())
+                    && MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(
+                        coordinate.scope())) {
+                  roots.addAll(classes);
+                }
+              });
+    }
+    return Set.copyOf(roots);
   }
 
   private static ResolverArtifactGraphProjection projection(

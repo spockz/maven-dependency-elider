@@ -43,6 +43,9 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
   /** Transitive fixture artifacts use Maven runtime scope. */
   private static final String RUNTIME_SCOPE = "runtime";
 
+  /** Entry shared by duplicate-owner fixtures and their expected archives. */
+  private static final String EXTRA_CLASS_ENTRY = "closure/a/Extra.class";
+
   /** Empty metadata scan reused when no artifact-specific roots are configured. */
   private static final DependencyDynamicRoots.RootScan EMPTY_ROOT_SCAN =
       new DependencyDynamicRoots.RootScan(Set.of(), true);
@@ -116,20 +119,33 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         release,
         firstArtifactScope,
         false,
-        RUNTIME_SCOPE);
+        RUNTIME_SCOPE,
+        false);
+  }
+
+  /** Builds duplicate owners with an unrelated class in the second archive. */
+  protected Fixture fixtureWithDuplicateAndUnusedSecond() throws IOException {
+    return fixtureWithDuplicateAndUnusedSecond(21);
+  }
+
+  /** Builds runtime duplicate owners for a selected target release. */
+  protected Fixture fixtureWithDuplicateAndUnusedSecond(final int release) throws IOException {
+    return fixtureWithOptions(
+        true, false, false, false, release, RUNTIME_SCOPE, false, RUNTIME_SCOPE, true);
   }
 
   /** Builds two duplicate variants that link to different dropped artifacts. */
   protected Fixture fixtureWithDistinctDuplicateDependencies() throws IOException {
-    return fixtureWithOptions(true, false, false, false, 21, COMPILE_SCOPE, true, RUNTIME_SCOPE);
+    return fixtureWithOptions(
+        true, false, false, false, 21, COMPILE_SCOPE, true, RUNTIME_SCOPE, false);
   }
 
   /** Builds duplicate owners in compile and provided scope. */
   protected Fixture fixtureWithProvidedDuplicate() throws IOException {
-    return fixtureWithOptions(true, false, false, false, 21, COMPILE_SCOPE, false, "provided");
+    return fixtureWithOptions(
+        true, false, false, false, 21, COMPILE_SCOPE, false, "provided", false);
   }
 
-  @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.NPathComplexity"})
   private Fixture fixtureWithOptions(
       final boolean duplicateClass,
       final boolean serviceRootInA,
@@ -138,7 +154,8 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final int release,
       final String firstArtifactScope,
       final boolean distinctDuplicateDependencies,
-      final String secondArtifactScope)
+      final String secondArtifactScope,
+      final boolean unusedSecond)
       throws IOException {
     final Path sourceDirectory = Files.createDirectories(temporaryDirectory.resolve("sources"));
     final Path classes = Files.createDirectories(temporaryDirectory.resolve("classes"));
@@ -146,14 +163,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         writeSource(
             sourceDirectory,
             "closure/a/Entry.java",
-            resourceOnlyB
-                ? "package closure.a; public class Entry {}"
-                : optionalAsmReference
-                    ? "package closure.a; public class Entry { "
-                        + "public org.objectweb.asm.Label optional; "
-                        + "public Object make() { return new closure.b.Middle(); } }"
-                    : "package closure.a; public class Entry { "
-                        + "public Object make() { return new closure.b.Middle(); } }");
+            entrySource(resourceOnlyB, optionalAsmReference));
     final Path optionalAsmSource =
         optionalAsmReference
             ? writeSource(
@@ -163,12 +173,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
             : null;
     final Path extraSource =
         writeSource(
-            sourceDirectory,
-            "closure/a/Extra.java",
-            distinctDuplicateDependencies
-                ? "package closure.a; public class Extra { "
-                    + "public Object make() { return new closure.c.Leaf(); } }"
-                : "package closure.a; public class Extra {}");
+            sourceDirectory, "closure/a/Extra.java", extraSource(distinctDuplicateDependencies));
     final Path secondSource =
         writeSource(
             sourceDirectory,
@@ -190,6 +195,13 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     final Path unusedSecondSource =
         writeSource(
             sourceDirectory, "closure/b/Unused.java", "package closure.b; public class Unused {}");
+    final Path unusedFirstSource =
+        unusedSecond
+            ? writeSource(
+                sourceDirectory,
+                "closure/a/Unused.java",
+                "package closure.a; public class Unused {}")
+            : null;
     final List<Path> sources =
         new ArrayList<>(
             List.of(
@@ -200,6 +212,9 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
                 fourthSource,
                 fifthSource,
                 unusedSecondSource));
+    if (unusedFirstSource != null) {
+      sources.add(unusedFirstSource);
+    }
     if (optionalAsmSource != null) {
       sources.add(optionalAsmSource);
     }
@@ -208,7 +223,9 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         jar(
             "a.jar",
             classes,
-            List.of("closure/a/Entry.class", "closure/a/Extra.class"),
+            unusedSecond
+                ? List.of("closure/a/Entry.class", EXTRA_CLASS_ENTRY, "closure/a/Unused.class")
+                : List.of("closure/a/Entry.class", EXTRA_CLASS_ENTRY),
             serviceRootInA
                 ? Map.of(
                     "data/fixture.txt", "preserve this resource\n",
@@ -223,11 +240,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
           classes, List.of(extraSource), "-classpath", classes.toString());
     }
     final List<String> secondClasses =
-        resourceOnlyB
-            ? List.of()
-            : duplicateClass
-                ? List.of("closure/a/Extra.class", "closure/b/Middle.class")
-                : List.of("closure/b/Middle.class", "closure/b/Unused.class");
+        secondArtifactClasses(resourceOnlyB, duplicateClass, unusedSecond);
     final Path secondArtifactPath =
         jar(
             "b.jar",
@@ -246,6 +259,37 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         release,
         firstArtifactScope,
         secondArtifactScope);
+  }
+
+  private static String entrySource(
+      final boolean resourceOnlyB, final boolean optionalAsmReference) {
+    if (resourceOnlyB) {
+      return "package closure.a; public class Entry {}";
+    }
+    final String asmField = optionalAsmReference ? "public org.objectweb.asm.Label optional; " : "";
+    return "package closure.a; public class Entry { "
+        + asmField
+        + "public Object make() { return new closure.b.Middle(); } }";
+  }
+
+  private static String extraSource(final boolean distinctDuplicateDependencies) {
+    return distinctDuplicateDependencies
+        ? "package closure.a; public class Extra { "
+            + "public Object make() { return new closure.c.Leaf(); } }"
+        : "package closure.a; public class Extra {}";
+  }
+
+  private static List<String> secondArtifactClasses(
+      final boolean resourceOnlyB, final boolean duplicateClass, final boolean unusedSecond) {
+    if (resourceOnlyB) {
+      return List.of();
+    }
+    if (!duplicateClass) {
+      return List.of("closure/b/Middle.class", "closure/b/Unused.class");
+    }
+    return unusedSecond
+        ? List.of(EXTRA_CLASS_ENTRY, "closure/b/Middle.class", "closure/b/Unused.class")
+        : List.of(EXTRA_CLASS_ENTRY, "closure/b/Middle.class");
   }
 
   /** Builds a fixture whose first archive is visible only at runtime. */

@@ -14,7 +14,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.jar.JarFile;
+import java.util.stream.Collectors;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
@@ -201,8 +204,8 @@ final class MavenElisionServiceEffectiveAnalysisTest
             temporaryDirectory,
             fixture.snapshot("b").filePath(),
             "b-with-unrelated-trim-control.jar",
-            java.util.Map.of(),
-            java.util.Map.of("closure/b/Discarded.class", emptyClassBytes("closure/b/Discarded")));
+            Map.of(),
+            Map.of("closure/b/Discarded.class", emptyClassBytes("closure/b/Discarded")));
     NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(
         fixture, "b", secondArtifactWithTrimControl);
     final Path trace = temporaryDirectory.resolve("native-image-unknown-mixed.lst");
@@ -240,8 +243,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
             .orElseThrow();
     assertThat(artifactB.totalClasses()).isEqualTo(3);
     assertThat(artifactB.retainedClasses()).isEqualTo(2);
-    try (java.util.jar.JarFile archiveB =
-        new java.util.jar.JarFile(artifactB.trimmedPath().toFile())) {
+    try (JarFile archiveB = new JarFile(artifactB.trimmedPath().toFile())) {
       assertThat(
               List.of(
                   archiveB.getEntry("closure/b/Middle.class") != null,
@@ -257,7 +259,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final Set<ArtifactCoordinate> retained =
         fixture.allSnapshots().stream()
             .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
-            .collect(java.util.stream.Collectors.toSet());
+            .collect(Collectors.toSet());
     final TrimRequest request =
         new TrimRequest(
             fixture.mavenProject(),
@@ -272,8 +274,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
                 Set.of()),
             new TrimPolicy(List.of(), false, List.of(), false));
 
-    assertThatThrownBy(
-            () -> MavenDependencyTrimmer.analyzeInMemory(request, java.util.Map.of(), Set.of()))
+    assertThatThrownBy(() -> MavenDependencyTrimmer.analyzeInMemory(request, Map.of(), Set.of()))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Required class root has no recognized owner: missing.RequiredApi");
   }
@@ -377,7 +378,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final Set<ArtifactCoordinate> retained =
         inventory.stream()
             .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
-            .collect(java.util.stream.Collectors.toSet());
+            .collect(Collectors.toSet());
     final TrimRequest request =
         new TrimRequest(
             fixture.mavenProject(),
@@ -389,7 +390,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
             new TrimPolicy(List.of(), false, List.of(), false));
 
     final TrimAnalysisResult analysis =
-        MavenDependencyTrimmer.analyzeInMemory(request, java.util.Map.of(), Set.of());
+        MavenDependencyTrimmer.analyzeInMemory(request, Map.of(), Set.of());
 
     assertThat(analysis.candidateAnalyses()).doesNotContainKey(unchangedCoordinate);
     assertThat(analysis.candidateRoots().get(fixture.coordinate("c"))).contains("closure.c.Leaf");

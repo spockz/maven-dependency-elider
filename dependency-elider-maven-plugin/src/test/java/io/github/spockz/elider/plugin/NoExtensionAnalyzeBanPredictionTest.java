@@ -640,6 +640,20 @@ final class NoExtensionAnalyzeBanPredictionTest {
   }
 
   @Test
+  void noTrimBanProofScansUntracedRetainedClasses() throws Exception {
+    final Fixture fixture = basicFixture(USED_TRACE);
+    final Path originalUsedJar = fixture.usedDependency().getArtifact().getFile().toPath();
+    addClassToJar(originalUsedJar, USED_UNUSED_ENTRY, BANNED_IDLE_ENTRY);
+    checkOriginalProviderReferencesBannedClass(originalUsedJar);
+    final ElideMojo mojo = elideMojo(fixture, false);
+
+    assertAll(
+        "trim-disabled ban proof inspects every physical retained class",
+        () -> assertThat(Files.readAllLines(fixture.trace())).containsExactly("used.Api"),
+        () -> assertThatThrownBy(mojo::execute).hasMessageContaining(BANNED_PROVIDER_FAILURE));
+  }
+
+  @Test
   void retainedBytecodeConflictLeavesReportsViewsAndResolverPlanUntouched() throws Exception {
     final Fixture fixture = fixture(USED_TRACE, true);
     final ElideMojo mojo = elideMojo(fixture, false);

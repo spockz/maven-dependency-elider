@@ -95,12 +95,14 @@ final class MavenDependencyTrimmer {
                 options.trim().workers(),
                 options.trim().duplicateClasses()),
             options.trim().cacheProducerResolution().identity());
+    final List<DuplicateClasses.ToleratedDuplicate> duplicates =
+        DuplicateClasses.resolveRetained(request);
     if (!options.trim().enabled()) {
       return TrimResult.empty(
               new TrimExecutionEnvironment(
                   effective.trimAnalysis().targetRelease(),
                   effective.trimAnalysis().runtimeRelease()))
-          .withToleratedDuplicates(DuplicateClasses.resolveRetained(request));
+          .withToleratedDuplicates(duplicates);
     }
     final Map<TrimArtifactRootKey, Set<String>> roots =
         TrimRootPlanner.artifactRootKeys(
@@ -133,24 +135,13 @@ final class MavenDependencyTrimmer {
     final TrimExecutionEnvironment executionEnvironment = executionEnvironment(request);
     verifyAnalysisPlatform(effective, executionEnvironment);
     final JdkPlatformContext context = MavenPlatformContextHolder.forOperation(request.session());
-    return TrimOutputCoordinator.trimPrepared(
-        request,
-        executionEnvironment.targetRelease(),
-        executionEnvironment.runtimeRelease(),
-        context,
-        outputPlan);
-  }
-
-  /* package */ static TrimResult trim(final TrimRequest request)
-      throws IOException, MojoFailureException {
-    final TrimExecutionEnvironment executionEnvironment = executionEnvironment(request);
-    final JdkPlatformContext platformContext =
-        MavenPlatformContextHolder.forOperation(request.session());
-    return TrimOutputCoordinator.trimPrepared(
-        request,
-        executionEnvironment.targetRelease(),
-        executionEnvironment.runtimeRelease(),
-        platformContext);
+    return EffectiveTrimOutput.trimEffectivePrepared(
+            request,
+            executionEnvironment.targetRelease(),
+            executionEnvironment.runtimeRelease(),
+            context,
+            outputPlan)
+        .withToleratedDuplicates(duplicates);
   }
 
   /* package */ static TrimExecutionEnvironment executionEnvironment(final TrimRequest request)

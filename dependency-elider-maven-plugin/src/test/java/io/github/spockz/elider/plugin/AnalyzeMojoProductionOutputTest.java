@@ -126,8 +126,12 @@ final class AnalyzeMojoProductionOutputTest {
                             .anyMatch(
                                 line ->
                                     line.startsWith(
-                                        "Whole artifacts that would be dropped: 1 / 2 "
-                                            + "(original JAR file bytes: ")),
+                                        "Whole artifacts that would be dropped: 0 / 2 ")),
+                    () ->
+                        assertThat(messages)
+                            .anyMatch(
+                                line ->
+                                    "Raw trace decision drops before graph safety: 1".equals(line)),
                     () ->
                         assertThat(messages)
                             .anyMatch(
@@ -143,7 +147,7 @@ final class AnalyzeMojoProductionOutputTest {
                                 line ->
                                     line.contains(
                                             "CVE-2026-19003 org.example:unused-compile:jar:1.0")
-                                        && line.contains("[PLANNED_UNVERIFIED]")),
+                                        && line.contains("[RETAINED_UNCHANGED]")),
                     () ->
                         assertThat(messages)
                             .anyMatch(
@@ -159,6 +163,8 @@ final class AnalyzeMojoProductionOutputTest {
     assertThat(reportJson.path(PRODUCTION_OUTPUT_FIELD).asText()).isEqualTo(output.toString());
     assertThat(reportJson.path("staticEvidenceAvailable").asBoolean()).isTrue();
     assertThat(reportJson.path("classFilesScanned").asInt()).isEqualTo(1);
+    assertThat(reportJson.path("dependencyPrediction").path("wouldElideArtifacts")).isEmpty();
+    assertThat(reportJson.path("dependencyPrediction").path("plannedClassRemovals")).isEmpty();
   }
 
   @Test

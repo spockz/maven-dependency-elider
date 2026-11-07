@@ -5,23 +5,21 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
-import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.ArtifactFileRef;
-import io.github.spockz.elider.model.TraceData;
-import io.github.spockz.elider.scanner.ArtifactClassIndex;
-import io.github.spockz.elider.scanner.JarIndexScanner;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.JarFile;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.model.Build;
-import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,51 +47,79 @@ final class MavenDependencyTrimmerTest {
   MavenDependencyTrimmerTest() {}
 
   @Test
-  void consumesDynamicRootsFromInvocationWithoutRescanningJar() throws Exception {
+  void serviceFinishConsumesPreparedDynamicRootsWithoutRescanningJar() throws Exception {
     final Path jar = compileJar();
-    final Path normalizedJar = jar.toAbsolutePath().normalize();
-    final ArtifactCoordinate coordinate =
-        new ArtifactCoordinate(GROUP_ID, ARTIFACT_ID, VERSION, JAR_TYPE, "", ARTIFACT_ID);
     final Artifact artifact = runtimeArtifact(jar);
     final MavenProject project = project(artifact);
-    final ElisionAnalysisModel.ArtifactSnapshot snapshot =
-        new ElisionAnalysisModel.ArtifactSnapshot(artifact, coordinate, normalizedJar);
-    final ArtifactFileRef artifactRef = ArtifactFileRef.fromPath(coordinate, normalizedJar);
-    final ArtifactClassIndex classIndex = new JarIndexScanner().scan(List.of(artifactRef));
-    final TrimScanInputs scanInputs =
-        new TrimScanInputs(
-            classIndex,
-            Map.of(
-                normalizedJar,
-                new DependencyDynamicRoots.RootScan(Set.of("sample.Dynamic"), true)));
-
-    final TrimResult result = trim(project, snapshot, scanInputs);
-
-    assertThat(result.records()).hasSize(1);
-    try (JarFile trimmed = new JarFile(result.records().getFirst().trimmedPath().toFile())) {
-      assertThat(trimmed.getEntry("sample/Keep.class")).isNotNull();
-      assertThat(trimmed.getEntry("sample/Dynamic.class")).isNotNull();
-      assertThat(trimmed.getEntry("sample/Drop.class")).isNull();
-    }
-    assertThatThrownBy(() -> trim(project, snapshot, new TrimScanInputs(classIndex, Map.of())))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("Missing dynamic-root scan for retained artifact");
-  }
-
-  private TrimResult trim(
-      final MavenProject project,
-      final ElisionAnalysisModel.ArtifactSnapshot snapshot,
-      final TrimScanInputs scanInputs)
-      throws IOException, MojoFailureException {
-    return MavenDependencyTrimmer.trim(
-        new TrimRequest(
-            project,
+    final Path trace = tempDir.resolve("runtime.lst");
+    Files.writeString(trace, "sample.Keep\n");
+    final AtomicInteger scans = new AtomicInteger();
+    final ElisionAnalysisModel.AnalysisOptions options =
+        new ElisionAnalysisModel.AnalysisOptions(
+            List.of(trace.toFile()),
+            List.of(),
             null,
-            List.of(snapshot),
-            scanInputs,
-            Set.of(snapshot.coordinate()),
-            new TrimEvidence(TraceData.of(Set.of("sample.Keep")), Set.of(), Set.of(), Set.of()),
-            new TrimPolicy(List.of(), false, List.of(), false)));
+            null,
+            new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
+            new ElisionAnalysisModel.TrimOptions(
+                true,
+                List.of(),
+                false,
+                List.of(),
+                false,
+                MavenDependencyTrimmer.MIN_TRIM_WORKERS,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+            new ElisionAnalysisModel.DynamicRootOptions(true));
+    final MavenElisionService service = new MavenElisionService();
+    final ElisionAnalysisModel.PreparedAnalysis prepared =
+        service.prepare(
+            project,
+            options,
+            (path, context) -> {
+              scans.incrementAndGet();
+              return new DependencyDynamicRoots.RootScan(Set.of("sample.Dynamic"), true);
+            });
+    final ElisionAnalysisModel.Analysis analysis = service.finish(prepared);
+    final TrimResult result = analysis.trimResult();
+    assertThat(result.records()).hasSize(1);
+    final ArtifactTrimRecord record = result.records().getFirst();
+    final boolean keepPresent;
+    final boolean dynamicPresent;
+    final boolean dropPresent;
+    try (JarFile trimmed = new JarFile(record.trimmedPath().toFile())) {
+      keepPresent = trimmed.getEntry("sample/Keep.class") != null;
+      dynamicPresent = trimmed.getEntry("sample/Dynamic.class") != null;
+      dropPresent = trimmed.getEntry("sample/Drop.class") != null;
+    }
+    final TrimRequest request =
+        TrimRequestFactory.fromPreparedAnalysis(
+            prepared,
+            prepared.rawDecision().retainedArtifacts(),
+            prepared.pruningRequiredClasses());
+    final TrimRequest missingScan =
+        new TrimRequest(
+            request.project(),
+            request.session(),
+            request.environment(),
+            request.candidates(),
+            new TrimScanInputs(request.scanInputs().classIndex(), Map.of()),
+            request.retainedCoordinates(),
+            request.evidence(),
+            request.policy(),
+            request.cacheProducerIdentity());
+
+    assertAll(
+        "the effective service path reuses prepared dynamic roots and requires a full scan set",
+        () -> assertThat(scans).hasValue(1),
+        () -> assertThat(prepared.dynamicRootInputs().classNames()).contains("sample.Dynamic"),
+        () -> org.junit.jupiter.api.Assertions.assertTrue(keepPresent, "kept class remains"),
+        () -> org.junit.jupiter.api.Assertions.assertTrue(dynamicPresent, "dynamic class remains"),
+        () -> org.junit.jupiter.api.Assertions.assertFalse(dropPresent, "unused class is removed"),
+        () ->
+            assertThatThrownBy(
+                    () -> MavenDependencyTrimmer.analyzeInMemory(missingScan, Map.of(), Set.of()))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Missing dynamic-root scan for full inventory JAR"));
   }
 
   private Path compileJar() throws IOException {

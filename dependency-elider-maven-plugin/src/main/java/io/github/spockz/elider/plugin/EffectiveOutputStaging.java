@@ -8,7 +8,6 @@ import io.github.spockz.elider.plugin.ParallelTrimExecutor.PreparedOutputCleanup
 import io.github.spockz.elider.plugin.ServiceProviderTrimInventory.ServiceProviderInventory;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.PreparedEffectiveOutputs;
-import io.github.spockz.elider.plugin.TrimOutputCoordinator.PendingOutput;
 import io.github.spockz.elider.trimmer.ArchiveSanitizer;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -31,6 +30,9 @@ final class EffectiveOutputStaging implements AutoCloseable {
 
   /** Keeps this batch isolated until the complete generation is published. */
   private final Path generationDirectory;
+
+  /* package */ record PendingOutput(
+      TrimCandidate candidate, ArchiveSanitizer.PreparedOutput prepared) {}
 
   /* package */ EffectiveOutputStaging(final Path generationDirectory) {
     this.generationDirectory = generationDirectory;

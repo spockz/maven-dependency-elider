@@ -3,7 +3,7 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.plugin.TrimOutputCoordinator.PendingOutput;
+import io.github.spockz.elider.plugin.EffectiveOutputStaging.PendingOutput;
 import io.github.spockz.elider.trimmer.ArchiveSanitizer;
 import java.io.IOException;
 import java.util.ArrayList;

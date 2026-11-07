@@ -159,6 +159,29 @@ final class DuplicateClassMultiReleaseTest extends MavenDependencyTrimmerInMemor
       final int release,
       final boolean multiRelease)
       throws IOException {
+    writeVersionedOwner(target, duplicate, middle, null, release, multiRelease);
+  }
+
+  private static void writeVersionedOwner(
+      final Path target,
+      final byte[] duplicate,
+      final byte[] middle,
+      final byte[] unused,
+      final int release,
+      final boolean multiRelease)
+      throws IOException {
+    writeVersionedOwner(target, duplicate, middle, unused, release, multiRelease, false);
+  }
+
+  private static void writeVersionedOwner(
+      final Path target,
+      final byte[] duplicate,
+      final byte[] middle,
+      final byte[] unused,
+      final int release,
+      final boolean multiRelease,
+      final boolean includeBaseDuplicate)
+      throws IOException {
     final Manifest manifest = new Manifest();
     manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
     manifest.getMainAttributes().putValue("Multi-Release", Boolean.toString(multiRelease));
@@ -166,6 +189,16 @@ final class DuplicateClassMultiReleaseTest extends MavenDependencyTrimmerInMemor
       output.putNextEntry(new JarEntry("closure/b/Middle.class"));
       output.write(middle);
       output.closeEntry();
+      if (includeBaseDuplicate) {
+        output.putNextEntry(new JarEntry("closure/a/Extra.class"));
+        output.write(duplicate);
+        output.closeEntry();
+      }
+      if (unused != null) {
+        output.putNextEntry(new JarEntry("closure/b/Unused.class"));
+        output.write(unused);
+        output.closeEntry();
+      }
       output.putNextEntry(new JarEntry("META-INF/versions/" + release + "/closure/a/Extra.class"));
       output.write(duplicate);
       output.closeEntry();

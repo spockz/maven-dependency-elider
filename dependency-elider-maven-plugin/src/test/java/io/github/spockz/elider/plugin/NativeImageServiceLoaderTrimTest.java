@@ -3,6 +3,8 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
@@ -85,6 +87,7 @@ import org.junit.jupiter.api.Test;
                     MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
                 new ElisionAnalysisModel.DynamicRootOptions(false)));
     final ElisionAnalysisModel.Analysis analysis = service.finish(prepared);
+    final boolean graphFailClosed = prepared.graphBinding().evaluation().failClosed();
     final ArtifactTrimRecord providerTrim =
         analysis.trimResult().records().stream()
             .filter(record -> record.coordinate().equals(fixture.coordinate("c")))
@@ -97,23 +100,39 @@ import org.junit.jupiter.api.Test;
       unrelatedClassRemoved = output.getEntry(UNRELATED_PROVIDER_CLASS) == null;
     }
 
-    assertThat(
-            List.of(
-                prepared.dynamicRootInputs().classNames(),
-                prepared.rawDecision().retainedArtifacts(),
-                analysis.effectiveDecision().retainedArtifacts(),
-                providerTrim.totalClasses(),
-                providerTrim.retainedClasses(),
-                providerPresent,
-                unrelatedClassRemoved))
-        .containsExactly(
-            Set.of("closure.a.Entry", "closure.c.Leaf"),
-            Set.of(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c")),
-            Set.of(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c")),
-            2,
-            1,
-            true,
-            true);
+    assertAll(
+        "service feature roots retain provider output while graph absence fails closed",
+        () ->
+            assertAll(
+                "prepared and raw decisions retain the service descriptor owner and provider",
+                () ->
+                    assertThat(prepared.dynamicRootInputs().classNames())
+                        .containsExactlyInAnyOrder("closure.a.Entry", "closure.c.Leaf"),
+                () ->
+                    assertThat(prepared.rawDecision().retainedArtifacts())
+                        .containsExactlyInAnyOrder(
+                            fixture.coordinate("a"),
+                            fixture.coordinate("b"),
+                            fixture.coordinate("c")),
+                () ->
+                    assertThat(prepared.rawDecision().elidedArtifacts())
+                        .containsExactlyInAnyOrder(
+                            fixture.coordinate("d"), fixture.coordinate("e"))),
+        () -> assertTrue(graphFailClosed, "missing graph proof keeps the policy fail-closed"),
+        () -> assertThat(prepared.graphBinding().pair()).isNull(),
+        () -> assertThat(analysis.graphProjection()).isNull(),
+        () ->
+            assertThat(analysis.effectiveDecision().retainedArtifacts())
+                .containsExactlyInAnyOrder(
+                    fixture.coordinate("a"),
+                    fixture.coordinate("b"),
+                    fixture.coordinate("c"),
+                    fixture.coordinate("d"),
+                    fixture.coordinate("e")),
+        () -> assertThat(providerTrim.totalClasses()).isEqualTo(2),
+        () -> assertThat(providerTrim.retainedClasses()).isEqualTo(1),
+        () -> assertTrue(providerPresent, "service provider remains in the output archive"),
+        () -> assertTrue(unrelatedClassRemoved, "unrelated provider class is pruned"));
   }
 
   @Test

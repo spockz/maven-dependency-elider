@@ -62,34 +62,7 @@ final class MavenElisionService {
 
   /* package */ Analysis finish(final PreparedAnalysis prepared)
       throws IOException, MojoFailureException {
-    if (!prepared.options().trim().enabled()) {
-      MavenArtifactInventory.verifyPreparedInventory(prepared);
-    }
-    if (ElisionReachabilityEngine.requiresTierAwareMrjarTrim(prepared)) {
-      return ElisionReachabilityEngine.finishEffectiveOutputs(
-          ElisionReachabilityEngine.finishAnalysis(prepared));
-    }
-    final AnalysisOptions options = prepared.options();
-    final TrimRequest trimRequest =
-        TrimRequestFactory.fromPreparedAnalysis(
-            prepared,
-            prepared.rawDecision().retainedArtifacts(),
-            prepared.pruningRequiredClasses());
-    final TrimResult trimResult =
-        options.trim().enabled()
-            ? MavenDependencyTrimmer.trim(trimRequest)
-            : TrimResult.empty(MavenDependencyTrimmer.executionEnvironment(trimRequest));
-    return new Analysis(
-        ElisionAnalysisModel.artifactViews(prepared),
-        prepared.rawDecision(),
-        prepared.rawDecision(),
-        ElisionAnalysisModel.evidence(prepared),
-        trimResult,
-        null,
-        null,
-        prepared
-            .policyOptions()
-            .withOperationFingerprint(prepared.graphBinding().operationFingerprint()));
+    return finishEffectiveOutputs(finishAnalysis(prepared));
   }
 
   /* package */ EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)

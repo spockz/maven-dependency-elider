@@ -272,8 +272,8 @@ final class AnalyzeMojoTest {
     AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
-    AnalyzeMojoTestFieldSupport.set(
-        mojo, REPORT_FILE_FIELD, tempDir.resolve("predicted-elisions.json").toFile());
+    final Path report = tempDir.resolve("predicted-elisions.json");
+    AnalyzeMojoTestFieldSupport.set(mojo, REPORT_FILE_FIELD, report.toFile());
     AnalyzeMojoTestFieldSupport.set(
         mojo, "cveCacheDirectory", tempDir.resolve("analysis-cve-cache").toFile());
     final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
@@ -290,23 +290,36 @@ final class AnalyzeMojoTest {
 
     assertThat(log.messages())
         .contains(
-            "Whole artifacts that would be dropped: 1 / 2 (original JAR file bytes: "
-                + MavenElisionReportWriter.formatBytes(Files.size(unused.getFile().toPath()))
-                + ")",
+            "Whole artifacts that would be dropped: 0 / 2 (original JAR file bytes: 0 B)",
+            "Raw trace decision drops before graph safety: 1",
             "Analysis only: no trim proof or published changes",
             "Vulnerability findings: 1");
     assertAll(
-        "predicted removal is an affected but unverified planned finding",
+        "the fail-closed graph retains the raw drop without a trim proof",
         () ->
             assertThat(log.messages())
                 .anyMatch(
                     line ->
                         line.contains("CVE-2026-19001 org.example:unused-runtime:jar:1.0")
-                            && line.contains("[PLANNED_UNVERIFIED]")),
+                            && line.contains("[RETAINED_UNCHANGED]")),
         () ->
             assertThat(log.messages())
                 .anyMatch(line -> line.contains("Applicability: AFFECTED; intent: AUTO_VERIFY")),
-        () -> assertThat(log.messages()).contains("CVE Sources:"));
+        () -> assertThat(log.messages()).contains("CVE Sources:"),
+        () ->
+            assertThat(
+                    new com.fasterxml.jackson.databind.ObjectMapper()
+                        .readTree(report.toFile())
+                        .path("dependencyPrediction")
+                        .path("wouldElideArtifacts"))
+                .isEmpty(),
+        () ->
+            assertThat(
+                    new com.fasterxml.jackson.databind.ObjectMapper()
+                        .readTree(report.toFile())
+                        .path("dependencyPrediction")
+                        .path("plannedClassRemovals"))
+                .isEmpty());
     assertThat(project.getArtifacts()).isSameAs(artifacts).containsExactlyInAnyOrder(used, unused);
     assertThat(unused.getFile()).isSameAs(unusedFile);
     assertThat(log.messages())
