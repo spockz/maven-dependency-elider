@@ -5,12 +5,7 @@ package io.github.spockz.elider.model;
 
 /** Advisory claim; proof APIs continue to require narrow evidence types. */
 public sealed interface AdvisoryEvidence
-    permits ExplicitClassMappingEvidence,
-        ExplicitPrerequisiteEvidence,
-        StructuredSourceClassEvidence,
-        CorroboratedSourceClassCandidate,
-        HeuristicCandidateEvidence,
-        PackageAdvisoryEvidence {
+    permits HeuristicCandidateEvidence, PackageAdvisoryEvidence {
   /** Returns the CVE and exact Maven version scope described by this evidence. */
   AdvisoryScope scope();
 

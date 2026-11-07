@@ -379,8 +379,7 @@ public final class OsvSnapshotIndexer {
     final List<io.github.spockz.elider.model.AdvisoryEvidence> evidence = new ArrayList<>();
     readAffectedEntries(
         root, cveId, osvId, osvDigest, affectedPackages, evidence, skipped, locator);
-    final List<CveAffectedEntryContext> cnaEntries = new ArrayList<>();
-    return new OsvAdvisoryRecord(osvId, modified, aliases, affectedPackages, cnaEntries, evidence);
+    return new OsvAdvisoryRecord(osvId, modified, aliases, affectedPackages, evidence);
   }
 
   private static List<AdvisoryScope> readAffectedEntries(

@@ -13,17 +13,12 @@ import io.github.spockz.elider.model.AdvisoryEvidence;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.CveAffectedEntryContext;
-import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
-import io.github.spockz.elider.model.ExplicitClassMappingEvidence;
-import io.github.spockz.elider.model.ExplicitPrerequisiteEvidence;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
-import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -61,52 +56,35 @@ class AdvisoryEvidenceCodecTest {
         () -> assertThat(decoded.getFirst().osvId()).isEqualTo("GHSA-owner"),
         () -> assertThat(decoded.getFirst().aliases()).containsExactly("CVE-2025-12345"),
         () ->
-            assertThat(decoded.getFirst().cnaAffectedEntries().getFirst().entryIdentity())
-                .isEqualTo("containers.cna.affected[0]"),
-        () ->
-            assertThat(decoded.getFirst().evidence())
-                .filteredOn(StructuredSourceClassEvidence.class::isInstance)
-                .singleElement()
-                .satisfies(
-                    value ->
-                        assertThat(
-                                ((StructuredSourceClassEvidence) value).cnaAffectedEntryIdentity())
-                            .isEqualTo("containers.cna.affected[0]")),
-        () ->
             assertThat(decoded.getFirst().evidence())
                 .extracting(value -> value.provenance().origin())
                 .contains(
-                    EvidenceOrigin.OSV,
-                    EvidenceOrigin.CVE_LIST,
-                    EvidenceOrigin.DESCRIPTION,
-                    EvidenceOrigin.REFERENCE_URL),
+                    EvidenceOrigin.OSV, EvidenceOrigin.DESCRIPTION, EvidenceOrigin.REFERENCE_URL),
         () ->
-            assertThat(decoded.getFirst().cnaAffectedEntries())
-                .singleElement()
-                .satisfies(
-                    entry ->
-                        assertAll(
-                            () ->
-                                assertThat(entry.versions())
-                                    .containsExactly(
-                                        new CveVersionClaim(
-                                            "1.0",
-                                            "affected",
-                                            "semver",
-                                            "2.0",
-                                            "2.1",
-                                            List.of(Map.of("at", "1.5", "status", "unaffected")))),
-                            () -> assertThat(entry.defaultStatus()).isEqualTo("affected"),
-                            () ->
-                                assertThat(entry.packageUrl())
-                                    .isEqualTo("pkg:maven/org.example/library"),
-                            () ->
-                                assertThat(entry.collectionUrl())
-                                    .isEqualTo("https://repo.maven.apache.org/maven2"),
-                            () ->
-                                assertThat(entry.programFiles())
-                                    .containsExactly("src/main/java/org/example/Unknown.java"),
-                            () -> assertThat(entry.programRoutines()).containsExactly("decode"))));
+            assertThat(
+                    writer
+                        .encodeTree(List.of(record))
+                        .path("records")
+                        .get(0)
+                        .has("cnaAffectedEntries"))
+                .isFalse());
+  }
+
+  @Test
+  void schemaV1RejectsRetiredStructuredEvidenceAndCnaEntryShape() throws IOException {
+    final ObjectNode legacy =
+        (ObjectNode) mapper.readTree(writer.encode(List.of(recordWithVariants())));
+    final ObjectNode legacyRecord = (ObjectNode) legacy.path("records").get(0);
+    final ObjectNode oldCnaShape = legacy.deepCopy();
+    ((ObjectNode) oldCnaShape.path("records").get(0)).putArray("cnaAffectedEntries");
+    final ObjectNode oldStructuredTag = legacy.deepCopy();
+    ((ObjectNode) firstEvidence(oldStructuredTag)).put("kind", "structured-source-class");
+
+    assertAll(
+        "schema v1 accepts source-neutral advisory evidence only",
+        () -> assertThat(legacyRecord.has("cnaAffectedEntries")).isFalse(),
+        () -> assertRejected(oldCnaShape, "unknown field"),
+        () -> assertRejected(oldStructuredTag, "Unknown advisory evidence discriminator"));
   }
 
   @Test
@@ -145,7 +123,6 @@ class AdvisoryEvidenceCodecTest {
                     coordinate,
                     List.of(),
                     List.of())),
-            List.of(),
             List.of(commitCandidate));
     final HeuristicCandidateEvidence decoded =
         (HeuristicCandidateEvidence)
@@ -175,7 +152,6 @@ class AdvisoryEvidenceCodecTest {
             Set.of("GHSA-alias-only"),
             List.of(
                 affectedPackage("Maven:https://repo.test", "org.example:library", List.of("2.1"))),
-            List.of(),
             List.of());
     final OsvAdvisoryRecord decoded = read(writer.encode(List.of(noCve))).getFirst();
 
@@ -204,7 +180,6 @@ class AdvisoryEvidenceCodecTest {
             "2026-10-31T00:00:00Z",
             Set.of("CVE-2025-12345"),
             first.affectedPackages(),
-            List.of(),
             List.of(packageEvidence("GHSA-second-owner", scope())));
     final List<OsvAdvisoryRecord> decoded = read(writer.encode(List.of(second, first)));
 
@@ -222,8 +197,7 @@ class AdvisoryEvidenceCodecTest {
   void deterministicEncodingIgnoresRecordOrder() throws IOException {
     final OsvAdvisoryRecord first = recordWithVariants();
     final OsvAdvisoryRecord second =
-        new OsvAdvisoryRecord(
-            "GHSA-other", "2026-10-31T00:00:00Z", Set.of(), List.of(), List.of(), List.of());
+        new OsvAdvisoryRecord("GHSA-other", "2026-10-31T00:00:00Z", Set.of(), List.of(), List.of());
 
     assertThat(writer.encode(List.of(first, second)))
         .isEqualTo(writer.encode(List.of(second, first)));
@@ -256,56 +230,21 @@ class AdvisoryEvidenceCodecTest {
                             "2026-10-31T00:00:00Z",
                             Set.of("CVE-2025-12345"),
                             recordWithVariants().affectedPackages(),
-                            List.of(),
                             List.of(packageEvidence("wrong-owner", scope()))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("provenance"));
   }
 
   @Test
-  void ownerProofEvidenceCannotBePersistedOrLoadedFromCache() throws IOException {
+  void rejectsSupersededEvidenceDiscriminators() throws IOException {
     assertAll(
-        "owner evidence remains outside persisted advisory cache",
-        () ->
-            assertThatThrownBy(
-                    () ->
-                        new OsvAdvisoryRecord(
-                            "GHSA-owner",
-                            "2026-10-31T00:00:00Z",
-                            Set.of("CVE-2025-12345"),
-                            recordWithVariants().affectedPackages(),
-                            List.of(),
-                            List.of(ownerEvidence())))
-                .isInstanceOf(IllegalArgumentException.class),
-        () -> {
-          final ObjectNode root = persistedOwnerDocument("explicit-class-mapping");
-          assertRejected(root, "Owner proof evidence");
-        },
-        () -> {
-          final ExplicitPrerequisiteEvidence prerequisite =
-              ExplicitPrerequisiteEvidence.declare(
-                  scope().cveId(),
-                  scope().affectedCoordinate(),
-                  scope().versionRangeSpec(),
-                  "org.example:prerequisite",
-                  "org.example.Prerequisite",
-                  null,
-                  io.github.spockz.elider.model.ConfidenceLevel.HIGH,
-                  "effective-project-pom:vulnerabilityMappings[1]");
-          assertThatThrownBy(
-                  () ->
-                      new OsvAdvisoryRecord(
-                          "GHSA-owner",
-                          "2026-10-31T00:00:00Z",
-                          Set.of("CVE-2025-12345"),
-                          recordWithVariants().affectedPackages(),
-                          List.of(),
-                          List.of(prerequisite)))
-              .isInstanceOf(IllegalArgumentException.class);
-        },
+        "schema v1 rejects evidence outside source-neutral advisory claims",
+        () -> assertRejected(persistedOwnerDocument("structured-source-class"), "Unknown"),
         () ->
             assertRejected(
-                persistedOwnerDocument("explicit-prerequisite"), "Owner proof evidence"));
+                persistedOwnerDocument("corroborated-source-class-candidate"), "Unknown"),
+        () -> assertRejected(persistedOwnerDocument("explicit-class-mapping"), "Unknown"),
+        () -> assertRejected(persistedOwnerDocument("explicit-prerequisite"), "Unknown"));
   }
 
   @Test
@@ -337,26 +276,7 @@ class AdvisoryEvidenceCodecTest {
   }
 
   @Test
-  void structuredEvidenceRemainsMediumAndRetainsUnresolvedEntries() {
-    final StructuredSourceClassEvidence structured =
-        (StructuredSourceClassEvidence)
-            recordWithVariants().evidence().stream()
-                .filter(StructuredSourceClassEvidence.class::isInstance)
-                .findFirst()
-                .orElseThrow();
-    assertAll(
-        () ->
-            assertThat(structured.confidenceLabel())
-                .isEqualTo(io.github.spockz.elider.model.ConfidenceLevel.MEDIUM),
-        () -> assertThat(structured.scope().affectedCoordinate().version()).isNull(),
-        () ->
-            assertThat(structured.fileClassAttribution())
-                .containsEntry("src/main/java/org/example/Unknown.java", Set.of()),
-        () -> assertThat(structured.routineClassAttribution()).containsEntry("decode", Set.of()));
-  }
-
-  @Test
-  void rejectsOverflowMissingUnknownInvalidProvenanceAndAttribution() throws IOException {
+  void rejectsOverflowMissingUnknownAndInvalidProvenance() throws IOException {
     assertAll(
         () -> {
           final ObjectNode overflow = documentWith(packageEvidence("GHSA-owner", scope()));
@@ -413,29 +333,7 @@ class AdvisoryEvidenceCodecTest {
                         new AdvisoryProvenance(
                             EvidenceOrigin.CVE_LIST, "CVE-2025-12345", null, "invalid-digest"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("SHA-256"),
-        () -> {
-          final ObjectNode incomplete = documentWith(structuredEvidenceVariant());
-          ((ObjectNode) firstEvidence(incomplete)).putObject("fileClassAttribution");
-          assertRejected(incomplete, "exact attribution");
-        },
-        () ->
-            assertThatThrownBy(
-                    () ->
-                        new StructuredSourceClassEvidence(
-                            scope(),
-                            new AdvisoryProvenance(
-                                EvidenceOrigin.CVE_LIST, "CVE-2025-12345", null, "a".repeat(64)),
-                            "containers.cna.affected[0]",
-                            "Example:library",
-                            Set.of("src/main/java/org/example/Maybe.java"),
-                            Set.of(),
-                            Map.of(
-                                "src/main/java/org/example/Maybe.java",
-                                Set.of("org.example.Bad$Nested")),
-                            Map.of()))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("top-level class names"));
+                .hasMessageContaining("SHA-256"));
   }
 
   private OsvAdvisoryRecord recordWithVariants() {
@@ -444,15 +342,6 @@ class AdvisoryEvidenceCodecTest {
     final List<AdvisoryEvidence> evidence =
         List.of(
             packageEvidence("GHSA-owner", scope),
-            new StructuredSourceClassEvidence(
-                scope,
-                new AdvisoryProvenance(EvidenceOrigin.CVE_LIST, "CVE-2025-12345", null, digest),
-                "containers.cna.affected[0]",
-                "Example:library",
-                Set.of("src/main/java/org/example/Unknown.java"),
-                Set.of("decode"),
-                Map.of("src/main/java/org/example/Unknown.java", Set.of()),
-                Map.of("decode", Set.of())),
             new HeuristicCandidateEvidence(
                 scope,
                 new AdvisoryProvenance(
@@ -473,32 +362,12 @@ class AdvisoryEvidenceCodecTest {
         "2026-10-31T00:00:00Z",
         Set.of("CVE-2025-12345"),
         List.of(affectedPackage("Maven", "org.example:library", List.of())),
-        List.of(
-            new CveAffectedEntryContext(
-                "containers.cna.affected[0]",
-                OsvSnapshotFixtures.cveSourceMetadata("CVE-2025-12345", "PUBLISHED", digest),
-                "Example",
-                "library",
-                "pkg:maven/org.example/library",
-                "https://repo.maven.apache.org/maven2",
-                "org.example:library",
-                "affected",
-                List.of(
-                    new CveVersionClaim(
-                        "1.0",
-                        "affected",
-                        "semver",
-                        "2.0",
-                        "2.1",
-                        List.of(Map.of("at", "1.5", "status", "unaffected")))),
-                Set.of("src/main/java/org/example/Unknown.java"),
-                Set.of("decode"))),
         evidence);
   }
 
   private OsvAdvisoryRecord otherOwner() {
     return new OsvAdvisoryRecord(
-        "GHSA-other", "2026-10-31T00:00:00Z", Set.of(), List.of(), List.of(), List.of());
+        "GHSA-other", "2026-10-31T00:00:00Z", Set.of(), List.of(), List.of());
   }
 
   private static OsvAffectedPackage affectedPackage(
@@ -521,17 +390,6 @@ class AdvisoryEvidenceCodecTest {
         scope, new AdvisoryProvenance(EvidenceOrigin.OSV, owner, null, "a".repeat(64)));
   }
 
-  private static ExplicitClassMappingEvidence ownerEvidence() {
-    return ExplicitClassMappingEvidence.declare(
-        "CVE-2025-12345",
-        ArtifactCoordinate.of("org.example", "library", "1.0"),
-        "[1.0,2.0)",
-        Set.of("org.example.Vulnerable"),
-        null,
-        io.github.spockz.elider.model.ConfidenceLevel.HIGH,
-        "effective-project-pom:vulnerabilityMappings[0]");
-  }
-
   private ObjectNode persistedOwnerDocument(final String discriminator) throws IOException {
     final ObjectNode document = documentWith(packageEvidence("GHSA-owner", scope()));
     ((ObjectNode) firstEvidence(document)).put("kind", discriminator);
@@ -539,33 +397,6 @@ class AdvisoryEvidenceCodecTest {
   }
 
   private ObjectNode documentWith(final AdvisoryEvidence evidence) throws IOException {
-    final List<CveAffectedEntryContext> cnaEntries;
-    if (evidence instanceof StructuredSourceClassEvidence structured) {
-      final String productIdentity = structured.affectedProductIdentity();
-      final int delimiter = productIdentity.indexOf(':');
-      cnaEntries =
-          List.of(
-              new CveAffectedEntryContext(
-                  structured.cnaAffectedEntryIdentity(),
-                  OsvSnapshotFixtures.cveSourceMetadata(
-                      structured.scope().cveId(),
-                      "PUBLISHED",
-                      structured.provenance().sourceRecordSha256()),
-                  productIdentity.substring(0, delimiter),
-                  productIdentity.substring(delimiter + 1),
-                  "pkg:maven/"
-                      + structured.scope().affectedCoordinate().groupId()
-                      + "/"
-                      + structured.scope().affectedCoordinate().artifactId(),
-                  null,
-                  null,
-                  null,
-                  List.of(),
-                  structured.programFiles(),
-                  structured.programRoutines()));
-    } else {
-      cnaEntries = List.of();
-    }
     return (ObjectNode)
         mapper.readTree(
             writer.encode(
@@ -575,16 +406,7 @@ class AdvisoryEvidenceCodecTest {
                         "2026-10-31T00:00:00Z",
                         Set.of("CVE-2025-12345"),
                         List.of(affectedPackage("Maven", "org.example:library", List.of())),
-                        cnaEntries,
                         List.of(evidence)))));
-  }
-
-  private StructuredSourceClassEvidence structuredEvidenceVariant() {
-    return recordWithVariants().evidence().stream()
-        .filter(StructuredSourceClassEvidence.class::isInstance)
-        .map(StructuredSourceClassEvidence.class::cast)
-        .findFirst()
-        .orElseThrow();
   }
 
   private static JsonNode firstEvidence(final ObjectNode document) {

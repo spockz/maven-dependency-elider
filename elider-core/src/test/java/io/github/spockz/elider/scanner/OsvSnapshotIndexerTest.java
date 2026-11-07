@@ -11,7 +11,6 @@ import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
-import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -221,11 +220,6 @@ class OsvSnapshotIndexerTest {
     final OsvAdvisoryRecord firstRecord = find(records, "GHSA-owner-one");
     final OsvAdvisoryRecord secondRecord = find(records, "GHSA-owner-two");
     final OsvAdvisoryRecord noCveRecord = find(records, "GHSA-without-cve");
-    final List<StructuredSourceClassEvidence> structuredEvidence =
-        firstRecord.evidence().stream()
-            .filter(StructuredSourceClassEvidence.class::isInstance)
-            .map(StructuredSourceClassEvidence.class::cast)
-            .toList();
     final List<HeuristicCandidateEvidence> referenceCandidates =
         firstRecord.evidence().stream()
             .filter(HeuristicCandidateEvidence.class::isInstance)
@@ -255,8 +249,6 @@ class OsvSnapshotIndexerTest {
                 .extracting(value -> value.provenance().origin())
                 .contains(
                     EvidenceOrigin.OSV, EvidenceOrigin.DESCRIPTION, EvidenceOrigin.REFERENCE_URL),
-        () -> assertThat(structuredEvidence).isEmpty(),
-        () -> assertThat(firstRecord.cnaAffectedEntries()).isEmpty(),
         () -> assertThat(referenceCandidates).hasSize(2),
         () ->
             assertThat(referenceCandidates)
@@ -294,9 +286,6 @@ class OsvSnapshotIndexerTest {
 
     assertAll(
         "CVE claims have their own lifecycle and do not persist inside OSV projections",
-        () -> assertThat(first.cnaAffectedEntries()).isEmpty(),
-        () ->
-            assertThat(first.evidence()).noneMatch(StructuredSourceClassEvidence.class::isInstance),
         () -> assertThat(changed).isEqualTo(first),
         () -> assertThat(withdrawn).isEqualTo(first));
   }

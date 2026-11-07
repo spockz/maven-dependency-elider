@@ -45,19 +45,6 @@ class OmittedCodeProofTest {
   }
 
   @Test
-  void explicitClassEvidenceRetainsPomOrigin() {
-    assertAll(
-        "explicit owner evidence provenance",
-        () -> {
-          final ExplicitClassMappingEvidence evidence =
-              ExplicitEvidenceTestSupport.classEvidence(mapping("org.example.Vulnerable"));
-          assertAll(
-              () -> assertThat(evidence.origin()).isEqualTo(EvidenceOrigin.POM),
-              () -> assertThat(evidence.configurationOrigin()).isEqualTo("test-project-pom"));
-        });
-  }
-
-  @Test
   void genericProofRequiresMatchingComponentAndAffectedVersion() throws Exception {
     final ArtifactTrimRecord record =
         record(jar("bound-original.jar", "org/example/Vulnerable.class"), jar("bound-trimmed.jar"));

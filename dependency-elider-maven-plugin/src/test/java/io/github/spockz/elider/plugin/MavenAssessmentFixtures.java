@@ -8,16 +8,12 @@ import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.CacheProducerIdentity;
-import io.github.spockz.elider.model.CveAffectedEntryContext;
-import io.github.spockz.elider.model.CveSourceRecordMetadata;
-import io.github.spockz.elider.model.CveVersionClaim;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
-import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
 import java.io.IOException;
 import java.net.URI;
@@ -58,16 +54,6 @@ final class MavenAssessmentFixtures {
             TEST_VERSION_RANGE,
             MAVEN_ECOSYSTEM,
             coordinate.groupId() + ":" + coordinate.artifactId());
-    final StructuredSourceClassEvidence reviewEvidence =
-        new StructuredSourceClassEvidence(
-            scope,
-            new AdvisoryProvenance(EvidenceOrigin.CVE_LIST, cveId, null, "a".repeat(64)),
-            "containers.cna.affected[0]",
-            "Example:" + coordinate.artifactId(),
-            Set.of("src/main/java/org/example/Vulnerable.java"),
-            Set.of(),
-            Map.of("src/main/java/org/example/Vulnerable.java", Set.of("org.example.Vulnerable")),
-            Map.of());
     final OsvAdvisoryRecord record =
         new OsvAdvisoryRecord(
             "GHSA-cache-only",
@@ -81,21 +67,6 @@ final class MavenAssessmentFixtures {
                     List.of(),
                     List.of())),
             List.of(
-                new CveAffectedEntryContext(
-                    "containers.cna.affected[0]",
-                    new CveSourceRecordMetadata(
-                        true, true, true, cveId, true, "PUBLISHED", "a".repeat(64)),
-                    "Example",
-                    coordinate.artifactId(),
-                    "pkg:maven/" + coordinate.groupId() + "/" + coordinate.artifactId(),
-                    null,
-                    null,
-                    null,
-                    List.of(new CveVersionClaim("1.0", "affected", null, null, null, List.of())),
-                    Set.of("src/main/java/org/example/Vulnerable.java"),
-                    Set.of())),
-            List.of(
-                reviewEvidence,
                 new HeuristicCandidateEvidence(
                     scope,
                     new AdvisoryProvenance(
@@ -182,7 +153,6 @@ final class MavenAssessmentFixtures {
                     scopeCoordinate,
                     List.of(),
                     List.of())),
-            List.of(),
             List.of(
                 new PackageAdvisoryEvidence(
                     scope,
@@ -219,7 +189,6 @@ final class MavenAssessmentFixtures {
             SOURCE_MODIFIED,
             Set.of(cveId),
             List.of(affectedPackage),
-            List.of(),
             List.of(
                 new PackageAdvisoryEvidence(
                     scope, new AdvisoryProvenance(EvidenceOrigin.OSV, osvId, null, "c".repeat(64))),
@@ -269,7 +238,6 @@ final class MavenAssessmentFixtures {
             SOURCE_MODIFIED,
             Set.of(cveId),
             List.of(exactVersion, exactVersionWithRange),
-            List.of(),
             List.of(
                 new PackageAdvisoryEvidence(
                     scope, new AdvisoryProvenance(EvidenceOrigin.OSV, osvId, null, "c".repeat(64))),

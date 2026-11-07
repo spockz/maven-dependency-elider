@@ -9,15 +9,12 @@ import io.github.spockz.elider.model.AdvisoryEvidence;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
-import io.github.spockz.elider.model.CveAffectedEntryContext;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
-import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -117,10 +114,7 @@ public final class AdvisoryEvidenceReader {
   private OsvAdvisoryRecord readRecord(final JsonNode node) throws IOException {
     requireObject(node, "OSV record");
     requireFields(
-        node,
-        Set.of(
-            "osvId", "modified", "aliases", "affectedPackages", "cnaAffectedEntries", "evidence"),
-        "OSV record");
+        node, Set.of("osvId", "modified", "aliases", "affectedPackages", "evidence"), "OSV record");
     final JsonNode modifiedNode = node.get("modified");
     if (modifiedNode == null || !modifiedNode.isTextual()) {
       throw new IOException("modified must be RFC 3339 timestamp text");
@@ -132,14 +126,6 @@ public final class AdvisoryEvidenceReader {
     }
     for (final JsonNode item : evidenceNodes) {
       evidence.add(readEvidence(item));
-    }
-    final List<CveAffectedEntryContext> cnaEntries = new ArrayList<>();
-    final JsonNode cnaNodes = node.get("cnaAffectedEntries");
-    if (!cnaNodes.isArray()) {
-      throw new IOException("cnaAffectedEntries must be an array");
-    }
-    for (final JsonNode entry : cnaNodes) {
-      cnaEntries.add(CnaAffectedEntryReader.read(entry));
     }
     final List<OsvAffectedPackage> affectedPackages = new ArrayList<>();
     final JsonNode packageNodes = node.get("affectedPackages");
@@ -155,7 +141,6 @@ public final class AdvisoryEvidenceReader {
           modifiedNode.textValue(),
           readStringSet(node.get("aliases"), "aliases"),
           affectedPackages,
-          cnaEntries,
           evidence);
     } catch (final IllegalArgumentException exception) {
       throw new IOException("Invalid OSV record: " + exception.getMessage(), exception);
@@ -236,95 +221,13 @@ public final class AdvisoryEvidenceReader {
     final String kind = requiredText(node, "kind");
     try {
       return switch (kind) {
-        case "structured-source-class" -> readStructured(node);
-        case "corroborated-source-class-candidate" -> readCorroborated(node);
         case "heuristic-candidate" -> readHeuristic(node);
         case "package-advisory" -> readPackage(node);
-        case "explicit-class-mapping", "explicit-prerequisite" ->
-            throw new IOException(
-                "Owner proof evidence cannot be loaded from an advisory document");
         default -> throw new IOException("Unknown advisory evidence discriminator: " + kind);
       };
     } catch (final IllegalArgumentException exception) {
       throw new IOException("Invalid " + kind + " evidence: " + exception.getMessage(), exception);
     }
-  }
-
-  private StructuredSourceClassEvidence readStructured(final JsonNode node) throws IOException {
-    requireFields(
-        node,
-        Set.of(
-            "kind",
-            "scope",
-            "provenance",
-            "cnaAffectedEntryIdentity",
-            "affectedProductIdentity",
-            "programFiles",
-            "programRoutines",
-            "fileClassAttribution",
-            "routineClassAttribution"),
-        "structured-source-class evidence");
-    return new StructuredSourceClassEvidence(
-        readScope(node.get("scope")),
-        readProvenance(node.get("provenance")),
-        requiredText(node, "cnaAffectedEntryIdentity"),
-        requiredText(node, "affectedProductIdentity"),
-        readStringSet(node.get("programFiles"), "programFiles"),
-        readStringSet(node.get("programRoutines"), "programRoutines"),
-        readAttribution(node.get("fileClassAttribution"), "fileClassAttribution"),
-        readAttribution(node.get("routineClassAttribution"), "routineClassAttribution"));
-  }
-
-  private CorroboratedSourceClassCandidate readCorroborated(final JsonNode node)
-      throws IOException {
-    requireFields(
-        node,
-        Set.of(
-            "kind",
-            "scope",
-            "provenance",
-            "cnaAffectedEntryIdentity",
-            "artifactCoordinate",
-            "originalArchiveSha256",
-            "physicalJarEntry",
-            "multiReleaseTier",
-            "affectedProductIdentity",
-            "programFile",
-            "classEntry",
-            "sourceFileAttribute",
-            "packagePathComparison",
-            "conventionalLayoutAssumed",
-            "mappingStatus"),
-        "corroborated source candidate");
-    return new CorroboratedSourceClassCandidate(
-        readScope(node.get("scope")),
-        readProvenance(node.get("provenance")),
-        requiredText(node, "cnaAffectedEntryIdentity"),
-        readCoordinate(node.get("artifactCoordinate"), "artifactCoordinate"),
-        requiredText(node, "originalArchiveSha256"),
-        requiredText(node, "physicalJarEntry"),
-        requiredInteger(node, "multiReleaseTier"),
-        requiredText(node, "affectedProductIdentity"),
-        requiredText(node, "programFile"),
-        requiredText(node, "classEntry"),
-        requiredText(node, "sourceFileAttribute"),
-        requiredText(node, "packagePathComparison"),
-        requiredBoolean(node, "conventionalLayoutAssumed"),
-        CorroboratedSourceClassCandidate.MappingStatus.valueOf(
-            requiredText(node, "mappingStatus")));
-  }
-
-  private static ArtifactCoordinate readCoordinate(final JsonNode node, final String context)
-      throws IOException {
-    requireObject(node, context);
-    requireFields(node, COORDINATE_FIELDS, context);
-    return new ArtifactCoordinate(
-        requiredText(node, "groupId"),
-        requiredText(node, "artifactId"),
-        optionalText(node, "version"),
-        requiredText(node, "type"),
-        requiredTextAllowBlank(node, "classifier"),
-        requiredText(node, "scope"));
   }
 
   private HeuristicCandidateEvidence readHeuristic(final JsonNode node) throws IOException {
@@ -390,23 +293,6 @@ public final class AdvisoryEvidenceReader {
     return Set.copyOf(values);
   }
 
-  @SuppressWarnings("PMD.UseConcurrentHashMap")
-  private static Map<String, Set<String>> readAttribution(final JsonNode node, final String field)
-      throws IOException {
-    if (node == null || !node.isObject()) {
-      throw new IOException(field + " must be an object");
-    }
-    final Map<String, Set<String>> result = new LinkedHashMap<>();
-    final Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-    while (fields.hasNext()) {
-      final Map.Entry<String, JsonNode> entry = fields.next();
-      if (result.putIfAbsent(entry.getKey(), readStringSet(entry.getValue(), field)) != null) {
-        throw new IOException(field + " contains duplicate source keys");
-      }
-    }
-    return Map.copyOf(result);
-  }
-
   private static String requiredText(final JsonNode node, final String field) throws IOException {
     final JsonNode value = node == null ? null : node.get(field);
     if (value == null || !value.isTextual() || value.textValue().isBlank()) {
@@ -433,23 +319,6 @@ public final class AdvisoryEvidenceReader {
       throw new IOException(field + " must be a string");
     }
     return value.textValue();
-  }
-
-  private static boolean requiredBoolean(final JsonNode node, final String field)
-      throws IOException {
-    final JsonNode value = node.get(field);
-    if (value == null || !value.isBoolean()) {
-      throw new IOException(field + " must be a boolean");
-    }
-    return value.booleanValue();
-  }
-
-  private static int requiredInteger(final JsonNode node, final String field) throws IOException {
-    final JsonNode value = node.get(field);
-    if (value == null || !value.isIntegralNumber() || !value.canConvertToInt()) {
-      throw new IOException(field + " must be an integer");
-    }
-    return value.intValue();
   }
 
   private static void requireObject(final JsonNode node, final String name) throws IOException {

@@ -800,7 +800,6 @@ final class ADR0008MavenPreconditionAssessmentTest {
             List.of(
                 new OsvAffectedPackage(
                     "Maven", scope.packageName(), coordinate, List.of(), List.of())),
-            List.of(),
             List.of(
                 new PackageAdvisoryEvidence(
                     scope,

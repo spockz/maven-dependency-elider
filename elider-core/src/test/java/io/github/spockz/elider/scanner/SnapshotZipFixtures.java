@@ -62,8 +62,8 @@ public final class SnapshotZipFixtures {
     return raw("malformed.json", "{not-json");
   }
 
-  /** Writes typed cache bytes with an invalid present CNA version type. */
-  public static byte[] invalidVersionTypeCache() throws IOException {
+  /** Writes a typed cache document with the retired CNA entry field. */
+  public static byte[] legacyCnaEntryCache() throws IOException {
     final ObjectMapper mapper = new ObjectMapper();
     final ObjectNode root = mapper.createObjectNode();
     root.put("schemaVersion", 1);

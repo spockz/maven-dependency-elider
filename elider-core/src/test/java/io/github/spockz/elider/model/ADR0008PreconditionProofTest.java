@@ -82,15 +82,6 @@ final class ADR0008PreconditionProofTest {
   }
 
   @Test
-  void explicitPrerequisiteEvidenceRetainsPomOrigin() {
-    assertThat(
-            ExplicitEvidenceTestSupport.prerequisiteEvidence(
-                    mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"))
-                .origin())
-        .isEqualTo(EvidenceOrigin.POM);
-  }
-
-  @Test
   @DisplayName("ADR-0008/empty inventory cannot bind the affected artifact")
   void emptyCompleteInventoryIsDistinctButCannotBindAffectedArtifact() throws Exception {
     final PreconditionClassInventory inventory = PreconditionClassInventory.complete(List.of());

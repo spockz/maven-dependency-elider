@@ -13,11 +13,7 @@ public record OsvAdvisoryRecord(
     String modified,
     Set<String> aliases,
     List<OsvAffectedPackage> affectedPackages,
-    List<CveAffectedEntryContext> cnaAffectedEntries,
     List<AdvisoryEvidence> evidence) {
-  /** Exactly one source entry must own structured attribution. */
-  private static final int ONE_MATCHING_CNA_ENTRY = 1;
-
   /** Validates record identity and freezes aliases and evidence. */
   public OsvAdvisoryRecord {
     if (osvId == null || osvId.isBlank()) {
@@ -42,9 +38,6 @@ public record OsvAdvisoryRecord(
     Objects.requireNonNull(affectedPackages, "affectedPackages");
     affectedPackages.forEach(value -> Objects.requireNonNull(value, "affected package"));
     affectedPackages = List.copyOf(affectedPackages);
-    Objects.requireNonNull(cnaAffectedEntries, "cnaAffectedEntries");
-    cnaAffectedEntries.forEach(value -> Objects.requireNonNull(value, "CNA affected entry"));
-    cnaAffectedEntries = List.copyOf(cnaAffectedEntries);
     Objects.requireNonNull(evidence, "evidence");
     evidence.forEach(item -> Objects.requireNonNull(item, "evidence item"));
     evidence = List.copyOf(evidence);
@@ -81,83 +74,6 @@ public record OsvAdvisoryRecord(
       if (!ownedSource) {
         throw new IllegalArgumentException("Evidence provenance must belong to this OSV record");
       }
-      if (item instanceof StructuredSourceClassEvidence structured) {
-        validateStructuredEntryLink(structured, cnaAffectedEntries, osvId, aliases);
-      } else if (item instanceof CorroboratedSourceClassCandidate corroborated) {
-        validateCorroboratedEntryLink(corroborated, cnaAffectedEntries, osvId, aliases);
-      }
     }
-  }
-
-  private static void validateStructuredEntryLink(
-      final StructuredSourceClassEvidence evidence,
-      final List<CveAffectedEntryContext> entries,
-      final String osvId,
-      final Set<String> aliases) {
-    final List<CveAffectedEntryContext> matches =
-        entries.stream()
-            .filter(entry -> entry.entryIdentity().equals(evidence.cnaAffectedEntryIdentity()))
-            .toList();
-    if (matches.size() != ONE_MATCHING_CNA_ENTRY) {
-      throw new IllegalArgumentException(
-          "Structured evidence must identify one CNA affected entry");
-    }
-    final CveAffectedEntryContext entry = matches.getFirst();
-    if (!MavenPackageIdentity.matchesCnaScope(entry, evidence.scope().affectedCoordinate())
-        || !hasExpectedSourceRecord(
-            entry,
-            evidence.affectedProductIdentity(),
-            evidence.scope().cveId(),
-            osvId,
-            aliases,
-            evidence.provenance().sourceRecordSha256())
-        || !entry.programFiles().equals(evidence.programFiles())
-        || !entry.programRoutines().equals(evidence.programRoutines())) {
-      throw new IllegalArgumentException(
-          "Structured evidence must retain its exact CNA entry claims");
-    }
-  }
-
-  private static void validateCorroboratedEntryLink(
-      final CorroboratedSourceClassCandidate candidate,
-      final List<CveAffectedEntryContext> entries,
-      final String osvId,
-      final Set<String> aliases) {
-    final List<CveAffectedEntryContext> matches =
-        entries.stream()
-            .filter(entry -> entry.entryIdentity().equals(candidate.cnaAffectedEntryIdentity()))
-            .toList();
-    if (matches.size() != ONE_MATCHING_CNA_ENTRY) {
-      throw new IllegalArgumentException(
-          "Corroborated candidate must identify one CNA affected entry");
-    }
-    final CveAffectedEntryContext entry = matches.getFirst();
-    if (!MavenPackageIdentity.matchesCnaArtifact(entry, candidate.artifactCoordinate())
-        || !hasExpectedSourceRecord(
-            entry,
-            candidate.affectedProductIdentity(),
-            candidate.scope().cveId(),
-            osvId,
-            aliases,
-            candidate.provenance().sourceRecordSha256())
-        || !entry.programFiles().contains(candidate.programFile())
-        || !entry.hasUnambiguousExactAffectedVersion(candidate.artifactCoordinate().version())) {
-      throw new IllegalArgumentException(
-          "Corroborated candidate must retain one exact CNA product/version claim");
-    }
-  }
-
-  private static boolean hasExpectedSourceRecord(
-      final CveAffectedEntryContext entry,
-      final String expectedProductIdentity,
-      final String cveId,
-      final String osvId,
-      final Set<String> aliases,
-      final String expectedDigest) {
-    final String productIdentity =
-        (entry.vendor() == null ? "" : entry.vendor()) + ":" + entry.product();
-    return productIdentity.equals(expectedProductIdentity)
-        && entry.sourceRecord().authorizesStructuredClaims(cveId, osvId, aliases)
-        && entry.sourceRecord().sourceRecordSha256().equals(expectedDigest);
   }
 }

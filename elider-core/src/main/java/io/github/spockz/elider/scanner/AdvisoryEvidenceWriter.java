@@ -9,14 +9,11 @@ import io.github.spockz.elider.model.AdvisoryEvidence;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.CorroboratedSourceClassCandidate;
-import io.github.spockz.elider.model.CveAffectedEntryContext;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
-import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -77,10 +74,6 @@ public final class AdvisoryEvidenceWriter {
             java.util.Comparator.comparing(OsvAffectedPackage::ecosystem)
                 .thenComparing(OsvAffectedPackage::packageName))
         .forEach(value -> writeAffectedPackage(affectedPackages.addObject(), value));
-    final ArrayNode cnaEntries = node.putArray("cnaAffectedEntries");
-    record.cnaAffectedEntries().stream()
-        .sorted(java.util.Comparator.comparing(CveAffectedEntryContext::entryIdentity))
-        .forEach(entry -> writeCnaEntry(cnaEntries.addObject(), entry));
     final List<ObjectNode> evidence =
         record.evidence().stream()
             .map(this::writeEvidence)
@@ -128,38 +121,9 @@ public final class AdvisoryEvidenceWriter {
     }
   }
 
-  private static void writeCnaEntry(final ObjectNode target, final CveAffectedEntryContext entry) {
-    CnaAffectedEntryCodec.write(target, entry);
-  }
-
   private ObjectNode writeEvidence(final AdvisoryEvidence evidence) {
     final ObjectNode node = mapper.createObjectNode();
-    if (evidence instanceof StructuredSourceClassEvidence structured) {
-      node.put("kind", "structured-source-class");
-      writeCommon(node, structured.scope(), structured.provenance());
-      node.put("cnaAffectedEntryIdentity", structured.cnaAffectedEntryIdentity());
-      node.put("affectedProductIdentity", structured.affectedProductIdentity());
-      writeStrings(node.putArray("programFiles"), structured.programFiles());
-      writeStrings(node.putArray("programRoutines"), structured.programRoutines());
-      writeAttribution(node.putObject("fileClassAttribution"), structured.fileClassAttribution());
-      writeAttribution(
-          node.putObject("routineClassAttribution"), structured.routineClassAttribution());
-    } else if (evidence instanceof CorroboratedSourceClassCandidate corroborated) {
-      node.put("kind", "corroborated-source-class-candidate");
-      writeCommon(node, corroborated.scope(), corroborated.provenance());
-      node.put("cnaAffectedEntryIdentity", corroborated.cnaAffectedEntryIdentity());
-      writeCoordinate(node.putObject("artifactCoordinate"), corroborated.artifactCoordinate());
-      node.put("originalArchiveSha256", corroborated.originalArchiveSha256());
-      node.put("physicalJarEntry", corroborated.physicalJarEntry());
-      node.put("multiReleaseTier", corroborated.multiReleaseTier());
-      node.put("affectedProductIdentity", corroborated.affectedProductIdentity());
-      node.put("programFile", corroborated.programFile());
-      node.put("classEntry", corroborated.classEntry());
-      node.put("sourceFileAttribute", corroborated.sourceFileAttribute());
-      node.put("packagePathComparison", corroborated.packagePathComparison());
-      node.put("conventionalLayoutAssumed", corroborated.conventionalLayoutAssumed());
-      node.put("mappingStatus", corroborated.mappingStatus().name());
-    } else if (evidence instanceof HeuristicCandidateEvidence heuristic) {
+    if (evidence instanceof HeuristicCandidateEvidence heuristic) {
       node.put("kind", "heuristic-candidate");
       writeCommon(node, heuristic.scope(), heuristic.provenance());
       writeStrings(node.putArray("candidateClasses"), heuristic.candidateClasses());
@@ -218,16 +182,5 @@ public final class AdvisoryEvidenceWriter {
 
   private static void writeStrings(final ArrayNode target, final Set<String> values) {
     new TreeSet<>(values).forEach(target::add);
-  }
-
-  private static void writeAttribution(
-      final ObjectNode target, final Map<String, Set<String>> attribution) {
-    attribution.entrySet().stream()
-        .sorted(Map.Entry.comparingByKey())
-        .forEach(
-            entry -> {
-              final ArrayNode classes = target.putArray(entry.getKey());
-              writeStrings(classes, entry.getValue());
-            });
   }
 }
