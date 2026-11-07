@@ -130,8 +130,8 @@ final class MavenElisionReportGenericRenderer {
       if (observation.diagnostic() != null) {
         lines.add("    " + observation.diagnostic());
       }
-      for (final String diagnostic : observation.observationDiagnostics()) {
-        lines.add("    " + diagnostic);
+      if (!observation.observationDiagnostics().isEmpty()) {
+        lines.add("    Source diagnostics are in the JSON snapshot");
       }
     }
   }

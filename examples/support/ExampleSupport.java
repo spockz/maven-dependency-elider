@@ -1281,8 +1281,8 @@ public final class ExampleSupport {
     if (!output.contains("[INFO] Vulnerability findings:")) {
       throw new IOException("[" + fixture + "] Report output has no vulnerability findings section");
     }
-    if (!output.contains("[INFO] Source observations:")) {
-      throw new IOException("[" + fixture + "] Report output has no source observations section");
+    if (!output.contains("[INFO] CVE Sources:")) {
+      throw new IOException("[" + fixture + "] Report output has no CVE sources section");
     }
     if (findings.isEmpty() && !output.contains("[INFO] Vulnerability findings: none")) {
       throw new IOException("[" + fixture + "] Empty findings must be explicit in report output");
@@ -1362,6 +1362,12 @@ public final class ExampleSupport {
         }
       }
       case "example-spring-boot-app" -> {
+        for (final String expected : List.of("CVE-2024-50379", "CVE-2026-18401", "CVE-2026-77310")) {
+          singleMatching(
+              findings,
+              value -> expected.equals(value.path("vulnerabilityId").asText()),
+              "real Spring advisory " + expected);
+        }
         final JsonNode observedCve =
             singleMatching(
                 findings,

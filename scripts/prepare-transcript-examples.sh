@@ -61,12 +61,8 @@ main() {
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
     -pl dependency-elider-maven-plugin -am install -Dmaven.test.skip=true
 
-  "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
-    -pl dependency-elider-maven-plugin \
-    -Dtest=TranscriptCachePreparationTest \
-    "-Delide.transcriptCacheFixtureInput=$repo_root/scripts/fixtures/transcript-vulnerability-cache/index.json" \
-    "-Delide.transcriptCacheFixtureOutput=$cache_dir/index.json" \
-    test
+  bash "$repo_root/scripts/prepare-example-vulnerability-cache.sh" \
+    "$cache_dir" "$maven" "${maven_options[@]}"
 
   run_fixture_maven() {
     local fixture_dir=$1

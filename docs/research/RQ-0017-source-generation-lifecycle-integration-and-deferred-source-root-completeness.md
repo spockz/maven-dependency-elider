@@ -194,3 +194,27 @@ The real Maven lifecycle test `extensionRebindsElideAfterGeneratedBytecodeExists
 The source union feeds compile artifact pruning and class-trimming roots, but remains separate from `BytecodeReferenceScan`, class-use categories, and runtime telemetry. Class-use reports continue to label only bytecode and runtime evidence; CVE/VEX claims are still bounded by their existing trim and precondition evidence. The source supplement can retain source-only unused types, and it does not guarantee dependencies referenced only by test sources. Missing/empty source roots, unsupported source forms or compiler/platform modes, and javac attribution errors produce a visible conservative fallback that retains every compile-visible coordinate and all indexed classes it provides.
 
 Remaining boundary: trusted VEX inventory requires the packaged Maven extension and a real lifecycle-sourced `process-classes` execution. Direct Mojo invocation, a missing lifecycle phase, and other phases remain conservative. The process-classes mode takes effect only after production compilation; it cannot remove dependencies from that compile invocation.
+
+## 7. Dated verification: 2026-11-06
+
+The source-attribution and automatic inlined-constant preservation described earlier in this record
+are historical: the dated amendment to [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md)
+and [ADR-0013](../adr/0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md)
+supersede them with production bytecode attribution and explicit retention for dependencies used only
+through inlined constants.
+
+A real Spring Boot example was verified using the existing extension-driven `process-classes`
+rebind. Production compile preceded elide, three tests passed in a separate `clean test` run, and a
+`clean package` run produced a JAR whose HTTP endpoint returned the expected response. A standalone
+`dependency:tree` caused the extension to run compile and elide first, while `clean compile` alone did
+not invoke elide. A valid source-free JAR project failed because no compiled class output existed.
+
+The phase move did not resolve the Logback/Janino prerequisite assessment: with the mapping and
+completeness opt-in supplied, the guard rejected Spring Boot's later `repackage` execution. It also
+did so for a request ending at `process-classes`, where that execution did not run. The common report
+did not surface the guard reason. The concrete setup, outcomes and limitations are recorded in
+[RQ-0020](RQ-0020-advisory-source-coverage-and-scanner-finding-projections.md) and its
+[verification snapshot](data/rq-0020/2026-11-06-process-classes-verification.json). Changing the
+default phase would need a separate compatibility decision and updates to phase inference, goal
+preparation, supported output boundaries, examples, and regression tests; the existing accepted
+`initialize` default has not changed.

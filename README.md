@@ -428,7 +428,7 @@ Run standalone CVE fixture baselines:
 
 The transcripts below come from configured Maven invocations. Run `make update-transcripts` to refresh them. Report dependency graphs keep the first three rows; an elision count and SHA-256 digest detect changes in omitted rows. Rerun the displayed fixture's full `report` command to inspect its graph without elision.
 
-The pinned [transcript fixture](https://github.com/spockz/maven-dependency-elider/blob/main/scripts/fixtures/transcript-vulnerability-cache/README.md) supplies two package-advisory contexts and a commit-derived class candidate for stable examples. These package and heuristic rows remain review-only. Effective declared code from any input uses the same attribution and physical checks; manual `LOW`/`MEDIUM` retains review-only intent.
+Example tests and generated transcripts use complete, pinned OSV Maven and CVE List snapshots stored with [Git LFS](scripts/fixtures/vulnerability-snapshots/README.md). Install Git LFS and run `git lfs pull` before running these checks. The snapshots make the examples reproducible but do not represent live advisory coverage; a normal assessment uses its configured vulnerability cache. Package and heuristic rows remain review-only. Effective declared code from any input uses the same attribution and physical checks; manual `LOW`/`MEDIUM` retains review-only intent.
 
 Read each report from the elision totals through its vulnerability findings and source observations. The examples distinguish package matches and heuristic leads from verified declared-code absence and complete-inventory prerequisite absence. These outcomes retain their scope and do not predict what every package scanner will report.
 
@@ -470,16 +470,46 @@ Process exit status: 0
 [INFO] Applied bans: none
 [INFO] Program classes pruned from retained JARs: 535 (uncompressed omitted .class payload bytes: 1.93 MiB; excludes module descriptors and archive metadata)
 [INFO]   - org.apache.commons:commons-compress:jar:1.28.0 (compile): 535 classes, 1.93 MiB
-[INFO] Vulnerability findings: 1
+[INFO] Vulnerability findings: 6
 [INFO]   - CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
-[INFO]     Aliases: [CVE-2014-3577, GHSA-transcript-httpclient]
+[INFO]     Aliases: [CVE-2014-3577, GHSA-cfh5-3ghh-wfjx]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Declared code: [org.apache.http.conn.ssl.AbstractVerifier] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
 [INFO]     Heuristic leads: [org.apache.http.conn.ssl.AbstractVerifier]
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2015-5262 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
+[INFO]     Aliases: [CVE-2015-5262, GHSA-fmj5-wv96-r2ch]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-13956 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [REMOVED]
+[INFO]     Aliases: [CVE-2020-13956, GHSA-7r82-7xv7-xcpj]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-25710 org.apache.commons:commons-compress:jar:1.28.0 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2024-25710, GHSA-4g9r-vxhx-9pgx]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=1.3,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=1.25.0,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=1.3,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=1.25.0,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2024-26308 org.apache.commons:commons-compress:jar:1.28.0 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2024-26308, GHSA-4265-ccf5-phj5]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=1.21,status=affected,versionType=semver,lessThan=1.26.0,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=1.21,status=affected,versionType=semver,lessThan=1.26.0,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2024-47554 commons-io:commons-io:jar:2.20.0 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-47554, GHSA-78wr-2p64-hpwj]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=2.0,status=affected,versionType=semver,lessThan=2.14.0,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=2.0,status=affected,versionType=semver,lessThan=2.14.0,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
 [INFO] CVE Sources:
-[INFO]   - CVE_LIST CURRENT
+[INFO]   - CVE_LIST PARTIAL
+[INFO]     Skipped 79 CVE List source row(s)
+[INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
@@ -561,9 +591,550 @@ Process exit status: 0
 [INFO]   - org.springframework:spring-webmvc:jar:6.1.14 (compile): 146 classes, 524.46 KiB
 [INFO]   - org.webjars:webjars-locator-core:jar:0.58 (runtime): 1 classes, 10.66 KiB
 [INFO]   - org.yaml:snakeyaml:jar:2.2 (compile): 0 classes, 2.65 KiB
-[INFO] Vulnerability findings: none
+[INFO] Vulnerability findings: 101
+[INFO]   - CVE-2024-12798 ch.qos.logback:logback-core:jar:1.5.11 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-12798, GHSA-pr98-23f8-jwxv]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-12801 ch.qos.logback:logback-core:jar:1.5.11 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-12801, GHSA-6v67-2wr5-gvf4]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-31573 org.xmlunit:xmlunit-core:jar:2.9.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-31573, GHSA-chfm-68vv-pvw5]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-50379 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2024-50379, CVE-2024-50379, GHSA-5j33-cvvr-w245]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-56337 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2024-56337, CVE-2024-56337, GHSA-27hp-xhwr-wr2m]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-57699 net.minidev:json-smart:jar:2.5.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-57699, GHSA-pq2g-wx69-c263]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.11 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-11226, GHSA-25qh-j22f-pwp8]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-22233 org.springframework:spring-context:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-22233, GHSA-4wp7-92pw-q264]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-22235 org.springframework.boot:spring-boot:jar:3.3.5 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-22235, GHSA-rc42-6c7j-7h5r]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-24813 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-24813, CVE-2025-24813, GHSA-83qj-6fr2-vhqg]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-31650 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-31650, CVE-2025-31650, GHSA-3p2h-wqq4-wf4h]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-31651 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-31651, CVE-2025-31651, GHSA-ff77-26x5-69cr]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-41234 org.springframework:spring-web:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-41234, GHSA-6r3c-xf4w-jxjm]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Declared code: [org.springframework.http.ContentDisposition] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [org.springframework.http.ContentDisposition]
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-41242 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2025-41242, GHSA-r936-gwx5-v52f]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-41249 org.springframework:spring-core:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-41249, GHSA-jmp9-x22r-554x]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-46701 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-46701, CVE-2025-46701, GHSA-h2fw-rfh5-95r3]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-48988 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-48988, CVE-2025-48988, GHSA-h3gc-qfqq-6h8f]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-48989 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-48989, CVE-2025-48989, GHSA-gqp3-2cvr-x8m3]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-49124 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-49124, CVE-2025-49124, GHSA-42wg-hm62-jcwg]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-49125 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-49125, CVE-2025-49125, GHSA-wc4r-xq3c-5cf3]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-52520 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-52520, CVE-2025-52520, GHSA-wr62-c79q-cv37]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-53506 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-53506, CVE-2025-53506, GHSA-25xr-qj8w-c4vf]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-55668 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-55668, CVE-2025-55668, GHSA-23hv-mwm6-g8jf]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-55752 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-55752, CVE-2025-55752, GHSA-wmwf-9ccg-fff5]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-55754 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-55754, CVE-2025-55754, GHSA-vfww-5hm6-hx2j]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-61795 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-61795, CVE-2025-61795, GHSA-hgrr-935x-pq79]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-66614 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2025-66614, CVE-2025-66614, GHSA-fpj8-gq4v-p354]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-10532 ch.qos.logback:logback-core:jar:1.5.11 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-10532, GHSA-jhq6-gfmj-v8fx]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-110257 org.ow2.asm:asm:jar:9.10.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.ow2.asm/asm,collectionURL=https://repo1.maven.org/maven2/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-110258 org.ow2.asm:asm:jar:9.10.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.ow2.asm/asm,collectionURL=https://repo1.maven.org/maven2/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-110259 org.ow2.asm:asm:jar:9.10.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.ow2.asm/asm,collectionURL=https://repo1.maven.org/maven2/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-110260 org.ow2.asm:asm:jar:9.10.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.ow2.asm/asm,collectionURL=https://repo1.maven.org/maven2/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-110261 org.ow2.asm:asm:jar:9.10.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.ow2.asm/asm,collectionURL=https://repo1.maven.org/maven2/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-110263 org.ow2.asm:asm:jar:9.10.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.ow2.asm/asm,collectionURL=https://repo1.maven.org/maven2/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-110879 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/DatabindContext.java] RESOLVED; classes: [com.fasterxml.jackson.databind.DatabindContext]; reasons: []
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/jsontype/DefaultBaseTypeLimitingValidator.java] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator, com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator$UnsafeBaseTypes]; reasons: []
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/jsontype/impl/StdTypeResolverBuilder.java] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.impl.StdTypeResolverBuilder, com.fasterxml.jackson.databind.jsontype.impl.StdTypeResolverBuilder$1]; reasons: []
+[INFO]     Declared code: [DatabindContext._resolveAndValidateGeneric] RESOLVED; classes: [com.fasterxml.jackson.databind.DatabindContext]; reasons: []
+[INFO]     Declared code: [DatabindContext._validateTypeParameter] UNRESOLVED; classes: []; reasons: [ROUTINE_METHOD_NOT_FOUND]
+[INFO]     Declared code: [DefaultBaseTypeLimitingValidator] UNRESOLVED; classes: []; reasons: [ROUTINE_METHOD_NOT_FOUND]
+[INFO]     Declared code: [StdTypeResolverBuilder] UNRESOLVED; classes: []; reasons: [ROUTINE_METHOD_NOT_FOUND]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-110974 com.vaadin.external.google:android-json:jar:0.0.20131108.vaadin1 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-112046 org.ow2.asm:asm:jar:9.10.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.ow2.asm/asm,collectionURL=https://repo1.maven.org/maven2/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-113602 net.minidev:json-smart:jar:2.5.1 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=2.6.0,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=2.6.0,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-116486 org.objenesis:objenesis:jar:3.3 (test) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=0,status=affected,versionType=custom,lessThan=3.6,lessThanOrEqual=null,changes=[], version=3.6,status=unaffected,versionType=custom,lessThan=null,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=0,status=affected,versionType=custom,lessThan=3.6,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=3.6,status=unaffected,versionType=custom,lessThan=null,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-1225 ch.qos.logback:logback-core:jar:1.5.11 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-1225, GHSA-qqpg-mvqg-649v]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-18401 com.fasterxml.jackson.core:jackson-core:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-18401, GHSA-72hv-8253-57qq]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._finishNumberIntegralPart] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._valueComplete] UNRESOLVED; classes: []; reasons: [ROUTINE_METHOD_NOT_FOUND]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-19032 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-19032, GHSA-wjgm-6hv5-3cvf]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.databind.ext.NioPathDeserializer
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/ext/NioPathDeserializer.java] RESOLVED; classes: [com.fasterxml.jackson.databind.ext.NioPathDeserializer]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.databind.ext.NioPathDeserializer.deserialize] RESOLVED; classes: [com.fasterxml.jackson.databind.ext.NioPathDeserializer]; reasons: []
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-22733 org.springframework.boot:spring-boot-starter-actuator:jar:3.3.5 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-22733, GHSA-mgvc-8q2h-5pgc]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-22735 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-22735, GHSA-6hcq-hmm3-jj3c]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-22737 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-22737, GHSA-4773-3jfm-qmx3]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-22741 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-22741, GHSA-wg35-8jpf-2xv3]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-22745 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-22745, GHSA-6p4f-wcwh-5vvm]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-24400 org.assertj:assertj-core:jar:3.27.3 (test) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-24400, GHSA-rqfh-9r24-8c9r]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Declared code: [org.assertj.core.api.AbstractCharSequenceAssert] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Declared code: [org.assertj.core.util.xml.XmlStringPrettyFormatter] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [org.assertj.core.api.AbstractCharSequenceAssert, org.assertj.core.util.xml.XmlStringPrettyFormatter]
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-24734 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-24734, CVE-2026-24734, GHSA-mgp5-rv84-w37q]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-24880 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-24880, CVE-2026-24880, GHSA-563x-q5rq-57qp]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-25854 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-25854, CVE-2026-25854, GHSA-9m3c-qcxr-9x87]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-34483 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-34483, CVE-2026-34483, GHSA-rv64-5gf8-9qq8]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-34487 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-34487, CVE-2026-34487, GHSA-x4m4-345f-5h5g]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-40973 org.springframework.boot:spring-boot:jar:3.3.5 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-40973, GHSA-wwpq-f5c3-7hvx]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-40984 io.micrometer:micrometer-core:jar:1.13.6 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-40984, GHSA-g3pr-3p32-fp23]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41001 org.springframework.boot:spring-boot-autoconfigure:jar:3.3.5 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41001, GHSA-ggg2-9786-hwc8]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41284 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-41284, CVE-2026-41284, GHSA-gx5v-xp9w-j4cg]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41293 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-41293, CVE-2026-41293, GHSA-r29c-68gh-xp6x]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41841 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-41841, GHSA-mq64-j8f9-9gcj]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41842 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-41842, GHSA-x23c-287f-qqv5]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41843 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-41843, GHSA-72pg-x5f8-j25j]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41844 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-41844, GHSA-h3qp-gqrc-q736]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41845 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-41845, GHSA-3chg-m5w7-qfv5]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41846 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-41846, GHSA-957g-f97v-vppc]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41848 org.springframework:spring-core:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41848, GHSA-659m-px2c-25wj]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41850 org.springframework:spring-expression:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41850, GHSA-r5w3-xv2f-j59q]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41851 org.springframework:spring-expression:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41851, GHSA-wxpp-56q6-5pcg]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41852 org.springframework:spring-expression:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41852, GHSA-9f52-rjqv-25qv]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41853 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-41853, GHSA-cjpg-rgq5-fr37]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-42498 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-42498, CVE-2026-42498, GHSA-fv25-8xcx-gqjc]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-43512 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-43512, CVE-2026-43512, GHSA-h6fc-48rj-7qqh]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-43513 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-43513, CVE-2026-43513, GHSA-5mp6-jrq3-r938]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-43514 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-43514, CVE-2026-43514, GHSA-9m89-8frq-c98c]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-43515 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-43515, CVE-2026-43515, GHSA-5m62-pw8w-7w9f]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-47884 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-47884, GHSA-pc63-qcmh-9cmg]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-49844 org.apache.logging.log4j:log4j-api:jar:2.23.1 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-49844, GHSA-qv9r-c865-cp47]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-53404 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-53404, CVE-2026-53404, GHSA-h792-v28v-ppgr]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54512 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-54512, GHSA-j3rv-43j4-c7qm]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54513 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-54513, GHSA-rmj7-2vxq-3g9f]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54514 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-54514, GHSA-hgj6-7826-r7m5]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54515 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-54515, GHSA-5jmj-h7xm-6q6v]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-55276 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-55276, CVE-2026-55276, GHSA-mqg3-r7h5-24x4]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-55956 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-55956, CVE-2026-55956, GHSA-5v3h-fjv2-54fg]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-55957 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-55957, CVE-2026-55957, GHSA-7895-gffq-w6jq]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-59888 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-59888, GHSA-3pjw-73gf-8qr5]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-59889 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-59889, GHSA-5gvw-p9qm-jgwh]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-65182 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-65182, CVE-2026-65182, GHSA-gcx9-497g-6cp6]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-65905 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-65905, CVE-2026-65905, GHSA-9xv2-5v5q-p794]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-68494 com.fasterxml.jackson.core:jackson-core:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-68494, GHSA-r7wm-3cxj-wff9]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._finishNumberIntegralPart] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._startNegativeNumber] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._startPositiveNumber] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.core.async.ByteArrayFeeder] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Declared code: [com.fasterxml.jackson.core.exc.StreamConstraintsException] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [com.fasterxml.jackson.core.async.ByteArrayFeeder, com.fasterxml.jackson.core.exc.StreamConstraintsException]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-68497 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-68497, GHSA-q4xh-88c3-wmh7]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/ext/CoreXMLDeserializers.java] RESOLVED; classes: [com.fasterxml.jackson.databind.ext.CoreXMLDeserializers, com.fasterxml.jackson.databind.ext.CoreXMLDeserializers$Std]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.databind.ext.CoreXMLDeserializers.Std._deserialize] UNRESOLVED; classes: []; reasons: [ROUTINE_OWNER_NOT_FOUND]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-68498 com.fasterxml.jackson.core:jackson-core:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.core.json.ReaderBasedJsonParser
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/core/json/ReaderBasedJsonParser.java] RESOLVED; classes: [com.fasterxml.jackson.core.json.ReaderBasedJsonParser]; reasons: []
+[INFO]     Declared code: [ReaderBasedJsonParser._parseName2] RESOLVED; classes: [com.fasterxml.jackson.core.json.ReaderBasedJsonParser]; reasons: []
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-68525 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-tomcat-2026-68525, CVE-2026-68525, GHSA-h3x4-894j-xpx5]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-77310 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-77310, GHSA-vvgp-rfg2-7rr6]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-83557 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-83557, GHSA-gx83-3vf8-gh7j]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/jsontype/DefaultBaseTypeLimitingValidator.java] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator, com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator$UnsafeBaseTypes]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator.isUnsafeBaseType] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator, com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator$UnsafeBaseTypes]; reasons: []
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-84939 org.freemarker:freemarker:jar:2.3.33 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-84939, GHSA-27j2-h3m2-8237]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=2.2.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=2.3.34,changes=[], version=2.3.35,status=unaffected,versionType=semver,lessThan=null,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=2.2.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=2.3.34,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=2.3.35,status=unaffected,versionType=semver,lessThan=null,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-89407 com.fasterxml.jackson.core:jackson-core:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-89407, GHSA-p6pp-m3f8-5c89]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.core.io.NumberInput
+[INFO]     Declared code: [com.fasterxml.jackson.core.io.NumberInput.looksLikeValidNumber] RESOLVED; classes: [com.fasterxml.jackson.core.io.NumberInput]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.core.io.NumberInput] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [com.fasterxml.jackson.core.io.NumberInput]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-89425 com.fasterxml.jackson.core:jackson-core:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-89425, GHSA-7hhh-6rmp-j9qf]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.core.json.UTF8DataInputJsonParser
+[INFO]     Declared code: [com.fasterxml.jackson.core.json.UTF8DataInputJsonParser._reportInvalidToken] RESOLVED; classes: [com.fasterxml.jackson.core.json.UTF8DataInputJsonParser]; reasons: []
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-91776 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-91776, GHSA-wv8q-qhhj-9h54]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.databind.jsontype.impl.TypeDeserializerBase
+[INFO]     Declared code: [com.fasterxml.jackson.databind.jsontype.impl.TypeDeserializerBase._findDeserializer] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.impl.TypeDeserializerBase]; reasons: []
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-91777 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-91777, GHSA-cxp5-3px4-pw24]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [com.fasterxml.jackson.databind.deser.std.CollectionDeserializer.CollectionReferringAccumulator.resolveForwardReference] UNRESOLVED; classes: []; reasons: [ROUTINE_OWNER_NOT_FOUND]
+[INFO]     Declared code: [com.fasterxml.jackson.databind.deser.std.MapDeserializer.MapReferringAccumulator.resolveForwardReference] UNRESOLVED; classes: []; reasons: [ROUTINE_OWNER_NOT_FOUND]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-9828 ch.qos.logback:logback-core:jar:1.5.11 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-9828, GHSA-p47f-322f-whfh]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - GHSA-mhm7-754m-9p8w com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
 [INFO] CVE Sources:
-[INFO]   - CVE_LIST CURRENT
+[INFO]   - CVE_LIST PARTIAL
+[INFO]     Skipped 79 CVE List source row(s)
+[INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
@@ -629,17 +1200,189 @@ Process exit status: 0
 [INFO]   - org.codehaus.janino:commons-compiler:jar:3.1.12 (compile): 51 classes, 96.78 KiB
 [INFO]   - org.codehaus.janino:janino:jar:3.1.12 (compile): 52 classes, 330.49 KiB
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
-[INFO] Vulnerability findings: 1
+[INFO] Vulnerability findings: 29
 [INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9 (compile) [RETAINED_AND_TRIMMED]
-[INFO]     Aliases: [CVE-2022-42889, GHSA-transcript-commons-text]
+[INFO]     Aliases: [CVE-2022-42889, GHSA-599f-7c49-w659]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: DECLARED_CODE_ABSENT; All effective declared code and its nested classes are absent from the trimmed artifact. This observation is limited to the declared code and does not establish declaration completeness.
 [INFO]     Declared code: [org.apache.commons.text.lookup.StringLookup] RESOLVED; classes: [org.apache.commons.text.lookup.StringLookup]; reasons: []
-[INFO]     Overridden fields: [intent]
-[INFO]     Enriched fields: [code]
+[INFO]     Declared code: [org.apache.commons.text.lookup.StringLookup] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [org.apache.commons.text.lookup.StringLookup]
+[INFO]     Overridden fields: [code, intent]
 [INFO]     Sources: [OSV, POM]
+[INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-11226, GHSA-25qh-j22f-pwp8]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-41249 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-41249, GHSA-jmp9-x22r-554x]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-10532 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-10532, GHSA-jhq6-gfmj-v8fx]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-110879 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/DatabindContext.java] RESOLVED; classes: [com.fasterxml.jackson.databind.DatabindContext]; reasons: []
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/jsontype/DefaultBaseTypeLimitingValidator.java] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator, com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator$UnsafeBaseTypes]; reasons: []
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/jsontype/impl/StdTypeResolverBuilder.java] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.impl.StdTypeResolverBuilder, com.fasterxml.jackson.databind.jsontype.impl.StdTypeResolverBuilder$1]; reasons: []
+[INFO]     Declared code: [DatabindContext._resolveAndValidateGeneric] RESOLVED; classes: [com.fasterxml.jackson.databind.DatabindContext]; reasons: []
+[INFO]     Declared code: [DatabindContext._validateTypeParameter] UNRESOLVED; classes: []; reasons: [ROUTINE_METHOD_NOT_FOUND]
+[INFO]     Declared code: [DefaultBaseTypeLimitingValidator] UNRESOLVED; classes: []; reasons: [ROUTINE_METHOD_NOT_FOUND]
+[INFO]     Declared code: [StdTypeResolverBuilder] UNRESOLVED; classes: []; reasons: [ROUTINE_METHOD_NOT_FOUND]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-1225 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-1225, GHSA-qqpg-mvqg-649v]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-18401 com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-18401, GHSA-72hv-8253-57qq]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._finishNumberIntegralPart] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._valueComplete] UNRESOLVED; classes: []; reasons: [ROUTINE_METHOD_NOT_FOUND]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-19032 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-19032, GHSA-wjgm-6hv5-3cvf]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.databind.ext.NioPathDeserializer
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/ext/NioPathDeserializer.java] RESOLVED; classes: [com.fasterxml.jackson.databind.ext.NioPathDeserializer]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.databind.ext.NioPathDeserializer.deserialize] RESOLVED; classes: [com.fasterxml.jackson.databind.ext.NioPathDeserializer]; reasons: []
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-41848 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41848, GHSA-659m-px2c-25wj]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41850 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41850, GHSA-r5w3-xv2f-j59q]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41851 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41851, GHSA-wxpp-56q6-5pcg]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41852 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41852, GHSA-9f52-rjqv-25qv]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54512 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-54512, GHSA-j3rv-43j4-c7qm]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54513 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-54513, GHSA-rmj7-2vxq-3g9f]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54514 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-54514, GHSA-hgj6-7826-r7m5]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54515 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-54515, GHSA-5jmj-h7xm-6q6v]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-59888 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-59888, GHSA-3pjw-73gf-8qr5]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-59889 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-59889, GHSA-5gvw-p9qm-jgwh]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-68494 com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-68494, GHSA-r7wm-3cxj-wff9]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/core/json/async/NonBlockingUtf8JsonParserBase.java] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._finishNumberIntegralPart] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._startNegativeNumber] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [NonBlockingUtf8JsonParserBase._startPositiveNumber] RESOLVED; classes: [com.fasterxml.jackson.core.json.async.NonBlockingUtf8JsonParserBase]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.core.async.ByteArrayFeeder] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Declared code: [com.fasterxml.jackson.core.exc.StreamConstraintsException] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [com.fasterxml.jackson.core.async.ByteArrayFeeder, com.fasterxml.jackson.core.exc.StreamConstraintsException]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-68497 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-68497, GHSA-q4xh-88c3-wmh7]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/ext/CoreXMLDeserializers.java] RESOLVED; classes: [com.fasterxml.jackson.databind.ext.CoreXMLDeserializers, com.fasterxml.jackson.databind.ext.CoreXMLDeserializers$Std]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.databind.ext.CoreXMLDeserializers.Std._deserialize] UNRESOLVED; classes: []; reasons: [ROUTINE_OWNER_NOT_FOUND]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-68498 com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.core.json.ReaderBasedJsonParser
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/core/json/ReaderBasedJsonParser.java] RESOLVED; classes: [com.fasterxml.jackson.core.json.ReaderBasedJsonParser]; reasons: []
+[INFO]     Declared code: [ReaderBasedJsonParser._parseName2] RESOLVED; classes: [com.fasterxml.jackson.core.json.ReaderBasedJsonParser]; reasons: []
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-77310 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-77310, GHSA-vvgp-rfg2-7rr6]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-83557 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-83557, GHSA-gx83-3vf8-gh7j]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator
+[INFO]     Declared code: [src/main/java/com/fasterxml/jackson/databind/jsontype/DefaultBaseTypeLimitingValidator.java] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator, com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator$UnsafeBaseTypes]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator.isUnsafeBaseType] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator, com.fasterxml.jackson.databind.jsontype.DefaultBaseTypeLimitingValidator$UnsafeBaseTypes]; reasons: []
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-89407 com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-89407, GHSA-p6pp-m3f8-5c89]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.core.io.NumberInput
+[INFO]     Declared code: [com.fasterxml.jackson.core.io.NumberInput.looksLikeValidNumber] RESOLVED; classes: [com.fasterxml.jackson.core.io.NumberInput]; reasons: []
+[INFO]     Declared code: [com.fasterxml.jackson.core.io.NumberInput] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [com.fasterxml.jackson.core.io.NumberInput]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-89425 com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-89425, GHSA-7hhh-6rmp-j9qf]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.core.json.UTF8DataInputJsonParser
+[INFO]     Declared code: [com.fasterxml.jackson.core.json.UTF8DataInputJsonParser._reportInvalidToken] RESOLVED; classes: [com.fasterxml.jackson.core.json.UTF8DataInputJsonParser]; reasons: []
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-91776 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-91776, GHSA-wv8q-qhhj-9h54]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.databind.jsontype.impl.TypeDeserializerBase
+[INFO]     Declared code: [com.fasterxml.jackson.databind.jsontype.impl.TypeDeserializerBase._findDeserializer] RESOLVED; classes: [com.fasterxml.jackson.databind.jsontype.impl.TypeDeserializerBase]; reasons: []
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-91777 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-91777, GHSA-cxp5-3px4-pw24]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [com.fasterxml.jackson.databind.deser.std.CollectionDeserializer.CollectionReferringAccumulator.resolveForwardReference] UNRESOLVED; classes: []; reasons: [ROUTINE_OWNER_NOT_FOUND]
+[INFO]     Declared code: [com.fasterxml.jackson.databind.deser.std.MapDeserializer.MapReferringAccumulator.resolveForwardReference] UNRESOLVED; classes: []; reasons: [ROUTINE_OWNER_NOT_FOUND]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-9828 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-9828, GHSA-p47f-322f-whfh]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - GHSA-mhm7-754m-9p8w com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
 [INFO] CVE Sources:
-[INFO]   - CVE_LIST CURRENT
+[INFO]   - CVE_LIST PARTIAL
+[INFO]     Skipped 79 CVE List source row(s)
+[INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
@@ -700,14 +1443,59 @@ Process exit status: 0
 [INFO] Applied bans: none
 [INFO] Program classes pruned from retained JARs: 5 (uncompressed omitted .class payload bytes: 6.38 KiB; excludes module descriptors and archive metadata)
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, 6.38 KiB
-[INFO] Vulnerability findings: 1
+[INFO] Vulnerability findings: 9
 [INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-11226, GHSA-25qh-j22f-pwp8]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: PREREQUISITES_ABSENT; Required prerequisite pairs org.codehaus.janino:janino / org.codehaus.janino.ClassBodyEvaluator are absent from the complete declared Maven inventory. The proof does not cover providers introduced outside that inventory.
 [INFO]     Effective prerequisites: [org.codehaus.janino:janino / org.codehaus.janino.ClassBodyEvaluator]
-[INFO]     Sources: [POM]
+[INFO]     Overridden fields: [intent]
+[INFO]     Enriched fields: [prerequisites]
+[INFO]     Sources: [OSV, POM]
+[INFO]   - CVE-2025-41249 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-41249, GHSA-jmp9-x22r-554x]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-10532 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-10532, GHSA-jhq6-gfmj-v8fx]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-1225 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-1225, GHSA-qqpg-mvqg-649v]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41848 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41848, GHSA-659m-px2c-25wj]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41850 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41850, GHSA-r5w3-xv2f-j59q]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41851 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41851, GHSA-wxpp-56q6-5pcg]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41852 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41852, GHSA-9f52-rjqv-25qv]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-9828 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-9828, GHSA-p47f-322f-whfh]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
 [INFO] CVE Sources:
-[INFO]   - CVE_LIST CURRENT
+[INFO]   - CVE_LIST PARTIAL
+[INFO]     Skipped 79 CVE List source row(s)
+[INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
@@ -785,16 +1573,46 @@ Process exit status: 0
 [INFO]   - org.apache.commons:commons-compress:jar:1.28.0 (compile): 535 classes, unknown
 [INFO]     Would remove classes: [org.apache.commons.compress.CompressException, org.apache.commons.compress.CompressFilterOutputStream, org.apache.commons.compress.MemoryLimitException, org.apache.commons.compress.PasswordRequiredException, org.apache.commons.compress.archivers.ArchiveException, org.apache.commons.compress.archivers.ArchiveInputStream, org.apache.commons.compress.archivers.ArchiveInputStream$ArchiveEntryIOIterator, org.apache.commons.compress.archivers.ArchiveOutputStream, org.apache.commons.compress.archivers.ArchiveStreamFactory, org.apache.commons.compress.archivers.ArchiveStreamProvider, org.apache.commons.compress.archivers.Lister, org.apache.commons.compress.archivers.StreamingNotSupportedException, org.apache.commons.compress.archivers.ar.ArArchiveEntry, org.apache.commons.compress.archivers.ar.ArArchiveInputStream, org.apache.commons.compress.archivers.ar.ArArchiveOutputStream, org.apache.commons.compress.archivers.ar.package-info, org.apache.commons.compress.archivers.arj.ArjArchiveEntry, org.apache.commons.compress.archivers.arj.ArjArchiveEntry$HostOs, org.apache.commons.compress.archivers.arj.ArjArchiveInputStream, org.apache.commons.compress.archivers.arj.LocalFileHeader, org.apache.commons.compress.archivers.arj.LocalFileHeader$FileTypes, org.apache.commons.compress.archivers.arj.LocalFileHeader$Flags, org.apache.commons.compress.archivers.arj.LocalFileHeader$Methods, org.apache.commons.compress.archivers.arj.MainHeader, org.apache.commons.compress.archivers.arj.MainHeader$Flags, org.apache.commons.compress.archivers.arj.MainHeader$HostOS, org.apache.commons.compress.archivers.arj.package-info, org.apache.commons.compress.archivers.cpio.CpioArchiveEntry, org.apache.commons.compress.archivers.cpio.CpioArchiveInputStream, org.apache.commons.compress.archivers.cpio.CpioArchiveOutputStream, org.apache.commons.compress.archivers.cpio.CpioConstants, org.apache.commons.compress.archivers.cpio.CpioUtil, org.apache.commons.compress.archivers.cpio.package-info, org.apache.commons.compress.archivers.dump.Dirent, org.apache.commons.compress.archivers.dump.DumpArchiveConstants, org.apache.commons.compress.archivers.dump.DumpArchiveConstants$COMPRESSION_TYPE, org.apache.commons.compress.archivers.dump.DumpArchiveConstants$SEGMENT_TYPE, org.apache.commons.compress.archivers.dump.DumpArchiveEntry, org.apache.commons.compress.archivers.dump.DumpArchiveEntry$PERMISSION, org.apache.commons.compress.archivers.dump.DumpArchiveEntry$TYPE, org.apache.commons.compress.archivers.dump.DumpArchiveEntry$TapeSegmentHeader, org.apache.commons.compress.archivers.dump.DumpArchiveException, org.apache.commons.compress.archivers.dump.DumpArchiveInputStream, org.apache.commons.compress.archivers.dump.DumpArchiveSummary, org.apache.commons.compress.archivers.dump.DumpArchiveUtil, org.apache.commons.compress.archivers.dump.InvalidFormatException, org.apache.commons.compress.archivers.dump.ShortFileException, org.apache.commons.compress.archivers.dump.TapeInputStream, org.apache.commons.compress.archivers.dump.TapeInputStream$1, org.apache.commons.compress.archivers.dump.UnrecognizedFormatException, org.apache.commons.compress.archivers.dump.UnsupportedCompressionAlgorithmException, org.apache.commons.compress.archivers.dump.package-info, org.apache.commons.compress.archivers.examples.Archiver, org.apache.commons.compress.archivers.examples.Archiver$1, org.apache.commons.compress.archivers.examples.Archiver$ArchiverFileVisitor, org.apache.commons.compress.archivers.examples.CloseableConsumer, org.apache.commons.compress.archivers.examples.CloseableConsumerAdapter, org.apache.commons.compress.archivers.examples.Expander, org.apache.commons.compress.archivers.examples.Expander$ArchiveEntryBiConsumer, org.apache.commons.compress.archivers.examples.Expander$ArchiveEntrySupplier, org.apache.commons.compress.archivers.examples.package-info, org.apache.commons.compress.archivers.jar.JarArchiveEntry, org.apache.commons.compress.archivers.jar.JarArchiveInputStream, org.apache.commons.compress.archivers.jar.JarArchiveOutputStream, org.apache.commons.compress.archivers.jar.package-info, org.apache.commons.compress.archivers.package-info, org.apache.commons.compress.archivers.sevenz.AES256Options, org.apache.commons.compress.archivers.sevenz.AES256SHA256Decoder, org.apache.commons.compress.archivers.sevenz.AES256SHA256Decoder$1, org.apache.commons.compress.archivers.sevenz.AES256SHA256Decoder$AES256SHA256DecoderInputStream, org.apache.commons.compress.archivers.sevenz.AES256SHA256Decoder$AES256SHA256DecoderOutputStream, org.apache.commons.compress.archivers.sevenz.AbstractCoder, org.apache.commons.compress.archivers.sevenz.Archive, org.apache.commons.compress.archivers.sevenz.BindPair, org.apache.commons.compress.archivers.sevenz.BoundedSeekableByteChannelInputStream, org.apache.commons.compress.archivers.sevenz.CLI, org.apache.commons.compress.archivers.sevenz.CLI$1, org.apache.commons.compress.archivers.sevenz.CLI$Mode, org.apache.commons.compress.archivers.sevenz.CLI$Mode$1, org.apache.commons.compress.archivers.sevenz.Coder, org.apache.commons.compress.archivers.sevenz.Coders, org.apache.commons.compress.archivers.sevenz.Coders$1, org.apache.commons.compress.archivers.sevenz.Coders$BCJDecoder, org.apache.commons.compress.archivers.sevenz.Coders$BZIP2Decoder, org.apache.commons.compress.archivers.sevenz.Coders$CopyDecoder, org.apache.commons.compress.archivers.sevenz.Coders$Deflate64Decoder, org.apache.commons.compress.archivers.sevenz.Coders$DeflateDecoder, org.apache.commons.compress.archivers.sevenz.Coders$DeflateDecoder$DeflateDecoderInputStream, org.apache.commons.compress.archivers.sevenz.Coders$DeflateDecoder$DeflateDecoderOutputStream, org.apache.commons.compress.archivers.sevenz.DeltaDecoder, org.apache.commons.compress.archivers.sevenz.Folder, org.apache.commons.compress.archivers.sevenz.LZMA2Decoder, org.apache.commons.compress.archivers.sevenz.LZMADecoder, org.apache.commons.compress.archivers.sevenz.NID, org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry, org.apache.commons.compress.archivers.sevenz.SevenZFile, org.apache.commons.compress.archivers.sevenz.SevenZFile$1, org.apache.commons.compress.archivers.sevenz.SevenZFile$2, org.apache.commons.compress.archivers.sevenz.SevenZFile$ArchiveStatistics, org.apache.commons.compress.archivers.sevenz.SevenZFile$Builder, org.apache.commons.compress.archivers.sevenz.SevenZFileOptions, org.apache.commons.compress.archivers.sevenz.SevenZFileOptions$1, org.apache.commons.compress.archivers.sevenz.SevenZFileOptions$Builder, org.apache.commons.compress.archivers.sevenz.SevenZMethod, org.apache.commons.compress.archivers.sevenz.SevenZMethodConfiguration, org.apache.commons.compress.archivers.sevenz.SevenZOutputFile, org.apache.commons.compress.archivers.sevenz.SevenZOutputFile$1, org.apache.commons.compress.archivers.sevenz.SevenZOutputFile$OutputStreamWrapper, org.apache.commons.compress.archivers.sevenz.StartHeader, org.apache.commons.compress.archivers.sevenz.StreamMap, org.apache.commons.compress.archivers.sevenz.SubStreamsInfo, org.apache.commons.compress.archivers.sevenz.package-info, org.apache.commons.compress.archivers.tar.TarArchiveEntry, org.apache.commons.compress.archivers.tar.TarArchiveInputStream, org.apache.commons.compress.archivers.tar.TarArchiveOutputStream, org.apache.commons.compress.archivers.tar.TarArchiveSparseEntry, org.apache.commons.compress.archivers.tar.TarArchiveSparseZeroInputStream, org.apache.commons.compress.archivers.tar.TarArchiveStructSparse, org.apache.commons.compress.archivers.tar.TarConstants, org.apache.commons.compress.archivers.tar.TarFile, org.apache.commons.compress.archivers.tar.TarFile$BoundedTarEntryInputStream, org.apache.commons.compress.archivers.tar.TarGnuSparseKeys, org.apache.commons.compress.archivers.tar.TarUtils, org.apache.commons.compress.archivers.tar.TarUtils$1, org.apache.commons.compress.archivers.tar.package-info, org.apache.commons.compress.archivers.zip.BinaryTree, org.apache.commons.compress.archivers.zip.BitStream, org.apache.commons.compress.archivers.zip.CircularBuffer, org.apache.commons.compress.archivers.zip.DefaultBackingStoreSupplier, org.apache.commons.compress.archivers.zip.ExplodingInputStream, org.apache.commons.compress.archivers.zip.FileRandomAccessOutputStream, org.apache.commons.compress.archivers.zip.InflaterInputStreamWithStatistics, org.apache.commons.compress.archivers.zip.ParallelScatterZipCreator, org.apache.commons.compress.archivers.zip.ParallelScatterZipCreator$1, org.apache.commons.compress.archivers.zip.RandomAccessOutputStream, org.apache.commons.compress.archivers.zip.ScatterStatistics, org.apache.commons.compress.archivers.zip.ScatterZipOutputStream, org.apache.commons.compress.archivers.zip.ScatterZipOutputStream$CompressedEntry, org.apache.commons.compress.archivers.zip.ScatterZipOutputStream$ZipEntryWriter, org.apache.commons.compress.archivers.zip.SeekableChannelRandomAccessOutputStream, org.apache.commons.compress.archivers.zip.StreamCompressor, org.apache.commons.compress.archivers.zip.StreamCompressor$DataOutputCompressor, org.apache.commons.compress.archivers.zip.StreamCompressor$OutputStreamCompressor, org.apache.commons.compress.archivers.zip.StreamCompressor$ScatterGatherBackingStoreCompressor, org.apache.commons.compress.archivers.zip.StreamCompressor$SeekableByteChannelCompressor, org.apache.commons.compress.archivers.zip.UnshrinkingInputStream, org.apache.commons.compress.archivers.zip.Zip64Mode, org.apache.commons.compress.archivers.zip.Zip64RequiredException, org.apache.commons.compress.archivers.zip.ZipArchiveEntryPredicate, org.apache.commons.compress.archivers.zip.ZipArchiveEntryRequest, org.apache.commons.compress.archivers.zip.ZipArchiveEntryRequestSupplier, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$BoundCountInputStream, org.apache.commons.compress.archivers.zip.ZipArchiveInputStream$CurrentEntry, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream$1, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream$CurrentEntry, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream$EntryMetaData, org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream$UnicodeExtraFieldPolicy, org.apache.commons.compress.archivers.zip.ZipFile, org.apache.commons.compress.archivers.zip.ZipFile$1, org.apache.commons.compress.archivers.zip.ZipFile$2, org.apache.commons.compress.archivers.zip.ZipFile$BoundedFileChannelInputStream, org.apache.commons.compress.archivers.zip.ZipFile$Builder, org.apache.commons.compress.archivers.zip.ZipFile$Entry, org.apache.commons.compress.archivers.zip.ZipFile$NameAndComment, org.apache.commons.compress.archivers.zip.ZipFile$StoredStatisticsStream, org.apache.commons.compress.archivers.zip.ZipIoUtil, org.apache.commons.compress.archivers.zip.ZipSplitOutputStream, org.apache.commons.compress.archivers.zip.ZipSplitReadOnlySeekableByteChannel, org.apache.commons.compress.archivers.zip.ZipSplitReadOnlySeekableByteChannel$1, org.apache.commons.compress.archivers.zip.ZipSplitReadOnlySeekableByteChannel$ZipSplitSegmentComparator, org.apache.commons.compress.archivers.zip.package-info, org.apache.commons.compress.changes.Change, org.apache.commons.compress.changes.Change$ChangeType, org.apache.commons.compress.changes.ChangeSet, org.apache.commons.compress.changes.ChangeSetPerformer, org.apache.commons.compress.changes.ChangeSetPerformer$ArchiveEntryIterator, org.apache.commons.compress.changes.ChangeSetPerformer$ArchiveInputStreamIterator, org.apache.commons.compress.changes.ChangeSetPerformer$ZipFileIterator, org.apache.commons.compress.changes.ChangeSetResults, org.apache.commons.compress.changes.package-info, org.apache.commons.compress.compressors.CompressorException, org.apache.commons.compress.compressors.CompressorInputStream, org.apache.commons.compress.compressors.CompressorOutputStream, org.apache.commons.compress.compressors.CompressorStreamFactory, org.apache.commons.compress.compressors.CompressorStreamProvider, org.apache.commons.compress.compressors.FileNameUtil, org.apache.commons.compress.compressors.brotli.BrotliCompressorInputStream, org.apache.commons.compress.compressors.brotli.BrotliUtils, org.apache.commons.compress.compressors.brotli.BrotliUtils$CachedAvailability, org.apache.commons.compress.compressors.brotli.package-info, org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream, org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream$Data, org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream, org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream$Data, org.apache.commons.compress.compressors.bzip2.BZip2Constants, org.apache.commons.compress.compressors.bzip2.BZip2Utils, org.apache.commons.compress.compressors.bzip2.BlockSort, org.apache.commons.compress.compressors.bzip2.CRC, org.apache.commons.compress.compressors.bzip2.Rand, org.apache.commons.compress.compressors.bzip2.package-info, org.apache.commons.compress.compressors.deflate.DeflateCompressorInputStream, org.apache.commons.compress.compressors.deflate.DeflateCompressorOutputStream, org.apache.commons.compress.compressors.deflate.DeflateParameters, org.apache.commons.compress.compressors.deflate.package-info, org.apache.commons.compress.compressors.deflate64.Deflate64CompressorInputStream, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$1, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$BinaryTreeNode, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$DecoderState, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$DecodingMemory, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$HuffmanCodes, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$InitialState, org.apache.commons.compress.compressors.deflate64.HuffmanDecoder$UncompressedState, org.apache.commons.compress.compressors.deflate64.HuffmanState, org.apache.commons.compress.compressors.deflate64.package-info, org.apache.commons.compress.compressors.gzip.ExtraField, org.apache.commons.compress.compressors.gzip.ExtraField$SubField, org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream, org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream$1, org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream$Builder, org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream, org.apache.commons.compress.compressors.gzip.GzipParameters, org.apache.commons.compress.compressors.gzip.GzipParameters$OS, org.apache.commons.compress.compressors.gzip.GzipUtils, org.apache.commons.compress.compressors.gzip.package-info, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorInputStream, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorInputStream$State, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorOutputStream, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorOutputStream$1, org.apache.commons.compress.compressors.lz4.BlockLZ4CompressorOutputStream$Pair, org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorInputStream, org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream, org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream$BlockSize, org.apache.commons.compress.compressors.lz4.FramedLZ4CompressorOutputStream$Parameters, org.apache.commons.compress.compressors.lz4.XXHash32, org.apache.commons.compress.compressors.lz4.package-info, org.apache.commons.compress.compressors.lz77support.AbstractLZ77CompressorInputStream, org.apache.commons.compress.compressors.lz77support.LZ77Compressor, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$AbstractReference, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$BackReference, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$Block, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$Block$BlockType, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$Callback, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$EOD, org.apache.commons.compress.compressors.lz77support.LZ77Compressor$LiteralBlock, org.apache.commons.compress.compressors.lz77support.Parameters, org.apache.commons.compress.compressors.lz77support.Parameters$1, org.apache.commons.compress.compressors.lz77support.Parameters$Builder, org.apache.commons.compress.compressors.lz77support.package-info, org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream, org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream$1, org.apache.commons.compress.compressors.lzma.LZMACompressorInputStream$Builder, org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream, org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream$1, org.apache.commons.compress.compressors.lzma.LZMACompressorOutputStream$Builder, org.apache.commons.compress.compressors.lzma.LZMAUtils, org.apache.commons.compress.compressors.lzma.LZMAUtils$CachedAvailability, org.apache.commons.compress.compressors.lzma.package-info, org.apache.commons.compress.compressors.lzw.LZWInputStream, org.apache.commons.compress.compressors.lzw.package-info, org.apache.commons.compress.compressors.pack200.AbstractStreamBridge, org.apache.commons.compress.compressors.pack200.InMemoryCachingStreamBridge, org.apache.commons.compress.compressors.pack200.Pack200CompressorInputStream, org.apache.commons.compress.compressors.pack200.Pack200CompressorOutputStream, org.apache.commons.compress.compressors.pack200.Pack200Strategy, org.apache.commons.compress.compressors.pack200.Pack200Strategy$1, org.apache.commons.compress.compressors.pack200.Pack200Strategy$2, org.apache.commons.compress.compressors.pack200.Pack200Utils, org.apache.commons.compress.compressors.pack200.TempFileCachingStreamBridge, org.apache.commons.compress.compressors.pack200.TempFileCachingStreamBridge$1, org.apache.commons.compress.compressors.pack200.package-info, org.apache.commons.compress.compressors.package-info, org.apache.commons.compress.compressors.snappy.FramedSnappyCompressorInputStream, org.apache.commons.compress.compressors.snappy.FramedSnappyCompressorOutputStream, org.apache.commons.compress.compressors.snappy.FramedSnappyDialect, org.apache.commons.compress.compressors.snappy.SnappyCompressorInputStream, org.apache.commons.compress.compressors.snappy.SnappyCompressorInputStream$State, org.apache.commons.compress.compressors.snappy.SnappyCompressorOutputStream, org.apache.commons.compress.compressors.snappy.SnappyCompressorOutputStream$1, org.apache.commons.compress.compressors.snappy.package-info, org.apache.commons.compress.compressors.xz.XZCompressorInputStream, org.apache.commons.compress.compressors.xz.XZCompressorInputStream$1, org.apache.commons.compress.compressors.xz.XZCompressorInputStream$Builder, org.apache.commons.compress.compressors.xz.XZCompressorOutputStream, org.apache.commons.compress.compressors.xz.XZCompressorOutputStream$1, org.apache.commons.compress.compressors.xz.XZCompressorOutputStream$Builder, org.apache.commons.compress.compressors.xz.XZUtils, org.apache.commons.compress.compressors.xz.XZUtils$CachedAvailability, org.apache.commons.compress.compressors.xz.package-info, org.apache.commons.compress.compressors.z.ZCompressorInputStream, org.apache.commons.compress.compressors.z.package-info, org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream, org.apache.commons.compress.compressors.zstandard.ZstdCompressorOutputStream, org.apache.commons.compress.compressors.zstandard.ZstdCompressorOutputStream$1, org.apache.commons.compress.compressors.zstandard.ZstdCompressorOutputStream$Builder, org.apache.commons.compress.compressors.zstandard.ZstdConstants, org.apache.commons.compress.compressors.zstandard.ZstdUtils, org.apache.commons.compress.compressors.zstandard.ZstdUtils$CachedAvailability, org.apache.commons.compress.compressors.zstandard.package-info, org.apache.commons.compress.harmony.archive.internal.nls.Messages, org.apache.commons.compress.harmony.archive.internal.nls.package-info, org.apache.commons.compress.harmony.pack200.Archive, org.apache.commons.compress.harmony.pack200.Archive$PackingFile, org.apache.commons.compress.harmony.pack200.Archive$SegmentUnit, org.apache.commons.compress.harmony.pack200.AttributeDefinitionBands, org.apache.commons.compress.harmony.pack200.AttributeDefinitionBands$AttributeDefinition, org.apache.commons.compress.harmony.pack200.BHSDCodec, org.apache.commons.compress.harmony.pack200.BandSet, org.apache.commons.compress.harmony.pack200.BandSet$BandAnalysisResults, org.apache.commons.compress.harmony.pack200.BandSet$BandData, org.apache.commons.compress.harmony.pack200.BcBands, org.apache.commons.compress.harmony.pack200.CPClass, org.apache.commons.compress.harmony.pack200.CPConstant, org.apache.commons.compress.harmony.pack200.CPDouble, org.apache.commons.compress.harmony.pack200.CPFloat, org.apache.commons.compress.harmony.pack200.CPInt, org.apache.commons.compress.harmony.pack200.CPLong, org.apache.commons.compress.harmony.pack200.CPMethodOrField, org.apache.commons.compress.harmony.pack200.CPNameAndType, org.apache.commons.compress.harmony.pack200.CPSignature, org.apache.commons.compress.harmony.pack200.CPString, org.apache.commons.compress.harmony.pack200.CPUTF8, org.apache.commons.compress.harmony.pack200.CanonicalCodecFamilies, org.apache.commons.compress.harmony.pack200.ClassBands, org.apache.commons.compress.harmony.pack200.ClassBands$TempParamAnnotation, org.apache.commons.compress.harmony.pack200.Codec, org.apache.commons.compress.harmony.pack200.CodecEncoding, org.apache.commons.compress.harmony.pack200.ConstantPoolEntry, org.apache.commons.compress.harmony.pack200.CpBands, org.apache.commons.compress.harmony.pack200.FileBands, org.apache.commons.compress.harmony.pack200.IcBands, org.apache.commons.compress.harmony.pack200.IcBands$IcTuple, org.apache.commons.compress.harmony.pack200.IntList, org.apache.commons.compress.harmony.pack200.MetadataBandGroup, org.apache.commons.compress.harmony.pack200.NewAttribute, org.apache.commons.compress.harmony.pack200.NewAttribute$ErrorAttribute, org.apache.commons.compress.harmony.pack200.NewAttribute$PassAttribute, org.apache.commons.compress.harmony.pack200.NewAttribute$StripAttribute, org.apache.commons.compress.harmony.pack200.NewAttributeBands, org.apache.commons.compress.harmony.pack200.NewAttributeBands$AttributeLayoutElement, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Call, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Callable, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Integral, org.apache.commons.compress.harmony.pack200.NewAttributeBands$LayoutElement, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Reference, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Replication, org.apache.commons.compress.harmony.pack200.NewAttributeBands$Union, org.apache.commons.compress.harmony.pack200.NewAttributeBands$UnionCase, org.apache.commons.compress.harmony.pack200.Pack200Adapter, org.apache.commons.compress.harmony.pack200.Pack200ClassReader, org.apache.commons.compress.harmony.pack200.Pack200Exception, org.apache.commons.compress.harmony.pack200.Pack200PackerAdapter, org.apache.commons.compress.harmony.pack200.PackingOptions, org.apache.commons.compress.harmony.pack200.PackingUtils, org.apache.commons.compress.harmony.pack200.PackingUtils$PackingLogger, org.apache.commons.compress.harmony.pack200.PopulationCodec, org.apache.commons.compress.harmony.pack200.RunCodec, org.apache.commons.compress.harmony.pack200.Segment, org.apache.commons.compress.harmony.pack200.Segment$ArrayVisitor, org.apache.commons.compress.harmony.pack200.Segment$PassException, org.apache.commons.compress.harmony.pack200.Segment$SegmentAnnotationVisitor, org.apache.commons.compress.harmony.pack200.Segment$SegmentAnnotationVisitor$1, org.apache.commons.compress.harmony.pack200.Segment$SegmentFieldVisitor, org.apache.commons.compress.harmony.pack200.Segment$SegmentMethodVisitor, org.apache.commons.compress.harmony.pack200.SegmentHeader, org.apache.commons.compress.harmony.pack200.SegmentHeader$1, org.apache.commons.compress.harmony.pack200.SegmentHeader$Counter, org.apache.commons.compress.harmony.pack200.package-info, org.apache.commons.compress.harmony.package-info, org.apache.commons.compress.harmony.unpack200.Archive, org.apache.commons.compress.harmony.unpack200.AttrDefinitionBands, org.apache.commons.compress.harmony.unpack200.AttributeLayout, org.apache.commons.compress.harmony.unpack200.AttributeLayoutMap, org.apache.commons.compress.harmony.unpack200.BandSet, org.apache.commons.compress.harmony.unpack200.BcBands, org.apache.commons.compress.harmony.unpack200.ClassBands, org.apache.commons.compress.harmony.unpack200.CpBands, org.apache.commons.compress.harmony.unpack200.FileBands, org.apache.commons.compress.harmony.unpack200.IMatcher, org.apache.commons.compress.harmony.unpack200.IcBands, org.apache.commons.compress.harmony.unpack200.IcTuple, org.apache.commons.compress.harmony.unpack200.MetadataBandGroup, org.apache.commons.compress.harmony.unpack200.NewAttributeBands, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$1, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$AttributeLayoutElement, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Call, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Callable, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Integral, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$LayoutElement, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Reference, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Replication, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$Union, org.apache.commons.compress.harmony.unpack200.NewAttributeBands$UnionCase, org.apache.commons.compress.harmony.unpack200.Pack200UnpackerAdapter, org.apache.commons.compress.harmony.unpack200.Segment, org.apache.commons.compress.harmony.unpack200.SegmentConstantPool, org.apache.commons.compress.harmony.unpack200.SegmentConstantPoolArrayCache, org.apache.commons.compress.harmony.unpack200.SegmentConstantPoolArrayCache$CachedArray, org.apache.commons.compress.harmony.unpack200.SegmentHeader, org.apache.commons.compress.harmony.unpack200.SegmentOptions, org.apache.commons.compress.harmony.unpack200.SegmentUtils, org.apache.commons.compress.harmony.unpack200.bytecode.AnnotationDefaultAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.AnnotationsAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.AnnotationsAttribute$Annotation, org.apache.commons.compress.harmony.unpack200.bytecode.AnnotationsAttribute$ElementValue, org.apache.commons.compress.harmony.unpack200.bytecode.Attribute, org.apache.commons.compress.harmony.unpack200.bytecode.BCIRenumberedAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.ByteCode, org.apache.commons.compress.harmony.unpack200.bytecode.CPClass, org.apache.commons.compress.harmony.unpack200.bytecode.CPConstant, org.apache.commons.compress.harmony.unpack200.bytecode.CPConstantNumber, org.apache.commons.compress.harmony.unpack200.bytecode.CPDouble, org.apache.commons.compress.harmony.unpack200.bytecode.CPField, org.apache.commons.compress.harmony.unpack200.bytecode.CPFieldRef, org.apache.commons.compress.harmony.unpack200.bytecode.CPFloat, org.apache.commons.compress.harmony.unpack200.bytecode.CPInteger, org.apache.commons.compress.harmony.unpack200.bytecode.CPInterfaceMethodRef, org.apache.commons.compress.harmony.unpack200.bytecode.CPLong, org.apache.commons.compress.harmony.unpack200.bytecode.CPMember, org.apache.commons.compress.harmony.unpack200.bytecode.CPMethod, org.apache.commons.compress.harmony.unpack200.bytecode.CPMethodRef, org.apache.commons.compress.harmony.unpack200.bytecode.CPNameAndType, org.apache.commons.compress.harmony.unpack200.bytecode.CPRef, org.apache.commons.compress.harmony.unpack200.bytecode.CPString, org.apache.commons.compress.harmony.unpack200.bytecode.CPUTF8, org.apache.commons.compress.harmony.unpack200.bytecode.ClassConstantPool, org.apache.commons.compress.harmony.unpack200.bytecode.ClassFile, org.apache.commons.compress.harmony.unpack200.bytecode.ClassFileEntry, org.apache.commons.compress.harmony.unpack200.bytecode.CodeAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.ConstantPoolEntry, org.apache.commons.compress.harmony.unpack200.bytecode.ConstantValueAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.DeprecatedAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.EnclosingMethodAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.ExceptionTableEntry, org.apache.commons.compress.harmony.unpack200.bytecode.ExceptionsAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.InnerClassesAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.InnerClassesAttribute$InnerClassesEntry, org.apache.commons.compress.harmony.unpack200.bytecode.LineNumberTableAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.LocalVariableTableAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.LocalVariableTypeTableAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$1, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$AbstractBcValue, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$BCIndex, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$BCLength, org.apache.commons.compress.harmony.unpack200.bytecode.NewAttribute$BCOffset, org.apache.commons.compress.harmony.unpack200.bytecode.OperandManager, org.apache.commons.compress.harmony.unpack200.bytecode.RuntimeVisibleorInvisibleAnnotationsAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.RuntimeVisibleorInvisibleParameterAnnotationsAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.RuntimeVisibleorInvisibleParameterAnnotationsAttribute$ParameterAnnotation, org.apache.commons.compress.harmony.unpack200.bytecode.SignatureAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.SourceFileAttribute, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ByteCodeForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ByteForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ClassRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ClassSpecificReferenceForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.DoubleForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.FieldRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.FloatRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.IMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.IincForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.InitMethodReferenceForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.IntRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.LabelForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.LocalForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.LongForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.LookupSwitchForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.MethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.MultiANewArrayForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.NarrowClassRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.NewClassRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.NewInitMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.NoArgumentForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ReferenceForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ShortForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SingleByteReferenceForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.StringRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SuperFieldRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SuperInitMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SuperMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.SwitchForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.TableSwitchForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ThisFieldRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ThisInitMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.ThisMethodRefForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.VariableInstructionForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.WideForm, org.apache.commons.compress.harmony.unpack200.bytecode.forms.package-info, org.apache.commons.compress.harmony.unpack200.bytecode.package-info, org.apache.commons.compress.harmony.unpack200.package-info, org.apache.commons.compress.java.util.jar.Pack200, org.apache.commons.compress.java.util.jar.Pack200$Packer, org.apache.commons.compress.java.util.jar.Pack200$Unpacker, org.apache.commons.compress.java.util.jar.package-info, org.apache.commons.compress.package-info, org.apache.commons.compress.parallel.FileBasedScatterGatherBackingStore, org.apache.commons.compress.parallel.InputStreamSupplier, org.apache.commons.compress.parallel.ScatterGatherBackingStore, org.apache.commons.compress.parallel.ScatterGatherBackingStoreSupplier, org.apache.commons.compress.parallel.package-info, org.apache.commons.compress.utils.ArchiveUtils, org.apache.commons.compress.utils.BitInputStream, org.apache.commons.compress.utils.BoundedArchiveInputStream, org.apache.commons.compress.utils.BoundedInputStream, org.apache.commons.compress.utils.BoundedSeekableByteChannelInputStream, org.apache.commons.compress.utils.CRC32VerifyingInputStream, org.apache.commons.compress.utils.CharsetNames, org.apache.commons.compress.utils.Charsets, org.apache.commons.compress.utils.ChecksumCalculatingInputStream, org.apache.commons.compress.utils.ChecksumVerifyingInputStream, org.apache.commons.compress.utils.CloseShieldFilterInputStream, org.apache.commons.compress.utils.CountingInputStream, org.apache.commons.compress.utils.CountingOutputStream, org.apache.commons.compress.utils.ExactMath, org.apache.commons.compress.utils.FileNameUtils, org.apache.commons.compress.utils.FixedLengthBlockOutputStream, org.apache.commons.compress.utils.FixedLengthBlockOutputStream$1, org.apache.commons.compress.utils.FixedLengthBlockOutputStream$BufferAtATimeOutputChannel, org.apache.commons.compress.utils.FlushShieldFilterOutputStream, org.apache.commons.compress.utils.IOUtils, org.apache.commons.compress.utils.InputStreamStatistics, org.apache.commons.compress.utils.Iterators, org.apache.commons.compress.utils.Lists, org.apache.commons.compress.utils.MultiReadOnlySeekableByteChannel, org.apache.commons.compress.utils.OsgiUtils, org.apache.commons.compress.utils.ParsingUtils, org.apache.commons.compress.utils.SeekableInMemoryByteChannel, org.apache.commons.compress.utils.ServiceLoaderIterator, org.apache.commons.compress.utils.Sets, org.apache.commons.compress.utils.SkipShieldingInputStream, org.apache.commons.compress.utils.TimeUtils, org.apache.commons.compress.utils.package-info]
 [INFO] Analysis only: no trim proof or published changes
-[INFO] Vulnerability findings: 1
+[INFO] Vulnerability findings: 6
 [INFO]   - CVE-2014-3577 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [PLANNED_UNVERIFIED]
-[INFO]     Aliases: [CVE-2014-3577, GHSA-transcript-httpclient]
+[INFO]     Aliases: [CVE-2014-3577, GHSA-cfh5-3ghh-wfjx]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Declared code: [org.apache.http.conn.ssl.AbstractVerifier] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
 [INFO]     Heuristic leads: [org.apache.http.conn.ssl.AbstractVerifier]
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2015-5262 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [PLANNED_UNVERIFIED]
+[INFO]     Aliases: [CVE-2015-5262, GHSA-fmj5-wv96-r2ch]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-13956 org.apache.httpcomponents:httpclient:jar:4.3.4 (compile) [PLANNED_UNVERIFIED]
+[INFO]     Aliases: [CVE-2020-13956, GHSA-7r82-7xv7-xcpj]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-25710 org.apache.commons:commons-compress:jar:1.28.0 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2024-25710, GHSA-4g9r-vxhx-9pgx]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=1.3,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=1.25.0,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=1.3,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=1.25.0,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2024-26308 org.apache.commons:commons-compress:jar:1.28.0 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2024-26308, GHSA-4265-ccf5-phj5]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=1.21,status=affected,versionType=semver,lessThan=1.26.0,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=1.21,status=affected,versionType=semver,lessThan=1.26.0,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2024-47554 commons-io:commons-io:jar:2.20.0 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-47554, GHSA-78wr-2p64-hpwj]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=2.0,status=affected,versionType=semver,lessThan=2.14.0,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=2.0,status=affected,versionType=semver,lessThan=2.14.0,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
 [INFO] CVE Sources:
-[INFO]   - CVE_LIST CURRENT
+[INFO]   - CVE_LIST PARTIAL
+[INFO]     Skipped 79 CVE List source row(s)
+[INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:

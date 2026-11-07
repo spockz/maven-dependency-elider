@@ -94,6 +94,10 @@ main() {
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
     -pl dependency-elider-maven-plugin -am install -DskipTests
 
+  vulnerability_cache="$test_dir/vulnerability-cache"
+  bash "$repo_root/scripts/prepare-example-vulnerability-cache.sh" \
+    "$vulnerability_cache" "$maven" "${maven_options[@]}"
+
   run_fixture_maven() {
     local fixture_dir=$1
     shift
@@ -185,7 +189,9 @@ MANIFEST
     baseline_seconds="$test_dir/$fixture-baseline.seconds"
     elision_seconds="$test_dir/$fixture-elision.seconds"
     elision_options=(
+      --offline
       -Delide.mode=elision
+      "-Delide.cveCacheDirectory=$vulnerability_cache"
       "-Delide.traceFiles=$trace"
       -Delider.verifyElision=true
     )
@@ -333,7 +339,7 @@ MANIFEST
     run_fixture_maven "$fixture_dir" -f "$pom" \
       io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report >"$report_output" 2>&1
     printf '\n%s report:\n' "$fixture"
-    grep -E '^\[INFO\] (Project:|Snapshot:|Whole artifacts dropped:|Program classes removed with dropped JARs:|Program classes pruned from retained JARs:|Vulnerability findings:|Source observations:|  - |    (Applicability:|Outcome:))' \
+    grep -E '^\[INFO\] (Project:|Snapshot:|Whole artifacts dropped:|Program classes removed with dropped JARs:|Program classes pruned from retained JARs:|Vulnerability findings:|CVE Sources:|  - |    (Applicability:|Outcome:))' \
       "$report_output"
     verify_cve_report "$fixture" "$fixture_dir" "$report_output"
 
@@ -411,7 +417,9 @@ run_reactor_fixture() {
   local threaded_reports="$evidence_dir/reactor-threaded-reports"
   local report_output="$evidence_dir/reactor-report.out"
   local -a elision_options=(
+    --offline
     -Delide.mode=elision
+    "-Delide.cveCacheDirectory=$vulnerability_cache"
     "-Delide.traceFiles=$trace"
     -Delide.trimJars=true
     -Delide.sourceRootsComplete=true
@@ -970,8 +978,9 @@ final class ElidedHttpClientReference {
 }
 JAVA
 
-  (cd -- "$probe_fixture" && "$maven" "${maven_options[@]}" -f "$probe_pom" clean compile \
+  (cd -- "$probe_fixture" && "$maven" "${maven_options[@]}" --offline -f "$probe_pom" clean compile \
     -Delide.mode=elision -Delide.traceFiles="$trace" -Delider.verifyElision=false \
+    "-Delide.cveCacheDirectory=$vulnerability_cache" \
     -Delide.sourceRootsComplete=true -Dmaven.compiler.proc=none) \
     >"$active_log" 2>&1
   if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedHttpClientReference.class ]]; then

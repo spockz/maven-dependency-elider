@@ -126,6 +126,7 @@ class MavenElisionReportGenericFindingTest {
                     "refresh failed",
                     "old-revision",
                     "retained snapshot",
+                    "record warning",
                     "https://example.test/advisory",
                     "a".repeat(64)),
         () ->
@@ -150,7 +151,8 @@ class MavenElisionReportGenericFindingTest {
                     "CVE Sources:\n",
                     "OSV CURRENT",
                     "CVE_LIST STALE",
-                    "CACHE UNAVAILABLE"),
+                    "CACHE UNAVAILABLE",
+                    "Source diagnostics are in the JSON snapshot"),
         () ->
             assertThat(rendered)
                 .doesNotContain(
@@ -160,6 +162,8 @@ class MavenElisionReportGenericFindingTest {
                     "FieldValue[",
                     "VersionCoverageClaim[",
                     "Source observations:",
+                    "record warning",
+                    "retained snapshot",
                     "revision:",
                     "last success:",
                     "contributions:"),
@@ -330,7 +334,9 @@ class MavenElisionReportGenericFindingTest {
                 .contains(
                     "PARTIAL",
                     "Skipped malformed source data",
-                    "CVE-2026-54321 affected[1] skipped"),
+                    "Source diagnostics are in the JSON snapshot")
+                .doesNotContain("CVE-2026-54321 affected[1] skipped"),
+        () -> assertThat(root.toString()).contains("CVE-2026-54321 affected[1] skipped"),
         () -> assertInvalidPartialReport(mapper, noRevision, "no-revision"),
         () -> assertInvalidPartialReport(mapper, noTime, "no-time"),
         () -> assertInvalidPartialReport(mapper, noDiagnostic, "no-diagnostic"));

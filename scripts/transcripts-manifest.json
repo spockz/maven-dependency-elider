@@ -98,6 +98,11 @@
       ],
       "goal": "report",
       "expectedExitCode": 0,
+      "requiredOutput": [
+        "CVE-2024-50379 org.apache.tomcat.embed:tomcat-embed-core",
+        "CVE-2026-18401 com.fasterxml.jackson.core:jackson-core",
+        "CVE-2026-77310 com.fasterxml.jackson.core:jackson-databind"
+      ],
       "maxGraphRows": 3
     },
     {

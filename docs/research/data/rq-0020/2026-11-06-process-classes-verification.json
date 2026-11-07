@@ -1,0 +1,98 @@
+{
+  "measuredOn": "2026-11-06",
+  "purpose": "Verify moving the elide lifecycle execution to process-classes",
+  "project": "isolated copy of examples/example-spring-boot-app",
+  "method": {
+    "phase": "process-classes via existing extension rebind",
+    "sourceRootsComplete": false,
+    "productionClassesComplete": true,
+    "preconditionClassPathComplete": true,
+    "manualPrerequisiteScope": "CVE-2025-11226 ch.qos.logback:logback-core [1.5.11]",
+    "prerequisite": {
+      "dependency": "org.codehaus.janino:janino",
+      "class": "org.codehaus.janino.ClassBodyEvaluator"
+    },
+    "advisories": "pinned complete OSV Maven and CVE List snapshots; CVE List PARTIAL"
+  },
+  "packageRun": {
+    "goals": [
+      "clean",
+      "package"
+    ],
+    "skipTests": true,
+    "order": [
+      "compile",
+      "elide",
+      "testCompile",
+      "test skipped",
+      "spring-boot repackage"
+    ],
+    "build": "SUCCESS",
+    "findings": 101,
+    "classesPruned": 3429,
+    "wholeArtifactsDropped": 0,
+    "logbackOutcome": "NO_PROOF",
+    "inventoryFailure": "unmodeled lifecycle writer after process-classes: org.springframework.boot:spring-boot-maven-plugin at package",
+    "artifactSha256": "4abd013f0d236a4b89dd011ce35b84492e7cf90fb4c12ebcee37dd5b6596983a",
+    "helloEndpoint": {
+      "status": 200,
+      "body": {
+        "message": "hello"
+      }
+    }
+  },
+  "testRun": {
+    "goals": [
+      "clean",
+      "test"
+    ],
+    "testsRun": 3,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "build": "SUCCESS"
+  },
+  "compileOnly": {
+    "goals": [
+      "clean",
+      "compile"
+    ],
+    "elideExecuted": false,
+    "build": "SUCCESS"
+  },
+  "dependencyTree": {
+    "goals": [
+      "dependency:tree"
+    ],
+    "extensionPrepared": [
+      "compile",
+      "elide",
+      "dependency:tree"
+    ],
+    "build": "SUCCESS"
+  },
+  "stopAtProcessClasses": {
+    "goals": [
+      "clean",
+      "process-classes"
+    ],
+    "repackageExecuted": false,
+    "logbackOutcome": "NO_PROOF",
+    "inventoryFailure": "unmodeled lifecycle writer after process-classes: org.springframework.boot:spring-boot-maven-plugin at package",
+    "build": "SUCCESS"
+  },
+  "emptyJarModule": {
+    "goals": [
+      "clean",
+      "process-classes"
+    ],
+    "build": "FAILURE",
+    "error": "Production class output directory is missing"
+  },
+  "limits": [
+    "The test used existing opt-in rebinding; the plugin default was not changed.",
+    "Debugger inspection observed the incomplete-inventory reason that the report omits.",
+    "Passing one Spring application and endpoint does not establish compatibility for every Maven project or runtime.",
+    "No final packaged archive or deployment-time providers exist at process-classes."
+  ]
+}

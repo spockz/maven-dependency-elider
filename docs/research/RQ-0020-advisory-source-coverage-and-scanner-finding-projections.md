@@ -3,6 +3,11 @@
 
 ## Status
 
+The single implementation and project-alignment entry point for this investigation and RQ-0021 is
+the [consolidated handover](../handovers/2026-11-06-cve-evidence-and-inventory-assessment.md).
+This RQ remains the living historical evidence and research record; its earlier dated snapshots
+and proposals are preserved below.
+
 Open; investigation and reporting design. The Spring example has an optional OWASP Dependency-Check profile, and OSV-Scanner was run externally for this study. Adding NVD as a Dependency Elider advisory source was explicitly deferred while investigating. NVD ingestion into Elider, the new finding-projection category, and GitHub release association remain unimplemented proposals.
 
 The agreed reporting direction is to distinguish potential scanner findings projected to disappear, observed baseline findings expected to disappear, and findings observed to disappear in comparable scans. None of those claims alone means a vulnerability was mitigated. More detailed applicability or mitigation evidence takes precedence in the security assessment for the exact CVE and component.
@@ -10,7 +15,7 @@ The agreed reporting direction is to distinguish potential scanner findings proj
 ## Record
 
 - Opened: 2026-11-04
-- Last updated: 2026-11-05
+- Last updated: 2026-11-06
 - Evidence snapshot: 2026-11-04; tool and source behavior below is as checked on that date.
 - Related decisions: [ADR-0006](../adr/0006-dual-source-vulnerability-advisory-ingestion-from-cvelist-v5-and-osv-maven.md), [ADR-0013](../adr/0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md), [RQ-0008](RQ-0008-osv-sbom-comparison-and-vex-evidence.md), [RQ-0011](RQ-0011-persisted-report-scope-and-vulnerability-telemetry.md), [RQ-0013](RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md), [RQ-0015](RQ-0015-actionable-advisory-gap-detection-and-heuristic-elision-candidates.md), and [RQ-0019](RQ-0019-developer-actionable-advisory-workflows-and-ide-quick-fixes.md).
 
@@ -548,6 +553,275 @@ The API requires an organization and token; Snyk says most APIs require Enterpri
 is separately licensed and is not a publicly documented bulk feed consumed by this integration. No
 authorized live API request or new Snyk finding count was available for this measurement. Mock API
 tests establish integration behavior, not the account's entitlement or real-world coverage.
+
+### 2026-11-05: Spring example, current Maven matches and NVD product candidates
+
+The checked-in Spring example transcript says `Vulnerability findings: none` because the transcript
+generator uses a deliberately small, deterministic advisory fixture. That fixture contains two OSV
+records for HttpClient and Commons Text and no Tomcat or Jackson records. Its `CURRENT` source
+observation describes that fixture; it is not evidence that a live database has no findings. The
+earlier actual Spring plugin assessment, recorded above, found 36 Tomcat CVEs, four Jackson Core
+CVEs, and twelve Jackson Databind CVEs plus one GHSA-only advisory. Its CVE List partition was
+`STALE`, and it predates the full-index isolation fix; it is not a measurement of the current plugin
+with a successful full CVE List refresh.
+
+On 2026-11-05, exact-version [OSV API](https://google.github.io/osv.dev/post-v1-query/) queries
+returned the same advisory identities as that earlier plugin measurement. No query returned a next
+page. The [NVD CVE API](https://nvd.nist.gov/developers/vulnerabilities) was separately queried for
+the CPE names below, with all returned rows captured. The
+[comparison snapshot](data/rq-0020/2026-11-05-current-cpe-maven-comparison.json) records the exact
+advisory identities, publication dates, CPE strings, selected CVE List input and indexer results.
+
+| Exact Maven artifact | OSV Maven advisory results | NVD product CPE CVEs | NVD CVEs published in 2026 |
+| --- | --- | --- | --- |
+| `org.apache.tomcat.embed:tomcat-embed-core:10.1.31` | 36 CVEs | 54 | 36 |
+| `com.fasterxml.jackson.core:jackson-core:2.18.2` | 4 CVEs | 0 | 0 |
+| `com.fasterxml.jackson.core:jackson-databind:2.18.2` | 12 CVEs and 1 GHSA-only advisory | 4 | 4 |
+
+The 36 Tomcat CVEs in OSV are a subset of the 54 NVD product matches, leaving 18 NVD-only CVE IDs,
+16 of which were published by NVD in 2026. Nineteen Tomcat OSV CVE identifiers have the `2026`
+prefix. Jackson's two modules together have 16 distinct OSV CVE IDs, all with the `2026` prefix,
+and one GHSA-only advisory. A CVE identifier year, OSV advisory publication year and NVD CVE
+publication year are different measures. The Jackson CPE results cover only the two queried CPE
+names, not every possible NVD product identity or other structured metadata.
+
+To measure the CVE List path directly, the current `CveListFindingIndexer` and Maven version matcher
+were run on the 18 NVD-only Tomcat CVE records and the 16 Jackson CVE records at CVE List revision
+`8683d0fedac9baee8b745555aebad828cceaaa90`. All 34 records were processed without a skipped entry.
+They produced 18 Maven contributions for nine Jackson CVEs, including nine contributions applicable
+to the example's Jackson artifacts and versions; all nine were already present in OSV. None of the
+18 selected Tomcat records produced a Maven contribution. This is a selected-record adapter probe,
+not a full current CVE List index or a new end-to-end application scan.
+
+For example, the [CVE List record for CVE-2026-68763](https://github.com/CVEProject/cvelistV5/blob/8683d0fedac9baee8b745555aebad828cceaaa90/cves/2026/68xxx/CVE-2026-68763.json)
+identifies the Tomcat product and version range without a recognized Maven package identity; the
+[global OSV record](https://osv.dev/vulnerability/CVE-2026-68763) supplies Git ranges rather than
+the Maven package. The [Apache advisory](https://tomcat.apache.org/security-10.html) describes an
+HTTP/2 issue in a range containing 10.1.31, and the example's embedded-core JAR contains the HTTP/2
+classes changed by the fix. This warrants further artifact-level investigation; class presence does
+not establish exploitability. Conversely, Apache describes CVE-2026-50229 as an issue in the number
+guess example web application, and the examined embedded-core JAR contains no `numguess` resource.
+This illustrates why a product CPE match is not by itself proof that a particular Maven JAR contains
+the affected component.
+
+NVD CPE matching could therefore add useful, explicitly attributed product-level candidates for
+scanner projection, including some of these 18 Tomcat IDs. It would not fix the intentionally small
+transcript fixture and, for the queried Jackson CPEs in this snapshot, would add no CVE beyond OSV.
+An implementation would need product-to-artifact associations, NVD's complete applicability logic,
+version bounds, aliases and provenance. Direct package and code evidence can enrich or qualify a
+candidate; manual field overrides retain their existing semantics. A candidate is neither proof that
+the artifact is vulnerable nor a mitigation claim, and only an actual comparable before/after scan
+establishes what a particular scanner reported.
+
+### 2026-11-06: Why the local Spring report shows no vulnerabilities
+
+The saved `examples/example-spring-boot-app/target/dependency-elider-report.json` examined on
+2026-11-06 was generated at `2026-11-05T22:26:04Z` and contained no findings. Its source revisions
+were `transcript-osv-fixture` (three contributions) and `transcript-empty-cve-fixture` (zero
+contributions), both marked `CURRENT`. Transcript preparation runs the application against the
+offline pinned fixture and leaves its applied report in the example's target directory. The `report`
+goal displayed in the README reads that saved snapshot; it does not query advisory sources or
+re-assess the application. Repeating that goal alone therefore continues to show the fixture result.
+The revision and contribution fields in the JSON distinguish the fixture from a complete source; the
+normal log's `CURRENT` status alone does not.
+
+For comparison, the earlier OSV-backed analysis of the same example was rendered again using the
+offline `report` goal and its saved analysis snapshot. The goal succeeded and printed 89 findings,
+including CVE-2024-50379 for Tomcat Embed Core, CVE-2026-18401 for Jackson Core, and CVE-2026-77310
+for Jackson Databind. That snapshot is the earlier 89-row measurement above, including test-scope
+dependencies and an unavailable CVE List source; rerendering it does not refresh or revalidate it.
+It does demonstrate that these existing findings are displayed by the current report renderer and
+are not filtered out merely because their outcome is `NO_PROOF`. Generating a new assessment with
+the desired real cache and reviewing source health is necessary to get current findings.
+
+The example and transcript workflow was then changed to index complete, pinned upstream snapshots,
+stored with Git LFS and identified in the [snapshot provenance](../../scripts/fixtures/vulnerability-snapshots/README.md).
+The regenerated Spring elision report contained 101 finding rows across the resolved graph: 36 for
+Tomcat Embed Core, five for Jackson Core, and 14 for Jackson Databind. The OSV snapshot had 13,654
+contributions and `CURRENT` status for that snapshot. CVE List had 1,133 contributions and was
+`PARTIAL` because 79 malformed rows were skipped. These are pinned-snapshot results, not a live scan
+or a count of demonstrated mitigations; the earlier fixture and OSV-only runs remain separate
+historical observations.
+
+The saved applied Spring report generated at `2026-11-06T07:22:09Z` has 100 distinct CVEs and one
+GHSA-only advisory, including 13 test-scope findings. None has a `DECLARED_CODE_ABSENT` or
+`PREREQUISITES_ABSENT` proof; 92 findings have `NO_PROOF` and nine have `UNRESOLVED` applicability
+or intent. No VEX file was produced. The run dropped no whole JARs and pruned 3,429 program classes
+from retained JARs. The 33 findings on trimmed JARs comprise 32 CVEs and the GHSA-only advisory:
+19 Jackson, 13 Spring Web MVC and one FreeMarker. All 36 Tomcat Embed Core findings concern an
+unchanged JAR. For CVE-2026-68494 and CVE-2026-89407, the report resolves a declared vulnerable
+class and records that the class remains in the trimmed Jackson Core JAR. These observations do not
+establish exploitability, universal scanner results, or an upper bound on mitigations obtainable
+with different application code, configuration or better vulnerability mappings.
+
+The same Spring report contains CVE-2025-11226 for Logback Core 1.5.11 with `NO_PROOF` and no
+effective prerequisite mapping. Its captured Maven graph contains no Janino coordinate, but that
+alone does not establish complete classpath proof. The separate `example-cve-safe-class-app` maps
+the Janino coordinate and class manually, opts into complete inventory inspection, and reports
+`PREREQUISITES_ABSENT` for Logback Core 1.5.18 with a scoped OpenVEX `not_affected` statement.
+Janino was already absent in that example's baseline, so this is not evidence that elision removed
+it. The [NVD advisory](https://nvd.nist.gov/vuln/detail/CVE-2025-11226) describes Janino and Spring
+as necessary for the reported attack. Applying and verifying an equivalent mapping and the
+complete-inventory requirements in the Spring example remains untested.
+
+### 2026-11-06: Root cause of the missing Janino prerequisite result
+
+The pinned OSV and CVE List records describe the Janino and Spring requirements in prose. The OSV
+record provides the Maven identity and affected ranges, but the generic adapter emits an omitted
+prerequisite group. The CVE List record identifies Logback as a product and module without a Maven
+package identity recognized by the current CVE adapter. Both automatic adapters currently emit no
+prerequisite declarations; none of the 14,787 automatic contributions in the pinned cache has a
+supplied prerequisite group. CVE List was partial as recorded above, so this is a measurement of the
+accepted indexed contributions, not a claim about all upstream records. The OSV text indexing path
+retains description provenance and heuristic code leads, but does not retain this Janino statement as
+a prerequisite in the generic contribution. The shared generic model can represent prerequisite
+pairs; the gap is in acquiring and distributing applicable declarations, not the generic type.
+
+The safe-class example adds a project-local assertion for `org.codehaus.janino:janino` and
+`org.codehaus.janino.ClassBodyEvaluator`. Bytecode inspection of Logback Core 1.5.11 and 1.5.18
+confirms that `PropertyEvalScriptBuilder` constructs that Janino class, although the advisory prose
+does not itself declare the exact class or prove its necessity for every covered version. The Spring
+example does not inherit the local assertion, and shared mapping catalogs remain unimplemented; see
+[RQ-0021](RQ-0021-centrally-distributed-vulnerability-mapping-dependencies.md).
+
+An isolated Spring copy was then run with the exact 1.5.11 mapping and
+`preconditionClassPathComplete=true`. It still reported `NO_PROOF`, with the generic message about
+physical omission of code. This supersedes the immediately preceding statement that this particular
+Spring experiment remained untested. Debugger inspection found successive independent inventory
+guard failures:
+
+1. With `maven.test.skip=true`, the guard still requires an explicit `skipTests=true` property.
+2. After adding `skipTests=true`, it cannot resolve the implicit `initialize` phase of the elider's
+   own `default` execution, even though Maven executes that goal using its declared default phase.
+3. After making that phase explicit in the isolated copy, it rejects the Spring Boot `repackage`
+   execution as unmodeled.
+
+These are successive first failures under the tested configuration, not an exhaustive list of all
+possible blockers. The inventory capture records each failure internally, but the finding assessment
+discards an incomplete inventory's reason and reports the unrelated generic omission diagnostic.
+The `analyze` path supplies no prerequisite inventory at all; in the isolated mapped example with the
+opt-in property it likewise returned `NO_PROOF`. Analysis must not claim future physical verification,
+but it currently lacks a corresponding prerequisite prediction and explanation.
+
+The safe-class POM's `(,1.6.0)` mapping range is wider than the
+[upstream advisory's](https://github.com/advisories/GHSA-25qh-j22f-pwp8) affected ranges and includes
+the fixed versions 1.3.16 and 1.5.19. Reconciliation of the example's actual saved contributions
+with the production merger returned `NOT_AFFECTED` for those versions using automatic contributions
+alone and `AFFECTED` after including its manual mapping. The adapter treats every manual mapping's
+range as an affected-version assertion, even when the intended new information is a prerequisite.
+This is not a reason to change the approved union of explicit affected claims: the mapping's range is
+too broad, and any future way to scope supplemental evidence without asserting affected coverage must
+be designed explicitly. The current prerequisite proof also requires both coordinate and class to be
+absent for every pair, limiting detection when the exact required class is removed from a retained
+dependency or when several necessary conditions have different Boolean relationships.
+
+The [measurement snapshot](data/rq-0020/2026-11-06-logback-precondition-root-cause.json) records
+the inputs, counts, controlled outcomes and limits. The isolated Maven logs and project are under
+`.scratch/precondition-root-cause/` and `/tmp/elider-spring-precondition-*.log`. No production fix
+was made during this investigation.
+
+### 2026-11-06: User direction on prerequisite applicability and attribution
+
+The user clarified that prerequisite applicability is an outcome in its own right. When a known
+necessary dependency is absent from the effective elision inventory, the finding should be reported
+as not applicable within that assessed inventory whether the dependency was absent initially or
+removed during elision. Whether elision caused the absence is a separate reason, not a prerequisite
+for listing the finding as not applicable. Compare original and final observations before attributing
+class absence to elision: a coordinate's original presence does not establish that the required class
+was present, and another provider may retain it. Analysis should report the corresponding prediction
+without presenting planned output as physically verified.
+
+The user further clarified that this missing-dependency result belongs in the emitted CycloneDX SBOM
+as VEX even when the dependency was absent before elision; the project must not claim credit for
+removing it. The existing safe-class example already demonstrates this bounded behavior: Janino is
+absent from both baseline and post-elision SBOMs, and the post-elision SBOM records CVE-2025-11226
+as `not_affected` with `requires_dependency`. The existing
+`ADR0008MavenPreconditionPublicationTest#publishesPreconditionEvidenceFromOneRetainedInventoryWithoutTrimRecords`
+passed on 2026-11-06 and verifies CycloneDX and OpenVEX without trim records. This does not establish
+that Spring receives the result: its automatic prerequisite evidence and inventory guard gaps remain
+as recorded above. Currently SBOM generation and prerequisite VEX assessment are also gated by
+`trimJars`; a run configured without trimming does not publish an SBOM through this path.
+
+The elision publisher already has a retained-artifact plan and selected trimmed JAR paths before it
+assesses findings. Its Maven goal runs at `initialize`, however, before later compilation, packaging
+and deployment can introduce additional providers. Report the outcome against the inventory actually
+examined; do not equate absence from that inventory with universal runtime absence. Missing evidence,
+an unknown prerequisite, or an uninspectable provider must remain distinguishable from observed
+absence. The existing ADR-0008 VEX proof conditions describe the current implementation and need
+explicit review where this direction changes its reporting or evidence semantics; this note is not
+an implementation or a compatibility promise.
+
+For the saved Spring example, both baseline and post-elision Maven SBOMs contain 91 components and
+no Janino coordinate. Inspection of the produced Spring Boot JAR and all 57 directly nested library
+JARs found no `org/codehaus/janino/ClassBodyEvaluator.class`. The
+[observation snapshot](data/rq-0020/2026-11-06-spring-janino-inventory-observation.json) records the
+archive digest and the exact inspection boundary. This is evidence that the mapped prerequisite is
+absent from that packaged artifact, rather than evidence that elision removed the Janino dependency;
+it does not inspect deployment-provided or recursively nested providers. The current plugin report
+still says `NO_PROOF` because it lacks the prerequisite declaration and the inventory proof path is
+gated as described above.
+
+### 2026-11-06: Verifying `process-classes` for the Spring example
+
+The plugin already supports `process-classes` as an opt-in; its descriptor default remains
+`initialize`. An isolated copy of the Spring example used the extension's
+`elide.productionClassesComplete=true` rebind, the pinned advisory cache, and the exact Logback
+1.5.11/Janino mapping. With `clean package` and `skipTests=true`, the observed order was production
+compile, elide, test compilation, skipped tests, and Spring Boot repackage. The build succeeded, the
+report had 101 findings, 3,429 pruned classes and zero dropped JARs, and the packaged application's
+`/api/hello` returned HTTP 200 with the expected body. A separate `clean test` run executed all three
+Spring tests successfully. These results establish behavior for this example, not every project.
+
+The phase change did not by itself establish Janino inapplicability: the report remained `NO_PROOF`.
+Debugger inspection identified the inventory guard's first failure as an unmodeled Spring Boot
+`repackage` execution after `process-classes`. A separate `clean process-classes` run also reported
+`NO_PROOF` with that same guard failure even though repackage did not execute in that Maven request.
+The guard's behavior and the scope of a phase-only observation require explicit assessment; its
+failure should not be silently converted into either an unrestricted VEX conclusion or an unrelated
+generic diagnostic.
+
+In the same isolated setup, `clean compile` completed without running elide, while the extension's
+standalone `dependency:tree` preparation ran compile, elide and then the tree goal. A valid
+source-free JAR fixture failed at `process-classes` because the current bytecode-complete path
+requires an existing production class output. The [verification snapshot](data/rq-0020/2026-11-06-process-classes-verification.json)
+records the exact scope and observations; local command logs are in
+`.scratch/process-classes-verification/logs/`.
+
+Moving the default would change the existing contract: `compile` and `initialize` would no longer
+perform elision, compilation would precede ordinary elision, test compilation would follow it, and
+the final package would still be created later. The extension currently infers an unspecified phase
+as `initialize`, so changing only the Mojo annotation would leave phase inference and dependency-tree
+preparation inconsistent. Bytecode-only analysis also cannot discover dependencies used solely via
+inlined constants; the current policy requires explicit retention. See the dated verification in
+[RQ-0017](RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md)
+and the superseding [ADR-0013](../adr/0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md).
+No default phase or proof policy was changed in this investigation.
+
+### 2026-11-06: Handover for evidence propagation and inventory assessment
+
+The user confirmed that prerequisite assessment must never be gated by whether JAR trimming is
+enabled and must use the actual final inventory. A change in physical contents can change the
+assessment; the setting alone cannot. An already-absent necessary prerequisite can support a
+scoped SBOM VEX result without attributing its absence to elision. Analysis predictions must remain
+distinguishable from verified output.
+
+The [implementation handover](../handovers/2026-11-06-cve-evidence-and-inventory-assessment.md)
+connects the observed ingestion, shared mapping, assessment, lifecycle and publication gaps to a
+TDD plan. It proposes an explicitly selected data-only shared catalog and requires the real-data
+Spring example as an end-to-end acceptance case. This is a plan, not an implementation or a new
+empirical result. Earlier dated observations and their inventory boundaries remain unchanged.
+
+The user further directed that whole-JAR elision and class trimming must share the same liveness
+analysis and dataset. The handover now specifies one cross-artifact closure, with the physical output
+inventory kept distinct from dead-class candidates for CVE assessment. It also clarifies that
+ordinary repackaging need not automatically defer assessment or require a second full scan; known
+packaging additions and the actual assessed boundary still need to be accounted for.
+
+The user then requested an explicit closed-world option under which runtime evidence is assumed
+complete for the supported workload. The handover records the requested distinction between an
+unobserved class and a class retained only by static references, along with root, cache, reporting,
+and output-verification requirements. The existing completeness options serve other purposes and
+do not implement this mode. This is a proposed feature, not a claim that it has been implemented.
 
 ## Unresolved questions
 

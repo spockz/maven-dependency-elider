@@ -1,0 +1,29 @@
+{
+  "observedOn": "2026-11-06",
+  "subject": "CVE-2025-11226 Janino prerequisite in the Spring Boot example",
+  "reportGeneratedAt": "2026-11-06T07:22:09.759728771Z",
+  "baselineMavenSbom": {
+    "components": 91,
+    "janinoCoordinates": 0
+  },
+  "postElisionMavenSbom": {
+    "components": 91,
+    "janinoCoordinates": 0,
+    "wholeArtifactsDropped": 0
+  },
+  "packagedArchive": {
+    "path": "examples/example-spring-boot-app/target/example-spring-boot-app-0.1.0-SNAPSHOT.jar",
+    "sha256": "45a5ad7940fbbbac0e2243db057b029c9a1e16736f3030f9d860084c6a9cae13",
+    "nestedJarsInspected": 57,
+    "janinoNamedOuterEntries": 0,
+    "exactClass": "org/codehaus/janino/ClassBodyEvaluator.class",
+    "exactClassProvidersInOuterAndDirectNestedJars": 0
+  },
+  "scope": "Maven SBOM coordinates and class entries in the saved Spring Boot archive and its directly nested library JARs; does not inspect external runtime providers or recursively nested archives",
+  "currentPluginResult": {
+    "finding": "CVE-2025-11226",
+    "outcome": "NO_PROOF",
+    "effectivePrerequisites": []
+  },
+  "method": "Scanned ZIP directory entries in the packaged application and every BOOT-INF/lib JAR with Go archive/zip. Baseline and post-elision SBOM component identities were examined separately."
+}

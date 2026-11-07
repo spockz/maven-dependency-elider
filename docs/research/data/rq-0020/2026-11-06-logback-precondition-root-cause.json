@@ -1,0 +1,84 @@
+{
+  "measuredOn": "2026-11-06",
+  "subject": "CVE-2025-11226 prerequisite root-cause investigation",
+  "sources": {
+    "osvArchiveSha256": "83f0acd183479c7199ec8fc47c48a4676ceb9239fb603295ddeda36444081156",
+    "cveListRevision": "8683d0fedac9baee8b745555aebad828cceaaa90",
+    "cveListStatus": "PARTIAL; 79 malformed rows skipped",
+    "genericContributions": 14787,
+    "automaticContributionsWithPrerequisites": 0
+  },
+  "baseline": {
+    "project": "examples/example-spring-boot-app",
+    "artifact": "ch.qos.logback:logback-core:1.5.11",
+    "outcome": "NO_PROOF",
+    "prerequisiteGroup": "OMITTED",
+    "janinoCoordinateInCapturedGraph": false
+  },
+  "controlledRuns": {
+    "location": ".scratch/precondition-root-cause/examples/example-spring-boot-app",
+    "mappingScope": "[1.5.11]",
+    "prerequisite": {
+      "requiresDependency": "org.codehaus.janino:janino",
+      "requiresClass": "org.codehaus.janino.ClassBodyEvaluator"
+    },
+    "optedIn": true,
+    "initial": {
+      "goals": [
+        "clean",
+        "package"
+      ],
+      "mavenTestSkip": true,
+      "skipTestsExplicit": false,
+      "outcome": "NO_PROOF",
+      "inventoryFailure": "Maven downstream provider generation is unsupported: Maven tests must be explicitly skipped with effective skipTests=true"
+    },
+    "withSkipTests": {
+      "skipTestsExplicit": true,
+      "outcome": "NO_PROOF",
+      "inventoryFailure": "Maven downstream provider generation is unsupported: execution default has no recognized lifecycle phase",
+      "rejectedExecution": {
+        "groupId": "io.github.spockz",
+        "artifactId": "dependency-elider-maven-plugin",
+        "executionId": "default"
+      }
+    },
+    "withExplicitEliderPhase": {
+      "skipTestsExplicit": true,
+      "eliderPhase": "initialize",
+      "outcome": "NO_PROOF",
+      "inventoryFailure": "Maven downstream provider generation is unsupported: unmodeled plugin execution org.springframework.boot:spring-boot-maven-plugin goals [repackage]"
+    },
+    "analysis": {
+      "outcome": "NO_PROOF",
+      "prerequisiteGroup": "DECLARED",
+      "sourceBoundary": "AnalyzePrediction assessment supplies null precondition inventory"
+    }
+  },
+  "rangeProbe": {
+    "source": "Actual persisted safe-class example contributions decoded and reconciled by the production generic merger",
+    "manualRange": "(,1.6.0)",
+    "versions": [
+      {
+        "version": "1.3.16",
+        "automaticOnly": "NOT_AFFECTED",
+        "withManual": "AFFECTED"
+      },
+      {
+        "version": "1.5.19",
+        "automaticOnly": "NOT_AFFECTED",
+        "withManual": "AFFECTED"
+      },
+      {
+        "version": "1.5.11",
+        "automaticOnly": "AFFECTED",
+        "withManual": "AFFECTED"
+      }
+    ]
+  },
+  "limitations": [
+    "The captured failures are sequential first blockers, not a complete inventory of all possible blockers.",
+    "The experiment modified only an isolated scratch copy; no production fix or proof of exploitability is claimed.",
+    "Debugger inspection observed inventory exceptions that the report does not retain."
+  ]
+}

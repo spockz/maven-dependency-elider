@@ -7,17 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.spockz.elider.model.CacheProducerIdentity;
-import io.github.spockz.elider.model.CodeReference;
 import io.github.spockz.elider.model.GenericFindingReconciler;
 import io.github.spockz.elider.model.GenericVulnerabilityFinding;
-import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;
-import io.github.spockz.elider.scanner.AdvisoryEvidenceReader;
+import io.github.spockz.elider.scanner.CveListFindingIndexer;
 import io.github.spockz.elider.scanner.FindingSource;
 import io.github.spockz.elider.scanner.FindingSourceSnapshot;
 import io.github.spockz.elider.scanner.GenericFindingCacheEnvelope;
 import io.github.spockz.elider.scanner.GenericFindingCacheEnvelopeReader;
 import io.github.spockz.elider.scanner.GenericFindingCacheEnvelopeWriter;
+import io.github.spockz.elider.scanner.OsvSnapshotIndexer;
 import io.github.spockz.elider.scanner.OsvVulnerabilityFindingAdapter;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -41,8 +40,11 @@ import org.junit.jupiter.api.Test;
 /** Builds the producer-bound transcript fixture. */
 @SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.ExcessiveImports"})
 class TranscriptCachePreparationTest {
-  /** System property selecting the producer-free advisory fixture. */
+  /** System property selecting the pinned OSV Maven archive. */
   private static final String INPUT_PROPERTY = "elide.transcriptCacheFixtureInput";
+
+  /** System property selecting the extracted pinned CVE List archive. */
+  private static final String CVE_INPUT_PROPERTY = "elide.transcriptCveListDirectory";
 
   /** System property selecting the producer-bound cache output. */
   private static final String OUTPUT_PROPERTY = "elide.transcriptCacheFixtureOutput";
@@ -63,7 +65,7 @@ class TranscriptCachePreparationTest {
   private static final String CORE_ARTIFACT_ID = "elider-core";
 
   /** Stable source timestamp for the generated transcript cache metadata. */
-  private static final Instant FIXTURE_TIMESTAMP = Instant.parse("2026-10-31T00:00:00Z");
+  private static final Instant FIXTURE_TIMESTAMP = Instant.parse("2026-11-05T22:38:17Z");
 
   @Test
   @SuppressWarnings({"PMD.LawOfDemeter", "PMD.UnitTestContainsTooManyAsserts"})
@@ -96,10 +98,19 @@ class TranscriptCachePreparationTest {
                         resolution
                             .diagnostic()
                             .orElse("Installed plugin cache identity is unavailable")));
-    final List<OsvAdvisoryRecord> records = readFixture(Path.of(inputSetting));
+    final Path cveInput = Path.of(requiredProperty(CVE_INPUT_PROPERTY));
+    final OsvSnapshotIndexer.PartialIndex osv;
+    try (InputStream input = Files.newInputStream(Path.of(inputSetting))) {
+      osv = new OsvSnapshotIndexer().indexZipIsolated(input, cveInput);
+    }
+    final CveListFindingIndexer.IndexResult cve = new CveListFindingIndexer().index(cveInput);
+    assertAll(
+        "complete upstream snapshots are indexed",
+        () -> assertThat(osv.records()).hasSizeGreaterThan(5_000),
+        () -> assertThat(cve.sourceRecordCount()).isGreaterThan(400_000));
     final OsvVulnerabilityFindingAdapter adapter = new OsvVulnerabilityFindingAdapter();
     final List<VulnerabilityFindingContribution> contributions =
-        records.stream().flatMap(record -> adapter.contributions(record).stream()).toList();
+        osv.records().stream().flatMap(record -> adapter.contributions(record).stream()).toList();
     final GenericFindingCacheEnvelope envelope =
         new GenericFindingCacheEnvelope(
             producer,
@@ -107,21 +118,21 @@ class TranscriptCachePreparationTest {
                 FindingSource.OSV,
                     new FindingSourceSnapshot(
                         FindingSource.OSV,
-                        "transcript-osv-fixture",
+                        "83f0acd183479c7199ec8fc47c48a4676ceb9239fb603295ddeda36444081156",
                         FIXTURE_TIMESTAMP,
-                        FindingSourceSnapshot.Status.CURRENT,
-                        null,
+                        status(osv.skippedCount()),
+                        diagnostic("OSV", osv.skippedCount()),
                         contributions,
-                        List.of()),
+                        osv.skippedRows()),
                 FindingSource.CVE_LIST,
                     new FindingSourceSnapshot(
                         FindingSource.CVE_LIST,
-                        "transcript-empty-cve-fixture",
+                        "8683d0fedac9baee8b745555aebad828cceaaa90",
                         FIXTURE_TIMESTAMP,
-                        FindingSourceSnapshot.Status.CURRENT,
-                        null,
-                        List.of(),
-                        List.of())));
+                        status(cve.skippedRows()),
+                        diagnostic("CVE List", cve.skippedRows()),
+                        cve.contributions(),
+                        cve.observationDiagnostics())));
     final byte[] encoded = new GenericFindingCacheEnvelopeWriter().encode(envelope);
     verifyEnvelope(encoded, producer);
     final Path output = Path.of(outputSetting);
@@ -172,10 +183,14 @@ class TranscriptCachePreparationTest {
         groupId, artifactId, version, "runtime", "jar", null, new DefaultArtifactHandler("jar"));
   }
 
-  private static List<OsvAdvisoryRecord> readFixture(final Path input) throws IOException {
-    try (InputStream stream = Files.newInputStream(input)) {
-      return new AdvisoryEvidenceReader().read(stream);
-    }
+  private static FindingSourceSnapshot.Status status(final int skippedRows) {
+    return skippedRows == 0
+        ? FindingSourceSnapshot.Status.CURRENT
+        : FindingSourceSnapshot.Status.PARTIAL;
+  }
+
+  private static String diagnostic(final String source, final int skippedRows) {
+    return skippedRows == 0 ? null : "Skipped " + skippedRows + " " + source + " source row(s)";
   }
 
   private static void verifyEnvelope(final byte[] encoded, final CacheProducerIdentity producer)
@@ -191,19 +206,13 @@ class TranscriptCachePreparationTest {
           () ->
               assertThat(decoded.sources())
                   .containsOnlyKeys(FindingSource.OSV, FindingSource.CVE_LIST),
-          () -> assertThat(decoded.sources().get(FindingSource.CVE_LIST).contributions()).isEmpty(),
+          () ->
+              assertThat(decoded.sources().get(FindingSource.CVE_LIST).contributions())
+                  .isNotEmpty(),
           () ->
               assertThat(findings)
                   .extracting(GenericVulnerabilityFinding::vulnerabilityId)
-                  .containsExactly("CVE-2014-3577", "CVE-2022-42889"),
-          () ->
-              assertThat(findings.getFirst().heuristicLeadsFor("4.3.4"))
-                  .containsExactly(
-                      CodeReference.className("org.apache.http.conn.ssl.AbstractVerifier")),
-          () ->
-              assertThat(findings)
-                  .allSatisfy(
-                      finding -> assertThat(finding.effectiveCodeClaimsFor("1.0")).isEmpty()));
+                  .contains("CVE-2024-50379", "CVE-2026-18401", "CVE-2026-77310"));
     }
   }
 

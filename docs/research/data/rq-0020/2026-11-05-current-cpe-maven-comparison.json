@@ -1,0 +1,896 @@
+{
+  "measuredAtUtc": "2026-11-05T22:38:17Z",
+  "purpose": "Exact-version OSV Maven versus NVD CPE comparison and selected CVE List adapter probe; not a new end-to-end plugin scan.",
+  "osvQueryUrl": "https://api.osv.dev/v1/query",
+  "nvdQueryUrl": "https://services.nvd.nist.gov/rest/json/cves/2.0",
+  "packages": [
+    {
+      "maven": "org.apache.tomcat.embed:tomcat-embed-core:10.1.31",
+      "cpe": "cpe:2.3:a:apache:tomcat:10.1.31:*:*:*:*:*:*:*",
+      "osv": {
+        "advisories": [
+          {
+            "id": "GHSA-23hv-mwm6-g8jf",
+            "aliases": [
+              "BIT-tomcat-2025-55668",
+              "CVE-2025-55668"
+            ],
+            "published": "2025-08-13T15:30:34Z"
+          },
+          {
+            "id": "GHSA-25xr-qj8w-c4vf",
+            "aliases": [
+              "BIT-tomcat-2025-53506",
+              "CVE-2025-53506"
+            ],
+            "published": "2025-07-10T21:31:53Z"
+          },
+          {
+            "id": "GHSA-27hp-xhwr-wr2m",
+            "aliases": [
+              "BIT-tomcat-2024-56337",
+              "CVE-2024-56337"
+            ],
+            "published": "2024-12-20T18:31:32Z"
+          },
+          {
+            "id": "GHSA-3p2h-wqq4-wf4h",
+            "aliases": [
+              "BIT-tomcat-2025-31650",
+              "CVE-2025-31650"
+            ],
+            "published": "2025-04-28T21:30:43Z"
+          },
+          {
+            "id": "GHSA-42wg-hm62-jcwg",
+            "aliases": [
+              "BIT-tomcat-2025-49124",
+              "CVE-2025-49124"
+            ],
+            "published": "2025-06-16T15:32:28Z"
+          },
+          {
+            "id": "GHSA-563x-q5rq-57qp",
+            "aliases": [
+              "BIT-tomcat-2026-24880",
+              "CVE-2026-24880"
+            ],
+            "published": "2026-04-09T21:31:29Z"
+          },
+          {
+            "id": "GHSA-5j33-cvvr-w245",
+            "aliases": [
+              "BIT-tomcat-2024-50379",
+              "CVE-2024-50379"
+            ],
+            "published": "2024-12-17T15:31:43Z"
+          },
+          {
+            "id": "GHSA-5m62-pw8w-7w9f",
+            "aliases": [
+              "BIT-tomcat-2026-43515",
+              "CVE-2026-43515"
+            ],
+            "published": "2026-05-12T18:30:38Z"
+          },
+          {
+            "id": "GHSA-5mp6-jrq3-r938",
+            "aliases": [
+              "BIT-tomcat-2026-43513",
+              "CVE-2026-43513"
+            ],
+            "published": "2026-05-12T18:30:38Z"
+          },
+          {
+            "id": "GHSA-5v3h-fjv2-54fg",
+            "aliases": [
+              "BIT-tomcat-2026-55956",
+              "CVE-2026-55956"
+            ],
+            "published": "2026-06-29T21:32:15Z"
+          },
+          {
+            "id": "GHSA-7895-gffq-w6jq",
+            "aliases": [
+              "BIT-tomcat-2026-55957",
+              "CVE-2026-55957"
+            ],
+            "published": "2026-06-29T21:32:15Z"
+          },
+          {
+            "id": "GHSA-83qj-6fr2-vhqg",
+            "aliases": [
+              "BIT-tomcat-2025-24813",
+              "CVE-2025-24813"
+            ],
+            "published": "2025-03-10T18:31:56Z"
+          },
+          {
+            "id": "GHSA-9m3c-qcxr-9x87",
+            "aliases": [
+              "BIT-tomcat-2026-25854",
+              "CVE-2026-25854"
+            ],
+            "published": "2026-04-09T21:31:29Z"
+          },
+          {
+            "id": "GHSA-9m89-8frq-c98c",
+            "aliases": [
+              "BIT-tomcat-2026-43514",
+              "CVE-2026-43514"
+            ],
+            "published": "2026-05-12T18:30:38Z"
+          },
+          {
+            "id": "GHSA-9xv2-5v5q-p794",
+            "aliases": [
+              "BIT-tomcat-2026-65905",
+              "CVE-2026-65905"
+            ],
+            "published": "2026-08-26T00:30:52Z"
+          },
+          {
+            "id": "GHSA-ff77-26x5-69cr",
+            "aliases": [
+              "BIT-tomcat-2025-31651",
+              "CVE-2025-31651"
+            ],
+            "published": "2025-04-28T21:30:43Z"
+          },
+          {
+            "id": "GHSA-fpj8-gq4v-p354",
+            "aliases": [
+              "BIT-tomcat-2025-66614",
+              "CVE-2025-66614"
+            ],
+            "published": "2026-02-17T21:31:13Z"
+          },
+          {
+            "id": "GHSA-fv25-8xcx-gqjc",
+            "aliases": [
+              "BIT-tomcat-2026-42498",
+              "CVE-2026-42498"
+            ],
+            "published": "2026-05-12T18:30:38Z"
+          },
+          {
+            "id": "GHSA-gcx9-497g-6cp6",
+            "aliases": [
+              "BIT-tomcat-2026-65182",
+              "CVE-2026-65182"
+            ],
+            "published": "2026-08-26T00:30:52Z"
+          },
+          {
+            "id": "GHSA-gqp3-2cvr-x8m3",
+            "aliases": [
+              "BIT-tomcat-2025-48989",
+              "CVE-2025-48989"
+            ],
+            "published": "2025-08-13T15:30:34Z"
+          },
+          {
+            "id": "GHSA-gx5v-xp9w-j4cg",
+            "aliases": [
+              "BIT-tomcat-2026-41284",
+              "CVE-2026-41284"
+            ],
+            "published": "2026-05-12T18:30:38Z"
+          },
+          {
+            "id": "GHSA-h2fw-rfh5-95r3",
+            "aliases": [
+              "BIT-tomcat-2025-46701",
+              "CVE-2025-46701"
+            ],
+            "published": "2025-05-29T21:31:37Z"
+          },
+          {
+            "id": "GHSA-h3gc-qfqq-6h8f",
+            "aliases": [
+              "BIT-tomcat-2025-48988",
+              "CVE-2025-48988"
+            ],
+            "published": "2025-06-16T15:32:28Z"
+          },
+          {
+            "id": "GHSA-h3x4-894j-xpx5",
+            "aliases": [
+              "BIT-tomcat-2026-68525",
+              "CVE-2026-68525"
+            ],
+            "published": "2026-08-26T00:30:52Z"
+          },
+          {
+            "id": "GHSA-h6fc-48rj-7qqh",
+            "aliases": [
+              "BIT-tomcat-2026-43512",
+              "CVE-2026-43512"
+            ],
+            "published": "2026-05-12T18:30:38Z"
+          },
+          {
+            "id": "GHSA-h792-v28v-ppgr",
+            "aliases": [
+              "BIT-tomcat-2026-53404",
+              "CVE-2026-53404"
+            ],
+            "published": "2026-06-29T21:32:15Z"
+          },
+          {
+            "id": "GHSA-hgrr-935x-pq79",
+            "aliases": [
+              "BIT-tomcat-2025-61795",
+              "CVE-2025-61795"
+            ],
+            "published": "2025-10-27T18:31:13Z"
+          },
+          {
+            "id": "GHSA-mgp5-rv84-w37q",
+            "aliases": [
+              "BIT-tomcat-2026-24734",
+              "CVE-2026-24734"
+            ],
+            "published": "2026-02-17T21:31:13Z"
+          },
+          {
+            "id": "GHSA-mqg3-r7h5-24x4",
+            "aliases": [
+              "BIT-tomcat-2026-55276",
+              "CVE-2026-55276"
+            ],
+            "published": "2026-06-29T21:32:15Z"
+          },
+          {
+            "id": "GHSA-r29c-68gh-xp6x",
+            "aliases": [
+              "BIT-tomcat-2026-41293",
+              "CVE-2026-41293"
+            ],
+            "published": "2026-05-12T18:30:38Z"
+          },
+          {
+            "id": "GHSA-rv64-5gf8-9qq8",
+            "aliases": [
+              "BIT-tomcat-2026-34483",
+              "CVE-2026-34483"
+            ],
+            "published": "2026-04-09T21:31:30Z"
+          },
+          {
+            "id": "GHSA-vfww-5hm6-hx2j",
+            "aliases": [
+              "BIT-tomcat-2025-55754",
+              "CVE-2025-55754"
+            ],
+            "published": "2025-10-27T18:31:13Z"
+          },
+          {
+            "id": "GHSA-wc4r-xq3c-5cf3",
+            "aliases": [
+              "BIT-tomcat-2025-49125",
+              "CVE-2025-49125"
+            ],
+            "published": "2025-06-16T15:32:28Z"
+          },
+          {
+            "id": "GHSA-wmwf-9ccg-fff5",
+            "aliases": [
+              "BIT-tomcat-2025-55752",
+              "CVE-2025-55752"
+            ],
+            "published": "2025-10-27T18:31:13Z"
+          },
+          {
+            "id": "GHSA-wr62-c79q-cv37",
+            "aliases": [
+              "BIT-tomcat-2025-52520",
+              "CVE-2025-52520"
+            ],
+            "published": "2025-07-10T21:31:52Z"
+          },
+          {
+            "id": "GHSA-x4m4-345f-5h5g",
+            "aliases": [
+              "BIT-tomcat-2026-34487",
+              "CVE-2026-34487"
+            ],
+            "published": "2026-04-09T21:31:30Z"
+          }
+        ],
+        "nextPageToken": null
+      },
+      "nvd": {
+        "totalResults": 54,
+        "cves": [
+          {
+            "id": "CVE-2024-52318",
+            "published": "2024-11-18T13:15:04.490",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2024-50379",
+            "published": "2024-12-17T13:15:18.810",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2024-54677",
+            "published": "2024-12-17T13:15:18.957",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2024-56337",
+            "published": "2024-12-20T16:15:24.260",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-24813",
+            "published": "2025-03-10T17:15:35.067",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2025-31650",
+            "published": "2025-04-28T20:15:20.653",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-31651",
+            "published": "2025-04-28T20:15:20.783",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-46701",
+            "published": "2025-05-29T19:15:27.983",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-48988",
+            "published": "2025-06-16T15:15:24.563",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-49124",
+            "published": "2025-06-16T15:15:24.707",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-49125",
+            "published": "2025-06-16T15:15:24.850",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-52520",
+            "published": "2025-07-10T19:15:25.570",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-53506",
+            "published": "2025-07-10T20:15:26.970",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-48989",
+            "published": "2025-08-13T13:15:34.153",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-55668",
+            "published": "2025-08-13T14:15:33.330",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-55752",
+            "published": "2025-10-27T18:15:42.283",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-55754",
+            "published": "2025-10-27T18:15:42.710",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-61795",
+            "published": "2025-10-27T18:15:44.200",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2025-66614",
+            "published": "2026-02-17T19:21:55.310",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2026-24733",
+            "published": "2026-02-17T19:21:56.820",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2026-24734",
+            "published": "2026-02-17T19:21:56.953",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2026-24880",
+            "published": "2026-04-09T20:16:24.060",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-25854",
+            "published": "2026-04-09T20:16:24.207",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-29145",
+            "published": "2026-04-09T20:16:24.447",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-29146",
+            "published": "2026-04-09T20:16:24.577",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2026-34483",
+            "published": "2026-04-09T20:16:24.937",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-34487",
+            "published": "2026-04-09T20:16:25.203",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-34500",
+            "published": "2026-04-09T20:16:25.330",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-41284",
+            "published": "2026-05-12T16:16:15.933",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-41293",
+            "published": "2026-05-12T16:16:17.553",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-42498",
+            "published": "2026-05-12T16:16:17.800",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-43512",
+            "published": "2026-05-12T16:16:17.990",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-43513",
+            "published": "2026-05-12T16:16:18.177",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-43514",
+            "published": "2026-05-12T16:16:18.370",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-43515",
+            "published": "2026-05-12T16:16:18.553",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-50229",
+            "published": "2026-06-29T21:16:44.413",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-53404",
+            "published": "2026-06-29T21:16:44.527",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-53434",
+            "published": "2026-06-29T21:16:44.937",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-55276",
+            "published": "2026-06-29T21:16:45.380",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-55955",
+            "published": "2026-06-29T21:16:45.490",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-55956",
+            "published": "2026-06-29T21:16:45.597",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-55957",
+            "published": "2026-06-29T21:16:45.700",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-59083",
+            "published": "2026-07-14T09:16:41.483",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-59084",
+            "published": "2026-07-14T09:16:41.607",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-66299",
+            "published": "2026-07-28T15:17:50.210",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-65182",
+            "published": "2026-08-25T22:17:04.900",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-65183",
+            "published": "2026-08-25T22:17:05.050",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-65905",
+            "published": "2026-08-25T22:17:05.303",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-65927",
+            "published": "2026-08-25T22:17:05.433",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-66422",
+            "published": "2026-08-25T22:17:05.560",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-68525",
+            "published": "2026-08-25T22:17:05.700",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-68569",
+            "published": "2026-08-25T22:17:05.837",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-68763",
+            "published": "2026-08-25T22:17:05.970",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-73180",
+            "published": "2026-08-25T22:17:06.107",
+            "vulnStatus": "Analyzed"
+          }
+        ]
+      }
+    },
+    {
+      "maven": "com.fasterxml.jackson.core:jackson-core:2.18.2",
+      "cpe": "cpe:2.3:a:fasterxml:jackson-core:2.18.2:*:*:*:*:*:*:*",
+      "osv": {
+        "advisories": [
+          {
+            "id": "GHSA-72hv-8253-57qq",
+            "aliases": [
+              "CVE-2026-18401"
+            ],
+            "published": "2026-02-28T02:01:05Z"
+          },
+          {
+            "id": "GHSA-7hhh-6rmp-j9qf",
+            "aliases": [
+              "CVE-2026-89425"
+            ],
+            "published": "2026-10-01T15:20:27Z"
+          },
+          {
+            "id": "GHSA-p6pp-m3f8-5c89",
+            "aliases": [
+              "CVE-2026-89407"
+            ],
+            "published": "2026-10-01T15:19:21Z"
+          },
+          {
+            "id": "GHSA-r7wm-3cxj-wff9",
+            "aliases": [
+              "CVE-2026-68494"
+            ],
+            "published": "2026-07-21T21:58:53Z"
+          }
+        ],
+        "nextPageToken": null
+      },
+      "nvd": {
+        "totalResults": 0,
+        "cves": []
+      }
+    },
+    {
+      "maven": "com.fasterxml.jackson.core:jackson-databind:2.18.2",
+      "cpe": "cpe:2.3:a:fasterxml:jackson-databind:2.18.2:*:*:*:*:*:*:*",
+      "osv": {
+        "advisories": [
+          {
+            "id": "GHSA-3pjw-73gf-8qr5",
+            "aliases": [
+              "CVE-2026-59888"
+            ],
+            "published": "2026-07-21T19:33:06Z"
+          },
+          {
+            "id": "GHSA-5gvw-p9qm-jgwh",
+            "aliases": [
+              "CVE-2026-59889"
+            ],
+            "published": "2026-07-21T22:00:43Z"
+          },
+          {
+            "id": "GHSA-5jmj-h7xm-6q6v",
+            "aliases": [
+              "CVE-2026-54515"
+            ],
+            "published": "2026-06-23T21:23:58Z"
+          },
+          {
+            "id": "GHSA-cxp5-3px4-pw24",
+            "aliases": [
+              "CVE-2026-91777"
+            ],
+            "published": "2026-09-30T15:37:24Z"
+          },
+          {
+            "id": "GHSA-gx83-3vf8-gh7j",
+            "aliases": [
+              "CVE-2026-83557"
+            ],
+            "published": "2026-09-28T20:44:25Z"
+          },
+          {
+            "id": "GHSA-hgj6-7826-r7m5",
+            "aliases": [
+              "CVE-2026-54514"
+            ],
+            "published": "2026-06-23T21:22:54Z"
+          },
+          {
+            "id": "GHSA-j3rv-43j4-c7qm",
+            "aliases": [
+              "CVE-2026-54512"
+            ],
+            "published": "2026-06-23T21:21:38Z"
+          },
+          {
+            "id": "GHSA-mhm7-754m-9p8w",
+            "aliases": [],
+            "published": "2026-07-21T19:40:12Z"
+          },
+          {
+            "id": "GHSA-q4xh-88c3-wmh7",
+            "aliases": [
+              "CVE-2026-68497"
+            ],
+            "published": "2026-09-28T20:19:46Z"
+          },
+          {
+            "id": "GHSA-rmj7-2vxq-3g9f",
+            "aliases": [
+              "CVE-2026-54513"
+            ],
+            "published": "2026-06-23T21:22:15Z"
+          },
+          {
+            "id": "GHSA-vvgp-rfg2-7rr6",
+            "aliases": [
+              "CVE-2026-77310"
+            ],
+            "published": "2026-09-28T20:17:41Z"
+          },
+          {
+            "id": "GHSA-wjgm-6hv5-3cvf",
+            "aliases": [
+              "CVE-2026-19032"
+            ],
+            "published": "2026-09-28T20:19:19Z"
+          },
+          {
+            "id": "GHSA-wv8q-qhhj-9h54",
+            "aliases": [
+              "CVE-2026-91776"
+            ],
+            "published": "2026-09-30T15:36:55Z"
+          }
+        ],
+        "nextPageToken": null
+      },
+      "nvd": {
+        "totalResults": 4,
+        "cves": [
+          {
+            "id": "CVE-2026-54512",
+            "published": "2026-06-23T21:17:02.203",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-54513",
+            "published": "2026-06-23T21:17:02.333",
+            "vulnStatus": "Modified"
+          },
+          {
+            "id": "CVE-2026-54514",
+            "published": "2026-06-23T21:17:02.467",
+            "vulnStatus": "Analyzed"
+          },
+          {
+            "id": "CVE-2026-54515",
+            "published": "2026-06-23T21:17:02.597",
+            "vulnStatus": "Analyzed"
+          }
+        ]
+      }
+    }
+  ],
+  "tomcatNvdOnlyCves": [
+    "CVE-2024-52318",
+    "CVE-2024-54677",
+    "CVE-2026-24733",
+    "CVE-2026-29145",
+    "CVE-2026-29146",
+    "CVE-2026-34500",
+    "CVE-2026-50229",
+    "CVE-2026-53434",
+    "CVE-2026-55955",
+    "CVE-2026-59083",
+    "CVE-2026-59084",
+    "CVE-2026-65183",
+    "CVE-2026-65927",
+    "CVE-2026-66299",
+    "CVE-2026-66422",
+    "CVE-2026-68569",
+    "CVE-2026-68763",
+    "CVE-2026-73180"
+  ],
+  "cveListSelectedProbe": {
+    "revision": "8683d0fedac9baee8b745555aebad828cceaaa90",
+    "recordIds": [
+      "CVE-2024-52318",
+      "CVE-2024-54677",
+      "CVE-2026-18401",
+      "CVE-2026-19032",
+      "CVE-2026-24733",
+      "CVE-2026-29145",
+      "CVE-2026-29146",
+      "CVE-2026-34500",
+      "CVE-2026-50229",
+      "CVE-2026-53434",
+      "CVE-2026-54512",
+      "CVE-2026-54513",
+      "CVE-2026-54514",
+      "CVE-2026-54515",
+      "CVE-2026-55955",
+      "CVE-2026-59083",
+      "CVE-2026-59084",
+      "CVE-2026-59888",
+      "CVE-2026-59889",
+      "CVE-2026-65183",
+      "CVE-2026-65927",
+      "CVE-2026-66299",
+      "CVE-2026-66422",
+      "CVE-2026-68494",
+      "CVE-2026-68497",
+      "CVE-2026-68569",
+      "CVE-2026-68763",
+      "CVE-2026-73180",
+      "CVE-2026-77310",
+      "CVE-2026-83557",
+      "CVE-2026-89407",
+      "CVE-2026-89425",
+      "CVE-2026-91776",
+      "CVE-2026-91777"
+    ],
+    "indexerSummary": "records=34 contributions=18 skipped=0 digest=6920e0b2ee6e04c03fcdd10f526ad2782c9e414b3c0c33e59d70bf60aa84c904",
+    "contributions": [
+      {
+        "cve": "CVE-2026-18401",
+        "mavenPackage": "com.fasterxml.jackson.core:jackson-core",
+        "matchesProjectArtifactAndVersion": true
+      },
+      {
+        "cve": "CVE-2026-18401",
+        "mavenPackage": "tools.jackson.core:jackson-core",
+        "matchesProjectArtifactAndVersion": false
+      },
+      {
+        "cve": "CVE-2026-19032",
+        "mavenPackage": "com.fasterxml.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": true
+      },
+      {
+        "cve": "CVE-2026-19032",
+        "mavenPackage": "tools.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": false
+      },
+      {
+        "cve": "CVE-2026-68494",
+        "mavenPackage": "com.fasterxml.jackson.core:jackson-core",
+        "matchesProjectArtifactAndVersion": true
+      },
+      {
+        "cve": "CVE-2026-68494",
+        "mavenPackage": "tools.jackson.core:jackson-core",
+        "matchesProjectArtifactAndVersion": false
+      },
+      {
+        "cve": "CVE-2026-68497",
+        "mavenPackage": "com.fasterxml.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": true
+      },
+      {
+        "cve": "CVE-2026-68497",
+        "mavenPackage": "tools.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": false
+      },
+      {
+        "cve": "CVE-2026-83557",
+        "mavenPackage": "com.fasterxml.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": true
+      },
+      {
+        "cve": "CVE-2026-83557",
+        "mavenPackage": "tools.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": false
+      },
+      {
+        "cve": "CVE-2026-89407",
+        "mavenPackage": "com.fasterxml.jackson.core:jackson-core",
+        "matchesProjectArtifactAndVersion": true
+      },
+      {
+        "cve": "CVE-2026-89407",
+        "mavenPackage": "tools.jackson.core:jackson-core",
+        "matchesProjectArtifactAndVersion": false
+      },
+      {
+        "cve": "CVE-2026-89425",
+        "mavenPackage": "com.fasterxml.jackson.core:jackson-core",
+        "matchesProjectArtifactAndVersion": true
+      },
+      {
+        "cve": "CVE-2026-89425",
+        "mavenPackage": "tools.jackson.core:jackson-core",
+        "matchesProjectArtifactAndVersion": false
+      },
+      {
+        "cve": "CVE-2026-91776",
+        "mavenPackage": "com.fasterxml.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": true
+      },
+      {
+        "cve": "CVE-2026-91776",
+        "mavenPackage": "tools.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": false
+      },
+      {
+        "cve": "CVE-2026-91777",
+        "mavenPackage": "com.fasterxml.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": true
+      },
+      {
+        "cve": "CVE-2026-91777",
+        "mavenPackage": "tools.jackson.core:jackson-databind",
+        "matchesProjectArtifactAndVersion": false
+      }
+    ]
+  }
+}
