@@ -1,5 +1,5 @@
 // WHY: Owns Elide's lifecycle and publication handoff outside the Mojo.
-// Both ban and ordinary analysis share the same transactional publisher boundary.
+// Ban and ordinary analysis share the same ordered publication flow.
 
 package io.github.spockz.elider.plugin;
 
@@ -43,8 +43,10 @@ final class MavenElideExecution {
       }
       final MavenElideExecutionConfiguration configuration = configurationFactory.get();
       if (configuration.analysisOptions().completeness().sourceRootsComplete()) {
-        throw new IOException(
-            "elide.sourceRootsComplete is no longer supported; bind elide to process-classes");
+        throw new MojoFailureException(
+            "Dependency elision failed: elide.sourceRootsComplete is no longer supported; "
+                + "bind elide to process-classes",
+            new IOException("Obsolete source-root completeness setting"));
       }
       BanishedDependencyLifecycleActivation.verifyElideConfiguration(
           session, project, mojoExecution, lifecycle.banishedDependencies());
@@ -146,7 +148,7 @@ final class MavenElideExecution {
       final Analysis unboundAnalysis = service.finishEffectiveOutputs(effective);
       try (TrimOutputGenerationCommitHandle generation =
           unboundAnalysis.trimResult().generationCommit()) {
-        configuration.publication().afterGenerationStaging().run();
+        configuration.publication().afterGenerationStaging().run(unboundAnalysis);
         applicationBinding.verifyFresh(project);
         plan.verifyAuditFresh(project, lifecycle.session());
         final Analysis analysis = applicationBinding.bindAnalysis(unboundAnalysis);
@@ -180,7 +182,6 @@ final class MavenElideExecution {
             publication.snykConfiguration(),
             publication.preconditionProofEnabled(),
             publication.assumeConventionalJavaSourceLayout(),
-            publication.afterStaging(),
             banPlan,
             applicationBinding));
   }

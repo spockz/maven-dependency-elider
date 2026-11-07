@@ -7,10 +7,8 @@ import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.project.MavenProject;
 
 /** Verifies final ban absence in the live views and staged output. */
 final class MavenBanPublicationVerifier {
@@ -19,33 +17,27 @@ final class MavenBanPublicationVerifier {
   /* package */ static void verify(
       final MavenBanPlan banPlan,
       final MavenArtifactViewBinding binding,
-      final MavenProject project,
       final ElisionAnalysisModel.ApplyPlan applyPlan,
       final ElisionAnalysisModel.Analysis analysis)
       throws IOException, MojoFailureException {
     banPlan.verifyAuditBytesFresh();
-    verifyFinalViews(banPlan, project, applyPlan, analysis);
+    verifyPlannedViews(banPlan, applyPlan, analysis);
     MavenBanPublicationGraphVerifier.verify(banPlan, binding, analysis.graphProjection());
     MavenBanFinalOutputVerifier.verify(binding, applyPlan, analysis.trimResult().records());
-    MavenBanRetainedProviderClosure.verify(banPlan, project, analysis);
+    MavenBanRetainedProviderClosure.verify(
+        analysis.banPlan(),
+        new ArrayList<>(applyPlan.resolvedArtifacts()),
+        analysis.trimResult().records(),
+        analysis);
   }
 
-  private static void verifyFinalViews(
+  private static void verifyPlannedViews(
       final MavenBanPlan banPlan,
-      final MavenProject project,
       final ElisionAnalysisModel.ApplyPlan applyPlan,
       final ElisionAnalysisModel.Analysis analysis)
       throws MojoFailureException {
-    final List<Artifact> resolved = new ArrayList<>(project.getArtifacts());
-    final boolean directPresent = project.getDependencyArtifacts() != null;
-    final List<Artifact> direct =
-        directPresent ? new ArrayList<>(project.getDependencyArtifacts()) : List.of();
-    if (directPresent != applyPlan.directArtifactsPresent()) {
-      throw new MojoFailureException(
-          "Final Maven direct view presence differs from the apply plan");
-    }
-    requireSameReferences("resolved", resolved, applyPlan.resolvedArtifacts());
-    requireSameReferences("direct", direct, applyPlan.directArtifacts());
+    final List<Artifact> resolved = new ArrayList<>(applyPlan.resolvedArtifacts());
+    final List<Artifact> direct = new ArrayList<>(applyPlan.directArtifacts());
     rejectBanArtifacts(banPlan, resolved, "final resolved view");
     rejectBanArtifacts(banPlan, direct, "final direct view");
     rejectBanTrimRecords(banPlan, analysis.trimResult().records());
@@ -69,21 +61,6 @@ final class MavenBanPublicationVerifier {
               record.coordinate(), "requested dependency is present in trim output membership");
         }
       }
-    }
-  }
-
-  private static void requireSameReferences(
-      final String viewName, final List<Artifact> actual, final Set<Artifact> expected)
-      throws MojoFailureException {
-    final Set<Artifact> actualReferences =
-        java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-    actualReferences.addAll(actual);
-    final Set<Artifact> expectedReferences =
-        java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-    expectedReferences.addAll(expected);
-    if (actual.size() != expected.size() || !actualReferences.equals(expectedReferences)) {
-      throw new MojoFailureException(
-          "Final Maven " + viewName + " view differs from the apply plan");
     }
   }
 

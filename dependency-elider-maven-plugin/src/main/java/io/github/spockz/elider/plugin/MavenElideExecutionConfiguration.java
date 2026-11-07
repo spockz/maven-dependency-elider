@@ -36,10 +36,9 @@ record MavenElideExecutionConfiguration(
       SnykPackageIssuesIntegration.Configuration snykConfiguration,
       boolean preconditionProofEnabled,
       boolean assumeConventionalJavaSourceLayout,
-      MavenElisionOutputPublisher.AfterStaging afterStaging,
-      MavenElisionOutputPublisher.AfterStaging afterGenerationStaging) {}
+      MavenElisionOutputPublisher.AfterGenerationStaging afterGenerationStaging) {}
 
-  /** Installs the resolver plan after report and view staging succeeds. */
+  /** Installs the resolver plan after report outputs and Maven views are ready. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   @FunctionalInterface
   interface PlanPublication {

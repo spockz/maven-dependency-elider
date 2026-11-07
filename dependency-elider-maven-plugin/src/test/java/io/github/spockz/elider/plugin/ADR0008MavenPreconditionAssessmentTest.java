@@ -937,13 +937,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         artifactFiles.add(ArtifactFileRef.fromPath(provider.coordinate(), provider.path()));
       }
     }
-    return new MavenPreconditionInventory.Snapshot(
-        artifactFiles,
-        classProviders,
-        "assessment-test-root-fingerprint",
-        List.of(),
-        List.of(),
-        optInEnabled);
+    return new MavenPreconditionInventory.Snapshot(artifactFiles, classProviders, optInEnabled);
   }
 
   @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")

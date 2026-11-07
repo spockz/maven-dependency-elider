@@ -1,5 +1,5 @@
 // WHY: Reconciles an isolated Resolver plan with exact live Maven artifact objects before the
-// transactional publisher may mutate their views.
+// publication flow may mutate their views.
 
 package io.github.spockz.elider.plugin;
 

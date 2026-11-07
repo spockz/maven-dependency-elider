@@ -23,6 +23,9 @@ final class MavenBanFinalOutputVerifier {
       throws IOException {
     binding.verifyOriginalInputsFresh();
     final Map<ArtifactIdentity, ArtifactTrimRecord> trims = trimsByIdentity(records);
+    for (final ArtifactTrimRecord record : records) {
+      verifyTrimDigest(record.coordinate(), record);
+    }
     for (final Artifact artifact : applyPlan.resolvedArtifacts()) {
       verifyFinalArtifact(binding, artifact, trims);
     }
@@ -48,8 +51,9 @@ final class MavenBanFinalOutputVerifier {
     final ArtifactCoordinate coordinate = MavenArtifactInventory.toCoordinate(artifact);
     final ElisionAnalysisModel.ArtifactSnapshot source = sourceFor(binding, coordinate);
     final ArtifactTrimRecord trim = trims.get(ArtifactIdentity.of(coordinate));
-    verifyFinalPath(coordinate, artifact, trim == null ? source.filePath() : trim.trimmedPath());
-    verifyTrimDigest(coordinate, trim);
+    if (trim == null) {
+      verifyFinalPath(coordinate, artifact, source.filePath());
+    }
   }
 
   private static void verifyFinalPath(

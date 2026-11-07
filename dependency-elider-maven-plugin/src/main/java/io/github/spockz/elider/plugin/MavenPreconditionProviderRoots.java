@@ -1,27 +1,17 @@
-/* WHY: Re-enumerates Maven application roots and binds providers to their
- * file bytes. */
+/* WHY: Enumerates compiled output and resource providers for prerequisite proof. */
 
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
 import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
-import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Stream;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Resource;
@@ -30,23 +20,17 @@ import org.apache.maven.project.MavenProject;
 /** Scans compiled output and resource roots for class and resource providers. */
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
-  "PMD.CouplingBetweenObjects",
+  "PMD.CommentRequired",
   "PMD.CyclomaticComplexity",
-  "PMD.GodClass",
   "PMD.LawOfDemeter",
-  "PMD.TooManyMethods",
   "PMD.UseConcurrentHashMap"
 })
 final class MavenPreconditionProviderRoots {
-  /** Class file suffix used to select the bytecode provider reader. */
   private static final String CLASS_SUFFIX = ".class";
-
-  /** Prefix used to identify errors in declared Maven inputs. */
-  private static final String MAVEN_PREFIX = "Maven ";
 
   private MavenPreconditionProviderRoots() {}
 
-  record Capture(List<Provider> providers, String fingerprint) {
+  record Capture(List<Provider> providers) {
     Capture {
       providers = List.copyOf(providers);
     }
@@ -55,257 +39,108 @@ final class MavenPreconditionProviderRoots {
   static Capture capture(
       final MavenProject project,
       final MavenSession session,
-      final ElisionAnalysisModel.Analysis analysis,
-      final Collection<Path> stages)
+      final ElisionAnalysisModel.Analysis analysis)
       throws IOException {
     if (project == null || project.getBuild() == null) {
-      throw new IOException(MAVEN_PREFIX + "project build roots are unavailable");
+      throw new IOException("Maven project build roots are unavailable");
     }
     MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
         project, session, analysis.evidence().trustedProcessClassesContext());
-    final List<Path> normalizedStages =
-        stages.stream().map(path -> path.toAbsolutePath().normalize()).sorted().toList();
-    final List<RootFiles> rootsBeforeScan = declaredRoots(project, analysis, normalizedStages);
-    final List<String> membersBeforeScan = rootMembers(rootsBeforeScan);
-    final List<Provider> providers = applicationProviders(rootsBeforeScan);
-    verifyCapturedRootDigests(rootsBeforeScan, providers);
-    final List<RootFiles> rootsAfterScan = declaredRoots(project, analysis, normalizedStages);
-    final List<String> membersAfterScan = rootMembers(rootsAfterScan);
-    if (!rootIdentity(rootsBeforeScan).equals(rootIdentity(rootsAfterScan))
-        || !membersBeforeScan.equals(membersAfterScan)) {
-      throw new IOException("Maven provider roots changed during inventory capture");
+    final List<Root> roots = declaredRoots(project, analysis);
+    final Map<Path, Provider> providers = new LinkedHashMap<>();
+    for (final Root root : roots) {
+      addProviders(root, providers);
     }
-    verifyCapturedRootDigests(rootsAfterScan, providers);
-    return new Capture(
-        providers,
-        fingerprint(
-            rootIdentity(rootsAfterScan), membersAfterScan, stageIdentity(normalizedStages)));
+    return new Capture(List.copyOf(providers.values()));
   }
 
-  private static List<RootFiles> declaredRoots(
-      final MavenProject project,
-      final ElisionAnalysisModel.Analysis analysis,
-      final List<Path> stages)
-      throws IOException {
-    final List<RootFiles> roots = new ArrayList<>();
-    addDirectoryRoot(
-        roots, "production-output", project, project.getBuild().getOutputDirectory(), stages);
-    addDirectoryRoot(
-        roots, "test-output", project, project.getBuild().getTestOutputDirectory(), stages);
-    addResources(roots, "production-resource", project, project.getBuild().getResources(), stages);
-    addResources(roots, "test-resource", project, project.getBuild().getTestResources(), stages);
+  private static List<Root> declaredRoots(
+      final MavenProject project, final ElisionAnalysisModel.Analysis analysis) throws IOException {
+    final List<Root> roots = new ArrayList<>();
+    addDirectoryRoot(roots, project, "production-output", project.getBuild().getOutputDirectory());
+    addDirectoryRoot(roots, project, "test-output", project.getBuild().getTestOutputDirectory());
+    addResources(roots, project, "production-resource", project.getBuild().getResources());
+    addResources(roots, project, "test-resource", project.getBuild().getTestResources());
     if (analysis.evidence().bytecodeScan().isPresent()) {
       final Path scannedOutput = analysis.evidence().bytecodeScan().orElseThrow().scope();
-      if (!containsRoot(roots, scannedOutput)) {
-        addDirectoryRoot(
-            roots, "configured-production-output", project, scannedOutput.toString(), stages);
+      if (roots.stream()
+          .noneMatch(root -> root.path().equals(scannedOutput.toAbsolutePath().normalize()))) {
+        roots.add(
+            new Root("configured-production-output", scannedOutput.toAbsolutePath().normalize()));
       }
     }
     return List.copyOf(roots);
   }
 
   private static void addResources(
-      final List<RootFiles> roots,
-      final String kind,
+      final List<Root> roots,
       final MavenProject project,
-      final Collection<Resource> resources,
-      final List<Path> stages)
+      final String kind,
+      final Collection<Resource> resources)
       throws IOException {
     if (resources == null) {
-      throw new IOException(MAVEN_PREFIX + kind + " roots are unavailable");
+      throw new IOException("Maven " + kind + " roots are unavailable");
     }
     for (final Resource resource : resources) {
       if (resource.getDirectory() == null || resource.getDirectory().isBlank()) {
-        throw new IOException(MAVEN_PREFIX + kind + " root is blank");
+        throw new IOException("Maven " + kind + " root is blank");
       }
-      roots.add(scanRoot(kind, resolveProjectPath(project, resource.getDirectory()), stages));
+      roots.add(new Root(kind, resolveProjectPath(project, resource.getDirectory())));
     }
   }
 
   private static void addDirectoryRoot(
-      final List<RootFiles> roots,
-      final String kind,
+      final List<Root> roots,
       final MavenProject project,
-      final String configuredRoot,
-      final List<Path> stages)
+      final String kind,
+      final String configuredRoot)
       throws IOException {
     if (configuredRoot == null || configuredRoot.isBlank()) {
-      throw new IOException(MAVEN_PREFIX + kind + " root is unavailable");
+      throw new IOException("Maven " + kind + " root is unavailable");
     }
-    roots.add(scanRoot(kind, resolveProjectPath(project, configuredRoot), stages));
+    roots.add(new Root(kind, resolveProjectPath(project, configuredRoot)));
   }
 
   private static Path resolveProjectPath(final MavenProject project, final String configuredPath) {
     final Path path = Path.of(configuredPath);
     if (path.isAbsolute() || project.getBasedir() == null) {
-      return path;
+      return path.toAbsolutePath().normalize();
     }
-    return project.getBasedir().toPath().resolve(path);
+    return project.getBasedir().toPath().resolve(path).toAbsolutePath().normalize();
   }
 
-  private static RootFiles scanRoot(
-      final String kind, final Path configuredRoot, final List<Path> stages) throws IOException {
-    final Path root = configuredRoot.toAbsolutePath().normalize();
-    if (Files.isSymbolicLink(root)) {
-      throw new IOException("Declared Maven provider root is a symbolic link: " + root);
-    }
-    if (Files.notExists(root, LinkOption.NOFOLLOW_LINKS)) {
-      return new RootFiles(kind, root.toString(), false, List.of());
-    }
-    if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
-      throw new IOException("Cannot determine declared Maven provider root state: " + root);
-    }
-    final Path canonicalRoot = root.toRealPath();
-    if (!canonicalRoot.equals(root)) {
-      throw new IOException("Declared Maven provider root is not canonical: " + root);
-    }
-    if (!Files.isDirectory(canonicalRoot)) {
-      throw new IOException("Declared Maven provider root is not a directory: " + root);
-    }
-    final Set<Path> excludedStages = new LinkedHashSet<>(stages);
-    final List<Path> members = regularMembers(canonicalRoot, excludedStages);
-    return new RootFiles(kind, canonicalRoot.toString(), true, members);
-  }
-
-  private static List<Path> regularMembers(final Path root, final Set<Path> excludedStages)
+  private static void addProviders(final Root root, final Map<Path, Provider> providers)
       throws IOException {
-    final List<Path> members = new ArrayList<>();
-    try (Stream<Path> paths = Files.walk(root)) {
+    if (Files.notExists(root.path())) {
+      return;
+    }
+    if (!Files.isDirectory(root.path())) {
+      throw new IOException("Maven provider root is not a directory: " + root.path());
+    }
+    try (Stream<Path> paths = Files.walk(root.path())) {
       for (final Path path : paths.sorted().toList()) {
-        if (Files.isSymbolicLink(path)) {
-          throw new IOException("Symbolic link in declared Maven provider root: " + path);
-        }
         if (Files.isDirectory(path)) {
           continue;
         }
         if (!Files.isRegularFile(path)) {
           throw new IOException("Unsupported filesystem entry in Maven provider root: " + path);
         }
-        if (!excludedStages.contains(path.toAbsolutePath().normalize())) {
-          members.add(canonicalRegularFile(path));
+        final Path normalized = path.toAbsolutePath().normalize();
+        if (providers.containsKey(normalized)) {
+          continue;
         }
-      }
-    }
-    return List.copyOf(members);
-  }
-
-  private static List<Provider> applicationProviders(final List<RootFiles> roots)
-      throws IOException {
-    final Map<Path, Provider> providersByPath = new LinkedHashMap<>();
-    for (final RootFiles root : roots) {
-      addRootProviders(root, providersByPath);
-    }
-    return List.copyOf(providersByPath.values());
-  }
-
-  private static void addRootProviders(
-      final RootFiles root, final Map<Path, Provider> providersByPath) throws IOException {
-    addFileProviders(root, providersByPath);
-  }
-
-  private static void addFileProviders(
-      final RootFiles root, final Map<Path, Provider> providersByPath) throws IOException {
-    for (final Path member : root.members()) {
-      final ProviderKind kind =
-          member.toString().endsWith(CLASS_SUFFIX)
-              ? ProviderKind.APPLICATION_CLASS_FILE
-              : ProviderKind.APPLICATION_RESOURCE_FILE;
-      final Provider provider =
-          kind == ProviderKind.APPLICATION_CLASS_FILE
-              ? Provider.applicationClassFile(member)
-              : Provider.applicationResourceFile(member);
-      providersByPath.putIfAbsent(member, provider);
-    }
-  }
-
-  private static boolean containsRoot(final List<RootFiles> roots, final Path candidate) {
-    final Path normalized = candidate.toAbsolutePath().normalize();
-    return roots.stream().anyMatch(root -> normalized.toString().equals(root.configuredPath()));
-  }
-
-  private static void verifyCapturedRootDigests(
-      final List<RootFiles> roots, final List<Provider> providers) throws IOException {
-    final Map<Path, String> digests = new HashMap<>();
-    for (final Provider provider : providers) {
-      digests.put(provider.path(), provider.sha256());
-    }
-    for (final RootFiles root : roots) {
-      for (final Path member : root.members()) {
-        final String capturedDigest = digests.get(member);
-        if (capturedDigest == null) {
-          throw new IOException("Maven provider was not inventoried: " + member);
-        }
-        if (!capturedDigest.equals(ArtifactFileDigest.sha256(member))) {
-          throw new IOException(
-              MAVEN_PREFIX + "provider changed during inventory capture: " + member);
-        }
+        final ProviderKind kind =
+            normalized.toString().endsWith(CLASS_SUFFIX)
+                ? ProviderKind.APPLICATION_CLASS_FILE
+                : ProviderKind.APPLICATION_RESOURCE_FILE;
+        providers.putIfAbsent(
+            normalized,
+            kind == ProviderKind.APPLICATION_CLASS_FILE
+                ? Provider.applicationClassFile(normalized)
+                : Provider.applicationResourceFile(normalized));
       }
     }
   }
 
-  private static Path canonicalRegularFile(final Path path) throws IOException {
-    final Path absolute = path.toAbsolutePath().normalize();
-    if (Files.isSymbolicLink(absolute)) {
-      throw new IOException("Maven class provider is a symbolic link: " + absolute);
-    }
-    if (!Files.isRegularFile(absolute)) {
-      throw new IOException("Maven class provider is not a regular file: " + absolute);
-    }
-    final Path canonical = absolute.toRealPath();
-    if (!canonical.equals(absolute)) {
-      throw new IOException("Maven class provider path is not canonical: " + absolute);
-    }
-    return canonical;
-  }
-
-  private static List<String> rootIdentity(final List<RootFiles> roots) {
-    final List<String> identity = new ArrayList<>();
-    for (final RootFiles root : roots) {
-      identity.add(root.kind() + "\0" + root.configuredPath() + "\0" + root.exists());
-    }
-    return List.copyOf(identity);
-  }
-
-  private static List<String> rootMembers(final List<RootFiles> roots) throws IOException {
-    final List<String> members = new ArrayList<>();
-    for (final RootFiles root : roots) {
-      for (final Path member : root.members()) {
-        members.add(root.kind() + "\0" + member + "\0" + ArtifactFileDigest.sha256(member));
-      }
-    }
-    return List.copyOf(members);
-  }
-
-  private static List<String> stageIdentity(final List<Path> stages) {
-    return stages.stream().map(path -> "stage\0" + path).toList();
-  }
-
-  private static String fingerprint(
-      final List<String> identity, final List<String> members, final List<String> stages)
-      throws IOException {
-    try {
-      final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-      try (DataOutputStream output = new DataOutputStream(bytes)) {
-        writeValues(output, identity);
-        output.writeInt(-1);
-        writeValues(output, members);
-        output.writeInt(-1);
-        writeValues(output, stages);
-      }
-      return HexFormat.of()
-          .formatHex(MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray()));
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is unavailable", exception);
-    }
-  }
-
-  private static void writeValues(final DataOutputStream output, final List<String> values)
-      throws IOException {
-    for (final String value : values) {
-      output.writeUTF(value);
-    }
-  }
-
-  private record RootFiles(
-      String kind, String configuredPath, boolean exists, List<Path> members) {}
+  private record Root(String kind, Path path) {}
 }

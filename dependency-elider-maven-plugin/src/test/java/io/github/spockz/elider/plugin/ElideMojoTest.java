@@ -483,7 +483,7 @@ final class ElideMojoTest {
     Files.write(sbomReport, previousSbom);
     final Set<Artifact> previousResolved = project.getArtifacts();
     final Set<Artifact> previousDirect = project.getDependencyArtifacts();
-    final java.io.File previousArtifactFile = used.getFile();
+    final File previousArtifactFile = used.getFile();
     set(mojo, "project", project);
     set(mojo, "traceFiles", List.of(writeTrace("used.Entry\n").toFile()));
     set(mojo, "trimJars", true);
@@ -508,9 +508,11 @@ final class ElideMojoTest {
     assertThatThrownBy(mojo::execute)
         .isInstanceOf(MojoFailureException.class)
         .hasMessageContaining("injected resolver plan publication failure");
-    assertThat(Files.readAllBytes(classUsageReport)).isEqualTo(previousReport);
-    assertThat(Files.readAllBytes(summaryReport)).isEqualTo(previousSummary);
-    assertThat(Files.readAllBytes(sbomReport)).isEqualTo(previousSbom);
+    assertAll(
+        "individual output replacements remain published when resolver-plan publication fails",
+        () -> assertThat(Files.readAllBytes(classUsageReport)).isNotEqualTo(previousReport),
+        () -> assertThat(Files.readAllBytes(summaryReport)).isNotEqualTo(previousSummary),
+        () -> assertThat(Files.readAllBytes(sbomReport)).isNotEqualTo(previousSbom));
     assertThat(project.getArtifacts()).containsExactlyElementsOf(previousResolved);
     assertThat(project.getArtifacts().iterator().next()).isSameAs(used);
     assertThat(project.getDependencyArtifacts()).containsExactlyElementsOf(previousDirect);
@@ -1346,7 +1348,7 @@ final class ElideMojoTest {
     final Set<Artifact> artifacts = new LinkedHashSet<>(List.of(springAop, springCore, candidate));
     final MavenProject project = projectForArtifacts("spring-optional-link", artifacts);
     project.getProperties().setProperty("maven.compiler.release", "11");
-    final List<java.io.File> trace =
+    final List<File> trace =
         List.of(writeTrace("org.springframework.aop.AopRoot\ncandidate.Entry\n").toFile());
     final List<String> configuredPassThrough = List.of("org.example:spring-aop:1.0:jar:");
     final byte[] originalSpringAop = Files.readAllBytes(input.springAopPath());
@@ -2882,7 +2884,7 @@ final class ElideMojoTest {
             null,
             8);
     final Path coreCompileClasspath =
-        Path.of(candidatePath + java.io.File.pathSeparator + optionalTypePath);
+        Path.of(candidatePath + File.pathSeparator + optionalTypePath);
     final String coreClass =
         "package org.springframework.core; public class CoroutinesUtils { "
             + "public static void invoke() { new candidate.Keep().touch(); "

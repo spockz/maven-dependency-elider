@@ -234,24 +234,14 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
       final MavenElisionReportSnapshot snapshot,
       final Path summary)
       throws IOException, MojoFailureException {
-    try (MavenOutputTransaction outputs =
-        MavenOutputTransaction.forTargets(List.of(reportFile.toPath(), summary))) {
-      MavenClassUsageReportWriter.write(
-          outputs.stagedPath(reportFile.toPath()),
-          prediction.evidence().classUsageReport(),
-          prediction.evidence().bytecodeScan(),
-          prediction,
-          exclusionReview);
-      MavenElisionReportWriter.write(outputs.stagedPath(summary), snapshot);
-      outputs.publish();
-      outputs.commit();
-      try {
-        outputs.cleanupCommitted();
-      } catch (final IOException exception) {
-        throw new MojoFailureException(
-            "Analysis reports were published, but backup cleanup failed", exception);
-      }
-    }
+    MavenOutputTargetValidation.validate(List.of(reportFile.toPath(), summary));
+    MavenClassUsageReportWriter.write(
+        reportFile.toPath(),
+        prediction.evidence().classUsageReport(),
+        prediction.evidence().bytecodeScan(),
+        prediction,
+        exclusionReview);
+    MavenElisionReportWriter.write(summary, snapshot);
   }
 
   private void logReport(

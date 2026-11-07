@@ -1,15 +1,15 @@
-// WHY: Proves Maven publishes exact-class precondition evidence only through the shared inventory
-// and rollback transaction.
+// WHY: Proves per-output replacement, ownership cleanup, and proof-gated publication behavior.
 
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.engine.ClassUsageReport;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
@@ -17,7 +17,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import org.apache.maven.artifact.Artifact;
@@ -30,24 +32,22 @@ import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.model.PluginManagement;
 import org.apache.maven.model.Resource;
-import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.toolchain.ToolchainManager;
 import org.codehaus.plexus.PlexusContainer;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
-import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
-/** WHY: Groups publication and rollback cases around one shared fixture. */
-@DisplayName("ADR-0008: Maven precondition publication and rollback")
 @SuppressWarnings({
   "PMD.AvoidAccessibilityAlteration",
   "PMD.AtLeastOneConstructor",
   "PMD.CommentDefaultAccessModifier",
+  "PMD.CommentRequired",
   "PMD.CouplingBetweenObjects",
   "PMD.ExcessiveImports",
   "PMD.GodClass",
@@ -55,20 +55,18 @@ import org.objectweb.asm.Opcodes;
   "PMD.UnitTestContainsTooManyAsserts",
   "checkstyle:AbbreviationAsWordInName"
 })
-final class ADR0008MavenPreconditionPublicationTest {
-  /** Private Mojo field used by the staging hook tests. */
-  private static final String AFTER_STAGING_FIELD = "afterStaging";
+final class MavenOutputPublicationTest {
+  private static final String SCHEMA_FIELD = "schemaVersion";
+  private static final String OUTPUTS_FIELD = "outputs";
+  private static final String UNSUPPORTED_SCHEMA =
+      "Unsupported generated output manifest schema version";
 
-  /** Previously generated VEX bytes preserved during rollback tests. */
   private static final String PREVIOUS_GENERATED_OPENVEX = "previous generated OpenVEX";
 
-  /** Plexus lookup method name used by the test container proxy. */
   private static final String LOOKUP_METHOD = "lookup";
 
-  /** JSON reader and writer for report assertions and staged-file tampering cases. */
   private static final ObjectMapper JSON = new ObjectMapper();
 
-  /** Isolated project and output root for each publication scenario. */
   @TempDir Path temporaryDirectory;
 
   @Test
@@ -111,6 +109,67 @@ final class ADR0008MavenPreconditionPublicationTest {
                           "org.example:prerequisite", "org.example.prerequisite.EntryPoint"));
             });
     assertThat(report.trimmedArtifacts()).isEmpty();
+  }
+
+  @Test
+  void oneReportReplacementIsAtomicAndWriteFailuresPropagate() throws Exception {
+    final Path successDirectory = Files.createDirectories(temporaryDirectory.resolve("atomic"));
+    final Path report = successDirectory.resolve("report.json");
+    Files.writeString(report, "previous report");
+
+    MavenClassUsageReportWriter.write(report, new ClassUsageReport(List.of()), Optional.empty());
+
+    assertAll(
+        "one report is replaced without leaving temporary siblings",
+        () -> assertThat(JSON.readTree(report.toFile()).path(SCHEMA_FIELD).asInt()).isEqualTo(1),
+        () -> assertThat(directoryEntries(successDirectory)).containsExactly(report));
+
+    final Path failureDirectory = Files.createDirectories(temporaryDirectory.resolve("failed"));
+    final Path directoryTarget = Files.createDirectory(failureDirectory.resolve("report.json"));
+    assertThatThrownBy(
+            () ->
+                MavenClassUsageReportWriter.write(
+                    directoryTarget, new ClassUsageReport(List.of()), Optional.empty()))
+        .isInstanceOf(IOException.class);
+    assertAll(
+        "a failed replacement preserves the prior target and removes its temporary file",
+        () ->
+            Assertions.assertTrue(Files.isDirectory(directoryTarget), "Target remains a directory"),
+        () -> assertThat(directoryEntries(directoryTarget)).isEmpty(),
+        () -> assertThat(directoryEntries(failureDirectory)).containsExactly(directoryTarget));
+  }
+
+  @Test
+  void partialFileWriteFailurePreservesPriorBytesAndRemovesSiblingTemporaryFile() throws Exception {
+    final Path directory = Files.createDirectories(temporaryDirectory.resolve("partial-write"));
+    final Path target = directory.resolve("summary.json");
+    Files.writeString(target, "prior bytes");
+    final AtomicReference<Path> temporary = new AtomicReference<>();
+
+    assertThatThrownBy(
+            () ->
+                MavenGeneratedOutputs.writeAtomically(
+                    target,
+                    stage -> {
+                      temporary.set(stage);
+                      Files.writeString(stage, "partial new bytes");
+                      throw new IOException("injected mid-write failure");
+                    }))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("injected mid-write failure");
+
+    assertAll(
+        "failed single-file writes keep prior content and clean up their sibling temp",
+        () -> assertThat(Optional.ofNullable(temporary.get())).isPresent(),
+        () ->
+            assertThat(Optional.ofNullable(temporary.get()).map(Path::getParent))
+                .contains(directory),
+        () ->
+            Assertions.assertFalse(
+                Optional.ofNullable(temporary.get()).map(Files::exists).orElse(false),
+                "Failed temporary output is removed"),
+        () -> assertThat(target).hasContent("prior bytes"),
+        () -> assertThat(directoryEntries(directory)).containsExactly(target));
   }
 
   @Test
@@ -198,141 +257,25 @@ final class ADR0008MavenPreconditionPublicationTest {
   }
 
   @Test
-  void providerMutationOrAdditionDuringStagingAbortsAllOutputPublication() throws Exception {
-    for (final boolean addProvider : List.of(false, true)) {
-      final Fixture fixture = fixture("provider-drift-" + addProvider, false, false);
-      configure(fixture, true);
-      final Path changedResource = fixture.resourceRoot().resolve("existing.bin");
-      if (!addProvider) {
-        Files.writeString(changedResource, "unchanged provider");
-      }
-      writePreviousOutputs(fixture);
-      set(
-          fixture.mojo(),
-          AFTER_STAGING_FIELD,
-          (MavenElisionOutputPublisher.AfterStaging)
-              () -> {
-                if (addProvider) {
-                  Files.write(changedResource, classBytes("late.Provider"));
-                } else {
-                  Files.writeString(changedResource, "mutated provider");
-                }
-              });
-
-      assertThatThrownBy(fixture.mojo()::execute)
-          .isInstanceOf(MojoFailureException.class)
-          .hasMessageContaining("provider inventory changed");
-      assertPreviousOutputs(fixture);
-    }
-  }
-
-  @Test
-  void outputTargetMutationDuringStagingAbortsBeforeInstallingAnyReport() throws Exception {
-    final Fixture fixture = fixture("output-target-drift", false, false);
-    configure(fixture, true);
-    writePreviousOutputs(fixture);
-    set(
-        fixture.mojo(),
-        AFTER_STAGING_FIELD,
-        (MavenElisionOutputPublisher.AfterStaging)
-            () -> Files.writeString(fixture.summary(), "concurrent summary update"));
-
-    assertThatThrownBy(fixture.mojo()::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("provider inventory changed");
-
-    assertThat(fixture.classUsage()).hasContent("old class usage");
-    assertThat(fixture.summary()).hasContent("concurrent summary update");
-    assertThat(fixture.sbom()).hasContent("old SBOM");
-    assertThat(fixture.baselineSbom()).hasContent("old baseline SBOM");
-    assertThat(fixture.vex()).hasContent("old OpenVEX");
-  }
-
-  @Test
-  void validJsonStageTamperingAbortsAndRestoresPreviousOutputs() throws Exception {
-    final Fixture fixture = fixture("valid-json-stage-tamper", false, false);
-    configure(fixture, true);
-    writePreviousOutputs(fixture);
-    set(
-        fixture.mojo(),
-        AFTER_STAGING_FIELD,
-        (MavenElisionOutputPublisher.AfterStaging)
-            () -> {
-              final ObjectNode changed =
-                  (ObjectNode) JSON.readTree(stageFor(fixture.summary()).toFile());
-              changed.put("tampered", true);
-              JSON.writeValue(stageFor(fixture.summary()).toFile(), changed);
-            });
-
-    assertThatThrownBy(fixture.mojo()::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Staged output changed after staging");
-
-    assertPreviousOutputs(fixture);
-  }
-
-  @Test
-  void coordinatedManifestAndSbomStageTamperingStillAborts() throws Exception {
-    final Fixture fixture = fixture("coordinated-stage-tamper", false, false);
-    configure(fixture, true);
-    writePreviousOutputs(fixture);
-    set(
-        fixture.mojo(),
-        AFTER_STAGING_FIELD,
-        (MavenElisionOutputPublisher.AfterStaging)
-            () -> {
-              final Path sbomStage = stageFor(fixture.sbom());
-              final ObjectNode changedSbom = (ObjectNode) JSON.readTree(sbomStage.toFile());
-              changedSbom.put("tampered", true);
-              JSON.writeValue(sbomStage.toFile(), changedSbom);
-              final String changedDigest = ArtifactFileDigest.sha256(sbomStage);
-
-              final Path manifestStage =
-                  stageFor(MavenGeneratedOutputs.manifestPath(fixture.project()));
-              final ObjectNode manifest = (ObjectNode) JSON.readTree(manifestStage.toFile());
-              final ArrayNode outputs = (ArrayNode) manifest.path("outputs");
-              final Path sbomTarget = fixture.sbom().toAbsolutePath().normalize();
-              boolean updatedSbomEntry = false;
-              for (final JsonNode output : outputs) {
-                final ObjectNode entry = (ObjectNode) output;
-                if (Path.of(entry.path("path").asText())
-                    .toAbsolutePath()
-                    .normalize()
-                    .equals(sbomTarget)) {
-                  entry.put("sha256", changedDigest);
-                  updatedSbomEntry = true;
-                }
-              }
-              if (!updatedSbomEntry) {
-                throw new IOException("SBOM stage was not recorded in generated-output manifest");
-              }
-              JSON.writeValue(manifestStage.toFile(), manifest);
-            });
-
-    assertThatThrownBy(fixture.mojo()::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Staged output changed after staging");
-
-    assertPreviousOutputs(fixture);
-  }
-
-  @Test
   void defaultOptOutDeletesOnlyUnchangedOwnedVexAndPreservesModifiedOrUnownedFiles()
       throws Exception {
     final Fixture owned = fixture("owned-stale-vex", false, false);
     configure(owned, false);
     writeVex(owned.vex(), PREVIOUS_GENERATED_OPENVEX);
-    MavenGeneratedOutputManifest.write(
-        MavenGeneratedOutputs.manifestPath(owned.project()), List.of(owned.vex()));
+    MavenGeneratedOutputs.record(owned.project(), List.of(owned.vex()));
     owned.mojo().execute();
     assertThat(owned.vex()).doesNotExist();
     assertThat(prerequisiteFindings(MavenElisionReportWriter.read(owned.summary()))).isEmpty();
+    final JsonNode updatedManifest =
+        JSON.readTree(MavenGeneratedOutputs.Paths.manifestPath(owned.project()).toFile());
+    assertThat(updatedManifest.path(SCHEMA_FIELD).asInt()).isEqualTo(1);
+    assertThat(updatedManifest.path(OUTPUTS_FIELD).findValuesAsText("path"))
+        .doesNotContain(owned.vex().toAbsolutePath().normalize().toString());
 
     final Fixture modified = fixture("modified-stale-vex", false, false);
     configure(modified, false);
     writeVex(modified.vex(), PREVIOUS_GENERATED_OPENVEX);
-    MavenGeneratedOutputManifest.write(
-        MavenGeneratedOutputs.manifestPath(modified.project()), List.of(modified.vex()));
+    MavenGeneratedOutputs.record(modified.project(), List.of(modified.vex()));
     writeVex(modified.vex(), "user modified OpenVEX");
     final RecordingMavenLog modifiedLog = new RecordingMavenLog();
     modified.mojo().setLog(modifiedLog);
@@ -353,48 +296,119 @@ final class ADR0008MavenPreconditionPublicationTest {
   }
 
   @Test
-  void resolverFailureAfterStaleVexDeletionRestoresPriorVexAndManifest() throws Exception {
-    final Fixture fixture = fixture("rollback-stale-vex", false, false);
-    configure(fixture, false);
-    final Set<Artifact> originalArtifacts = new LinkedHashSet<>(fixture.project().getArtifacts());
-    final Path resolvedOnlyJar = fixture.basedir().resolve("resolved-only.jar");
-    writeJar(resolvedOnlyJar, "other/ResolvedOnly", null);
-    final Artifact resolvedOnly = runtimeArtifact("resolved-only", resolvedOnlyJar);
-    final Set<Artifact> originalResolvedArtifacts = new LinkedHashSet<>(originalArtifacts);
-    originalResolvedArtifacts.add(resolvedOnly);
-    fixture.project().setResolvedArtifacts(originalResolvedArtifacts);
-    fixture.project().setArtifacts(new LinkedHashSet<>(originalArtifacts));
-    writeVex(fixture.vex(), PREVIOUS_GENERATED_OPENVEX);
-    final Path manifest = MavenGeneratedOutputs.manifestPath(fixture.project());
-    MavenGeneratedOutputManifest.write(manifest, List.of(fixture.vex()));
-    final byte[] priorManifest = Files.readAllBytes(manifest);
-    set(
-        fixture.mojo(),
-        "planPublication",
-        (MavenElideExecutionConfiguration.PlanPublication)
-            (ignoredSession, ignoredProject, ignoredRecords, ignoredProjection) -> {
-              throw new IOException("injected resolver publication failure");
-            });
+  void generatedOutputRegistryRequiresSchemaVersionOneAndExactFields() throws Exception {
+    final Fixture fixture = fixture("strict-ownership-registry", false, false);
+    final Path registry = MavenGeneratedOutputs.Paths.manifestPath(fixture.project());
+    Files.createDirectories(registry.getParent());
+    final ObjectNode unsupportedVersion = JSON.createObjectNode();
+    unsupportedVersion.put(SCHEMA_FIELD, 2);
+    unsupportedVersion.putArray(OUTPUTS_FIELD);
+    JSON.writeValue(registry.toFile(), unsupportedVersion);
 
-    assertThatThrownBy(fixture.mojo()::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("injected resolver publication failure");
+    assertThatThrownBy(
+            () ->
+                MavenGeneratedOutputs.unchangedOwnedOutputDigest(fixture.project(), fixture.vex()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(UNSUPPORTED_SCHEMA);
 
-    assertThat(fixture.vex()).hasContent(PREVIOUS_GENERATED_OPENVEX);
-    assertThat(Files.readAllBytes(manifest)).isEqualTo(priorManifest);
-    assertThat(fixture.project().getArtifacts()).containsExactlyElementsOf(originalArtifacts);
-    assertThat(resolvedArtifactView(fixture.project()))
-        .containsExactlyElementsOf(originalResolvedArtifacts);
+    final ObjectNode malformedEntry = JSON.createObjectNode();
+    malformedEntry.put(SCHEMA_FIELD, 1);
+    malformedEntry.putArray(OUTPUTS_FIELD).addObject().put("path", fixture.vex().toString());
+    JSON.writeValue(registry.toFile(), malformedEntry);
+    assertThatThrownBy(
+            () ->
+                MavenGeneratedOutputs.unchangedOwnedOutputDigest(fixture.project(), fixture.vex()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Malformed generated output digest");
   }
 
-  private static Set<Artifact> resolvedArtifactView(final MavenProject project) {
-    final MavenProject snapshot = project.clone();
-    snapshot.setArtifactFilter(artifact -> true);
-    snapshot.setArtifacts(null);
-    return new LinkedHashSet<>(snapshot.getArtifacts());
+  @Test
+  void generatedOutputRegistryRejectsEveryUnsupportedSchemaV1Shape() throws Exception {
+    final Fixture fixture = fixture("strict-ownership-registry-shapes", false, false);
+    final Path registry = MavenGeneratedOutputs.Paths.manifestPath(fixture.project());
+    Files.createDirectories(registry.getParent());
+    final ObjectNode valid = registryDocument(fixture.vex());
+    final ObjectNode unknownTop = valid.deepCopy();
+    unknownTop.put("extra", true);
+    final ObjectNode unknownEntry = valid.deepCopy();
+    ((ObjectNode) unknownEntry.withArray(OUTPUTS_FIELD).get(0)).put("extra", true);
+    final ObjectNode duplicatePaths = JSON.createObjectNode();
+    duplicatePaths.put(SCHEMA_FIELD, 1);
+    duplicatePaths
+        .putArray(OUTPUTS_FIELD)
+        .add(valid.get(OUTPUTS_FIELD).get(0).deepCopy())
+        .add(valid.get(OUTPUTS_FIELD).get(0).deepCopy());
+    final List<org.junit.jupiter.api.function.Executable> checks =
+        List.of(
+            () ->
+                rejectsRegistry(
+                    registry,
+                    fixture,
+                    JSON.writeValueAsString(unknownTop),
+                    "Unsupported generated output registry field extra"),
+            () ->
+                rejectsRegistry(
+                    registry,
+                    fixture,
+                    JSON.writeValueAsString(unknownEntry),
+                    "Unsupported generated output registry field extra"),
+            () ->
+                rejectsRegistry(
+                    registry,
+                    fixture,
+                    "{\"schemaVersion\":1,\"schemaVersion\":1,\"outputs\":[]}",
+                    "Duplicate field 'schemaVersion'"),
+            () ->
+                rejectsRegistry(
+                    registry,
+                    fixture,
+                    JSON.writeValueAsString(duplicatePaths),
+                    "Duplicate generated output registry path"),
+            () ->
+                rejectsRegistry(
+                    registry,
+                    fixture,
+                    "{\"schemaVersion\":1,\"outputs\":[]} {}",
+                    "Trailing data in generated output registry"),
+            () -> rejectsRegistry(registry, fixture, "{\"outputs\":[]}", UNSUPPORTED_SCHEMA),
+            () ->
+                rejectsRegistry(
+                    registry,
+                    fixture,
+                    "{\"schemaVersion\":\"1\",\"outputs\":[]}",
+                    UNSUPPORTED_SCHEMA),
+            () ->
+                rejectsRegistry(
+                    registry,
+                    fixture,
+                    "{\"schemaVersion\":4294967297,\"outputs\":[]}",
+                    UNSUPPORTED_SCHEMA));
+    assertAll("schema-v1 registry rejects malformed or unsupported data", checks);
   }
 
-  @SuppressWarnings("PMD.LawOfDemeter") // Maven Artifact exposes its file through a File accessor.
+  private static ObjectNode registryDocument(final Path output) {
+    final ObjectNode document = JSON.createObjectNode();
+    document.put(SCHEMA_FIELD, 1);
+    document
+        .putArray(OUTPUTS_FIELD)
+        .addObject()
+        .put("path", output.toAbsolutePath().normalize().toString())
+        .put("sha256", "0".repeat(64));
+    return document;
+  }
+
+  private static void rejectsRegistry(
+      final Path registry, final Fixture fixture, final String json, final String diagnostic)
+      throws IOException {
+    Files.writeString(registry, json);
+    assertThatThrownBy(
+            () ->
+                MavenGeneratedOutputs.unchangedOwnedOutputDigest(fixture.project(), fixture.vex()))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining(diagnostic);
+  }
+
+  @SuppressWarnings("PMD.LawOfDemeter")
   private static Path artifactFile(final Artifact artifact) {
     return artifact.getFile().toPath();
   }
@@ -569,36 +583,15 @@ final class ADR0008MavenPreconditionPublicationTest {
     set(mojo, "vulnerabilityMappings", List.of(mapping));
   }
 
-  private void writePreviousOutputs(final Fixture fixture) throws IOException {
-    Files.createDirectories(fixture.classUsage().getParent());
-    Files.writeString(fixture.classUsage(), "old class usage");
-    Files.writeString(fixture.summary(), "old summary");
-    Files.writeString(fixture.sbom(), "old SBOM");
-    Files.writeString(fixture.baselineSbom(), "old baseline SBOM");
-    writeVex(fixture.vex(), "old OpenVEX");
-  }
-
-  private void assertPreviousOutputs(final Fixture fixture) throws IOException {
-    assertThat(fixture.classUsage()).hasContent("old class usage");
-    assertThat(fixture.summary()).hasContent("old summary");
-    assertThat(fixture.sbom()).hasContent("old SBOM");
-    assertThat(fixture.baselineSbom()).hasContent("old baseline SBOM");
-    assertThat(fixture.vex()).hasContent("old OpenVEX");
+  private static List<Path> directoryEntries(final Path directory) throws IOException {
+    try (java.util.stream.Stream<Path> entries = Files.list(directory)) {
+      return entries.sorted().toList();
+    }
   }
 
   private static void writeVex(final Path path, final String content) throws IOException {
     Files.createDirectories(path.getParent());
     Files.writeString(path, content);
-  }
-
-  private static Path stageFor(final Path target) throws IOException {
-    final String prefix = "." + target.getFileName() + ".staged-";
-    try (java.util.stream.Stream<Path> paths = Files.list(target.getParent())) {
-      return paths
-          .filter(path -> path.getFileName().toString().startsWith(prefix))
-          .findFirst()
-          .orElseThrow(() -> new IOException("Missing stage for output: " + target));
-    }
   }
 
   private static JsonNode component(final JsonNode sbom, final String artifactId) {

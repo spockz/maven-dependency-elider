@@ -209,17 +209,10 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   private MavenElideExecutionConfiguration.PlanPublication planPublication =
       ResolverArtifactPlanPublisher::publish;
 
-  /**
-   * Test mutation hook for report stages.
-   *
-   * <p>Verifies inventory freshness before publication.
-   */
-  @SuppressWarnings(PMD_IMMUTABLE_FIELD)
-  private MavenElisionOutputPublisher.AfterStaging afterStaging = () -> {};
-
   /** Failure hook after generation staging. */
   @SuppressWarnings(PMD_IMMUTABLE_FIELD)
-  private MavenElisionOutputPublisher.AfterStaging afterGenerationStaging = () -> {};
+  private MavenElisionOutputPublisher.AfterGenerationStaging afterGenerationStaging =
+      analysis -> {};
 
   /** Maven switch that skips analysis and mutation. */
   @Parameter(property = "elide.skip", defaultValue = DEFAULT_FALSE)
@@ -255,11 +248,11 @@ public final class ElideMojo extends PluginCacheMojoSupport {
         new MavenElideExecutionConfiguration.Publication(
             new MavenElisionOutputPublisher.ReportFiles(
                 reportFile,
-                MavenGeneratedOutputs.outputFile(
+                MavenGeneratedOutputs.Paths.outputFile(
                     sbomFile, project, "dependency-elider-sbom.cdx.json"),
-                MavenGeneratedOutputs.outputFile(
+                MavenGeneratedOutputs.Paths.outputFile(
                     baselineSbomFile, project, "baseline-sbom.cdx.json"),
-                MavenGeneratedOutputs.outputFile(
+                MavenGeneratedOutputs.Paths.outputFile(
                     vexFile, project, "dependency-elider.openvex.json"),
                 summaryFile,
                 trimJars),
@@ -271,7 +264,6 @@ public final class ElideMojo extends PluginCacheMojoSupport {
                 snykEnabled, session != null && session.isOffline(), snykOrgId, snykApiBaseUri),
             trimJars && preconditionClassPathComplete,
             assumeConventionalJavaSourceLayout,
-            afterStaging,
             afterGenerationStaging));
   }
 

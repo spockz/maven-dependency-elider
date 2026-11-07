@@ -126,17 +126,18 @@ final class MavenSbomWriter {
                 "urn:uuid:" + UUID.randomUUID(), "Dependency Elider", "Tool", Instant.now(), 1));
   }
 
-  static void stage(final MavenProject project, final Path sbomFile) throws IOException {
-    for (final Path stagedPath : stagedPaths(project)) {
-      stage(sbomFile, stagedPath);
+  static void writeEmbeddedSboms(final MavenProject project, final Path sbomFile)
+      throws IOException {
+    for (final Path embeddedPath : embeddedSbomPaths(project)) {
+      writeEmbeddedSbom(sbomFile, embeddedPath);
     }
   }
 
-  static void stage(final Path sbomFile, final Path stagedPath) throws IOException {
-    copy(sbomFile, stagedPath);
+  static void writeEmbeddedSbom(final Path sbomFile, final Path embeddedPath) throws IOException {
+    MavenGeneratedOutputs.writeAtomically(embeddedPath, temporary -> copy(sbomFile, temporary));
   }
 
-  static List<Path> stagedPaths(final MavenProject project) {
+  static List<Path> embeddedSbomPaths(final MavenProject project) {
     if (project.getBuild() == null || project.getBuild().getOutputDirectory() == null) {
       return List.of();
     }

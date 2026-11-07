@@ -1,5 +1,6 @@
 // WHY: Checks retained final archive references against the actual effective and absent class
-// providers immediately before plan publication.
+// providers immediately before plan publication. It runs under the repository's single-writer
+// analysis model, so local maps do not need concurrent implementations.
 
 package io.github.spockz.elider.plugin;
 
@@ -9,23 +10,25 @@ import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.scanner.JarIndexScanner;
 import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.concurrent.ConcurrentHashMap;
+import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.project.MavenProject;
 
-/** Verifies bytecode references in the final retained effective provider set. */
+@SuppressWarnings({"PMD.CommentRequired", "PMD.UseConcurrentHashMap"})
 final class MavenBanRetainedProviderClosure {
   private MavenBanRetainedProviderClosure() {}
 
   /* package */ static void verify(
       final MavenBanPlan banPlan,
-      final MavenProject project,
+      final List<Artifact> retainedArtifacts,
+      final List<ArtifactTrimRecord> trimRecords,
       final ElisionAnalysisModel.Analysis analysis)
       throws IOException, MojoFailureException {
     banPlan.verifyAuditBytesFresh();
@@ -33,7 +36,8 @@ final class MavenBanRetainedProviderClosure {
     if (absentOwners.isEmpty()) {
       return;
     }
-    final List<ElisionAnalysisModel.ArtifactSnapshot> finalSnapshots = finalSnapshots(project);
+    final List<ElisionAnalysisModel.ArtifactSnapshot> finalSnapshots =
+        finalSnapshots(retainedArtifacts, trimRecords);
     final List<ArtifactFileRef> providers = retainedJars(finalSnapshots);
     final Set<String> requiredClasses = retainedBytecodeReferences(providers, analysis);
     final Map<String, List<ArtifactCoordinate>> effectiveOwners = ownersByClass(providers);
@@ -43,11 +47,26 @@ final class MavenBanRetainedProviderClosure {
   }
 
   private static List<ElisionAnalysisModel.ArtifactSnapshot> finalSnapshots(
-      final MavenProject project) throws IOException {
-    final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots =
-        MavenArtifactInventory.snapshots(new ArrayList<>(project.getArtifacts()));
+      final List<Artifact> retainedArtifacts, final List<ArtifactTrimRecord> trimRecords)
+      throws IOException {
+    final Map<ArtifactCoordinate, ArtifactTrimRecord> trims = new HashMap<>();
+    for (final ArtifactTrimRecord record : trimRecords) {
+      if (trims.putIfAbsent(record.coordinate(), record) != null) {
+        throw new IOException("Duplicate final trim record for " + record.coordinate());
+      }
+    }
+    final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots = new ArrayList<>();
+    for (final Artifact artifact : retainedArtifacts) {
+      final ArtifactCoordinate coordinate = MavenArtifactInventory.toCoordinate(artifact);
+      final ArtifactTrimRecord trim = trims.get(coordinate);
+      snapshots.add(
+          new ElisionAnalysisModel.ArtifactSnapshot(
+              artifact,
+              coordinate,
+              trim == null ? MavenArtifactInventory.normalizedPath(artifact) : trim.trimmedPath()));
+    }
     MavenArtifactPathValidation.validateIdentityPaths(snapshots);
-    return snapshots;
+    return List.copyOf(snapshots);
   }
 
   private static List<ArtifactFileRef> retainedJars(
@@ -107,7 +126,7 @@ final class MavenBanRetainedProviderClosure {
   private static Map<String, List<ArtifactCoordinate>> ownersByClass(
       final List<ArtifactFileRef> providers) throws IOException {
     final ArtifactClassIndex index = new JarIndexScanner().scan(providers);
-    final Map<String, List<ArtifactCoordinate>> owners = new ConcurrentHashMap<>();
+    final Map<String, List<ArtifactCoordinate>> owners = new HashMap<>();
     index
         .classesByArtifact()
         .forEach(
@@ -147,7 +166,7 @@ final class MavenBanRetainedProviderClosure {
   }
 
   private static Map<String, List<ArtifactCoordinate>> absentOwners(final MavenBanPlan banPlan) {
-    final Map<String, List<ArtifactCoordinate>> owners = new ConcurrentHashMap<>();
+    final Map<String, List<ArtifactCoordinate>> owners = new HashMap<>();
     banPlan
         .forcedAbsentClassProviders()
         .forEach(

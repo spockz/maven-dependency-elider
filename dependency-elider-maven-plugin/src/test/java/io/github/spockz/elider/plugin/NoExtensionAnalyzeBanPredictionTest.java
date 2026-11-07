@@ -6,22 +6,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.TrimOptions;
+import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -48,6 +56,8 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
 /** Tests detached bans. JUnit constructs the test. */
+// assertAll preserves independent failure diagnostics; PMD counts each assertion
+// against this class's one-assert test rule.
 @SuppressWarnings({
   "PMD.AtLeastOneConstructor",
   "PMD.CommentRequired",
@@ -55,7 +65,8 @@ import org.objectweb.asm.Opcodes;
   "PMD.ExcessiveImports",
   "PMD.GodClass",
   "PMD.LawOfDemeter",
-  "PMD.TooManyMethods"
+  "PMD.TooManyMethods",
+  "PMD.UnitTestContainsTooManyAsserts"
 })
 final class NoExtensionAnalyzeBanPredictionTest {
   private static final String BAN = "fixture:banned";
@@ -65,12 +76,16 @@ final class NoExtensionAnalyzeBanPredictionTest {
   private static final String VERSION = "1.0";
   private static final String RUNTIME_SCOPE = "runtime";
   private static final String BANNED_ARTIFACT_ID = "banned";
+  private static final String BANNED_IDLE_CLASS = "banned.Idle";
+  private static final String BANNED_IDLE_ENTRY = "banned/Idle";
+  private static final String DEPENDENCY_FIELD = "dependency";
+  private static final String OBJECT_INTERNAL_NAME = "java/lang/Object";
   private static final String USED_ARTIFACT_ID = "used";
   private static final String UNUSED_ARTIFACT_ID = "unused";
   private static final String SUMMARY_FILENAME = "elide-summary.json";
   private static final String CLASS_USAGE_FILENAME = "elide-class-usage.json";
   private static final String BANNED_PROVIDER_FAILURE =
-      "no retained provider for class banned.Idle";
+      "no retained provider for class " + BANNED_IDLE_CLASS;
   private static final String PREVIOUS_REPORT = "prior report\n";
   private static final String PREVIOUS_SUMMARY = "prior summary\n";
   private static final String DEPENDENCY_PREDICTION_FIELD = "dependencyPrediction";
@@ -138,7 +153,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         prediction.evidence().bytecodeScan(),
         prediction);
     final com.fasterxml.jackson.databind.JsonNode json =
-        new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
+        new ObjectMapper().readTree(report.toFile());
     final com.fasterxml.jackson.databind.JsonNode rows =
         json.path(DEPENDENCY_PREDICTION_FIELD).path("banPlan");
 
@@ -150,13 +165,13 @@ final class NoExtensionAnalyzeBanPredictionTest {
                     json.path(DEPENDENCY_PREDICTION_FIELD).path("banContextFingerprint").asText())
                 .hasSize(64),
         () -> assertThat(rows.size()).isEqualTo(2),
-        () -> assertThat(rows.get(0).path("dependency").asText()).isEqualTo(BAN),
+        () -> assertThat(rows.get(0).path(DEPENDENCY_FIELD).asText()).isEqualTo(BAN),
         () ->
             assertThat(rows.get(0).path("status").asText())
                 .isEqualTo("FORCED_ABSENT_AFTER_RESOLUTION"),
         () -> assertThat(rows.get(0).path("matchedArtifacts").size()).isEqualTo(1),
         () -> assertThat(rows.get(0).path("applied").asBoolean()).isFalse(),
-        () -> assertThat(rows.get(1).path("dependency").asText()).isEqualTo("fixture:missing"),
+        () -> assertThat(rows.get(1).path(DEPENDENCY_FIELD).asText()).isEqualTo("fixture:missing"),
         () -> assertThat(rows.get(1).path("status").asText()).isEqualTo("UNMATCHED"),
         () -> assertThat(rows.get(1).path("matchedArtifacts").size()).isZero(),
         () -> assertThat(rows.get(1).path("applied").asBoolean()).isFalse(),
@@ -167,7 +182,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
 
   @Test
   void duplicateOwnerPoliciesRetainEveryProviderInEffectiveAnalyzePrediction() throws Exception {
-    final Fixture controlFixture = basicFixture("used.Api\n");
+    final Fixture controlFixture = basicFixture(USED_TRACE);
     final AnalyzePrediction control =
         new MavenElisionService()
             .predict(
@@ -202,7 +217,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         trimmedAroundDuplicates.evidence().bytecodeScan(),
         trimmedAroundDuplicates);
     final com.fasterxml.jackson.databind.JsonNode json =
-        new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
+        new ObjectMapper().readTree(report.toFile());
     final com.fasterxml.jackson.databind.JsonNode duplicate =
         json.path("toleratedDuplicates").get(0);
     assertAll(
@@ -223,7 +238,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
                 .anySatisfy(
                     trim ->
                         assertThat(trim.removedClasses())
-                            .contains("banned.Idle")
+                            .contains(BANNED_IDLE_CLASS)
                             .doesNotContain("shared.Type")),
         () -> assertThat(retainedWhole.plannedTrims()).isEmpty(),
         () ->
@@ -255,7 +270,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
     mojo.execute();
 
     final com.fasterxml.jackson.databind.JsonNode json =
-        new com.fasterxml.jackson.databind.ObjectMapper().readTree(report.toFile());
+        new ObjectMapper().readTree(report.toFile());
     final com.fasterxml.jackson.databind.JsonNode duplicate =
         json.path("toleratedDuplicates").get(0);
     final AnalyzeMojo trimMojo = new AnalyzeMojo();
@@ -278,7 +293,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
     trimMojo.execute();
 
     final com.fasterxml.jackson.databind.JsonNode trimJson =
-        new com.fasterxml.jackson.databind.ObjectMapper().readTree(trimReport.toFile());
+        new ObjectMapper().readTree(trimReport.toFile());
     final com.fasterxml.jackson.databind.JsonNode trimDuplicate =
         trimJson.path("toleratedDuplicates").get(0);
     assertAll(
@@ -322,7 +337,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         prediction.evidence().bytecodeScan(),
         prediction);
     final com.fasterxml.jackson.databind.JsonNode row =
-        new com.fasterxml.jackson.databind.ObjectMapper()
+        new ObjectMapper()
             .readTree(report.toFile())
             .path(DEPENDENCY_PREDICTION_FIELD)
             .path("banPlan")
@@ -511,7 +526,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
 
   @Test
   void rejectsRuntimeObservationOfBannedProviderBeforePrediction() throws Exception {
-    final Fixture fixture = basicFixture("used.Api\nbanned.Idle\n");
+    final Fixture fixture = basicFixture(USED_TRACE + BANNED_IDLE_CLASS + "\n");
 
     assertThatThrownBy(
             () ->
@@ -587,9 +602,41 @@ final class NoExtensionAnalyzeBanPredictionTest {
                 .hasMessageContaining(BANNED_PROVIDER_FAILURE));
   }
 
-  @SuppressWarnings(
-      "PMD.UnitTestContainsTooManyAsserts") // assertAll checks each rollback invariant
-  // independently.
+  @Test
+  void removedRetainedClassReferenceDoesNotBlockBanPublication() throws Exception {
+    final Fixture fixture = basicFixture(USED_TRACE);
+    final Path originalUsedJar = fixture.usedDependency().getArtifact().getFile().toPath();
+    addClassToJar(originalUsedJar, "used/Unused", BANNED_IDLE_ENTRY);
+    checkOriginalProviderReferencesBannedClass(originalUsedJar);
+    final ElideMojo mojo = elideMojo(fixture, true);
+    final org.apache.maven.artifact.Artifact banned =
+        fixture.project().getArtifacts().stream()
+            .filter(artifact -> BANNED_ARTIFACT_ID.equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow();
+    final ArtifactCoordinate bannedCoordinate = MavenArtifactInventory.toCoordinate(banned);
+    final AtomicReference<ElisionAnalysisModel.Analysis> capturedAnalysis = new AtomicReference<>();
+    set(
+        mojo,
+        "afterGenerationStaging",
+        (MavenElisionOutputPublisher.AfterGenerationStaging) capturedAnalysis::set);
+
+    mojo.execute();
+
+    final org.apache.maven.artifact.Artifact retained =
+        fixture.project().getArtifacts().stream()
+            .filter(artifact -> USED_ARTIFACT_ID.equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow();
+    assertAll(
+        "a banned reference removed from the final trimmed provider no longer blocks the ban",
+        () -> checkCapturedBanOwner(capturedAnalysis.get(), bannedCoordinate),
+        () -> checkOnlyRetainedArtifact(fixture.project(), retained),
+        () -> checkArtifactHasFile(retained),
+        () -> checkTrimmedClassPresent(retained, "used.Api"),
+        () -> checkTrimmedClassAbsent(retained, "used.Unused"));
+  }
+
   @Test
   void retainedBytecodeConflictLeavesReportsViewsAndResolverPlanUntouched() throws Exception {
     final Fixture fixture = fixture(USED_TRACE, true);
@@ -629,11 +676,66 @@ final class NoExtensionAnalyzeBanPredictionTest {
                 .isSameAs(priorResolverPlan));
   }
 
-  @SuppressWarnings(
-      "PMD.UnitTestContainsTooManyAsserts") // assertAll checks each rollback invariant
-  // independently.
   @Test
-  void planPublicationFailureRollsBackFilesViewsAndResolverPlan() throws Exception {
+  void stagedBannedArchiveConflictIsRejectedBeforeReportOrViewPublication() throws Exception {
+    final Fixture fixture = basicFixture(USED_TRACE);
+    addClassToJar(fixture.usedDependency().getArtifact().getFile().toPath(), "used/Unused");
+    final ElideMojo mojo = elideMojo(fixture, true);
+    final Path directory = fixture.trace().getParent();
+    final Path reportDirectory = Files.createDirectory(directory.resolve(CLASS_USAGE_FILENAME));
+    final Path summary = directory.resolve(SUMMARY_FILENAME);
+    Files.writeString(summary, PREVIOUS_SUMMARY);
+    final List<org.apache.maven.artifact.Artifact> resolvedView =
+        List.copyOf(fixture.project().getArtifacts());
+    final List<org.apache.maven.artifact.Artifact> directView =
+        List.copyOf(fixture.project().getDependencyArtifacts());
+    final Map<org.apache.maven.artifact.Artifact, java.io.File> artifactFiles =
+        artifactFiles(resolvedView, directView);
+    final Object priorResolverPlan = new Object();
+    fixture
+        .repositorySession()
+        .getData()
+        .set(ResolverArtifactPlanPublisher.SESSION_DATA_KEY, priorResolverPlan);
+    final org.apache.maven.artifact.Artifact retained =
+        resolvedView.stream()
+            .filter(artifact -> USED_ARTIFACT_ID.equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow();
+    final ArtifactCoordinate retainedCoordinate = MavenArtifactInventory.toCoordinate(retained);
+    set(
+        mojo,
+        "afterGenerationStaging",
+        (MavenElisionOutputPublisher.AfterGenerationStaging)
+            analysis -> {
+              final ArtifactTrimRecord trim =
+                  analysis.trimResult().records().stream()
+                      .filter(record -> record.coordinate().equals(retainedCoordinate))
+                      .findFirst()
+                      .orElseThrow(
+                          () -> new IOException("Fixture did not produce a retained trim output"));
+              jar(trim.trimmedPath(), BANNED_IDLE_ENTRY, false, null);
+            });
+
+    checkBanPublicationFails(mojo, "Trimmed output bytes changed before ban publication");
+
+    assertAll(
+        "a staged banned provider is rejected before generated files or Maven views change",
+        () -> checkEmptyDirectory(reportDirectory),
+        () -> assertThat(summary).hasContent(PREVIOUS_SUMMARY),
+        () -> assertSameArtifactReferences(fixture.project().getArtifacts(), resolvedView),
+        () -> assertSameArtifactReferences(fixture.project().getDependencyArtifacts(), directView),
+        () -> assertThat(artifactFiles(resolvedView, directView)).isEqualTo(artifactFiles),
+        () ->
+            assertThat(
+                    fixture
+                        .repositorySession()
+                        .getData()
+                        .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
+                .isSameAs(priorResolverPlan));
+  }
+
+  @Test
+  void planPublicationFailureKeepsPerFileReportsAndRestoresMavenViews() throws Exception {
     final Fixture fixture = basicFixture(USED_TRACE);
     final ElideMojo mojo = elideMojo(fixture, false);
     final Path directory = fixture.trace().getParent();
@@ -663,9 +765,10 @@ final class NoExtensionAnalyzeBanPredictionTest {
     assertThatThrownBy(mojo::execute).hasMessageContaining("injected resolver plan failure");
 
     assertAll(
-        "publication failure restores staged files, exact Maven views and artifact file pointers",
-        () -> assertThat(Files.readString(report)).isEqualTo(PREVIOUS_REPORT),
-        () -> assertThat(Files.readString(summary)).isEqualTo(PREVIOUS_SUMMARY),
+        "resolver plan failure preserves individually published reports and restores Maven views",
+        () -> assertThat(Files.readString(report)).isNotEqualTo(PREVIOUS_REPORT),
+        () -> assertThat(new ObjectMapper().readTree(report.toFile()).isObject()).isTrue(),
+        () -> assertThat(MavenElisionReportWriter.read(summary)).isNotNull(),
         () -> assertSameArtifactReferences(fixture.project().getArtifacts(), resolvedView),
         () -> assertSameArtifactReferences(fixture.project().getDependencyArtifacts(), directView),
         () -> assertThat(artifactFiles(resolvedView, directView)).isEqualTo(artifactFiles),
@@ -678,9 +781,6 @@ final class NoExtensionAnalyzeBanPredictionTest {
                 .isSameAs(priorResolverPlan));
   }
 
-  @SuppressWarnings(
-      "PMD.UnitTestContainsTooManyAsserts") // assertAll independently checks every rollback
-  // surface.
   @Test
   void failureAfterTrimGenerationStagingRollsBackBeforePublication() throws Exception {
     final Fixture fixture = basicFixture(USED_TRACE);
@@ -707,8 +807,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
     set(
         mojo,
         "afterGenerationStaging",
-        (MavenElisionOutputPublisher.AfterStaging)
-            () -> {
+        (MavenElisionOutputPublisher.AfterGenerationStaging)
+            analysis -> {
               throw new IOException("injected failure after trim generation staging");
             });
 
@@ -732,6 +832,52 @@ final class NoExtensionAnalyzeBanPredictionTest {
                 .isSameAs(priorResolverPlan));
   }
 
+  private static void checkOriginalProviderReferencesBannedClass(final Path originalUsedJar)
+      throws IOException {
+    assertThat(
+            new ProductionBytecodeReferenceScanner()
+                .scanArchive(originalUsedJar)
+                .referencedClasses())
+        .contains(BANNED_IDLE_CLASS);
+  }
+
+  private static void checkCapturedBanOwner(
+      final ElisionAnalysisModel.Analysis analysis, final ArtifactCoordinate bannedCoordinate) {
+    assertThat(analysis.banPlan().forcedAbsentClassProviders())
+        .containsEntry(bannedCoordinate, Set.of(BANNED_IDLE_CLASS));
+  }
+
+  private static void checkOnlyRetainedArtifact(
+      final MavenProject project, final org.apache.maven.artifact.Artifact retained) {
+    assertThat(project.getArtifacts()).containsExactly(retained);
+  }
+
+  private static void checkArtifactHasFile(final org.apache.maven.artifact.Artifact artifact) {
+    assertThat(artifact.getFile()).isNotNull();
+  }
+
+  private static void checkTrimmedClassPresent(
+      final org.apache.maven.artifact.Artifact artifact, final String className)
+      throws IOException {
+    assertThat(TrimPaths.classNames(artifact.getFile().toPath())).contains(className);
+  }
+
+  private static void checkTrimmedClassAbsent(
+      final org.apache.maven.artifact.Artifact artifact, final String className)
+      throws IOException {
+    assertThat(TrimPaths.classNames(artifact.getFile().toPath())).doesNotContain(className);
+  }
+
+  private static void checkBanPublicationFails(final ElideMojo mojo, final String diagnostic) {
+    assertThatThrownBy(mojo::execute).hasMessageContaining(diagnostic);
+  }
+
+  private static void checkEmptyDirectory(final Path directory) throws IOException {
+    try (Stream<Path> entries = Files.list(directory)) {
+      assertThat(entries.toList()).isEmpty();
+    }
+  }
+
   @Test
   void ignoresOnlySelfOriginServiceMetadataWithAndWithoutTrim() throws Exception {
     final Fixture selfOrigin = fixture(USED_TRACE, false, false, true);
@@ -747,7 +893,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
                 selfOrigin.project(),
                 selfOrigin.options(List.of(BAN), true, true),
                 selfOrigin.resolver());
-    final String bannedProvider = "banned.Idle";
+    final String bannedProvider = BANNED_IDLE_CLASS;
     assertAll(
         "self-origin metadata remains in evidence but cannot retain its own banned artifact",
         () ->
@@ -777,7 +923,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         false);
     jar(
         directory.resolve("banned.jar"),
-        "banned/Idle",
+        BANNED_IDLE_ENTRY,
         false,
         null,
         "-H:ExcludeResources=required[.]txt",
@@ -965,7 +1111,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
   }
 
   private Fixture duplicateProviderFixture() throws IOException {
-    final Fixture fixture = basicFixture("used.Api\n");
+    final Fixture fixture = basicFixture(USED_TRACE);
     final org.apache.maven.artifact.Artifact used =
         fixture.project().getArtifacts().stream()
             .filter(artifact -> USED_ARTIFACT_ID.equals(artifact.getArtifactId()))
@@ -978,7 +1124,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
             .orElseThrow();
     writeJarClasses(used.getFile().toPath(), List.of("used/Api", "shared/Type", "used/Only"));
     writeJarClasses(
-        banned.getFile().toPath(), List.of("shared/Type", "banned/Idle", "banned/Only"));
+        banned.getFile().toPath(), List.of("shared/Type", BANNED_IDLE_ENTRY, "banned/Only"));
     return fixture;
   }
 
@@ -1014,7 +1160,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
     try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(path))) {
       for (final String className : classNames) {
         final ClassWriter writer = new ClassWriter(0);
-        writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, "java/lang/Object", null);
+        writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, OBJECT_INTERNAL_NAME, null);
         writer.visitEnd();
         zip.putNextEntry(new ZipEntry(className + ".class"));
         zip.write(writer.toByteArray());
@@ -1164,7 +1310,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
     final Path bannedJar =
         jar(
             directory.resolve("banned.jar"),
-            "banned/Idle",
+            BANNED_IDLE_ENTRY,
             false,
             bannedServiceProvider ? "banned.Service" : null);
     final MavenProject project = new MavenProject();
@@ -1189,7 +1335,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         sourceRoot.resolve("App.java"), "public class App { private used.Api value; }\n");
     project.addCompileSourceRoot(sourceRoot.toString());
     final ClassWriter consumer = new ClassWriter(0);
-    consumer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "App", null, "java/lang/Object", null);
+    consumer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "App", null, OBJECT_INTERNAL_NAME, null);
     consumer.visitField(Opcodes.ACC_PRIVATE, "value", "Lused/Api;", null, null).visitEnd();
     consumer.visitEnd();
     Files.write(productionOutput.resolve("App.class"), consumer.toByteArray());
@@ -1260,9 +1406,12 @@ final class NoExtensionAnalyzeBanPredictionTest {
       final boolean resource)
       throws IOException {
     final ClassWriter writer = new ClassWriter(0);
-    writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, "java/lang/Object", null);
+    writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, OBJECT_INTERNAL_NAME, null);
     if (referencesBanned) {
-      writer.visitField(Opcodes.ACC_PRIVATE, "dependency", "Lbanned/Idle;", null, null).visitEnd();
+      writer
+          .visitField(
+              Opcodes.ACC_PRIVATE, DEPENDENCY_FIELD, "L" + BANNED_IDLE_ENTRY + ";", null, null)
+          .visitEnd();
     }
     writer.visitEnd();
     try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(path))) {
@@ -1288,6 +1437,44 @@ final class NoExtensionAnalyzeBanPredictionTest {
       }
     }
     return path;
+  }
+
+  private static void addClassToJar(final Path path, final String className) throws IOException {
+    addClassToJar(path, className, null);
+  }
+
+  private static void addClassToJar(
+      final Path path, final String className, final String referencedClass) throws IOException {
+    final Path replacement = path.resolveSibling(path.getFileName() + ".replacement");
+    try (JarFile source = new JarFile(path.toFile());
+        ZipOutputStream target = new ZipOutputStream(Files.newOutputStream(replacement))) {
+      final Enumeration<JarEntry> entries = source.entries();
+      while (entries.hasMoreElements()) {
+        copyJarEntry(target, source, entries.nextElement());
+      }
+      final ClassWriter writer = new ClassWriter(0);
+      writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, OBJECT_INTERNAL_NAME, null);
+      if (referencedClass != null) {
+        writer
+            .visitField(
+                Opcodes.ACC_PRIVATE, DEPENDENCY_FIELD, "L" + referencedClass + ";", null, null)
+            .visitEnd();
+      }
+      writer.visitEnd();
+      target.putNextEntry(new ZipEntry(className + ".class"));
+      target.write(writer.toByteArray());
+      target.closeEntry();
+    }
+    Files.move(replacement, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+  }
+
+  private static void copyJarEntry(
+      final ZipOutputStream target, final JarFile source, final JarEntry entry) throws IOException {
+    target.putNextEntry(new ZipEntry(entry.getName()));
+    try (InputStream input = source.getInputStream(entry)) {
+      input.transferTo(target);
+    }
+    target.closeEntry();
   }
 
   private static void writeClasslessJar(final Path path) throws IOException {

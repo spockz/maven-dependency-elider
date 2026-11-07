@@ -31,10 +31,15 @@ import org.junit.jupiter.api.io.TempDir;
 @SuppressWarnings({
   "PMD.UnitTestContainsTooManyAsserts",
   "PMD.LawOfDemeter",
+  "PMD.CommentRequired",
   "PMD.AtLeastOneConstructor",
   "PMD.TooManyMethods"
 })
 final class AnalyzeMojoTest {
+  private static final String PROJECT_FIELD = "project";
+  private static final String REPORT_FILE_FIELD = "reportFile";
+  private static final String SUMMARY_FILE_FIELD = "analysisSummaryFile";
+
   /** CVE fixtures share one vulnerable symbol. */
   private static final String UNUSED_CLASS = "unused.Idle";
 
@@ -46,7 +51,7 @@ final class AnalyzeMojoTest {
     final MavenProject project = AnalyzeMojoTestArtifactSupport.project(tempDir, "early-rejection");
     final AnalyzeMojo mojo = new AnalyzeMojo();
     final AtomicBoolean analysisStarted = new AtomicBoolean();
-    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.set(mojo, "sourceRootsComplete", true);
     AnalyzeMojoTestFieldSupport.set(
         mojo,
@@ -66,6 +71,44 @@ final class AnalyzeMojoTest {
                 .hasMessageContaining("elide.sourceRootsComplete is no longer supported")
                 .hasMessageContaining("bind elide to process-classes"),
         () -> assertThat(analysisStarted).isFalse());
+  }
+
+  @Test
+  void overlappingReportTargetsFailBeforeEitherOutputIsReplaced() throws Exception {
+    final AnalyzeMojoTestArtifactSupport.Fixture fixture =
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used.Sample\n");
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(fixture.mojo());
+    final Path shared = tempDir.resolve("shared-analysis-output.json");
+    final byte[] prior = "prior output".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    Files.write(shared, prior);
+    AnalyzeMojoTestFieldSupport.set(fixture.mojo(), REPORT_FILE_FIELD, shared.toFile());
+    AnalyzeMojoTestFieldSupport.set(
+        fixture.mojo(),
+        SUMMARY_FILE_FIELD,
+        shared.getParent().resolve(".").resolve(shared.getFileName()).toFile());
+
+    assertThatThrownBy(fixture.mojo()::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("Duplicate output target path");
+    assertThat(Files.readAllBytes(shared)).isEqualTo(prior);
+  }
+
+  @Test
+  void ancestorAndDescendantReportTargetsFailBeforeEitherOutputIsReplaced() throws Exception {
+    final AnalyzeMojoTestArtifactSupport.Fixture fixture =
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used.Sample\n");
+    AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(fixture.mojo());
+    final Path parentTarget = tempDir.resolve("overlapping-output");
+    final byte[] prior = "prior output".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    Files.write(parentTarget, prior);
+    AnalyzeMojoTestFieldSupport.set(fixture.mojo(), REPORT_FILE_FIELD, parentTarget.toFile());
+    AnalyzeMojoTestFieldSupport.set(
+        fixture.mojo(), SUMMARY_FILE_FIELD, parentTarget.resolve("summary.json").toFile());
+
+    assertThatThrownBy(fixture.mojo()::execute)
+        .isInstanceOf(MojoFailureException.class)
+        .hasMessageContaining("Overlapping output target paths");
+    assertThat(Files.readAllBytes(parentTarget)).isEqualTo(prior);
   }
 
   @Test
@@ -109,12 +152,12 @@ final class AnalyzeMojoTest {
     final Path trace = tempDir.resolve("runtime.lst");
     Files.writeString(trace, "used/Sample\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
     AnalyzeMojoTestFieldSupport.set(mojo, "retainedArtifacts", List.of("org.example:excluded"));
     final Path report = tempDir.resolve("analysis.json");
-    AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, REPORT_FILE_FIELD, report.toFile());
     final RecordingMavenLog log = new RecordingMavenLog();
     mojo.setLog(log);
 
@@ -226,11 +269,11 @@ final class AnalyzeMojoTest {
     final Path trace = tempDir.resolve("predicted-elisions.lst");
     Files.writeString(trace, "used/Sample\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
     AnalyzeMojoTestFieldSupport.set(
-        mojo, "reportFile", tempDir.resolve("predicted-elisions.json").toFile());
+        mojo, REPORT_FILE_FIELD, tempDir.resolve("predicted-elisions.json").toFile());
     AnalyzeMojoTestFieldSupport.set(
         mojo, "cveCacheDirectory", tempDir.resolve("analysis-cve-cache").toFile());
     final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
@@ -290,12 +333,12 @@ final class AnalyzeMojoTest {
     final Path trace = tempDir.resolve("trim-analysis.lst");
     Files.writeString(trace, "sample.Keep\n");
     final AnalyzeMojo mojo = new AnalyzeMojo();
-    AnalyzeMojoTestFieldSupport.set(mojo, "project", project);
+    AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of(trace.toFile()));
     AnalyzeMojoTestFieldSupport.set(mojo, "trimJars", true);
     AnalyzeMojoTestFieldSupport.set(
-        mojo, "reportFile", tempDir.resolve("trim-analysis.json").toFile());
+        mojo, REPORT_FILE_FIELD, tempDir.resolve("trim-analysis.json").toFile());
     AnalyzeMojoTestFieldSupport.set(
         mojo, "cveCacheDirectory", tempDir.resolve("trim-analysis-cache").toFile());
     final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
@@ -361,7 +404,7 @@ final class AnalyzeMojoTest {
     Files.writeString(report, previousReport);
     AnalyzeMojoTestFieldSupport.set(
         fixture.mojo(), "banishedDependencies", List.of("org.example:used"));
-    AnalyzeMojoTestFieldSupport.set(fixture.mojo(), "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(fixture.mojo(), REPORT_FILE_FIELD, report.toFile());
     AnalyzeMojoTestFieldSupport.set(
         fixture.mojo(),
         "predictionService",
@@ -398,7 +441,7 @@ final class AnalyzeMojoTest {
   void rejectsAnEmptyTraceList() throws ReflectiveOperationException {
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(
-        mojo, "project", AnalyzeMojoTestArtifactSupport.project(tempDir, "skipped-analysis"));
+        mojo, PROJECT_FIELD, AnalyzeMojoTestArtifactSupport.project(tempDir, "skipped-analysis"));
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
     AnalyzeMojoTestFieldSupport.set(mojo, "traceFiles", List.of());
 
@@ -461,11 +504,11 @@ final class AnalyzeMojoTest {
             new ReactorLeafModuleDetectorTest.StubProjectDependencyGraph(
                 List.of(intermediate, leaf), Map.of(intermediate, List.of(leaf))));
 
-    AnalyzeMojoTestFieldSupport.set(mojo, "project", intermediate);
+    AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, intermediate);
     AnalyzeMojoTestFieldSupport.set(mojo, "session", session);
     final Path report = tempDir.resolve("intermediate-ban-report.json");
     Files.writeString(report, "existing report");
-    AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
+    AnalyzeMojoTestFieldSupport.set(mojo, REPORT_FILE_FIELD, report.toFile());
     AnalyzeMojoTestFieldSupport.set(mojo, "banishedDependencies", List.of("org.example:library"));
     // leafOnly is true by default: skips without failing on missing trace files
     assertAll(
