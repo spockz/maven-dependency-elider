@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.HeuristicCandidateEvidence;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
+import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.StructuredSourceClassEvidence;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -58,6 +59,44 @@ class OsvSnapshotIndexerTest {
             .getFirst();
 
     assertThat(record.evidence().getFirst().scope().versionRangeSpec()).isEqualTo("[0.9.3,0.10.0]");
+  }
+
+  @Test
+  void recognizesOnlyMavenEcosystemIdentitiesAcceptedByTheIndexer() throws IOException {
+    final List<String> recognized = List.of("maven", "Maven", "MAVEN", "Maven:https://repo.test");
+    final List<String> rejected = List.of("npm", "mavenish", " maven");
+
+    assertAll(
+        "OSV ecosystem identity is normalized case insensitively without trimming or widening"
+            + " prefixes",
+        () ->
+            assertThat(recognized)
+                .allSatisfy(
+                    ecosystem ->
+                        assertThat(indexedAffectedPackages(ecosystem, "recognized-" + ecosystem))
+                            .as("recognized ecosystem %s", ecosystem)
+                            .hasSize(1)),
+        () ->
+            assertThat(rejected)
+                .allSatisfy(
+                    ecosystem ->
+                        assertThat(indexedAffectedPackages(ecosystem, "rejected-" + ecosystem))
+                            .as("rejected ecosystem %s", ecosystem)
+                            .isEmpty()));
+  }
+
+  private List<OsvAffectedPackage> indexedAffectedPackages(final String ecosystem, final String id)
+      throws IOException {
+    final String osv =
+        """
+        {"id":"%s","modified":"2026-11-04T00:00:00Z","affected":[{"package":{"ecosystem":"%s","name":"org.example:library"},"versions":["1.0"]}]}
+        """
+            .formatted(id, ecosystem);
+    return new OsvSnapshotIndexer()
+        .indexZip(
+            new ByteArrayInputStream(createZip(List.of(new ZipItem("record.json", osv)))), tempDir)
+        .getFirst()
+        .affectedPackages();
   }
 
   @Test
