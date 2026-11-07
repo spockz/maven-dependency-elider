@@ -11,6 +11,7 @@ record ReferenceGraph(
     Set<String> libraryClassNames,
     Map<String, Set<String>> edges,
     Map<String, Map<String, Set<EdgeKind>>> typedEdges,
+    Map<String, Set<String>> unclassifiedEdges,
     Map<String, Set<UnresolvedLink>> unresolvedProgramReferences,
     Map<String, Set<UnresolvedLink>> unresolvedLibraryReferences,
     Map<String, RuntimeException> edgeFailures,

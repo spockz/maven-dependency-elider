@@ -132,12 +132,13 @@ final class ReferenceGraphIndexer {
     typedEdges.forEach(
         (source, targets) ->
             edges.computeIfAbsent(source, ignored -> new TreeSet<>()).addAll(targets.keySet()));
-    reconcileTypedEdges(edges, typedEdges, edgeFailures);
+    final Map<String, Set<String>> unclassifiedEdges = unclassifiedEdges(edges, typedEdges);
     return new ReferenceGraph(
         classNames(programPool),
         classNames(libraryPool, platformClasses),
         immutableSetMap(edges),
         Map.copyOf(typedEdges),
+        immutableSetMap(unclassifiedEdges),
         immutableSetMap(unresolvedPrograms),
         immutableSetMap(unresolvedLibraries),
         Map.copyOf(edgeFailures),
@@ -169,21 +170,19 @@ final class ReferenceGraphIndexer {
         });
   }
 
-  private static void reconcileTypedEdges(
+  private static Map<String, Set<String>> unclassifiedEdges(
       final Map<String, Set<String>> completeEdges,
-      final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges,
-      final Map<String, RuntimeException> edgeFailures) {
+      final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges) {
+    final Map<String, Set<String>> unclassifiedBySource = new HashMap<>();
     completeEdges.forEach(
         (source, targets) -> {
           final Set<String> unclassified = new TreeSet<>(targets);
           unclassified.removeAll(typedEdges.getOrDefault(source, Map.of()).keySet());
           if (!unclassified.isEmpty()) {
-            edgeFailures.putIfAbsent(
-                source,
-                new IllegalArgumentException(
-                    "Unclassified reference targets in " + source + ": " + unclassified));
+            unclassifiedBySource.put(source, unclassified);
           }
         });
+    return unclassifiedBySource;
   }
 
   @SuppressWarnings("PMD.AvoidCatchingGenericException")

@@ -153,8 +153,7 @@ final class PreparedAnalysisState {
     }
   }
 
-  private boolean hasCachedAnalysis(
-      final Set<String> roots, final ClosureQueryPolicy queryPolicy) {
+  private boolean hasCachedAnalysis(final Set<String> roots, final ClosureQueryPolicy queryPolicy) {
     return previousAnalysis != null
         && roots.equals(previousRoots)
         && queryPolicy.equals(previousPolicy);
@@ -243,9 +242,22 @@ final class PreparedAnalysisState {
         if (edgeFailure != null) {
           throw edgeFailure;
         }
+        rejectUnclassifiedClosedWorldEdges(current, graph, queryPolicy);
         enqueueTargets(current, graph, pending, queryPolicy);
       }
       return expanded;
+    }
+
+    private static void rejectUnclassifiedClosedWorldEdges(
+        final String source, final ReferenceGraph graph, final ClosureQueryPolicy queryPolicy) {
+      if (queryPolicy.mode() != ClosureQueryPolicy.Mode.CLOSED_WORLD) {
+        return;
+      }
+      final Set<String> unclassified = graph.unclassifiedEdges().getOrDefault(source, Set.of());
+      if (!unclassified.isEmpty()) {
+        throw new IllegalArgumentException(
+            "Unclassified reference targets in " + source + ": " + new TreeSet<>(unclassified));
+      }
     }
 
     private static void enqueueTargets(

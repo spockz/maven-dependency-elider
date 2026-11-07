@@ -23,6 +23,12 @@ class PreparedAnalysisStateTest {
   /** Names the same fixture class in the public dotted form accepted by analysis. */
   private static final String ROOT_NAME = "fixture.Root";
 
+  /** Names the class reached from the graph root. */
+  private static final String LINKED_CLASS = "fixture/Linked";
+
+  /** Names a node excluded by the query root. */
+  private static final String DEAD_CLASS = "fixture/Dead";
+
   /** Fails exactly the initial graph build before allowing deterministic retry. */
   private static final int FIRST_BUILD = 1;
 
@@ -68,15 +74,85 @@ class PreparedAnalysisStateTest {
     assertThat(buildCount).hasValue(2);
   }
 
+  @Test
+  void conservativeQueryFollowsProguardEdgeWithoutTypedClassification() throws Exception {
+    final ReferenceGraph graph =
+        new ReferenceGraph(
+            Set.of(ROOT_CLASS, LINKED_CLASS),
+            Set.of(),
+            Map.of(ROOT_CLASS, Set.of(LINKED_CLASS)),
+            Map.of(ROOT_CLASS, Map.of()),
+            Map.of(ROOT_CLASS, Set.of(LINKED_CLASS)),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            2);
+
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        state(() -> graph, Set.of(ROOT_CLASS))
+            .analyze(List.of(ROOT_NAME), ClosureQueryPolicy.conservative());
+
+    assertThat(analysis.retainedClasses()).containsExactlyInAnyOrder(ROOT_CLASS, LINKED_CLASS);
+  }
+
+  @Test
+  void closedWorldQueryRejectsUnclassifiedEdgeFromReachedSource() throws Exception {
+    final ReferenceGraph graph =
+        new ReferenceGraph(
+            Set.of(ROOT_CLASS, LINKED_CLASS),
+            Set.of(),
+            Map.of(ROOT_CLASS, Set.of(LINKED_CLASS)),
+            Map.of(ROOT_CLASS, Map.of()),
+            Map.of(ROOT_CLASS, Set.of(LINKED_CLASS)),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            2);
+
+    assertThatThrownBy(
+            () ->
+                state(() -> graph, Set.of(ROOT_CLASS))
+                    .analyze(List.of(ROOT_NAME), ClosureQueryPolicy.closedWorld(Set.of(ROOT_NAME))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Unclassified reference target");
+  }
+
+  @Test
+  void closedWorldQueryDoesNotFailForUnclassifiedEdgeFromDeadSource() throws Exception {
+    final ReferenceGraph graph =
+        new ReferenceGraph(
+            Set.of(ROOT_CLASS, DEAD_CLASS, LINKED_CLASS),
+            Set.of(),
+            Map.of(DEAD_CLASS, Set.of(LINKED_CLASS)),
+            Map.of(DEAD_CLASS, Map.of()),
+            Map.of(DEAD_CLASS, Set.of(LINKED_CLASS)),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            3);
+
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        state(() -> graph, Set.of(ROOT_CLASS, DEAD_CLASS, LINKED_CLASS))
+            .analyze(List.of(ROOT_NAME), ClosureQueryPolicy.closedWorld(Set.of(ROOT_NAME)));
+
+    assertThat(analysis.retainedClasses()).containsExactly(ROOT_CLASS);
+  }
+
   private static PreparedAnalysisState state(final PreparedAnalysisState.GraphSupplier supplier) {
+    return state(supplier, Set.of(ROOT_CLASS));
+  }
+
+  private static PreparedAnalysisState state(
+      final PreparedAnalysisState.GraphSupplier supplier, final Set<String> candidateClasses) {
     return new PreparedAnalysisState(
-        Path.of("candidate.jar"), supplier, Set.of(ROOT_CLASS), false, Set.of());
+        Path.of("candidate.jar"), supplier, candidateClasses, false, Set.of());
   }
 
   private static ReferenceGraph graph() {
     return new ReferenceGraph(
         Set.of(ROOT_CLASS),
         Set.of(),
+        Map.of(),
         Map.of(),
         Map.of(),
         Map.of(),
