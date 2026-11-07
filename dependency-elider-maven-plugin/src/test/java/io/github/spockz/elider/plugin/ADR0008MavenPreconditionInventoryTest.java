@@ -884,57 +884,67 @@ final class ADR0008MavenPreconditionInventoryTest {
       final MavenSession testSession = sessionForGoals(fixture.project(), GOAL_CLEAN, "test");
       testSession.getUserProperties().setProperty("maven.test.skip", FALSE);
 
-      final MavenPreconditionInventory.Snapshot beforeTestCompile =
-          MavenPreconditionInventory.capture(
-              fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
-
       assertAll(
-          "test-only source keeps the process-classes proof incomplete before test compilation",
-          () -> assertThat(beforeTestCompile.complete()).isFalse(),
-          () ->
-              assertThat(beforeTestCompile.classProviders().detail())
-                  .contains("Maven test compilation can add providers after process-classes"),
-          () ->
-              assertThat(beforeTestCompile.classProviders().providers())
-                  .noneMatch(provider -> provider.path().equals(testOnlySource)));
-
-      testSession.getUserProperties().setProperty("maven.test.skip", TRUE);
-      final MavenPreconditionInventory.Snapshot testCompilationSkipped =
-          MavenPreconditionInventory.capture(
-              fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
-      assertAll(
-          "skipping Maven test compilation permits proof while existing test output remains"
-              + " scanned",
-          () -> assertThat(testCompilationSkipped.complete()).isTrue(),
-          () ->
-              assertThat(testCompilationSkipped.classProviders().providers())
-                  .anySatisfy(
-                      provider -> assertThat(provider.path()).isEqualTo(compiledTestClass)));
-
-      final Plugin compiler = compilerPlugin();
-      final PluginExecution testCompile = new PluginExecution();
-      testCompile.setId(DEFAULT_TEST_COMPILE);
-      testCompile.setConfiguration(configuration("skip", TRUE));
-      compiler.addExecution(testCompile);
-      fixture.project().getBuild().addPlugin(compiler);
-      final MavenPreconditionInventory.Snapshot unmodeledCompilerSkip =
-          MavenPreconditionInventory.capture(
-              fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
-      assertAll(
-          "plugin-local testCompile skip is conservatively incomplete",
-          () -> assertThat(unmodeledCompilerSkip.complete()).isFalse(),
-          () ->
-              assertThat(unmodeledCompilerSkip.classProviders().detail())
-                  .contains("Maven Compiler Plugin test skip configuration is not modeled"));
-
-      final MavenSession processClassesSession =
-          sessionForGoals(fixture.project(), GOAL_CLEAN, PROCESS_CLASSES_PHASE);
-      final MavenPreconditionInventory.Snapshot beforeTestPhaseRequested =
-          MavenPreconditionInventory.capture(
-              fixture.project(), processClassesSession, fixture.plan(), trusted, true, List.of());
-      assertAll(
-          "process-classes is eligible before test compilation is requested",
-          () -> assertThat(beforeTestPhaseRequested.complete()).isTrue());
+          "each lifecycle boundary independently controls prerequisite inventory completeness",
+          () -> {
+            final MavenPreconditionInventory.Snapshot beforeTestCompile =
+                MavenPreconditionInventory.capture(
+                    fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
+            assertAll(
+                "test-only source keeps the process-classes proof incomplete before test"
+                    + " compilation",
+                () -> assertThat(beforeTestCompile.complete()).isFalse(),
+                () ->
+                    assertThat(beforeTestCompile.classProviders().detail())
+                        .contains("Maven test compilation can add providers after process-classes"),
+                () ->
+                    assertThat(beforeTestCompile.classProviders().providers())
+                        .noneMatch(provider -> provider.path().equals(testOnlySource)));
+          },
+          () -> {
+            testSession.getUserProperties().setProperty("maven.test.skip", TRUE);
+            final MavenPreconditionInventory.Snapshot testCompilationSkipped =
+                MavenPreconditionInventory.capture(
+                    fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
+            assertAll(
+                "skipping Maven test compilation permits proof while existing test output remains"
+                    + " scanned",
+                () -> assertThat(testCompilationSkipped.complete()).isTrue(),
+                () ->
+                    assertThat(testCompilationSkipped.classProviders().providers())
+                        .anySatisfy(
+                            provider -> assertThat(provider.path()).isEqualTo(compiledTestClass)));
+          },
+          () -> {
+            final Plugin compiler = compilerPlugin();
+            final PluginExecution testCompile = new PluginExecution();
+            testCompile.setId(DEFAULT_TEST_COMPILE);
+            testCompile.setConfiguration(configuration("skip", TRUE));
+            compiler.addExecution(testCompile);
+            fixture.project().getBuild().addPlugin(compiler);
+            final MavenPreconditionInventory.Snapshot unmodeledCompilerSkip =
+                MavenPreconditionInventory.capture(
+                    fixture.project(), testSession, fixture.plan(), trusted, true, List.of());
+            assertAll(
+                "plugin-local testCompile skip is conservatively incomplete",
+                () -> assertThat(unmodeledCompilerSkip.complete()).isFalse(),
+                () ->
+                    assertThat(unmodeledCompilerSkip.classProviders().detail())
+                        .contains("Maven Compiler Plugin test skip configuration is not modeled"));
+          },
+          () -> {
+            final MavenSession processClassesSession =
+                sessionForGoals(fixture.project(), GOAL_CLEAN, PROCESS_CLASSES_PHASE);
+            final MavenPreconditionInventory.Snapshot beforeTestPhaseRequested =
+                MavenPreconditionInventory.capture(
+                    fixture.project(),
+                    processClassesSession,
+                    fixture.plan(),
+                    trusted,
+                    true,
+                    List.of());
+            assertThat(beforeTestPhaseRequested.complete()).isTrue();
+          });
     }
 
     private static ElisionAnalysisModel.Analysis trustedProcessClassesAnalysis(
