@@ -31,7 +31,7 @@ final class ArchiveSnapshot {
   private static final String MODULE_DESCRIPTOR_ENTRY = "module-info.class";
 
   /** Class-entry bytes, retained in archive order for pool construction. */
-  private final Map<String, byte[]> classBytes;
+  private final Map<String, byte[]> classesByName;
 
   /** Whether the archive contains a direct module descriptor. */
   private final boolean hasModuleDescriptor;
@@ -40,9 +40,9 @@ final class ArchiveSnapshot {
   private final LibraryArchiveTemplates libraryTemplates;
 
   private ArchiveSnapshot(final Map<String, byte[]> classBytes, final boolean hasModuleDescriptor) {
-    this.classBytes = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(classBytes));
+    this.classesByName = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(classBytes));
     this.hasModuleDescriptor = hasModuleDescriptor;
-    this.libraryTemplates = new LibraryArchiveTemplates(this.classBytes);
+    this.libraryTemplates = new LibraryArchiveTemplates(this.classesByName);
   }
 
   private static boolean isNestedArchive(final String entryName) {
@@ -142,7 +142,11 @@ final class ArchiveSnapshot {
   }
 
   Set<String> classNames() {
-    return classBytes.keySet();
+    return classesByName.keySet();
+  }
+
+  Map<String, byte[]> classBytes() {
+    return classesByName;
   }
 
   ClassPool newClassPool(final boolean library) throws IOException {
@@ -150,7 +154,7 @@ final class ArchiveSnapshot {
       return newLibraryClassPool();
     }
     final ClassPool pool = new ClassPool();
-    for (final Map.Entry<String, byte[]> entry : classBytes.entrySet()) {
+    for (final Map.Entry<String, byte[]> entry : classesByName.entrySet()) {
       try (DataInputStream input =
           new DataInputStream(new ByteArrayInputStream(entry.getValue()))) {
         final ProgramClass clazz = new ProgramClass();

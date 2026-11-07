@@ -156,7 +156,7 @@ class ArchiveSnapshotTemplateTest {
             Set.of(),
             (path, isCandidate) -> isCandidate ? candidate : sibling);
 
-    assertThat(prepared.analyze(List.of()).retainedClasses()).containsExactly("fixture/Root");
+    assertThat(prepared.analyze(List.of()).retainedClasses()).isEmpty();
     assertThat(sibling.libraryDeclarationParseCount()).isZero();
 
     prepared.analyze(List.of("fixture.Root"));

@@ -75,6 +75,13 @@ class PreparedAnalysisStateTest {
 
   private static ReferenceGraph graph() {
     return new ReferenceGraph(
-        Set.of(ROOT_CLASS), Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), FIRST_BUILD);
+        Set.of(ROOT_CLASS),
+        Set.of(),
+        Map.of(),
+        Map.of(),
+        Map.of(),
+        Map.of(),
+        Map.of(),
+        FIRST_BUILD);
   }
 }

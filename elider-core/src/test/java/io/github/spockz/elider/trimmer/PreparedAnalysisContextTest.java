@@ -92,7 +92,7 @@ class PreparedAnalysisContextTest {
                 Set.of(),
                 ArchiveSnapshot::read);
 
-    assertThat(prepared.analyze(List.of()).retainedClasses()).contains("fixture/PlatformRoot");
+    assertThat(prepared.analyze(List.of()).retainedClasses()).isEmpty();
     assertThat(prepared.referenceGraphBuilt()).isFalse();
     ((LibraryClass) mutableJdkClassTable.getClass("fixture/Added")).methods = new LibraryMethod[0];
 

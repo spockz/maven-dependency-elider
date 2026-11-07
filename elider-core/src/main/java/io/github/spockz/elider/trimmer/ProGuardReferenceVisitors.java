@@ -2,9 +2,9 @@
 
 package io.github.spockz.elider.trimmer;
 
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.function.Function;
 import org.objectweb.asm.Type;
 import proguard.classfile.Clazz;
@@ -34,14 +34,14 @@ final class ProGuardReferenceVisitors {
 
   /* Package access keeps callback construction internal to the trimmer. */
   static InvalidReferenceVisitor recordingInvalid(
-      final Map<String, Set<String>> unresolvedReferences,
+      final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedReferences,
       final SignaturePolymorphicReferenceResolver resolver) {
     return new RecordingInvalidReferenceVisitor(unresolvedReferences, resolver);
   }
 
   /* Package access keeps callback construction internal to the trimmer. */
   static InvalidReferenceVisitor recordingLibraryInvalid(
-      final Map<String, Set<String>> unresolvedReferences,
+      final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedReferences,
       final SignaturePolymorphicReferenceResolver resolver) {
     return new RecordingLibraryReferenceVisitor(unresolvedReferences, resolver);
   }
@@ -125,14 +125,14 @@ final class ProGuardReferenceVisitors {
   /* Package access keeps unresolved-link recording internal to the trimmer. */
   static final class RecordingInvalidReferenceVisitor implements InvalidReferenceVisitor {
     /** Stores missing reference descriptions. */
-    private final Map<String, Set<String>> unresolvedReferences;
+    private final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedReferences;
 
     /** Handles legal signature-polymorphic links omitted by Core's visitor. */
     private final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver;
 
     /* Package access lets the factory instantiate this visitor. */
     RecordingInvalidReferenceVisitor(
-        final Map<String, Set<String>> unresolvedReferences,
+        final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedReferences,
         final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver) {
       this.unresolvedReferences = unresolvedReferences;
       this.signaturePolymorphicResolver = signaturePolymorphicResolver;
@@ -140,7 +140,7 @@ final class ProGuardReferenceVisitors {
 
     @Override
     public void visitMissingClass(final Clazz referencingClass, final String missingClassName) {
-      add(referencingClass, "class " + missingClassName);
+      add(referencingClass, missingClassName, "class " + missingClassName);
     }
 
     @Override
@@ -160,13 +160,17 @@ final class ProGuardReferenceVisitors {
       }
       add(
           referencingClass,
+          targetClass.getName(),
           "member " + targetClass.getName() + "." + memberName + memberDescriptor);
     }
 
-    private void add(final Clazz referencingClass, final String missingReference) {
+    private void add(
+        final Clazz referencingClass, final String targetClass, final String missingReference) {
       unresolvedReferences
-          .computeIfAbsent(referencingClass.getName(), unused -> new TreeSet<>())
-          .add(referencingClass.getName() + " -> " + missingReference);
+          .computeIfAbsent(referencingClass.getName(), unused -> new LinkedHashSet<>())
+          .add(
+              new ReferenceGraph.UnresolvedLink(
+                  targetClass, referencingClass.getName() + " -> " + missingReference));
     }
   }
 
@@ -174,14 +178,14 @@ final class ProGuardReferenceVisitors {
   /* Package access keeps sibling-link recording internal to the trimmer. */
   static final class RecordingLibraryReferenceVisitor implements InvalidReferenceVisitor {
     /** Maps each sibling class to its unresolved links. */
-    private final Map<String, Set<String>> unresolvedReferences;
+    private final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedReferences;
 
     /** Handles legal signature-polymorphic links omitted by Core's visitor. */
     private final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver;
 
     /* Package access lets the factory instantiate this visitor. */
     RecordingLibraryReferenceVisitor(
-        final Map<String, Set<String>> unresolvedReferences,
+        final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedReferences,
         final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver) {
       this.unresolvedReferences = unresolvedReferences;
       this.signaturePolymorphicResolver = signaturePolymorphicResolver;
@@ -189,7 +193,7 @@ final class ProGuardReferenceVisitors {
 
     @Override
     public void visitMissingClass(final Clazz referencingClass, final String missingClassName) {
-      add(referencingClass, "class " + missingClassName);
+      add(referencingClass, missingClassName, "class " + missingClassName);
     }
 
     @Override
@@ -209,13 +213,17 @@ final class ProGuardReferenceVisitors {
       }
       add(
           referencingClass,
+          targetClass.getName(),
           "member " + targetClass.getName() + "." + memberName + memberDescriptor);
     }
 
-    private void add(final Clazz referencingClass, final String missingReference) {
+    private void add(
+        final Clazz referencingClass, final String targetClass, final String missingReference) {
       unresolvedReferences
-          .computeIfAbsent(referencingClass.getName(), unused -> new TreeSet<>())
-          .add(referencingClass.getName() + " -> " + missingReference);
+          .computeIfAbsent(referencingClass.getName(), unused -> new LinkedHashSet<>())
+          .add(
+              new ReferenceGraph.UnresolvedLink(
+                  targetClass, referencingClass.getName() + " -> " + missingReference));
     }
   }
 }

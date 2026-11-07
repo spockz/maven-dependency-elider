@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.trimmer;
 
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -42,7 +43,7 @@ final class SignaturePolymorphicReferenceResolver {
       final Clazz targetClass,
       final String memberName,
       final String memberDescriptor,
-      final Map<String, Set<String>> unresolvedReferences) {
+      final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedReferences) {
     if (!hasDeclaration(targetClass, memberName)) {
       return false;
     }
@@ -108,7 +109,7 @@ final class SignaturePolymorphicReferenceResolver {
   private void recordType(
       final Clazz referencingClass,
       final Type descriptorType,
-      final Map<String, Set<String>> unresolvedReferences) {
+      final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedReferences) {
     final Type referenceType =
         descriptorType.getSort() == Type.ARRAY ? descriptorType.getElementType() : descriptorType;
     if (referenceType.getSort() != Type.OBJECT) {
@@ -117,8 +118,10 @@ final class SignaturePolymorphicReferenceResolver {
     final String className = referenceType.getInternalName();
     if (classLookup.apply(className) == null) {
       unresolvedReferences
-          .computeIfAbsent(referencingClass.getName(), unused -> new TreeSet<>())
-          .add(referencingClass.getName() + " -> class " + className);
+          .computeIfAbsent(referencingClass.getName(), unused -> new LinkedHashSet<>())
+          .add(
+              new ReferenceGraph.UnresolvedLink(
+                  className, referencingClass.getName() + " -> class " + className));
       return;
     }
     descriptorTypes

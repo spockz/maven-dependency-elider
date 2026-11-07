@@ -23,7 +23,7 @@ public final class DependencyJarTrimmer {
    * Computes closure from caller roots and flat, non-MR sibling JARs.
    *
    * @param libraryClassPath flat sibling JAR paths
-   * @param retainedRoots complete caller roots; empty retains all candidate classes
+   * @param retainedRoots caller roots; an empty set retains no candidate classes
    */
   public TrimAnalysis analyze(
       final Path candidateJar,
@@ -175,6 +175,13 @@ public final class DependencyJarTrimmer {
     /** Computes closure from roots, extending a prior successful closure when possible. */
     public TrimAnalysis analyze(final Collection<String> retainedRoots) throws IOException {
       return state.analyze(retainedRoots);
+    }
+
+    /** Computes closure under an explicit conservative or trace-bounded query policy. */
+    public TrimAnalysis analyze(
+        final Collection<String> retainedRoots, final ClosureQueryPolicy queryPolicy)
+        throws IOException {
+      return state.analyze(retainedRoots, queryPolicy);
     }
 
     /** Package scope exposes the number of nodes expanded across successful queries. */

@@ -8,6 +8,7 @@ import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -40,6 +41,9 @@ final class PreparedAnalysisState {
   /** Last successful roots enable incremental growth only. */
   private Set<String> previousRoots = Set.of();
 
+  /** Last successful policy keeps conservative and bounded graph visits distinct. */
+  private ClosureQueryPolicy previousPolicy;
+
   /** Candidate nodes visited by the last successful query. */
   private Set<String> previouslyVisitedProgramClasses = Set.of();
 
@@ -68,33 +72,38 @@ final class PreparedAnalysisState {
 
   DependencyJarTrimmer.TrimAnalysis analyze(final Collection<String> requestedRoots)
       throws IOException {
+    return analyze(requestedRoots, ClosureQueryPolicy.conservative());
+  }
+
+  DependencyJarTrimmer.TrimAnalysis analyze(
+      final Collection<String> requestedRoots, final ClosureQueryPolicy queryPolicy)
+      throws IOException {
     stateLock.lock();
     try {
-      return analyzeLocked(requestedRoots);
+      return analyzeLocked(requestedRoots, queryPolicy);
     } finally {
       stateLock.unlock();
     }
   }
 
-  private DependencyJarTrimmer.TrimAnalysis analyzeLocked(final Collection<String> requestedRoots)
+  private DependencyJarTrimmer.TrimAnalysis analyzeLocked(
+      final Collection<String> requestedRoots, final ClosureQueryPolicy queryPolicy)
       throws IOException {
     final Set<String> roots = DependencyJarTrimmer.normalizeRoots(requestedRoots);
+    java.util.Objects.requireNonNull(queryPolicy, "queryPolicy");
     if (roots.isEmpty()) {
-      return new DependencyJarTrimmer.TrimAnalysis(
-          candidateClassNames.size(), candidateClassNames, roots, Set.of());
+      return emptyAnalysis(roots);
     }
-    final Set<String> missingRoots = new TreeSet<>(roots);
-    missingRoots.removeAll(candidateClassNames);
-    if (!missingRoots.isEmpty()) {
-      throw new IllegalArgumentException(
-          "Retained roots are not in candidate JAR: " + missingRoots);
-    }
-    if (previousAnalysis != null && roots.equals(previousRoots)) {
+    validateRoots(roots);
+    if (hasCachedAnalysis(roots, queryPolicy)) {
       return previousAnalysis;
     }
 
     final ReferenceGraph currentGraph = graph();
-    final boolean canExtend = previousAnalysis != null && roots.containsAll(previousRoots);
+    final boolean canExtend =
+        previousAnalysis != null
+            && queryPolicy.equals(previousPolicy)
+            && roots.containsAll(previousRoots);
     final Set<String> visitedProgramClasses =
         canExtend ? new LinkedHashSet<>(previouslyVisitedProgramClasses) : new LinkedHashSet<>();
     final Set<String> visitedLibraryClasses =
@@ -113,7 +122,8 @@ final class PreparedAnalysisState {
             visitedProgramClasses,
             visitedLibraryClasses,
             tolerateUnresolvedProgramReferences,
-            toleratedUnresolvedLibraryClasses);
+            toleratedUnresolvedLibraryClasses,
+            queryPolicy);
 
     final Set<String> retainedClasses = new TreeSet<>(visitedProgramClasses);
     final Set<String> reachableLibraryClasses = new TreeSet<>(visitedLibraryClasses);
@@ -121,11 +131,33 @@ final class PreparedAnalysisState {
         new DependencyJarTrimmer.TrimAnalysis(
             currentGraph.totalClasses(), retainedClasses, roots, reachableLibraryClasses);
     previousRoots = Set.copyOf(roots);
+    previousPolicy = queryPolicy;
     previouslyVisitedProgramClasses = Set.copyOf(visitedProgramClasses);
     previouslyVisitedLibraryClasses = Set.copyOf(visitedLibraryClasses);
     previousAnalysis = analysis;
     expandedNodes += additions;
     return analysis;
+  }
+
+  private DependencyJarTrimmer.TrimAnalysis emptyAnalysis(final Set<String> roots) {
+    return new DependencyJarTrimmer.TrimAnalysis(
+        candidateClassNames.size(), Set.of(), roots, Set.of());
+  }
+
+  private void validateRoots(final Set<String> roots) {
+    final Set<String> missingRoots = new TreeSet<>(roots);
+    missingRoots.removeAll(candidateClassNames);
+    if (!missingRoots.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Retained roots are not in candidate JAR: " + missingRoots);
+    }
+  }
+
+  private boolean hasCachedAnalysis(
+      final Set<String> roots, final ClosureQueryPolicy queryPolicy) {
+    return previousAnalysis != null
+        && roots.equals(previousRoots)
+        && queryPolicy.equals(previousPolicy);
   }
 
   int expandedNodeCount() {
@@ -182,7 +214,8 @@ final class PreparedAnalysisState {
         final Set<String> visitedProgramClasses,
         final Set<String> visitedLibraryClasses,
         final boolean tolerateUnresolvedProgramReferences,
-        final Set<String> toleratedUnresolvedLibraryClasses)
+        final Set<String> toleratedUnresolvedLibraryClasses,
+        final ClosureQueryPolicy queryPolicy)
         throws IOException {
       int expanded = 0;
       while (!pending.isEmpty()) {
@@ -192,14 +225,16 @@ final class PreparedAnalysisState {
             candidateJar,
             graph,
             visitedProgramClasses,
-            tolerateUnresolvedProgramReferences)) {
+            tolerateUnresolvedProgramReferences,
+            queryPolicy)) {
           expanded++;
         } else if (visitLibrary(
             current,
             candidateJar,
             graph,
             visitedLibraryClasses,
-            toleratedUnresolvedLibraryClasses)) {
+            toleratedUnresolvedLibraryClasses,
+            queryPolicy)) {
           expanded++;
         } else {
           continue;
@@ -208,9 +243,30 @@ final class PreparedAnalysisState {
         if (edgeFailure != null) {
           throw edgeFailure;
         }
-        graph.edges().getOrDefault(current, Set.of()).forEach(pending::addLast);
+        enqueueTargets(current, graph, pending, queryPolicy);
       }
       return expanded;
+    }
+
+    private static void enqueueTargets(
+        final String source,
+        final ReferenceGraph graph,
+        final Deque<String> pending,
+        final ClosureQueryPolicy queryPolicy) {
+      if (queryPolicy.mode() == ClosureQueryPolicy.Mode.CONSERVATIVE) {
+        graph.edges().getOrDefault(source, Set.of()).forEach(pending::addLast);
+        return;
+      }
+      graph
+          .typedEdges()
+          .getOrDefault(source, Map.of())
+          .forEach(
+              (target, kinds) -> {
+                if (kinds.contains(ReferenceGraph.EdgeKind.STRUCTURAL)
+                    || queryPolicy.allowedClasses().contains(target)) {
+                  pending.addLast(target);
+                }
+              });
     }
 
     private static boolean visitProgram(
@@ -218,14 +274,25 @@ final class PreparedAnalysisState {
         final Path candidateJar,
         final ReferenceGraph graph,
         final Set<String> visited,
-        final boolean tolerateUnresolved)
+        final boolean tolerateUnresolved,
+        final ClosureQueryPolicy queryPolicy)
         throws IOException {
       if (!graph.programClassNames().contains(name) || !visited.add(name)) {
         return false;
       }
-      if (!tolerateUnresolved && graph.unresolvedProgramReferences().containsKey(name)) {
+      if (!tolerateUnresolved
+          && hasFatalUnresolved(
+              graph.unresolvedProgramReferences().getOrDefault(name, Set.of()),
+              graph,
+              name,
+              queryPolicy)) {
         throw new DependencyJarTrimmer.UnresolvedReferenceException(
-            candidateJar, graph.unresolvedProgramReferences().get(name));
+            candidateJar,
+            unresolvedDescriptions(
+                graph.unresolvedProgramReferences().getOrDefault(name, Set.of()),
+                graph,
+                name,
+                queryPolicy));
       }
       return true;
     }
@@ -235,17 +302,65 @@ final class PreparedAnalysisState {
         final Path candidateJar,
         final ReferenceGraph graph,
         final Set<String> visited,
-        final Set<String> toleratedUnresolved)
+        final Set<String> toleratedUnresolved,
+        final ClosureQueryPolicy queryPolicy)
         throws IOException {
       if (!graph.libraryClassNames().contains(name) || !visited.add(name)) {
         return false;
       }
-      if (graph.unresolvedLibraryReferences().containsKey(name)
-          && !toleratedUnresolved.contains(name)) {
+      if (!toleratedUnresolved.contains(name)
+          && hasFatalUnresolved(
+              graph.unresolvedLibraryReferences().getOrDefault(name, Set.of()),
+              graph,
+              name,
+              queryPolicy)) {
         throw new DependencyJarTrimmer.UnresolvedReferenceException(
-            candidateJar, graph.unresolvedLibraryReferences().get(name));
+            candidateJar,
+            unresolvedDescriptions(
+                graph.unresolvedLibraryReferences().getOrDefault(name, Set.of()),
+                graph,
+                name,
+                queryPolicy));
       }
       return true;
+    }
+
+    private static boolean hasFatalUnresolved(
+        final Set<ReferenceGraph.UnresolvedLink> links,
+        final ReferenceGraph graph,
+        final String source,
+        final ClosureQueryPolicy queryPolicy) {
+      return links.stream()
+          .anyMatch(link -> !isExcludedBodyTarget(link, graph, source, queryPolicy));
+    }
+
+    private static Set<String> unresolvedDescriptions(
+        final Set<ReferenceGraph.UnresolvedLink> links,
+        final ReferenceGraph graph,
+        final String source,
+        final ClosureQueryPolicy queryPolicy) {
+      final Set<String> descriptions = new TreeSet<>();
+      links.stream()
+          .filter(link -> !isExcludedBodyTarget(link, graph, source, queryPolicy))
+          .map(ReferenceGraph.UnresolvedLink::description)
+          .forEach(descriptions::add);
+      return descriptions;
+    }
+
+    private static boolean isExcludedBodyTarget(
+        final ReferenceGraph.UnresolvedLink link,
+        final ReferenceGraph graph,
+        final String source,
+        final ClosureQueryPolicy queryPolicy) {
+      if (queryPolicy.mode() != ClosureQueryPolicy.Mode.CLOSED_WORLD
+          || queryPolicy.allowedClasses().contains(link.targetClass())) {
+        return false;
+      }
+      final Set<ReferenceGraph.EdgeKind> kinds =
+          graph.typedEdges().getOrDefault(source, Map.of()).get(link.targetClass());
+      return kinds != null
+          && kinds.contains(ReferenceGraph.EdgeKind.BODY)
+          && !kinds.contains(ReferenceGraph.EdgeKind.STRUCTURAL);
     }
   }
 }

@@ -8,7 +8,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import proguard.classfile.ClassPool;
@@ -124,7 +126,8 @@ final class ReferenceGraphBuilder {
     return pool;
   }
 
-  private LibraryPools libraryPools(final ClassPool programPool) throws IOException {
+  private LibraryPools libraryPools(
+      final ClassPool programPool, final Map<String, byte[]> classBytes) throws IOException {
     final ClassPool libraryPool = new ClassPool();
     final Set<String> platformNames = new HashSet<>();
     for (final Path libraryPath : libraryClassPath) {
@@ -132,14 +135,17 @@ final class ReferenceGraphBuilder {
         throw new IllegalArgumentException(
             "Library classpath entry does not exist: " + libraryPath);
       }
-      addSiblingClasses(libraryPath, programPool, libraryPool);
+      addSiblingClasses(libraryPath, programPool, libraryPool, classBytes);
     }
     addPlatformClasses(programPool, libraryPool, platformNames);
     return new LibraryPools(libraryPool, platformNames);
   }
 
   private void addSiblingClasses(
-      final Path libraryPath, final ClassPool programPool, final ClassPool libraryPool)
+      final Path libraryPath,
+      final ClassPool programPool,
+      final ClassPool libraryPool,
+      final Map<String, byte[]> classBytes)
       throws IOException {
     final ArchiveSnapshot archive = archiveProvider.read(libraryPath, false);
     final ClassPool siblingPool = checkedPool(archive, true, libraryPath);
@@ -147,6 +153,7 @@ final class ReferenceGraphBuilder {
       if (programPool.getClass(clazz.getName()) == null
           && libraryPool.getClass(clazz.getName()) == null) {
         libraryPool.addClass(clazz);
+        classBytes.putIfAbsent(clazz.getName(), archive.classBytes().get(clazz.getName()));
       }
     }
   }
@@ -170,12 +177,16 @@ final class ReferenceGraphBuilder {
 
   private record LibraryPools(ClassPool pool, Set<String> platformNames) {}
 
+  // WHY: The local archive map is built by one thread before graph publication.
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
   private ReferenceGraph build(final ArchiveSnapshot candidateArchive) throws IOException {
     final ClassPool programPool =
         FrozenClassPool.copyOf(checkedPool(candidateArchive, false, candidateJar));
-    final LibraryPools libraries = libraryPools(programPool);
+    final Map<String, byte[]> classBytes = new LinkedHashMap<>(candidateArchive.classBytes());
+    final LibraryPools libraries = libraryPools(programPool, classBytes);
     final ClassPool frozenLibraryPool = FrozenClassPool.copyOf(libraries.pool());
-    return new ReferenceGraphIndexer(programPool, frozenLibraryPool, libraries.platformNames())
+    return new ReferenceGraphIndexer(
+            programPool, frozenLibraryPool, libraries.platformNames(), classBytes)
         .build();
   }
 }

@@ -185,7 +185,7 @@ class DependencyJarTrimmerTest {
             candidateJar, siblings, jdkClassTable, Set.of());
     assertThat(prepared.referenceGraphBuilt()).isFalse();
     final DependencyJarTrimmer.TrimAnalysis rootlessBeforeGraph = prepared.analyze(List.of());
-    assertThat(rootlessBeforeGraph.retainedClasses()).containsAll(rootlessBeforeGraph.roots());
+    assertThat(rootlessBeforeGraph.retainedClasses()).isEmpty();
     assertThat(prepared.referenceGraphBuilt()).isFalse();
     assertThat(prepared.expandedNodeCount()).isZero();
 
@@ -221,11 +221,43 @@ class DependencyJarTrimmerTest {
     final int expansionsAfterShrink = prepared.expandedNodeCount();
     final DependencyJarTrimmer.TrimAnalysis rootless = prepared.analyze(List.of());
     assertThat(rootless.roots()).isEmpty();
-    assertThat(rootless.retainedClasses()).containsAll(shrunk.retainedClasses());
+    assertThat(rootless.retainedClasses()).isEmpty();
     assertThat(rootless.reachableLibraryClasses()).isEmpty();
     assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterShrink);
     assertThat(prepared.analyze(List.of("fixture.C"))).isEqualTo(shrunk);
     assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterShrink);
+  }
+
+  @Test
+  @DisplayName("ADR-0003: empty roots remove classes but preserve resource obligations")
+  void emptyRootsRetainNoClassesAndKeepResources() throws Exception {
+    final Path candidateJar =
+        writeClassJar("empty-roots.jar", Map.of("fixture/Only", simpleClass("fixture/Only", null)));
+    final Path archiveWithResource = temporaryDirectory.resolve("empty-roots-resource.jar");
+    try (java.util.jar.JarFile input = new java.util.jar.JarFile(candidateJar.toFile());
+        JarOutputStream output = new JarOutputStream(Files.newOutputStream(archiveWithResource))) {
+      final JarEntry classEntry = input.entries().nextElement();
+      output.putNextEntry(new JarEntry(classEntry.getName()));
+      try (java.io.InputStream classBytes = input.getInputStream(classEntry)) {
+        classBytes.transferTo(output);
+      }
+      output.closeEntry();
+      output.putNextEntry(new JarEntry("config/settings.properties"));
+      output.write("enabled=true\n".getBytes(StandardCharsets.UTF_8));
+      output.closeEntry();
+    }
+
+    final DependencyJarTrimmer.TrimAnalysis analysis = analyze(archiveWithResource, List.of());
+    final Path outputJar = temporaryDirectory.resolve("empty-roots-output.jar");
+    SingleReleaseArchiveWriter.write(archiveWithResource, outputJar, analysis);
+
+    assertAll(
+        "empty class closure keeps non-class archive obligations",
+        () -> assertThat(analysis.retainedClasses()).isEmpty(),
+        () -> assertThat(SingleReleaseArchiveWriter.countEntries(outputJar)).isEqualTo(1),
+        () ->
+            assertThat(readJarEntry(outputJar, "config/settings.properties"))
+                .isEqualTo("enabled=true\n"));
   }
 
   @Test
@@ -712,5 +744,13 @@ class DependencyJarTrimmerTest {
   private static DependencyJarTrimmer.TrimAnalysis analyze(
       final Path candidateJar, final List<String> roots) throws IOException {
     return analyze(candidateJar, List.of(), roots);
+  }
+
+  private static String readJarEntry(final Path archive, final String entryName)
+      throws IOException {
+    try (java.util.jar.JarFile jar = new java.util.jar.JarFile(archive.toFile());
+        java.io.InputStream contents = jar.getInputStream(jar.getJarEntry(entryName))) {
+      return new String(contents.readAllBytes(), StandardCharsets.UTF_8);
+    }
   }
 }
