@@ -38,7 +38,7 @@ class JaCoCoTraceReaderTest {
   JaCoCoTraceReaderTest() {}
 
   @Test
-  void readsRecordsRegardlessOfProbeHitsAndDeduplicatesAcrossSessions() throws IOException {
+  void readsOnlyHitRecordsAcrossMultipleBlocksAndDeduplicatesClasses() throws IOException {
     final Path exec = tempDir.resolve("coverage.exec");
     writeExec(
         exec,
@@ -48,6 +48,8 @@ class JaCoCoTraceReaderTest {
               new ExecutionData(11, "org/example/Hit", new boolean[] {true}));
           writer.visitClassExecution(
               new ExecutionData(13, "org/example/Duplicate", new boolean[] {true, false}));
+          writer.visitClassExecution(
+              new ExecutionData(14, "org/example/NoHit", new boolean[] {false, false}));
           writer.visitSessionInfo(new SessionInfo("two", 3, 4));
           writer.visitClassExecution(
               new ExecutionData(13, "org/example/Duplicate", new boolean[] {false, true}));
@@ -57,11 +59,12 @@ class JaCoCoTraceReaderTest {
     final TraceData result = new JaCoCoTraceReader().read(exec);
 
     assertThat(result.loadedClassesDotFormat())
-        .containsExactlyInAnyOrder("org.example.Hit", "org.example.Duplicate");
+        .containsExactlyInAnyOrder("org.example.Hit", "org.example.Duplicate")
+        .doesNotContain("org.example.NoHit");
   }
 
   @Test
-  void includesClassRecordWithNoHitProbe() throws IOException {
+  void excludesClassRecordWithoutAnyHitProbe() throws IOException {
     final Path exec = tempDir.resolve("unhit.exec");
     writeExec(
         exec,
@@ -74,7 +77,7 @@ class JaCoCoTraceReaderTest {
 
     assertThat(classRecordCount(exec)).isEqualTo(1);
     assertThat(new JaCoCoTraceReader().read(exec).loadedClassesDotFormat())
-        .containsExactly("org.example.Unhit");
+        .doesNotContain("org.example.Unhit");
   }
 
   @Test
@@ -197,6 +200,11 @@ class JaCoCoTraceReaderTest {
     assertThat(reader.supports(exec)).isTrue();
     assertThat(reader.readAll(List.of(exec, log)).loadedClassesDotFormat())
         .containsExactlyInAnyOrder("org.example.Covered", "org.example.Loaded");
+    assertThat(reader.readAllEvidence(List.of(exec)).inputKinds())
+        .containsExactly(TraceEvidenceKind.JACOCO_EXECUTION);
+    final Path truncated = tempDir.resolve("mixed-truncated.exec");
+    Files.write(truncated, new byte[] {(byte) 0x01, (byte) 0xc0});
+    assertThatIOException().isThrownBy(() -> reader.readAll(List.of(log, truncated)));
   }
 
   private static void writeExec(final Path path, final Consumer<ExecutionDataWriter> action)

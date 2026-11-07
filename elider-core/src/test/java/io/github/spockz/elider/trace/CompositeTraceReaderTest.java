@@ -20,6 +20,9 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CommentDefaultAccessModifier"
 })
 class CompositeTraceReaderTest {
+  /** Fixture suffix recognized as a unified class-load log. */
+  private static final String CLASS_LOAD_LOG = "classes.log";
+
   /** Supplies isolated paths for each test. */
   @TempDir Path tempDir;
 
@@ -28,7 +31,7 @@ class CompositeTraceReaderTest {
 
   @Test
   void mergesExplicitTraceFiles() throws IOException {
-    final Path log = tempDir.resolve("classes.log");
+    final Path log = tempDir.resolve(CLASS_LOAD_LOG);
     final Path classList = tempDir.resolve("classes.lst");
     Files.writeString(log, "[info][class,load] org.example.FromLog source: file:/app.jar\n");
     Files.writeString(classList, "org/example/FromCds\n");
@@ -40,21 +43,42 @@ class CompositeTraceReaderTest {
   }
 
   @Test
-  void rejectsEmptyAggregateButAllowsEmptySourceWhenAnotherContributes() throws IOException {
+  void preservesEachEvidenceKindAlongsideNormalizedObservations() throws IOException {
+    final Path log = tempDir.resolve(CLASS_LOAD_LOG);
+    final Path classList = tempDir.resolve("classes.lst");
+    final Path graal = tempDir.resolve("reflect-config.json");
+    Files.writeString(log, "[info][class,load] org.example.FromLog source: file:/app.jar\n");
+    Files.writeString(classList, "org/example/FromCds\n");
+    Files.writeString(graal, "[{\"name\":\"org.example.FromGraalConfig\"}]");
+
+    final CompositeTraceEvidence evidence =
+        new CompositeTraceReader().readAllEvidence(List.of(log, classList, graal));
+
+    assertThat(evidence.observations().loadedClassesDotFormat())
+        .containsExactlyInAnyOrder(
+            "org.example.FromLog", "org.example.FromCds", "org.example.FromGraalConfig");
+    assertThat(evidence.inputKinds())
+        .containsExactlyInAnyOrder(
+            TraceEvidenceKind.CLASS_LOAD_LOG,
+            TraceEvidenceKind.CDS_CLASS_LIST,
+            TraceEvidenceKind.GRAAL_CONFIGURATION);
+  }
+
+  @Test
+  void rejectsEachEmptyEvidenceInputEvenWhenAnotherInputContributes() throws IOException {
     final Path emptyConfig = tempDir.resolve("empty.json");
-    final Path log = tempDir.resolve("classes.log");
+    final Path log = tempDir.resolve(CLASS_LOAD_LOG);
     Files.writeString(emptyConfig, "[]");
     Files.writeString(log, "[info][class,load] org.example.Observed source: file:/app.jar\n");
     final CompositeTraceReader reader = new CompositeTraceReader();
 
     assertThatIOException().isThrownBy(() -> reader.readAll(List.of(emptyConfig)));
-    assertThat(reader.readAll(List.of(emptyConfig, log)).loadedClassesDotFormat())
-        .containsExactly("org.example.Observed");
+    assertThatIOException().isThrownBy(() -> reader.readAll(List.of(emptyConfig, log)));
   }
 
   @Test
   void rejectsPartialResultsWhenLaterInputsFail() throws IOException {
-    final Path log = tempDir.resolve("classes.log");
+    final Path log = tempDir.resolve(CLASS_LOAD_LOG);
     final Path missing = tempDir.resolve("missing.lst");
     final Path unsupported = tempDir.resolve("trace.bin");
     final Path malformed = tempDir.resolve("malformed.lst");

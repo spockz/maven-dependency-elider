@@ -161,6 +161,16 @@ With this configuration:
 * Diagnostic commands (`./mvnw dependency:tree`) reflect the post-elision dependency graph.
 * When telemetry files are absent, elision passes through safely without modifying dependencies.
 
+Closed-world class liveness is opt-in with `-Delide.closedWorld=true` or `<closedWorld>true</closedWorld>`.
+Each configured evidence file must contain a class observation that matches project output or a
+resolved dependency; a valid file does not make an empty, malformed, or irrelevant sibling file
+acceptable. The allowed class set combines observed classes with explicit trim roots and active
+dynamic roots. Structural class references remain required regardless of this set. JaCoCo
+execution data contributes classes with hit probes and is recorded as probe evidence; it does not
+claim complete class loading. Graal reachability configuration is not runtime class evidence.
+Reports preserve the mode, normalized allowed classes, evidence kinds, and operation fingerprint
+under the policy identity.
+
 ### Persisted Output Files
 
 The `elide` goal writes two structured JSON records:

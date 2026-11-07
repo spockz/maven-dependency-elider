@@ -8,6 +8,7 @@ import io.github.spockz.elider.plugin.TierArchiveProjector.TierContext;
 import io.github.spockz.elider.plugin.TierCandidatePlanner.TierCandidate;
 import io.github.spockz.elider.plugin.TierInventoryReader.MultiReleaseCandidateInfo;
 import io.github.spockz.elider.plugin.TierRootPlanner.RootPlan;
+import io.github.spockz.elider.trimmer.ClosureQueryPolicy;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import java.io.IOException;
 import java.util.LinkedHashMap;
@@ -21,8 +22,12 @@ final class TierClosureAnalyzer {
   /** Bounds and policy belong to this analysis operation. */
   private final MultiReleaseTrimContext operation;
 
+  /** Immutable class-edge policy reused across the tier fixed-point passes. */
+  private final ClosureQueryPolicy closureQueryPolicy;
+
   /* package */ TierClosureAnalyzer(final MultiReleaseTrimContext operation) {
     this.operation = operation;
+    this.closureQueryPolicy = operation.request().evidence().runtimePolicy().closureQueryPolicy();
   }
 
   /* package */ ClosureResult analyzeToFixedPoint(
@@ -86,7 +91,8 @@ final class TierClosureAnalyzer {
                 entry
                     .getValue()
                     .analyze(
-                        rootsForProgram(context, entry.getKey(), candidates.get(entry.getKey()))));
+                        rootsForProgram(context, entry.getKey(), candidates.get(entry.getKey())),
+                        closureQueryPolicy));
     for (int index = 0; index < entries.size(); index++) {
       final Map.Entry<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
           entry = entries.get(index);
@@ -153,7 +159,7 @@ final class TierClosureAnalyzer {
               final TierCandidate candidate = candidates.get(entry.getKey());
               final Set<String> localRoots =
                   candidate.localRoots(context.classesOf(entry.getKey()));
-              return candidateAnalysis(candidate, localRoots, entry.getValue());
+              return candidateAnalysis(candidate, localRoots, entry.getValue(), closureQueryPolicy);
             });
     for (int index = 0; index < entries.size(); index++) {
       final Map.Entry<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
@@ -173,13 +179,14 @@ final class TierClosureAnalyzer {
   private static DependencyJarTrimmer.TrimAnalysis candidateAnalysis(
       final TierCandidate candidate,
       final Set<String> localRoots,
-      final DependencyJarTrimmer.PreparedAnalysis prepared)
+      final DependencyJarTrimmer.PreparedAnalysis prepared,
+      final ClosureQueryPolicy queryPolicy)
       throws IOException {
     if (candidate.isMultiRelease() && localRoots.isEmpty() && !candidate.roots().isEmpty()) {
       return new DependencyJarTrimmer.TrimAnalysis(
           candidate.classes().size(), Set.of(), Set.of(), Set.of());
     }
-    return prepared.analyze(localRoots);
+    return prepared.analyze(localRoots, queryPolicy);
   }
 
   private boolean collectReachableClasses(

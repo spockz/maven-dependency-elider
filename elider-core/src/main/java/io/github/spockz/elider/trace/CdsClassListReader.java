@@ -16,6 +16,11 @@ import java.util.Set;
 /** Reads HotSpot {@code -XX:DumpLoadedClassList} files. */
 @SuppressWarnings("PMD.CyclomaticComplexity")
 public final class CdsClassListReader implements RuntimeTraceReader {
+  @Override
+  public TraceEvidenceKind evidenceKind() {
+    return TraceEvidenceKind.CDS_CLASS_LIST;
+  }
+
   /** Creates a reader for HotSpot CDS class-list files. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
   public CdsClassListReader() {}

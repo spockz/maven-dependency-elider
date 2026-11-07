@@ -13,6 +13,7 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -334,6 +335,99 @@ final class MavenElisionReportSchemaTest {
             assertThatThrownBy(() -> MavenElisionReportWriter.read(invalidCoordinate))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("Elision report policy coordinates are invalid"));
+  }
+
+  @Test
+  void roundTripsExplicitRuntimeEvidencePolicyDimensions() throws IOException {
+    final ObjectNode payload = emptyDroppedReportShape();
+    final ObjectNode policy = payload.with("policy");
+    policy.put("closedWorld", true);
+    policy.putArray("allowedClasses").add("fixture.Entry").add("fixture.Other");
+    policy.putArray("evidenceKinds").add("JACOCO_EXECUTION");
+    final Path report = writeReport("runtime-evidence-policy.json", payload);
+
+    final MavenElisionReportSnapshot snapshot = MavenElisionReportWriter.read(report);
+    final JsonNode replayed = JSON.valueToTree(snapshot).path("policy");
+    final Path conservativeReport =
+        writeReport("conservative-empty-runtime-policy.json", emptyDroppedReportShape());
+    final JsonNode conservative =
+        JSON.valueToTree(MavenElisionReportWriter.read(conservativeReport)).path("policy");
+    final boolean replayedClosedWorld = replayed.path("closedWorld").asBoolean();
+    final boolean conservativeClosedWorld = conservative.path("closedWorld").asBoolean();
+
+    assertAll(
+        "report replay retains runtime evidence semantics",
+        () ->
+            Assertions.assertTrue(
+                replayedClosedWorld, "closed-world status survives report replay"),
+        () ->
+            assertThat(replayed.path("allowedClasses"))
+                .isEqualTo(JSON.valueToTree(List.of("fixture.Entry", "fixture.Other"))),
+        () ->
+            assertThat(replayed.path("evidenceKinds"))
+                .isEqualTo(JSON.valueToTree(List.of("JACOCO_EXECUTION"))),
+        () ->
+            Assertions.assertFalse(
+                conservativeClosedWorld, "conservative reports remain unbounded"),
+        () -> assertThat(conservative.path("allowedClasses")).isEmpty());
+  }
+
+  @Test
+  void rejectsEvidenceKindsThatCannotBeAdmittedByThePersistedPolicy() throws IOException {
+    final ObjectNode closedWorldGraal = emptyDroppedReportShape();
+    final ObjectNode closedWorldGraalPolicy = closedWorldGraal.with("policy");
+    closedWorldGraalPolicy.put("closedWorld", true);
+    closedWorldGraalPolicy.putArray("allowedClasses").add("fixture.Entry");
+    closedWorldGraalPolicy.putArray("evidenceKinds").add("GRAAL_CONFIGURATION");
+    final Path closedWorldGraalReport =
+        writeReport("closed-world-graal-kind.json", closedWorldGraal);
+
+    final ObjectNode unclassifiedEvidence = emptyDroppedReportShape();
+    final ObjectNode unclassifiedPolicy = unclassifiedEvidence.with("policy");
+    unclassifiedPolicy.putArray("evidenceKinds").add("UNCLASSIFIED");
+    final Path unclassifiedReport =
+        writeReport("unclassified-evidence-kind.json", unclassifiedEvidence);
+
+    final ObjectNode emptyClosedWorldEvidence = emptyDroppedReportShape();
+    final ObjectNode emptyEvidencePolicy = emptyClosedWorldEvidence.with("policy");
+    emptyEvidencePolicy.put("closedWorld", true);
+    emptyEvidencePolicy.putArray("allowedClasses").add("fixture.Entry");
+    final Path emptyEvidenceReport =
+        writeReport("closed-world-empty-evidence-kinds.json", emptyClosedWorldEvidence);
+
+    final ObjectNode emptyClosedWorldAllowed = emptyDroppedReportShape();
+    final ObjectNode emptyAllowedPolicy = emptyClosedWorldAllowed.with("policy");
+    emptyAllowedPolicy.put("closedWorld", true);
+    emptyAllowedPolicy.putArray("evidenceKinds").add("JACOCO_EXECUTION");
+    final Path emptyAllowedReport =
+        writeReport("closed-world-empty-allowed-classes.json", emptyClosedWorldAllowed);
+
+    assertAll(
+        "persisted evidence kinds must be valid for the recorded mode",
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(closedWorldGraalReport))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Elision report policy values are malformed"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(unclassifiedReport))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Elision report policy values are malformed"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(emptyEvidenceReport))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Elision report policy values are malformed"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportWriter.read(emptyAllowedReport))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Elision report policy values are malformed"));
+  }
+
+  private ObjectNode emptyDroppedReportShape() {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("wholeArtifactsDropped", 0);
+    payload.put("originalJarBytesDropped", 0);
+    payload.set(DROPPED_ROWS, JSON.createArrayNode());
+    return payload;
   }
 
   @Test
@@ -790,6 +884,9 @@ final class MavenElisionReportSchemaTest {
     final ObjectNode policy = payload.putObject("policy");
     policy.putArray("retainedArtifacts");
     policy.putArray("banishedDependencies");
+    policy.put("closedWorld", false);
+    policy.putArray("allowedClasses");
+    policy.putArray("evidenceKinds");
     policy.put("operationFingerprint", MavenElisionGraphBinding.sha256(List.of()));
     payload.putArray("genericFindings");
     payload.putArray("sourceObservations");

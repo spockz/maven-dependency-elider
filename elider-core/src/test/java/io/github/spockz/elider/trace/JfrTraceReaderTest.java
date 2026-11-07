@@ -4,6 +4,8 @@ package io.github.spockz.elider.trace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIOException;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.TraceData;
 import java.io.IOException;
@@ -35,6 +37,9 @@ class JfrTraceReaderTest {
 
   /** Names the JFR event used by the reader. */
   private static final String CLASS_LOAD_EVENT_NAME = "jdk.ClassLoad";
+
+  /** Names the event that indicates incomplete recording data. */
+  private static final String DATA_LOSS_EVENT_NAME = "jdk.DataLoss";
 
   /** Supplies a local destination for the generated recording. */
   @TempDir Path tempDir;
@@ -87,6 +92,23 @@ class JfrTraceReaderTest {
     assertThat(reader.supports(unsupported)).isFalse();
     assertThatIOException().isThrownBy(() -> reader.read(unsupported));
     assertThatIOException().isThrownBy(() -> reader.read(tempDir.resolve("missing.jfr")));
+  }
+
+  @Test
+  void rejectsPositiveDataLossAfterRecordingRelevantClassLoads() {
+    final Set<String> classes = new HashSet<>();
+    final Throwable failure =
+        catchThrowable(
+            () -> {
+              JfrTraceReader.acceptEvent(CLASS_LOAD_EVENT_NAME, "fixture.Entry", 0L, classes);
+              JfrTraceReader.acceptEvent(DATA_LOSS_EVENT_NAME, null, 1L, classes);
+            });
+
+    assertAll(
+        "a recording with data loss is not complete class-load evidence",
+        () -> assertThat(classes).containsExactly("fixture.Entry"),
+        () -> assertThat(failure).isInstanceOf(IOException.class),
+        () -> assertThat(failure).hasMessageContaining("JFR recording reports lost data"));
   }
 
   private void compileClass(final Path output, final String packageName, final String className)

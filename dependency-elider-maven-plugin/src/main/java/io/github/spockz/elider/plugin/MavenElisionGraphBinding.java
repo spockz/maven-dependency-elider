@@ -326,6 +326,13 @@ final class MavenElisionGraphBinding {
     fields.add(Boolean.toString(options.completeness().sourceRootsComplete()));
     fields.add(Boolean.toString(options.completeness().productionClassesComplete()));
     fields.add(Boolean.toString(options.trim().enabled()));
+    fields.add("closed-world=" + policyOptions.runtimePolicy().closedWorld());
+    policyOptions.runtimePolicy().allowedClasses().stream()
+        .map(className -> "runtime-allowed=" + className)
+        .forEach(fields::add);
+    policyOptions.runtimePolicy().evidenceKinds().stream()
+        .map(kind -> "runtime-evidence-kind=" + kind.name())
+        .forEach(fields::add);
     fields.add(options.trim().mrjarStrategy());
     fields.add(Boolean.toString(options.trim().failOnUnsupportedModuleInfo()));
     fields.addAll(

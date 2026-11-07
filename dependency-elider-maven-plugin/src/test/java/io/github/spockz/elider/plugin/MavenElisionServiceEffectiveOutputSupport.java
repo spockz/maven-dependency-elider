@@ -57,13 +57,14 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       throws IOException, MojoFailureException {
     return buildOperation(
         fixture,
-        traceFile,
+        List.of(traceFile),
         productionOutput,
         List.of(),
         trimJars,
         passThroughArtifacts,
         mrjarStrategy,
-        MavenPluginDescriptorFixtures.releasedProducerResolution());
+        MavenPluginDescriptorFixtures.releasedProducerResolution(),
+        false);
   }
 
   /** Prepares an operation using an explicitly selected plugin producer identity. */
@@ -74,13 +75,14 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       throws IOException, MojoFailureException {
     return buildOperation(
         fixture,
-        traceFile,
+        List.of(traceFile),
         null,
         List.of(),
         true,
         List.of(),
         "vertical-shading",
-        producerResolution);
+        producerResolution,
+        false);
   }
 
   /** Retains coordinates through raw exclusion configuration. */
@@ -93,25 +95,27 @@ abstract class MavenElisionServiceEffectiveOutputSupport
       throws IOException, MojoFailureException {
     return buildOperation(
         fixture,
-        traceFile,
+        List.of(traceFile),
         productionOutput,
         retainedArtifacts,
         trimJars,
         List.of(),
         "vertical-shading",
-        MavenPluginDescriptorFixtures.releasedProducerResolution());
+        MavenPluginDescriptorFixtures.releasedProducerResolution(),
+        false);
   }
 
   /** Prepares the operation from raw exclusions and output pass-through coordinates. */
-  private ServiceOperation buildOperation(
+  protected ServiceOperation buildOperation(
       final Fixture fixture,
-      final Path traceFile,
+      final List<Path> traceFiles,
       final File productionOutput,
       final List<String> retainedArtifacts,
       final boolean trimJars,
       final List<String> passThroughArtifacts,
       final String mrjarStrategy,
-      final PluginCacheProducerIdentityResolver.Resolution producerResolution)
+      final PluginCacheProducerIdentityResolver.Resolution producerResolution,
+      final boolean closedWorld)
       throws IOException, MojoFailureException {
     final File completeOutput =
         completeProductionClasses(
@@ -122,8 +126,9 @@ abstract class MavenElisionServiceEffectiveOutputSupport
     final MavenElisionService service = new MavenElisionService();
     final ElisionAnalysisModel.AnalysisOptions options =
         new ElisionAnalysisModel.AnalysisOptions(
-            List.of(traceFile.toFile()),
+            traceFiles.stream().map(Path::toFile).toList(),
             retainedArtifacts,
+            List.of(),
             completeOutput,
             null,
             new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
@@ -136,7 +141,9 @@ abstract class MavenElisionServiceEffectiveOutputSupport
                 1,
                 mrjarStrategy,
                 producerResolution),
-            new ElisionAnalysisModel.DynamicRootOptions(true));
+            new ElisionAnalysisModel.DynamicRootOptions(true),
+            null,
+            closedWorld);
     final ElisionAnalysisModel.PreparedAnalysis prepared =
         service.prepare(fixture.mavenProject(), options);
     final ResolverArtifactGraphCapturePair pair =

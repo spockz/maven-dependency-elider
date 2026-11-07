@@ -9,6 +9,11 @@ import java.nio.file.Path;
 
 /** Reads one supported runtime telemetry file into normalized class observations. */
 public interface RuntimeTraceReader {
+  /** Identifies the evidence semantics of files read by this reader. */
+  default TraceEvidenceKind evidenceKind() {
+    return TraceEvidenceKind.UNCLASSIFIED;
+  }
+
   /** Returns whether this reader recognizes the file path's format. */
   boolean supports(Path path);
 

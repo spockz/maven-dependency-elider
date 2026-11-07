@@ -68,8 +68,17 @@ final class MavenAnalysisPreparation {
     final MavenAnalysisEvidence.RootEvidence evidence =
         MavenAnalysisEvidence.scan(analysisProject, options, inventory.candidates(), scanner);
     final MavenBanPlan verifiedBanPlan = banPlan.withVerifiedEvidence(evidence);
+    final Set<String> workloadClasses = new HashSet<>(evidence.productionOutputClasses());
+    evidence.index().classesByArtifact().values().forEach(workloadClasses::addAll);
+    final RuntimeEvidencePolicy runtimePolicy =
+        RuntimeEvidenceAdmission.admit(
+            evidence.traceEvidence(),
+            options.closedWorld(),
+            workloadClasses,
+            Set.copyOf(options.trim().explicitRoots()),
+            evidence.dynamicRoots().classNames());
     final MavenElisionPolicyIdentity.Options policyOptions =
-        MavenElisionPolicyIdentity.normalize(options);
+        MavenElisionPolicyIdentity.normalize(options, runtimePolicy);
     final Set<String> requiredClasses =
         DynamicRootOrchestrator.requiredClassesForTrimming(
             evidence.sourceRequiredClasses(),

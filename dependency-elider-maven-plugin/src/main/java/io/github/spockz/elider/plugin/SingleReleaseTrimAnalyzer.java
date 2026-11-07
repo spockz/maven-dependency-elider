@@ -37,7 +37,11 @@ final class SingleReleaseTrimAnalyzer {
         SingleReleaseRootPlanner.singleReleaseRootPlan(request, inventory, layout, platform);
     final SingleReleaseClosureAnalyzer.SingleReleaseClosure closure =
         SingleReleaseClosureAnalyzer.analyzeSingleReleaseClosure(
-            inventory, layout, roots, request.policy().trimWorkers());
+            inventory,
+            layout,
+            roots,
+            request.evidence().runtimePolicy().closureQueryPolicy(),
+            request.policy().trimWorkers());
     return TrimRootPlanner.inMemoryResult(
         closure.analyses(),
         roots.candidateRoots(),

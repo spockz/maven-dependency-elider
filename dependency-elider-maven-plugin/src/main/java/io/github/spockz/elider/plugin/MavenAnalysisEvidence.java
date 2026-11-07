@@ -13,6 +13,7 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootScanner;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.scanner.JarIndexScanner;
+import io.github.spockz.elider.trace.CompositeTraceEvidence;
 import io.github.spockz.elider.trace.CompositeTraceReader;
 import java.io.File;
 import java.io.IOException;
@@ -34,7 +35,9 @@ final class MavenAnalysisEvidence {
       final List<ArtifactFileRef> candidates,
       final DynamicRootScanner scanner)
       throws IOException {
-    final TraceData trace = new CompositeTraceReader().readAll(tracePaths(options.traceFiles()));
+    final CompositeTraceEvidence traceEvidence =
+        new CompositeTraceReader().readAllEvidence(tracePaths(options.traceFiles()));
+    final TraceData trace = traceEvidence.observations();
     final ArtifactClassIndex index = new JarIndexScanner().scan(candidates);
     final CompletenessOptions completeness = options.completeness();
     final List<Path> additionalBytecodeRoots =
@@ -64,6 +67,7 @@ final class MavenAnalysisEvidence {
             options.dynamicRoots().conservativeServiceLoaderRoots());
     return new RootEvidence(
         trace,
+        traceEvidence,
         index,
         production.scan(),
         dynamicRoots,
@@ -93,6 +97,7 @@ final class MavenAnalysisEvidence {
 
   /* default */ record RootEvidence(
       TraceData trace,
+      CompositeTraceEvidence traceEvidence,
       ArtifactClassIndex index,
       Optional<BytecodeReferenceScan> bytecodeScan,
       DynamicRootInputs dynamicRoots,

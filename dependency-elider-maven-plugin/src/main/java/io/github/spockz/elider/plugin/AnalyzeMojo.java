@@ -60,6 +60,10 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.productionClassesComplete", defaultValue = DEFAULT_FALSE)
   private boolean productionClassesComplete;
 
+  /** Admits explicit runtime evidence as a closed-world class boundary. */
+  @Parameter(property = "elide.closedWorld", defaultValue = DEFAULT_FALSE)
+  private boolean closedWorld;
+
   /** Restricts dependency analysis to leaf modules in multi-module reactors. */
   @Parameter(property = "elide.leafOnly", defaultValue = "true")
   private boolean leafOnly = true;
@@ -210,7 +214,9 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
                       mrjarStrategy,
                       new DuplicateClassPolicy(
                           retainDuplicateClassOwners, trimDuplicateClassOwners)),
-                  new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots)),
+                  new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots),
+                  null,
+                  closedWorld),
               projectDependenciesResolver);
       verifyBanPrediction(prediction);
       final ExclusionReview exclusionReview = ExclusionReview.capture(project, session);

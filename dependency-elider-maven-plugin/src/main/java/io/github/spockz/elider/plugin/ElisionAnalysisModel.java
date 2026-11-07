@@ -38,7 +38,31 @@ final class ElisionAnalysisModel {
       CompletenessOptions completeness,
       TrimOptions trim,
       DynamicRootOptions dynamicRoots,
-      AnalysisEnvironment environment) {
+      AnalysisEnvironment environment,
+      boolean closedWorld) {
+    /* default */ AnalysisOptions(
+        final List<File> traceFiles,
+        final List<String> retainedArtifacts,
+        final List<String> banishedDependencies,
+        final File productionOutput,
+        final MavenSession session,
+        final CompletenessOptions completeness,
+        final TrimOptions trim,
+        final DynamicRootOptions dynamicRoots,
+        final AnalysisEnvironment environment) {
+      this(
+          traceFiles,
+          retainedArtifacts,
+          banishedDependencies,
+          productionOutput,
+          session,
+          completeness,
+          trim,
+          dynamicRoots,
+          environment,
+          false);
+    }
+
     /* default */ AnalysisOptions(
         final List<File> traceFiles,
         final List<String> retainedArtifacts,
@@ -57,7 +81,8 @@ final class ElisionAnalysisModel {
           completeness,
           trim,
           dynamicRoots,
-          null);
+          null,
+          false);
     }
 
     /* default */ AnalysisOptions(
@@ -77,7 +102,8 @@ final class ElisionAnalysisModel {
           completeness,
           trim,
           dynamicRoots,
-          null);
+          null,
+          false);
     }
 
     /* default */ AnalysisOptions {
@@ -101,7 +127,8 @@ final class ElisionAnalysisModel {
           completeness,
           trim,
           dynamicRoots,
-          value);
+          value,
+          closedWorld);
     }
   }
 

@@ -26,6 +26,11 @@ public final class GraalVmConfigReader implements RuntimeTraceReader {
   private static final Set<Character> PRIMITIVE_DESCRIPTORS =
       Set.of('Z', 'B', 'C', 'S', 'I', 'J', 'F', 'D', 'V');
 
+  @Override
+  public TraceEvidenceKind evidenceKind() {
+    return TraceEvidenceKind.GRAAL_CONFIGURATION;
+  }
+
   /** Creates a reader for GraalVM reflection configuration files. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
   public GraalVmConfigReader() {}

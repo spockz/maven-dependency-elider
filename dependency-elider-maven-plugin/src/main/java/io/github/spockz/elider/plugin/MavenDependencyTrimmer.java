@@ -83,7 +83,8 @@ final class MavenDependencyTrimmer {
                     .map(BytecodeReferenceScan::referencedClasses)
                     .orElse(Set.of()),
                 prepared.projectOutputClasses(),
-                prepared.dynamicRootInputs().provenServiceInterfaces()),
+                prepared.dynamicRootInputs().provenServiceInterfaces(),
+                prepared.policyOptions().runtimePolicy()),
             new TrimPolicy(
                 options.trim().explicitRoots(),
                 options.trim().failOnUnsupportedMultiRelease(),

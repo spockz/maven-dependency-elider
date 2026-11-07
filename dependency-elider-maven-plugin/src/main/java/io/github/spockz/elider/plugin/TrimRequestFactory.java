@@ -35,7 +35,8 @@ final class TrimRequestFactory {
             rootClasses,
             prepared.bytecodeScan().map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
             prepared.projectOutputClasses(),
-            prepared.dynamicRootInputs().provenServiceInterfaces()),
+            prepared.dynamicRootInputs().provenServiceInterfaces(),
+            prepared.policyOptions().runtimePolicy()),
         new TrimPolicy(
             trim.explicitRoots(),
             trim.failOnUnsupportedMultiRelease(),

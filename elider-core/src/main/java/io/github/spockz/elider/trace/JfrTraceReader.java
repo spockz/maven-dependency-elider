@@ -14,9 +14,23 @@ import jdk.jfr.consumer.RecordingFile;
 
 /** Reads loaded classes from JDK Flight Recorder {@code jdk.ClassLoad} events. */
 public final class JfrTraceReader implements RuntimeTraceReader {
-  /** Creates a reader for JFR recording files. */
+  /** JFR event carrying class-load observations. */
+  private static final String CLASS_LOAD_EVENT = "jdk.ClassLoad";
+
+  /** JFR event indicating incomplete recording data. */
+  private static final String DATA_LOSS_EVENT = "jdk.DataLoss";
+
+  /** Sentinel amount for events without data-loss accounting. */
+  private static final long NO_DATA_LOSS = 0L;
+
+  /** Creates the public reader implementation used by runtime evidence clients. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
   public JfrTraceReader() {}
+
+  @Override
+  public TraceEvidenceKind evidenceKind() {
+    return TraceEvidenceKind.JFR_CLASS_LOAD;
+  }
 
   /** Recognizes JFR files by their conventional {@code .jfr} suffix. */
   @Override
@@ -37,14 +51,34 @@ public final class JfrTraceReader implements RuntimeTraceReader {
       while (recording.hasMoreEvents()) {
         final RecordedEvent event = recording.readEvent();
         final String eventTypeName = event.getEventType().getName();
-        if (!"jdk.ClassLoad".equals(eventTypeName)) {
-          continue;
+        if (DATA_LOSS_EVENT.equals(eventTypeName)) {
+          acceptEvent(eventTypeName, null, event.getLong("amount"), classes);
+        } else if (CLASS_LOAD_EVENT.equals(eventTypeName)) {
+          final RecordedClass loadedClass = event.getClass("loadedClass");
+          acceptEvent(
+              eventTypeName,
+              loadedClass == null ? null : loadedClass.getName(),
+              NO_DATA_LOSS,
+              classes);
         }
-        final RecordedClass loadedClass = event.getClass("loadedClass");
-        addLoadedClassName(loadedClass == null ? null : loadedClass.getName(), classes);
       }
     }
     return TraceData.of(classes);
+  }
+
+  /* default */ static void acceptEvent(
+      final String eventTypeName,
+      final String loadedClassName,
+      final long dataLossAmount,
+      final Set<String> classes)
+      throws IOException {
+    if (DATA_LOSS_EVENT.equals(eventTypeName)) {
+      if (dataLossAmount > NO_DATA_LOSS) {
+        throw new IOException("JFR recording reports lost data: " + dataLossAmount + " bytes");
+      }
+    } else if (CLASS_LOAD_EVENT.equals(eventTypeName)) {
+      addLoadedClassName(loadedClassName, classes);
+    }
   }
 
   private static void addLoadedClassName(final String className, final Set<String> classes) {

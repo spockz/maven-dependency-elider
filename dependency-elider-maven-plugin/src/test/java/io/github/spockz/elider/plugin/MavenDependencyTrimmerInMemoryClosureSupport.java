@@ -297,6 +297,11 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     return fixture(false, false, false, false, 21, RUNTIME_SCOPE);
   }
 
+  /** Builds a runtime-scoped first artifact with a selected base class release. */
+  protected Fixture fixtureWithRuntimeA(final int release) throws IOException {
+    return fixture(false, false, false, false, release, RUNTIME_SCOPE);
+  }
+
   /** Builds runtime A without bytecode links to resource-only B. */
   protected Fixture fixtureWithRuntimeFirstAndResourceOnlySecond() throws IOException {
     return fixture(false, false, true, false, 21, RUNTIME_SCOPE);

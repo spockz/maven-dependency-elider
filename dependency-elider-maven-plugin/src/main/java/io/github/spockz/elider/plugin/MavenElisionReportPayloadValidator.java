@@ -4,6 +4,8 @@ package io.github.spockz.elider.plugin;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.trace.TraceEvidenceKind;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -71,7 +73,13 @@ final class MavenElisionReportPayloadValidator {
 
   /** Exact fields for the producing policy and operation identity. */
   private static final Set<String> POLICY_FIELDS =
-      Set.of("retainedArtifacts", "banishedDependencies", "operationFingerprint");
+      Set.of(
+          "retainedArtifacts",
+          "banishedDependencies",
+          "operationFingerprint",
+          "closedWorld",
+          "allowedClasses",
+          "evidenceKinds");
 
   /** Whole-artifact rows retain original-JAR and removed-class metrics. */
   private static final Map<String, Long> DROPPED_METRICS =
@@ -522,8 +530,18 @@ final class MavenElisionReportPayloadValidator {
     final JsonNode retained = policy.get("retainedArtifacts");
     final JsonNode banished = policy.get("banishedDependencies");
     final JsonNode fingerprint = policy.get("operationFingerprint");
+    final JsonNode closedWorld = policy.get("closedWorld");
+    final JsonNode allowedClasses = policy.get("allowedClasses");
+    final JsonNode evidenceKinds = policy.get("evidenceKinds");
     if (!canonicalTextArray(retained)
         || !canonicalTextArray(banished)
+        || closedWorld == null
+        || !closedWorld.isBoolean()
+        || !canonicalSortedDistinctTextArray(allowedClasses)
+        || !canonicalSortedDistinctTextArray(evidenceKinds)
+        || !canonicalAllowedClasses(allowedClasses)
+        || !canonicalEvidenceKinds(evidenceKinds, closedWorld.booleanValue())
+        || (closedWorld.booleanValue() && (allowedClasses.isEmpty() || evidenceKinds.isEmpty()))
         || fingerprint == null
         || !fingerprint.isTextual()
         || !fingerprint.textValue().matches("[0-9a-f]{64}")) {
@@ -547,6 +565,30 @@ final class MavenElisionReportPayloadValidator {
     } catch (final org.apache.maven.plugin.MojoFailureException exception) {
       throw new IOException("Elision report policy coordinates are invalid", exception);
     }
+  }
+
+  private static boolean canonicalAllowedClasses(final JsonNode classes) {
+    for (final JsonNode className : classes) {
+      if (!className.textValue().equals(TraceData.normalizeToDot(className.textValue()))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static boolean canonicalEvidenceKinds(final JsonNode kinds, final boolean closedWorld) {
+    for (final JsonNode kind : kinds) {
+      try {
+        final TraceEvidenceKind evidenceKind = TraceEvidenceKind.valueOf(kind.textValue());
+        if (evidenceKind == TraceEvidenceKind.UNCLASSIFIED
+            || (closedWorld && evidenceKind == TraceEvidenceKind.GRAAL_CONFIGURATION)) {
+          return false;
+        }
+      } catch (final IllegalArgumentException exception) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private static boolean canonicalTextArray(final JsonNode value) {

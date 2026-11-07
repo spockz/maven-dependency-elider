@@ -108,6 +108,10 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.traceFiles")
   private List<File> traceFiles;
 
+  /** Admits explicit runtime evidence as a closed-world class boundary. */
+  @Parameter(property = "elide.closedWorld", defaultValue = DEFAULT_FALSE)
+  private boolean closedWorld;
+
   /** Global artifact identities that must remain in the build. */
   @Parameter(property = "elide.retainedArtifacts")
   private List<String> retainedArtifacts;
@@ -289,7 +293,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
     return ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings);
   }
 
-  private ElisionAnalysisModel.AnalysisOptions analysisOptions() {
+  /* default */ ElisionAnalysisModel.AnalysisOptions analysisOptions() {
     final boolean trustedProcessClassesContext = trustedProcessClassesContext();
     final boolean useProductionClasses =
         productionClassesComplete || (trustedProcessClassesContext && !sourceRootsComplete);
@@ -309,7 +313,9 @@ public final class ElideMojo extends PluginCacheMojoSupport {
             trimWorkers,
             mrjarStrategy,
             new DuplicateClassPolicy(retainDuplicateClassOwners, trimDuplicateClassOwners)),
-        new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots));
+        new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots),
+        null,
+        closedWorld);
   }
 
   private File effectiveProductionOutput(final boolean useProductionClasses) {

@@ -6,10 +6,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.trace.TraceEvidenceKind;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
 /** Verifies graph-pair selection and TEST context. */
@@ -20,6 +24,9 @@ final class MavenElisionGraphBindingTest extends MavenElisionGraphBindingTestSup
 
   /** Canonical retention or ban identity used by fingerprint comparisons. */
   private static final String LIBRARY_IDENTITY = "fixture:library";
+
+  /** Shared class name in runtime-policy identity fixtures. */
+  private static final String KEEP_CLASS = "fixture.Keep";
 
   /** Creates this focused behavior test group. */
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -109,6 +116,56 @@ final class MavenElisionGraphBindingTest extends MavenElisionGraphBindingTestSup
         () ->
             assertThat(changed.operationFingerprint())
                 .isNotEqualTo(canonical.operationFingerprint()));
+  }
+
+  @Test
+  void operationFingerprintIncludesModeAllowedSetAndEvidenceKinds() throws Exception {
+    final Fixture fixture = fixture(true, JAR_BYTES);
+    final List<ElisionAnalysisModel.ArtifactSnapshot> inventory = List.of(fixture.snapshot());
+    final ElisionDecision decision =
+        new ElisionDecision(Set.of(coordinate(VERSION)), Set.of(), Map.of(), Map.of(), 0L);
+    final RuntimeEvidencePolicy baselinePolicy =
+        new RuntimeEvidencePolicy(
+            true, Set.of(KEEP_CLASS), Set.of(KEEP_CLASS), Set.of(TraceEvidenceKind.CLASS_LOAD_LOG));
+    final RuntimeEvidencePolicy normalizedPolicy =
+        new RuntimeEvidencePolicy(
+            true,
+            Set.of("fixture/Keep", KEEP_CLASS),
+            Set.of("fixture/Keep", KEEP_CLASS),
+            Set.of(TraceEvidenceKind.CLASS_LOAD_LOG));
+    final RuntimeEvidencePolicy conservativePolicy =
+        new RuntimeEvidencePolicy(
+            false,
+            Set.of(KEEP_CLASS),
+            Set.of(KEEP_CLASS),
+            Set.of(TraceEvidenceKind.CLASS_LOAD_LOG));
+    final RuntimeEvidencePolicy expandedPolicy =
+        new RuntimeEvidencePolicy(
+            true,
+            Set.of(KEEP_CLASS),
+            Set.of(KEEP_CLASS, "fixture.Other"),
+            Set.of(TraceEvidenceKind.CLASS_LOAD_LOG));
+    final RuntimeEvidencePolicy changedKindPolicy =
+        new RuntimeEvidencePolicy(
+            true,
+            Set.of(KEEP_CLASS),
+            Set.of(KEEP_CLASS),
+            Set.of(TraceEvidenceKind.JACOCO_EXECUTION));
+
+    final String baseline = operationFingerprint(fixture, inventory, decision, baselinePolicy);
+    final String normalized = operationFingerprint(fixture, inventory, decision, normalizedPolicy);
+    final String conservative =
+        operationFingerprint(fixture, inventory, decision, conservativePolicy);
+    final String expanded = operationFingerprint(fixture, inventory, decision, expandedPolicy);
+    final String changedKind =
+        operationFingerprint(fixture, inventory, decision, changedKindPolicy);
+
+    assertAll(
+        "policy identity distinguishes closed-world semantics and normalizes its set",
+        () -> assertThat(normalized).isEqualTo(baseline),
+        () -> assertThat(conservative).isNotEqualTo(baseline),
+        () -> assertThat(expanded).isNotEqualTo(baseline),
+        () -> assertThat(changedKind).isNotEqualTo(baseline));
   }
 
   @Test
@@ -235,6 +292,26 @@ final class MavenElisionGraphBindingTest extends MavenElisionGraphBindingTestSup
         options.completeness(),
         options.trim(),
         options.dynamicRoots());
+  }
+
+  private static String operationFingerprint(
+      final Fixture fixture,
+      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
+      final ElisionDecision decision,
+      final RuntimeEvidencePolicy runtimePolicy)
+      throws IOException, MojoFailureException {
+    final MavenElisionPolicyIdentity.Options options =
+        MavenElisionPolicyIdentity.normalize(fixture.options(), runtimePolicy);
+    return MavenElisionGraphBinding.bind(
+            fixture.project(),
+            fixture.options(),
+            inventory,
+            decision,
+            TraceData.of(Set.of(KEEP_CLASS)),
+            Set.of(KEEP_CLASS),
+            List.of(),
+            options)
+        .operationFingerprint();
   }
 
   private static ElisionAnalysisModel.AnalysisOptions withRetention(

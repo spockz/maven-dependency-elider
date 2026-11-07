@@ -29,6 +29,11 @@ public final class ClassLoaderLogReader implements RuntimeTraceReader {
   /** Extracts the first field after the unified log class-load marker. */
   private static final Pattern CLASS_LOAD_NAME = Pattern.compile("^\\s*([^\\s]+)");
 
+  @Override
+  public TraceEvidenceKind evidenceKind() {
+    return TraceEvidenceKind.CLASS_LOAD_LOG;
+  }
+
   /** Creates a reader for JVM class loading log files. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
   public ClassLoaderLogReader() {}

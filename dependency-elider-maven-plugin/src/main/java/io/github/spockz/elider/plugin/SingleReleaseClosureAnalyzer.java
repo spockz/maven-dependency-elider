@@ -7,6 +7,7 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.SingleReleaseRootPlanner.SingleReleaseRootPlan;
 import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseInventory;
 import io.github.spockz.elider.plugin.SingleReleaseTrimInventory.SingleReleaseLayout;
+import io.github.spockz.elider.trimmer.ClosureQueryPolicy;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import java.io.IOException;
 import java.util.LinkedHashSet;
@@ -27,6 +28,7 @@ final class SingleReleaseClosureAnalyzer {
       final SingleReleaseInventory inventory,
       final SingleReleaseLayout layout,
       final SingleReleaseRootPlan roots,
+      final ClosureQueryPolicy queryPolicy,
       final int trimWorkers)
       throws IOException {
     final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> finalAnalyses =
@@ -54,7 +56,10 @@ final class SingleReleaseClosureAnalyzer {
           ParallelTrimExecutor.mapParallel(
               programEntries,
               trimWorkers,
-              entry -> entry.getValue().analyze(inventory.classesByArtifact().get(entry.getKey())));
+              entry ->
+                  entry
+                      .getValue()
+                      .analyze(inventory.classesByArtifact().get(entry.getKey()), queryPolicy));
       analysisRuns += programAnalyses.size();
       for (int index = 0; index < programEntries.size(); index++) {
         final Map.Entry<
@@ -81,7 +86,10 @@ final class SingleReleaseClosureAnalyzer {
           ParallelTrimExecutor.mapParallel(
               candidateEntries,
               trimWorkers,
-              entry -> entry.getValue().analyze(roots.candidateRoots().get(entry.getKey())));
+              entry ->
+                  entry
+                      .getValue()
+                      .analyze(roots.candidateRoots().get(entry.getKey()), queryPolicy));
       analysisRuns += candidateAnalyses.size();
       for (int index = 0; index < candidateEntries.size(); index++) {
         final ElisionAnalysisModel.ArtifactSnapshot candidate =

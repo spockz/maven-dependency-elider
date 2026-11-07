@@ -15,8 +15,13 @@ import org.jacoco.core.data.ExecutionData;
 import org.jacoco.core.data.ExecutionDataReader;
 import org.jacoco.core.data.ExecutionDataStore;
 
-/** Reads class names recorded in JaCoCo {@code .exec} files. */
+/** Reads hit class names recorded in JaCoCo {@code .exec} files. */
 public final class JaCoCoTraceReader implements RuntimeTraceReader {
+  @Override
+  public TraceEvidenceKind evidenceKind() {
+    return TraceEvidenceKind.JACOCO_EXECUTION;
+  }
+
   /** Creates a reader for JaCoCo execution data files. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
   public JaCoCoTraceReader() {}
@@ -31,7 +36,7 @@ public final class JaCoCoTraceReader implements RuntimeTraceReader {
     return fileName != null && fileName.toString().toLowerCase(Locale.ROOT).endsWith(".exec");
   }
 
-  /** Includes every class record, whether or not its execution probes were hit. */
+  /** Includes only class records with at least one hit probe. */
   @Override
   public TraceData read(final Path path) throws IOException {
     if (!supports(path)) {
@@ -62,7 +67,9 @@ public final class JaCoCoTraceReader implements RuntimeTraceReader {
       if (!TraceClassName.isValid(className)) {
         throw new IOException("Invalid class name in JaCoCo execution data file " + path);
       }
-      classes.add(className);
+      if (record.hasHits()) {
+        classes.add(className);
+      }
     }
     return TraceData.of(classes);
   }
