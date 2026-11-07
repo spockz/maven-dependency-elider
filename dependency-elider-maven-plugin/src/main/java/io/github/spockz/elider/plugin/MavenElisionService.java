@@ -66,17 +66,8 @@ final class MavenElisionService {
       MavenArtifactInventory.verifyPreparedInventory(prepared);
     }
     if (ElisionReachabilityEngine.requiresTierAwareMrjarTrim(prepared)) {
-      final Analysis analysis =
-          ElisionReachabilityEngine.finishEffectiveOutputs(
-              ElisionReachabilityEngine.finishAnalysis(prepared));
-      final TrimOutputGenerationCommitHandle generation = analysis.trimResult().generationCommit();
-      if (generation != null) {
-        try (generation) {
-          generation.commit();
-          generation.cleanupCommitted();
-        }
-      }
-      return analysis;
+      return ElisionReachabilityEngine.finishEffectiveOutputs(
+          ElisionReachabilityEngine.finishAnalysis(prepared));
     }
     final AnalysisOptions options = prepared.options();
     final TrimRequest trimRequest =

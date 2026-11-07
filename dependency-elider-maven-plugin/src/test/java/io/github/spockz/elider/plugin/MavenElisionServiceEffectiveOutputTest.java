@@ -3,6 +3,9 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.trimmer.ArtifactDigests;
@@ -116,6 +119,31 @@ final class MavenElisionServiceEffectiveOutputTest
       assertThat(output.getEntry("closure/a/Extra.class")).isNotNull();
       assertThat(output.getEntry("closure/a/Entry.class")).isNull();
     }
+  }
+
+  @Test
+  void failedArchiveReplacementPreservesTargetAndDoesNotStoreCache() throws Exception {
+    final Fixture fixture = fixture(false);
+    final ServiceOperation operation =
+        operation(fixture, trace(temporaryDirectory, ENTRY_TRACE), null);
+    final ArtifactTrimRecord original =
+        record(trimEffective(operation).records(), fixture.coordinate("a"));
+    final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
+    Files.delete(manifest);
+    Files.delete(original.trimmedPath());
+    Files.createDirectory(original.trimmedPath());
+    final Path marker = original.trimmedPath().resolve("marker.bin");
+    Files.writeString(marker, "preserve existing target");
+
+    assertThatThrownBy(() -> trimEffective(operation)).isInstanceOf(IOException.class);
+
+    assertAll(
+        "failed archive replacement leaves the old target intact and does not publish cache"
+            + " metadata",
+        () ->
+            assertTrue(Files.isDirectory(original.trimmedPath()), "Target directory is preserved"),
+        () -> assertThat(marker).hasContent("preserve existing target"),
+        () -> assertThat(manifest).doesNotExist());
   }
 
   @Test

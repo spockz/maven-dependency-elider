@@ -782,8 +782,14 @@ final class NoExtensionAnalyzeBanPredictionTest {
   }
 
   @Test
-  void failureAfterTrimGenerationStagingRollsBackBeforePublication() throws Exception {
+  void failureAfterTrimGenerationStagingKeepsCompletedOutputsBeforePublication() throws Exception {
     final Fixture fixture = basicFixture(USED_TRACE);
+    final org.apache.maven.artifact.Artifact used =
+        fixture.project().getArtifacts().stream()
+            .filter(artifact -> USED_ARTIFACT_ID.equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow();
+    addClassToJar(used.getFile().toPath(), "used/Unused");
     final ElideMojo mojo = elideMojo(fixture, true);
     final Path directory = fixture.trace().getParent();
     final Path report = directory.resolve(CLASS_USAGE_FILENAME);
@@ -798,6 +804,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
         artifactFiles(resolvedView, directView);
     final Path generatedOutputRoot =
         Path.of(fixture.project().getBuild().getDirectory()).resolve("elided-artifacts");
+    final Path cacheManifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.project());
     final List<String> priorGenerationFiles = fileSnapshot(generatedOutputRoot);
     final Object priorResolverPlan = new Object();
     fixture
@@ -816,13 +823,17 @@ final class NoExtensionAnalyzeBanPredictionTest {
         .hasMessageContaining("injected failure after trim generation staging");
 
     assertAll(
-        "a failed post-stage binding step closes the generation handle before any publication",
+        "a failed post-stage binding step keeps completed trim outputs but publishes no reports",
         () -> assertThat(Files.readString(report)).isEqualTo(PREVIOUS_REPORT),
         () -> assertThat(Files.readString(summary)).isEqualTo(PREVIOUS_SUMMARY),
         () -> assertSameArtifactReferences(fixture.project().getArtifacts(), resolvedView),
         () -> assertSameArtifactReferences(fixture.project().getDependencyArtifacts(), directView),
         () -> assertThat(artifactFiles(resolvedView, directView)).isEqualTo(artifactFiles),
-        () -> assertThat(fileSnapshot(generatedOutputRoot)).isEqualTo(priorGenerationFiles),
+        () -> assertThat(cacheManifest).isRegularFile(),
+        () -> assertThat(fileSnapshot(generatedOutputRoot)).isNotEqualTo(priorGenerationFiles),
+        () ->
+            assertThat(fileSnapshot(generatedOutputRoot))
+                .anyMatch(path -> path.startsWith(".generations/")),
         () ->
             assertThat(
                     fixture

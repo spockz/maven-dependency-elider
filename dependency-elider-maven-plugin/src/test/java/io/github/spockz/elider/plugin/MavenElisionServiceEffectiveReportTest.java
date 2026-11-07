@@ -29,33 +29,31 @@ final class MavenElisionServiceEffectiveReportTest
     final ElisionAnalysisModel.Analysis analysis =
         operation.service().finishEffectiveOutputs(effective);
 
-    try (TrimOutputGenerationCommitHandle ignored = analysis.trimResult().generationCommit()) {
-      assertThat(
-              List.of(
-                  analysis.mediatedGraph() != null,
-                  analysis.mediatedGraph().available(),
-                  analysis.mediatedGraph().snapshot().graphFingerprint(),
-                  analysis.mediatedGraph().artifactPaths().stream()
-                      .filter(path -> CLASS_TRIMMED.equals(path.kind()))
-                      .map(MediatedGraphReport.ArtifactPath::coordinate)
-                      .toList(),
-                  analysis.trimResult().records().stream()
-                      .map(ArtifactTrimRecord::coordinate)
-                      .toList()))
-          .containsExactly(
-              true,
-              true,
-              effective.graphEvaluation().afterFingerprint(),
-              List.of(fixture.coordinate("a")),
-              List.of(fixture.coordinate("a")));
-    }
+    assertThat(
+            List.of(
+                analysis.mediatedGraph() != null,
+                analysis.mediatedGraph().available(),
+                analysis.mediatedGraph().snapshot().graphFingerprint(),
+                analysis.mediatedGraph().artifactPaths().stream()
+                    .filter(path -> CLASS_TRIMMED.equals(path.kind()))
+                    .map(MediatedGraphReport.ArtifactPath::coordinate)
+                    .toList(),
+                analysis.trimResult().records().stream()
+                    .map(ArtifactTrimRecord::coordinate)
+                    .toList()))
+        .containsExactly(
+            true,
+            true,
+            effective.graphEvaluation().afterFingerprint(),
+            List.of(fixture.coordinate("a")),
+            List.of(fixture.coordinate("a")));
   }
 
   @Test
   @SuppressWarnings(
       "PMD.UnitTestContainsTooManyAsserts") // Prior manifest, files, and generation form one
   // rollback invariant.
-  void reportConstructionFailureRestoresThePreviouslyCommittedGeneration() throws Exception {
+  void reportConstructionFailureLeavesCompletedTrimOutputsAvailable() throws Exception {
     final Fixture fixture = fixture(false);
     final Path traceFile = trace(temporaryDirectory, "closure/a/Entry");
     final ServiceOperation firstOperation = operation(fixture, traceFile, null);
@@ -64,11 +62,6 @@ final class MavenElisionServiceEffectiveReportTest
             .service()
             .finishEffectiveOutputs(
                 firstOperation.service().finishAnalysis(firstOperation.prepared()));
-    try (TrimOutputGenerationCommitHandle generationCommit =
-        first.trimResult().generationCommit()) {
-      generationCommit.commit();
-      generationCommit.cleanupCommitted();
-    }
     final Path manifest = EffectiveOutputCacheTestFiles.cacheManifest(fixture.mavenProject());
     final byte[] priorManifest = Files.readAllBytes(manifest);
     final List<Path> priorOutputs =
@@ -98,9 +91,12 @@ final class MavenElisionServiceEffectiveReportTest
         .isInstanceOf(java.io.IOException.class)
         .hasMessageContaining("missing a successful policy evaluation");
 
-    assertThat(Files.readAllBytes(manifest)).isEqualTo(priorManifest);
+    assertThat(Files.readAllBytes(manifest)).isNotEqualTo(priorManifest);
     priorOutputs.forEach(
-        path -> assertTrue(Files.isRegularFile(path), "Prior generation file was not restored"));
-    assertThat(EffectiveOutputCacheTestFiles.generationCount(fixture.mavenProject())).isEqualTo(1);
+        path ->
+            assertTrue(Files.isRegularFile(path), "Completed output remains available: " + path));
+    assertThat(EffectiveOutputCacheTestFiles.generationCount(fixture.mavenProject()))
+        .as("both completed output generations remain available")
+        .isEqualTo(2);
   }
 }

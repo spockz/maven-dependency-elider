@@ -774,7 +774,7 @@ class MavenElisionReportGenericFindingTest {
                 0L,
                 0,
                 new TrimExecutionEnvironment(21, Runtime.version().feature()),
-                null),
+                List.of()),
             null,
             MediatedGraphReportTestSupport.emptyGraph("org.example:consumer:1"),
             MavenElisionPolicyIdentityTestSupport.emptyPolicy());

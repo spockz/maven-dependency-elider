@@ -165,7 +165,7 @@ final class JarTrimCache {
         System.nanoTime() - context.started(),
         0,
         context.executionEnvironment(),
-        null);
+        List.of());
   }
 
   private static boolean validManifest(

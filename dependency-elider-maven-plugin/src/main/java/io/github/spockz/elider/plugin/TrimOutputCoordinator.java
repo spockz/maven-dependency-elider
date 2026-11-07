@@ -5,10 +5,8 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
 import io.github.spockz.elider.trimmer.ArchiveSanitizer;
-import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import org.apache.maven.plugin.MojoFailureException;
 
@@ -45,15 +43,4 @@ final class TrimOutputCoordinator {
 
   /* package */ record PendingOutput(
       TrimCandidate candidate, ArchiveSanitizer.PreparedOutput prepared) {}
-
-  /* package */ static List<ArtifactTrimRecord> publishOutputs(
-      final List<ArchiveSanitizer.PreparedOutput> preparedOutputs,
-      final PreparedOutputPublisher publisher)
-      throws IOException {
-    final List<ArtifactTrimRecord> records = new ArrayList<>(preparedOutputs.size());
-    for (final ArchiveSanitizer.PreparedOutput prepared : preparedOutputs) {
-      records.add(publisher.publish(prepared));
-    }
-    return List.copyOf(records);
-  }
 }

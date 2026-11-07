@@ -18,7 +18,6 @@ record TrimResult(
     long maximumCacheHitNanos,
     int analysisRuns,
     TrimExecutionEnvironment executionEnvironment,
-    TrimOutputGenerationCommitHandle generationCommit,
     List<DuplicateClasses.ToleratedDuplicate> toleratedDuplicates) {
   TrimResult {
     records =
@@ -28,29 +27,6 @@ record TrimResult(
     configuredPassThroughArtifacts = configuredPassThroughArtifacts.stream().sorted().toList();
     java.util.Objects.requireNonNull(executionEnvironment, "executionEnvironment");
     toleratedDuplicates = List.copyOf(toleratedDuplicates);
-  }
-
-  /* package */ TrimResult(
-      final List<ArtifactTrimRecord> records,
-      final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
-      final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
-      final List<ArtifactCoordinate> configuredPassThroughArtifacts,
-      final int cacheHits,
-      final long maximumCacheHitNanos,
-      final int analysisRuns,
-      final TrimExecutionEnvironment executionEnvironment,
-      final TrimOutputGenerationCommitHandle generationCommit) {
-    this(
-        records,
-        multiReleasePassthroughArtifacts,
-        moduleInfoPassthroughArtifacts,
-        configuredPassThroughArtifacts,
-        cacheHits,
-        maximumCacheHitNanos,
-        analysisRuns,
-        executionEnvironment,
-        generationCommit,
-        List.of());
   }
 
   /** Attaches accepted duplicate classes to this result. */
@@ -65,12 +41,11 @@ record TrimResult(
         maximumCacheHitNanos,
         analysisRuns,
         executionEnvironment,
-        generationCommit,
         duplicates);
   }
 
   /* package */ static TrimResult empty(final TrimExecutionEnvironment executionEnvironment) {
     return new TrimResult(
-        List.of(), List.of(), List.of(), List.of(), 0, 0L, 0, executionEnvironment, null);
+        List.of(), List.of(), List.of(), List.of(), 0, 0L, 0, executionEnvironment, List.of());
   }
 }

@@ -287,7 +287,7 @@ final class MavenElisionReportWriterTest {
                 0L,
                 0,
                 new TrimExecutionEnvironment(21, Runtime.version().feature()),
-                null),
+                List.of()),
             null,
             MediatedGraphReportTestSupport.reportForOutputs(
                 removedCoordinate, trimmedCoordinate, GROUP_ID + ":consumer:" + PROJECT_VERSION),

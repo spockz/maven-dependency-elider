@@ -56,30 +56,11 @@ final class MavenDependencyTrimmer {
   /* package */ static TrimResult trimEffectiveOutputs(
       final ElisionAnalysisModel.EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
-    return trimEffectiveOutputs(effective, TrimOutputGenerationPublisher::atomicMove);
-  }
-
-  /* package */ static TrimResult trimEffectiveOutputs(
-      final ElisionAnalysisModel.EffectiveAnalysis effective,
-      final TrimOutputGenerationPublisher.MoveOperation move)
-      throws IOException, MojoFailureException {
-    final TrimResult result = stageEffectiveOutputs(effective, move);
-    if (result.generationCommit() != null) {
-      result.generationCommit().commit();
-      result.generationCommit().cleanupCommitted();
-    }
-    return result;
+    return stageEffectiveOutputs(effective);
   }
 
   /* package */ static TrimResult stageEffectiveOutputs(
       final ElisionAnalysisModel.EffectiveAnalysis effective)
-      throws IOException, MojoFailureException {
-    return stageEffectiveOutputs(effective, TrimOutputGenerationPublisher::atomicMove);
-  }
-
-  /* package */ static TrimResult stageEffectiveOutputs(
-      final ElisionAnalysisModel.EffectiveAnalysis effective,
-      final TrimOutputGenerationPublisher.MoveOperation move)
       throws IOException, MojoFailureException {
     final ElisionAnalysisModel.PreparedAnalysis prepared = effective.prepared();
     MavenArtifactInventory.verifyPreparedInventory(prepared);
@@ -148,8 +129,7 @@ final class MavenDependencyTrimmer {
             options.completeness().sourceRootsComplete(),
             options.completeness().productionClassesComplete(),
             options.trim().mrjarStrategy(),
-            options.trim().failOnUnsupportedModuleInfo(),
-            move);
+            options.trim().failOnUnsupportedModuleInfo());
     final TrimExecutionEnvironment executionEnvironment = executionEnvironment(request);
     verifyAnalysisPlatform(effective, executionEnvironment);
     final JdkPlatformContext context = MavenPlatformContextHolder.forOperation(request.session());

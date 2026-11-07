@@ -15,7 +15,6 @@ import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,15 +30,10 @@ final class EffectiveOutputStaging implements AutoCloseable {
   private final PreparedOutputCleanup preparedOutputCleanup = new PreparedOutputCleanup(sanitizer);
 
   /** Keeps this batch isolated until the complete generation is published. */
-  private final Path stagedGeneration;
+  private final Path generationDirectory;
 
-  /* package */ EffectiveOutputStaging(final Path stagedGeneration, final Path stagedManifest) {
-    this.stagedGeneration = stagedGeneration;
-    if (stagedManifest != null) {
-      preparedOutputCleanup.addCleanupAction(() -> Files.deleteIfExists(stagedManifest));
-    }
-    preparedOutputCleanup.addCleanupAction(
-        () -> TrimGenerationPublisher.deleteTree(stagedGeneration));
+  /* package */ EffectiveOutputStaging(final Path generationDirectory) {
+    this.generationDirectory = generationDirectory;
   }
 
   /* package */ PreparedEffectiveOutputs prepareOutputs(
@@ -71,7 +65,8 @@ final class EffectiveOutputStaging implements AutoCloseable {
             toSanitize,
             trimWorkers,
             candidate -> {
-              final Path stagedOutput = stagedGeneration.resolve(candidate.output().getFileName());
+              final Path stagedOutput =
+                  generationDirectory.resolve(candidate.output().getFileName());
               final ArchiveSanitizer.PreparedOutput staged;
               if (candidate.archive().multiRelease()) {
                 final Set<String> removedProviders =
@@ -122,9 +117,10 @@ final class EffectiveOutputStaging implements AutoCloseable {
               return preparedOutputCleanup.track(new PendingOutput(candidate, staged));
             },
             preparedOutputCleanup);
-    final List<ArtifactTrimRecord> stagedRecords =
-        TrimOutputCoordinator.publishOutputs(
-            prepared.stream().map(PendingOutput::prepared).toList(), sanitizer::publish);
+    final List<ArtifactTrimRecord> stagedRecords = new ArrayList<>(prepared.size());
+    for (final PendingOutput pending : prepared) {
+      stagedRecords.add(sanitizer.publish(pending.prepared()));
+    }
     for (int index = 0; index < prepared.size(); index++) {
       final PendingOutput pending = prepared.get(index);
       final ArtifactTrimRecord staged = stagedRecords.get(index);

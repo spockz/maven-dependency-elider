@@ -81,10 +81,6 @@ final class MavenElisionOutputPublisher {
       MavenGeneratedOutputs.record(request.project(), generated);
     }
     publishViewsAndPlan(request, plan);
-    if (request.generation() != null) {
-      request.generation().commit();
-      request.generation().cleanupCommitted();
-    }
     return assessment;
   }
 
@@ -335,7 +331,6 @@ final class MavenElisionOutputPublisher {
       MavenSession session,
       MavenElisionService service,
       ElisionAnalysisModel.Analysis analysis,
-      TrimOutputGenerationCommitHandle generation,
       ReportFiles files,
       Log log,
       MavenElideExecutionConfiguration.PlanPublication planPublication,

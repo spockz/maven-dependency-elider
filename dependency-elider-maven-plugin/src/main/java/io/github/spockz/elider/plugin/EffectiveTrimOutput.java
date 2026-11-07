@@ -59,7 +59,6 @@ final class EffectiveTrimOutput {
                 request
                     .cacheProducerIdentity()
                     .map(CacheProducerIdentity::canonicalCompatibilityIdentity)));
-    TrimGenerationPublisher.verifyEffectiveInputs(effectiveOutput, fingerprint);
     final List<String> platformIdentities =
         fingerprint.platformSnapshots().stream()
             .map(JdkPlatformContext.PlatformSnapshot::identity)
@@ -95,7 +94,6 @@ final class EffectiveTrimOutput {
                     cacheStart))
             : null;
     if (cached != null) {
-      TrimGenerationPublisher.verifyEffectiveInputs(effectiveOutput, fingerprint);
       return cached;
     }
     return TrimGenerationPublisher.publishEffectiveOutputs(

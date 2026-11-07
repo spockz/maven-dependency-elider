@@ -30,7 +30,7 @@ final class ElisionAnalysisTestFixtures {
           0L,
           0,
           new TrimExecutionEnvironment(21, Runtime.version().feature()),
-          null);
+          List.of());
 
   private ElisionAnalysisTestFixtures() {}
 

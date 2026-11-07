@@ -885,7 +885,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
             0L,
             0,
             new TrimExecutionEnvironment(21, Runtime.version().feature()),
-            null),
+            List.of()),
         null,
         null,
         MavenElisionPolicyIdentityTestSupport.emptyPolicy());

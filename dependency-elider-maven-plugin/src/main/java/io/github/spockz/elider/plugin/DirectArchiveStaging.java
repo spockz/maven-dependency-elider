@@ -77,9 +77,10 @@ final class DirectArchiveStaging {
               },
               preparedOutputCleanup);
       NativeImageConsumedInput.verifyAll(request.scanInputs().consumedInputs());
-      final List<ArtifactTrimRecord> publishedRecords =
-          TrimOutputCoordinator.publishOutputs(
-              prepared.stream().map(PendingOutput::prepared).toList(), sanitizer::publish);
+      final List<ArtifactTrimRecord> publishedRecords = new ArrayList<>(prepared.size());
+      for (final PendingOutput pending : prepared) {
+        publishedRecords.add(sanitizer.publish(pending.prepared()));
+      }
       for (int index = 0; index < prepared.size(); index++) {
         final PendingOutput pending = prepared.get(index);
         final ArtifactTrimRecord record = publishedRecords.get(index);

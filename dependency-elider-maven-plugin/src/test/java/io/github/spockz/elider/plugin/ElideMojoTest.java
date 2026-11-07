@@ -456,12 +456,16 @@ final class ElideMojoTest {
       Artifact first, Artifact second, Path summaryFile, RecordingMavenLog log) {}
 
   @Test
-  void failedPlanPublicationRestoresPriorOutputsViewsAndResolverPayload()
+  void failedPlanPublicationKeepsCompletedArchiveAndRestoresViewsAndResolverPayload()
       throws IOException, ReflectiveOperationException {
     final Path originalJar =
         compileJarSources(
             "publication-rollback",
-            Map.of("used/Entry.java", "package used; public class Entry {}"),
+            Map.of(
+                "used/Entry.java",
+                "package used; public class Entry {}",
+                "unused/Unused.java",
+                "package unused; public class Unused {}"),
             null);
     final Artifact used = runtimeArtifact("used", originalJar);
     final MavenProject project = project(used, new LinkedHashSet<>(List.of(used)));
@@ -518,7 +522,8 @@ final class ElideMojoTest {
     assertThat(project.getDependencyArtifacts()).containsExactlyElementsOf(previousDirect);
     assertThat(project.getDependencyArtifacts().iterator().next()).isSameAs(used);
     assertThat(used.getFile()).isEqualTo(previousArtifactFile);
-    assertThat(EffectiveOutputCacheTestFiles.cacheManifest(project)).doesNotExist();
+    assertThat(EffectiveOutputCacheTestFiles.cacheManifest(project)).isRegularFile();
+    assertThat(EffectiveOutputCacheTestFiles.generationCount(project)).isPositive();
     assertThat(
             session
                 .getRepositorySession()

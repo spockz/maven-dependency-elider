@@ -122,9 +122,7 @@ final class MavenElideExecution {
     final PreparedAnalysis prepared = service.prepare(project, configuration.analysisOptions());
     final EffectiveAnalysis effective = service.finishAnalysis(prepared);
     final Analysis analysis = service.finishEffectiveOutputs(effective);
-    try (TrimOutputGenerationCommitHandle generation = analysis.trimResult().generationCommit()) {
-      publish(configuration, service, analysis, generation, MavenBanPlan.empty(), null);
-    }
+    publish(configuration, service, analysis, MavenBanPlan.empty(), null);
   }
 
   private static void executeBannedAnalysis(
@@ -146,14 +144,11 @@ final class MavenElideExecution {
       plan.verifyAuditFresh(project, lifecycle.session());
       final EffectiveAnalysis effective = service.finishAnalysis(preparation.analysis());
       final Analysis unboundAnalysis = service.finishEffectiveOutputs(effective);
-      try (TrimOutputGenerationCommitHandle generation =
-          unboundAnalysis.trimResult().generationCommit()) {
-        configuration.publication().afterGenerationStaging().run(unboundAnalysis);
-        applicationBinding.verifyFresh(project);
-        plan.verifyAuditFresh(project, lifecycle.session());
-        final Analysis analysis = applicationBinding.bindAnalysis(unboundAnalysis);
-        publish(configuration, service, analysis, generation, plan, applicationBinding);
-      }
+      configuration.publication().afterGenerationStaging().run(unboundAnalysis);
+      applicationBinding.verifyFresh(project);
+      plan.verifyAuditFresh(project, lifecycle.session());
+      final Analysis analysis = applicationBinding.bindAnalysis(unboundAnalysis);
+      publish(configuration, service, analysis, plan, applicationBinding);
     }
   }
 
@@ -161,7 +156,6 @@ final class MavenElideExecution {
       final MavenElideExecutionConfiguration configuration,
       final MavenElisionService service,
       final Analysis analysis,
-      final TrimOutputGenerationCommitHandle generation,
       final MavenBanPlan banPlan,
       final MavenArtifactViewBinding applicationBinding)
       throws IOException, MojoFailureException {
@@ -173,7 +167,6 @@ final class MavenElideExecution {
             lifecycle.session(),
             service,
             analysis,
-            generation,
             publication.files(),
             publication.log(),
             publication.planPublication(),

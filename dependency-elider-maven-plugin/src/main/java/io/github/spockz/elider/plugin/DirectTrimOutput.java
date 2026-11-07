@@ -7,6 +7,7 @@ import io.github.spockz.elider.plugin.DirectArchiveStaging.PublishedArchives;
 import io.github.spockz.elider.plugin.DirectTrimPreparation.PreparedDirectTrim;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
+import java.util.List;
 import org.apache.maven.plugin.MojoFailureException;
 
 /** Coordinates direct trim analysis and publication. */
@@ -37,6 +38,6 @@ final class DirectTrimOutput {
         0L,
         analysisRuns,
         new TrimExecutionEnvironment(plan.compilerRelease(), plan.runtimeRelease()),
-        null);
+        List.of());
   }
 }

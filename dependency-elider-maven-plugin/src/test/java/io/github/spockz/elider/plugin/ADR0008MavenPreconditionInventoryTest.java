@@ -970,7 +970,7 @@ final class ADR0008MavenPreconditionInventoryTest {
               analysis.trimResult().maximumCacheHitNanos(),
               analysis.trimResult().analysisRuns(),
               analysis.trimResult().executionEnvironment(),
-              analysis.trimResult().generationCommit()),
+              analysis.trimResult().toleratedDuplicates()),
           analysis.graphProjection(),
           analysis.mediatedGraph(),
           analysis.policyIdentity());
