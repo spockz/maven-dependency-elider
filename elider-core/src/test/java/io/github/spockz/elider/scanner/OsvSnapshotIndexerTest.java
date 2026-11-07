@@ -87,14 +87,17 @@ class OsvSnapshotIndexerTest {
 
   private List<OsvAffectedPackage> indexedAffectedPackages(final String ecosystem, final String id)
       throws IOException {
-    final String osv =
-        """
-        {"id":"%s","modified":"2026-11-04T00:00:00Z","affected":[{"package":{"ecosystem":"%s","name":"org.example:library"},"versions":["1.0"]}]}
-        """
-            .formatted(id, ecosystem);
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode osv = mapper.createObjectNode();
+    osv.put("id", id).put("modified", "2026-11-04T00:00:00Z");
+    final ObjectNode affected = osv.putArray("affected").addObject();
+    affected.putObject("package").put("ecosystem", ecosystem).put("name", "org.example:library");
+    affected.putArray("versions").add("1.0");
     return new OsvSnapshotIndexer()
         .indexZip(
-            new ByteArrayInputStream(createZip(List.of(new ZipItem("record.json", osv)))), tempDir)
+            new ByteArrayInputStream(
+                createZip(List.of(new ZipItem("record.json", mapper.writeValueAsString(osv))))),
+            tempDir)
         .getFirst()
         .affectedPackages();
   }
