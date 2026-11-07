@@ -53,19 +53,11 @@ Coverage reports are generated during `verify` under each production module's `t
 
 ## Cache benchmarks
 
-The JMH cache benchmarks measure fresh metadata fingerprinting, complete decision cache loading, and the combined fingerprint plus lookup over 100 local artifact fixtures. They exercise the core cache API only; they do not measure a Maven plugin fast path or establish the whole-build sub-10ms target. Build the standalone JMH runner and run these methods from the repository root with:
+### Historical core-cache benchmark result
 
-```sh
-./mvnw -pl elider-benchmarks -am package
-java -jar elider-benchmarks/target/benchmarks.jar '.*ElisionCacheBenchmark.*' \
-  -f 2 -wi 3 -i 5 -w 1s -r 1s
-```
+This historical table records the retired standalone `ElisionCacheBenchmark`, which measured the old core cache API over 100 local artifact fixtures. It is not runnable in the current source tree and does not measure the production Maven trim-cache path. Keep it as historical evidence only; do not compare it with or relabel it as a production trim-cache result.
 
-JMH reports the fork, warmup, measurement, and JVM metadata. Record hardware, operating system, and filesystem separately when comparing runs.
-
-### Recorded run
-
-With JMH 1.37 on GraalVM JDK 25.0.5, the command above measured:
+With JMH 1.37 on GraalVM JDK 25.0.5, that historical run measured:
 
 | Benchmark | Average time | 99.9% confidence interval |
 | :--- | ---: | ---: |
@@ -73,10 +65,18 @@ With JMH 1.37 on GraalVM JDK 25.0.5, the command above measured:
 | Complete decision cache load | 0.722 ms/op | ±0.011 ms/op |
 | Fingerprinting plus cache lookup | 1.078 ms/op | ±0.302 ms/op |
 
-The cache load result exceeds the research note's 0.5 ms component budget. The combined result measures the core cache API only; the cache is not integrated into the Maven plugin, so it does not prove lifecycle or whole-build overhead. The recorded environment was an AMD Ryzen 9 5900X 12-core processor (12 cores, 24 threads) and Linux 7.2.9-1-cachyos-bore-lto x86_64. Benchmark fixtures were created under `/tmp` on overlay storage; the workspace mount is Btrfs. The benchmark run used 2 forks, 3 warmup iterations, and 5 measurement iterations of 1 second each. The results are specific to this run and environment.
+The cache load result exceeded the research note's 0.5 ms component budget for the retired core cache API. The recorded environment was an AMD Ryzen 9 5900X 12-core processor (12 cores, 24 threads) and Linux 7.2.9-1-cachyos-bore-lto x86_64. Benchmark fixtures were created under `/tmp` on overlay storage; the workspace mount is Btrfs. The benchmark run used 2 forks, 3 warmup iterations, and 5 measurement iterations of 1 second each. The results are specific to this historical run and environment.
 
 ### Production trim-cache benchmarks and build impact
 
-The production trim-cache benchmark uses exact content hashes. Its recorded warm hit is **93.038 ± 0.756 ms/op** on GraalVM JDK 21.0.12, above the <10 ms target; the per-artifact <1.5 ms target remains unmet. See [RQ-0003](docs/research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for methodology, limitations, and performance follow-ups.
+The `MavenTrimCacheBenchmark` measures the production trim-cache path with exact content hashes. Build the JMH runner and run both `validatedMavenTrimCacheHit` and `validatedFreshMavenTrimCacheHit` from the repository root:
+
+```sh
+./mvnw -pl elider-benchmarks -am package
+java -jar elider-benchmarks/target/benchmarks.jar '.*MavenTrimCacheBenchmark.*' \
+  -f 2 -wi 3 -i 5 -w 1s -r 1s
+```
+
+Its recorded warm hit is **93.038 ± 0.756 ms/op** on GraalVM JDK 21.0.12, above the <10 ms target; the per-artifact <1.5 ms target remains unmet. JMH reports the fork, warmup, measurement, and JVM metadata. Record hardware, operating system, and filesystem separately when comparing runs. See [RQ-0003](docs/research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for methodology, limitations, and performance follow-ups.
 
 Paired example-build medians show about +1.977 s for Basic and +20.417 s for Spring Boot with elision enabled. These measurements include Maven startup, dependency resolution, compilation, tests, elision, and packaging; they are descriptive observations, not a whole-build performance guarantee.

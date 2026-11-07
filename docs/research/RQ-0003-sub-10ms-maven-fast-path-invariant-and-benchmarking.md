@@ -4,7 +4,7 @@
 * **Status**: Open
 * **Category**: Performance & Benchmarking
 * **Date**: 2026-10-24
-* **Last Updated**: 2026-10-30
+* **Last Updated**: 2026-11-07
 
 Abbreviations: Java Microbenchmark Harness (JMH), Solid State Drive (SSD), Non-Volatile Memory Express (NVMe), Central Directory (CEN), Virtual Threads (Loom), Central Processing Unit (CPU).
 
@@ -234,3 +234,7 @@ The example runner now schedules the five standalone fixtures with a default max
 | `EXAMPLE_JOBS=2` | 124.045 s | Five passed | Passed | `/tmp/wp-test01-track3-fixup-parallel.log` |
 
 Both runs used GraalVM JDK 21.0.12+7.1, the repository Maven wrapper (Apache Maven 3.9.11), and the same already-warm local Maven repository. The serial run immediately preceded the parallel run. A full repository check was active in the `track-native-image-02` sibling worktree during this measurement window, so CPU contention was present; this is one observed pair, not a controlled benchmark, and no speedup target or performance claim is inferred. The wall time covers shared setup, all five standalone lifecycles, and the sequential plus threaded reactor checks. The separate `make test-reactor-example` and `make check-transcripts` gates also passed. Synchronization-based shell tests cover overlap, the worker bound, ordered output, complete ordinary-failure aggregation, early-worker failure boundaries, queued INT/TERM status and unstarted fixtures, timeout-owned process-group cleanup, and invalid limits rejected before bootstrap. Standalone app timeouts use foreground process-group mode so worker interruption reaches the timeout command and its child.
+
+### 2026-11-07: Standalone Cache Benchmark Retirement
+
+The obsolete `elider.cache` package and its sole benchmark caller, `ElisionCacheBenchmark`, were removed because they did not participate in the production Maven trim-cache path. The separate `MavenTrimCacheBenchmark` remains and measures production trim-cache operations. The earlier three-row core-cache timing table is retained in `CONTRIBUTING.md` as historical evidence only; those measurements are not production trim-cache results and the old benchmark command is no longer runnable. Current benchmark instructions point to `MavenTrimCacheBenchmark` and its warm and fresh-request operations.

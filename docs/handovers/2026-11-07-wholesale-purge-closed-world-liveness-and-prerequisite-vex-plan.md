@@ -77,7 +77,7 @@ Verified prerequisite VEX is based on the actual staged final output inventory. 
 
 ## 3. Slice 0: Wholesale `git rm` of 91 Obsolete/Over-Engineered Files & Exact Caller Edits
 
-Complete this slice before feature work. The end state removes all **91 files (~15,000+ lines)**, but only after replacement tests and caller migrations establish which accepted guarantees remain. Work through clusters as reviewable commits; do not delete behavior-bearing tests before their replacement assertions fail for the intended reason.
+Complete this slice before feature work. The end state removes all **91 tracked files (~15,000+ lines)**, but only after replacement tests and caller migrations establish which accepted guarantees remain. Work through clusters as reviewable commits; do not delete behavior-bearing tests before their replacement assertions fail for the intended reason.
 
 ### Step 0.1: Add Replacement Tests for Preserved Guarantees
 
@@ -97,7 +97,7 @@ Treat the eight behavior groups as separate TDD sub-slices. For each affected cl
 Run the following `git rm` commands from the repository root:
 
 ```bash
-# Cluster A: Entire elider.cache package (10 files) + 12 zero-caller dead files/resources
+# Cluster A: Entire elider.cache package (10 files), obsolete cache benchmark, and 11 extant dead files/resources
 git rm \
   elider-core/src/main/java/io/github/spockz/elider/cache/BoundedByteArrayOutputStream.java \
   elider-core/src/main/java/io/github/spockz/elider/cache/ElisionCache.java \
@@ -109,7 +109,7 @@ git rm \
   elider-core/src/main/java/io/github/spockz/elider/cache/FingerprintValues.java \
   elider-core/src/test/java/io/github/spockz/elider/cache/ElisionCacheConcurrencyTest.java \
   elider-core/src/test/java/io/github/spockz/elider/cache/ElisionCacheTest.java \
-  elider-core/src/test/resources/osv-fixtures/cve-2025-12345.json \
+  elider-benchmarks/src/main/java/io/github/spockz/elider/benchmark/ElisionCacheBenchmark.java \
   elider-core/src/test/resources/vulnerability-mappings/requires-class-v1.json \
   dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenMappingApplicability.java \
   dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenMissingPrerequisite.java \
@@ -261,10 +261,11 @@ git rm \
    - Update `EffectiveTrimOutput` and `MavenDependencyTrimmerTest` to exercise the effective route directly, including dynamic-root reuse and upper-tier MRJAR closure.
    - Migrate `MavenBanAuditContextTest` from the removed freshness method while retaining its upper-MR-tier closure scenario.
 9. Run `make test-core` and `make test-plugin` to confirm clean compilation and green replacement tests before Slice 1.
+10. In [CONTRIBUTING.md](../../CONTRIBUTING.md), remove the runnable `ElisionCacheBenchmark` command and description. Point current cache-benchmark instructions to the existing `MavenTrimCacheBenchmark` and its actual methods, `validatedMavenTrimCacheHit` and `validatedFreshMavenTrimCacheHit`. Preserve the old three-row timing table only under an explicit historical label; do not relabel its measurements as production trim-cache results.
 
 ### Step 0.5: Update the Decision and Research Records
 
-Update ADR-0004 to record that resolved inputs are captured once and outputs retain simple per-file replacement safety. Update ADR-0008 and ADR-0012 with the preserved inventory and ban-proof boundaries. Review ADR-0010, ADR-0013, and ADR-0014 for the source-free module, standard-JDK, and strict unreleased-format decisions. Record relevant new evidence in RQ-0017, RQ-0020, and RQ-0021; leave unrelated RQs untouched.
+Update ADR-0004 to record that resolved inputs are captured once and outputs retain simple per-file replacement safety. Update ADR-0008 and ADR-0012 with the preserved inventory and ban-proof boundaries. Review ADR-0010, ADR-0013, and ADR-0014 for the source-free module, standard-JDK, and strict unreleased-format decisions. Record relevant new evidence in RQ-0003, RQ-0017, RQ-0020, and RQ-0021; leave unrelated RQs untouched. RQ-0003 should state that the obsolete standalone cache benchmark is retired with its dead cache API while the production `MavenTrimCacheBenchmark` remains; preserve the old core-cache measurements as historical only.
 
 ---
 
