@@ -41,25 +41,58 @@
 
 ### 2.3 How the New `closedWorld` Flag (`-Delide.closedWorld=true` / `<closedWorld>true</closedWorld>`) Works
 
-When the user provides a runtime trace (`-Xlog:class+load`, CDS class list, JFR `jdk.ClassLoad`, or JaCoCo probe hits) and enables `closedWorld = true`, the analysis data is treated as the **closed world of executed classes**:
+When the user provides runtime evidence and enables `closedWorld = true`, they assert that the evidence bounds the workload being optimized. The option does not independently prove that every class loaded by the JVM appears in the trace; JaCoCo probe hits cannot establish that fact.
 
 1. **Default Conservative Mode (`closedWorld = false`)**:
    - Treats `target/classes`, runtime traces, explicit `trimRoots`, and active dynamic metadata (`META-INF/services/*`, `spring.factories`, `AutoConfiguration.imports`, conditional `META-INF/native-image/**`) as **seed roots**.
    - Feeds those seed roots into `proguard-core`'s `CompleteReferencedClassVisitor` to retain the full transitive static constant-pool closure across all methods and branches.
 2. **Closed-World Mode (`closedWorld = true`)**:
-   - Every class loaded by the JVM during the traced workload is already present in the runtime trace.
+   - The supplied evidence represents the user's declared workload boundary. Do not interpret enabling this option as automatic proof of a complete class-load record.
    - **No `proguard-core` method-body constant-pool search (`CompleteReferencedClassVisitor`) is performed to pull in untraced classes**: if class `A` was loaded in the trace and references class `B` inside an unexecuted method/branch, and `B` was **not** in the trace (nor an explicit/active dynamic root), `B` is **not** added to `retainedClasses`, and its owning JAR `jar-b` is elided if no other class in `jar-b` is live.
    - **Only Structural Linkage Edges (`structuralEdges`) are traversed unconditionally**: For any root (including JaCoCo instruction-level traces or explicit `trimRoots` that may omit pure interfaces/superclasses without executable code), `proguard-core` visits class-header/declaration structures required to load and link the class (`ClassHierarchyTraveler` for superclasses/interfaces, `MemberDescriptorReferencedClassVisitor` for field/method descriptors, `SignatureAttributeReferencedClassVisitor` for generic signatures, and `ExceptionHandlerConstantVisitor` for `try`/`catch` exception handler types in `CodeAttribute.exceptions`), plus code-body edges (`CompleteReferencedClassVisitor`) **only when the target class is itself in the closed-world allowed set** (`tracedClasses ∪ explicitRoots ∪ activeDynamicRoots`).
-   - **No `UnresolvedReferenceException` on untraced dead-method references**: In `closedWorld = true`, `PreparedAnalysisState.ClosureTraversal` does not throw `UnresolvedReferenceException` for missing classes or members that are outside the closed-world set.
+   - **Selective unresolved-reference handling**: In `closedWorld = true`, suppress an unresolved target only when typed reference evidence proves it is a non-structural method-body target excluded from the allowed set. Structural or allowed-target unresolved references, malformed bytecode, and unclassified failures remain errors.
    - **Application bytecode (`target/classes`) scoping in `closedWorld = true`**: When a non-empty runtime trace is supplied and `closedWorld = true`, `target/classes` only roots dependency classes that were either observed in the runtime trace, structurally linked by a traced application class, or explicitly rooted — unexecuted application methods in `target/classes` do not pull in untraced dependency JARs.
+
+---
+
+### 2.4 Architectural Clarifications from Independent Review
+
+The `closedWorld` option is an explicit, workload-specific trimming contract. It uses the user's assertion that the supplied evidence covers the workload being optimized. It cannot promise that transformed archives load on every compliant JDK 21+ installation: JVMs may resolve symbolic references eagerly or lazily, and verification may load types referenced by uncalled method bodies and stack-map frames. Preserve the full static closure in default mode and whenever documentation claims portable loadability.
+
+Closed-world admission fails explicitly when `closedWorld` is enabled without trace files, when files are empty, malformed, unreadable, detectably incomplete, or when their normalized classes are wholly irrelevant to the analyzed application/dependency inventory. Do not silently fall back to conservative mode or interpret unusable evidence as an empty world. Preserve each input kind through admission and reporting rather than using a merged non-empty class set as proof of completeness. Class-load logs, CDS class lists, and JFR class-load recordings are load evidence. JaCoCo input is binary `.exec` execution evidence only; exclude no-hit records and never describe probes as a complete class-load record. The reader does not support XML or CSV. Enabling `closedWorld` asserts the supplied workload evidence is the intended bound; reports must still identify its evidence kind and boundary.
+
+The closure query must distinguish conservative mode from an explicitly supplied allowed-class set, including the empty-set case. Include both mode and normalized allowed-set identity in reusable analysis state and trim-policy identity; changing either must recompute traversal. Traverse structural references regardless of allowed-set membership. Traverse other references only when their targets belong to the allowed set. Ignore an unresolved method-body target only when typed reference evidence identifies it as an excluded, non-structural target. Missing structural or allowed-target links, malformed bytecode, unclassified linkage failures, and reference-extraction failures remain fatal. Do not parse formatted diagnostic strings to decide which unresolved references to suppress.
+
+Keep explicit roots and active dynamic roots. An unknown dynamic-root owner may add a focused diagnostic but must not retain every archive. Removing `SpringMetadataRoots.readMetadata` must not remove active service, Spring factories/imports, native-image, or resource roots required elsewhere in the accepted policy. Empty liveness sets must not be converted to all classes or all artifacts.
+
+Service descriptor processing uses three outcomes: unchanged, replacement bytes, and omission. Existing `ServiceDescriptorFilter.filter()` returns `Optional.empty()` for unchanged input, so do not interpret it as a request to omit the descriptor. Decide provider retention against the global retained-class set across all archives and all effective MRJAR tiers. Preserve duplicate provider declarations where another archive supplies the provider, and preserve unknown/external provider names. Do not emit versioned `META-INF` descriptors. A user-provided trace from one runtime cannot justify removing a provider needed by another effective tier in the supported archive view.
+
+These limits are behavioral boundaries, not optional documentation polish. Tests must include real transformed archives loaded and invoked in a fresh JVM or isolated class loader on available standard JDK 21 and 25 installations, plus an uncalled method containing verification-relevant type relationships. Passing those examples demonstrates the captured workloads only; it does not establish universal verifier behavior.
+
+Supplemental version evidence never establishes affectedness or unaffectedness by itself. A scope-only mapping can provide code/prerequisite metadata only inside an independently asserted affected range; missing affected evidence has its own `NO_AFFECTED_ASSERTION` outcome and cannot create VEX. Keep prerequisite operator, full member set, version scope, priority, review intent, and row provenance atomic through merge. Preserve the current every-pair-absent proof rule as default `ANY_OF`; explicit `ALL_OF` is a separately documented contract. Conflicting equal-priority groups remain unresolved.
+
+Verified prerequisite VEX is based on the actual staged final output inventory. Complete baseline providers are required only to attribute why a prerequisite is absent; incomplete baseline evidence yields `UNKNOWN` attribution without invalidating a complete actual-final absence proof. An incomplete final inventory still suppresses proof. Analysis may report a labeled prediction but cannot issue a physical absence attestation. Catalog coordinates are explicitly adopted Maven build inputs, isolated from application dependencies, with computed artifact digest, schema, stable row IDs, advisory references, selected rows, exclusions, and adoption origin saved for offline replay. A digest identifies observed bytes but does not authenticate the publisher.
 
 ---
 
 ## 3. Slice 0: Wholesale `git rm` of 91 Obsolete/Over-Engineered Files & Exact Caller Edits
 
-Execute this slice first to remove **91 files (~15,000+ lines)** before adding new features.
+Complete this slice before feature work. The end state removes all **91 files (~15,000+ lines)**, but only after replacement tests and caller migrations establish which accepted guarantees remain. Work through clusters as reviewable commits; do not delete behavior-bearing tests before their replacement assertions fail for the intended reason.
 
-### Step 0.1: Run `git rm` on All 91 Files
+### Step 0.1: Add Replacement Tests for Preserved Guarantees
+
+Treat the eight behavior groups as separate TDD sub-slices. For each affected cluster, first add or migrate its focused acceptance test, run it against the current implementation, then make the minimum caller/production change and remove that cluster's files. A behavior-neutral deletion may have a passing characterization test before the refactor; a behavioral change must first fail for its intended reason. Commit each green cluster before moving to the next. Keep the existing supported boundary while removing duplicate verification, compatibility code, or orchestration layers:
+
+1. **Strict persisted evidence**: OSV record/evidence round trips remain valid; deleted `STRUCTURED_SOURCE_CLASS` and `CORROBORATED_SOURCE_CLASS_CANDIDATE` evidence tags and the superseded `cnaAffectedEntries` shape are rejected explicitly at schema version 1. Do not add compatibility constructors or aliases for the unreleased draft.
+2. **Precondition inventory**: exact class providers in application output, retained and staged dependency archives, shaded providers, duplicate providers, and effective MRJAR tiers determine each prerequisite member's present/absent state before its atomic group's operator is evaluated. Incomplete baseline inventory yields `UNKNOWN` attribution; incomplete actual final inventory blocks physical absence proof and yields `UNKNOWN`. A prerequisite class found only in test sources/output must not be treated as absent when a later `test-compile` may still create that provider.
+3. **VEX and report publication**: retained-component prerequisite proof emits the existing CycloneDX/OpenVEX forms only after inspecting a complete actual staged effective output inventory; an analysis prediction is never presented as physical proof. Baseline completeness is needed for causal attribution, not final absence: if baseline is incomplete but actual final inventory is complete, physical proof may succeed with `UNKNOWN` attribution. An incomplete final inventory suppresses the statement with its reason. A failed write surfaces as an error. When proof no longer succeeds, delete only an unchanged output recorded as plugin-owned. Preserve modified and unowned configured VEX files and report that preservation. Keep all internal unreleased persisted formats at version 1.
+4. **Ban enforcement**: a surviving application/library/provider reference, including an upper MRJAR tier or alternate class provider, rejects a ban before reports, artifact views, or resolver-plan publication. Retain strict final absence and closure validation while reducing redundant freshness passes.
+5. **Effective trim route**: both duplicate policies preserve their current class contents and diagnostics; unmatched duplicates still fail; dynamic roots supplied with analysis are reused without rescanning; pass-through and MRJAR behavior remain observable through the effective-analysis route.
+6. **Compiler environment**: inherited Maven properties, configured target selection, and standard platform-option precedence remain covered through surviving APIs after AST scanner removal.
+7. **Removed source-completeness property**: an explicit `elide.sourceRootsComplete=true` fails with migration guidance before `SourceRootCompleteness` and its caller are deleted.
+8. **Ban publication boundary**: requested-ban validation inspects staged archive bytes and final class/resource/provider closure before replacing generated outputs or publishing Maven artifact views or resolver plans. Inject a staged retained banned class and assert publication is rejected without changing prior output files or Maven views.
+
+### Step 0.2: Run `git rm` on All 91 Files
 
 Run the following `git rm` commands from the repository root:
 
@@ -174,7 +207,7 @@ git rm \
   dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DuplicateClassDirectTrimTest.java
 ```
 
-### Step 0.2: Exact Caller Cleanups in `elider-core`
+### Step 0.3: Exact Caller Cleanups in `elider-core`
 
 1. [OsvSnapshotIndexer.java](../../elider-core/src/main/java/io/github/spockz/elider/scanner/OsvSnapshotIndexer.java):
    - Remove `import io.github.spockz.elider.applicability.MavenRawScopeApplicability;`.
@@ -191,7 +224,7 @@ git rm \
    - Change the `permits` clause to:
      `permits PackageAdvisoryEvidence, HeuristicCandidateEvidence`
 3. [OsvAdvisoryRecord.java](../../elider-core/src/main/java/io/github/spockz/elider/model/OsvAdvisoryRecord.java):
-   - Remove the `List<CnaAffectedEntry> cnaAffectedEntries` record component (or keep a delegating overloaded constructor without `cnaAffectedEntries` and remove `validateStructuredEntryLink` / `validateCorroboratedEntryLink`).
+   - Remove the `List<CnaAffectedEntry> cnaAffectedEntries` record component and remove `validateStructuredEntryLink` / `validateCorroboratedEntryLink`. Do not keep a compatibility constructor for this unreleased draft.
 4. [AdvisoryEvidenceReader.java](../../elider-core/src/main/java/io/github/spockz/elider/scanner/AdvisoryEvidenceReader.java) & [AdvisoryEvidenceWriter.java](../../elider-core/src/main/java/io/github/spockz/elider/scanner/AdvisoryEvidenceWriter.java):
    - Remove `CnaAffectedEntryReader` / `CnaAffectedEntryCodec` calls and `STRUCTURED_SOURCE_CLASS` / `CORROBORATED_SOURCE_CLASS_CANDIDATE` branches.
 5. Clean up test references in:
@@ -199,7 +232,7 @@ git rm \
    - `elider-core/src/test/java/io/github/spockz/elider/model/ADR0008PreconditionProofTest.java` (remove `explicitPrerequisiteEvidenceRetainsPomOrigin` at lines 84–91).
    - `elider-core/src/test/java/io/github/spockz/elider/scanner/AdvisoryEvidenceCodecTest.java`, `OsvSnapshotFixtures.java`, `OsvSnapshotIndexerTest.java`, `VulnerabilityCacheRecordFixture.java`, and `dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/MavenAssessmentFixtures.java`: remove test cases/arguments for deleted `StructuredSourceClassEvidence`, `CorroboratedSourceClassCandidate`, `ExplicitClassMappingEvidence`, `ExplicitPrerequisiteEvidence`, and `cnaAffectedEntries`.
 
-### Step 0.3: Exact Caller Cleanups in `dependency-elider-maven-plugin`
+### Step 0.4: Exact Caller Cleanups in `dependency-elider-maven-plugin`
 
 1. [ProductionAnalysisInputs.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/ProductionAnalysisInputs.java):
    - At lines 77–97, replace the `if (sourceRootsComplete)` branch with throwing `new IOException("elide.sourceRootsComplete is no longer supported; bind elide to process-classes")`.
@@ -209,18 +242,29 @@ git rm \
    - Remove `addSourceRoots` (lines 105–117) and `addSourceProviders` / `MavenSourceDeclarationScanner` (lines 269–288) — at `process-classes`, only compiled output directories (`production-output`, `test-output`, `configured-production-output`) and resource directories (`production-resource`, `test-resource`) are scanned as runtime class/resource providers.
    - Remove `LinkOption.NOFOLLOW_LINKS`, `Files.isSymbolicLink`, and `verifyCapturedRootDigests` double-hashing (lines 80–93, 208–220, 329–388).
 3. [AnalyzeMojo.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/AnalyzeMojo.java) & [MavenElisionOutputPublisher.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenElisionOutputPublisher.java):
-   - Replace `MavenOutputTransaction` / `MavenGeneratedOutputManifest` with direct file writing (`Files.createDirectories(target.getParent())`, `MavenElisionReportWriter.write(...)`, `Files.writeString(...)`, and `Files.deleteIfExists(vexPath)` when no VEX attestations exist).
-   - Remove `MavenPreconditionInventory.verifyFresh(...)`, `MavenBanPublicationVerifier.verify(...)`, and `banPlan.verifyAuditFresh(...)`.
+   - Remove cross-file transaction/journal/rollback orchestration. Write each report, SBOM, and VEX through a simple same-directory temporary file and replacement so a failed write never exposes a partial file. Keep I/O failures explicit. Document that outputs across different paths are no longer an all-or-nothing transaction.
+   - Remove the `MavenGeneratedOutputManifest` and `MavenGeneratedOutputEntry` classes, but retain their required ownership behavior as a small digest-backed registry owned by `MavenGeneratedOutputs`: stale VEX cleanup may delete only a path previously emitted by this plugin whose current bytes still match the recorded digest. Preserve modified or unowned custom outputs and report that choice. Keep the registry's unreleased format at version 1 and reject malformed shapes.
+   - Remove duplicate freshness passes, not proof obligations. Validate the complete inventory once from its captured inputs, preserve concrete incompleteness, and run strict ban identity/graph/bytecode/resource/provider absence checks before any report, SBOM, VEX, artifact-view, or resolver-plan publication. Move necessary checks into one clear boundary if their current helper classes are removed.
 4. [MavenPreconditionInventory.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenPreconditionInventory.java):
-   - Remove `MavenPreconditionOutputState`, `MavenPreconditionStages`, and `verifyFresh(...)`.
+   - Remove `MavenPreconditionOutputState`, `MavenPreconditionStages`, and repeated `verifyFresh(...)` rehashing. Keep one complete baseline/final inventory capture and exact provider search.
 5. [TrimGenerationPublisher.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/TrimGenerationPublisher.java), [EffectiveOutputStaging.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/EffectiveOutputStaging.java), [TrimResult.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/TrimResult.java):
-   - Remove `TrimOutputGenerationPublisher`, `TrimOutputGenerationCommitHandle`, `PreparedOutputPublisher`, and `verifyEffectiveInputs(...)`; publish staged outputs directly into the `generation` directory and call `JarTrimCache.storeCache(...)`.
+   - Remove `TrimOutputGenerationPublisher`, `TrimOutputGenerationCommitHandle`, `PreparedOutputPublisher`, and duplicate `verifyEffectiveInputs(...)` rehashing. Keep simple staged archive writes and replacement in the `generation` directory, explicit write failures, and `JarTrimCache.storeCache(...)` after successful output creation.
 6. [ElisionReachabilityEngine.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/ElisionReachabilityEngine.java), [MavenBanPlan.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenBanPlan.java), [MavenElideExecution.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenElideExecution.java):
-   - Remove `banPlan.verifyAuditBytesFresh()`, `MavenArtifactInventory.verifyPreparedInventory(prepared)` inside the loop, `MavenBanRetainedProviderClosure.verify(...)`, and `requiresTierAwareMrjarTrim(...)`.
+   - Remove repeated `banPlan.verifyAuditBytesFresh()` and `MavenArtifactInventory.verifyPreparedInventory(prepared)` calls inside the loop under ADR-0004's stable-input assumption. Preserve one pre-publication ban check covering supported Maven views, every effective MRJAR tier, alternate class providers, and retained resource/service obligations. Fold the logic of deleted `MavenBanRetainedProviderClosure` into the surviving closure boundary. Remove `requiresTierAwareMrjarTrim(...)` only after its MRJAR proof coverage has migrated to that boundary.
 7. [MavenDependencyTrimmer.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenDependencyTrimmer.java) & [MavenElisionService.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenElisionService.java):
    - Remove `MavenDependencyTrimmer.trim(TrimRequest)` and route `MavenElisionService.finish(PreparedAnalysis)` directly to `finishEffectiveOutputs(finishAnalysis(prepared))`.
    - Call `EffectiveTrimOutput.trimEffectivePrepared(...)` directly instead of `TrimOutputCoordinator.trimPrepared(...)`.
-8. Run `make test-core` and `make test-plugin` to confirm clean compilation and green baseline tests before Slice 1.
+8. Migrate remaining callers before deleting their support classes:
+   - `MavenGeneratedOutputs` callers in `MavenTrimOutputWriter`, `ElideMojo`, and `MavenElisionOutputPublisher` still use output defaults, generated paths, stale-output cleanup, and ownership digests. Preserve these contracts in the simplified owner registry.
+   - `TrimOutputCoordinator.PendingOutput` and `publishOutputs` are used by `ParallelTrimExecutor`, `EffectiveOutputStaging`, and `DirectArchiveStaging`. Preserve duplicate resolution (`DuplicateClasses.resolveRetained` and `withToleratedDuplicates`), staged-output cleanup, and pass-through behavior when routing directly through `EffectiveTrimOutput`.
+   - `MavenElideExecution` and `MavenEffectiveAnalysisReport` own generation handles/cleanup; migrate those paths before removing the handles.
+   - Update `EffectiveTrimOutput` and `MavenDependencyTrimmerTest` to exercise the effective route directly, including dynamic-root reuse and upper-tier MRJAR closure.
+   - Migrate `MavenBanAuditContextTest` from the removed freshness method while retaining its upper-MR-tier closure scenario.
+9. Run `make test-core` and `make test-plugin` to confirm clean compilation and green replacement tests before Slice 1.
+
+### Step 0.5: Update the Decision and Research Records
+
+Update ADR-0004 to record that resolved inputs are captured once and outputs retain simple per-file replacement safety. Update ADR-0008 and ADR-0012 with the preserved inventory and ban-proof boundaries. Review ADR-0010, ADR-0013, and ADR-0014 for the source-free module, standard-JDK, and strict unreleased-format decisions. Record relevant new evidence in RQ-0017, RQ-0020, and RQ-0021; leave unrelated RQs untouched.
 
 ---
 
@@ -231,21 +275,32 @@ git rm \
 Create/update tests in:
 
 - `elider-core/src/test/java/io/github/spockz/elider/trace/JaCoCoTraceReaderTest.java`:
-  - Assert that an XML/CSV `<class>` or `<method>` row with `ci="0"` / `mi > 0` (`!record.hasHits()`) is **excluded** from `TraceData.loadedClasses()`.
+  - Build binary `.exec` input with JaCoCo's execution-data writer; assert a class record with no hit probes is excluded and a hit record is included. XML and CSV are not supported trace inputs.
+- `dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/ClosedWorldTraceAdmissionTest.java`:
+  - With `closedWorld=true`, missing trace configuration, an empty file/list, malformed or truncated data, an unreadable path, a detectably incomplete recording, or a trace containing no classes relevant to the analyzed inventory fails explicitly. A metadata root alone does not satisfy trace admission.
+  - Keep source kinds for class-load logs, CDS lists, JFR events, and JaCoCo `.exec`; reports identify which kind was used. JaCoCo is recorded as execution evidence, not complete class-load evidence.
+  - Changing mode or the normalized allowed-class set with the same requested roots recomputes closure and produces the same result as a fresh prepared state.
 - `elider-core/src/test/java/io/github/spockz/elider/trimmer/DependencyJarTrimmerTest.java`:
   - Assert that calling `analyze(...)` with `retainedRoots = Set.of()` returns `retainedClasses = Set.of()` (`0` retained classes), **not** all classes in the JAR.
-  - Assert that `SingleReleaseArchiveWriter` filters `META-INF/services/<S>` so pruned provider classes from the JAR are removed while retained or external providers remain, and if all providers in `META-INF/services/<S>` are pruned, the descriptor entry is omitted.
+  - Assert that service filtering distinguishes unchanged bytes, replacement bytes, and omission. Remove a provider only when no retained archive supplies it; keep duplicate declarations for providers supplied elsewhere and unknown/external provider names. If every known provider is removed, omit the descriptor.
   - Assert **Conservative (`closedWorld = false`) vs. Closed-World (`closedWorld = true`)**:
     - Build a fixture with `jar-a` containing `com.example.LiveA` (which `extends com.example.BaseA` in `jar-a`, has a method `used()` and an unexecuted method `unused()` that calls `com.other.UnusedB.run()` in `jar-b`) and `com.example.DeadA`.
     - When `closedWorld = false` and `LiveA` is in the trace: `LiveA` and `BaseA` are retained in `jar-a`, `DeadA` is trimmed, and `com.other.UnusedB` is in `reachableLibraryClasses()`.
-    - When `closedWorld = true` and `LiveA` + `BaseA` are in the closed-world trace (while `UnusedB` is **not** in the trace): `LiveA` and `BaseA` are retained in `jar-a`, `DeadA` is trimmed, `reachableLibraryClasses()` does **not** contain `com.other.UnusedB`, no `UnresolvedReferenceException` is thrown, and loading `LiveA` + invoking `LiveA.used()` in a `URLClassLoader` on JDK 21+ succeeds without `jar-b` on the classpath.
+    - When `closedWorld = true` and `LiveA` + `BaseA` are in the allowed set (while `UnusedB` is **not**): retain `LiveA` and `BaseA`, trim `DeadA`, omit `UnusedB`, and allow only a typed body-only unresolved edge to that excluded target. Retain an available untraced superclass/interface through structural traversal. A missing structural target, a missing allowed target, malformed bytecode, and an unclassified extraction failure still fail.
+    - Load the transformed archives in a fresh JVM or isolated class loader and invoke `LiveA.used()` with `jar-b` absent. Add a second live class with an uncalled method containing a frame/catch-type relationship. Run representative cases on available standard JDK 21 and 25 installations; document these as workload tests, not universal verification proof.
+  - **Observed-workload boundary**: add a closed-world fixture whose untraced method is invoked after trimming and assert the resulting missing-class/linkage failure. Document this as the expected consequence of a user-supplied workload bound; default conservative mode retains static closure.
 - `dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/SpringMetadataRootsTest.java` & `DependencyDynamicRootsTest.java`:
   - Assert that `META-INF/spring-autoconfigure-metadata.properties` inside a JAR is **ignored** and does not add any owner or `.ConditionalOnClass` classes to dynamic roots.
-  - Assert that an unowned class in `META-INF/spring.factories` or `META-INF/services/java.sql.Driver` does **not** cause `DynamicRootOrchestrator.dynamicRootArtifactOwners` or `SingleReleaseTrimInventory` to retain unrelated JARs in the inventory.
+  - Assert that an unknown external root produces a focused diagnostic and does **not** cause `DynamicRootOrchestrator.dynamicRootArtifactOwners` or `SingleReleaseTrimInventory` to retain unrelated JARs. Preserve recognized Spring factories/imports, services, native-image roots, and resource roots.
+- `elider-core/src/test/java/io/github/spockz/elider/trimmer/MultiReleaseArchivePlanTest.java`:
+  - For root service descriptors shared across MRJAR tiers, retain provider names viable in any supported effective tier and preserve the root-only `META-INF` behavior.
 - `dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/MavenElisionServiceEffectiveReportTest.java`:
   - **Cross-JAR reached JAR trimming**: `target/classes` -> `jar-a:LiveA` -> `jar-b:LiveB` (where `jar-b` also has `DeadB` and `DeadB` references `jar-c:DeadC`). Assert `jar-a` and `jar-b` are retained and trimmed to only `LiveA` and `LiveB` (`DeadB` is trimmed out), and `jar-c` is **elided** (because `jar-b` is no longer marked `forcedUnchanged`).
   - **Ancestor-promoted 0-live-class JAR**: `project -> jar-a -> jar-b` (where `jar-a` has `0` live classes and `DeadA -> jar-d:DeadD`, while `jar-b` has `LiveB`). Assert `jar-a` is `ANCESTOR_PROMOTED`, `jar-d` is **elided**, and when `trimJars = true`, `jar-a` is trimmed to `0` `.class` entries while keeping its `META-INF/MANIFEST.MF` and resources.
   - **`closedWorld = true` end-to-end**: With `closedWorld = true`, `jar-b` referenced only from an unexecuted method in `jar-a` (and absent from the trace) is **elided** by `elide` and predicted as elided by `analyze`.
+  - **Trim-off parity**: with `trimJars = false`, exercise the same closure and reporting inputs through `analyze` and `elide`; assert no retained archive bytes change, dropped artifacts are absent from the effective view, and class/provider/resource accounting agrees.
+  - **Additional effective-output cases**: assert extra physically retained classes remain available to closure, resource-only archives and service/resource roots follow the declared policy, duplicate providers obey both duplicate policies and preserve unmatched-duplicate failure, explicit-retention decisions remain intact, and pass-through inputs are unchanged.
+  - **MRJAR analysis/publication parity**: assert `analyze` and `elide` select the same supported base and upper-tier closure, while the published archives preserve effective classes and root-only service descriptors across tiers.
 
 ### Step 1.2: Production Implementation for Slice 1
 
@@ -279,7 +334,7 @@ Create/update tests in:
      - Delete `forcedUnchanged.addAll(newlyReachedDrops);` (line 104) and `addUnchangedPolicyArtifacts(evaluation, forcedUnchanged);` (lines 105, 121, 139–143).
      - When `newlyReachedDrops` are promoted in `finishAnalysis`, merge `DiscoveredTrimRoots.from(prepared.resolvedSnapshots(), analysis.candidateRoots())` into `discoveredRoots` and re-run `analyzeInMemory` with the newly promoted JARs treated as trimmable candidates (not `forcedUnchanged`).
      - After the reachability loop converges, any retained JAR that has `0` live classes (such as an `ANCESTOR_PROMOTED` JAR) keeps `retainedClasses = Set.of()` when `trimJars = true` so `SingleReleaseArchiveWriter` strips all its `.class` entries while keeping its manifest and resources.
-4. **Fix `JaCoCoTraceReader` & `SingleReleaseArchiveWriter` Service Filtering**:
+4. **Fix `JaCoCoTraceReader` & Service Descriptor Filtering**:
    - In [JaCoCoTraceReader.java](../../elider-core/src/main/java/io/github/spockz/elider/trace/JaCoCoTraceReader.java) at lines 48–55:
 
      ```java
@@ -292,21 +347,25 @@ Create/update tests in:
        ...
      ```
 
-   - In [SingleReleaseArchiveWriter.java](../../elider-core/src/main/java/io/github/spockz/elider/trimmer/SingleReleaseArchiveWriter.java) at lines 166–186:
-     - Accept `Set<String> serviceRetainedClasses` (defaulting to `retainedClasses` when not supplied, and passed from `EffectiveOutputStaging` using `globallyRetainedClasses` just like `MultiReleaseArchivePlan`).
-     - When `ServiceDescriptorFilter.isServiceDescriptor(entry.getName())` is true, call `ServiceDescriptorFilter.filterServices(input, entry, inputClasses, serviceRetainedClasses)`. If `Optional.empty()`, omit the entry; if present, write the filtered bytes.
+   - Replace the ambiguous `Optional<byte[]>` result from `ServiceDescriptorFilter` with an explicit result representing unchanged, replacement bytes, or omission. An unchanged descriptor is copied as-is; replacement writes the filtered bytes; omission skips the entry.
+   - Pass the global retained provider set to both `SingleReleaseArchiveWriter` and `MultiReleaseArchiveWriter`, assembled across all artifacts and effective MRJAR tiers. Preserve an external/unknown provider and any declaration whose provider class survives in another archive. Do not emit versioned `META-INF` descriptors.
 5. **Implement `closedWorld` Mode in `elider-core` and `dependency-elider-maven-plugin`**:
    - In [ProGuardReferenceVisitors.java](../../elider-core/src/main/java/io/github/spockz/elider/trimmer/ProGuardReferenceVisitors.java):
-     - Add `static ClassVisitor structural(final ClassVisitor classVisitor, final Function<String, Clazz> classLookup)` that visits:
+     - Add visitors that collect structural reference evidence, including:
        - Superclass and interfaces (`new ClassHierarchyTraveler(false, true, true, false, classVisitor)`),
        - Field and method descriptors (`new AllMemberVisitor(new MemberDescriptorReferencedClassVisitor(classVisitor))`),
        - Class and member `Signature` attributes (`new AllAttributeVisitor(true, new SignatureAttributeReferencedClassVisitor(classVisitor))`),
        - Exception handler `catch_type` constants (`new AllMethodVisitor(new AllAttributeVisitor(new AllExceptionInfoVisitor(new ExceptionHandlerConstantVisitor(new ReferencedClassVisitor(classVisitor)))))`).
+     - These visitor categories do not prove universal JDK verification safety. Keep trace trimming workload-scoped and preserve default static closure.
    - In [ReferenceGraph.java](../../elider-core/src/main/java/io/github/spockz/elider/trimmer/ReferenceGraph.java) & [ReferenceGraphIndexer.java](../../elider-core/src/main/java/io/github/spockz/elider/trimmer/ReferenceGraphIndexer.java):
-     - Store `Map<String, Set<String>> structuralEdges` alongside `Map<String, Set<String>> edges` (code + structural edges).
+     - Store structurally typed reference edges and unresolved evidence (source class, target class, and reference kind), rather than only target-name sets and formatted diagnostic strings. Preserve full-reference edges for conservative traversal.
    - In [PreparedAnalysisState.java](../../elider-core/src/main/java/io/github/spockz/elider/trimmer/PreparedAnalysisState.java):
-     - Support `analyze(Collection<String> requestedRoots, Set<String> closedWorldAllowedClasses)` (when `closedWorldAllowedClasses` is empty/null, run normal conservative traversal over `graph.edges()` with unresolved-reference checks; when `closedWorldAllowedClasses` is non-null, traverse `graph.structuralEdges()` unconditionally and only traverse `graph.edges()` to targets in `closedWorldAllowedClasses`, and skip `UnresolvedReferenceException` for targets outside `closedWorldAllowedClasses`).
-   - Expose `<closedWorld>` (`@Parameter(property = "elide.closedWorld", defaultValue = "false") boolean closedWorld`) on `ElideMojo` and `AnalyzeMojo`, thread it through `ElisionAnalysisModel`, `MavenElisionPolicyIdentity` (so cache fingerprints include `closedWorld`), `MavenAnalysisPreparation`, and `SingleReleaseClosureAnalyzer` / `TierClosureAnalyzer`.
+     - Distinguish conservative mode from a closed-world query with an explicit API such as `Optional<Set<String>>`: absent policy means conservative static traversal; present policy means trace-bounded traversal, including a deliberate empty set. Do not overload empty roots or `null` to switch modes.
+     - Traverse structural references unconditionally and non-structural references only when their target is in the normalized allowed set. Suppress an unresolved target only when typed evidence classifies it as an excluded body-only reference; structural, allowed-target, malformed, and unclassified failures remain errors.
+     - Recompute closure when roots, mode, or allowed set changes. Reuse requires the full normalized query identity, not root equality alone.
+   - Preserve trace kind through `RuntimeTraceReader`/`CompositeTraceReader` and the analysis model. Reject closed-world mode with no trace input, empty/malformed/unreadable/incomplete data, or no relevant application/dependency classes. JaCoCo `.exec` contributes hit classes only and remains explicitly labeled execution evidence.
+   - Expose `<closedWorld>` (`@Parameter(property = "elide.closedWorld", defaultValue = "false") boolean closedWorld`) on `ElideMojo` and `AnalyzeMojo`; thread the mode and allowed set through `ElisionAnalysisModel`, `MavenElisionPolicyIdentity`, `MavenAnalysisPreparation`, and `SingleReleaseClosureAnalyzer` / `TierClosureAnalyzer`. Cache identity includes trace evidence kind and the normalized allowed-class set.
+   - Save the selected mode and evidence kind/boundary in the report so `report` replay shows the same analysis contract. Keep persisted report schema at version 1 while unreleased; update its writer, reader, validator, fixture, and documentation together.
 
 ---
 
@@ -315,29 +374,36 @@ Create/update tests in:
 ### Step 2.1: Write Failing Tests First (TDD)
 
 - `elider-core/src/test/java/io/github/spockz/elider/model/GenericVulnerabilityFindingTest.java`:
-  - Test that a contribution with `VersionCoverageClaim.evidenceScope("(,1.6.0)")` and `PrerequisiteClaim("org.codehaus.janino:janino", "org.codehaus.janino.ScriptEvaluator")` merged with an OSV/CVE contribution affecting `[1.4.0, 1.5.19)` and `[1.3.0, 1.3.15)`:
+  - Test a contribution with `VersionCoverageClaim.evidenceScope("[1.5.18]")` and `PrerequisiteClaim("org.codehaus.janino:janino", "org.codehaus.janino.ClassBodyEvaluator")` merged with independent OSV/CVE affected-version assertions. The example catalog is limited to the Logback versions inspected in the preserved research; broader class/version scope requires new bytecode and advisory review recorded in RQ-0020/RQ-0021.
     - Reports `applicability("1.5.18") == AFFECTED` and `effectivePrerequisitesFor("1.5.18")` contains Janino.
     - Reports `applicability("1.5.19") == NOT_AFFECTED` and `applicability("1.3.16") == NOT_AFFECTED`.
-  - Test priority ordering: `MergePriority.MANUAL` (POM) > `MergePriority.CATALOG` > `MergePriority.AUTOMATIC` independently for `codeGroup` and `prerequisiteGroup`, regardless of contribution list order.
+  - Test that scope-only contributions inside and outside their scope return a distinct `NO_AFFECTED_ASSERTION` result, never establish `AFFECTED` or `NOT_AFFECTED`, and cannot emit VEX. Scope supplies supplemental fields only when an independent contribution establishes `AFFECTED`. An unaffected-only assertion returns `NOT_AFFECTED` only inside its asserted range; outside that range, absent any affected assertion, the result is `NO_AFFECTED_ASSERTION`. Fixed Logback versions 1.3.16 and 1.5.19 are not made affected by the supplemental scope.
+  - Include the original regression shape: an evidence-only scope `(,1.6.0)` overlaps independently asserted vulnerable ranges but extends beyond them. Versions 1.5.18, 1.5.19, and 1.3.16 follow only the independent affected/unaffected assertions; the supplemental scope neither fills the affected-range gaps nor creates a negative assertion by itself.
+  - Test affected-applicability precedence: a matching supported affected assertion remains `AFFECTED` despite overlapping unaffected or unresolved assertions (the unresolved group still blocks verification); with no matching affected assertion, an applicable unresolved assertion returns `UNRESOLVED`; an unaffected-only matching assertion returns `NOT_AFFECTED`; evidence-scope-only input returns `NO_AFFECTED_ASSERTION`.
+  - Test priority ordering: `MergePriority.MANUAL` (POM) > `MergePriority.CATALOG` > `MergePriority.AUTOMATIC` independently for `codeGroup` and prerequisite groups, regardless of contribution list order. Cover reordered and duplicate rows, overlapping and disjoint scopes, POM supplied/omitted/empty groups, same-priority operator conflicts, and manual `REVIEW_ONLY` intent overriding catalog intent.
 - `elider-core/src/test/java/io/github/spockz/elider/scanner/VulnerabilityMappingCatalogCodecTest.java`:
-  - Test reading, writing, and validating `META-INF/elider/vulnerability-mappings.json` (`schemaVersion: 1`), rejecting unsupported `schemaVersion`, isolating malformed mapping rows as `PARTIAL` source health with diagnostics while keeping valid rows.
+  - Test reading, writing, and validating `META-INF/elider/vulnerability-mappings.json` (`schemaVersion: 1`), rejecting unsupported schema, malformed top-level containers, missing resources, invalid catalog IDs, duplicate row IDs, and systemic decode failures explicitly. Require stable `mappingId` per row; preserve advisory-only vulnerability IDs and aliases, component `type`/`classifier`, affected versus evidence-scope ranges, class/file/routine code locators, prerequisite groups, confidence, review intent, and advisory URI. LOW/MEDIUM confidence maps to `REVIEW_ONLY`; HIGH confidence does not itself grant proof eligibility, and an explicit review-only intent remains review-only. Preserve omitted fields versus explicitly empty arrays through round-trip. Deduplicate equivalent semantic rows independent of order while preserving all provenance. Preserve ambiguous alias relationships for the common reconciler, which retains disputed CVEs separately and marks ambiguous identities review-only. A malformed row may preserve unrelated valid rows for review with `PARTIAL` source health; source health alone does not alter proof eligibility. Any selected incomplete or malformed declaration blocks proof under the same common declaration-completeness rules for catalog, POM, and automatic findings.
 - `dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/MavenVulnerabilityMappingCatalogTest.java`:
-  - Test resolving a data-only mapping catalog JAR via Maven `RepositorySystem` from `<vulnerabilityMappingCatalogs><coordinate>...</coordinate></vulnerabilityMappingCatalogs>`, verifying POM override precedence (`POM > CATALOG > AUTOMATIC`), offline replay via `report`, and that the catalog artifact never appears in project dependencies, `PreconditionClassInventory`, or CycloneDX SBOM components.
+  - Test resolving only explicitly configured data-only catalog coordinates via Maven `RepositorySystem`; require a concrete released version and reject ranges, `LATEST`/`RELEASE`, and `-SNAPSHOT` coordinates so adoption is reproducible. Cover a locally pinned artifact, cached offline success, required missing-artifact/offline-cache failure (never empty success), and exact version/type/classifier selection. Deduplicate repeated configured coordinates so each artifact resolves once. Across distinct catalogs, deduplicate byte-equivalent rows independent of order while retaining all source provenance; a reused `mappingId` with different semantic fields is an unresolved mapping conflict, never order-wins. Assert isolation from application dependencies, compile/runtime classpaths, `PreconditionClassInventory`, packaged libraries, and CycloneDX components. Save the selected catalog GAV/type/classifier, computed artifact SHA-256, schema version, row IDs, advisory URIs, exclusions, and adoption provenance in report evidence; `report` replay uses saved evidence without resolving the catalog again, even after repository bytes change or disappear.
+  - Cover missing metadata resource, corrupt artifact/container, unsupported schema, duplicate row IDs, malformed rows/`PARTIAL` status, advisory-only identity and alias bridges, exact digest recording, and unchanged common physical-proof gating. The computed digest records observed artifact bytes; it is not treated as publisher authentication or compared to a fabricated expected digest. Verify one mapping containing both vulnerable-code and prerequisite fields preserves their independent scopes and provenance.
+  - Add a valid row plus an unrelated malformed row: source health is `PARTIAL`, but the valid row receives the same assessment and proof eligibility as the same complete declaration from POM or automatic input. A malformed/ambiguous effective row remains unresolved under the common declaration-completeness rule, independent of source.
 
 ### Step 2.2: Production Implementation for Slice 2
 
 1. **Supplemental Evidence Scope (`VersionCoverageClaim` & `GenericVulnerabilityFinding`)**:
    - In [VersionCoverageClaim.java](../../elider-core/src/main/java/io/github/spockz/elider/model/VersionCoverageClaim.java):
-     - Add `public static VersionCoverageClaim evidenceScope(final String mavenRange)` using `VersionApplicability.EVIDENCE_SCOPE` (add `EVIDENCE_SCOPE` to [VersionApplicability.java](../../elider-core/src/main/java/io/github/spockz/elider/model/VersionApplicability.java)).
+     - Add `public static VersionCoverageClaim evidenceScope(final String mavenRange)` using `VersionApplicability.EVIDENCE_SCOPE`.
+     - Add `VersionApplicability.NO_AFFECTED_ASSERTION` as a result distinct from `NOT_AFFECTED`. It is a query result, not a persisted claim status; strict readers reject it inside a `VersionCoverageClaim`.
    - In [GenericVulnerabilityFinding.java](../../elider-core/src/main/java/io/github/spockz/elider/model/GenericVulnerabilityFinding.java):
-     - `applicability(final String version)` (lines 107–121) only checks `claim.status() == VersionApplicability.AFFECTED` and `claim.status() == VersionApplicability.UNRESOLVED` (ignoring `EVIDENCE_SCOPE` so an evidence scope never marks a fixed version as `AFFECTED`).
-     - `positivelyApplicable(final VulnerabilityFindingContribution contribution, final String version)` (lines 304–311) matches when `claim.status() == VersionApplicability.AFFECTED || claim.status() == VersionApplicability.EVIDENCE_SCOPE`.
+     - `applicability(final String version)` considers independently asserted `AFFECTED`, explicit `NOT_AFFECTED`, and `UNRESOLVED` ranges. A matching supported `AFFECTED` assertion wins over overlapping `NOT_AFFECTED`/`UNRESOLVED` claims. If no affected assertion matches and an applicable unresolved assertion remains, return `UNRESOLVED`; otherwise a matching unaffected assertion or the presence of an affected assertion whose supported range excludes the candidate returns `NOT_AFFECTED`. An unaffected-only assertion outside its range and evidence-scope-only input return `NO_AFFECTED_ASSERTION`.
+     - `positivelyApplicable(...)` may use `EVIDENCE_SCOPE` to supply supplemental fields only when merged applicability is independently `AFFECTED`; an evidence-scope-only finding never becomes reassuring or proof-bearing.
+     - Propagate `NO_AFFECTED_ASSERTION` through assessment, report schema-v1 writer/reader/validator/renderers, fixtures, and docs. It produces no CycloneDX or OpenVEX VEX statement.
    - In [ManualVulnerabilityMappingContributionAdapter.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/ManualVulnerabilityMappingContributionAdapter.java):
      - Add `boolean assertsAffected` (default `false`) to `VulnerabilityMappingConfig`. When `assertsAffected == false` (the default for supplemental code/prerequisite mappings), emit `VersionCoverageClaim.evidenceScope(spec)`; when `assertsAffected == true`, emit `VersionCoverageClaim.affected(spec)`.
 2. **Add `CATALOG` Priority & Origin**:
    - In [MergePriority.java](../../elider-core/src/main/java/io/github/spockz/elider/model/MergePriority.java): Add `CATALOG` between `AUTOMATIC` and `MANUAL`.
    - In [EvidenceOrigin.java](../../elider-core/src/main/java/io/github/spockz/elider/model/EvidenceOrigin.java): Add `CATALOG`.
-   - In [GenericVulnerabilityFinding.java](../../elider-core/src/main/java/io/github/spockz/elider/model/GenericVulnerabilityFinding.java): In `effectiveGroupSuppliers`, check `MANUAL` first, then `CATALOG`, then `AUTOMATIC`.
+   - In [GenericVulnerabilityFinding.java](../../elider-core/src/main/java/io/github/spockz/elider/model/GenericVulnerabilityFinding.java): resolve supplied groups by scoped field priority: `MANUAL` first, then `CATALOG`, then `AUTOMATIC`. Omitted fields can be enriched from a lower-priority source; explicit empty fields clear lower-priority values. Review intent is resolved independently and a manual LOW/MEDIUM `REVIEW_ONLY` policy cannot be bypassed by catalog confidence.
 3. **Implement `VulnerabilityMappingCatalog` in `elider-core` & Resolver in Plugin**:
    - Create `elider-core/src/main/java/io/github/spockz/elider/scanner/VulnerabilityMappingCatalog.java` reading/writing `META-INF/elider/vulnerability-mappings.json`:
 
@@ -347,16 +413,31 @@ Create/update tests in:
        "catalogId": "io.github.spockz:elider-vulnerability-mappings",
        "mappings": [
          {
-           "cveId": "CVE-2025-11226",
+           "vulnerabilityId": "CVE-2025-11226",
+           "aliases": [],
+           "mappingId": "logback-cve-2025-11226-classbodyevaluator-1.5.18",
+           "advisoryUri": "https://nvd.nist.gov/vuln/detail/CVE-2025-11226",
            "groupId": "ch.qos.logback",
            "artifactId": "logback-core",
-           "versionRangeSpec": "(,1.6.0)",
-           "assertsAffected": false,
-           "prerequisiteOperator": "ALL_OF",
-           "prerequisites": [
+           "type": "jar",
+           "classifier": "",
+           "versionClaims": [
              {
-               "requiresDependency": "org.codehaus.janino:janino",
-               "requiresClass": "org.codehaus.janino.ScriptEvaluator"
+               "range": "[1.5.18]",
+               "status": "EVIDENCE_SCOPE"
+             }
+           ],
+           "confidenceLevel": "HIGH",
+           "intent": "AUTO_VERIFY",
+           "prerequisiteGroups": [
+             {
+               "operator": "ANY_OF",
+               "members": [
+                 {
+                   "requiresDependency": "org.codehaus.janino:janino",
+                   "requiresClass": "org.codehaus.janino.ClassBodyEvaluator"
+                 }
+               ]
              }
            ]
          }
@@ -364,7 +445,9 @@ Create/update tests in:
      }
      ```
 
-   - Create `dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenVulnerabilityMappingCatalogResolver.java` using `@Component RepositorySystem` to resolve each `<vulnerabilityMappingCatalogs>` coordinate (`groupId:artifactId:version[:type[:classifier]]`), verify its file digest, parse `META-INF/elider/vulnerability-mappings.json`, and emit `VulnerabilityFindingContribution`s with `MergePriority.CATALOG` and `EvidenceOrigin.CATALOG` + `FindingSourceObservation` for the catalog source.
+     - Add a separate stable row for the inspected `1.5.11` Logback version with a `versionClaims` entry `{ "range": "[1.5.11]", "status": "EVIDENCE_SCOPE" }`; do not widen the evidence scope to all versions below a release boundary without new review. The schema must preserve the current `VulnerabilityFindingContribution` contract, including advisory-only IDs and aliases, GAV type/classifier, source-version claims, class/file/routine `CodeReference`s, confidence label, `AssessmentIntent`, optional code/prerequisite groups, and missing-versus-explicitly-empty fields. `codeGroup` is an optional array of declared/heuristic claim kind and reference kind/value/original spellings; `prerequisiteGroups` is an optional array of atomic operator/member groups. Omission maps to `FieldValue.omitted()` and an empty array maps to `FieldValue.supplied(emptySet())`.
+
+   - Create `dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenVulnerabilityMappingCatalogResolver.java` using the configured Maven session and `RepositorySystem` to resolve only explicitly adopted coordinates (`groupId:artifactId:version[:type[:classifier]]`). Fail missing required artifacts and malformed/missing/unsupported containers explicitly. Compute and persist the resolved artifact SHA-256 as observed provenance; do not claim it authenticates a publisher or compare it with an unspecified expected digest. Emit contributions with `MergePriority.CATALOG`, `EvidenceOrigin.CATALOG`, stable catalog/row identity, and advisory URI in `FindingSourceObservation`. The artifact remains a build input, not an application dependency or executable provider.
 
 ---
 
@@ -373,30 +456,34 @@ Create/update tests in:
 ### Step 3.1: Write Failing Tests First (TDD)
 
 - `elider-core/src/test/java/io/github/spockz/elider/model/ADR0008PreconditionProofTest.java`:
-  - **Trimmed-class prerequisite proof**: Affected `logback-core` is retained AND `org.codehaus.janino:janino` JAR is retained on the classpath, **but** `org.codehaus.janino.ScriptEvaluator` was trimmed out of `janino.jar` (and is absent from all other providers). Assert `PreconditionProof.prove(...)` **succeeds** (`NOT_AFFECTED`, `requires_dependency`).
-  - **Conjunctive (`ALL_OF`) vs. Alternative (`ANY_OF`)**:
-    - Under `ALL_OF` with prerequisites `[P1, P2]`, if `P1` is present and `P2` is absent, `PreconditionProof.prove(...)` **succeeds** (`NOT_AFFECTED`).
-    - Under `ANY_OF` with prerequisites `[P1, P2]`, if `P1` is present and `P2` is absent, `PreconditionProof.prove(...)` **fails** (still exploitable via `P1`); if both `P1` and `P2` are absent, it **succeeds**.
-  - **Baseline vs. Final Attribution**:
+  - **Trimmed-class prerequisite proof**: Affected `logback-core` is retained and the `org.codehaus.janino:janino` coordinate remains, but the reviewed required class `org.codehaus.janino.ClassBodyEvaluator` is absent from the actual staged Janino archive and all other providers. Assert proof succeeds only after inspecting the staged bytes; coordinate retention alone does not block a class-specific prerequisite proof. Add the inverse case where `ScriptEvaluator` is absent but `ClassBodyEvaluator` remains; proof must fail.
+  - **Atomic prerequisite groups**: Keep operator, complete member set, version scope, priority, review intent, and row provenance together through reconciliation. Use `PrerequisiteGroup(operator, members)` as one supplied field. POM supplied groups replace catalog/automatic groups in their matching scope, omitted groups permit enrichment, and explicit empty groups clear lower-priority groups. Deduplicate identical groups independent of order; retain distinct groups as separate proof obligations rather than flattening their members or operators. Incompatible same-priority overlapping groups are unresolved, never order-wins.
+  - **Conjunctive (`ALL_OF`) vs. alternative (`ANY_OF`)**:
+    - Preserve the current all-declarations-absent rule as the default `ANY_OF`: with members `[P1, P2]`, one present member prevents proof; both absent permits proof.
+    - `ALL_OF` explicitly means all members are jointly required: one absent member disarms that group. Every effective group must be disarmed before VEX proof.
+    - Test identical and reordered rows, overlapping and disjoint scopes, same-priority conflicting operators, a scoped POM override, an omitted POM group enriched from catalog, explicit empty POM group, and LOW manual review intent overriding catalog AUTO_VERIFY.
+  - **Baseline vs. Actual Staged Final Attribution**:
     - Absent in baseline and absent in final -> `PrerequisiteAbsenceAttribution.ALREADY_ABSENT`.
-    - Present in baseline and absent in final because owning JAR was dropped -> `PrerequisiteAbsenceAttribution.ELIDED_DEPENDENCY`.
-    - Present in baseline and absent in final because `requiresClass` was trimmed from retained owning JAR -> `PrerequisiteAbsenceAttribution.TRIMMED_CLASS`.
+    - Present in baseline and absent from actual final bytes because all providers' owning archives were dropped -> `PrerequisiteAbsenceAttribution.ELIDED_DEPENDENCY`.
+    - Present in baseline and absent from actual final bytes because an owning archive remains but the exact class was removed from its staged contents -> `PrerequisiteAbsenceAttribution.TRIMMED_CLASS`.
+    - If duplicate baseline providers disappear through different routes (for example, one archive is dropped and another is trimmed), report `MIXED` and retain provider-level outcomes.
+    - If either baseline or actual final inventory is incomplete, attribution is `UNKNOWN`; coordinate-only predictions cannot establish a cause.
+  - If baseline is incomplete but actual final inventory is complete and proves all required classes absent, permit the physical VEX proof while reporting `UNKNOWN` attribution and the baseline refusal reason. If actual final inventory is incomplete, suppress proof.
+  - Add duplicate/shaded-provider cases: any provider retaining the exact class makes that member present. Evaluate the complete atomic group's operator afterward; a present member blocks `ANY_OF` but does not block `ALL_OF` proof if another jointly required member is absent. Include `ALL_OF(P1 present through a duplicate provider, P2 absent)` and assert proof succeeds, while `ANY_OF` over the same member states fails.
+  - Add a test-only provider case: when the class exists only in `src/test/java` and `test-compile` can still run after `process-classes`, precondition proof is suppressed. `-DskipTests` does not suppress this future compiler output; `-Dmaven.test.skip=true` does.
 
 ### Step 3.2: Production Implementation for Slice 3
 
-1. **Add `PrerequisiteOperator` (`ALL_OF`, `ANY_OF`) & `PrerequisiteAbsenceAttribution`**:
-   - Create `elider-core/src/main/java/io/github/spockz/elider/model/PrerequisiteOperator.java` (`ALL_OF`, `ANY_OF`, defaulting to `ALL_OF`).
-   - Create `elider-core/src/main/java/io/github/spockz/elider/model/PrerequisiteAbsenceAttribution.java` (`ALREADY_ABSENT`, `ELIDED_DEPENDENCY`, `TRIMMED_CLASS`, `PRESENT`, `UNKNOWN`).
-   - Include `PrerequisiteOperator prerequisiteOperator` on `VulnerabilityFindingContribution` / `GenericVulnerabilityFinding` (defaulting to `ALL_OF`).
+1. **Add `PrerequisiteOperator` (`ALL_OF`, `ANY_OF`), atomic `PrerequisiteGroup`, and `PrerequisiteAbsenceAttribution`**:
+   - Create `elider-core/src/main/java/io/github/spockz/elider/model/PrerequisiteOperator.java` (`ALL_OF`, `ANY_OF`), with `ANY_OF` as the compatibility default.
+   - Create `PrerequisiteGroup` containing the operator and complete immutable member set. Store atomic groups in a supplied `FieldValue<Set<PrerequisiteGroup>>`; a supplied empty set explicitly clears lower-priority groups. The contribution's version claims, merge priority, assessment intent, stable row/source provenance remain bound to its groups through scoped reconciliation.
+   - Create `elider-core/src/main/java/io/github/spockz/elider/model/PrerequisiteAbsenceAttribution.java` (`ALREADY_ABSENT`, `ELIDED_DEPENDENCY`, `TRIMMED_CLASS`, `MIXED`, `PRESENT`, `UNKNOWN`). Keep each claim's provider-based outcome so `MIXED` can be explained.
+   - Default legacy/single-field mappings to `ANY_OF`, preserving today's behavior that every effective prerequisite pair must be absent. An explicit `ALL_OF` mapping opts into a new conjunctive contract and must be documented in ADR-0008/ADR-0014.
 2. **Fix `PreconditionProof.java` (`:107-136`) for Trimmed Classes, `ALL_OF`/`ANY_OF`, and Attribution**:
    - In [PreconditionProof.java](../../elider-core/src/main/java/io/github/spockz/elider/model/PreconditionProof.java):
-     - A single `PrerequisiteClaim(requiresDependency, requiresClass)` is **present** in an `InventoryInspection` iff `inspection.availableClasses.contains(prerequisite.requiresClass())` (when `requiresClass` is specified; if `requiresClass` is absent from every provider in the complete inventory, the prerequisite is **absent** even if a trimmed `requiresDependency` archive remains).
-     - For `PrerequisiteOperator.ALL_OF`: the vulnerability's prerequisite condition is disarmed if **at least one** declared `PrerequisiteClaim` is absent from `finalInspection`.
-     - For `PrerequisiteOperator.ANY_OF`: the vulnerability's prerequisite condition is disarmed iff **every** declared `PrerequisiteClaim` is absent from `finalInspection`.
-     - When `baselineInspection` is also provided:
-       - If the disarming prerequisite(s) were already absent in `baselineInspection` -> `PrerequisiteAbsenceAttribution.ALREADY_ABSENT`.
-       - Else if the prerequisite's `requiresDependency` archive was present in `baselineInspection` and absent in `finalInspection` -> `PrerequisiteAbsenceAttribution.ELIDED_DEPENDENCY`.
-       - Else (`requiresDependency` archive is still in `finalInspection`, but `requiresClass` was removed by trimming) -> `PrerequisiteAbsenceAttribution.TRIMMED_CLASS`.
+     - A pair's class is present iff the exact class appears in any provider in the inspected physical inventory. The declared coordinate remains part of the atomic evidence and attribution, but a retained archive does not refute that pair's absence when the class is absent from its actual staged bytes and every other provider.
+     - For `ALL_OF`, a group is disarmed when at least one member class is absent. For `ANY_OF`, it is disarmed only when every member class is absent. Every effective group must be disarmed; same-priority operator conflicts remain unresolved.
+     - Compare exact provider identities from complete baseline and actual staged final inventories. Derive `ALREADY_ABSENT`, `ELIDED_DEPENDENCY`, `TRIMMED_CLASS`, or `MIXED` from all duplicate providers and per-claim causes. If either inventory is incomplete, report `UNKNOWN`. Never infer physical absence or attribution from predicted coordinates/classes alone.
 3. **Preserve Incomplete Inventory Diagnostics in `MavenVulnerabilityAssessment.java`**:
    - At [MavenVulnerabilityAssessment.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenVulnerabilityAssessment.java) lines 273–278, when `preconditionInventory != null && !preconditionInventory.classProviders().complete()`, pass `preconditionInventory.classProviders().detail()` into `GenericFindingAssessment` so the user and report JSON see the exact reason why the inventory was incomplete.
 
@@ -407,20 +494,27 @@ Create/update tests in:
 ### Step 4.1: Write Failing Tests First (TDD)
 
 - Integration tests in `MavenElisionOutputPublisherTest` / `ElideMojoTest` / `AnalyzeMojoTest`:
-  - `elide` with `trimJars = false` captures `PreconditionClassInventory` (both baseline and final), proves `CVE-2025-11226` `NOT_AFFECTED` (`requires_dependency`, `ALREADY_ABSENT`), writes `dependency-elider-report.json`, writes `bom.json` with CycloneDX `vulnerabilities[].analysis` (`state: not_affected`, `justification: requires_dependency`), and writes `vex.openvex.json` — while leaving original `.jar` files untouched.
-  - `analyze` computes baseline and predicted final `PreconditionClassInventory` and outputs matching assessment and attribution (`ALREADY_ABSENT` vs. `ELIDED_DEPENDENCY` / `TRIMMED_CLASS`) in console and JSON report.
+  - `elide` with `trimJars = false` captures complete baseline providers and the actual effective final providers after whole-artifact decisions. It proves `CVE-2025-11226` only against actual selected bytes, writes matching report/CycloneDX/OpenVEX outputs, and leaves retained original `.jar` bytes untouched. `analyze` uses the same scenario but labels its result as a prediction and emits no verified VEX statement.
+  - With trimming enabled, capture staged archive bytes and inspect their classes/resources/providers, retained originals, dropped archives, application outputs, shaded and duplicate providers, and effective MRJAR tiers before constructing a verified VEX attestation. Mutate a staged archive after predicted analysis so it retains the required class; assert proof is suppressed and no VEX/report generation presents predicted absence as physical proof.
+  - `analyze` reports a labeled predicted outcome only. It never emits a VEX attestation from predicted final inventory. Baseline or final inventory incompleteness yields `UNKNOWN` attribution with its exact refusal reason.
+  - An incomplete baseline with a complete actual staged final inventory still allows final absence proof but reports `UNKNOWN` attribution; an incomplete final inventory suppresses VEX proof.
+  - Groups with prerequisites absent for different baseline/elision/trimming reasons report `MIXED` plus provider-level outcomes. A provider makes its exact member present; apply the selected group operator to the full member-state set, including alternate, shaded, application, retained, duplicate, and MRJAR providers.
 
 ### Step 4.2: Production Implementation for Slice 4
 
 1. [ElideMojo.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/ElideMojo.java):
    - At line 272, change `final boolean preconditionInventoryComplete = trimJars && preconditionClassPathComplete;` to `final boolean preconditionInventoryComplete = preconditionClassPathComplete;`.
+   - Attempt the complete baseline inventory whenever `preconditionClassPathComplete` is enabled. Baseline incompleteness supplies `UNKNOWN` attribution but does not by itself block final absence proof. After all trim outputs are staged and the effective Maven view is known, inspect actual staged archive bytes plus retained originals/application providers and exclude dropped archives; an incomplete final inventory suppresses VEX. With `trimJars=false`, inspect the unchanged retained archive bytes and the effective view after whole-artifact elision. Physical archive replacement remains gated by `trimJars`.
 2. [AnalyzeMojo.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/AnalyzeMojo.java):
-   - At lines 327–333, capture baseline and predicted post-elision `MavenPreconditionInventory` from `effectiveAnalysis` instead of passing `null`.
+   - At lines 327–333, capture baseline and predicted post-elision `MavenPreconditionInventory` from `effectiveAnalysis` instead of passing `null`. Reports mark these as predictions and do not create verified CycloneDX/OpenVEX attestations; only `elide` inspects actual staged bytes for that claim.
 3. [MavenElisionOutputPublisher.java](../../dependency-elider-maven-plugin/src/main/java/io/github/spockz/elider/plugin/MavenElisionOutputPublisher.java):
-   - At lines 106–288, remove the `if (request.files().trimJars())` guard around SBOM (`generateSbom` / `sbomOutput`), OpenVEX (`vex` generation and `Files.deleteIfExists`), and report publication. Only physical JAR path replacement (`applyArtifactChanges` / trimmed JAR file swapping) depends on `trimJars`.
+   - At lines 106–288, remove the `if (request.files().trimJars())` guard around SBOM (`generateSbom` / `sbomOutput`), OpenVEX generation/stale cleanup, and report publication. Only physical JAR path replacement (`applyArtifactChanges` / trimmed JAR file swapping) depends on `trimJars`.
+   - If no VEX attestations remain, clear only an unchanged plugin-owned VEX path using the digest registry specified in Slice 0. Preserve and warn about modified or unowned configured outputs; do not call `Files.deleteIfExists` on an arbitrary path.
+   - Construct VEX only from the complete actual staged-final inventory and exact affected-component bytes. The ban check and prerequisite proof consume the same staged view before report/SBOM/VEX files, artifact views, or resolver plans are published.
 4. **Update Report Payload, Validator, and Renderers (Schema v1)**:
-   - Add `prerequisiteAttribution` (`ALREADY_ABSENT`, `ELIDED_DEPENDENCY`, `TRIMMED_CLASS`, `PRESENT`, `UNKNOWN`) to `GenericFindingAssessment`, `MavenElisionReportGenericPayload`, `MavenElisionReportPayloadValidator`, and `MavenElisionReportGenericRenderer` (keeping schema version `1` per `AGENTS.md`).
-   - Ensure console summary and report clearly distinguish vulnerabilities mitigated by elision/trimming (`ELIDED_DEPENDENCY` / `TRIMMED_CLASS`) from vulnerabilities already non-exploitable in the baseline build (`ALREADY_ABSENT`).
+   - Add `prerequisiteAttribution` (`ALREADY_ABSENT`, `ELIDED_DEPENDENCY`, `TRIMMED_CLASS`, `MIXED`, `PRESENT`, `UNKNOWN`) and per-claim outcomes to `GenericFindingAssessment`, `MavenElisionReportGenericPayload`, `MavenElisionReportPayloadValidator`, and `MavenElisionReportGenericRenderer` (keeping schema version `1` per `AGENTS.md`).
+   - Ensure console summary and report distinguish baseline absence, elision, trimming, and mixed causes. Preserve the exact incomplete-inventory reason and proof boundary.
+   - Remove ownership claims that depend only on a Maven coordinate; report providers and attribution from observed class identity in baseline/final inventories.
 
 ---
 
@@ -433,6 +527,9 @@ Create/update tests in:
   - `EliderLifecycleParticipant` orders `elide` at the tail of `process-classes` (`priority = Integer.MAX_VALUE`).
   - A module with `0` `.java` source files and an absent or empty `target/classes` directory succeeds at `process-classes`.
   - `MavenPreconditionGenerationGuard` allows builds stopping at `process-classes` even when `package` has untrusted plugins, accepts `spring-boot-maven-plugin:repackage` at `package`, accepts `-Dmaven.test.skip=true` for `testCompile`, and resolves omitted `<phase>` on `dependency-elider-maven-plugin` to `process-classes`.
+  - A prerequisite class found only in `src/test/java` suppresses precondition proof when test compilation can still happen later. `-DskipTests` does not change that result; `-Dmaven.test.skip=true` does.
+  - An explicit `elide.sourceRootsComplete=true` invocation fails with the supported migration guidance to use `process-classes` and compiled production output.
+  - Add real Maven fixtures, not priority-only unit assertions: an event-recording execution proves `elide` runs after compiler/AOT work at the tail of `process-classes`; a small multi-module reactor includes a source-free module; a package-bound plugin after the requested `process-classes` boundary does not block; the default lifecycle and `dependency:tree` invocations exercise their actual plugin behavior; and an explicit user phase binding is preserved and ordered according to that binding.
 
 ### Step 5.2: Production Implementation for Slice 5
 
@@ -447,7 +544,7 @@ Create/update tests in:
 3. **Fix `MavenPreconditionGenerationGuard.java`**:
    - At lines 1212–1245: Move `if (phaseIndex > requestedPhaseIndex) { return; }` **above** the `if (trustedProcessClasses && phaseIndex > PROCESS_CLASSES_PHASE_INDEX)` block so plugins bound to later phases (`package`) do not fail a build that stops at `process-classes`.
    - At lines 1308–1343: When `execution.getPhase()` on `dependency-elider-maven-plugin` is null/blank, default it to `process-classes` (`PROCESS_CLASSES_PHASE`).
-   - At lines 597–615: In `isSkippedTestCompiler`, also return `true` when `<skip>true</skip>` or property `maven.test.skip=true` is set.
+   - At lines 597–615: In `isSkippedTestCompiler`, return `true` for `<skip>true</skip>` or `maven.test.skip=true`. Do not treat `skipTests=true` as skipping `testCompile`; precondition proof remains suppressed when later test output may add a provider.
    - Recognize `org.springframework.boot:spring-boot-maven-plugin` goal `repackage` at `package` as a known packager boundary.
 
 ---
@@ -455,20 +552,19 @@ Create/update tests in:
 ## 9. Slice 6: Examples, Real-Snapshot Verification, ADRs/RQs & Transcripts
 
 1. **Install/Configure Shared Vulnerability Mapping Catalog for Examples**:
-   - Create a shared mapping catalog fixture/artifact (containing the schema-v1 `CVE-2025-11226` Logback `< 1.6.0` -> Janino `org.codehaus.janino:janino` / `org.codehaus.janino.ScriptEvaluator` mapping) and configure both [examples/example-spring-boot-app/pom.xml](../../examples/example-spring-boot-app/pom.xml) and [examples/example-cve-safe-class-app/pom.xml](../../examples/example-cve-safe-class-app/pom.xml) to consume it (with `example-cve-safe-class-app` also testing POM override / scope behavior on fixed `1.3.16` and `1.5.19`).
+   - Create a shared schema-v1 catalog fixture with stable row IDs and the reviewed `org.codehaus.janino.ClassBodyEvaluator` prerequisite for the inspected Logback Core versions 1.5.11 and 1.5.18 only. Do not claim the class is necessary for all versions below 1.6.0 without new advisory and bytecode evidence. Configure both [examples/example-spring-boot-app/pom.xml](../../examples/example-spring-boot-app/pom.xml) and [examples/example-cve-safe-class-app/pom.xml](../../examples/example-cve-safe-class-app/pom.xml) to consume it. Keep scope-only catalog rows from asserting affectedness; verify fixed versions 1.3.16 and 1.5.19 are not reported affected merely because they fall inside a supplemental scope. Add the negative case where `ScriptEvaluator` is absent but `ClassBodyEvaluator` remains.
    - Remove redundant `<phase>process-classes</phase>` and `<productionClassesComplete>true</productionClassesComplete>` boilerplate from example POMs where `process-classes` is now the default.
 2. **Verify Real-Snapshot Behavior on `example-spring-boot-app`**:
    - Build/install the current plugin, then prepare the pinned cache with `bash ./scripts/prepare-example-vulnerability-cache.sh "$PWD/.scratch/wp-wholesale/vulnerability-cache" ./mvnw`. The helper requires a cache-directory argument and a Maven executable; pass any additional Maven arguments after those two values. Run `elide` and `analyze` on `example-spring-boot-app` with `-Delide.cveCacheDirectory="$PWD/.scratch/wp-wholesale/vulnerability-cache"`.
-   - Confirm `CVE-2025-11226` is reported as `NOT_AFFECTED` (`requires_dependency`) with attribution `ALREADY_ABSENT` (since Janino is not in `example-spring-boot-app`'s baseline dependency tree), emitted in `bom.json` and `vex.openvex.json`, and that whole-JAR elision and intra-JAR trimming drop the maximum number of unused JARs and classes (now that `SpringMetadataRoots.readMetadata` and the unresolved-root keep-all poison pill are gone).
+   - Confirm `CVE-2025-11226` is reported as `NOT_AFFECTED` (`requires_dependency`) with attribution `ALREADY_ABSENT` only after actual staged-final inventory inspection (Janino is absent from the baseline dependency tree), emitted in `bom.json` and `vex.openvex.json`. Record baseline/final retained and elided archive counts plus retained/pruned class and resource counts. Assert selected known-dead archives/classes are removed and required live classes, resources, explicit-retention inputs, and MRJAR providers remain; do not claim a global or theoretical maximum.
 3. **Update ADRs, RQs, and Generated Transcripts**:
-   - Update [ADR-0001](../adr/0001-runtime-telemetry-driven-dependency-elision-at-maven-initialize-phase.md), [ADR-0003](../adr/0003-proguard-core-intra-jar-trimming-and-cyclonedx-pedigree.md), [ADR-0008](../adr/0008-precondition-gated-vex-attestations.md), [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md), [RQ-0020](../research/RQ-0020-advisory-source-coverage-and-scanner-finding-projections.md), and [RQ-0021](../research/RQ-0021-centrally-distributed-vulnerability-mapping-dependencies.md).
+   - Update [ADR-0001](../adr/0001-runtime-telemetry-driven-dependency-elision-at-maven-initialize-phase.md), [ADR-0003](../adr/0003-proguard-core-intra-jar-trimming-and-cyclonedx-pedigree.md), [ADR-0004](../adr/0004-assume-resolved-inputs-stable-during-build.md), [ADR-0008](../adr/0008-precondition-gated-vex-attestations.md), [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md), [ADR-0012](../adr/0012-dual-layer-ban-policy-and-retention-naming.md), [ADR-0013](../adr/0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md), [ADR-0014](../adr/0014-source-independent-vulnerability-findings.md), [RQ-0017](../research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md), [RQ-0020](../research/RQ-0020-advisory-source-coverage-and-scanner-finding-projections.md), and [RQ-0021](../research/RQ-0021-centrally-distributed-vulnerability-mapping-dependencies.md), each only where the implementation changes or adds evidence to its decision.
    - Run:
 
      ```bash
      make update-transcripts
-     make check-transcripts
-     make test-core
-     make test-plugin
      make test-examples
      make check
      ```
+
+   - Use focused `make test-core` / `make test-plugin` during the corresponding development slices. The final gate runs `make check` once for the repository's combined tests, static checks, Markdown lint, SBOM comparison, and transcript drift; run `make test-examples` once because it is an additional end-to-end gate.
