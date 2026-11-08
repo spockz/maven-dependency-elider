@@ -199,6 +199,10 @@ operators, each prerequisite member's observed final presence, provider paths an
 baseline-to-final attribution. The `report` goal renders those saved observations without reopening
 the archives; replay does not recreate a proof-capable attestation. `ANALYSIS` snapshots remain
 predictions and cannot contain verified prerequisite-absence evidence.
+Analyze may also save a separate `prerequisitePrediction` for selected prerequisite groups. It
+compares baseline provider bytes with planned artifact/class removals and is labeled as a forecast;
+it has no final archive fingerprint, never creates VEX, and is replayed without reopening the
+baseline archives. Only `APPLIED` reports can carry physical prerequisite proof.
 
 The saved elision report and Analyze class-usage report include `exclusionReview`, with an explicit
 unavailable reason when the pre-resolution lifecycle capture is absent. Repeated exact exclusions

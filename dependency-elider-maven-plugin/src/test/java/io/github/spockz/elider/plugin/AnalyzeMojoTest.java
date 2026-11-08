@@ -13,13 +13,17 @@ import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.assertj.core.api.Assertions;
@@ -39,12 +43,70 @@ final class AnalyzeMojoTest {
   private static final String PROJECT_FIELD = "project";
   private static final String REPORT_FILE_FIELD = "reportFile";
   private static final String SUMMARY_FILE_FIELD = "analysisSummaryFile";
+  private static final String TRACE_CLASS_USAGE = "used/Sample\n";
 
   /** CVE fixtures share one vulnerable symbol. */
   private static final String UNUSED_CLASS = "unused.Idle";
 
   /** Temporary directory for ZIP fixtures and explicit trace files. */
   @TempDir private Path tempDir;
+
+  private static MojoExecution lifecycleExecution(final Plugin plugin, final String phase)
+      throws ReflectiveOperationException {
+    final MojoExecution execution = new MojoExecution(plugin, "analyze", phase + "-binding");
+    execution.setLifecyclePhase(phase);
+    AnalyzeMojoTestFieldSupport.set(execution, "source", MojoExecution.Source.LIFECYCLE);
+    return execution;
+  }
+
+  @Test
+  void trustsApplicationOutputOnlyWhenAnalyzeRunsAtProcessClassesBinding()
+      throws IOException, ReflectiveOperationException, MojoFailureException {
+    final AnalyzeMojoTestArtifactSupport.Fixture fixture =
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, TRACE_CLASS_USAGE);
+    final AnalyzeMojo mojo = fixture.mojo();
+    final MavenProject project = fixture.project();
+    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+    request.setGoals(List.of("clean", "process-classes"));
+    final MavenSession session = new MavenSession(null, request, null, project);
+    AnalyzeMojoTestFieldSupport.set(mojo, "session", session);
+    final List<Boolean> trustedContexts = new java.util.ArrayList<>();
+    AnalyzeMojoTestFieldSupport.set(
+        mojo,
+        "predictionService",
+        (AnalyzePredictionService)
+            (currentProject, options, resolver) -> {
+              trustedContexts.add(options.completeness().trustedProcessClassesContext());
+              final ElisionAnalysisModel.AnalysisEvidence evidence =
+                  new ElisionAnalysisModel.AnalysisEvidence(
+                      new io.github.spockz.elider.engine.ClassUsageReport(List.of()),
+                      Optional.empty(),
+                      Map.of(),
+                      false,
+                      options.completeness().trustedProcessClassesContext(),
+                      null,
+                      Set.of());
+              return new AnalyzePrediction(
+                  MavenAnalysisResolutionContext.Provenance.DETACHED_CURRENT_MODEL,
+                  List.of(),
+                  List.of(),
+                  List.of(),
+                  List.of(),
+                  evidence,
+                  "a".repeat(64),
+                  "b".repeat(64),
+                  "c".repeat(64));
+            });
+    final Plugin plugin = new Plugin();
+    for (final String phase : List.of("initialize", "process-classes")) {
+      AnalyzeMojoTestFieldSupport.set(mojo, "mojoExecution", lifecycleExecution(plugin, phase));
+      mojo.execute();
+    }
+
+    assertAll(
+        "requested later lifecycle goals do not prove the current execution reached that phase",
+        () -> assertThat(trustedContexts).containsExactly(false, true));
+  }
 
   @Test
   void sourceRootsCompleteFailsBeforeAnalysisWithMigrationGuidance() throws Exception {
@@ -150,7 +212,7 @@ final class AnalyzeMojoTest {
     final Set<Artifact> resolvedSnapshot = Set.copyOf(project.getArtifacts());
     final Set<Artifact> directSnapshot = Set.copyOf(project.getDependencyArtifacts());
     final Path trace = tempDir.resolve("runtime.lst");
-    Files.writeString(trace, "used/Sample\n");
+    Files.writeString(trace, TRACE_CLASS_USAGE);
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
@@ -199,7 +261,7 @@ final class AnalyzeMojoTest {
   @Test
   void writesFrozenRepeatedExclusionsToAnalyzeReport() throws Exception {
     final AnalyzeMojoTestArtifactSupport.Fixture fixture =
-        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, TRACE_CLASS_USAGE);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(fixture.mojo());
     final MavenProject project = fixture.project();
     project.setFile(tempDir.resolve("pom.xml").toFile());
@@ -267,7 +329,7 @@ final class AnalyzeMojoTest {
         AnalyzeMojoTestArtifactSupport.project(tempDir, "predicted-elisions");
     project.setArtifacts(artifacts);
     final Path trace = tempDir.resolve("predicted-elisions.lst");
-    Files.writeString(trace, "used/Sample\n");
+    Files.writeString(trace, TRACE_CLASS_USAGE);
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(mojo, PROJECT_FIELD, project);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
@@ -400,7 +462,7 @@ final class AnalyzeMojoTest {
   @Test
   void rejectsInvalidRetentionCoordinates() throws IOException, ReflectiveOperationException {
     final AnalyzeMojoTestArtifactSupport.Fixture fixture =
-        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, TRACE_CLASS_USAGE);
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(fixture.mojo());
     AnalyzeMojoTestFieldSupport.set(fixture.mojo(), "retainedArtifacts", List.of("org.example"));
 
@@ -413,7 +475,7 @@ final class AnalyzeMojoTest {
   void selectedBanCaptureWithoutHookFailsClosedWithoutPublishingReport()
       throws IOException, ReflectiveOperationException {
     final AnalyzeMojoTestArtifactSupport.Fixture fixture =
-        AnalyzeMojoTestArtifactSupport.fixture(tempDir, "used/Sample\n");
+        AnalyzeMojoTestArtifactSupport.fixture(tempDir, TRACE_CLASS_USAGE);
     final Path report = tempDir.resolve("ban-guard-report.json");
     final String previousReport = "previous report";
     Files.writeString(report, previousReport);

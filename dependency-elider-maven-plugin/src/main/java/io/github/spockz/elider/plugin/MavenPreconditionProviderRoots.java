@@ -30,7 +30,7 @@ final class MavenPreconditionProviderRoots {
 
   private MavenPreconditionProviderRoots() {}
 
-  record Capture(List<Provider> providers) {
+  record Capture(List<Provider> providers, String incompleteDetail) {
     Capture {
       providers = List.copyOf(providers);
     }
@@ -39,30 +39,36 @@ final class MavenPreconditionProviderRoots {
   static Capture capture(
       final MavenProject project,
       final MavenSession session,
-      final ElisionAnalysisModel.Analysis analysis)
+      final ElisionAnalysisModel.AnalysisEvidence evidence,
+      final boolean explicitCompleteness)
       throws IOException {
     if (project == null || project.getBuild() == null) {
       throw new IOException("Maven project build roots are unavailable");
     }
     MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
-        project, session, analysis.evidence().trustedProcessClassesContext());
-    final List<Root> roots = declaredRoots(project, analysis);
+        project, session, evidence.trustedProcessClassesContext());
+    final List<Root> roots = declaredRoots(project, evidence);
     final Map<Path, Provider> providers = new LinkedHashMap<>();
     for (final Root root : roots) {
       addProviders(root, providers);
     }
-    return new Capture(List.copyOf(providers.values()));
+    final String incompleteDetail =
+        explicitCompleteness || evidence.trustedProcessClassesContext()
+            ? null
+            : "Production output is not known complete before the process-classes phase";
+    return new Capture(List.copyOf(providers.values()), incompleteDetail);
   }
 
   private static List<Root> declaredRoots(
-      final MavenProject project, final ElisionAnalysisModel.Analysis analysis) throws IOException {
+      final MavenProject project, final ElisionAnalysisModel.AnalysisEvidence evidence)
+      throws IOException {
     final List<Root> roots = new ArrayList<>();
     addDirectoryRoot(roots, project, "production-output", project.getBuild().getOutputDirectory());
     addDirectoryRoot(roots, project, "test-output", project.getBuild().getTestOutputDirectory());
     addResources(roots, project, "production-resource", project.getBuild().getResources());
     addResources(roots, project, "test-resource", project.getBuild().getTestResources());
-    if (analysis.evidence().bytecodeScan().isPresent()) {
-      final Path scannedOutput = analysis.evidence().bytecodeScan().orElseThrow().scope();
+    if (evidence.bytecodeScan().isPresent()) {
+      final Path scannedOutput = evidence.bytecodeScan().orElseThrow().scope();
       if (roots.stream()
           .noneMatch(root -> root.path().equals(scannedOutput.toAbsolutePath().normalize()))) {
         roots.add(

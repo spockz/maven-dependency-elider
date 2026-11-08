@@ -212,7 +212,10 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
                   productionOutput,
                   session,
                   new ElisionAnalysisModel.CompletenessOptions(
-                      sourceRootsComplete, productionClassesComplete, false, true),
+                      sourceRootsComplete,
+                      productionClassesComplete,
+                      trustedProcessClassesContext(),
+                      true),
                   trimOptions(
                       trimJars,
                       trimRoots == null ? List.of() : trimRoots,
@@ -343,6 +346,7 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
                 vulnerabilityMappings,
                 vulnerabilityMappingCatalogs),
             prediction,
+            () -> MavenPreconditionPrediction.capture(project, session, prediction),
             SnykPackageIssuesIntegration.Configuration.configured(
                 snykEnabled, session != null && session.isOffline(), snykOrgId, snykApiBaseUri));
   }
@@ -358,5 +362,11 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
       return true;
     }
     return false;
+  }
+
+  private boolean trustedProcessClassesContext() {
+    return mojoExecution != null
+        && EliderPreparationState.source(mojoExecution) == MojoExecution.Source.LIFECYCLE
+        && "process-classes".equals(mojoExecution.getLifecyclePhase());
   }
 }

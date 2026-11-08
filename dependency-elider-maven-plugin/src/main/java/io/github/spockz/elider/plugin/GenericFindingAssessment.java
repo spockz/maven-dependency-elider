@@ -37,7 +37,8 @@ record GenericFindingAssessment(
     MavenVulnerabilityAssessment.InventoryDisposition inventoryDisposition,
     List<VulnerabilityFindingContribution> contributions,
     Optional<PrerequisiteProofResult> prerequisiteProof,
-    Optional<PrerequisiteProofEvidence> prerequisiteProofEvidence) {
+    Optional<PrerequisiteProofEvidence> prerequisiteProofEvidence,
+    Optional<PrerequisitePrediction> prerequisitePrediction) {
   GenericFindingAssessment {
     requireText(vulnerabilityId, "vulnerabilityId");
     aliases = Set.copyOf(Objects.requireNonNull(aliases, "aliases"));
@@ -60,6 +61,16 @@ record GenericFindingAssessment(
     contributions = List.copyOf(Objects.requireNonNull(contributions, "contributions"));
     Objects.requireNonNull(prerequisiteProof, "prerequisiteProof");
     Objects.requireNonNull(prerequisiteProofEvidence, "prerequisiteProofEvidence");
+    Objects.requireNonNull(prerequisitePrediction, "prerequisitePrediction");
+    if ((prerequisiteProof.isPresent() || prerequisiteProofEvidence.isPresent())
+        && prerequisitePrediction.isPresent()) {
+      throw new IllegalArgumentException(
+          "Physical proof and Analyze prediction are distinct evidence");
+    }
+    if (outcome == Outcome.PLANNED_PREREQUISITES_ABSENT && prerequisitePrediction.isEmpty()) {
+      throw new IllegalArgumentException(
+          "Planned prerequisite absence requires prediction evidence");
+    }
     if (prerequisiteProof.isPresent()) {
       final PrerequisiteProofEvidence captured =
           PrerequisiteProofEvidence.from(prerequisiteProof.orElseThrow());
@@ -70,6 +81,51 @@ record GenericFindingAssessment(
       }
       prerequisiteProofEvidence = Optional.of(captured);
     }
+  }
+
+  @SuppressWarnings("PMD.ExcessiveParameterList")
+  /* default */
+  GenericFindingAssessment(
+      final String vulnerabilityId,
+      final Set<String> aliases,
+      final ArtifactCoordinate candidate,
+      final VersionApplicability applicability,
+      final Optional<AssessmentIntent> intent,
+      final ClaimGroupStatus codeGroupStatus,
+      final List<CodeAttributionResolver.DeclarationResult> codeAttribution,
+      final List<CodeReference> heuristicLeads,
+      final ClaimGroupStatus prerequisiteGroupStatus,
+      final List<PrerequisiteClaim> effectivePrerequisites,
+      final List<VersionCoverageClaim> unresolvedVersionClaims,
+      final Set<String> overriddenFields,
+      final Set<String> enrichedFields,
+      final Outcome outcome,
+      final String detail,
+      final MavenVulnerabilityAssessment.InventoryDisposition inventoryDisposition,
+      final List<VulnerabilityFindingContribution> contributions,
+      final Optional<PrerequisiteProofResult> prerequisiteProof,
+      final Optional<PrerequisiteProofEvidence> prerequisiteProofEvidence) {
+    this(
+        vulnerabilityId,
+        aliases,
+        candidate,
+        applicability,
+        intent,
+        codeGroupStatus,
+        codeAttribution,
+        heuristicLeads,
+        prerequisiteGroupStatus,
+        effectivePrerequisites,
+        unresolvedVersionClaims,
+        overriddenFields,
+        enrichedFields,
+        outcome,
+        detail,
+        inventoryDisposition,
+        contributions,
+        prerequisiteProof,
+        prerequisiteProofEvidence,
+        Optional.empty());
   }
 
   /* default */
@@ -111,6 +167,7 @@ record GenericFindingAssessment(
         detail,
         inventoryDisposition,
         contributions,
+        Optional.empty(),
         Optional.empty(),
         Optional.empty());
   }
@@ -155,6 +212,7 @@ record GenericFindingAssessment(
         inventoryDisposition,
         contributions,
         prerequisiteProof,
+        Optional.empty(),
         Optional.empty());
   }
 
@@ -164,6 +222,7 @@ record GenericFindingAssessment(
     UNRESOLVED,
     REVIEW_ONLY,
     PLANNED_CODE_ABSENT,
+    PLANNED_PREREQUISITES_ABSENT,
     DECLARED_CODE_ABSENT,
     PREREQUISITES_ABSENT,
     NO_PROOF

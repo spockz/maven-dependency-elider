@@ -106,7 +106,7 @@ final class MavenPreconditionInventory {
       final List<ArtifactFileRef> verifiedArtifactFiles =
           MavenPreconditionArtifactInventory.capture(plan, analysis, true);
       final MavenPreconditionProviderRoots.Capture roots =
-          MavenPreconditionProviderRoots.capture(project, session, analysis);
+          MavenPreconditionProviderRoots.capture(project, session, analysis.evidence(), optIn);
       final List<Provider> finalProviders =
           new ArrayList<>(
               MavenPreconditionArtifactInventory.dependencyProviders(verifiedArtifactFiles));

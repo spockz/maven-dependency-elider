@@ -18,6 +18,7 @@ final class MavenElisionReportProofValidator {
 
   /* package */ static void validate(final GenericFindingAssessment finding) throws IOException {
     validateDetachedProofEvidence(finding);
+    MavenElisionReportPredictionValidator.validatePrediction(finding, null);
     if (!isProof(finding.outcome())) {
       return;
     }
@@ -31,6 +32,7 @@ final class MavenElisionReportProofValidator {
   /* package */ static void validateForecast(
       final GenericFindingAssessment finding, final MavenElisionReportSnapshot snapshot)
       throws IOException {
+    MavenElisionReportPredictionValidator.validatePrediction(finding, snapshot);
     if (finding.outcome() != GenericFindingAssessment.Outcome.PLANNED_CODE_ABSENT) {
       return;
     }
@@ -66,7 +68,7 @@ final class MavenElisionReportProofValidator {
         || outcome == GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT;
   }
 
-  private static boolean isAutomaticallyVerifiable(final GenericFindingAssessment finding) {
+  /* package */ static boolean isAutomaticallyVerifiable(final GenericFindingAssessment finding) {
     return finding.applicability() == VersionApplicability.AFFECTED
         && finding.intent().orElse(null) == AssessmentIntent.AUTO_VERIFY;
   }
@@ -80,7 +82,7 @@ final class MavenElisionReportProofValidator {
     }
   }
 
-  private static void validateDeclaredCode(final GenericFindingAssessment finding)
+  /* package */ static void validateDeclaredCode(final GenericFindingAssessment finding)
       throws IOException {
     final List<CodeAttributionResolver.DeclarationResult> declared =
         finding.codeAttribution().stream()
