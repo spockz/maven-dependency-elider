@@ -41,6 +41,8 @@ final class EffectiveTrimOutput {
             .map(ElisionAnalysisModel.ArtifactSnapshot::filePath)
             .toList();
     final List<TrimCandidate> work = plan.work();
+    TrimCandidatePlanner.assignEffectiveAnalyses(plan, effectiveOutput.analysis());
+    ServiceProviderTrimInventory.planDescriptorOutputs(effectiveOutput, work);
     final Path manifest = TrimPaths.cacheManifestPath(project);
     final long cacheStart = System.nanoTime();
     final FingerprintSnapshot fingerprint =
@@ -75,7 +77,6 @@ final class EffectiveTrimOutput {
     if (request.cacheProducerIdentity().isEmpty()) {
       work.forEach(candidate -> candidate.output().toFile().deleteOnExit());
     }
-    TrimCandidatePlanner.assignEffectiveAnalyses(plan, effectiveOutput.analysis());
     final TrimResult cached =
         request.cacheProducerIdentity().isPresent()
             ? JarTrimCache.loadCache(
@@ -94,20 +95,21 @@ final class EffectiveTrimOutput {
                     cacheStart))
             : null;
     if (cached != null) {
-      return cached;
+      return cached.withServiceDescriptorChanges(work);
     }
     return TrimGenerationPublisher.publishEffectiveOutputs(
-        new EffectivePublication(
-            effectiveOutput,
-            work,
-            fingerprint,
-            manifest,
-            completeFingerprint,
-            generation,
-            request.cacheProducerIdentity(),
-            passThrough.multiReleaseCoordinates(),
-            passThrough.moduleInfoCoordinates(),
-            passThrough.configuredCoordinates(),
-            effectiveOutput.analysis().analysisRuns()));
+            new EffectivePublication(
+                effectiveOutput,
+                work,
+                fingerprint,
+                manifest,
+                completeFingerprint,
+                generation,
+                request.cacheProducerIdentity(),
+                passThrough.multiReleaseCoordinates(),
+                passThrough.moduleInfoCoordinates(),
+                passThrough.configuredCoordinates(),
+                effectiveOutput.analysis().analysisRuns()))
+        .withServiceDescriptorChanges(work);
   }
 }

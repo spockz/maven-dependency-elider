@@ -22,6 +22,24 @@ final class TrimCandidate {
   /** The last completed analysis supplies provenance and retained class evidence. */
   private DependencyJarTrimmer.TrimAnalysis closureAnalysis;
 
+  /** Provider decisions and output requirement are fixed before cache lookup. */
+  private DescriptorPlan descriptorState = DescriptorPlan.unplanned();
+
+  /* package */ record DescriptorPlan(
+      boolean ready,
+      boolean outputRequired,
+      Set<String> removedProviders,
+      java.util.List<ServiceDescriptorChange> changes) {
+    DescriptorPlan {
+      removedProviders = Set.copyOf(removedProviders);
+      changes = changes.stream().sorted().toList();
+    }
+
+    private static DescriptorPlan unplanned() {
+      return new DescriptorPlan(false, false, Set.of(), java.util.List.of());
+    }
+  }
+
   /* package */ record CandidateArchive(
       ElisionAnalysisModel.ArtifactSnapshot snapshot,
       Set<String> classes,
@@ -83,7 +101,17 @@ final class TrimCandidate {
   /* package */ boolean requiresOutput() {
     return sourceArchive.multiRelease()
         || closureAnalysis == null
-        || closureAnalysis.retainedClasses().size() < closureAnalysis.totalClasses();
+        || closureAnalysis.retainedClasses().size() < closureAnalysis.totalClasses()
+        || descriptorState.outputRequired();
+  }
+
+  /* package */ void serviceDescriptorPlan(
+      final Set<String> removedProviders, final java.util.List<ServiceDescriptorChange> changes) {
+    descriptorState = new DescriptorPlan(true, !changes.isEmpty(), removedProviders, changes);
+  }
+
+  /* package */ DescriptorPlan descriptorPlan() {
+    return descriptorState;
   }
 
   /* package */ Path output() {

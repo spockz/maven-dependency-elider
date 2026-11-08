@@ -9,28 +9,21 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
-import java.util.Optional;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
-/** Applies exact provider-name filtering to a root service descriptor. */
+/** Reconciles provider declarations without changing untouched descriptor bytes. */
 @SuppressWarnings({"PMD.CommentRequired", "PMD.CommentDefaultAccessModifier"})
 final class ServiceDescriptorFilter {
-  private static final String SERVICES_PREFIX = "META-INF/services/";
-
   private ServiceDescriptorFilter() {}
 
-  static Optional<byte[]> filter(
-      final JarFile input, final JarEntry entry, final Set<String> removedProviders)
+  static Result reconcile(
+      final byte[] original, final Set<String> knownProviders, final Set<String> retainedProviders)
       throws IOException {
-    if (!entry.getName().startsWith(SERVICES_PREFIX) || removedProviders.isEmpty()) {
-      return Optional.empty();
-    }
-    final byte[] original;
-    try (InputStream contents = input.getInputStream(entry)) {
-      original = contents.readAllBytes();
-    }
+    java.util.Objects.requireNonNull(original, "original");
+    java.util.Objects.requireNonNull(knownProviders, "knownProviders");
+    java.util.Objects.requireNonNull(retainedProviders, "retainedProviders");
     final String text;
     try {
       text =
@@ -41,15 +34,29 @@ final class ServiceDescriptorFilter {
               .decode(ByteBuffer.wrap(original))
               .toString();
     } catch (final CharacterCodingException exception) {
-      throw new IOException("Invalid UTF-8 service descriptor: " + entry.getName(), exception);
+      throw new IOException("Invalid UTF-8 service descriptor", exception);
     }
-    return filterLines(text, removedProviders);
+    return filterLines(text, original, knownProviders, retainedProviders);
   }
 
-  private static Optional<byte[]> filterLines(
-      final String text, final Set<String> removedProviders) {
+  static Result filter(
+      final JarFile input, final JarEntry entry, final Set<String> removedProviders)
+      throws IOException {
+    final byte[] original;
+    try (InputStream contents = input.getInputStream(entry)) {
+      original = contents.readAllBytes();
+    }
+    return reconcile(original, removedProviders, Set.of());
+  }
+
+  private static Result filterLines(
+      final String text,
+      final byte[] original,
+      final Set<String> knownProviders,
+      final Set<String> retainedProviders) {
     final StringBuilder filtered = new StringBuilder(text.length());
     boolean changed = false;
+    boolean retainedDeclaration = false;
     int lineStart = 0;
     while (lineStart < text.length()) {
       int lineEnd = lineStart;
@@ -57,17 +64,25 @@ final class ServiceDescriptorFilter {
         lineEnd++;
       }
       final int separatorEnd = lineSeparatorEnd(text, lineEnd);
+      final String provider = providerName(text.substring(lineStart, lineEnd));
       final boolean removed =
-          removedProviders.contains(providerName(text.substring(lineStart, lineEnd)));
+          !provider.isEmpty()
+              && knownProviders.contains(provider)
+              && !retainedProviders.contains(provider);
       changed |= removed;
       if (!removed) {
         filtered.append(text, lineStart, separatorEnd);
+        retainedDeclaration |= !provider.isEmpty();
       }
       lineStart = separatorEnd;
     }
-    return changed
-        ? Optional.of(filtered.toString().getBytes(StandardCharsets.UTF_8))
-        : Optional.empty();
+    if (!changed) {
+      return new Result(Outcome.UNCHANGED, original);
+    }
+    if (!retainedDeclaration) {
+      return new Result(Outcome.OMIT, new byte[0]);
+    }
+    return new Result(Outcome.REPLACED, filtered.toString().getBytes(StandardCharsets.UTF_8));
   }
 
   private static boolean isLineBreak(final char value) {
@@ -88,5 +103,23 @@ final class ServiceDescriptorFilter {
   private static String providerName(final String line) {
     final int comment = line.indexOf('#');
     return (comment < 0 ? line : line.substring(0, comment)).trim();
+  }
+
+  enum Outcome {
+    UNCHANGED,
+    REPLACED,
+    OMIT
+  }
+
+  record Result(Outcome outcome, byte[] bytes) {
+    Result {
+      java.util.Objects.requireNonNull(outcome, "outcome");
+      bytes = bytes.clone();
+    }
+
+    @Override
+    public byte[] bytes() {
+      return bytes.clone();
+    }
   }
 }

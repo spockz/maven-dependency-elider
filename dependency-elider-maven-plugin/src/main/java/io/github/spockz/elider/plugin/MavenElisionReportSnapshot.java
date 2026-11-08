@@ -330,7 +330,9 @@ record MavenElisionReportSnapshot(
                         value.coordinate().toString(),
                         value.removedClasses().size(),
                         null,
-                        value.removedClasses().stream().sorted().toList()))
+                        value.removedClasses().stream().sorted().toList(),
+                        value.serviceDescriptorChanges(),
+                        value.mrjarStatus()))
             .toList();
     return new MavenElisionReportSnapshot(
         SCHEMA_VERSION,
@@ -389,7 +391,14 @@ record MavenElisionReportSnapshot(
 
     final List<TrimmedArtifact> trimmed =
         analysis.trimResult().records().stream()
-            .map(MavenElisionReportSnapshot::trimmedArtifact)
+            .map(
+                record ->
+                    trimmedArtifact(
+                        record,
+                        analysis
+                            .trimResult()
+                            .serviceDescriptorChanges()
+                            .getOrDefault(record.coordinate(), List.of())))
             .sorted(Comparator.comparing(TrimmedArtifact::coordinate))
             .toList();
     final int prunedClasses = sumPrunedClassCounts(trimmed);
@@ -497,13 +506,19 @@ record MavenElisionReportSnapshot(
   }
 
   static TrimmedArtifact trimmedArtifact(final ArtifactTrimRecord record) {
+    return trimmedArtifact(record, List.of());
+  }
+
+  static TrimmedArtifact trimmedArtifact(
+      final ArtifactTrimRecord record, final List<ServiceDescriptorChange> serviceChanges) {
     final int prunedClasses = record.totalClasses() - record.retainedClasses();
-    if (prunedClasses == 0 && !"elevated_and_trimmed".equals(record.mrjarStatus())) {
-      throw new IllegalArgumentException(
-          "A single-release trim record must prune at least one class: " + record.coordinate());
-    }
     return new TrimmedArtifact(
-        record.coordinate().toString(), prunedClasses, record.prunedClassBytes());
+        record.coordinate().toString(),
+        prunedClasses,
+        record.prunedClassBytes(),
+        null,
+        serviceChanges,
+        record.mrjarStatus());
   }
 
   static DroppedArtifactSummary droppedArtifactSummary(final ElisionAnalysisModel.Analysis analysis)
@@ -727,9 +742,20 @@ record MavenElisionReportSnapshot(
       String coordinate,
       int programClassesPruned,
       Long uncompressedProgramClassBytesPruned,
-      List<String> plannedClasses) {
+      List<String> plannedClasses,
+      List<ServiceDescriptorChange> serviceDescriptorChanges,
+      String mrjarStatus) {
     TrimmedArtifact(final String coordinate, final int count, final long bytes) {
-      this(coordinate, count, bytes, null);
+      this(coordinate, count, bytes, null, List.of(), null);
+    }
+
+    TrimmedArtifact(
+        final String coordinate,
+        final int count,
+        final Long bytes,
+        final List<String> plannedClasses,
+        final List<ServiceDescriptorChange> serviceDescriptorChanges) {
+      this(coordinate, count, bytes, plannedClasses, serviceDescriptorChanges, null);
     }
 
     TrimmedArtifact {
@@ -738,8 +764,20 @@ record MavenElisionReportSnapshot(
         require(
             plannedClasses.size() == programClassesPruned, "Planned classes disagree with count");
       }
+      serviceDescriptorChanges = serviceDescriptorChanges.stream().sorted().toList();
+      if (serviceDescriptorChanges.stream().map(ServiceDescriptorChange::path).distinct().count()
+          != serviceDescriptorChanges.size()) {
+        throw new IllegalArgumentException("Service descriptor change paths must be unique");
+      }
       requireNonBlank(coordinate, "coordinate");
       require(programClassesPruned >= 0, "programClassesPruned must not be negative");
+      require(
+          programClassesPruned > 0
+              || !serviceDescriptorChanges.isEmpty()
+              || "elevated_and_trimmed".equals(mrjarStatus)
+              || "classpath-only".equals(mrjarStatus),
+          "A retained artifact output must prune classes, elevate an MRJAR, or change a service"
+              + " descriptor, or strip its root module descriptor");
       require(
           uncompressedProgramClassBytesPruned == null || uncompressedProgramClassBytesPruned >= 0,
           "uncompressedProgramClassBytesPruned must not be negative");

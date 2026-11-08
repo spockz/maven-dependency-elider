@@ -110,7 +110,19 @@ final class MavenElisionReportPayloadValidator {
           "coordinate",
           PROGRAM_CLASSES_PRUNED,
           UNCOMPRESSED_PROGRAM_CLASS_BYTES_PRUNED,
-          "plannedClasses");
+          "plannedClasses",
+          "serviceDescriptorChanges",
+          "mrjarStatus");
+
+  /** Exact fields for one changed root service descriptor. */
+  private static final Set<String> SERVICE_DESCRIPTOR_CHANGE_FIELDS = Set.of("path", "outcome");
+
+  /** Reported actions that changed a root service descriptor. */
+  private static final Set<String> SERVICE_DESCRIPTOR_OUTCOMES = Set.of("REPLACED", "OMIT");
+
+  /** Transformations that may produce output while removing zero classes. */
+  private static final Set<String> TRANSFORMING_ZERO_CLASS_STATUSES =
+      Set.of("elevated_and_trimmed", "classpath-only");
 
   /** Reachable dispositions that leave an artifact in the effective output. */
   private static final Set<String> RETAINED_GRAPH_DISPOSITIONS =
@@ -148,7 +160,7 @@ final class MavenElisionReportPayloadValidator {
     validateMetrics(
         payload, Map.of("inputArtifactCount", (long) Integer.MAX_VALUE), "Elision report metric");
     validateRows(payload.get("droppedArtifacts"), DROPPED_FIELDS, DROPPED_METRICS);
-    validateRows(payload.get("trimmedArtifacts"), TRIMMED_FIELDS, TRIMMED_METRICS);
+    validateTrimmedRows(payload.get("trimmedArtifacts"));
     validateLayoutFlag(payload.get("assumeConventionalJavaSourceLayout"));
     final JsonNode fallback = payload.get("sourceAttributionFallback");
     if (fallback == null
@@ -690,6 +702,84 @@ final class MavenElisionReportPayloadValidator {
     for (final JsonNode row : rows) {
       validateRow(row, fields, metrics);
     }
+  }
+
+  private static void validateTrimmedRows(final JsonNode rows) throws IOException {
+    if (rows == null || !rows.isArray()) {
+      throw new IOException("Elision report artifact rows must be arrays");
+    }
+    for (final JsonNode row : rows) {
+      if (row.isObject()
+          && row.path(PROGRAM_CLASSES_PRUNED).isIntegralNumber()
+          && row.path(PROGRAM_CLASSES_PRUNED).intValue() == 0
+          && !row.has("serviceDescriptorChanges")) {
+        throw new IOException(
+            "Zero-class retained output requires a serviceDescriptorChanges outcome");
+      }
+      validateRow(row, TRIMMED_FIELDS, TRIMMED_METRICS);
+      validateMrjarStatus(row);
+      validateServiceDescriptorChanges(row);
+    }
+  }
+
+  private static void validateServiceDescriptorChanges(final JsonNode row) throws IOException {
+    final JsonNode changes = row.get("serviceDescriptorChanges");
+    if (changes == null || !changes.isArray()) {
+      throw new IOException("serviceDescriptorChanges must be an array");
+    }
+    final Set<String> paths = new HashSet<>();
+    for (final JsonNode change : changes) {
+      validateServiceDescriptorChange(change, paths);
+    }
+    if (requiresZeroClassReason(row, changes)) {
+      throw new IOException(
+          "Zero-class retained output requires a transforming MRJAR status or a"
+              + " serviceDescriptorChanges outcome");
+    }
+  }
+
+  private static void validateServiceDescriptorChange(
+      final JsonNode change, final Set<String> paths) throws IOException {
+    if (!change.isObject() || !fieldNames(change).equals(SERVICE_DESCRIPTOR_CHANGE_FIELDS)) {
+      throw new IOException("Service descriptor change fields do not match schema version 1");
+    }
+    final JsonNode path = change.get("path");
+    if (path == null
+        || !path.isTextual()
+        || !canonicalServiceDescriptorPath(path.textValue())
+        || !paths.add(path.textValue())) {
+      throw new IOException("Service descriptor change path is invalid or duplicated");
+    }
+    final JsonNode outcome = change.get("outcome");
+    if (outcome == null
+        || !outcome.isTextual()
+        || !SERVICE_DESCRIPTOR_OUTCOMES.contains(outcome.textValue())) {
+      throw new IOException("Service descriptor change outcome must be REPLACED or OMIT");
+    }
+  }
+
+  private static boolean requiresZeroClassReason(final JsonNode row, final JsonNode changes) {
+    return row.path(PROGRAM_CLASSES_PRUNED).asInt() == 0
+        && changes.isEmpty()
+        && !TRANSFORMING_ZERO_CLASS_STATUSES.contains(row.path("mrjarStatus").asText());
+  }
+
+  private static void validateMrjarStatus(final JsonNode row) throws IOException {
+    final JsonNode status = row.get("mrjarStatus");
+    if (status != null
+        && !status.isNull()
+        && (!status.isTextual()
+            || !Set.of("not_multi_release", "elevated_and_trimmed", "classpath-only")
+                .contains(status.textValue()))) {
+      throw new IOException("MRJAR trim status is invalid");
+    }
+  }
+
+  private static boolean canonicalServiceDescriptorPath(final String path) {
+    final String prefix = "META-INF/services/";
+    return path.startsWith(prefix)
+        && path.length() > prefix.length()
+        && AsciiBinaryClassName.isValid(path.substring(prefix.length()));
   }
 
   private static void validateRow(

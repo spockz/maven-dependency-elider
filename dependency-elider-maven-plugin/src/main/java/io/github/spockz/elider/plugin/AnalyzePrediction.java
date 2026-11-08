@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 /** Holds the dependency decision and provenance reported by Analyze. */
@@ -31,6 +32,15 @@ record AnalyzePrediction(
     TrimExecutionEnvironment executionEnvironment,
     List<String> rawDroppedCoordinates,
     MediatedGraphReport mediatedGraph) {
+  /** Report marker for root module descriptor removal. */
+  private static final String CLASSPATH_ONLY_STATUS = "classpath-only";
+
+  /** Report marker for an ordinary single-release output. */
+  private static final String NOT_MULTI_RELEASE_STATUS = "not_multi_release";
+
+  /** Report marker for an output elevated from a multi-release archive. */
+  private static final String ELEVATED_STATUS = "elevated_and_trimmed";
+
   /* default */ AnalyzePrediction(
       final Provenance provenance,
       final List<ArtifactSnapshot> inputArtifacts,
@@ -115,7 +125,7 @@ record AnalyzePrediction(
             analysis.prepared(),
             analysis.effectiveDecision().retainedArtifacts(),
             analysis.prepared().pruningRequiredClasses());
-    final List<PlannedTrim> trims = plannedTrims(analysis);
+    final List<PlannedTrim> trims = plannedTrims(analysis, trimRequest);
     return new AnalyzePrediction(
         analysis.prepared().resolutionContext().provenance(),
         analysis.prepared().resolvedSnapshots(),
@@ -156,20 +166,40 @@ record AnalyzePrediction(
   }
 
   private static List<PlannedTrim> plannedTrims(
-      final ElisionAnalysisModel.EffectiveAnalysis analysis) throws IOException {
+      final ElisionAnalysisModel.EffectiveAnalysis analysis, final TrimRequest trimRequest)
+      throws IOException {
+    final List<TrimCandidate> candidates = plannedOutputCandidates(analysis, trimRequest);
+    final Map<ArtifactCoordinate, List<ServiceDescriptorChange>> descriptorChanges =
+        plannedServiceDescriptorChanges(candidates);
+    final Map<ArtifactCoordinate, Set<String>> removedByCoordinate =
+        removedClassesByCoordinate(analysis);
+    final Set<ArtifactCoordinate> outputCoordinates =
+        outputCoordinates(analysis, candidates, removedByCoordinate, descriptorChanges);
     final List<PlannedTrim> planned = new java.util.ArrayList<>();
+    for (final ArtifactCoordinate coordinate : outputCoordinates) {
+      planned.add(
+          new PlannedTrim(
+              coordinate,
+              removedByCoordinate.getOrDefault(coordinate, Set.of()),
+              descriptorChanges.getOrDefault(coordinate, List.of()),
+              mrjarStatus(analysis, coordinate)));
+    }
+    return List.copyOf(planned);
+  }
+
+  /* WHY: Separates class removal facts from output eligibility policy. */
+  @SuppressWarnings("PMD.UseConcurrentHashMap")
+  private static Map<ArtifactCoordinate, Set<String>> removedClassesByCoordinate(
+      final ElisionAnalysisModel.EffectiveAnalysis analysis) throws IOException {
+    final Map<ArtifactCoordinate, Set<String>> removedByCoordinate = new TreeMap<>();
     for (final Map.Entry<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> entry :
         analysis.trimAnalysis().candidateAnalyses().entrySet()) {
       final ArtifactCoordinate coordinate = entry.getKey();
-      if (!analysis.effectiveDecision().retainedArtifacts().contains(coordinate)
-          || analysis.forcedUnchangedCoordinates().contains(coordinate)) {
+      if (mustSkipRemovedClasses(analysis, coordinate)) {
         continue;
       }
       final ArtifactSnapshot artifact = inputArtifact(analysis, coordinate);
-      if (analysis.prepared().options().trim().enabled()
-          && MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(
-              analysis.prepared().options().trim().mrjarStrategy())
-          && MultiReleaseClassInventory.hasUnsupportedVersionedClasses(artifact.filePath())) {
+      if (isUnsupportedPassThrough(analysis, artifact)) {
         continue;
       }
       final Set<String> inputClasses =
@@ -183,10 +213,118 @@ record AnalyzePrediction(
               entry.getValue().retainedClasses(),
               analysis.trimAnalysis().upperTierClasses().getOrDefault(coordinate, Set.of()));
       if (!removedClasses.isEmpty()) {
-        planned.add(new PlannedTrim(coordinate, removedClasses));
+        removedByCoordinate.put(coordinate, removedClasses);
       }
     }
-    return List.copyOf(planned);
+    return Map.copyOf(removedByCoordinate);
+  }
+
+  private static boolean mustSkipRemovedClasses(
+      final ElisionAnalysisModel.EffectiveAnalysis analysis, final ArtifactCoordinate coordinate) {
+    return !analysis.effectiveDecision().retainedArtifacts().contains(coordinate)
+        || analysis.forcedUnchangedCoordinates().contains(coordinate);
+  }
+
+  private static boolean isUnsupportedPassThrough(
+      final ElisionAnalysisModel.EffectiveAnalysis analysis, final ArtifactSnapshot artifact)
+      throws IOException {
+    return analysis.prepared().options().trim().enabled()
+        && MavenDependencyTrimmer.MRJAR_PASS_THROUGH.equals(
+            analysis.prepared().options().trim().mrjarStrategy())
+        && MultiReleaseClassInventory.hasUnsupportedVersionedClasses(artifact.filePath());
+  }
+
+  private static Set<ArtifactCoordinate> outputCoordinates(
+      final ElisionAnalysisModel.EffectiveAnalysis analysis,
+      final List<TrimCandidate> candidates,
+      final Map<ArtifactCoordinate, Set<String>> removedByCoordinate,
+      final Map<ArtifactCoordinate, List<ServiceDescriptorChange>> descriptorChanges)
+      throws IOException {
+    final Set<ArtifactCoordinate> outputCoordinates = new TreeSet<>(removedByCoordinate.keySet());
+    outputCoordinates.addAll(descriptorChanges.keySet());
+    addVerticalOutputCoordinates(analysis, candidates, outputCoordinates);
+    addClasspathOnlyOutputCoordinates(analysis, candidates, outputCoordinates);
+    return outputCoordinates;
+  }
+
+  private static void addVerticalOutputCoordinates(
+      final ElisionAnalysisModel.EffectiveAnalysis analysis,
+      final List<TrimCandidate> candidates,
+      final Set<ArtifactCoordinate> outputCoordinates) {
+    if (!analysis.prepared().options().trim().enabled()
+        || !MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING.equals(
+            analysis.prepared().options().trim().mrjarStrategy())) {
+      return;
+    }
+    candidates.stream()
+        .filter(candidate -> candidate.archive().multiRelease())
+        .map(candidate -> candidate.archive().snapshot().coordinate())
+        .forEach(outputCoordinates::add);
+  }
+
+  private static void addClasspathOnlyOutputCoordinates(
+      final ElisionAnalysisModel.EffectiveAnalysis analysis,
+      final List<TrimCandidate> candidates,
+      final Set<ArtifactCoordinate> outputCoordinates)
+      throws IOException {
+    if (!analysis.prepared().options().trim().enabled()
+        || !MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(
+            analysis.prepared().options().trim().mrjarStrategy())) {
+      return;
+    }
+    for (final TrimCandidate candidate : candidates) {
+      final ArtifactCoordinate coordinate = candidate.archive().snapshot().coordinate();
+      if (CLASSPATH_ONLY_STATUS.equals(mrjarStatus(analysis, coordinate))) {
+        outputCoordinates.add(coordinate);
+      }
+    }
+  }
+
+  private static String mrjarStatus(
+      final ElisionAnalysisModel.EffectiveAnalysis analysis, final ArtifactCoordinate coordinate)
+      throws IOException {
+    if (analysis.trimAnalysis().upperTierClasses().containsKey(coordinate)) {
+      return ELEVATED_STATUS;
+    }
+    if (analysis.prepared().options().trim().enabled()
+        && MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(
+            analysis.prepared().options().trim().mrjarStrategy())
+        && MultiReleaseLibraryProjection.hasRootModuleDescriptor(
+            inputArtifact(analysis, coordinate).filePath())) {
+      return CLASSPATH_ONLY_STATUS;
+    }
+    return NOT_MULTI_RELEASE_STATUS;
+  }
+
+  private static List<TrimCandidate> plannedOutputCandidates(
+      final ElisionAnalysisModel.EffectiveAnalysis analysis, final TrimRequest trimRequest)
+      throws IOException {
+    if (!analysis.prepared().options().trim().enabled()) {
+      return List.of();
+    }
+    final TrimGenerationPublisher.EffectiveOutputPlan outputPlan =
+        EffectiveOutputPlanFactory.create(analysis);
+    final TrimPassThroughPlan passThrough = TrimPassThroughPlanner.passThroughPlan(trimRequest);
+    final TrimCandidatePlanner.CandidatePlan candidates =
+        EffectiveCandidatePlanner.effectiveCandidatePlan(
+            trimRequest.project(),
+            passThrough.retainedLibraries(),
+            passThrough.retained(),
+            trimRequest.scanInputs().classIndex().classesByArtifact(),
+            outputPlan);
+    TrimCandidatePlanner.assignEffectiveAnalyses(candidates, analysis.trimAnalysis());
+    ServiceProviderTrimInventory.planDescriptorOutputs(outputPlan, candidates.work());
+    return candidates.work();
+  }
+
+  private static Map<ArtifactCoordinate, List<ServiceDescriptorChange>>
+      plannedServiceDescriptorChanges(final List<TrimCandidate> candidates) {
+    return candidates.stream()
+        .filter(candidate -> !candidate.descriptorPlan().changes().isEmpty())
+        .collect(
+            java.util.stream.Collectors.toUnmodifiableMap(
+                candidate -> candidate.archive().snapshot().coordinate(),
+                candidate -> candidate.descriptorPlan().changes()));
   }
 
   private static ArtifactSnapshot inputArtifact(
@@ -211,13 +349,35 @@ record AnalyzePrediction(
     return Set.copyOf(removed);
   }
 
-  /* default */ record PlannedTrim(ArtifactCoordinate coordinate, Set<String> removedClasses)
+  /* default */ record PlannedTrim(
+      ArtifactCoordinate coordinate,
+      Set<String> removedClasses,
+      List<ServiceDescriptorChange> serviceDescriptorChanges,
+      String mrjarStatus)
       implements Comparable<PlannedTrim> {
+    /* default */ PlannedTrim(
+        final ArtifactCoordinate coordinate, final Set<String> removedClasses) {
+      this(coordinate, removedClasses, List.of(), null);
+    }
+
+    /* default */ PlannedTrim(
+        final ArtifactCoordinate coordinate,
+        final Set<String> removedClasses,
+        final List<ServiceDescriptorChange> serviceDescriptorChanges) {
+      this(coordinate, removedClasses, serviceDescriptorChanges, null);
+    }
+
     PlannedTrim {
       Objects.requireNonNull(coordinate, "coordinate");
       removedClasses = Set.copyOf(new TreeSet<>(removedClasses));
-      if (removedClasses.isEmpty()) {
-        throw new IllegalArgumentException("A planned trim must remove at least one class");
+      serviceDescriptorChanges = serviceDescriptorChanges.stream().sorted().toList();
+      if (removedClasses.isEmpty()
+          && serviceDescriptorChanges.isEmpty()
+          && !"elevated_and_trimmed".equals(mrjarStatus)
+          && !"classpath-only".equals(mrjarStatus)) {
+        throw new IllegalArgumentException(
+            "A planned output must remove classes, change a service descriptor, or transform a"
+                + " modular archive");
       }
     }
 

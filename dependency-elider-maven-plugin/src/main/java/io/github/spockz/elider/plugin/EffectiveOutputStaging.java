@@ -5,7 +5,6 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.plugin.JarTrimCache.CacheEntry;
 import io.github.spockz.elider.plugin.ParallelTrimExecutor.PreparedOutputCleanup;
-import io.github.spockz.elider.plugin.ServiceProviderTrimInventory.ServiceProviderInventory;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.PreparedEffectiveOutputs;
 import io.github.spockz.elider.trimmer.ArchiveSanitizer;
@@ -47,6 +46,9 @@ final class EffectiveOutputStaging implements AutoCloseable {
     final Map<TrimCandidate, CacheEntry> entries = TrimCollections.lookupMap();
     final List<ArtifactTrimRecord> records = new ArrayList<>();
     final List<TrimCandidate> toSanitize = new ArrayList<>();
+    if (work.stream().anyMatch(candidate -> !candidate.descriptorPlan().ready())) {
+      ServiceProviderTrimInventory.planDescriptorOutputs(outputPlan, work);
+    }
     for (final TrimCandidate candidate : work) {
       final DependencyJarTrimmer.TrimAnalysis analysis = candidate.analysis();
       if (analysis == null) {
@@ -58,10 +60,6 @@ final class EffectiveOutputStaging implements AutoCloseable {
       }
       toSanitize.add(candidate);
     }
-    final ServiceProviderInventory providerInventory =
-        toSanitize.stream().anyMatch(candidate -> candidate.archive().multiRelease())
-            ? ServiceProviderTrimInventory.serviceProviderInventory(outputPlan, work)
-            : new ServiceProviderInventory(Set.of(), Set.of());
     final List<PendingOutput> prepared =
         ParallelTrimExecutor.mapParallel(
             toSanitize,
@@ -70,14 +68,8 @@ final class EffectiveOutputStaging implements AutoCloseable {
               final Path stagedOutput =
                   generationDirectory.resolve(candidate.output().getFileName());
               final ArchiveSanitizer.PreparedOutput staged;
+              final Set<String> removedProviders = candidate.descriptorPlan().removedProviders();
               if (candidate.archive().multiRelease()) {
-                final Set<String> removedProviders =
-                    ServiceProviderTrimInventory.removedServiceProviders(
-                        candidate,
-                        new TrimScanInputs(
-                            outputPlan.prepared().index(),
-                            outputPlan.prepared().dynamicRootInputs().scansByPath()),
-                        providerInventory);
                 final MultiReleaseArchivePlan plan =
                     MultiReleaseArchivePlan.create(
                         candidate.archive().snapshot().filePath(),
@@ -105,7 +97,8 @@ final class EffectiveOutputStaging implements AutoCloseable {
                         candidate.archive().snapshot().coordinate(),
                         candidate.analysis(),
                         TrimInputDigests.requiredInputDigest(
-                            inputDigests, candidate.archive().snapshot().filePath()));
+                            inputDigests, candidate.archive().snapshot().filePath()),
+                        removedProviders);
               } else {
                 staged =
                     sanitizer.prepareWithProvenance(
@@ -114,7 +107,8 @@ final class EffectiveOutputStaging implements AutoCloseable {
                         candidate.archive().snapshot().coordinate(),
                         candidate.analysis(),
                         TrimInputDigests.requiredInputDigest(
-                            inputDigests, candidate.archive().snapshot().filePath()));
+                            inputDigests, candidate.archive().snapshot().filePath()),
+                        removedProviders);
               }
               return preparedOutputCleanup.track(new PendingOutput(candidate, staged));
             },

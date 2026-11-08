@@ -53,7 +53,8 @@ final class MultiReleaseArchiveWriter {
     state.requireUnseen(name);
     if (entry.isDirectory()) {
       writeDirectory(input, output, entry, state);
-    } else if (!JarSignatureSanitizer.isSignatureFile(name)) {
+    } else if (!JarSignatureSanitizer.isSignatureFile(name)
+        && !isVersionedServiceDescriptor(name)) {
       if (JarSignatureSanitizer.isManifest(name)) {
         writeManifest(input, output, entry, state);
       } else if (name.startsWith(VERSIONED_PREFIX)) {
@@ -64,6 +65,14 @@ final class MultiReleaseArchiveWriter {
         writeResource(input, output, entry, state);
       }
     }
+  }
+
+  private static boolean isVersionedServiceDescriptor(final String name) {
+    if (!name.startsWith(VERSIONED_PREFIX)) {
+      return false;
+    }
+    final int releaseEnd = name.indexOf('/', VERSIONED_PREFIX.length());
+    return releaseEnd >= 0 && name.startsWith("META-INF/services/", releaseEnd + 1);
   }
 
   private static void writeDirectory(
@@ -165,13 +174,18 @@ final class MultiReleaseArchiveWriter {
         return;
       }
     }
-    final Optional<byte[]> serviceContents =
-        ServiceDescriptorFilter.filter(input, entry, state.removedServiceProviders());
-    if (serviceContents.isEmpty()) {
-      MultiReleaseEntrySupport.copyEntry(input, output, entry);
-    } else {
-      MultiReleaseEntrySupport.writeEntryAs(output, entry, name, serviceContents.orElseThrow());
+    if (name.startsWith("META-INF/services/")) {
+      final ServiceDescriptorFilter.Result result =
+          ServiceDescriptorFilter.filter(input, entry, state.removedServiceProviders());
+      if (result.outcome() == ServiceDescriptorFilter.Outcome.OMIT) {
+        return;
+      }
+      if (result.outcome() == ServiceDescriptorFilter.Outcome.REPLACED) {
+        MultiReleaseEntrySupport.writeEntryAs(output, entry, name, result.bytes());
+        return;
+      }
     }
+    MultiReleaseEntrySupport.copyEntry(input, output, entry);
   }
 
   private static final class WriteState {

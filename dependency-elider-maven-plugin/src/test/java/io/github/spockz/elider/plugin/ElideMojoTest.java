@@ -34,6 +34,7 @@ import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -1117,54 +1118,59 @@ final class ElideMojoTest {
   }
 
   @Test
-  void elevatedServicesDropProvidersMissingAtTargetButKeepUnknownProviders()
+  void singleReleaseDescriptorKeepsPassThroughUpperTierProvidersAndDropsAbsentOnes()
       throws IOException, ReflectiveOperationException, MojoFailureException {
-    final Path rootBase =
+    final Path rootClasses =
         compileJarSources(
-            "mr-service-base",
-            Map.of(
-                "Root.java", "package mrservice; public class Root { public static void run() {} }",
-                "Spi.java", "package mrservice; public interface Spi {}"),
-            null,
-            8);
-    final Path targetRoot =
-        compileJarSources(
-            "mr-service-target",
+            "mr-service-owner",
             Map.of(
                 "Root.java",
-                "package mrservice; public class Root { public static void run() {} }"),
-            rootBase,
+                "package mrservice; public class Root { public static void run() {} }",
+                "Unused.java",
+                "package mrservice; public class Unused {}",
+                "Spi.java",
+                "package mrservice; public interface Spi { String tier(); }"),
+            null,
             11);
-    final Path upperClasses =
+    final Path descriptorOwner =
+        rewriteJar(
+            rootClasses,
+            Map.of(
+                "META-INF/services/mrservice.Spi",
+                "mrservice.Provider\n" + "droppedprovider.Provider\n" + "external.Provider\n"));
+    final Path upperProviderClasses =
         compileJarSources(
-            "mr-service-upper",
+            "mr-service-upper-provider",
             Map.of(
                 "Provider.java",
-                "package mrservice; class Provider implements Spi { public Provider() {} }"),
-            rootBase,
+                "package mrservice; public class Provider implements Spi { "
+                    + "public Provider() {} public String tier() { return \"upper\"; } }"),
+            rootClasses,
             17);
+    final Path emptyClasses = descriptorJar("mr-service-empty.jar", "META-INF/empty", "");
+    final Path passThroughProvider =
+        writeMultiReleaseJar(
+            "mr-service-pass-through-provider.jar",
+            emptyClasses,
+            null,
+            emptyClasses,
+            upperProviderClasses,
+            Map.of("META-INF/versions/17/META-INF/services/mrservice.Spi", "external.Provider\n"));
+    final byte[] passThroughProviderBytes = Files.readAllBytes(passThroughProvider);
     final Path droppedProviderPath =
         compileJarSources(
             "mr-service-dropped-provider",
             Map.of(
                 "Provider.java",
                 "package droppedprovider; public class Provider implements mrservice.Spi { "
-                    + "public Provider() {} }",
+                    + "public Provider() {} public String tier() { return \"dropped\"; } }",
                 "Keep.java",
                 "package droppedprovider; public class Keep {}"),
-            rootBase,
-            8);
-    final Path multiReleasePath =
-        writeMultiReleaseJar(
-            "mr-service-root.jar",
-            rootBase,
-            null,
-            targetRoot,
-            upperClasses,
-            Map.of(
-                "META-INF/services/mrservice.Spi",
-                "mrservice.Provider\n" + "droppedprovider.Provider\n" + "external.Provider\n"));
-    final Artifact root = runtimeArtifact("mr-service-root", multiReleasePath);
+            rootClasses,
+            11);
+    final Artifact root = runtimeArtifact("mr-service-root", descriptorOwner);
+    final Artifact retainedUpperProvider =
+        runtimeArtifact("mr-service-pass-through-provider", passThroughProvider);
     final Artifact droppedProvider =
         runtimeArtifact("mr-service-dropped-provider", droppedProviderPath);
     final ArtifactCoordinate droppedProviderCoordinate =
@@ -1172,7 +1178,8 @@ final class ElideMojoTest {
             "org.example", "mr-service-dropped-provider", "1.0", "jar", "", "runtime");
     final MavenProject project =
         projectForArtifacts(
-            "mr-service-consumer", new LinkedHashSet<>(List.of(root, droppedProvider)));
+            "mr-service-consumer",
+            new LinkedHashSet<>(List.of(root, retainedUpperProvider, droppedProvider)));
     project.getProperties().setProperty("maven.compiler.release", "11");
     final MavenElisionService service = new MavenElisionService();
     final Path trace = writeTrace("mrservice.Root\n");
@@ -1187,12 +1194,14 @@ final class ElideMojoTest {
                 new ElisionAnalysisModel.CompletenessOptions(false, false, false, true),
                 new ElisionAnalysisModel.TrimOptions(
                     true,
-                    List.of("droppedprovider.Keep"),
+                    List.of("droppedprovider.Keep", "mrservice.Spi"),
                     false,
                     List.of(),
                     false,
                     MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
-                    "vertical-shading"),
+                    MavenDependencyTrimmer.MRJAR_PASS_THROUGH,
+                    MavenPluginDescriptorFixtures.releasedProducerResolution(),
+                    DuplicateClassPolicy.NONE),
                 new ElisionAnalysisModel.DynamicRootOptions(false)));
     assertThat(prepared.rawDecision().retainedArtifacts()).contains(droppedProviderCoordinate);
     final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
@@ -1207,9 +1216,17 @@ final class ElideMojoTest {
                 .retainedClasses())
         .contains("droppedprovider/Keep")
         .doesNotContain("droppedprovider/Provider");
+    final Set<ArtifactCoordinate> predictedRetained =
+        Set.copyOf(effective.effectiveDecision().retainedArtifacts());
     final TrimResult result = MavenDependencyTrimmer.trimEffectiveOutputs(effective);
+    final TrimResult warm = MavenDependencyTrimmer.trimEffectiveOutputs(effective);
     final ArtifactTrimRecord rootRecord =
         result.records().stream()
+            .filter(record -> "mr-service-root".equals(record.coordinate().artifactId()))
+            .findFirst()
+            .orElseThrow();
+    final ArtifactTrimRecord warmRootRecord =
+        warm.records().stream()
             .filter(record -> "mr-service-root".equals(record.coordinate().artifactId()))
             .findFirst()
             .orElseThrow();
@@ -1225,18 +1242,211 @@ final class ElideMojoTest {
       assertThat(providerOutput.getEntry("droppedprovider/Provider.class")).isNull();
     }
 
+    final String descriptorBytes;
+    final Set<String> rootOutputEntries;
     try (JarFile output = new JarFile(rootRecord.trimmedPath().toFile())) {
-      assertThat(output.getEntry("META-INF/versions/17/mrservice/Provider.class")).isNotNull();
+      rootOutputEntries =
+          output.stream().map(JarEntry::getName).collect(java.util.stream.Collectors.toSet());
       final JarEntry descriptor = output.getJarEntry("META-INF/services/mrservice.Spi");
       assertThat(descriptor).isNotNull();
       try (InputStream input = output.getInputStream(descriptor)) {
-        final String providers =
-            new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-        assertThat(providers)
-            .doesNotContain("mrservice.Provider", "droppedprovider.Provider")
-            .contains("external.Provider");
+        descriptorBytes = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
       }
     }
+    try (JarFile providerArchive = new JarFile(passThroughProvider.toFile())) {
+      assertThat(providerArchive.getEntry("mrservice/Provider.class")).isNull();
+      assertThat(providerArchive.getEntry("META-INF/versions/17/mrservice/Provider.class"))
+          .isNotNull();
+    }
+    final Object loadedProvider;
+    try (URLClassLoader loader =
+        new URLClassLoader(
+            new URL[] {
+              rootRecord.trimmedPath().toUri().toURL(), passThroughProvider.toUri().toURL()
+            })) {
+      final Class<?> serviceType = loader.loadClass("mrservice.Spi");
+      loadedProvider = ServiceLoader.load(serviceType, loader).findFirst().orElseThrow();
+    }
+
+    final ElideMojo mojo = newMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "trimJars", true);
+    set(mojo, "trimRoots", List.of("droppedprovider.Keep", "mrservice.Spi"));
+    set(mojo, "mrjarStrategy", MavenDependencyTrimmer.MRJAR_PASS_THROUGH);
+    set(mojo, "conservativeServiceLoaderRoots", false);
+    set(mojo, "reportFile", tempDir.resolve("mr-service-applied-report.json").toFile());
+    set(mojo, "summaryFile", tempDir.resolve("mr-service-applied-summary.json").toFile());
+    mojo.execute();
+    final Set<ArtifactCoordinate> appliedViews =
+        project.getArtifacts().stream()
+            .map(MavenArtifactInventory::toCoordinate)
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    final Path appliedRoot =
+        project.getArtifacts().stream()
+            .filter(artifact -> "mr-service-root".equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow()
+            .getFile()
+            .toPath();
+    final Path appliedProvider =
+        project.getArtifacts().stream()
+            .filter(artifact -> "mr-service-pass-through-provider".equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow()
+            .getFile()
+            .toPath();
+
+    final List<Artifact> noTrimArtifacts =
+        List.of(
+            runtimeArtifact("mr-service-root", descriptorOwner),
+            runtimeArtifact("mr-service-pass-through-provider", passThroughProvider),
+            runtimeArtifact("mr-service-dropped-provider", droppedProviderPath));
+    final MavenProject noTrimProject =
+        projectForArtifacts("mr-service-no-trim-consumer", new LinkedHashSet<>(noTrimArtifacts));
+    noTrimProject.getProperties().setProperty("maven.compiler.release", "11");
+    final ElideMojo noTrimMojo = newMojo();
+    set(noTrimMojo, "project", noTrimProject);
+    set(noTrimMojo, "traceFiles", List.of(trace.toFile()));
+    set(noTrimMojo, "trimRoots", List.of("droppedprovider.Keep", "mrservice.Spi"));
+    set(noTrimMojo, "mrjarStrategy", MavenDependencyTrimmer.MRJAR_PASS_THROUGH);
+    set(noTrimMojo, "conservativeServiceLoaderRoots", false);
+    set(noTrimMojo, "reportFile", tempDir.resolve("mr-service-no-trim-report.json").toFile());
+    set(noTrimMojo, "summaryFile", tempDir.resolve("mr-service-no-trim-summary.json").toFile());
+    noTrimMojo.execute();
+    final Path noTrimRoot =
+        noTrimProject.getArtifacts().stream()
+            .filter(artifact -> "mr-service-root".equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow()
+            .getFile()
+            .toPath();
+    final byte[] originalDescriptor =
+        "mrservice.Provider\ndroppedprovider.Provider\nexternal.Provider\n"
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+    assertAll(
+        "provider descriptors follow global retained ownership through planning and output",
+        () ->
+            assertThat(descriptorBytes)
+                .contains("mrservice.Provider", "external.Provider")
+                .doesNotContain("droppedprovider.Provider"),
+        () -> assertThat(rootOutputEntries).doesNotContain("mrservice/Unused.class"),
+        () ->
+            assertThat(
+                    rootOutputEntries.stream()
+                        .filter(name -> name.startsWith("META-INF/versions/"))
+                        .filter(name -> name.contains("META-INF/services/")))
+                .isEmpty(),
+        () ->
+            assertThat(result.records())
+                .noneMatch(
+                    record ->
+                        record
+                            .coordinate()
+                            .equals(MavenArtifactInventory.toCoordinate(retainedUpperProvider))),
+        () -> assertThat(warm.cacheHits()).isPositive(),
+        () -> assertThat(warmRootRecord.trimmedPath()).isEqualTo(rootRecord.trimmedPath()),
+        () ->
+            assertThat(result.serviceDescriptorChanges())
+                .containsEntry(
+                    rootRecord.coordinate(),
+                    List.of(
+                        new ServiceDescriptorChange(
+                            "META-INF/services/mrservice.Spi",
+                            ServiceDescriptorChange.Outcome.REPLACED))),
+        () ->
+            assertThat(warm.serviceDescriptorChanges())
+                .containsExactlyInAnyOrderEntriesOf(result.serviceDescriptorChanges()),
+        () -> assertThat(appliedViews).containsExactlyInAnyOrderElementsOf(predictedRetained),
+        () -> assertThat(appliedRoot).isNotEqualTo(descriptorOwner),
+        () -> assertThat(appliedProvider).isEqualTo(passThroughProvider),
+        () ->
+            assertThat(Files.readAllBytes(passThroughProvider))
+                .containsExactly(passThroughProviderBytes),
+        () -> assertThat(noTrimRoot).isEqualTo(descriptorOwner),
+        () -> {
+          try (JarFile archive = new JarFile(noTrimRoot.toFile())) {
+            assertThat(jarEntryBytes(archive, "META-INF/services/mrservice.Spi"))
+                .containsExactly(originalDescriptor);
+          }
+        },
+        () -> assertThat(loadedProvider.getClass().getName()).isEqualTo("mrservice.Provider"),
+        () ->
+            assertThat(loadedProvider.getClass().getMethod("tier").invoke(loadedProvider))
+                .isEqualTo("upper"));
+  }
+
+  @Test
+  void classlessDescriptorOwnerOmitsItsOnlyKnownDeadProvider() throws Exception {
+    final Path providerArchive =
+        compileJarSources(
+            "classless-service-provider",
+            Map.of(
+                "Root.java", "package classless; public class Root {}",
+                "Keep.java", "package classless; public class Keep {}",
+                "Service.java", "package classless; public interface Service {}",
+                "DeadProvider.java",
+                    "package classless; public class DeadProvider implements Service {}"),
+            null,
+            11);
+    final Path descriptorOwner =
+        descriptorJar(
+            "classless-service-owner.jar",
+            "META-INF/services/classless.Service",
+            "classless.DeadProvider\n");
+    final Artifact providerArtifact =
+        runtimeArtifact("classless-service-provider", providerArchive);
+    final Artifact descriptorArtifact = runtimeArtifact("classless-service-owner", descriptorOwner);
+    final MavenProject project =
+        projectForArtifacts(
+            "classless-service-consumer",
+            new LinkedHashSet<>(List.of(providerArtifact, descriptorArtifact)));
+    project.getProperties().setProperty("maven.compiler.release", "11");
+    final Path trace = writeTrace("classless.Root\n");
+    final ElideMojo mojo = newMojo();
+    set(mojo, "project", project);
+    set(mojo, "traceFiles", List.of(trace.toFile()));
+    set(mojo, "trimJars", true);
+    set(mojo, "trimRoots", List.of("classless.Keep"));
+    set(mojo, "conservativeServiceLoaderRoots", false);
+    set(mojo, "reportFile", tempDir.resolve("classless-service-report.json").toFile());
+    final Path summary = tempDir.resolve("classless-service-summary.json");
+    set(mojo, "summaryFile", summary.toFile());
+
+    mojo.execute();
+
+    final Path appliedDescriptorOwner =
+        project.getArtifacts().stream()
+            .filter(artifact -> "classless-service-owner".equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow()
+            .getFile()
+            .toPath();
+    final MavenElisionReportSnapshot applied = MavenElisionReportWriter.read(summary);
+    assertAll(
+        "classless service metadata follows providers removed from another retained archive",
+        () -> assertThat(appliedDescriptorOwner).isNotEqualTo(descriptorOwner),
+        () -> {
+          try (JarFile output = new JarFile(appliedDescriptorOwner.toFile())) {
+            assertThat(output.getEntry("META-INF/services/classless.Service")).isNull();
+            assertThat(output.stream().map(JarEntry::getName).toList())
+                .noneMatch(name -> name.endsWith(".class"));
+          }
+        },
+        () ->
+            assertThat(applied.trimmedArtifacts())
+                .anySatisfy(
+                    row ->
+                        assertAll(
+                            () -> assertThat(row.coordinate()).contains("classless-service-owner"),
+                            () -> assertThat(row.programClassesPruned()).isZero(),
+                            () ->
+                                assertThat(row.serviceDescriptorChanges())
+                                    .containsExactly(
+                                        new ServiceDescriptorChange(
+                                            "META-INF/services/classless.Service",
+                                            ServiceDescriptorChange.Outcome.OMIT)))));
   }
 
   @Test

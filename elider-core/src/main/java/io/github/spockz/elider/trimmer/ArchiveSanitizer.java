@@ -10,9 +10,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Objects;
+import java.util.Set;
 
 /** Writes sanitized dependency JARs without merging artifact boundaries. */
-@SuppressWarnings("PMD.CommentSize")
+// WHY: Distinct public preparation modes preserve callers' explicit output contracts.
+@SuppressWarnings({"PMD.CommentSize", "PMD.TooManyMethods"})
 public final class ArchiveSanitizer {
   /** Creates a stateless archive sanitizer. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
@@ -59,7 +61,8 @@ public final class ArchiveSanitizer {
         originalDigests,
         null,
         false,
-        "not_multi_release");
+        "not_multi_release",
+        Set.of());
   }
 
   /** Stages an MRJAR using a validated target-release elevation plan. */
@@ -94,7 +97,8 @@ public final class ArchiveSanitizer {
         originalDigests,
         plan,
         false,
-        "elevated_and_trimmed");
+        "elevated_and_trimmed",
+        Set.of());
   }
 
   /**
@@ -109,8 +113,22 @@ public final class ArchiveSanitizer {
       final DependencyJarTrimmer.TrimAnalysis analysis,
       final ArtifactDigests originalDigests)
       throws IOException {
+    return prepareWithProvenance(
+        originalJar, trimmedJar, coordinate, analysis, originalDigests, Set.of());
+  }
+
+  /** Stages a single-release archive while reconciling proven-absent providers. */
+  public PreparedOutput prepareWithProvenance(
+      final Path originalJar,
+      final Path trimmedJar,
+      final ArtifactCoordinate coordinate,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final ArtifactDigests originalDigests,
+      final Set<String> removedServiceProviders)
+      throws IOException {
     validateInputs(originalJar, trimmedJar, coordinate, analysis);
     Objects.requireNonNull(originalDigests, "originalDigests");
+    Objects.requireNonNull(removedServiceProviders, "removedServiceProviders");
     if (!originalDigests.matchesPath(originalJar)) {
       throw new IOException(
           "Captured original dependency digests belong to a different path: " + originalJar);
@@ -123,7 +141,8 @@ public final class ArchiveSanitizer {
         originalDigests,
         null,
         false,
-        "not_multi_release");
+        "not_multi_release",
+        removedServiceProviders);
   }
 
   /** Stages a runtime derivative in classpath-only mode, stripping the root module descriptor. */
@@ -134,8 +153,22 @@ public final class ArchiveSanitizer {
       final DependencyJarTrimmer.TrimAnalysis analysis,
       final ArtifactDigests originalDigests)
       throws IOException {
+    return prepareClasspathOnly(
+        originalJar, trimmedJar, coordinate, analysis, originalDigests, Set.of());
+  }
+
+  /** Stages a classpath-only archive while reconciling proven-absent providers. */
+  public PreparedOutput prepareClasspathOnly(
+      final Path originalJar,
+      final Path trimmedJar,
+      final ArtifactCoordinate coordinate,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final ArtifactDigests originalDigests,
+      final Set<String> removedServiceProviders)
+      throws IOException {
     validateInputs(originalJar, trimmedJar, coordinate, analysis);
     Objects.requireNonNull(originalDigests, "originalDigests");
+    Objects.requireNonNull(removedServiceProviders, "removedServiceProviders");
     if (!originalDigests.matchesPath(originalJar)) {
       throw new IOException(
           "Captured original dependency digests belong to a different path: " + originalJar);
@@ -148,7 +181,8 @@ public final class ArchiveSanitizer {
         originalDigests,
         null,
         true,
-        "classpath-only");
+        "classpath-only",
+        removedServiceProviders);
   }
 
   private static void validateInputs(
@@ -177,7 +211,8 @@ public final class ArchiveSanitizer {
       final ArtifactDigests originalDigests,
       final MultiReleaseArchivePlan elevationPlan,
       final boolean stripRootModuleDescriptor,
-      final String mrjarStatus)
+      final String mrjarStatus,
+      final Set<String> removedServiceProviders)
       throws IOException {
     final ArchiveOutputStager.OutputLocation location =
         ArchiveOutputStager.resolveOutputLocation(originalJar, trimmedJar);
@@ -186,7 +221,12 @@ public final class ArchiveSanitizer {
     try {
       final ArchiveOutputStager.WriteResult writeResult =
           ArchiveOutputStager.writeAndMeasure(
-              originalJar, temporaryJar, analysis, elevationPlan, stripRootModuleDescriptor);
+              originalJar,
+              temporaryJar,
+              analysis,
+              elevationPlan,
+              stripRootModuleDescriptor,
+              removedServiceProviders);
       moved = true;
       return new PreparedOutput(
           temporaryJar,
@@ -198,10 +238,8 @@ public final class ArchiveSanitizer {
           originalDigests.sha1(),
           writeResult.trimmedDigests().sha256(),
           writeResult.trimmedDigests().sha1(),
-          elevationPlan == null ? analysis.totalClasses() : elevationPlan.logicalClasses().size(),
-          elevationPlan == null
-              ? analysis.retainedClasses().size()
-              : elevationPlan.retainedLogicalClasses().size(),
+          writeResult.totalClasses(),
+          writeResult.retainedClasses(),
           writeResult.prunedClassBytes(),
           writeResult.originalPhysicalEntries(),
           writeResult.trimmedPhysicalEntries(),

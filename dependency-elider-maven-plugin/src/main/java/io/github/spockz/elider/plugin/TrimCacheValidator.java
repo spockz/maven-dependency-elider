@@ -60,6 +60,7 @@ final class TrimCacheValidator {
   private static boolean validCacheOutput(final CacheEntry entry, final TrimCandidate candidate) {
     if (entry.trimmedPath() == null) {
       return !candidate.archive().multiRelease()
+          && !candidate.requiresOutput()
           && entry.originalPhysicalEntries() == null
           && entry.trimmedPhysicalEntries() == null
           && entry.retainedClasses() == entry.totalClasses()
@@ -74,7 +75,10 @@ final class TrimCacheValidator {
         && entry.trimmedPhysicalEntries() != null
         && entry.originalPhysicalEntries() >= 0
         && entry.trimmedPhysicalEntries() >= 0
-        && (entry.retainedClasses() < entry.totalClasses() || candidate.archive().multiRelease());
+        && (entry.retainedClasses() < entry.totalClasses()
+            || candidate.archive().multiRelease()
+            || !entry.trimmedPhysicalEntries().equals(entry.originalPhysicalEntries())
+            || !entry.originalSha256().equals(entry.trimmedSha256()));
   }
 
   private static boolean validDigest(final String value, final int length) {

@@ -98,6 +98,9 @@ final class MultiReleaseArchiveInventory {
       if (path == null) {
         return;
       }
+      if (path.logicalName().startsWith("META-INF/services/")) {
+        return;
+      }
       rejectVersionedMetaInf(path, name);
       if (entry.isDirectory()) {
         return;

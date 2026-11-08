@@ -7,6 +7,8 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /** Returns canonical trim outputs and optional generation ownership. */
 record TrimResult(
@@ -18,8 +20,32 @@ record TrimResult(
     long maximumCacheHitNanos,
     int analysisRuns,
     TrimExecutionEnvironment executionEnvironment,
-    List<DuplicateClasses.ToleratedDuplicate> toleratedDuplicates) {
-  TrimResult {
+    List<DuplicateClasses.ToleratedDuplicate> toleratedDuplicates,
+    Map<ArtifactCoordinate, List<ServiceDescriptorChange>> serviceDescriptorChanges) {
+  /* default */ TrimResult(
+      final List<ArtifactTrimRecord> records,
+      final List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
+      final List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
+      final List<ArtifactCoordinate> configuredPassThroughArtifacts,
+      final int cacheHits,
+      final long maximumCacheHitNanos,
+      final int analysisRuns,
+      final TrimExecutionEnvironment executionEnvironment,
+      final List<DuplicateClasses.ToleratedDuplicate> toleratedDuplicates) {
+    this(
+        records,
+        multiReleasePassthroughArtifacts,
+        moduleInfoPassthroughArtifacts,
+        configuredPassThroughArtifacts,
+        cacheHits,
+        maximumCacheHitNanos,
+        analysisRuns,
+        executionEnvironment,
+        toleratedDuplicates,
+        Map.of());
+  }
+
+  /* default */ TrimResult {
     records =
         records.stream().sorted(Comparator.comparing(ArtifactTrimRecord::coordinate)).toList();
     multiReleasePassthroughArtifacts = multiReleasePassthroughArtifacts.stream().sorted().toList();
@@ -27,6 +53,11 @@ record TrimResult(
     configuredPassThroughArtifacts = configuredPassThroughArtifacts.stream().sorted().toList();
     java.util.Objects.requireNonNull(executionEnvironment, "executionEnvironment");
     toleratedDuplicates = List.copyOf(toleratedDuplicates);
+    serviceDescriptorChanges =
+        serviceDescriptorChanges.entrySet().stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey, entry -> entry.getValue().stream().sorted().toList()));
   }
 
   /** Attaches accepted duplicate classes to this result. */
@@ -41,7 +72,29 @@ record TrimResult(
         maximumCacheHitNanos,
         analysisRuns,
         executionEnvironment,
-        duplicates);
+        duplicates,
+        serviceDescriptorChanges);
+  }
+
+  /* package */ TrimResult withServiceDescriptorChanges(final List<TrimCandidate> candidates) {
+    final Map<ArtifactCoordinate, List<ServiceDescriptorChange>> changes =
+        candidates.stream()
+            .filter(candidate -> !candidate.descriptorPlan().changes().isEmpty())
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    candidate -> candidate.archive().snapshot().coordinate(),
+                    candidate -> candidate.descriptorPlan().changes()));
+    return new TrimResult(
+        records,
+        multiReleasePassthroughArtifacts,
+        moduleInfoPassthroughArtifacts,
+        configuredPassThroughArtifacts,
+        cacheHits,
+        maximumCacheHitNanos,
+        analysisRuns,
+        executionEnvironment,
+        toleratedDuplicates,
+        changes);
   }
 
   /* package */ static TrimResult empty(final TrimExecutionEnvironment executionEnvironment) {

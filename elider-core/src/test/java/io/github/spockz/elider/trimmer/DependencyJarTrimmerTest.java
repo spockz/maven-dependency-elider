@@ -261,6 +261,29 @@ class DependencyJarTrimmerTest {
   }
 
   @Test
+  void transformedSingleReleaseOmitsExistingVersionedServiceDescriptors() throws Exception {
+    final Path input = temporaryDirectory.resolve("versioned-service-input.jar");
+    try (JarOutputStream archive = new JarOutputStream(Files.newOutputStream(input))) {
+      archive.putNextEntry(new JarEntry("fixture/Only.class"));
+      archive.write(simpleClass("fixture/Only", null));
+      archive.closeEntry();
+      archive.putNextEntry(new JarEntry("META-INF/versions/17/META-INF/services/fixture.Service"));
+      archive.write("fixture.Provider\n".getBytes(StandardCharsets.UTF_8));
+      archive.closeEntry();
+    }
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        analyze(input, List.of(), List.of("fixture.Only"));
+    final Path output = temporaryDirectory.resolve("versioned-service-output.jar");
+
+    SingleReleaseArchiveWriter.write(input, output, analysis);
+
+    try (java.util.jar.JarFile archive = new java.util.jar.JarFile(output.toFile())) {
+      assertThat(archive.getEntry("META-INF/versions/17/META-INF/services/fixture.Service"))
+          .isNull();
+    }
+  }
+
+  @Test
   @DisplayName("ADR-0003: prepared contexts preserve candidate and ordered sibling precedence")
   void preparedContextsPreserveCandidateAndOrderedSiblingPrecedence() throws Exception {
     final Path candidateWithShared =

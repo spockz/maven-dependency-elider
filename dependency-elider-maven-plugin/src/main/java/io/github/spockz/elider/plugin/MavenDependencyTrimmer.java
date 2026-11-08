@@ -8,8 +8,6 @@ import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPla
 import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
-import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -105,34 +103,7 @@ final class MavenDependencyTrimmer {
                   effective.trimAnalysis().runtimeRelease()))
           .withToleratedDuplicates(duplicates);
     }
-    final Map<TrimArtifactRootKey, Set<String>> roots =
-        TrimRootPlanner.artifactRootKeys(
-            prepared.resolvedSnapshots(), effective.trimAnalysis().candidateRoots());
-    final Set<ArtifactCoordinate> unchangedCoordinates =
-        new LinkedHashSet<>(effective.forcedUnchangedCoordinates());
-    unchangedCoordinates.addAll(
-        classlessRetainedCoordinates(
-            prepared.resolvedSnapshots(),
-            prepared.index().classesByArtifact(),
-            effective.effectiveDecision().retainedArtifacts()));
-    final EffectiveOutputPlan outputPlan =
-        new EffectiveOutputPlan(
-            prepared,
-            effective.trimAnalysis(),
-            roots,
-            unchangedCoordinates,
-            effective.effectiveDecision().retainedArtifacts(),
-            effective.inventoryFingerprint(),
-            prepared.directInputFingerprint(),
-            effective.operationFingerprint(),
-            prepared.productionOutputFingerprint(),
-            prepared.bytecodeScan().map(BytecodeReferenceScan::referencedClasses).orElse(Set.of()),
-            options.trim().explicitRoots(),
-            options.trim().passThroughArtifacts(),
-            options.completeness().sourceRootsComplete(),
-            options.completeness().productionClassesComplete(),
-            options.trim().mrjarStrategy(),
-            options.trim().failOnUnsupportedModuleInfo());
+    final EffectiveOutputPlan outputPlan = EffectiveOutputPlanFactory.create(effective);
     final TrimExecutionEnvironment executionEnvironment = executionEnvironment(request);
     verifyAnalysisPlatform(effective, executionEnvironment);
     final JdkPlatformContext context = MavenPlatformContextHolder.forOperation(request.session());
@@ -185,23 +156,6 @@ final class MavenDependencyTrimmer {
         || executionEnvironment.runtimeRelease() != analysis.runtimeRelease()) {
       throw new IOException("Target or runtime release changed after effective analysis");
     }
-  }
-
-  private static Set<ArtifactCoordinate> classlessRetainedCoordinates(
-      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
-      final Map<io.github.spockz.elider.model.ArtifactFileRef, Set<String>> classesByArtifact,
-      final Set<ArtifactCoordinate> retained) {
-    final Map<Path, Set<String>> byPath = TrimCandidatePlanner.classesByPath(classesByArtifact);
-    return inventory.stream()
-        .filter(snapshot -> JAR_TYPE.equals(snapshot.coordinate().type()))
-        .filter(snapshot -> retained.contains(snapshot.coordinate()))
-        .filter(
-            snapshot ->
-                byPath
-                    .getOrDefault(snapshot.filePath().toAbsolutePath().normalize(), Set.of())
-                    .isEmpty())
-        .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
-        .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
   /* package */ static TrimAnalysisResult analyzeInMemory(

@@ -547,24 +547,7 @@ class ArchiveSanitizerTest {
 
   @Test
   void classpathOnlyStripsRootModuleDescriptorAndRetainsClasses() throws Exception {
-    final Path candidate = createCandidateJar();
-    final Path modularJar = temporaryDirectory.resolve("modular-candidate.jar");
-    final Path moduleSource = temporaryDirectory.resolve("module-src/module-info.java");
-    final Path moduleOutput = temporaryDirectory.resolve("module-bin");
-    Files.createDirectories(moduleSource.getParent());
-    Files.writeString(moduleSource, "module fixture.module {}\n");
-    CompilationFixtureSupport.compile(moduleOutput, List.of(moduleSource));
-    try (JarFile input = new JarFile(candidate.toFile());
-        JarOutputStream output = new JarOutputStream(Files.newOutputStream(modularJar))) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(input, output, entries.nextElement());
-      }
-      writeEntry(
-          output,
-          "module-info.class",
-          Files.readAllBytes(moduleOutput.resolve("module-info.class")));
-    }
+    final Path modularJar = createModularCandidate("modular-candidate.jar");
 
     final DependencyJarTrimmer.TrimAnalysis analysis =
         new DependencyJarTrimmer.TrimAnalysis(
@@ -583,6 +566,8 @@ class ArchiveSanitizerTest {
     final ArtifactTrimRecord record = sanitizer.publish(prepared);
     org.junit.jupiter.api.Assertions.assertAll(
         () -> assertThat(record.mrjarStatus()).isEqualTo("classpath-only"),
+        () -> assertThat(record.totalClasses()).isEqualTo(2),
+        () -> assertThat(record.retainedClasses()).isEqualTo(1),
         () ->
             assertThat(record.trimmedSha256())
                 .isEqualTo(digest(Files.readAllBytes(output), SHA_256)),
@@ -593,6 +578,54 @@ class ArchiveSanitizerTest {
             assertThat(trimmed.getJarEntry("fixture/Drop.class")).isNull();
           }
         });
+  }
+
+  @Test
+  void classpathOnlyExcludesRootModuleDescriptorFromAnalysisClassCounts() throws Exception {
+    final Path modularJar = createModularCandidate("analysis-counts-include-module.jar");
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer.TrimAnalysis(
+            3,
+            java.util.Set.of("fixture/Keep", "module-info"),
+            java.util.Set.of("fixture/Keep", "module-info"));
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepareClasspathOnly(
+            modularJar,
+            temporaryDirectory.resolve("analysis-counts-normalized.jar"),
+            ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
+            analysis,
+            ArtifactDigests.read(modularJar));
+
+    final ArtifactTrimRecord record = sanitizer.publish(prepared);
+
+    org.junit.jupiter.api.Assertions.assertAll(
+        "physical program class totals omit the stripped module descriptor",
+        () -> assertThat(record.totalClasses()).isEqualTo(2),
+        () -> assertThat(record.retainedClasses()).isEqualTo(1),
+        () -> assertThat(record.totalClasses() - record.retainedClasses()).isEqualTo(1));
+  }
+
+  private Path createModularCandidate(final String name) throws IOException {
+    final Path candidate = createCandidateJar();
+    final Path modularJar = temporaryDirectory.resolve(name);
+    final Path moduleSource = temporaryDirectory.resolve(name + "-src/module-info.java");
+    final Path moduleOutput = temporaryDirectory.resolve(name + "-bin");
+    Files.createDirectories(moduleSource.getParent());
+    Files.writeString(moduleSource, "module fixture.module {}\n");
+    CompilationFixtureSupport.compile(moduleOutput, List.of(moduleSource));
+    try (JarFile input = new JarFile(candidate.toFile());
+        JarOutputStream output = new JarOutputStream(Files.newOutputStream(modularJar))) {
+      final Enumeration<JarEntry> entries = input.entries();
+      while (entries.hasMoreElements()) {
+        copyEntry(input, output, entries.nextElement());
+      }
+      writeEntry(
+          output,
+          "module-info.class",
+          Files.readAllBytes(moduleOutput.resolve("module-info.class")));
+    }
+    return modularJar;
   }
 
   @Test

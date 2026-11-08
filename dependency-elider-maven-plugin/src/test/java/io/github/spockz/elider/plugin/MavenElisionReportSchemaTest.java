@@ -101,6 +101,149 @@ final class MavenElisionReportSchemaTest {
   }
 
   @Test
+  void descriptorOnlyTrimRowsRequireExplicitChangedDescriptorOutcomes() throws IOException {
+    final ObjectNode changed = descriptorOnlyTrimReport();
+    final ObjectNode changedRow = changed.withArray("trimmedArtifacts").addObject();
+    changedRow.put("coordinate", "example:services:jar:1.0 (runtime)");
+    changedRow.put(TRIMMED_CLASSES, 0);
+    changedRow.put(TRIMMED_CLASS_BYTES, 0);
+    changedRow.putNull("plannedClasses");
+    changedRow.putNull("mrjarStatus");
+    changedRow
+        .putArray("serviceDescriptorChanges")
+        .addObject()
+        .put("path", "META-INF/services/example.Service")
+        .put("outcome", "OMIT");
+
+    final ObjectNode unchangedOnly = descriptorOnlyTrimReport();
+    final ObjectNode unchangedRow = unchangedOnly.withArray("trimmedArtifacts").addObject();
+    unchangedRow.put("coordinate", "example:services:jar:1.0 (runtime)");
+    unchangedRow.put(TRIMMED_CLASSES, 0);
+    unchangedRow.put(TRIMMED_CLASS_BYTES, 0);
+    unchangedRow.putNull("plannedClasses");
+    unchangedRow.putNull("mrjarStatus");
+    unchangedRow
+        .putArray("serviceDescriptorChanges")
+        .addObject()
+        .put("path", "META-INF/services/example.Service")
+        .put("outcome", "UNCHANGED");
+    final ObjectNode missingChanges = descriptorOnlyTrimReport();
+    final ObjectNode missingChangesRow = missingChanges.withArray("trimmedArtifacts").addObject();
+    missingChangesRow.put("coordinate", "example:services:jar:1.0 (runtime)");
+    missingChangesRow.put(TRIMMED_CLASSES, 0);
+    missingChangesRow.put(TRIMMED_CLASS_BYTES, 0);
+    missingChangesRow.putNull("plannedClasses");
+    missingChangesRow.putNull("mrjarStatus");
+
+    final ObjectNode elevated = descriptorOnlyTrimReport();
+    final ObjectNode elevatedRow = elevated.withArray("trimmedArtifacts").addObject();
+    elevatedRow.put("coordinate", "example:elevated:jar:1.0 (runtime)");
+    elevatedRow.put(TRIMMED_CLASSES, 0);
+    elevatedRow.put(TRIMMED_CLASS_BYTES, 0);
+    elevatedRow.putNull("plannedClasses");
+    elevatedRow.putArray("serviceDescriptorChanges");
+    elevatedRow.put("mrjarStatus", "elevated_and_trimmed");
+
+    final ObjectNode classpathOnly = descriptorOnlyTrimReport();
+    final ObjectNode classpathOnlyRow = classpathOnly.withArray("trimmedArtifacts").addObject();
+    classpathOnlyRow.put("coordinate", "example:module:jar:1.0 (runtime)");
+    classpathOnlyRow.put(TRIMMED_CLASSES, 0);
+    classpathOnlyRow.put(TRIMMED_CLASS_BYTES, 0);
+    classpathOnlyRow.putNull("plannedClasses");
+    classpathOnlyRow.putArray("serviceDescriptorChanges");
+    classpathOnlyRow.put("mrjarStatus", "classpath-only");
+
+    final ObjectNode unsupportedNoOp = descriptorOnlyTrimReport();
+    final ObjectNode unsupportedNoOpRow = unsupportedNoOp.withArray("trimmedArtifacts").addObject();
+    unsupportedNoOpRow.put("coordinate", "example:noop:jar:1.0 (runtime)");
+    unsupportedNoOpRow.put(TRIMMED_CLASSES, 0);
+    unsupportedNoOpRow.put(TRIMMED_CLASS_BYTES, 0);
+    unsupportedNoOpRow.putNull("plannedClasses");
+    unsupportedNoOpRow.putArray("serviceDescriptorChanges");
+    unsupportedNoOpRow.put("mrjarStatus", "not_multi_release");
+
+    final ObjectNode invalidMrjarStatus = descriptorOnlyTrimReport();
+    final ObjectNode invalidStatusRow =
+        invalidMrjarStatus.withArray("trimmedArtifacts").addObject();
+    invalidStatusRow.put("coordinate", "example:elevated:jar:1.0 (runtime)");
+    invalidStatusRow.put(TRIMMED_CLASSES, 0);
+    invalidStatusRow.put(TRIMMED_CLASS_BYTES, 0);
+    invalidStatusRow.putNull("plannedClasses");
+    invalidStatusRow.putArray("serviceDescriptorChanges");
+    invalidStatusRow.put("mrjarStatus", "elevated");
+
+    assertAll(
+        "zero-class outputs need a real root service descriptor change",
+        () -> MavenElisionReportPayloadValidator.validate(changed),
+        () -> MavenElisionReportPayloadValidator.validate(elevated),
+        () -> MavenElisionReportPayloadValidator.validate(classpathOnly),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportPayloadValidator.validate(unsupportedNoOp))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("transforming MRJAR status"),
+        () ->
+            assertThatThrownBy(
+                    () -> MavenElisionReportPayloadValidator.validate(invalidMrjarStatus))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("MRJAR trim status is invalid"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportPayloadValidator.validate(missingChanges))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("serviceDescriptorChanges"),
+        () ->
+            assertThatThrownBy(() -> MavenElisionReportPayloadValidator.validate(unchangedOnly))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("REPLACED or OMIT"));
+  }
+
+  @Test
+  void rejectsMalformedServiceInterfaceNamesInModelAndPayload() throws IOException {
+    final List<String> invalidNames = List.of("bad name", "fixture..Service", "fixture\\Service");
+    final List<org.junit.jupiter.api.function.Executable> checks = new java.util.ArrayList<>();
+    for (final String service : invalidNames) {
+      checks.add(
+          () ->
+              assertThatThrownBy(
+                      () ->
+                          new ServiceDescriptorChange(
+                              "META-INF/services/" + service, ServiceDescriptorChange.Outcome.OMIT))
+                  .isInstanceOf(IllegalArgumentException.class));
+      checks.add(() -> assertMalformedServicePayload(service));
+    }
+    assertAll("descriptor paths use the service-interface binary-name grammar", checks.stream());
+  }
+
+  private void assertMalformedServicePayload(final String service) throws IOException {
+    final ObjectNode malformed = descriptorOnlyTrimReport();
+    final ObjectNode row = malformed.withArray("trimmedArtifacts").addObject();
+    row.put("coordinate", "example:services:jar:1.0 (runtime)");
+    row.put(TRIMMED_CLASSES, 0);
+    row.put(TRIMMED_CLASS_BYTES, 0);
+    row.putNull("plannedClasses");
+    row.putNull("mrjarStatus");
+    row.putArray("serviceDescriptorChanges")
+        .addObject()
+        .put("path", "META-INF/services/" + service)
+        .put("outcome", "OMIT");
+    assertThatThrownBy(() -> MavenElisionReportPayloadValidator.validate(malformed))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("Service descriptor change path is invalid or duplicated");
+  }
+
+  private static ObjectNode descriptorOnlyTrimReport() {
+    final ObjectNode payload = currentReportShapeWithDroppedRow();
+    payload.put("wholeArtifactsDropped", 0);
+    payload.put("originalJarBytesDropped", 0);
+    payload.put("droppedProgramClassEntries", 0);
+    payload.put("droppedProgramClassBytes", 0);
+    payload.putArray(DROPPED_ROWS);
+    payload.putArray("trimmedArtifacts");
+    payload.put("programClassesPruned", 0);
+    payload.put("uncompressedProgramClassBytesPruned", 0);
+    return payload;
+  }
+
+  @Test
   void rejectsInputCountsSmallerThanDistinctOutputArtifacts() throws IOException {
     final ArtifactCoordinate dropped = ArtifactCoordinate.of("example", "old", "1.0");
     final ArtifactCoordinate trimmed = ArtifactCoordinate.of("example", "trimmed", "1.0");
@@ -515,13 +658,17 @@ final class MavenElisionReportSchemaTest {
     JSON.writeValue(retainedPolicyPath.toFile(), retainedPolicyOtherVersion);
 
     final ObjectNode trimmed = appliedBanReport("example:drop", "example:drop:jar:1.0 (runtime)");
-    trimmed
-        .withArray("trimmedArtifacts")
+    final ObjectNode trimmedRow = trimmed.withArray("trimmedArtifacts").addObject();
+    trimmedRow.put("coordinate", "example:drop:jar:1.0 (runtime)");
+    trimmedRow.put(TRIMMED_CLASSES, 0);
+    trimmedRow.put(TRIMMED_CLASS_BYTES, 0);
+    trimmedRow.putNull("plannedClasses");
+    trimmedRow.putNull("mrjarStatus");
+    trimmedRow
+        .putArray("serviceDescriptorChanges")
         .addObject()
-        .put("coordinate", "example:drop:jar:1.0 (runtime)")
-        .put(TRIMMED_CLASSES, 0)
-        .put(TRIMMED_CLASS_BYTES, 0)
-        .putNull("plannedClasses");
+        .put("path", "META-INF/services/example.Service")
+        .put("outcome", "OMIT");
     final Path trimmedPath = temporaryDirectory.resolve("ban-also-trimmed.json");
     JSON.writeValue(trimmedPath.toFile(), trimmed);
 
@@ -667,13 +814,16 @@ final class MavenElisionReportSchemaTest {
   }
 
   private static void addTrimmedArtifact(final ObjectNode payload, final String coordinate) {
-    payload
-        .withArray("trimmedArtifacts")
+    final ObjectNode row = payload.withArray("trimmedArtifacts").addObject();
+    row.put("coordinate", coordinate);
+    row.put(TRIMMED_CLASSES, 0);
+    row.put(TRIMMED_CLASS_BYTES, 0);
+    row.putNull("plannedClasses");
+    row.putNull("mrjarStatus");
+    row.putArray("serviceDescriptorChanges")
         .addObject()
-        .put("coordinate", coordinate)
-        .put(TRIMMED_CLASSES, 0)
-        .put(TRIMMED_CLASS_BYTES, 0)
-        .putNull("plannedClasses");
+        .put("path", "META-INF/services/example.Service")
+        .put("outcome", "OMIT");
   }
 
   private ObjectNode appliedBanReport(final String dependency, final String coordinate)
@@ -770,6 +920,8 @@ final class MavenElisionReportSchemaTest {
             .put(TRIMMED_CLASSES, 1)
             .put(TRIMMED_CLASS_BYTES, 10)
             .putNull("plannedClasses");
+    trimmed.putArray("serviceDescriptorChanges");
+    trimmed.putNull("mrjarStatus");
     trimmed.putNull(TRIMMED_CLASSES);
     final Path previous = temporaryDirectory.resolve("null-trimmed-metric.json");
     JSON.writeValue(previous.toFile(), payload);
@@ -782,13 +934,13 @@ final class MavenElisionReportSchemaTest {
   @Test
   void rejectsNonTextArtifactCoordinate() throws IOException {
     final ObjectNode payload = currentReportShapeWithDroppedRow();
-    payload
-        .withArray("trimmedArtifacts")
-        .addObject()
-        .put("coordinate", 7)
-        .put(TRIMMED_CLASSES, 1)
-        .put(TRIMMED_CLASS_BYTES, 10)
-        .putNull("plannedClasses");
+    final ObjectNode trimmed = payload.withArray("trimmedArtifacts").addObject();
+    trimmed.put("coordinate", 7);
+    trimmed.put(TRIMMED_CLASSES, 1);
+    trimmed.put(TRIMMED_CLASS_BYTES, 10);
+    trimmed.putNull("plannedClasses");
+    trimmed.putArray("serviceDescriptorChanges");
+    trimmed.putNull("mrjarStatus");
     final Path previous = temporaryDirectory.resolve("non-text-coordinate.json");
     JSON.writeValue(previous.toFile(), payload);
 

@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.TraceData;
@@ -30,6 +31,30 @@ import org.objectweb.asm.Opcodes;
 /** Provides reusable immutable-input fixtures for closure tests. */
 @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 class MavenDependencyTrimmerInMemoryClosureSupport {
+
+  /** Maven field name used for project injection. */
+  protected static final String PROJECT_FIELD = "project";
+
+  /** Maven field name used for session injection. */
+  protected static final String SESSION_FIELD = "session";
+
+  /** Maven field name used for runtime evidence inputs. */
+  protected static final String TRACE_FILES_FIELD = "traceFiles";
+
+  /** Maven field name used for closed-world evidence mode. */
+  protected static final String CLOSED_WORLD_FIELD = "closedWorld";
+
+  /** Class name used by generated modular fixture archives. */
+  private static final String FIXTURE_MODULE_CLASS = "module-info";
+
+  /** Service descriptor parsed by the goal output fixture. */
+  private static final String FIXTURE_SERVICE_PATH = "META-INF/services/fixture.service.Spi";
+
+  /** Multi-release entry prefix used by generated upper-tier archives. */
+  private static final String VERSIONED_ENTRY_PREFIX = "META-INF/versions/";
+
+  /** Test goal report parser shared by Analyze and Elide output checks. */
+  protected final ObjectMapper reportObjectMapper = new ObjectMapper();
 
   /** Fixture coordinates are shared by generated test artifacts. */
   private static final String GROUP_ID = "fixture";
@@ -302,6 +327,12 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     return fixture(false, false, false, false, release, RUNTIME_SCOPE);
   }
 
+  /** Builds a provided-scope modular artifact. */
+  protected Fixture fixtureWithProvidedA(final int release) throws IOException {
+    return fixtureWithOptions(
+        false, false, false, false, release, "provided", false, RUNTIME_SCOPE, false);
+  }
+
   /** Builds runtime A without bytecode links to resource-only B. */
   protected Fixture fixtureWithRuntimeFirstAndResourceOnlySecond() throws IOException {
     return fixture(false, false, true, false, 21, RUNTIME_SCOPE);
@@ -371,6 +402,18 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
 
     /** Mutable Maven artifact objects owned by the project fixture. */
     final List<Artifact> projectArtifacts;
+
+    /* package */ MavenProject projectValue() {
+      return project;
+    }
+
+    /* package */ List<Artifact> projectArtifactValues() {
+      return projectArtifacts;
+    }
+
+    /* package */ List<ElisionAnalysisModel.ArtifactSnapshot> snapshotValues() {
+      return snapshots;
+    }
 
     private Fixture(
         final Path firstArtifactPath,

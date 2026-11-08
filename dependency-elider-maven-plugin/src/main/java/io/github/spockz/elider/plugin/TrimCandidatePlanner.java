@@ -54,10 +54,12 @@ final class TrimCandidatePlanner {
 
   /* package */ static void assignEffectiveAnalyses(
       final CandidatePlan plan, final TrimAnalysisResult analysis) throws IOException {
-    if (plan.work().size() != analysis.candidateAnalyses().size()) {
+    final List<TrimCandidate> analyzedCandidates =
+        plan.work().stream().filter(candidate -> candidate.analysis() == null).toList();
+    if (analyzedCandidates.size() != analysis.candidateAnalyses().size()) {
       throw new IOException("Effective analysis candidate inventory changed before output trim");
     }
-    for (final TrimCandidate candidate : plan.work()) {
+    for (final TrimCandidate candidate : analyzedCandidates) {
       final DependencyJarTrimmer.TrimAnalysis candidateAnalysis =
           analysis.candidateAnalyses().get(candidate.archive().snapshot().coordinate());
       if (candidateAnalysis == null

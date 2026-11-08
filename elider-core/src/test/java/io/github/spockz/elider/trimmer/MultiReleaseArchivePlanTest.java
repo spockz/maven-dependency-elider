@@ -221,7 +221,7 @@ final class MultiReleaseArchivePlanTest {
         copyWithEntry(
             fixture.jar(),
             temporaryDirectory.resolve("versioned-meta-inf.jar"),
-            "META-INF/versions/17/META-INF/services/example.Service",
+            "META-INF/versions/17/META-INF/example.properties",
             bytes("fixture.Api\n"));
     assertThatThrownBy(
             () -> MultiReleaseArchivePlan.create(invalidMetaInf, 11, Set.of(API_NAME), Set.of()))
@@ -273,6 +273,43 @@ final class MultiReleaseArchivePlanTest {
             MultiReleaseArchivePlan.create(withVersionContainer, 11, Set.of(API_NAME), Set.of())
                 .targetRelease())
         .isEqualTo(11);
+  }
+
+  @Test
+  void transformedMultiReleaseArchiveOmitsExistingVersionedServiceDescriptors() throws Exception {
+    final Fixture fixture = multiReleaseFixture("versioned-service", "VALUE");
+    final Path input =
+        copyWithEntry(
+            fixture.jar(),
+            temporaryDirectory.resolve("versioned-service-input.jar"),
+            "META-INF/versions/17/META-INF/services/example.Service",
+            bytes("fixture.Api\n"));
+    final MultiReleaseArchivePlan plan =
+        MultiReleaseArchivePlan.create(
+            input, 11, Set.of("fixture.Api"), Set.of("fixture.Drop", "drop.Lf", "drop.Crlf"));
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer.TrimAnalysis(
+            3, Set.of(API_NAME, "fixture/UpperOnly"), Set.of(API_NAME, "fixture/UpperOnly"));
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final Path output = temporaryDirectory.resolve("versioned-service-output.jar");
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepareMultiRelease(
+            input,
+            output,
+            ArtifactCoordinate.of("org.example", "versioned-service", "1"),
+            analysis,
+            plan,
+            null);
+    try {
+      sanitizer.publish(prepared);
+    } finally {
+      sanitizer.discard(prepared);
+    }
+
+    try (JarFile archive = new JarFile(output.toFile())) {
+      assertThat(archive.getEntry("META-INF/versions/17/META-INF/services/example.Service"))
+          .isNull();
+    }
   }
 
   @Test

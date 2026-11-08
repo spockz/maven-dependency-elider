@@ -16,6 +16,21 @@ import java.util.Set;
 final class ServiceProviderTrimInventory {
   private ServiceProviderTrimInventory() {}
 
+  /* package */ static void planDescriptorOutputs(
+      final EffectiveOutputPlan outputPlan, final List<TrimCandidate> candidates)
+      throws IOException {
+    final ServiceProviderInventory inventory = serviceProviderInventory(outputPlan, candidates);
+    final TrimScanInputs scanInputs =
+        new TrimScanInputs(
+            outputPlan.prepared().index(), outputPlan.prepared().dynamicRootInputs().scansByPath());
+    for (final TrimCandidate candidate : candidates) {
+      final Set<String> removed = removedServiceProviders(candidate, scanInputs, inventory);
+      final DependencyDynamicRoots.RootScan scan = serviceScan(candidate, scanInputs);
+      final List<ServiceDescriptorChange> changes = descriptorChanges(scan, removed);
+      candidate.serviceDescriptorPlan(removed, changes);
+    }
+  }
+
   /* package */ static ServiceProviderInventory serviceProviderInventory(
       final EffectiveOutputPlan outputPlan, final List<TrimCandidate> candidates)
       throws IOException {
@@ -26,8 +41,7 @@ final class ServiceProviderTrimInventory {
             candidatesByCoordinate.put(candidate.archive().snapshot().coordinate(), candidate));
     final Set<String> ownedClasses = new HashSet<>();
     final Set<String> retainedClasses = new HashSet<>();
-    final Path projectionDirectory =
-        TrimPaths.analysisLibraryDirectory(outputPlan.prepared().project());
+    retainedClasses.addAll(outputPlan.prepared().projectOutputClasses());
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot :
         outputPlan.prepared().resolvedSnapshots()) {
       if (!MavenDependencyTrimmer.JAR_TYPE.equals(snapshot.coordinate().type())) {
@@ -44,16 +58,13 @@ final class ServiceProviderTrimInventory {
         candidate.analysis().retainedClasses().stream()
             .map(name -> name.replace('/', '.'))
             .forEach(retainedClasses::add);
-      } else if (MultiReleaseClassInventory.hasUnsupportedVersionedClasses(source)) {
-        final Path projection =
-            MultiReleaseLibraryProjection.create(
-                source,
-                snapshot.coordinate(),
-                projectionDirectory,
-                outputPlan.analysis().targetRelease());
-        retainedClasses.addAll(TrimPaths.classNames(projection));
       } else {
         retainedClasses.addAll(logicalClasses);
+      }
+      if (candidate != null && candidate.archive().multiRelease()) {
+        candidate.archive().upperTierClasses().stream()
+            .map(name -> name.replace('/', '.'))
+            .forEach(retainedClasses::add);
       }
     }
     return new ServiceProviderInventory(ownedClasses, retainedClasses);
@@ -64,12 +75,7 @@ final class ServiceProviderTrimInventory {
       final TrimScanInputs scanInputs,
       final ServiceProviderInventory inventory)
       throws IOException {
-    final Path source = candidate.archive().snapshot().filePath().toAbsolutePath().normalize();
-    final DependencyDynamicRoots.RootScan scan = scanInputs.dynamicRootScans().get(source);
-    if (scan == null) {
-      throw new IOException(
-          "Missing service descriptor scan for " + candidate.archive().snapshot().coordinate());
-    }
+    final DependencyDynamicRoots.RootScan scan = serviceScan(candidate, scanInputs);
     final Set<String> removed = new HashSet<>();
     for (final DependencyDynamicRoots.ServiceDescriptor descriptor : scan.serviceDescriptors()) {
       for (final String provider : descriptor.providers()) {
@@ -80,6 +86,36 @@ final class ServiceProviderTrimInventory {
       }
     }
     return Set.copyOf(removed);
+  }
+
+  private static DependencyDynamicRoots.RootScan serviceScan(
+      final TrimCandidate candidate, final TrimScanInputs scanInputs) throws IOException {
+    final Path source = candidate.archive().snapshot().filePath().toAbsolutePath().normalize();
+    final DependencyDynamicRoots.RootScan scan = scanInputs.dynamicRootScans().get(source);
+    if (scan == null) {
+      throw new IOException(
+          "Missing service descriptor scan for " + candidate.archive().snapshot().coordinate());
+    }
+    return scan;
+  }
+
+  private static List<ServiceDescriptorChange> descriptorChanges(
+      final DependencyDynamicRoots.RootScan scan, final Set<String> removedProviders) {
+    return scan.serviceDescriptors().stream()
+        .filter(descriptor -> descriptor.providers().stream().anyMatch(removedProviders::contains))
+        .map(
+            descriptor -> {
+              final boolean hasRemainingProvider =
+                  descriptor.providers().stream()
+                      .anyMatch(provider -> !removedProviders.contains(provider));
+              return new ServiceDescriptorChange(
+                  "META-INF/services/" + descriptor.serviceInterface(),
+                  hasRemainingProvider
+                      ? ServiceDescriptorChange.Outcome.REPLACED
+                      : ServiceDescriptorChange.Outcome.OMIT);
+            })
+        .sorted()
+        .toList();
   }
 
   /* package */ record ServiceProviderInventory(

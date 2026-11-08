@@ -6,6 +6,7 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.plugin.TrimCandidatePlanner.CandidatePlan;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
+import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -66,6 +67,9 @@ final class EffectiveCandidatePlanner {
     }
     final CandidateClasses classes = readClasses(snapshot, inputs);
     if (classes.names().isEmpty() && !classes.multiRelease()) {
+      if (hasServiceDescriptor(snapshot, inputs)) {
+        addClasslessServiceCandidate(snapshot, inputs, outputs, work, classes);
+      }
       return;
     }
     final Set<String> discovered = inputs.roots().get(snapshot);
@@ -91,6 +95,32 @@ final class EffectiveCandidatePlanner {
                 .analysis()
                 .upperTierClasses()
                 .getOrDefault(snapshot.coordinate(), Set.of())));
+  }
+
+  private static boolean hasServiceDescriptor(
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot, final CandidateInputs inputs) {
+    final Path path = snapshot.filePath().toAbsolutePath().normalize();
+    final DependencyDynamicRoots.RootScan scan =
+        inputs.output().prepared().dynamicRootInputs().scansByPath().get(path);
+    return scan != null && !scan.serviceDescriptors().isEmpty();
+  }
+
+  private static void addClasslessServiceCandidate(
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot,
+      final CandidateInputs inputs,
+      final Set<Path> outputs,
+      final List<TrimCandidate> work,
+      final CandidateClasses classes)
+      throws IOException {
+    final Path output = TrimPaths.outputPath(inputs.project(), snapshot.coordinate());
+    if (!outputs.add(output)) {
+      throw new IOException("Distinct effective candidates share output path: " + output);
+    }
+    final TrimCandidate candidate =
+        new TrimCandidate(
+            snapshot, classes.names(), Set.of(), output, false, classes.logicalCount(), Set.of());
+    candidate.analysis(new DependencyJarTrimmer.TrimAnalysis(0, Set.of(), Set.of()));
+    work.add(candidate);
   }
 
   private static CandidateClasses readClasses(
