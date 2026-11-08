@@ -43,6 +43,7 @@ final class VexSerializerSupport {
         && Objects.equals(left.originalSha256(), right.originalSha256())
         && Objects.equals(left.trimmedSha256(), right.trimmedSha256())
         && left.requiredPrerequisites().equals(right.requiredPrerequisites())
+        && left.requiredPrerequisiteGroups().equals(right.requiredPrerequisiteGroups())
         && Objects.equals(left.affectedArtifactPath(), right.affectedArtifactPath())
         && Objects.equals(left.postElisionSha256(), right.postElisionSha256())
         && Objects.equals(left.inventorySha256(), right.inventorySha256());

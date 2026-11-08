@@ -205,15 +205,13 @@ class GenericFindingProofTest {
               Provider.dependencyArchive(
                   ArtifactCoordinate.of("org.example", "second", "1"),
                   jar("dependency-provider.jar"));
-          assertThatThrownBy(
-                  () ->
-                      PreconditionProof.prove(
-                          finding,
-                          COMPONENT,
-                          PreconditionClassInventory.complete(
-                              List.of(affected, coordinateProvider))))
-              .isInstanceOf(IllegalArgumentException.class)
-              .hasMessageContaining("Required dependency");
+          assertThat(
+                  PreconditionProof.prove(
+                      finding,
+                      COMPONENT,
+                      PreconditionClassInventory.complete(List.of(affected, coordinateProvider)))
+                      .requiredPrerequisites())
+              .containsExactly(first, second);
         },
         () ->
             assertThatThrownBy(

@@ -38,6 +38,10 @@ final class ADR0008PreconditionProofTest {
   /** Exact class name required by the proof fixture. */
   private static final String REQUIRED_CLASS = "org.example.Prerequisite";
 
+  /** Second member used to compare alternative and conjunctive group behavior. */
+  private static final PrerequisiteClaim SECOND_REQUIRED =
+      new PrerequisiteClaim("org.example:second", "org.example.SecondPrerequisite");
+
   /** Exact coordinate whose provider is bound into the emitted evidence. */
   private static final ArtifactCoordinate AFFECTED_COORDINATE =
       ArtifactCoordinate.of("org.example", "affected", "1.0");
@@ -156,8 +160,8 @@ final class ADR0008PreconditionProofTest {
   }
 
   @Test
-  @DisplayName("ADR-0008/retained prerequisite coordinates block proof")
-  void rejectsRetainedRequiredDependencyEvenWhenItsClassIsAbsent() throws Exception {
+  @DisplayName("ADR-0008/retained coordinate without required class does not block proof")
+  void retainedDependencyWithoutRequiredClassDoesNotRefuteAbsence() throws Exception {
     final Provider affected = affectedProvider();
     final Path prerequisitePath = archive("prerequisite.jar", Map.of());
     final Provider prerequisite =
@@ -166,12 +170,123 @@ final class ADR0008PreconditionProofTest {
     final PreconditionClassInventory inventory =
         PreconditionClassInventory.complete(List.of(affected, prerequisite));
 
-    assertThatThrownBy(
-            () ->
-                GenericProofTestSupport.prerequisiteProof(
-                    mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Required dependency is present");
+    final VexAttestation attestation =
+        GenericProofTestSupport.prerequisiteProof(
+            mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, "HIGH"), inventory);
+
+    assertThat(attestation.requiredPrerequisites())
+        .containsExactly(new PrerequisiteClaim(REQUIRED_DEPENDENCY, REQUIRED_CLASS));
+  }
+
+  @Test
+  @DisplayName("ADR-0008/group operators are evaluated against every physical provider")
+  void evaluatesAtomicGroupsAgainstTheSamePhysicalProviderState() throws Exception {
+    final Provider affected = affectedProvider();
+    final Provider firstClassProvider =
+        Provider.dependencyArchive(
+            ArtifactCoordinate.of("org.other", "shaded-provider", "1.0"),
+            archive(
+                "first-class-provider.jar",
+                Map.of("org/example/Prerequisite.class", classBytes("org/example/Prerequisite"),
+                    "org/example/PresentOne.class", classBytes("org/example/PresentOne"),
+                    "org/example/PresentTwo.class", classBytes("org/example/PresentTwo"))));
+    final PreconditionClassInventory inventory =
+        PreconditionClassInventory.complete(List.of(affected, firstClassProvider));
+    final PreconditionClassInventory allAbsentInventory =
+        PreconditionClassInventory.complete(List.of(affected));
+    final PrerequisiteClaim first = new PrerequisiteClaim(REQUIRED_DEPENDENCY, REQUIRED_CLASS);
+    final PrerequisiteClaim second = SECOND_REQUIRED;
+    final PrerequisiteGroup anyOf =
+        new PrerequisiteGroup(PrerequisiteOperator.ANY_OF, Set.of(first, second));
+    final PrerequisiteGroup allOf =
+        new PrerequisiteGroup(PrerequisiteOperator.ALL_OF, Set.of(first, second));
+    final PrerequisiteGroup disjointAllOf =
+        new PrerequisiteGroup(
+            PrerequisiteOperator.ALL_OF,
+            Set.of(
+                new PrerequisiteClaim("org.example:absent", "org.example.Absent"),
+                new PrerequisiteClaim("org.example:present-one", "org.example.PresentOne")));
+    final GenericVulnerabilityFinding anyOfFinding = findingWithGroups(List.of(anyOf));
+    final GenericVulnerabilityFinding allOfFinding = findingWithGroups(List.of(allOf));
+    final GenericVulnerabilityFinding disjointOperatorGroups =
+        GenericVulnerabilityFinding.merge(
+            List.of(
+                anyOfFinding.contributions().getFirst(),
+                findingWithGroups(List.of(disjointAllOf)).contributions().getFirst()));
+    final GenericVulnerabilityFinding partiallyDisarmedGroups =
+        findingWithGroups(
+            List.of(
+                allOf,
+                new PrerequisiteGroup(
+                    PrerequisiteOperator.ALL_OF,
+                    Set.of(
+                        new PrerequisiteClaim("org.example:present-one", "org.example.PresentOne"),
+                        new PrerequisiteClaim("org.example:present-two", "org.example.PresentTwo")))));
+    final GenericVulnerabilityFinding emptyGroups = findingWithGroups(List.of());
+    final GenericVulnerabilityFinding unresolvedGroups =
+        findingWithGroups(List.of(anyOf), AssessmentIntent.AUTO_VERIFY,
+            Set.of(UnresolvedContributionField.PREREQUISITES));
+    final GenericVulnerabilityFinding conflictingGroups =
+        GenericVulnerabilityFinding.merge(
+            List.of(
+                anyOfFinding.contributions().getFirst(),
+                allOfFinding.contributions().getFirst()));
+    final GenericVulnerabilityFinding reviewOnlyGroups =
+        findingWithGroups(List.of(anyOf), AssessmentIntent.REVIEW_ONLY, Set.of());
+
+    assertAll(
+        "operator proof uses exact class presence from any physical provider",
+        () ->
+            assertProofRejected(
+                anyOfFinding, inventory, "prerequisite group remains present"),
+        () ->
+            assertThat(allOfFinding.prerequisiteGroupStatusFor("1.0"))
+                .isEqualTo(ClaimGroupStatus.DECLARED),
+        () ->
+            assertThat(PreconditionProof.prove(allOfFinding, AFFECTED_COORDINATE, inventory))
+                .satisfies(
+                    attestation ->
+                        assertAll(
+                            () ->
+                                assertThat(attestation.requiredPrerequisites())
+                                    .containsExactlyInAnyOrder(first, second),
+                            () ->
+                                assertThat(attestation.requiredPrerequisiteGroups())
+                                    .containsExactly(allOf))),
+        () ->
+            assertThat(
+                    PreconditionProof.prove(
+                            anyOfFinding, AFFECTED_COORDINATE, allAbsentInventory)
+                        .requiredPrerequisites())
+                .containsExactlyInAnyOrder(first, second),
+        () ->
+            assertThat(disjointOperatorGroups.prerequisiteGroupStatusFor("1.0"))
+                .isEqualTo(ClaimGroupStatus.DECLARED),
+        () ->
+            assertThat(disjointOperatorGroups.effectivePrerequisiteGroupsFor("1.0"))
+                .containsExactlyInAnyOrder(anyOf, disjointAllOf),
+        () ->
+            assertProofRejected(
+                disjointOperatorGroups,
+                inventory,
+                "prerequisite group remains present"),
+        () ->
+            assertThat(
+                    PreconditionProof.prove(
+                            disjointOperatorGroups,
+                            AFFECTED_COORDINATE,
+                            allAbsentInventory)
+                        .requiredPrerequisiteGroups())
+                .containsExactlyInAnyOrder(anyOf, disjointAllOf),
+        () ->
+            assertProofRejected(
+                partiallyDisarmedGroups,
+                inventory,
+                "prerequisite"),
+        () -> assertProofRejected(emptyGroups, inventory, "declared prerequisite pairs"),
+        () -> assertProofRejected(unresolvedGroups, inventory, "declared prerequisite pairs"),
+        () -> assertProofRejected(conflictingGroups, inventory, "declared prerequisite pairs"),
+        () -> assertProofRejected(reviewOnlyGroups, inventory, "requires review"));
   }
 
   @Test
@@ -546,6 +661,44 @@ final class ADR0008PreconditionProofTest {
                     mapping(REQUIRED_CLASS, REQUIRED_DEPENDENCY, confidence), inventory))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("review");
+  }
+
+  private static void assertProofRejected(
+      final GenericVulnerabilityFinding finding,
+      final PreconditionClassInventory inventory,
+      final String diagnostic) {
+    assertThatThrownBy(() -> PreconditionProof.prove(finding, AFFECTED_COORDINATE, inventory))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining(diagnostic);
+  }
+
+  private static GenericVulnerabilityFinding findingWithGroups(
+      final List<PrerequisiteGroup> groups) {
+    return findingWithGroups(groups, AssessmentIntent.AUTO_VERIFY, Set.of());
+  }
+
+  private static GenericVulnerabilityFinding findingWithGroups(
+      final List<PrerequisiteGroup> groups,
+      final AssessmentIntent intent,
+      final Set<UnresolvedContributionField> unresolvedFields) {
+    final VulnerabilityFindingContribution contribution =
+        new VulnerabilityFindingContribution(
+            "CVE-2025-12345",
+            Set.of(),
+            AFFECTED_COORDINATE.groupId(),
+            AFFECTED_COORDINATE.artifactId(),
+            AFFECTED_COORDINATE.type(),
+            AFFECTED_COORDINATE.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.0]")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.copyOf(groups)),
+            MergePriority.MANUAL,
+            intent,
+            "typed proof fixture",
+            Set.of(),
+            ConfidenceLevel.HIGH,
+            unresolvedFields);
+    return GenericVulnerabilityFinding.merge(List.of(contribution));
   }
 
   private Provider affectedProvider() throws IOException {

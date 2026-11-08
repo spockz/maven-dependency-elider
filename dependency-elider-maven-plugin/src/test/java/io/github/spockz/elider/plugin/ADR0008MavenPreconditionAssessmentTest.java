@@ -300,8 +300,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
   }
 
   @Test
-  void doesNotReportInactiveWhenPrerequisiteCoordinateIsRetainedAtAnotherVersion()
-      throws IOException {
+  void provesPrerequisiteAbsenceWhenRetainedCoordinateLacksTheExactClass() throws IOException {
     final ArtifactCoordinate affected =
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
     final ArtifactCoordinate prerequisite =
@@ -320,8 +319,13 @@ final class ADR0008MavenPreconditionAssessmentTest {
             inventory,
             List.of(mapping(affected, EXACT_VERSION_RANGE, Set.of(), ConfidenceLevel.HIGH)));
 
-    assertThat(result.attestations()).isEmpty();
-    assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty();
+    assertAll(
+        "the exact prerequisite class is absent even though another version of its artifact remains",
+        () -> assertThat(result.attestations()).hasSize(1),
+        () ->
+            assertThat(result.inactiveDueToMissingPrerequisites())
+                .containsExactly(
+                    new MavenVulnerabilityAssessment.Finding(CVE_ID, affected)));
   }
 
   @Test

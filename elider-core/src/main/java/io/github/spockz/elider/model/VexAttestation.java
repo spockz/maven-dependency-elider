@@ -50,6 +50,9 @@ public final class VexAttestation {
   /** Complete atomic prerequisite set checked against one inventory. */
   private final Set<PrerequisiteClaim> requiredPrerequisites;
 
+  /** Complete operator groups retained from the selected source evidence. */
+  private final Set<PrerequisiteGroup> requiredPrerequisiteGroups;
+
   /** Retained affected artifact path bound by precondition evidence. */
   private final Path affectedArtifactPath;
 
@@ -74,6 +77,7 @@ public final class VexAttestation {
       final String originalSha256,
       final String trimmedSha256,
       final Set<PrerequisiteClaim> requiredPrerequisites,
+      final Set<PrerequisiteGroup> requiredPrerequisiteGroups,
       final Path affectedArtifactPath,
       final String postElisionSha256,
       final String inventorySha256,
@@ -93,6 +97,8 @@ public final class VexAttestation {
     Objects.requireNonNull(evidenceSymbols, "evidenceSymbols");
     this.evidenceSymbols = Collections.unmodifiableSet(new TreeSet<>(evidenceSymbols));
     this.requiredPrerequisites = Collections.unmodifiableSet(new TreeSet<>(requiredPrerequisites));
+    this.requiredPrerequisiteGroups =
+        Collections.unmodifiableSet(new TreeSet<>(requiredPrerequisiteGroups));
     Path boundArtifactPath = null;
     if (OMITTED_CODE_JUSTIFICATION.equals(justification)) {
       validateOmittedCodeEvidence(
@@ -140,6 +146,7 @@ public final class VexAttestation {
         original,
         trimmed,
         Set.of(),
+        Set.of(),
         null,
         null,
         null,
@@ -152,10 +159,14 @@ public final class VexAttestation {
       final GenericVulnerabilityFinding finding,
       final ArtifactCoordinate coordinate,
       final String detail,
-      final Set<PrerequisiteClaim> pairs,
+      final Set<PrerequisiteGroup> groups,
       final Path path,
       final String digest,
       final String inventoryDigest) {
+    final Set<PrerequisiteClaim> pairs =
+        groups.stream()
+            .flatMap(group -> group.members().stream())
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
     return new VexAttestation(
         finding.vulnerabilityId(),
         coordinate,
@@ -165,6 +176,7 @@ public final class VexAttestation {
         null,
         null,
         pairs,
+        groups,
         path,
         digest,
         inventoryDigest,
@@ -204,6 +216,7 @@ public final class VexAttestation {
         originalSha256,
         trimmedSha256,
         requiredPrerequisites,
+        requiredPrerequisiteGroups,
         affectedArtifactPath,
         postElisionSha256,
         inventorySha256,
@@ -259,6 +272,11 @@ public final class VexAttestation {
   /** Returns every effective prerequisite pair proven absent. */
   public Set<PrerequisiteClaim> requiredPrerequisites() {
     return requiredPrerequisites;
+  }
+
+  /** Returns the operator groups evaluated by prerequisite proof. */
+  public Set<PrerequisiteGroup> requiredPrerequisiteGroups() {
+    return requiredPrerequisiteGroups;
   }
 
   private java.util.Optional<PrerequisiteClaim> singlePrerequisite() {

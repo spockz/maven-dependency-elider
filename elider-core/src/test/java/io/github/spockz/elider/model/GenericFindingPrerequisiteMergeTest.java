@@ -74,7 +74,7 @@ class GenericFindingPrerequisiteMergeTest {
     final VulnerabilityFindingContribution allOf =
         typedContribution(
             "[1,2)",
-            new PrerequisiteGroup(PrerequisiteOperator.ALL_OF, Set.of(second)),
+            new PrerequisiteGroup(PrerequisiteOperator.ALL_OF, Set.of(first)),
             MergePriority.CATALOG,
             "catalog-all");
     final GenericVulnerabilityFinding finding =
@@ -86,6 +86,30 @@ class GenericFindingPrerequisiteMergeTest {
         () ->
             assertThat(finding.prerequisiteGroupStatusFor("1.5"))
                 .isEqualTo(ClaimGroupStatus.UNRESOLVED),
+        () -> assertThat(finding.effectivePrerequisitesFor("1.5")).isEmpty());
+  }
+
+  @Test
+  void disjointSamePriorityOperatorGroupsRemainIndependent() {
+    final PrerequisiteClaim first = new PrerequisiteClaim("org.example:first", "p.First");
+    final PrerequisiteClaim second = new PrerequisiteClaim("org.example:second", "p.Second");
+    final PrerequisiteGroup anyOf =
+        new PrerequisiteGroup(PrerequisiteOperator.ANY_OF, Set.of(first));
+    final PrerequisiteGroup allOf =
+        new PrerequisiteGroup(PrerequisiteOperator.ALL_OF, Set.of(second));
+    final GenericVulnerabilityFinding finding =
+        GenericVulnerabilityFinding.merge(
+            List.of(
+                typedContribution("[1,2)", anyOf, MergePriority.CATALOG, "catalog-any"),
+                typedContribution("[1,2)", allOf, MergePriority.CATALOG, "catalog-all")));
+
+    assertAll(
+        "disjoint operator groups remain separate obligations rather than an operator conflict",
+        () -> assertThat(finding.effectivePrerequisiteGroupsFor("1.5"))
+            .containsExactlyInAnyOrder(anyOf, allOf),
+        () ->
+            assertThat(finding.prerequisiteGroupStatusFor("1.5"))
+                .isEqualTo(ClaimGroupStatus.DECLARED),
         () -> assertThat(finding.effectivePrerequisitesFor("1.5")).isEmpty());
   }
 

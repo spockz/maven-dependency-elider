@@ -14,8 +14,10 @@ import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -59,6 +61,8 @@ public final class PreconditionProof {
 
   private record ArchiveClass(String internalName, int release) {}
 
+  private record PrerequisiteState(PrerequisiteClaim claim, boolean classPresent) {}
+
   private PreconditionProof() {}
 
   /** Checks effective prerequisites for the exact candidate. */
@@ -82,14 +86,14 @@ public final class PreconditionProof {
     }
     return prove(
         candidate,
-        Set.copyOf(finding.effectivePrerequisitesFor(candidate.version())),
+        Set.copyOf(finding.effectivePrerequisiteGroupsFor(candidate.version())),
         inspection,
         finding);
   }
 
   private static VexAttestation prove(
       final ArtifactCoordinate candidate,
-      final Set<PrerequisiteClaim> prerequisites,
+      final Set<PrerequisiteGroup> groups,
       final InventoryInspection inspection,
       final GenericVulnerabilityFinding finding)
       throws IOException {
@@ -98,30 +102,26 @@ public final class PreconditionProof {
       throw new IllegalArgumentException(
           "Precondition proof requires an exact affected Maven version");
     }
-    if (prerequisites.isEmpty()) {
+    if (groups.isEmpty()) {
       throw new IllegalArgumentException("Precondition proof requires prerequisite declarations");
     }
     final Provider affected = findAffectedProvider(candidate, inspection.inventory.providers());
-    final Set<String> availableClasses = inspection.availableClasses;
-    final Set<RequiredDependency> availableDependencies = inspection.availableDependencies;
-    for (final PrerequisiteClaim prerequisite : new TreeSet<>(prerequisites)) {
-      if (availableDependencies.contains(
-          parseRequiredDependency(prerequisite.requiresDependency()))) {
+    final Set<PrerequisiteClaim> prerequisites = new TreeSet<>();
+    for (final PrerequisiteGroup group : new TreeSet<>(groups)) {
+      final List<PrerequisiteState> states = prerequisiteStates(group, inspection);
+      prerequisites.addAll(group.members());
+      if (!isDisarmed(group.operator(), states)) {
         throw new IllegalArgumentException(
-            "Required dependency is present in the complete inventory: "
-                + prerequisite.requiresDependency());
-      }
-      if (availableClasses.contains(prerequisite.requiresClass())) {
-        throw new IllegalArgumentException(
-            "Required class is present in an inventoried provider: "
-                + prerequisite.requiresClass());
+            "Required class is present in an inventoried provider, so prerequisite group remains "
+                + "present in the complete inventory: "
+                + group.operator());
       }
     }
     final String impactDetail =
-        "Required prerequisite pairs "
-            + prerequisites.stream()
+        "Required prerequisite groups "
+            + new TreeSet<>(groups).stream()
                 .sorted()
-                .map(value -> value.requiresDependency() + " / " + value.requiresClass())
+                .map(PreconditionProof::describeGroup)
                 .collect(java.util.stream.Collectors.joining("; "))
             + " are absent from the complete declared Maven inventory. The proof does not cover "
             + "providers introduced outside that inventory.";
@@ -129,10 +129,41 @@ public final class PreconditionProof {
         finding,
         affected.coordinate(),
         impactDetail,
-        prerequisites,
+        Set.copyOf(groups),
         affected.path(),
         affected.sha256(),
         inspection.inventory.fingerprint());
+  }
+
+  private static List<PrerequisiteState> prerequisiteStates(
+      final PrerequisiteGroup group, final InventoryInspection inspection) {
+    return group.members().stream()
+        .sorted()
+        .map(
+            claim -> {
+              parseRequiredDependency(claim.requiresDependency());
+              return new PrerequisiteState(
+                  claim, !inspection.providersForClass(claim.requiresClass()).isEmpty());
+            })
+        .toList();
+  }
+
+  private static boolean isDisarmed(
+      final PrerequisiteOperator operator, final List<PrerequisiteState> states) {
+    return switch (operator) {
+      case ANY_OF -> states.stream().noneMatch(PrerequisiteState::classPresent);
+      case ALL_OF -> states.stream().anyMatch(state -> !state.classPresent());
+    };
+  }
+
+  private static String describeGroup(final PrerequisiteGroup group) {
+    return group.operator()
+        + "("
+        + group.members().stream()
+            .sorted()
+            .map(value -> value.requiresDependency() + " / " + value.requiresClass())
+            .collect(java.util.stream.Collectors.joining(", "))
+        + ")";
   }
 
   /** Captures and validates a complete provider inventory for reuse across findings. */
@@ -151,33 +182,33 @@ public final class PreconditionProof {
     }
 
     verifyProviderDigests(inventory.providers());
-    final Set<String> availableClasses = new HashSet<>();
-    final Set<RequiredDependency> availableDependencies = new HashSet<>();
+    final Map<String, List<Provider>> providersByClass = new TreeMap<>();
     for (final Provider provider : inventory.providers()) {
-      if (provider.kind() == ProviderKind.DEPENDENCY_ARCHIVE) {
-        availableDependencies.add(
-            new RequiredDependency(
-                provider.coordinate().groupId(), provider.coordinate().artifactId()));
+      for (final String className : readClasses(provider)) {
+        providersByClass.computeIfAbsent(className, unused -> new ArrayList<>()).add(provider);
       }
-      availableClasses.addAll(readClasses(provider));
     }
-    return new InventoryInspection(inventory, availableClasses, availableDependencies);
+    return new InventoryInspection(inventory, providersByClass);
   }
 
   /** Immutable, proof-controlled snapshot of a verified provider inventory. */
   @SuppressWarnings("PMD.CommentRequired")
   public static final class InventoryInspection {
     private final PreconditionClassInventory inventory;
-    private final Set<String> availableClasses;
-    private final Set<RequiredDependency> availableDependencies;
+    private final Map<String, List<Provider>> providersByClass;
 
     private InventoryInspection(
         final PreconditionClassInventory inventory,
-        final Set<String> availableClasses,
-        final Set<RequiredDependency> availableDependencies) {
+        final Map<String, List<Provider>> providersByClass) {
       this.inventory = inventory;
-      this.availableClasses = Set.copyOf(availableClasses);
-      this.availableDependencies = Set.copyOf(availableDependencies);
+      final Map<String, List<Provider>> copy = new TreeMap<>();
+      providersByClass.forEach((className, providers) -> copy.put(className, List.copyOf(providers)));
+      this.providersByClass = Map.copyOf(copy);
+    }
+
+    /** Returns every physically inspected provider containing this exact class. */
+    public List<Provider> providersForClass(final String className) {
+      return providersByClass.getOrDefault(Objects.requireNonNull(className, "className"), List.of());
     }
   }
 
