@@ -577,6 +577,7 @@ final class MavenOutputPublicationTest {
     mapping.setArtifactId("affected");
     mapping.setVersion("1.0");
     mapping.setVersionRangeSpec("[1.0]");
+    mapping.setAssertsAffected(true);
     mapping.setConfidenceLevel("HIGH");
     mapping.setRequiresDependency("org.example:prerequisite");
     mapping.setRequiresClass("org.example.prerequisite.EntryPoint");

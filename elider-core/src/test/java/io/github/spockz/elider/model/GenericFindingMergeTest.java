@@ -415,6 +415,310 @@ class GenericFindingMergeTest {
                 .containsExactly(CodeReference.className("org.example.FromDescription")));
   }
 
+  @Test
+  void catalogPriorityIsBetweenManualAndAutomaticPerVersionAndField() {
+    final ArtifactCoordinate component = ArtifactCoordinate.of("org.example", "library", null);
+    final VulnerabilityFindingContribution automatic =
+        contribution(
+            "CVE-2026-12354",
+            component,
+            List.of("[1.0,3.0)"),
+            FieldValue.supplied(
+                Set.of(CodeClaim.declared(CodeReference.className("org.example.Automatic")))),
+            MergePriority.AUTOMATIC,
+            AssessmentIntent.AUTO_VERIFY,
+            "scanner");
+    final VulnerabilityFindingContribution catalog =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-12354",
+            Set.of(),
+            component.groupId(),
+            component.artifactId(),
+            component.type(),
+            component.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.5,2.0)")),
+            FieldValue.supplied(
+                Set.of(CodeClaim.declared(CodeReference.className("org.example.Catalog")))),
+            FieldValue.omitted(),
+            MergePriority.CATALOG,
+            AssessmentIntent.AUTO_VERIFY,
+            "catalog:advisory-1",
+            Set.of(new AdvisoryProvenance(EvidenceOrigin.CATALOG, "advisory-1", null, null)));
+    final VulnerabilityFindingContribution manual =
+        contribution(
+            "CVE-2026-12354",
+            component,
+            List.of("[1.7,1.9)"),
+            FieldValue.supplied(
+                Set.of(CodeClaim.declared(CodeReference.className("org.example.Manual")))),
+            MergePriority.MANUAL,
+            AssessmentIntent.REVIEW_ONLY,
+            "effective-project-pom");
+    final GenericVulnerabilityFinding finding =
+        GenericVulnerabilityFinding.merge(List.of(manual, automatic, catalog));
+
+    assertAll(
+        "candidate version selects the highest supplied code-group priority",
+        () ->
+            assertThat(finding.codeFor("1.2"))
+                .containsExactly(CodeReference.className("org.example.Automatic")),
+        () ->
+            assertThat(finding.codeFor("1.6"))
+                .containsExactly(CodeReference.className("org.example.Catalog")),
+        () ->
+            assertThat(finding.codeFor("1.8"))
+                .containsExactly(CodeReference.className("org.example.Manual")),
+        () -> assertThat(finding.intentFor("1.8")).contains(AssessmentIntent.REVIEW_ONLY),
+        () ->
+            assertThat(
+                    finding.contributions().stream()
+                        .flatMap(value -> value.sourceProvenance().stream())
+                        .toList())
+                .containsExactly(
+                    new AdvisoryProvenance(EvidenceOrigin.CATALOG, "advisory-1", null, null)),
+        () ->
+            assertThat(finding.provenance())
+                .containsExactlyInAnyOrder(
+                    "scanner", "catalog:advisory-1", "effective-project-pom"));
+  }
+
+  @Test
+  void catalogSelectionIsFieldSpecificAndEqualPriorityUnionIsDeterministic() {
+    final ArtifactCoordinate component = ArtifactCoordinate.of("org.example", "library", null);
+    final PrerequisiteClaim prerequisite =
+        new PrerequisiteClaim("org.example:base", "org.example.Required");
+    final VulnerabilityFindingContribution automatic =
+        contribution(
+            "CVE-2026-12355",
+            component,
+            List.of("[1.0,2.0)"),
+            FieldValue.supplied(
+                Set.of(CodeClaim.declared(CodeReference.className("org.example.Automatic")))),
+            MergePriority.AUTOMATIC,
+            AssessmentIntent.AUTO_VERIFY,
+            "automatic");
+    final VulnerabilityFindingContribution catalogCode =
+        contribution(
+            "CVE-2026-12355",
+            component,
+            List.of("[1.0,2.0)"),
+            FieldValue.supplied(
+                Set.of(CodeClaim.declared(CodeReference.className("org.example.Catalog")))),
+            MergePriority.CATALOG,
+            AssessmentIntent.AUTO_VERIFY,
+            "catalog-code");
+    final VulnerabilityFindingContribution catalogPrerequisite =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-12355",
+            Set.of(),
+            component.groupId(),
+            component.artifactId(),
+            component.type(),
+            component.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.0,2.0)")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of(prerequisite)),
+            MergePriority.CATALOG,
+            AssessmentIntent.AUTO_VERIFY,
+            "catalog-prerequisite",
+            Set.of());
+    final VulnerabilityFindingContribution catalogCodeDuplicate =
+        contribution(
+            "CVE-2026-12355",
+            component,
+            List.of("[1.0,2.0)"),
+            FieldValue.supplied(
+                Set.of(
+                    CodeClaim.declared(CodeReference.className("org.example.Catalog")),
+                    CodeClaim.declared(CodeReference.className("org.example.SecondCatalog")))),
+            MergePriority.CATALOG,
+            AssessmentIntent.AUTO_VERIFY,
+            "catalog-code-copy");
+    final List<VulnerabilityFindingContribution> rows =
+        List.of(automatic, catalogCode, catalogPrerequisite, catalogCodeDuplicate);
+    final GenericVulnerabilityFinding forward = GenericVulnerabilityFinding.merge(rows);
+    final GenericVulnerabilityFinding reordered =
+        GenericVulnerabilityFinding.merge(
+            List.of(
+                catalogCodeDuplicate, catalogPrerequisite, automatic, catalogCode, catalogCode));
+
+    assertAll(
+        "catalog priority applies independently to supplied fields and unions ties"
+            + " deterministically",
+        () ->
+            assertThat(forward.codeFor("1.5"))
+                .containsExactly(
+                    CodeReference.className("org.example.Catalog"),
+                    CodeReference.className("org.example.SecondCatalog")),
+        () -> assertThat(forward.effectivePrerequisitesFor("1.5")).containsExactly(prerequisite),
+        () -> assertThat(reordered.codeFor("1.5")).isEqualTo(forward.codeFor("1.5")),
+        () ->
+            assertThat(reordered.effectivePrerequisitesFor("1.5"))
+                .isEqualTo(forward.effectivePrerequisitesFor("1.5")));
+  }
+
+  @Test
+  void omittedCatalogFieldsEnrichButExplicitlyEmptyCatalogFieldClearsOnlyThatGroup() {
+    final ArtifactCoordinate component = ArtifactCoordinate.of("org.example", "library", null);
+    final PrerequisiteClaim automaticPrerequisite =
+        new PrerequisiteClaim("org.example:base", "org.example.Required");
+    final VulnerabilityFindingContribution automatic =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-12357",
+            Set.of(),
+            component.groupId(),
+            component.artifactId(),
+            component.type(),
+            component.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.0,2.0)")),
+            FieldValue.supplied(
+                Set.of(CodeClaim.declared(CodeReference.className("org.example.Automatic")))),
+            FieldValue.supplied(Set.of(automaticPrerequisite)),
+            MergePriority.AUTOMATIC,
+            AssessmentIntent.AUTO_VERIFY,
+            "automatic",
+            Set.of());
+    final VulnerabilityFindingContribution catalog =
+        contribution(
+            "CVE-2026-12357",
+            component,
+            List.of("[1.0,2.0)"),
+            FieldValue.supplied(
+                Set.of(CodeClaim.declared(CodeReference.className("org.example.Catalog")))),
+            MergePriority.CATALOG,
+            AssessmentIntent.AUTO_VERIFY,
+            "catalog-code-only");
+    final GenericVulnerabilityFinding enriched =
+        GenericVulnerabilityFinding.merge(List.of(automatic, catalog));
+    final VulnerabilityFindingContribution explicitEmpty =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-12357",
+            Set.of(),
+            component.groupId(),
+            component.artifactId(),
+            component.type(),
+            component.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.0,2.0)")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of()),
+            MergePriority.CATALOG,
+            AssessmentIntent.AUTO_VERIFY,
+            "catalog-clear-prerequisite",
+            Set.of());
+    final GenericVulnerabilityFinding cleared =
+        GenericVulnerabilityFinding.merge(List.of(automatic, catalog, explicitEmpty));
+
+    assertAll(
+        "field omission enriches independently while explicit empty is not an unaffected assertion",
+        () ->
+            assertThat(enriched.codeFor("1.5"))
+                .containsExactly(CodeReference.className("org.example.Catalog")),
+        () ->
+            assertThat(enriched.effectivePrerequisitesFor("1.5"))
+                .containsExactly(automaticPrerequisite),
+        () ->
+            assertThat(cleared.prerequisiteGroupStatusFor("1.5"))
+                .isEqualTo(ClaimGroupStatus.EXPLICITLY_EMPTY),
+        () -> assertThat(cleared.effectivePrerequisitesFor("1.5")).isEmpty(),
+        () -> assertThat(cleared.applicability("1.5")).isEqualTo(VersionApplicability.AFFECTED),
+        () -> assertThat(cleared.codeFor("1.5")).isEqualTo(enriched.codeFor("1.5")));
+  }
+
+  @Test
+  void unresolvedCatalogPrerequisiteIsSelectedWithoutSuppressingAutomaticCode() {
+    final ArtifactCoordinate component = ArtifactCoordinate.of("org.example", "library", null);
+    final CodeClaim automaticCode =
+        CodeClaim.declared(CodeReference.className("org.example.Automatic"));
+    final PrerequisiteClaim catalogPrerequisite =
+        new PrerequisiteClaim("org.example:base", "org.example.Required");
+    final VulnerabilityFindingContribution automatic =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-12358",
+            Set.of(),
+            component.groupId(),
+            component.artifactId(),
+            component.type(),
+            component.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.0,2.0)")),
+            FieldValue.supplied(Set.of(automaticCode)),
+            FieldValue.omitted(),
+            MergePriority.AUTOMATIC,
+            AssessmentIntent.AUTO_VERIFY,
+            "automatic-code",
+            Set.of());
+    final VulnerabilityFindingContribution catalog =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-12358",
+            Set.of(),
+            component.groupId(),
+            component.artifactId(),
+            component.type(),
+            component.classifier(),
+            List.of(
+                VersionCoverageClaim.unresolvedRange(
+                    "[1.0,2.0)", "catalog prerequisite scope cannot be verified")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of(catalogPrerequisite)),
+            MergePriority.CATALOG,
+            AssessmentIntent.REVIEW_ONLY,
+            "catalog-prerequisite",
+            Set.of());
+    final GenericVulnerabilityFinding finding =
+        GenericVulnerabilityFinding.merge(List.of(automatic, catalog));
+
+    assertAll(
+        "unresolved catalog scope blocks its prerequisite group without losing omitted-field"
+            + " enrichment",
+        () -> assertThat(finding.applicability("1.5")).isEqualTo(VersionApplicability.AFFECTED),
+        () -> assertThat(finding.codeFor("1.5")).containsExactly(automaticCode.reference()),
+        () ->
+            assertThat(finding.prerequisiteGroupStatusFor("1.5"))
+                .isEqualTo(ClaimGroupStatus.UNRESOLVED),
+        () ->
+            assertThat(finding.effectivePrerequisitesFor("1.5"))
+                .containsExactly(catalogPrerequisite),
+        () -> assertThat(finding.intentFor("1.5")).contains(AssessmentIntent.REVIEW_ONLY));
+  }
+
+  @Test
+  void catalogContributionsCannotCrossExactComponentIdentity() {
+    final VulnerabilityFindingContribution jar =
+        contribution(
+            "CVE-2026-12356",
+            ArtifactCoordinate.of("org.example", "library", null),
+            List.of("[1.0,2.0)"),
+            FieldValue.omitted(),
+            MergePriority.CATALOG,
+            AssessmentIntent.AUTO_VERIFY,
+            "catalog-jar");
+    final VulnerabilityFindingContribution testsClassifier =
+        new VulnerabilityFindingContribution(
+            jar.vulnerabilityId(),
+            Set.of("GHSA-example"),
+            jar.groupId(),
+            jar.artifactId(),
+            "test-jar",
+            "tests",
+            jar.versionClaims(),
+            jar.codeGroup(),
+            jar.prerequisiteGroup(),
+            MergePriority.CATALOG,
+            AssessmentIntent.AUTO_VERIFY,
+            "catalog-tests",
+            Set.of());
+
+    assertAll(
+        "classifier and type remain part of candidate identity while aliases stay attached to their"
+            + " row",
+        () ->
+            assertThatThrownBy(
+                    () -> GenericVulnerabilityFinding.merge(List.of(jar, testsClassifier)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exact component identity"),
+        () -> assertThat(jar.aliases()).isEmpty(),
+        () -> assertThat(testsClassifier.aliases()).containsExactly("GHSA-example"));
+  }
+
   private static VulnerabilityFindingContribution contribution(
       final String cve,
       final ArtifactCoordinate component,

@@ -108,6 +108,7 @@ final class AnalyzeMojoProductionOutputTest {
     mapping.setGroupId("org.example");
     mapping.setArtifactId("unused-compile");
     mapping.setVersion(VERSION);
+    mapping.setAssertsAffected(true);
     mapping.setVulnerableClasses(List.of(UNUSED_CLASS));
     AnalyzeMojoTestFieldSupport.set(mojo, "vulnerabilityMappings", List.of(mapping));
     final RecordingMavenLog log = new RecordingMavenLog();

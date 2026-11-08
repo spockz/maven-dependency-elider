@@ -5,6 +5,7 @@ package io.github.spockz.elider.model;
 /** Provenance labels for advisory evidence variants. */
 public enum EvidenceOrigin {
   POM,
+  CATALOG,
   OSV,
   SNYK,
   CVE_LIST,

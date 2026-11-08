@@ -653,6 +653,7 @@ final class ElideMojoTest {
     mapping.setArtifactId("runtime-dependency");
     mapping.setVersion("1.0");
     mapping.setVersionRangeSpec("[1.0,2.0)");
+    mapping.setAssertsAffected(true);
     mapping.setVulnerableClasses(List.of("sample.Drop"));
     mapping.setConfidenceLevel("HIGH");
     set(mojo, "vulnerabilityMappings", List.of(mapping));

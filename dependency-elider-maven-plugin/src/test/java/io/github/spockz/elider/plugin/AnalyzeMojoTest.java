@@ -281,6 +281,7 @@ final class AnalyzeMojoTest {
     mapping.setGroupId("org.example");
     mapping.setArtifactId("unused-runtime");
     mapping.setVersion("1.0");
+    mapping.setAssertsAffected(true);
     mapping.setVulnerableClasses(List.of(UNUSED_CLASS));
     AnalyzeMojoTestFieldSupport.set(mojo, "vulnerabilityMappings", List.of(mapping));
     final RecordingMavenLog log = new RecordingMavenLog();
@@ -359,6 +360,7 @@ final class AnalyzeMojoTest {
     mapping.setGroupId("org.example");
     mapping.setArtifactId("runtime-cve");
     mapping.setVersion("1.0");
+    mapping.setAssertsAffected(true);
     mapping.setVulnerableClasses(List.of("sample.Drop"));
     AnalyzeMojoTestFieldSupport.set(mojo, "vulnerabilityMappings", List.of(mapping));
     final RecordingMavenLog log = new RecordingMavenLog();

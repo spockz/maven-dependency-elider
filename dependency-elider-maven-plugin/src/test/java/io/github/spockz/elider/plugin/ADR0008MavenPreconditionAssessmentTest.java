@@ -828,6 +828,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
                   config.setClassifier(mapping.affectedCoordinate().classifier());
                   config.setScope(mapping.affectedCoordinate().scope());
                   config.setVersionRangeSpec(mapping.versionRangeSpec());
+                  config.setAssertsAffected(true);
                   config.setVulnerableClasses(List.copyOf(mapping.vulnerableClasses()));
                   config.setSourceAdvisoryUrl(
                       mapping.sourceAdvisoryUrl() == null

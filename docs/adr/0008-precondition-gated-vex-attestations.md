@@ -56,3 +56,7 @@ This design rejects cases where only coordinates are known, and it requires call
 ## Dated Amendment: 2026-11-04 Common Finding and Proof Inputs
 
 [ADR-0014](0014-source-independent-vulnerability-findings.md) replaces provider-specific admission with common effective code/prerequisite declarations. Manual corrections retain explicit scoped merge priority, including review-only intent, but are not handled through a separate POM-origin proof route. Missing fields can be enriched; a prerequisite coordinate and class remain one atomic declaration pair. Priority and provenance cannot bypass exact version binding, complete opted-in inventory, archive identity, physical absence or output integrity checks. The inventory boundary and supported CycloneDX/OpenVEX representations above remain unchanged.
+
+### Dated Amendment: 2026-11-08 Manual Applicability and Supplemental Scope
+
+As clarified by [ADR-0014](0014-source-independent-vulnerability-findings.md), a POM mapping's `versionRangeSpec` scopes supplemental code and prerequisite declarations. `assertsAffected` defaults to `false`, including for an exact-version fallback; only `assertsAffected=true` asserts affectedness. Scope-only evidence cannot establish either affectedness or unaffectedness outside its range. This changes applicability input, not the complete-inventory or physical-absence requirements in this ADR. Without a matching affected, unresolved, or explicit unaffected claim, assessment reports `NO_AFFECTED_ASSERTION` and emits no VEX statement.

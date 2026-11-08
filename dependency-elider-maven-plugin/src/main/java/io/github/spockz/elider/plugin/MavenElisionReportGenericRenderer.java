@@ -143,6 +143,7 @@ final class MavenElisionReportGenericRenderer {
       case "osv" -> "OSV";
       case "snyk" -> "SNYK";
       case "cve-list" -> "CVE_LIST";
+      case "catalog" -> "CATALOG";
       case "effective-project-pom" -> "POM";
       default -> prefix;
     };
@@ -150,7 +151,7 @@ final class MavenElisionReportGenericRenderer {
 
   private static boolean isSource(final EvidenceOrigin origin) {
     return switch (origin) {
-      case POM, OSV, SNYK, CVE_LIST -> true;
+      case POM, CATALOG, OSV, SNYK, CVE_LIST -> true;
       case DESCRIPTION, REFERENCE_URL -> false;
     };
   }

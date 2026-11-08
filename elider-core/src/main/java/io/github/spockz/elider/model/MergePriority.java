@@ -5,5 +5,6 @@ package io.github.spockz.elider.model;
 /** Merge precedence for semantic contributions. */
 public enum MergePriority {
   AUTOMATIC,
+  CATALOG,
   MANUAL
 }

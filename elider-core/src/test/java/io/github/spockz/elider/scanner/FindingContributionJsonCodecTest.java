@@ -6,10 +6,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.CodeClaim;
 import io.github.spockz.elider.model.CodeReference;
+import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.FieldValue;
+import io.github.spockz.elider.model.GenericVulnerabilityFinding;
 import io.github.spockz.elider.model.MergePriority;
 import io.github.spockz.elider.model.VersionCoverageClaim;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;
@@ -77,5 +80,36 @@ class FindingContributionJsonCodecTest {
         () -> assertThat(encoded.at("/1/codeGroup/value").isArray()).isTrue(),
         () -> assertThat(encoded.at("/1/codeGroup/value")).isEmpty(),
         () -> assertThat(decoded.getFirst().prerequisiteGroup()).isEqualTo(FieldValue.omitted()));
+  }
+
+  @Test
+  void catalogPriorityAndTypedOriginSurviveContributionMergeAndCodec() throws IOException {
+    final VulnerabilityFindingContribution catalog =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-10002",
+            Set.of("GHSA-catalog"),
+            "org.example",
+            "library",
+            "jar",
+            "",
+            List.of(VersionCoverageClaim.affected("[1,2)")),
+            FieldValue.omitted(),
+            FieldValue.omitted(),
+            MergePriority.CATALOG,
+            AssessmentIntent.AUTO_VERIFY,
+            "catalog:record-1",
+            Set.of(new AdvisoryProvenance(EvidenceOrigin.CATALOG, "record-1", null, null)));
+    final GenericVulnerabilityFinding merged = GenericVulnerabilityFinding.merge(List.of(catalog));
+    final JsonNode encoded = FindingContributionJsonCodec.encode(merged.contributions());
+    final List<VulnerabilityFindingContribution> decoded =
+        FindingContributionJsonCodec.decode(encoded);
+
+    assertAll(
+        "catalog priority and source kind remain distinct through merge and persistence",
+        () -> assertThat(merged.contributions()).containsExactly(catalog),
+        () -> assertThat(encoded.at("/0/priority").textValue()).isEqualTo("CATALOG"),
+        () ->
+            assertThat(encoded.at("/0/sourceProvenance/0/origin").textValue()).isEqualTo("CATALOG"),
+        () -> assertThat(decoded).containsExactly(catalog));
   }
 }
