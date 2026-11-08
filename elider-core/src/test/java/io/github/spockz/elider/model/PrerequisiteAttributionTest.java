@@ -128,6 +128,78 @@ final class PrerequisiteAttributionTest {
   }
 
   @Test
+  void baselineSecurityFailureKeepsFinalProofAndMarksCauseUnknown() throws IOException {
+    final Provider baselineCandidate =
+        PrerequisiteAttributionFixtures.archive(
+            directory,
+            PrerequisiteAttributionFixtures.CANDIDATE,
+            "security-baseline-candidate.jar",
+            Map.of());
+    final Provider finalCandidate =
+        PrerequisiteAttributionFixtures.archive(
+            directory,
+            PrerequisiteAttributionFixtures.CANDIDATE,
+            "security-final-candidate.jar",
+            Map.of());
+    final Provider baselineProvider =
+        PrerequisiteAttributionFixtures.archive(
+            directory,
+            PrerequisiteAttributionFixtures.PROVIDER_ONE,
+            "security-baseline-provider.jar",
+            PrerequisiteAttributionFixtures.requiredClass());
+    final PreconditionClassInventory baseline =
+        PreconditionClassInventory.complete(List.of(baselineCandidate, baselineProvider));
+    final PreconditionClassInventory actualFinal =
+        PreconditionClassInventory.complete(List.of(finalCandidate));
+    final InventoryPair pair =
+        PreconditionProof.inspectPair(
+            baseline,
+            actualFinal,
+            inventory -> {
+              if (inventory == baseline) {
+                throw new SecurityException("baseline access denied");
+              }
+              return PreconditionProof.inspect(inventory);
+            });
+    final PrerequisiteProofResult proof =
+        PreconditionProof.proveWithAttribution(
+            PrerequisiteAttributionFixtures.finding("CVE-2025-12346"),
+            PrerequisiteAttributionFixtures.CANDIDATE,
+            pair);
+
+    assertAll(
+        "baseline access failure does not invalidate actual-final absence proof",
+        () -> assertThat(proof.attestation()).isNotNull(),
+        () -> assertThat(pair.baselineDetail()).contains("baseline access denied"),
+        () ->
+            assertThat(PrerequisiteAttributionFixtures.onlyGroup(proof).attribution())
+                .isEqualTo(PrerequisiteAbsenceAttribution.UNKNOWN));
+  }
+
+  @Test
+  void finalSecurityFailureRefusesTheInventoryPair() throws IOException {
+    final Provider candidate =
+        PrerequisiteAttributionFixtures.archive(
+            directory,
+            PrerequisiteAttributionFixtures.CANDIDATE,
+            "security-final-refusal-candidate.jar",
+            Map.of());
+    final PreconditionClassInventory inventory =
+        PreconditionClassInventory.complete(List.of(candidate));
+
+    assertThatThrownBy(
+            () ->
+                PreconditionProof.inspectPair(
+                    inventory,
+                    inventory,
+                    ignored -> {
+                      throw new SecurityException("final access denied");
+                    }))
+        .isInstanceOf(SecurityException.class)
+        .hasMessageContaining("final access denied");
+  }
+
+  @Test
   void duplicateProvidersThatDisappearByDifferentRoutesAreMixed() throws IOException {
     final Provider candidate =
         PrerequisiteAttributionFixtures.archive(

@@ -31,17 +31,36 @@ final class MavenPreconditionArtifactInventory {
       final ElisionAnalysisModel.Analysis analysis,
       final boolean strict)
       throws IOException {
-    final Map<ArtifactCoordinate, Path> trimmedPaths =
-        trimmedPaths(analysis.trimResult().records(), strict);
+    return capture(plan, trimmedPaths(analysis.trimResult().records(), strict), strict);
+  }
+
+  private static List<ArtifactFileRef> capture(
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final Map<ArtifactCoordinate, Path> paths,
+      final boolean strict)
+      throws IOException {
+    return capture(plan.resolvedArtifacts(), paths, strict);
+  }
+
+  private static List<ArtifactFileRef> capture(
+      final java.util.Collection<Artifact> artifacts,
+      final Map<ArtifactCoordinate, Path> paths,
+      final boolean strict)
+      throws IOException {
     final List<ArtifactFileRef> files = new ArrayList<>();
-    for (final Artifact artifact : plan.resolvedArtifacts()) {
-      final ArtifactFileRef file = captureArtifact(artifact, trimmedPaths, strict);
+    for (final Artifact artifact : artifacts) {
+      final ArtifactFileRef file = captureArtifact(artifact, paths, strict);
       if (file != null) {
         files.add(file);
       }
     }
     files.sort(Comparator.comparing(file -> exactIdentity(file.coordinate())));
     return List.copyOf(files);
+  }
+
+  static List<ArtifactFileRef> captureOriginal(
+      final ElisionAnalysisModel.ApplyPlan plan, final boolean strict) throws IOException {
+    return capture(plan.originalResolvedArtifacts(), Map.of(), strict);
   }
 
   static List<Provider> dependencyProviders(final List<ArtifactFileRef> artifactFiles)

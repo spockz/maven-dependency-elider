@@ -8,26 +8,59 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.PreconditionClassInventory;
 import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
+import io.github.spockz.elider.model.PreconditionProof;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 
 /** Captures the effective retained artifact view and exact proof-inventory state. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class MavenPreconditionInventory {
+  private record ProofInventoryState(
+      Optional<PreconditionProof.InventoryPair> pair, Optional<String> failure) {}
+
   private MavenPreconditionInventory() {}
 
   record Snapshot(
       List<ArtifactFileRef> artifactFiles,
       PreconditionClassInventory classProviders,
-      boolean optInEnabled) {
+      boolean optInEnabled,
+      Optional<PreconditionProof.InventoryPair> proofInventoryPair,
+      Optional<String> proofInventoryFailure) {
     Snapshot {
       artifactFiles = List.copyOf(artifactFiles);
       Objects.requireNonNull(classProviders, "classProviders");
+      proofInventoryPair = Objects.requireNonNull(proofInventoryPair, "proofInventoryPair");
+      proofInventoryFailure =
+          Objects.requireNonNull(proofInventoryFailure, "proofInventoryFailure");
+      if (proofInventoryPair.isPresent() && proofInventoryFailure.isPresent()) {
+        throw new IllegalArgumentException("Proof inventory cannot be both available and refused");
+      }
+      if (proofInventoryPair.isPresent()
+          && classProviders.status() != PreconditionClassInventory.Status.COMPLETE) {
+        throw new IllegalArgumentException(
+            "Proof inventory pair requires complete final providers");
+      }
+    }
+
+    Snapshot(
+        final List<ArtifactFileRef> artifactFiles,
+        final PreconditionClassInventory classProviders,
+        final boolean optInEnabled) {
+      this(artifactFiles, classProviders, optInEnabled, Optional.empty(), Optional.empty());
+    }
+
+    Snapshot(
+        final List<ArtifactFileRef> artifactFiles,
+        final PreconditionClassInventory classProviders,
+        final boolean optInEnabled,
+        final Optional<PreconditionProof.InventoryPair> proofInventoryPair) {
+      this(artifactFiles, classProviders, optInEnabled, proofInventoryPair, Optional.empty());
     }
 
     boolean complete() {
@@ -74,12 +107,18 @@ final class MavenPreconditionInventory {
           MavenPreconditionArtifactInventory.capture(plan, analysis, true);
       final MavenPreconditionProviderRoots.Capture roots =
           MavenPreconditionProviderRoots.capture(project, session, analysis);
-      final List<Provider> providers =
+      final List<Provider> finalProviders =
           new ArrayList<>(
               MavenPreconditionArtifactInventory.dependencyProviders(verifiedArtifactFiles));
-      providers.addAll(roots.providers());
+      finalProviders.addAll(roots.providers());
+      final PreconditionClassInventory finalInventory =
+          PreconditionClassInventory.complete(finalProviders);
+      final PreconditionClassInventory baselineInventory =
+          captureBaselineProviders(plan, roots.providers());
+      final ProofInventoryState proofState =
+          inspectProofInventory(baselineInventory, finalInventory);
       return new Snapshot(
-          verifiedArtifactFiles, PreconditionClassInventory.complete(providers), true);
+          verifiedArtifactFiles, finalInventory, true, proofState.pair(), proofState.failure());
     } catch (final IOException
         | UncheckedIOException
         | IllegalArgumentException
@@ -91,9 +130,46 @@ final class MavenPreconditionInventory {
     }
   }
 
+  private static ProofInventoryState inspectProofInventory(
+      final PreconditionClassInventory baselineInventory,
+      final PreconditionClassInventory finalInventory) {
+    try {
+      return new ProofInventoryState(
+          Optional.of(PreconditionProof.inspectPair(baselineInventory, finalInventory)),
+          Optional.empty());
+    } catch (final IOException | IllegalArgumentException refusal) {
+      return new ProofInventoryState(
+          Optional.empty(),
+          Optional.of(
+              "Could not inspect complete Maven class-provider inventory for proof: "
+                  + refusal.getMessage()));
+    }
+  }
+
+  private static PreconditionClassInventory captureBaselineProviders(
+      final ElisionAnalysisModel.ApplyPlan plan, final List<Provider> applicationProviders) {
+    try {
+      final List<Provider> providers =
+          new ArrayList<>(
+              MavenPreconditionArtifactInventory.dependencyProviders(
+                  MavenPreconditionArtifactInventory.captureOriginal(plan, true)));
+      providers.addAll(applicationProviders);
+      return PreconditionClassInventory.complete(providers);
+    } catch (final IOException | IllegalArgumentException | SecurityException failure) {
+      return PreconditionClassInventory.incomplete(
+          List.of(),
+          "Could not capture complete original Maven class-provider inventory: "
+              + failure.getMessage());
+    }
+  }
+
   private static Snapshot incompleteSnapshot(
       final List<ArtifactFileRef> artifactFiles, final String reason, final boolean optInEnabled) {
     return new Snapshot(
-        artifactFiles, PreconditionClassInventory.incomplete(List.of(), reason), optInEnabled);
+        artifactFiles,
+        PreconditionClassInventory.incomplete(List.of(), reason),
+        optInEnabled,
+        Optional.empty(),
+        Optional.empty());
   }
 }

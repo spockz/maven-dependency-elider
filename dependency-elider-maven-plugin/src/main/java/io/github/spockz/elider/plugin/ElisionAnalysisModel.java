@@ -466,11 +466,21 @@ final class ElisionAnalysisModel {
 
   /* default */ record ApplyPlan(
       Set<Artifact> resolvedArtifacts,
+      Set<Artifact> originalResolvedArtifacts,
       boolean directArtifactsPresent,
       Set<Artifact> directArtifacts) {
     /* default */ ApplyPlan {
       resolvedArtifacts = Collections.unmodifiableSet(new LinkedHashSet<>(resolvedArtifacts));
+      originalResolvedArtifacts =
+          Collections.unmodifiableSet(new LinkedHashSet<>(originalResolvedArtifacts));
       directArtifacts = Collections.unmodifiableSet(new LinkedHashSet<>(directArtifacts));
+    }
+
+    /* default */ ApplyPlan(
+        final Set<Artifact> resolvedArtifacts,
+        final boolean directArtifactsPresent,
+        final Set<Artifact> directArtifacts) {
+      this(resolvedArtifacts, resolvedArtifacts, directArtifactsPresent, directArtifacts);
     }
   }
 

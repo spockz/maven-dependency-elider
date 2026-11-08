@@ -65,6 +65,12 @@ public final class PreconditionProof {
 
   private record PrerequisiteState(PrerequisiteClaim claim, boolean classPresent) {}
 
+  /** Keeps baseline-refusal handling independently testable without weakening final inspection. */
+  @FunctionalInterface
+  interface InventoryInspector {
+    InventoryInspection inspect(PreconditionClassInventory inventory) throws IOException;
+  }
+
   private PreconditionProof() {}
 
   /** Checks effective prerequisites for the exact candidate. */
@@ -116,8 +122,18 @@ public final class PreconditionProof {
   public static InventoryPair inspectPair(
       final PreconditionClassInventory baseline, final PreconditionClassInventory actualFinal)
       throws IOException {
+    return inspectPair(baseline, actualFinal, PreconditionProof::inspect);
+  }
+
+  static InventoryPair inspectPair(
+      final PreconditionClassInventory baseline,
+      final PreconditionClassInventory actualFinal,
+      final InventoryInspector inspector)
+      throws IOException {
     Objects.requireNonNull(baseline, "baseline");
-    final InventoryInspection finalInspection = inspect(actualFinal);
+    Objects.requireNonNull(actualFinal, "actualFinal");
+    Objects.requireNonNull(inspector, "inspector");
+    final InventoryInspection finalInspection = inspector.inspect(actualFinal);
     if (baseline.status() != PreconditionClassInventory.Status.COMPLETE) {
       return new InventoryPair(null, finalInspection, baseline.detail());
     }
@@ -125,9 +141,12 @@ public final class PreconditionProof {
       return new InventoryPair(finalInspection, finalInspection, null);
     }
     try {
-      return new InventoryPair(inspect(baseline), finalInspection, null);
-    } catch (final IOException | IllegalArgumentException exception) {
-      return new InventoryPair(null, finalInspection, exception.getMessage());
+      return new InventoryPair(inspector.inspect(baseline), finalInspection, null);
+    } catch (final IOException | IllegalArgumentException | SecurityException exception) {
+      return new InventoryPair(
+          null,
+          finalInspection,
+          Objects.toString(exception.getMessage(), exception.getClass().getSimpleName()));
     }
   }
 

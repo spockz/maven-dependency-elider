@@ -110,6 +110,12 @@ final class ADR0008MavenPreconditionAssessmentTest {
   /** Stable CVE used by all focused mappings. */
   private static final String CVE_ID = "CVE-2026-12345";
 
+  /** Binary name of the vulnerable fixture class. */
+  private static final String VULNERABLE_CLASS = "org.example.Vulnerable";
+
+  /** Archive entry of the vulnerable fixture class. */
+  private static final String VULNERABLE_CLASS_ENTRY = "org/example/Vulnerable.class";
+
   /** Temporary files for affected archives and cache seeds. */
   @TempDir Path temporaryDirectory;
 
@@ -221,7 +227,10 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final Path reportPath = temporaryDirectory.resolve("prerequisite-assessment-report.json");
     MavenElisionReportWriter.write(reportPath, report);
     final MavenElisionReportSnapshot replayed = MavenElisionReportWriter.read(reportPath);
-    assertThat(replayed.genericFindings()).isEqualTo(report.genericFindings());
+    assertThat(replayed.genericFindings())
+        .usingRecursiveComparison()
+        .ignoringFields("prerequisiteProof")
+        .isEqualTo(report.genericFindings());
   }
 
   @Test
@@ -426,6 +435,132 @@ final class ADR0008MavenPreconditionAssessmentTest {
   }
 
   @Test
+  void incompletePrerequisiteInventoryDoesNotEraseOmittedCodeEvidence() throws IOException {
+    final ArtifactCoordinate prerequisiteCandidate =
+        ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
+    final ArtifactCoordinate codeCandidate =
+        ArtifactCoordinate.of(GROUP_ID, "incomplete-code", SECOND_VERSION);
+    final Path prerequisiteJar = writeJar("incomplete-pair-prerequisite.jar");
+    final Path originalCodeJar =
+        writeJar("incomplete-pair-code-original.jar", VULNERABLE_CLASS_ENTRY);
+    final Path trimmedCodeJar = writeJar("incomplete-pair-code-trimmed.jar");
+    final ArtifactTrimRecord trimRecord =
+        trimRecord(codeCandidate, originalCodeJar, trimmedCodeJar);
+    final ElisionAnalysisModel.Analysis analysis =
+        analysis(List.of(prerequisiteCandidate, codeCandidate), List.of(trimRecord));
+    final MavenPreconditionInventory.Snapshot inventory =
+        inventory(
+            PreconditionClassInventory.incomplete(
+                List.of(
+                    Provider.dependencyArchive(prerequisiteCandidate, prerequisiteJar),
+                    Provider.dependencyArchive(codeCandidate, trimmedCodeJar)),
+                "baseline provider inventory unavailable"),
+            Provider.dependencyArchive(prerequisiteCandidate, prerequisiteJar),
+            Provider.dependencyArchive(codeCandidate, trimmedCodeJar));
+    final VulnerabilitySymbolMapping prerequisiteMapping =
+        mapping(prerequisiteCandidate, EXACT_VERSION_RANGE, Set.of(), ConfidenceLevel.HIGH);
+    final VulnerabilitySymbolMapping codeMapping =
+        mapping(codeCandidate, "[2.0,2.0]", Set.of(VULNERABLE_CLASS), ConfidenceLevel.HIGH);
+
+    final MavenVulnerabilityAssessment.Result result =
+        assess(analysis, inventory, List.of(prerequisiteMapping, codeMapping));
+
+    assertAll(
+        "baseline attribution refusal leaves independent staged-code proof available",
+        () -> assertThat(result.attestations()).hasSize(1),
+        () -> assertThat(result.attestations().getFirst().coordinate()).isEqualTo(codeCandidate),
+        () ->
+            assertThat(result.attestations().getFirst().justification())
+                .isEqualTo("vulnerable_code_not_present"),
+        () ->
+            assertThat(result.provenVulnerableCodeAbsent())
+                .containsExactly(new MavenVulnerabilityAssessment.Finding(CVE_ID, codeCandidate)),
+        () -> assertThat(result.inactiveDueToMissingPrerequisites()).isEmpty(),
+        () ->
+            assertThat(result.genericFindings())
+                .filteredOn(finding -> finding.candidate().equals(prerequisiteCandidate))
+                .singleElement()
+                .satisfies(
+                    finding ->
+                        assertAll(
+                            () ->
+                                assertThat(finding.outcome())
+                                    .isEqualTo(GenericFindingAssessment.Outcome.NO_PROOF),
+                            () ->
+                                assertThat(finding.detail())
+                                    .contains("baseline provider inventory unavailable"))),
+        () ->
+            assertThat(result.genericFindings())
+                .filteredOn(finding -> finding.candidate().equals(codeCandidate))
+                .singleElement()
+                .extracting(GenericFindingAssessment::outcome)
+                .isEqualTo(GenericFindingAssessment.Outcome.DECLARED_CODE_ABSENT));
+  }
+
+  @Test
+  void proofInspectionRefusalPreservesIndependentOmittedCodeEvidence() throws IOException {
+    final ArtifactCoordinate prerequisiteCandidate =
+        ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
+    final ArtifactCoordinate codeCandidate =
+        ArtifactCoordinate.of(GROUP_ID, "code-affected", SECOND_VERSION);
+    final Path prerequisiteJar = writeJar("proof-refusal-prerequisite.jar");
+    final Path originalCodeJar =
+        writeJar("proof-refusal-code-original.jar", VULNERABLE_CLASS_ENTRY);
+    final Path trimmedCodeJar = writeJar("proof-refusal-code-trimmed.jar");
+    final ArtifactTrimRecord codeTrimRecord =
+        trimRecord(codeCandidate, originalCodeJar, trimmedCodeJar);
+    final ElisionAnalysisModel.Analysis analysis =
+        analysis(List.of(prerequisiteCandidate, codeCandidate), List.of(codeTrimRecord));
+    final MavenPreconditionInventory.Snapshot completeInventory =
+        completeInventory(
+            Provider.dependencyArchive(prerequisiteCandidate, prerequisiteJar),
+            Provider.dependencyArchive(codeCandidate, trimmedCodeJar));
+    final MavenPreconditionInventory.Snapshot refusedInventory =
+        new MavenPreconditionInventory.Snapshot(
+            completeInventory.artifactFiles(),
+            completeInventory.classProviders(),
+            true,
+            Optional.empty(),
+            Optional.of(
+                "Could not inspect complete Maven class-provider inventory for proof: "
+                    + "Javac plugin service provider"));
+    final VulnerabilitySymbolMapping prerequisiteMapping =
+        mapping(prerequisiteCandidate, EXACT_VERSION_RANGE, Set.of(), ConfidenceLevel.HIGH);
+    final VulnerabilitySymbolMapping codeMapping =
+        mapping(codeCandidate, "[2.0,2.0]", Set.of(VULNERABLE_CLASS), ConfidenceLevel.HIGH);
+
+    final MavenVulnerabilityAssessment.Result result =
+        assess(analysis, refusedInventory, List.of(prerequisiteMapping, codeMapping));
+
+    assertAll(
+        "proof inspection failure is limited to prerequisite proof",
+        () -> assertThat(result.attestations()).hasSize(1),
+        () -> assertThat(result.attestations().getFirst().coordinate()).isEqualTo(codeCandidate),
+        () ->
+            assertThat(result.provenVulnerableCodeAbsent())
+                .containsExactly(new MavenVulnerabilityAssessment.Finding(CVE_ID, codeCandidate)),
+        () ->
+            assertThat(result.genericFindings())
+                .filteredOn(finding -> finding.candidate().equals(prerequisiteCandidate))
+                .singleElement()
+                .satisfies(
+                    finding ->
+                        assertAll(
+                            () ->
+                                assertThat(finding.outcome())
+                                    .isEqualTo(GenericFindingAssessment.Outcome.NO_PROOF),
+                            () ->
+                                assertThat(finding.detail())
+                                    .contains("Javac plugin service provider"))),
+        () ->
+            assertThat(result.genericFindings())
+                .filteredOn(finding -> finding.candidate().equals(codeCandidate))
+                .singleElement()
+                .extracting(GenericFindingAssessment::outcome)
+                .isEqualTo(GenericFindingAssessment.Outcome.DECLARED_CODE_ABSENT));
+  }
+
+  @Test
   void lowAndMediumConfidenceMappingsCannotCreateInactiveFindings() throws IOException {
     final ArtifactCoordinate affected =
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
@@ -501,15 +636,14 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final ArtifactCoordinate trimCoordinate =
         new ArtifactCoordinate(
             GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION, "jar", "", "runtime");
-    final Path originalJar = writeJar("affected-original.jar", "org/example/Vulnerable.class");
+    final Path originalJar = writeJar("affected-original.jar", VULNERABLE_CLASS_ENTRY);
     final Path trimmedJar = writeJar("affected-trimmed.jar");
     final ArtifactTrimRecord trimRecord = trimRecord(trimCoordinate, originalJar, trimmedJar);
     final ElisionAnalysisModel.Analysis analysis = analysis(List.of(affected), List.of(trimRecord));
     final MavenPreconditionInventory.Snapshot inventory =
         completeInventory(Provider.dependencyArchive(affected, trimmedJar));
     final VulnerabilitySymbolMapping mapping =
-        mapping(
-            affected, EXACT_VERSION_RANGE, Set.of("org.example.Vulnerable"), ConfidenceLevel.HIGH);
+        mapping(affected, EXACT_VERSION_RANGE, Set.of(VULNERABLE_CLASS), ConfidenceLevel.HIGH);
 
     final MavenVulnerabilityAssessment.Result result =
         assess(analysis, inventory, List.of(mapping));
@@ -562,7 +696,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
     final ArtifactCoordinate secondMappingCoordinate =
         ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, OVERLAP_MAPPING_VERSION);
-    final Path originalJar = writeJar("conflict-original.jar", "org/example/Vulnerable.class");
+    final Path originalJar = writeJar("conflict-original.jar", VULNERABLE_CLASS_ENTRY);
     final Path trimmedJar = writeJar("conflict-trimmed.jar");
     final ArtifactTrimRecord trimRecord = trimRecord(candidate, originalJar, trimmedJar);
     final ElisionAnalysisModel.Analysis analysis =
@@ -573,7 +707,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         mappingWithPrerequisites(
             firstMappingCoordinate,
             FIRST_OVERLAP_RANGE,
-            Set.of("org.example.Vulnerable"),
+            Set.of(VULNERABLE_CLASS),
             ConfidenceLevel.HIGH,
             REQUIRED_DEPENDENCY,
             REQUIRED_CLASS);
@@ -581,7 +715,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         mappingWithPrerequisites(
             secondMappingCoordinate,
             SECOND_OVERLAP_RANGE,
-            Set.of("org.example.Vulnerable"),
+            Set.of(VULNERABLE_CLASS),
             ConfidenceLevel.HIGH,
             REQUIRED_DEPENDENCY,
             "org.example.alternate.EntryPoint");
@@ -788,6 +922,26 @@ final class ADR0008MavenPreconditionAssessmentTest {
     assertThat(result.attestations()).hasSize(1);
     assertThat(result.attestations().getFirst().justification()).isEqualTo("requires_dependency");
     assertThat(result.inactiveDueToMissingPrerequisites()).hasSize(1);
+    assertThat(result.genericFindings())
+        .singleElement()
+        .satisfies(
+            finding -> {
+              assertThat(finding.prerequisiteProof()).isPresent();
+              final io.github.spockz.elider.model.PrerequisiteProofResult proof =
+                  finding.prerequisiteProof().orElseThrow();
+              assertAll(
+                  () ->
+                      assertThat(proof.groups().getFirst().attribution())
+                          .isEqualTo(
+                              io.github.spockz.elider.model.PrerequisiteAbsenceAttribution
+                                  .ALREADY_ABSENT),
+                  () ->
+                      assertThat(proof.groups().getFirst().members().getFirst().claim())
+                          .isEqualTo(new PrerequisiteClaim(REQUIRED_DEPENDENCY, REQUIRED_CLASS)),
+                  () ->
+                      assertThat(proof.groups().getFirst().members().getFirst().providers())
+                          .isEmpty());
+            });
     assertThat(result.provenVulnerableCodeAbsent()).isEmpty();
     final MavenElisionReportSnapshot report = reportSnapshot(analysis, result);
     assertThat(report.genericFindings())
@@ -805,7 +959,10 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final Path reportPath = temporaryDirectory.resolve("precondition-replay-report.json");
     MavenElisionReportWriter.write(reportPath, report);
     final MavenElisionReportSnapshot replayed = MavenElisionReportWriter.read(reportPath);
-    assertThat(replayed.genericFindings()).isEqualTo(report.genericFindings());
+    assertThat(replayed.genericFindings())
+        .usingRecursiveComparison()
+        .ignoringFields("prerequisiteProof")
+        .isEqualTo(report.genericFindings());
   }
 
   private MavenVulnerabilityAssessment.Result assess(

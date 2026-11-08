@@ -13,7 +13,11 @@ import io.github.spockz.elider.model.PreconditionClassInventory;
 import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
 import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
 import io.github.spockz.elider.model.PreconditionProof;
+import io.github.spockz.elider.model.PrerequisiteAbsenceAttribution;
+import io.github.spockz.elider.model.PrerequisiteProofResult;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
+import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.net.StandardProtocolFamily;
 import java.net.UnixDomainSocketAddress;
@@ -225,6 +229,292 @@ final class ADR0008MavenPreconditionInventoryTest {
             });
   }
 
+  @Test
+  void attributionUsesOriginalResolvedProvidersAndSelectedTrimOutput() throws IOException {
+    final Fixture fixture = fixture("attribution-selected-trim");
+    final String requiredClass = "org.example.Required";
+    final String classEntry = requiredClass.replace('.', '/') + ".class";
+    ImmutableTestJar.write(
+        fixture.dependency(), Map.of(classEntry, classBytes("org/example/Required")));
+    final Path trimmedPath = temporaryDirectory.resolve("selected-trim.jar");
+    writeJar(trimmedPath);
+    final ArtifactDigests originalDigests = ArtifactDigests.read(fixture.dependency());
+    final ArtifactDigests trimmedDigests = ArtifactDigests.read(trimmedPath);
+    final ArtifactTrimRecord trimRecord =
+        new ArtifactTrimRecord(
+            fixture.coordinate(),
+            fixture.dependency(),
+            originalDigests.sha256(),
+            originalDigests.sha1(),
+            trimmedPath,
+            trimmedDigests.sha256(),
+            trimmedDigests.sha1(),
+            1,
+            0,
+            0L);
+    final ElisionAnalysisModel.Analysis originalAnalysis = fixture.analysis();
+    final TrimResult originalTrimResult = originalAnalysis.trimResult();
+    final TrimResult stagedTrimResult =
+        new TrimResult(
+            List.of(trimRecord),
+            originalTrimResult.multiReleasePassthroughArtifacts(),
+            originalTrimResult.moduleInfoPassthroughArtifacts(),
+            originalTrimResult.configuredPassThroughArtifacts(),
+            originalTrimResult.cacheHits(),
+            originalTrimResult.maximumCacheHitNanos(),
+            originalTrimResult.analysisRuns(),
+            originalTrimResult.executionEnvironment(),
+            originalTrimResult.toleratedDuplicates());
+    final ElisionAnalysisModel.Analysis stagedAnalysis =
+        new ElisionAnalysisModel.Analysis(
+            originalAnalysis.artifacts(),
+            originalAnalysis.decision(),
+            originalAnalysis.effectiveDecision(),
+            originalAnalysis.evidence(),
+            stagedTrimResult,
+            originalAnalysis.graphProjection(),
+            originalAnalysis.mediatedGraph(),
+            originalAnalysis.policyIdentity(),
+            originalAnalysis.traceDecision(),
+            originalAnalysis.banPlan());
+
+    final MavenPreconditionInventory.Snapshot snapshot =
+        MavenPreconditionInventory.capture(
+            fixture.project(),
+            sessionForGoals(fixture.project(), GOAL_CLEAN, GOAL_VERIFY),
+            fixture.plan(),
+            stagedAnalysis,
+            true);
+    final PreconditionProof.InventoryPair pair = snapshot.proofInventoryPair().orElseThrow();
+    final VulnerabilitySymbolMapping mapping =
+        new VulnerabilitySymbolMapping(
+            TEST_CVE,
+            fixture.coordinate(),
+            TEST_RANGE,
+            Set.of(),
+            null,
+            ConfidenceLevel.HIGH,
+            fixture.coordinate().groupId() + ":" + fixture.coordinate().artifactId(),
+            requiredClass);
+    final PrerequisiteProofResult result =
+        PreconditionProof.proveWithAttribution(
+            ExplicitEvidenceTestSupport.genericPrerequisiteFinding(mapping),
+            fixture.coordinate(),
+            pair);
+    final boolean finalInventoryComplete = snapshot.complete();
+
+    assertAll(
+        "proof attribution uses original Maven input and selected staged bytes",
+        () -> assertThat(finalInventoryComplete).isTrue(),
+        () ->
+            assertThat(snapshot.classProviders().providers())
+                .anySatisfy(
+                    provider -> {
+                      assertThat(provider.coordinate()).isEqualTo(fixture.coordinate());
+                      assertThat(provider.path()).isEqualTo(trimmedPath);
+                    }),
+        () ->
+            assertThat(result.groups())
+                .singleElement()
+                .satisfies(
+                    group ->
+                        assertThat(group.attribution())
+                            .isEqualTo(PrerequisiteAbsenceAttribution.TRIMMED_CLASS)),
+        () ->
+            assertThat(result.groups().getFirst().members().getFirst().providers())
+                .singleElement()
+                .satisfies(
+                    provider ->
+                        assertAll(
+                            () ->
+                                assertThat(provider.baselinePath()).isEqualTo(fixture.dependency()),
+                            () -> assertThat(provider.finalPath()).isEqualTo(trimmedPath),
+                            () ->
+                                assertThat(provider.attribution())
+                                    .isEqualTo(PrerequisiteAbsenceAttribution.TRIMMED_CLASS))));
+  }
+
+  @Test
+  void droppedDependencyClassIsPresentInBaselineAndAbsentFromFinal() throws IOException {
+    final Fixture fixture = fixture("dropped-provider-baseline");
+    final String requiredClass = "org.example.DroppedProvider";
+    final Path droppedJar = temporaryDirectory.resolve("dropped-provider.jar");
+    ImmutableTestJar.write(
+        droppedJar,
+        Map.of(
+            "META-INF/MANIFEST.MF",
+            "Manifest-Version: 1.0\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+            "org/example/DroppedProvider.class",
+            classBytes("org/example/DroppedProvider")));
+    final Artifact droppedArtifact =
+        new DefaultArtifact(
+            "org.example",
+            "dropped-provider",
+            TEST_VERSION,
+            GOAL_COMPILE,
+            JAR_TYPE,
+            null,
+            new DefaultArtifactHandler(JAR_TYPE));
+    droppedArtifact.setFile(droppedJar.toFile());
+    final Set<Artifact> resolvedArtifacts =
+        new LinkedHashSet<>(
+            List.of(fixture.project().getArtifacts().iterator().next(), droppedArtifact));
+    fixture.project().setArtifacts(resolvedArtifacts);
+    final ArtifactCoordinate droppedCoordinate =
+        MavenArtifactInventory.toCoordinate(droppedArtifact);
+    final ElisionAnalysisModel.Analysis sourceAnalysis = fixture.analysis();
+    final ElisionAnalysisModel.ArtifactViews artifactViews =
+        new ElisionAnalysisModel.ArtifactViews(
+            MavenArtifactInventory.snapshots(resolvedArtifacts), false, List.of());
+    final io.github.spockz.elider.model.ElisionDecision decision =
+        new io.github.spockz.elider.model.ElisionDecision(
+            Set.of(fixture.coordinate()), Set.of(droppedCoordinate), Map.of(), Map.of(), 0L);
+    final ElisionAnalysisModel.Analysis analysis =
+        new ElisionAnalysisModel.Analysis(
+            artifactViews,
+            decision,
+            decision,
+            sourceAnalysis.evidence(),
+            sourceAnalysis.trimResult(),
+            sourceAnalysis.graphProjection(),
+            sourceAnalysis.mediatedGraph(),
+            sourceAnalysis.policyIdentity(),
+            sourceAnalysis.traceDecision(),
+            sourceAnalysis.banPlan());
+    final ElisionAnalysisModel.ApplyPlan retainedPlan =
+        MavenArtifactPlan.prepare(fixture.project(), analysis);
+
+    final MavenPreconditionInventory.Snapshot snapshot =
+        MavenPreconditionInventory.capture(
+            fixture.project(),
+            sessionForGoals(fixture.project(), GOAL_CLEAN, GOAL_VERIFY),
+            retainedPlan,
+            analysis,
+            true);
+    final PreconditionProof.InventoryPair pair = snapshot.proofInventoryPair().orElseThrow();
+    final VulnerabilitySymbolMapping mapping =
+        new VulnerabilitySymbolMapping(
+            TEST_CVE,
+            fixture.coordinate(),
+            TEST_RANGE,
+            Set.of(),
+            null,
+            ConfidenceLevel.HIGH,
+            fixture.coordinate().groupId() + ":" + fixture.coordinate().artifactId(),
+            requiredClass);
+    final PrerequisiteProofResult proof =
+        PreconditionProof.proveWithAttribution(
+            ExplicitEvidenceTestSupport.genericPrerequisiteFinding(mapping),
+            fixture.coordinate(),
+            pair);
+    final boolean finalInventoryComplete = snapshot.complete();
+
+    assertAll(
+        "whole-artifact removal is attributed from original resolved providers",
+        () -> assertThat(retainedPlan.resolvedArtifacts()).hasSize(1),
+        () -> assertThat(finalInventoryComplete).isTrue(),
+        () ->
+            assertThat(snapshot.classProviders().providers())
+                .noneMatch(provider -> provider.path().equals(droppedJar)),
+        () ->
+            assertThat(proof.groups())
+                .singleElement()
+                .satisfies(
+                    group ->
+                        assertAll(
+                            () ->
+                                assertThat(group.attribution())
+                                    .isEqualTo(PrerequisiteAbsenceAttribution.ELIDED_DEPENDENCY),
+                            () ->
+                                assertThat(group.members().getFirst().providers())
+                                    .singleElement()
+                                    .satisfies(
+                                        provider ->
+                                            assertAll(
+                                                () ->
+                                                    assertThat(provider.baselinePath())
+                                                        .isEqualTo(droppedJar),
+                                                () -> assertThat(provider.finalPath()).isNull(),
+                                                () ->
+                                                    assertThat(provider.attribution())
+                                                        .isEqualTo(
+                                                            PrerequisiteAbsenceAttribution
+                                                                .ELIDED_DEPENDENCY))))));
+  }
+
+  @Test
+  void unreadableOriginalProviderKeepsCompleteFinalProofWithUnknownAttribution()
+      throws IOException {
+    final Fixture fixture = fixture("unreadable-provider-baseline");
+    final Path malformedJar = temporaryDirectory.resolve("malformed-dropped-provider.jar");
+    Files.writeString(malformedJar, "not a jar");
+    final Artifact droppedArtifact =
+        new DefaultArtifact(
+            "org.example",
+            "malformed-provider",
+            TEST_VERSION,
+            GOAL_COMPILE,
+            JAR_TYPE,
+            null,
+            new DefaultArtifactHandler(JAR_TYPE));
+    droppedArtifact.setFile(malformedJar.toFile());
+    final Artifact affectedArtifact = fixture.project().getArtifacts().iterator().next();
+    final Set<Artifact> resolvedArtifacts =
+        new LinkedHashSet<>(List.of(affectedArtifact, droppedArtifact));
+    fixture.project().setArtifacts(resolvedArtifacts);
+    final ArtifactCoordinate droppedCoordinate =
+        MavenArtifactInventory.toCoordinate(droppedArtifact);
+    final ElisionAnalysisModel.Analysis sourceAnalysis = fixture.analysis();
+    final ElisionAnalysisModel.Analysis analysis =
+        new ElisionAnalysisModel.Analysis(
+            new ElisionAnalysisModel.ArtifactViews(
+                MavenArtifactInventory.snapshots(resolvedArtifacts), false, List.of()),
+            new io.github.spockz.elider.model.ElisionDecision(
+                Set.of(fixture.coordinate()), Set.of(droppedCoordinate), Map.of(), Map.of(), 0L),
+            new io.github.spockz.elider.model.ElisionDecision(
+                Set.of(fixture.coordinate()), Set.of(droppedCoordinate), Map.of(), Map.of(), 0L),
+            sourceAnalysis.evidence(),
+            sourceAnalysis.trimResult(),
+            sourceAnalysis.graphProjection(),
+            sourceAnalysis.mediatedGraph(),
+            sourceAnalysis.policyIdentity(),
+            sourceAnalysis.traceDecision(),
+            sourceAnalysis.banPlan());
+    final ElisionAnalysisModel.ApplyPlan retainedPlan =
+        MavenArtifactPlan.prepare(fixture.project(), analysis);
+    final MavenPreconditionInventory.Snapshot snapshot =
+        MavenPreconditionInventory.capture(
+            fixture.project(),
+            sessionForGoals(fixture.project(), GOAL_CLEAN, GOAL_VERIFY),
+            retainedPlan,
+            analysis,
+            true);
+    final VulnerabilitySymbolMapping mapping =
+        new VulnerabilitySymbolMapping(
+            TEST_CVE,
+            fixture.coordinate(),
+            TEST_RANGE,
+            Set.of(),
+            null,
+            ConfidenceLevel.HIGH,
+            fixture.coordinate().groupId() + ":" + fixture.coordinate().artifactId(),
+            "org.example.AbsentPrerequisite");
+    final PrerequisiteProofResult proof =
+        PreconditionProof.proveWithAttribution(
+            ExplicitEvidenceTestSupport.genericPrerequisiteFinding(mapping),
+            fixture.coordinate(),
+            snapshot.proofInventoryPair().orElseThrow());
+    final boolean finalInventoryComplete = snapshot.complete();
+
+    assertAll(
+        "baseline archive failure limits attribution but not complete final proof",
+        () -> assertThat(finalInventoryComplete).isTrue(),
+        () -> assertThat(snapshot.proofInventoryPair().orElseThrow().baselineDetail()).isNotBlank(),
+        () ->
+            assertThat(proof.groups().getFirst().members().getFirst().attribution())
+                .isEqualTo(PrerequisiteAbsenceAttribution.UNKNOWN));
+  }
+
   /** WHY: Groups compiler-generated provider cases under the ADR proof boundary. */
   @Nested
   @DisplayName("Javac provider discovery")
@@ -351,6 +641,9 @@ final class ADR0008MavenPreconditionInventoryTest {
               "org.example.MissingPrerequisite");
 
       assertThat(snapshot.complete()).isTrue();
+      assertThat(snapshot.proofInventoryPair()).isEmpty();
+      assertThat(snapshot.proofInventoryFailure())
+          .hasValueSatisfying(value -> assertThat(value).contains("Javac plugin service provider"));
       assertThatThrownBy(
               () ->
                   PreconditionProof.prove(

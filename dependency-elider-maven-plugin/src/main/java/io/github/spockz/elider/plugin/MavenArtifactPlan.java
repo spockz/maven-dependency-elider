@@ -32,6 +32,7 @@ final class MavenArtifactPlan {
     final CurrentViews currentViews = MavenArtifactInventory.verifyCurrentViews(project, analysis);
     return new ApplyPlan(
         retained(currentViews.resolvedArtifacts(), elided),
+        new LinkedHashSet<>(currentViews.resolvedArtifacts()),
         analysis.artifacts().directArtifactsPresent(),
         new LinkedHashSet<>(currentViews.directArtifacts()));
   }
