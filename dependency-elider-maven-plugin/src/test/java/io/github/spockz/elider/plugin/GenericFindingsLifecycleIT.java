@@ -215,6 +215,91 @@ final class GenericFindingsLifecycleIT {
                 mappings));
   }
 
+  @Test
+  void explicitCatalogIsAdoptedByAnalyzeAndElideAsDataOnlyInput() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path dependencyRepository = Path.of(requiredProperty("maven.repo.local"));
+    final Path privateRepository =
+        Files.createDirectories(temporaryDirectory.resolve("catalog-private-repository"));
+    final Path settings =
+        MavenFixtureRepositorySettings.write(
+            temporaryDirectory, dependencyRepository.toUri().toASCIIString());
+    installPackagedArtifacts(repositoryRoot, privateRepository, settings);
+    final CacheProducerIdentity producer =
+        producerIdentity(
+            repositoryRoot.resolve(
+                "dependency-elider-maven-plugin/target/dependency-elider-maven-plugin-"
+                    + "0.1.0-SNAPSHOT.jar"),
+            repositoryRoot.resolve("elider-core/target/elider-core-0.1.0-SNAPSHOT.jar"),
+            privateRepository);
+    final String coordinate = "org.example.policy:vulnerability-map:1.2.3";
+    final Path dependencyJar = createDependencyArtifact(privateRepository);
+    fixtureArtifactDirectory = dependencyJar.getParent();
+    final Path catalogArtifact = createEmptyCatalogArtifact(privateRepository);
+    final Path fixture =
+        copyFixture(repositoryRoot, temporaryDirectory.resolve("catalog-consumer"));
+    configureProject(fixture, producer.version(), "");
+    final Path cache = Files.createDirectories(temporaryDirectory.resolve("catalog-cache"));
+    writeEmptyCache(producer, cache);
+    final String[] catalogArgument = {"-Delide.vulnerabilityMappingCatalogs=" + coordinate};
+
+    final String analyzeOutput =
+        runGoal(
+            repositoryRoot,
+            fixture,
+            privateRepository,
+            settings,
+            cache,
+            producer.version(),
+            "analyze",
+            catalogArgument);
+    final Path analysisReport = fixture.resolve("target/dependency-elider-analysis-report.json");
+    final String elideOutput =
+        runGoal(
+            repositoryRoot,
+            fixture,
+            privateRepository,
+            settings,
+            cache,
+            producer.version(),
+            "elide",
+            catalogArgument);
+    final Path elideReport = fixture.resolve("target/dependency-elider-report.json");
+    final JsonNode analysis = JSON.readTree(analysisReport.toFile());
+    final JsonNode applied = JSON.readTree(elideReport.toFile());
+    final JsonNode sbom =
+        JSON.readTree(fixture.resolve("target/dependency-elider-sbom.cdx.json").toFile());
+
+    assertAll(
+        "catalog adoption is reported by both goals but stays outside application outputs",
+        () -> assertThat(analyzeOutput).contains("BUILD SUCCESS"),
+        () -> assertThat(elideOutput).contains("BUILD SUCCESS"),
+        () -> assertCatalogAdoption(analysis.path("catalogAdoptions"), coordinate),
+        () -> assertCatalogAdoption(applied.path("catalogAdoptions"), coordinate),
+        () -> assertThat(analysis.path("inputArtifactCount").asInt()).isEqualTo(1),
+        () -> assertThat(applied.path("inputArtifactCount").asInt()).isEqualTo(1),
+        () -> assertThat(sbom.path("components").toString()).doesNotContain("vulnerability-map"),
+        () -> assertThat(catalogArtifact).isRegularFile());
+  }
+
+  private static void assertCatalogAdoption(final JsonNode adoptions, final String coordinate) {
+    assertThat(adoptions.isArray()).isTrue();
+    assertThat(adoptions.size()).isEqualTo(1);
+    assertAll(
+        () ->
+            assertThat(adoptions.get(0).path("coordinate").path("groupId").asText())
+                .isEqualTo("org.example.policy"),
+        () ->
+            assertThat(adoptions.get(0).path("coordinate").path("artifactId").asText())
+                .isEqualTo("vulnerability-map"),
+        () ->
+            assertThat(adoptions.get(0).path("coordinate").path("version").asText())
+                .isEqualTo("1.2.3"),
+        () -> assertThat(coordinate).isEqualTo("org.example.policy:vulnerability-map:1.2.3"),
+        () -> assertThat(adoptions.get(0).path("mappingIds")).isEmpty(),
+        () -> assertThat(adoptions.get(0).path("catalogId").asText()).isEqualTo("empty-catalog"));
+  }
+
   private static void assertMixedSourceScenario(
       final Path repositoryRoot,
       final Path fixture,
@@ -704,6 +789,21 @@ final class GenericFindingsLifecycleIT {
         "<project><modelVersion>4.0.0</modelVersion><groupId>io.github.spockz.elider.test</groupId>"
             + "<artifactId>generic-findings-fixture</artifactId><version>1.0.0</version>"
             + "<packaging>jar</packaging></project>");
+    return jar;
+  }
+
+  private static Path createEmptyCatalogArtifact(final Path localRepository) throws IOException {
+    final Path artifactDirectory =
+        localRepository.resolve("org/example/policy/vulnerability-map/1.2.3");
+    Files.createDirectories(artifactDirectory);
+    final Path jar = artifactDirectory.resolve("vulnerability-map-1.2.3.jar");
+    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(jar))) {
+      output.putNextEntry(new JarEntry("META-INF/elider/vulnerability-mappings.json"));
+      output.write(
+          "{\"catalogId\":\"empty-catalog\",\"schemaVersion\":1,\"mappings\":[]}"
+              .getBytes(StandardCharsets.UTF_8));
+      output.closeEntry();
+    }
     return jar;
   }
 

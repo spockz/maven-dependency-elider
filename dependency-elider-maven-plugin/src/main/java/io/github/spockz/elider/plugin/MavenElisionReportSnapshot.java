@@ -46,7 +46,9 @@ record MavenElisionReportSnapshot(
     @com.fasterxml.jackson.annotation.JsonIgnore List<FindingSourceObservation> sourceObservations,
     Mode mode,
     int inputArtifactCount,
-    String sourceAttributionFallback) {
+    String sourceAttributionFallback,
+    @com.fasterxml.jackson.annotation.JsonIgnore
+        List<MavenVulnerabilityMappingCatalogResolver.Adoption> catalogAdoptions) {
   /** Distinguishes forecast from applied output. */
   enum Mode {
     ANALYSIS,
@@ -78,6 +80,12 @@ record MavenElisionReportSnapshot(
                         .thenComparing(FindingSourceObservation::status)
                         .thenComparing(value -> Objects.toString(value.revision(), ""))
                         .thenComparing(value -> Objects.toString(value.diagnostic(), "")))
+                .toList();
+    catalogAdoptions =
+        catalogAdoptions == null
+            ? List.of()
+            : catalogAdoptions.stream()
+                .sorted(Comparator.comparing(value -> value.coordinate().toString()))
                 .toList();
     Objects.requireNonNull(mode, "mode");
     require(inputArtifactCount >= 0, "inputArtifactCount must not be negative");
@@ -233,7 +241,8 @@ record MavenElisionReportSnapshot(
         sourceObservations,
         Mode.APPLIED,
         wholeArtifactsDropped + trimmedArtifacts.size(),
-        null);
+        null,
+        List.of());
   }
 
   MavenElisionReportSnapshot(
@@ -370,7 +379,8 @@ record MavenElisionReportSnapshot(
         assessment.sourceObservations(),
         Mode.ANALYSIS,
         prediction.inputArtifacts().size(),
-        prediction.evidence().sourceAttributionFallback());
+        prediction.evidence().sourceAttributionFallback(),
+        assessment.catalogAdoptions());
   }
 
   static MavenElisionReportSnapshot from(
@@ -448,13 +458,47 @@ record MavenElisionReportSnapshot(
         vulnerabilityAssessment == null ? List.of() : vulnerabilityAssessment.sourceObservations(),
         Mode.APPLIED,
         analysis.artifacts().resolvedSnapshots().size(),
-        analysis.evidence().sourceAttributionFallback());
+        analysis.evidence().sourceAttributionFallback(),
+        vulnerabilityAssessment == null ? List.of() : vulnerabilityAssessment.catalogAdoptions());
   }
 
   MavenElisionReportSnapshot withGenericFindings(
       final List<GenericFindingAssessment> findings,
       final List<FindingSourceObservation> observations) {
     return copy(exclusionReview, appliedBans, toleratedDuplicates, findings, observations);
+  }
+
+  MavenElisionReportSnapshot withCatalogAdoptions(
+      final List<MavenVulnerabilityMappingCatalogResolver.Adoption> adoptions) {
+    return new MavenElisionReportSnapshot(
+        schemaVersion,
+        projectGroupId,
+        projectArtifactId,
+        projectVersion,
+        projectBaseDirectory,
+        generatedAt,
+        executionEnvironment,
+        wholeArtifactsDropped,
+        originalJarBytesDropped,
+        droppedProgramClassEntries,
+        droppedProgramClassBytes,
+        droppedArtifacts,
+        rawDroppedCoordinates,
+        programClassesPruned,
+        uncompressedProgramClassBytesPruned,
+        trimmedArtifacts,
+        mediatedGraph,
+        assumeConventionalJavaSourceLayout,
+        policy,
+        exclusionReview,
+        appliedBans,
+        toleratedDuplicates,
+        genericFindings,
+        sourceObservations,
+        mode,
+        inputArtifactCount,
+        sourceAttributionFallback,
+        adoptions);
   }
 
   MavenElisionReportSnapshot withExclusionReview(final ExclusionReview review) {
@@ -502,7 +546,8 @@ record MavenElisionReportSnapshot(
         observations,
         mode,
         inputArtifactCount,
-        sourceAttributionFallback);
+        sourceAttributionFallback,
+        catalogAdoptions);
   }
 
   static TrimmedArtifact trimmedArtifact(final ArtifactTrimRecord record) {

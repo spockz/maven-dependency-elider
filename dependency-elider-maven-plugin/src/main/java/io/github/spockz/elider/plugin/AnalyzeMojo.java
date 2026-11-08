@@ -20,6 +20,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
+import org.eclipse.aether.RepositorySystem;
 
 /** Analyzes a resolved Maven dependency set using explicit runtime traces. */
 @Mojo(
@@ -44,6 +45,9 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
 
   /** Resolver used to bind Analyze evidence to one captured or detached graph. */
   @Component private ProjectDependenciesResolver projectDependenciesResolver;
+
+  /** Resolves explicitly configured mapping catalogs as isolated data artifacts. */
+  @Component private RepositorySystem repositorySystem;
 
   /** Coordinates prediction; package tests may inject a focused result fixture. */
   private AnalyzePredictionService predictionService = new MavenElisionService()::predict;
@@ -150,6 +154,10 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
 
   /** Explicit project vulnerability mappings override cached mappings. */
   @Parameter private List<VulnerabilityMappingConfig> vulnerabilityMappings;
+
+  /** Pinned G:A:V[:type[:classifier]] catalogs, resolved only as assessment data. */
+  @Parameter(property = "elide.vulnerabilityMappingCatalogs")
+  private List<String> vulnerabilityMappingCatalogs;
 
   /** Enables optional per-artifact Snyk package issue queries. */
   @Parameter(property = "elide.snykEnabled", defaultValue = DEFAULT_FALSE)
@@ -328,7 +336,12 @@ public final class AnalyzeMojo extends PluginCacheMojoSupport {
     return new MavenVulnerabilityAssessment(getLog(), assumeConventionalJavaSourceLayout)
         .assess(
             config,
-            ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings),
+            ConfiguredVulnerabilityMappings.resolveForProject(
+                repositorySystem,
+                MavenAnalysisResolutionContext.repositorySession(session),
+                project,
+                vulnerabilityMappings,
+                vulnerabilityMappingCatalogs),
             prediction,
             SnykPackageIssuesIntegration.Configuration.configured(
                 snykEnabled, session != null && session.isOffline(), snykOrgId, snykApiBaseUri));

@@ -57,7 +57,8 @@ final class MavenElisionReportPayloadValidator {
           "appliedBans",
           "toleratedDuplicates",
           "genericFindings",
-          "sourceObservations");
+          "sourceObservations",
+          "catalogAdoptions");
 
   /** Exact fields persisted for each tolerated duplicate class. */
   private static final Set<String> TOLERATED_DUPLICATE_FIELDS =
@@ -172,6 +173,7 @@ final class MavenElisionReportPayloadValidator {
         payload.get("genericFindings"), "genericFindings");
     MavenElisionReportJsonPayloadShape.requireArray(
         payload.get("sourceObservations"), "sourceObservations");
+    MavenElisionReportCatalogAdoptionPayload.read(payload.get("catalogAdoptions"));
     ExclusionReviewPayloadValidator.validate(payload.get("exclusionReview"));
     validateAppliedBans(
         payload.get("appliedBans"), textValues(payload.path("policy").get("banishedDependencies")));

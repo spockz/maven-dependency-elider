@@ -1042,6 +1042,7 @@ final class MavenElisionReportSchemaTest {
     policy.put("operationFingerprint", MavenElisionGraphBinding.sha256(List.of()));
     payload.putArray("genericFindings");
     payload.putArray("sourceObservations");
+    payload.putArray("catalogAdoptions");
     payload.set(
         "exclusionReview",
         JSON.valueToTree(

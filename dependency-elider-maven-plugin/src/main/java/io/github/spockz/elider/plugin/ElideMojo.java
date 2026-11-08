@@ -19,6 +19,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
+import org.eclipse.aether.RepositorySystem;
 
 /** Applies graph-verified dependency changes during Maven initialization. */
 @Mojo(
@@ -47,6 +48,9 @@ public final class ElideMojo extends PluginCacheMojoSupport {
 
   /** Resolver used to bind an isolated ban plan to the current Maven model. */
   @Component private ProjectDependenciesResolver projectDependenciesResolver;
+
+  /** Resolves explicitly configured mapping catalogs as isolated data artifacts. */
+  @Component private RepositorySystem repositorySystem;
 
   /** Current execution source and ID for the injected preparation duplicate guard. */
   @Parameter(defaultValue = "${mojoExecution}", readonly = true, required = true)
@@ -187,6 +191,10 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   /** Explicit POM vulnerability mappings override cache entries. */
   @Parameter private List<VulnerabilityMappingConfig> vulnerabilityMappings;
 
+  /** Pinned G:A:V[:type[:classifier]] catalogs, resolved only as assessment data. */
+  @Parameter(property = "elide.vulnerabilityMappingCatalogs")
+  private List<String> vulnerabilityMappingCatalogs;
+
   /** Enables optional per-artifact Snyk package issue queries. */
   @Parameter(property = "elide.snykEnabled", defaultValue = DEFAULT_FALSE)
   private boolean snykEnabled;
@@ -290,7 +298,18 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   }
 
   private ConfiguredVulnerabilityMappings configuredVulnerabilityMappings() {
-    return ConfiguredVulnerabilityMappings.fromPom(vulnerabilityMappings);
+    try {
+      return ConfiguredVulnerabilityMappings.resolveForProject(
+          repositorySystem,
+          MavenAnalysisResolutionContext.repositorySession(session),
+          project,
+          vulnerabilityMappings,
+          vulnerabilityMappingCatalogs);
+    } catch (final java.io.IOException exception) {
+      throw new IllegalArgumentException(
+          "Could not resolve configured vulnerability mapping catalogs: " + exception.getMessage(),
+          exception);
+    }
   }
 
   /* default */ ElisionAnalysisModel.AnalysisOptions analysisOptions() {

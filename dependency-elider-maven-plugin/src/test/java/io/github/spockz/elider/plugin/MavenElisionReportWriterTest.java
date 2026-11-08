@@ -497,6 +497,36 @@ final class MavenElisionReportWriterTest {
   }
 
   @Test
+  void persistsCatalogAdoptionWithoutMatchingFindings() throws IOException {
+    final MavenVulnerabilityMappingCatalogResolver.Adoption adoption =
+        new MavenVulnerabilityMappingCatalogResolver.Adoption(
+            new MavenVulnerabilityMappingCatalogResolver.Coordinate(
+                "org.example", "catalog", "1.2.3", "jar", ""),
+            "a".repeat(64),
+            "empty-catalog",
+            1,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            "explicit-maven-catalog-coordinate",
+            List.of());
+    final MavenElisionReportSnapshot report = snapshot().withCatalogAdoptions(List.of(adoption));
+    final Path output = temporaryDirectory.resolve("target/catalog-report.json");
+
+    MavenElisionReportWriter.write(output, report);
+    final MavenElisionReportSnapshot reread = MavenElisionReportWriter.read(output);
+
+    assertAll(
+        () -> assertThat(reread.catalogAdoptions()).containsExactly(adoption),
+        () -> assertThat(reread.genericFindings()).isEmpty(),
+        () -> assertThat(Files.readString(output)).contains("\"catalogAdoptions\""),
+        () ->
+            assertThat(MavenElisionReportWriter.render(reread))
+                .anyMatch(line -> line.contains("org.example:catalog:1.2.3:jar:")));
+  }
+
+  @Test
   void failsClearlyWhenNoSuccessfulSnapshotExists() {
     final Path missing = temporaryDirectory.resolve("missing-report.json");
 

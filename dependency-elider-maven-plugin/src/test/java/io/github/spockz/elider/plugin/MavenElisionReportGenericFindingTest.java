@@ -118,6 +118,7 @@ class MavenElisionReportGenericFindingTest {
                 .contains(
                     "\"genericFindings\"",
                     "\"sourceObservations\"",
+                    "\"catalogAdoptions\"",
                     "GHSA-only",
                     "[1,2)",
                     "[3,4)",

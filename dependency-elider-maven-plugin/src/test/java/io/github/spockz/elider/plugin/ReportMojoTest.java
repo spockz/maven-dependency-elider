@@ -5,39 +5,31 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Verifies the report Mojo reads saved data and validates project identity. */
-@SuppressWarnings("PMD.AvoidAccessibilityAlteration")
+@SuppressWarnings("PMD.AtLeastOneConstructor")
 final class ReportMojoTest {
-  /** Logger API method name that enables report output. */
-  private static final String INFO_ENABLED_METHOD = "isInfoEnabled";
-
-  /** Temporary root for report snapshots and checkout identities. */
+  /** WHY: Snapshot identity and output share one isolated directory. */
   @TempDir private Path temporaryDirectory;
-
-  /** Creates the standalone report goal test fixture. */
-  @SuppressWarnings({"PMD.UncommentedEmptyConstructor", "PMD.CommentDefaultAccessModifier"})
-  ReportMojoTest() {}
 
   @Test
   void rejectsMismatchedGav() throws IOException, ReflectiveOperationException {
     final Path snapshotFile = temporaryDirectory.resolve("report.json");
-    MavenElisionReportWriter.write(snapshotFile, snapshot());
+    MavenElisionReportWriter.write(
+        snapshotFile, ReportMojoTestSupport.snapshot(temporaryDirectory, false));
     final List<String> messages = new ArrayList<>();
-    final MavenProject mismatchedGav = project();
+    final MavenProject mismatchedGav = ReportMojoTestSupport.project(temporaryDirectory);
     mismatchedGav.setArtifactId("another-project");
-    final ReportMojo gavMojo = mojo(snapshotFile, mismatchedGav, messages);
+    final ReportMojo gavMojo = ReportMojoTestSupport.mojo(snapshotFile, mismatchedGav, messages);
 
     assertThatThrownBy(gavMojo::execute)
         .isInstanceOf(MojoFailureException.class)
@@ -47,12 +39,14 @@ final class ReportMojoTest {
   @Test
   void rejectsAnotherCheckoutWithTheSameGav() throws IOException, ReflectiveOperationException {
     final Path snapshotFile = temporaryDirectory.resolve("report.json");
-    MavenElisionReportWriter.write(snapshotFile, snapshot());
+    MavenElisionReportWriter.write(
+        snapshotFile, ReportMojoTestSupport.snapshot(temporaryDirectory, false));
     final List<String> messages = new ArrayList<>();
     final Path anotherCheckout = Files.createDirectory(temporaryDirectory.resolve("checkout"));
-    final MavenProject mismatchedDirectory = project();
+    final MavenProject mismatchedDirectory = ReportMojoTestSupport.project(temporaryDirectory);
     mismatchedDirectory.setFile(anotherCheckout.resolve("pom.xml").toFile());
-    final ReportMojo directoryMojo = mojo(snapshotFile, mismatchedDirectory, messages);
+    final ReportMojo directoryMojo =
+        ReportMojoTestSupport.mojo(snapshotFile, mismatchedDirectory, messages);
     assertThatThrownBy(directoryMojo::execute)
         .isInstanceOf(MojoFailureException.class)
         .hasMessageContaining("snapshot belongs to project directory");
@@ -62,10 +56,13 @@ final class ReportMojoTest {
   void rendersSavedLayoutAssumptionAndTimeWithoutCurrentGoalConfiguration()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path snapshotFile = temporaryDirectory.resolve("report.json");
-    final MavenElisionReportSnapshot saved = snapshot(true);
+    final MavenElisionReportSnapshot saved =
+        ReportMojoTestSupport.snapshot(temporaryDirectory, true);
     MavenElisionReportWriter.write(snapshotFile, saved);
     final List<String> messages = new ArrayList<>();
-    final ReportMojo reportMojo = mojo(snapshotFile, project(), messages);
+    final ReportMojo reportMojo =
+        ReportMojoTestSupport.mojo(
+            snapshotFile, ReportMojoTestSupport.project(temporaryDirectory), messages);
 
     reportMojo.execute();
 
@@ -73,93 +70,5 @@ final class ReportMojoTest {
         .contains(
             "Snapshot: last successful elide run at " + saved.generatedAt(),
             "Conventional Java source layout assumption saved for this run: true");
-  }
-
-  private MavenElisionReportSnapshot snapshot() throws IOException {
-    return snapshot(false);
-  }
-
-  private MavenElisionReportSnapshot snapshot(final boolean layoutAssumed) throws IOException {
-    final ArtifactCoordinate dropped = coordinate("unused");
-    final ArtifactCoordinate trimmed = coordinate("partial");
-    final MediatedGraphReport graph =
-        MediatedGraphReportTestSupport.reportForOutputs(
-            dropped, trimmed, "org.example:consumer:1.0");
-    return new MavenElisionReportSnapshot(
-        MavenElisionReportSnapshot.SCHEMA_VERSION,
-        "org.example",
-        "consumer",
-        "1.0",
-        temporaryDirectory.toRealPath().toString(),
-        "2026-10-25T12:00:00Z",
-        new TrimExecutionEnvironment(21, Runtime.version().feature()),
-        1,
-        2048,
-        0,
-        0,
-        List.of(new MavenElisionReportSnapshot.DroppedArtifact(dropped.toString(), 2048)),
-        List.of(dropped.toString()),
-        3,
-        1536,
-        List.of(new MavenElisionReportSnapshot.TrimmedArtifact(trimmed.toString(), 3, 1536)),
-        graph,
-        layoutAssumed,
-        MavenElisionPolicyIdentityTestSupport.emptyPolicy(),
-        ExclusionReview.unavailable("No pre-injection declaration capture is available"),
-        List.of(),
-        List.of(),
-        List.of(),
-        List.of());
-  }
-
-  private static ArtifactCoordinate coordinate(final String artifactId) {
-    return EffectiveGraphPolicyTestSupport.coordinate(
-        artifactId, EffectiveGraphPolicyTestSupport.COMPILE_SCOPE);
-  }
-
-  private MavenProject project() {
-    final MavenProject project = new MavenProject();
-    project.setGroupId("org.example");
-    project.setArtifactId("consumer");
-    project.setVersion("1.0");
-    project.setFile(temporaryDirectory.resolve("pom.xml").toFile());
-    return project;
-  }
-
-  private static ReportMojo mojo(
-      final Path snapshot, final MavenProject project, final List<String> messages)
-      throws ReflectiveOperationException {
-    final ReportMojo mojo = new ReportMojo();
-    set(mojo, "project", project);
-    set(mojo, "summaryFile", snapshot.toFile());
-    mojo.setLog(recordingLog(messages));
-    return mojo;
-  }
-
-  @SuppressWarnings("PMD.UseProperClassLoader")
-  private static Log recordingLog(final List<String> messages) {
-    return (Log)
-        java.lang.reflect.Proxy.newProxyInstance(
-            Log.class.getClassLoader(),
-            new Class<?>[] {Log.class},
-            (proxy, method, arguments) -> {
-              if (INFO_ENABLED_METHOD.equals(method.getName())) {
-                return true;
-              }
-              if ("info".equals(method.getName())
-                  && arguments != null
-                  && arguments.length > 0
-                  && arguments[0] instanceof CharSequence message) {
-                messages.add(message.toString());
-              }
-              return method.getReturnType() == boolean.class ? false : null;
-            });
-  }
-
-  private static void set(final Object target, final String fieldName, final Object value)
-      throws ReflectiveOperationException {
-    final java.lang.reflect.Field field = target.getClass().getDeclaredField(fieldName);
-    field.setAccessible(true);
-    field.set(target, value);
   }
 }

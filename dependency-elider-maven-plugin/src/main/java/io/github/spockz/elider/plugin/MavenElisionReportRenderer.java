@@ -129,10 +129,38 @@ final class MavenElisionReportRenderer {
     lines.addAll(
         MavenElisionReportGenericRenderer.render(
             snapshot.genericFindings(), snapshot.sourceObservations(), predicted));
+    lines.addAll(catalogAdoptionLines(snapshot.catalogAdoptions()));
     lines.addAll(ExclusionReviewRenderer.render(snapshot.exclusionReview()));
     lines.addAll(
         MediatedGraphReportRenderer.render(
             snapshot.mediatedGraph(), snapshot.projectGav(), predicted));
+    return List.copyOf(lines);
+  }
+
+  private static List<String> catalogAdoptionLines(
+      final List<MavenVulnerabilityMappingCatalogResolver.Adoption> adoptions) {
+    if (adoptions.isEmpty()) {
+      return List.of();
+    }
+    final List<String> lines = new ArrayList<>();
+    lines.add("Adopted vulnerability mapping catalogs:");
+    for (final MavenVulnerabilityMappingCatalogResolver.Adoption adoption : adoptions) {
+      lines.add(
+          BULLET
+              + adoption.coordinate()
+              + " (catalogId="
+              + adoption.catalogId()
+              + ", sha256="
+              + adoption.sha256()
+              + ", mappings="
+              + adoption.mappingIds().size()
+              + ", unresolved="
+              + adoption.unresolvedMappingIds().size()
+              + ")");
+      for (final String diagnostic : adoption.diagnostics()) {
+        lines.add("    Diagnostic: " + diagnostic);
+      }
+    }
     return List.copyOf(lines);
   }
 

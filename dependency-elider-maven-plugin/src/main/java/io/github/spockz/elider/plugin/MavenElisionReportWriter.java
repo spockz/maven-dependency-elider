@@ -56,6 +56,9 @@ final class MavenElisionReportWriter {
       payload.set(
           "sourceObservations",
           MavenElisionReportGenericPayload.observations(snapshot.sourceObservations()));
+      payload.set(
+          "catalogAdoptions",
+          MavenElisionReportCatalogAdoptionPayload.write(snapshot.catalogAdoptions()));
       JSON.writeValue(temporary.toFile(), payload);
       try {
         Files.move(
@@ -100,12 +103,15 @@ final class MavenElisionReportWriter {
           MavenElisionReportGenericPayload.readFindings(payload.get("genericFindings"));
       final List<FindingSourceObservation> observations =
           MavenElisionReportGenericPayload.readObservations(payload.get("sourceObservations"));
+      final List<MavenVulnerabilityMappingCatalogResolver.Adoption> adoptions =
+          MavenElisionReportCatalogAdoptionPayload.read(payload.get("catalogAdoptions"));
       final com.fasterxml.jackson.databind.node.ObjectNode internal =
           ((com.fasterxml.jackson.databind.node.ObjectNode) payload).deepCopy();
-      internal.remove(List.of("genericFindings", "sourceObservations"));
+      internal.remove(List.of("genericFindings", "sourceObservations", "catalogAdoptions"));
       snapshot =
           JSON.treeToValue(internal, MavenElisionReportSnapshot.class)
-              .withGenericFindings(findings, observations);
+              .withGenericFindings(findings, observations)
+              .withCatalogAdoptions(adoptions);
     } catch (final IllegalArgumentException exception) {
       throw new IOException("Invalid elision report snapshot: " + absolute, exception);
     }

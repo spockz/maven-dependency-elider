@@ -146,7 +146,7 @@ record MavenAnalysisResolutionContext(
 
   @SuppressWarnings(
       "PMD.LawOfDemeter") // MavenSession exposes the Resolver session at this boundary.
-  private static RepositorySystemSession repositorySession(final MavenSession session) {
+  /* default */ static RepositorySystemSession repositorySession(final MavenSession session) {
     return session == null ? null : session.getRepositorySession();
   }
 
