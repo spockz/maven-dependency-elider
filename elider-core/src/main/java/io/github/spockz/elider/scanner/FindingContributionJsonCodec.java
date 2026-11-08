@@ -5,6 +5,7 @@ package io.github.spockz.elider.scanner;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.spockz.elider.model.UnresolvedContributionField;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;
 import java.io.IOException;
 import java.util.Arrays;
@@ -27,11 +28,13 @@ public final class FindingContributionJsonCodec {
           "classifier",
           "versionClaims",
           "codeGroup",
-          "prerequisiteGroup",
+          "prerequisiteGroups",
           "priority",
           "intent",
           "provenance",
-          "sourceProvenance");
+          "sourceProvenance",
+          "confidenceLevel",
+          "unresolvedFields");
   private static final Set<String> VERSION_FIELDS =
       Set.of("rawPredicate", "normalizedMavenRange", "status", "diagnostic");
   private static final Set<String> GROUP_FIELDS = Set.of("supplied", VALUE);
@@ -39,6 +42,7 @@ public final class FindingContributionJsonCodec {
   private static final Set<String> REFERENCE_FIELDS = Set.of(KIND, VALUE, "originalValues");
   private static final Set<String> PREREQUISITE_FIELDS =
       Set.of("requiresDependency", "requiresClass");
+  private static final Set<String> PREREQUISITE_GROUP_FIELDS = Set.of("operator", "members");
   private static final Set<String> PROVENANCE_FIELDS =
       Set.of("origin", "sourceRecordId", "sourceUrl", "sourceRecordSha256");
   private static final Set<String> CONTRIBUTION_TEXT_FIELDS =
@@ -92,7 +96,16 @@ public final class FindingContributionJsonCodec {
       FindingJsonFields.nullableText(version, "diagnostic");
     }
     validateClaimGroup(node.get("codeGroup"), true);
-    validateClaimGroup(node.get("prerequisiteGroup"), false);
+    validatePrerequisiteGroups(node.get("prerequisiteGroups"));
+    FindingJsonFields.nullableText(node, "confidenceLevel");
+    final JsonNode unresolvedFields =
+        FindingJsonFields.requiredArray(node.get("unresolvedFields"), "unresolvedFields");
+    for (final JsonNode field : unresolvedFields) {
+      if (!field.isTextual() || field.textValue().isBlank()) {
+        throw new IOException("unresolvedFields must contain non-blank text");
+      }
+      enumValue(field.textValue(), UnresolvedContributionField.class);
+    }
     for (final JsonNode provenance :
         FindingJsonFields.requiredArray(node.get("sourceProvenance"), "sourceProvenance")) {
       FindingJsonFields.requireShape(provenance, PROVENANCE_FIELDS, "source provenance");
@@ -100,6 +113,15 @@ public final class FindingContributionJsonCodec {
       FindingJsonFields.requiredText(provenance, "sourceRecordId");
       FindingJsonFields.nullableText(provenance, "sourceUrl");
       FindingJsonFields.nullableText(provenance, "sourceRecordSha256");
+    }
+  }
+
+  private static <T extends Enum<T>> T enumValue(final String value, final Class<T> type)
+      throws IOException {
+    try {
+      return Enum.valueOf(type, value);
+    } catch (final IllegalArgumentException failure) {
+      throw new IOException("Invalid " + type.getSimpleName() + ": " + value, failure);
     }
   }
 
@@ -126,6 +148,31 @@ public final class FindingContributionJsonCodec {
         FindingJsonFields.requireShape(claim, PREREQUISITE_FIELDS, "prerequisite claim");
         FindingJsonFields.requiredText(claim, "requiresDependency");
         FindingJsonFields.requiredText(claim, "requiresClass");
+      }
+    }
+  }
+
+  private static void validatePrerequisiteGroups(final JsonNode node) throws IOException {
+    FindingJsonFields.requireShape(node, GROUP_FIELDS, "prerequisite groups");
+    if (!node.get("supplied").isBoolean()) {
+      throw new IOException("prerequisite groups supplied must be a boolean");
+    }
+    final JsonNode groups = node.get(VALUE);
+    if (groups.isNull()) {
+      return;
+    }
+    for (final JsonNode group :
+        FindingJsonFields.requiredArray(groups, "prerequisite groups value")) {
+      FindingJsonFields.requireShape(group, PREREQUISITE_GROUP_FIELDS, "prerequisite group");
+      FindingJsonFields.requiredString(group, "operator");
+      final JsonNode members = FindingJsonFields.requiredArray(group.get("members"), "members");
+      if (members.isEmpty()) {
+        throw new IOException("prerequisite group members must not be empty");
+      }
+      for (final JsonNode member : members) {
+        FindingJsonFields.requireShape(member, PREREQUISITE_FIELDS, "prerequisite member");
+        FindingJsonFields.requiredText(member, "requiresDependency");
+        FindingJsonFields.requiredText(member, "requiresClass");
       }
     }
   }

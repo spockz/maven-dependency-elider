@@ -408,7 +408,7 @@ class GenericFindingCacheEnvelopeTest {
                 node -> node.putArray("originalValues").add(123)),
             new CacheMutation(
                 "numeric prerequisite class",
-                "/prerequisiteGroup/value/0",
+                "/prerequisiteGroups/value/0/members/0",
                 node -> node.put("requiresClass", 123)),
             new CacheMutation(
                 "ordinal version status", "/versionClaims/0", node -> node.put("status", 0)),

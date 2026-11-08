@@ -20,7 +20,7 @@ class GenericFindingPrerequisiteMergeTest {
   }
 
   @Test
-  void unionsAtomicPairsAndAppliesManualReplacementOnlyInsideItsScope() {
+  void preservesTypedGroupsAndProjectsCompatibleAlternativesInsideTheirScopes() {
     final PrerequisiteClaim first = new PrerequisiteClaim("org.example:first", "p.First");
     final PrerequisiteClaim second = new PrerequisiteClaim("org.example:second", "p.Second");
     final PrerequisiteClaim replacement =
@@ -35,18 +35,58 @@ class GenericFindingPrerequisiteMergeTest {
         GenericVulnerabilityFinding.merge(List.of(autoOne, autoTwo, manual));
     final GenericVulnerabilityFinding reordered =
         GenericVulnerabilityFinding.merge(List.of(manual, autoTwo, autoOne, autoOne));
+    final PrerequisiteGroup firstGroup =
+        new PrerequisiteGroup(PrerequisiteOperator.ANY_OF, Set.of(first));
+    final PrerequisiteGroup secondGroup =
+        new PrerequisiteGroup(PrerequisiteOperator.ANY_OF, Set.of(second));
 
     assertAll(
         () -> assertThat(finding.effectivePrerequisitesFor("1.5")).containsExactly(first),
         () -> assertThat(finding.effectivePrerequisitesFor("2.5")).containsExactly(replacement),
-        () -> assertThat(finding.effectivePrerequisitesFor("3.5")).containsExactly(first, second),
+        () ->
+            assertThat(finding.effectivePrerequisiteGroupsFor("3.5"))
+                .containsExactlyInAnyOrder(firstGroup, secondGroup),
+        () ->
+            assertThat(finding.prerequisiteGroupStatusFor("3.5"))
+                .isEqualTo(ClaimGroupStatus.DECLARED),
+        () ->
+            assertThat(finding.effectivePrerequisitesFor("3.5"))
+                .containsExactlyInAnyOrder(first, second),
         () -> assertThat(finding.effectivePrerequisitesFor("4.5")).containsExactly(second),
         () ->
-            assertThat(reordered.effectivePrerequisitesFor("3.5"))
-                .isEqualTo(finding.effectivePrerequisitesFor("3.5")),
+            assertThat(reordered.effectivePrerequisiteGroupsFor("3.5"))
+                .containsExactlyInAnyOrder(firstGroup, secondGroup),
         () ->
             assertThat(reordered.effectivePrerequisitesFor("2.5"))
                 .isEqualTo(finding.effectivePrerequisitesFor("2.5")));
+  }
+
+  @Test
+  void incompatibleSamePriorityOperatorsRemainUnresolvedAndTyped() {
+    final PrerequisiteClaim first = new PrerequisiteClaim("org.example:first", "p.First");
+    final PrerequisiteClaim second = new PrerequisiteClaim("org.example:second", "p.Second");
+    final VulnerabilityFindingContribution anyOf =
+        typedContribution(
+            "[1,2)",
+            new PrerequisiteGroup(PrerequisiteOperator.ANY_OF, Set.of(first)),
+            MergePriority.CATALOG,
+            "catalog-any");
+    final VulnerabilityFindingContribution allOf =
+        typedContribution(
+            "[1,2)",
+            new PrerequisiteGroup(PrerequisiteOperator.ALL_OF, Set.of(second)),
+            MergePriority.CATALOG,
+            "catalog-all");
+    final GenericVulnerabilityFinding finding =
+        GenericVulnerabilityFinding.merge(List.of(anyOf, allOf));
+
+    assertAll(
+        "operator conflict blocks proof without flattening the source groups",
+        () -> assertThat(finding.effectivePrerequisiteGroupsFor("1.5")).hasSize(2),
+        () ->
+            assertThat(finding.prerequisiteGroupStatusFor("1.5"))
+                .isEqualTo(ClaimGroupStatus.UNRESOLVED),
+        () -> assertThat(finding.effectivePrerequisitesFor("1.5")).isEmpty());
   }
 
   @Test
@@ -135,5 +175,27 @@ class GenericFindingPrerequisiteMergeTest {
         AssessmentIntent.AUTO_VERIFY,
         provenance,
         Set.of());
+  }
+
+  private static VulnerabilityFindingContribution typedContribution(
+      final String range,
+      final PrerequisiteGroup group,
+      final MergePriority priority,
+      final String provenance) {
+    return new VulnerabilityFindingContribution(
+        "CVE-2026-10000",
+        Set.of(),
+        "org.example",
+        "library",
+        "jar",
+        "",
+        List.of(VersionCoverageClaim.affected(range)),
+        FieldValue.supplied(Set.of(CodeClaim.declared(CodeReference.className("p.Code")))),
+        FieldValue.supplied(Set.of(group)),
+        priority,
+        AssessmentIntent.AUTO_VERIFY,
+        provenance,
+        Set.of(),
+        ConfidenceLevel.HIGH);
   }
 }
