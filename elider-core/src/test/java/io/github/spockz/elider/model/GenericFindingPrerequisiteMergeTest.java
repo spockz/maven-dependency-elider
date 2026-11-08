@@ -105,8 +105,9 @@ class GenericFindingPrerequisiteMergeTest {
 
     assertAll(
         "disjoint operator groups remain separate obligations rather than an operator conflict",
-        () -> assertThat(finding.effectivePrerequisiteGroupsFor("1.5"))
-            .containsExactlyInAnyOrder(anyOf, allOf),
+        () ->
+            assertThat(finding.effectivePrerequisiteGroupsFor("1.5"))
+                .containsExactlyInAnyOrder(anyOf, allOf),
         () ->
             assertThat(finding.prerequisiteGroupStatusFor("1.5"))
                 .isEqualTo(ClaimGroupStatus.DECLARED),

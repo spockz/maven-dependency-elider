@@ -207,9 +207,10 @@ class GenericFindingProofTest {
                   jar("dependency-provider.jar"));
           assertThat(
                   PreconditionProof.prove(
-                      finding,
-                      COMPONENT,
-                      PreconditionClassInventory.complete(List.of(affected, coordinateProvider)))
+                          finding,
+                          COMPONENT,
+                          PreconditionClassInventory.complete(
+                              List.of(affected, coordinateProvider)))
                       .requiredPrerequisites())
               .containsExactly(first, second);
         },

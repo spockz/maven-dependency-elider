@@ -320,12 +320,12 @@ final class ADR0008MavenPreconditionAssessmentTest {
             List.of(mapping(affected, EXACT_VERSION_RANGE, Set.of(), ConfidenceLevel.HIGH)));
 
     assertAll(
-        "the exact prerequisite class is absent even though another version of its artifact remains",
+        "the exact prerequisite class is absent even though another version of its artifact"
+            + " remains",
         () -> assertThat(result.attestations()).hasSize(1),
         () ->
             assertThat(result.inactiveDueToMissingPrerequisites())
-                .containsExactly(
-                    new MavenVulnerabilityAssessment.Finding(CVE_ID, affected)));
+                .containsExactly(new MavenVulnerabilityAssessment.Finding(CVE_ID, affected)));
   }
 
   @Test

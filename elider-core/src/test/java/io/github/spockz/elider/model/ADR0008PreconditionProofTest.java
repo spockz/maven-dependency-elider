@@ -187,9 +187,13 @@ final class ADR0008PreconditionProofTest {
             ArtifactCoordinate.of("org.other", "shaded-provider", "1.0"),
             archive(
                 "first-class-provider.jar",
-                Map.of("org/example/Prerequisite.class", classBytes("org/example/Prerequisite"),
-                    "org/example/PresentOne.class", classBytes("org/example/PresentOne"),
-                    "org/example/PresentTwo.class", classBytes("org/example/PresentTwo"))));
+                Map.of(
+                    "org/example/Prerequisite.class",
+                    classBytes("org/example/Prerequisite"),
+                    "org/example/PresentOne.class",
+                    classBytes("org/example/PresentOne"),
+                    "org/example/PresentTwo.class",
+                    classBytes("org/example/PresentTwo"))));
     final PreconditionClassInventory inventory =
         PreconditionClassInventory.complete(List.of(affected, firstClassProvider));
     final PreconditionClassInventory allAbsentInventory =
@@ -221,24 +225,24 @@ final class ADR0008PreconditionProofTest {
                     PrerequisiteOperator.ALL_OF,
                     Set.of(
                         new PrerequisiteClaim("org.example:present-one", "org.example.PresentOne"),
-                        new PrerequisiteClaim("org.example:present-two", "org.example.PresentTwo")))));
+                        new PrerequisiteClaim(
+                            "org.example:present-two", "org.example.PresentTwo")))));
     final GenericVulnerabilityFinding emptyGroups = findingWithGroups(List.of());
     final GenericVulnerabilityFinding unresolvedGroups =
-        findingWithGroups(List.of(anyOf), AssessmentIntent.AUTO_VERIFY,
+        findingWithGroups(
+            List.of(anyOf),
+            AssessmentIntent.AUTO_VERIFY,
             Set.of(UnresolvedContributionField.PREREQUISITES));
     final GenericVulnerabilityFinding conflictingGroups =
         GenericVulnerabilityFinding.merge(
             List.of(
-                anyOfFinding.contributions().getFirst(),
-                allOfFinding.contributions().getFirst()));
+                anyOfFinding.contributions().getFirst(), allOfFinding.contributions().getFirst()));
     final GenericVulnerabilityFinding reviewOnlyGroups =
         findingWithGroups(List.of(anyOf), AssessmentIntent.REVIEW_ONLY, Set.of());
 
     assertAll(
         "operator proof uses exact class presence from any physical provider",
-        () ->
-            assertProofRejected(
-                anyOfFinding, inventory, "prerequisite group remains present"),
+        () -> assertProofRejected(anyOfFinding, inventory, "prerequisite group remains present"),
         () ->
             assertThat(allOfFinding.prerequisiteGroupStatusFor("1.0"))
                 .isEqualTo(ClaimGroupStatus.DECLARED),
@@ -255,8 +259,7 @@ final class ADR0008PreconditionProofTest {
                                     .containsExactly(allOf))),
         () ->
             assertThat(
-                    PreconditionProof.prove(
-                            anyOfFinding, AFFECTED_COORDINATE, allAbsentInventory)
+                    PreconditionProof.prove(anyOfFinding, AFFECTED_COORDINATE, allAbsentInventory)
                         .requiredPrerequisites())
                 .containsExactlyInAnyOrder(first, second),
         () ->
@@ -267,22 +270,14 @@ final class ADR0008PreconditionProofTest {
                 .containsExactlyInAnyOrder(anyOf, disjointAllOf),
         () ->
             assertProofRejected(
-                disjointOperatorGroups,
-                inventory,
-                "prerequisite group remains present"),
+                disjointOperatorGroups, inventory, "prerequisite group remains present"),
         () ->
             assertThat(
                     PreconditionProof.prove(
-                            disjointOperatorGroups,
-                            AFFECTED_COORDINATE,
-                            allAbsentInventory)
+                            disjointOperatorGroups, AFFECTED_COORDINATE, allAbsentInventory)
                         .requiredPrerequisiteGroups())
                 .containsExactlyInAnyOrder(anyOf, disjointAllOf),
-        () ->
-            assertProofRejected(
-                partiallyDisarmedGroups,
-                inventory,
-                "prerequisite"),
+        () -> assertProofRejected(partiallyDisarmedGroups, inventory, "prerequisite"),
         () -> assertProofRejected(emptyGroups, inventory, "declared prerequisite pairs"),
         () -> assertProofRejected(unresolvedGroups, inventory, "declared prerequisite pairs"),
         () -> assertProofRejected(conflictingGroups, inventory, "declared prerequisite pairs"),

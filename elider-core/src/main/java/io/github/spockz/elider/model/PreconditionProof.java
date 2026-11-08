@@ -29,7 +29,9 @@ import org.objectweb.asm.ClassReader;
   "PMD.GodClass",
   "PMD.CyclomaticComplexity",
   "PMD.TooManyMethods",
-  "PMD.LawOfDemeter"
+  "PMD.LawOfDemeter",
+  // This boundary joins verified bytes with proof and explanation.
+  "PMD.CouplingBetweenObjects"
 })
 public final class PreconditionProof {
   /** Suffix recognized for raw class-file providers. */
@@ -71,7 +73,8 @@ public final class PreconditionProof {
       final ArtifactCoordinate candidate,
       final PreconditionClassInventory inventory)
       throws IOException {
-    return prove(finding, candidate, inspect(inventory));
+    return proveWithAttribution(finding, candidate, inspectPair(inventory, inventory))
+        .attestation();
   }
 
   /** Checks every effective prerequisite using a previously verified inventory. */
@@ -80,24 +83,83 @@ public final class PreconditionProof {
       final ArtifactCoordinate candidate,
       final InventoryInspection inspection)
       throws IOException {
+    return proveWithAttribution(finding, candidate, new InventoryPair(inspection, inspection, null))
+        .attestation();
+  }
+
+  /** Proves absence in final bytes and attributes it against baseline providers. */
+  public static PrerequisiteProofResult proveWithAttribution(
+      final GenericVulnerabilityFinding finding,
+      final ArtifactCoordinate candidate,
+      final PreconditionClassInventory baseline,
+      final PreconditionClassInventory actualFinal)
+      throws IOException {
+    return proveWithAttribution(finding, candidate, inspectPair(baseline, actualFinal));
+  }
+
+  /** Reuses one immutable inspection pair across findings. */
+  public static PrerequisiteProofResult proveWithAttribution(
+      final GenericVulnerabilityFinding finding,
+      final ArtifactCoordinate candidate,
+      final InventoryPair inventoryPair)
+      throws IOException {
+    Objects.requireNonNull(inventoryPair, "inventoryPair");
+    return evaluatePrerequisites(
+        finding,
+        candidate,
+        inventoryPair.baselineInspection,
+        inventoryPair.actualFinalInspection,
+        inventoryPair.baselineDetail());
+  }
+
+  /** Inspects final bytes and captures baseline evidence when complete. */
+  public static InventoryPair inspectPair(
+      final PreconditionClassInventory baseline, final PreconditionClassInventory actualFinal)
+      throws IOException {
+    Objects.requireNonNull(baseline, "baseline");
+    final InventoryInspection finalInspection = inspect(actualFinal);
+    if (baseline.status() != PreconditionClassInventory.Status.COMPLETE) {
+      return new InventoryPair(null, finalInspection, baseline.detail());
+    }
+    if (baseline.fingerprint().equals(actualFinal.fingerprint())) {
+      return new InventoryPair(finalInspection, finalInspection, null);
+    }
+    try {
+      return new InventoryPair(inspect(baseline), finalInspection, null);
+    } catch (final IOException | IllegalArgumentException exception) {
+      return new InventoryPair(null, finalInspection, exception.getMessage());
+    }
+  }
+
+  private static PrerequisiteProofResult evaluatePrerequisites(
+      final GenericVulnerabilityFinding finding,
+      final ArtifactCoordinate candidate,
+      final InventoryInspection baselineInspection,
+      final InventoryInspection finalInspection,
+      final String baselineDetail)
+      throws IOException {
     FindingVerification.requireEligible(finding, candidate);
     if (finding.prerequisiteGroupStatusFor(candidate.version()) != ClaimGroupStatus.DECLARED) {
       throw new IllegalArgumentException("Precondition proof requires declared prerequisite pairs");
     }
-    return prove(
+    return evaluatePrerequisites(
         candidate,
         Set.copyOf(finding.effectivePrerequisiteGroupsFor(candidate.version())),
-        inspection,
-        finding);
+        baselineInspection,
+        finalInspection,
+        finding,
+        baselineDetail);
   }
 
-  private static VexAttestation prove(
+  private static PrerequisiteProofResult evaluatePrerequisites(
       final ArtifactCoordinate candidate,
       final Set<PrerequisiteGroup> groups,
-      final InventoryInspection inspection,
-      final GenericVulnerabilityFinding finding)
+      final InventoryInspection baselineInspection,
+      final InventoryInspection finalInspection,
+      final GenericVulnerabilityFinding finding,
+      final String baselineDetail)
       throws IOException {
-    Objects.requireNonNull(inspection, "inspection");
+    Objects.requireNonNull(finalInspection, "finalInspection");
     if (candidate.version() == null || candidate.version().isBlank()) {
       throw new IllegalArgumentException(
           "Precondition proof requires an exact affected Maven version");
@@ -105,11 +167,10 @@ public final class PreconditionProof {
     if (groups.isEmpty()) {
       throw new IllegalArgumentException("Precondition proof requires prerequisite declarations");
     }
-    final Provider affected = findAffectedProvider(candidate, inspection.inventory.providers());
-    final Set<PrerequisiteClaim> prerequisites = new TreeSet<>();
+    final Provider affected =
+        findAffectedProvider(candidate, finalInspection.inventory.providers());
     for (final PrerequisiteGroup group : new TreeSet<>(groups)) {
-      final List<PrerequisiteState> states = prerequisiteStates(group, inspection);
-      prerequisites.addAll(group.members());
+      final List<PrerequisiteState> states = prerequisiteStates(group, finalInspection);
       if (!isDisarmed(group.operator(), states)) {
         throw new IllegalArgumentException(
             "Required class is present in an inventoried provider, so prerequisite group remains "
@@ -119,20 +180,24 @@ public final class PreconditionProof {
     }
     final String impactDetail =
         "Required prerequisite groups "
-            + new TreeSet<>(groups).stream()
-                .sorted()
-                .map(PreconditionProof::describeGroup)
-                .collect(java.util.stream.Collectors.joining("; "))
+            + new TreeSet<>(groups)
+                .stream()
+                    .sorted()
+                    .map(PreconditionProof::describeGroup)
+                    .collect(java.util.stream.Collectors.joining("; "))
             + " are absent from the complete declared Maven inventory. The proof does not cover "
             + "providers introduced outside that inventory.";
-    return VexAttestation.genericPrecondition(
-        finding,
-        affected.coordinate(),
-        impactDetail,
-        Set.copyOf(groups),
-        affected.path(),
-        affected.sha256(),
-        inspection.inventory.fingerprint());
+    final VexAttestation attestation =
+        VexAttestation.genericPrecondition(
+            finding,
+            affected.coordinate(),
+            impactDetail,
+            Set.copyOf(groups),
+            affected.path(),
+            affected.sha256(),
+            finalInspection.inventory.fingerprint());
+    return PrerequisiteProviderAttributor.result(
+        attestation, groups, baselineInspection, finalInspection, baselineDetail);
   }
 
   private static List<PrerequisiteState> prerequisiteStates(
@@ -202,13 +267,49 @@ public final class PreconditionProof {
         final Map<String, List<Provider>> providersByClass) {
       this.inventory = inventory;
       final Map<String, List<Provider>> copy = new TreeMap<>();
-      providersByClass.forEach((className, providers) -> copy.put(className, List.copyOf(providers)));
+      providersByClass.forEach(
+          (className, providers) -> copy.put(className, List.copyOf(providers)));
       this.providersByClass = Map.copyOf(copy);
     }
 
     /** Returns every physically inspected provider containing this exact class. */
     public List<Provider> providersForClass(final String className) {
-      return providersByClass.getOrDefault(Objects.requireNonNull(className, "className"), List.of());
+      return providersByClass.getOrDefault(
+          Objects.requireNonNull(className, "className"), List.of());
+    }
+
+    /** Returns the immutable providers whose bytes were checked for this inspection. */
+    @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+    List<Provider> providers() {
+      return inventory.providers();
+    }
+  }
+
+  /** Private-construction pair of verified provider observations. */
+  @SuppressWarnings("PMD.CommentRequired")
+  public static final class InventoryPair {
+    private final InventoryInspection baselineInspection;
+    private final InventoryInspection actualFinalInspection;
+    private final String baselineRefusal;
+
+    private InventoryPair(
+        final InventoryInspection baselineInspection,
+        final InventoryInspection actualFinalInspection,
+        final String baselineDetail) {
+      this.baselineInspection = baselineInspection;
+      this.actualFinalInspection =
+          Objects.requireNonNull(actualFinalInspection, "actualFinalInspection");
+      this.baselineRefusal = baselineDetail;
+    }
+
+    /** Returns why complete baseline attribution was unavailable, or {@code null}. */
+    public String baselineDetail() {
+      return baselineRefusal;
+    }
+
+    /** Returns the digest-bound actual final inventory fingerprint used by proof. */
+    public String actualFinalFingerprint() {
+      return actualFinalInspection.inventory.fingerprint();
     }
   }
 
