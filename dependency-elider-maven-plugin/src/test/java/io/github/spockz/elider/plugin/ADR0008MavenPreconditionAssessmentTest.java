@@ -13,17 +13,24 @@ import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.ClaimGroupStatus;
 import io.github.spockz.elider.model.ConfidenceLevel;
 import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.model.EvidenceOrigin;
+import io.github.spockz.elider.model.FieldValue;
+import io.github.spockz.elider.model.MergePriority;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
 import io.github.spockz.elider.model.PreconditionClassInventory;
 import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
 import io.github.spockz.elider.model.PreconditionProof;
+import io.github.spockz.elider.model.PrerequisiteClaim;
+import io.github.spockz.elider.model.VersionApplicability;
+import io.github.spockz.elider.model.VersionCoverageClaim;
 import io.github.spockz.elider.model.VexAttestation;
+import io.github.spockz.elider.model.VulnerabilityFindingContribution;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
 import io.github.spockz.elider.scanner.AdvisoryEvidenceWriter;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
@@ -157,7 +164,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
                     "summary retains the affected finding and its prerequisite proof outcome",
                     () ->
                         assertThat(messages)
-                            .anyMatch(line -> "Vulnerability findings: 1".equals(line)),
+                            .anyMatch(line -> "Vulnerability findings: 2".equals(line)),
                     () ->
                         assertThat(messages)
                             .anyMatch(
@@ -192,6 +199,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final MavenElisionReportSnapshot report = reportSnapshot(analysis, result);
     assertThat(report.schemaVersion()).isEqualTo(MavenElisionReportSnapshot.SCHEMA_VERSION);
     assertThat(report.genericFindings())
+        .filteredOn(finding -> finding.candidate().equals(affectedOne))
         .singleElement()
         .satisfies(
             finding ->
@@ -202,12 +210,93 @@ final class ADR0008MavenPreconditionAssessmentTest {
                     () ->
                         assertThat(finding.effectivePrerequisites())
                             .containsExactly(
-                                new io.github.spockz.elider.model.PrerequisiteClaim(
-                                    REQUIRED_DEPENDENCY, REQUIRED_CLASS))));
+                                new PrerequisiteClaim(REQUIRED_DEPENDENCY, REQUIRED_CLASS))));
+    assertThat(report.genericFindings())
+        .filteredOn(finding -> finding.candidate().equals(affectedTwo))
+        .singleElement()
+        .satisfies(
+            finding ->
+                assertThat(finding.applicability())
+                    .isEqualTo(VersionApplicability.NO_AFFECTED_ASSERTION));
     final Path reportPath = temporaryDirectory.resolve("prerequisite-assessment-report.json");
     MavenElisionReportWriter.write(reportPath, report);
     final MavenElisionReportSnapshot replayed = MavenElisionReportWriter.read(reportPath);
     assertThat(replayed.genericFindings()).isEqualTo(report.genericFindings());
+  }
+
+  @Test
+  void evidenceScopeAloneCannotUseOtherwiseProofEligibleInputsToEmitVex() throws IOException {
+    final ArtifactCoordinate candidate =
+        ArtifactCoordinate.of(GROUP_ID, AFFECTED_ARTIFACT_ID, AFFECTED_VERSION);
+    final Path candidateOriginal = writeJar("scope-proof-original.jar", "fixture/Present.class");
+    final Path candidateTrimmed = writeJar("scope-proof-trimmed.jar");
+    final ArtifactTrimRecord trim = trimRecord(candidate, candidateOriginal, candidateTrimmed);
+    final MavenPreconditionInventory.Snapshot inventory =
+        completeInventory(Provider.dependencyArchive(candidate, candidateOriginal));
+    final ElisionAnalysisModel.Analysis analysis = analysis(List.of(candidate), List.of(trim));
+    final PrerequisiteClaim required = new PrerequisiteClaim(REQUIRED_DEPENDENCY, REQUIRED_CLASS);
+    final VulnerabilityFindingContribution affected =
+        assessmentContribution(
+            candidate, VersionCoverageClaim.affected(EXACT_VERSION_RANGE), required);
+    final VulnerabilityFindingContribution scopeOnly =
+        assessmentContribution(
+            candidate, VersionCoverageClaim.evidenceScope(EXACT_VERSION_RANGE), required);
+    final VulnerabilityFindingContribution affectedAndUnresolved =
+        new VulnerabilityFindingContribution(
+            CVE_ID,
+            Set.of(),
+            candidate.groupId(),
+            candidate.artifactId(),
+            candidate.type(),
+            candidate.classifier(),
+            List.of(
+                VersionCoverageClaim.affected(EXACT_VERSION_RANGE),
+                VersionCoverageClaim.unresolvedRange(EXACT_VERSION_RANGE, "source unresolved")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of(required)),
+            MergePriority.MANUAL,
+            AssessmentIntent.AUTO_VERIFY,
+            "test-mapping",
+            Set.of());
+    final VulnerabilityCacheManager.CacheConfig cache = emptyCache("scope-proof-cache");
+    final MavenVulnerabilityAssessment assessment =
+        new MavenVulnerabilityAssessment(new RecordingMavenLog());
+
+    final MavenVulnerabilityAssessment.Result affectedResult =
+        assessment.assess(
+            cache, new ConfiguredVulnerabilityMappings(List.of(affected)), analysis, inventory);
+    final MavenVulnerabilityAssessment.Result scopeOnlyResult =
+        assessment.assess(
+            cache, new ConfiguredVulnerabilityMappings(List.of(scopeOnly)), analysis, inventory);
+    final MavenVulnerabilityAssessment.Result unresolvedResult =
+        assessment.assess(
+            cache,
+            new ConfiguredVulnerabilityMappings(List.of(affectedAndUnresolved)),
+            analysis,
+            inventory);
+
+    assertAll(
+        "scope-only metadata cannot claim the same proof as an affected assertion",
+        () -> assertThat(affectedResult.attestations()).hasSize(1),
+        () -> assertThat(scopeOnlyResult.attestations()).isEmpty(),
+        () -> assertThat(unresolvedResult.attestations()).isEmpty(),
+        () ->
+            assertThat(unresolvedResult.genericFindings())
+                .singleElement()
+                .satisfies(
+                    finding ->
+                        assertThat(finding.prerequisiteGroupStatus())
+                            .isEqualTo(ClaimGroupStatus.UNRESOLVED)),
+        () ->
+            assertThat(scopeOnlyResult.genericFindings())
+                .singleElement()
+                .satisfies(
+                    finding ->
+                        assertAll(
+                            () ->
+                                assertThat(finding.applicability())
+                                    .isEqualTo(VersionApplicability.NO_AFFECTED_ASSERTION),
+                            () -> assertThat(finding.effectivePrerequisites()).isEmpty())));
   }
 
   @Test
@@ -708,8 +797,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
                     () ->
                         assertThat(finding.effectivePrerequisites())
                             .containsExactly(
-                                new io.github.spockz.elider.model.PrerequisiteClaim(
-                                    REQUIRED_DEPENDENCY, REQUIRED_CLASS))));
+                                new PrerequisiteClaim(REQUIRED_DEPENDENCY, REQUIRED_CLASS))));
     final Path reportPath = temporaryDirectory.resolve("precondition-replay-report.json");
     MavenElisionReportWriter.write(reportPath, report);
     final MavenElisionReportSnapshot replayed = MavenElisionReportWriter.read(reportPath);
@@ -752,6 +840,26 @@ final class ADR0008MavenPreconditionAssessmentTest {
                 })
             .toList();
     return ConfiguredVulnerabilityMappings.fromPom(configs);
+  }
+
+  private static VulnerabilityFindingContribution assessmentContribution(
+      final ArtifactCoordinate candidate,
+      final VersionCoverageClaim coverage,
+      final PrerequisiteClaim prerequisite) {
+    return new VulnerabilityFindingContribution(
+        CVE_ID,
+        Set.of(),
+        candidate.groupId(),
+        candidate.artifactId(),
+        candidate.type(),
+        candidate.classifier(),
+        List.of(coverage),
+        FieldValue.omitted(),
+        FieldValue.supplied(Set.of(prerequisite)),
+        MergePriority.MANUAL,
+        AssessmentIntent.AUTO_VERIFY,
+        "test-mapping",
+        Set.of());
   }
 
   private CacheConfig emptyCache(final String directory) {

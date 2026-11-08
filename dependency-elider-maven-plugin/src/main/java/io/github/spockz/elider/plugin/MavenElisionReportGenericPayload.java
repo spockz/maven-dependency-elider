@@ -191,12 +191,17 @@ final class MavenElisionReportGenericPayload {
         coverage.add(claim);
       }
       final String intent = nullable(row, "intent");
+      final VersionApplicability applicability =
+          enumeration(row, "applicability", VersionApplicability.class);
+      if (applicability == VersionApplicability.EVIDENCE_SCOPE) {
+        throw new IOException("Report applicability must be an assessment result");
+      }
       final GenericFindingAssessment finding =
           new GenericFindingAssessment(
               text(row, "vulnerabilityId"),
               strings(row.get("aliases"), "aliases"),
               coordinate,
-              enumeration(row, "applicability", VersionApplicability.class),
+              applicability,
               intent == null
                   ? Optional.empty()
                   : Optional.of(enumName(intent, AssessmentIntent.class)),

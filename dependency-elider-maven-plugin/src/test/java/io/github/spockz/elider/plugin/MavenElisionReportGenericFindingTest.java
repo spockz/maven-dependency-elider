@@ -670,6 +670,16 @@ class MavenElisionReportGenericFindingTest {
     unresolvedRow.put("outcome", "PREREQUISITES_ABSENT");
     unresolvedRow.put("intent", "AUTO_VERIFY");
     unresolvedRow.put("applicability", "UNRESOLVED");
+    final ObjectNode unresolvedGroupProof = original.deepCopy();
+    final ObjectNode unresolvedGroupRow =
+        (ObjectNode) unresolvedGroupProof.withArray("genericFindings").get(0);
+    unresolvedGroupRow.put("outcome", "PREREQUISITES_ABSENT");
+    unresolvedGroupRow.put("intent", "AUTO_VERIFY");
+    unresolvedGroupRow.put("applicability", "AFFECTED");
+    unresolvedGroupRow.put("prerequisiteGroupStatus", "UNRESOLVED");
+    final ObjectNode evidenceScopeAsResult = original.deepCopy();
+    ((ObjectNode) evidenceScopeAsResult.withArray("genericFindings").get(0))
+        .put("applicability", "EVIDENCE_SCOPE");
     final ObjectNode wrongType = original.deepCopy();
     ((ObjectNode) wrongType.withArray("genericFindings").get(0)).put("aliases", false);
     assertAll(
@@ -684,7 +694,9 @@ class MavenElisionReportGenericFindingTest {
                 forgedCode,
                 forgedPrerequisite,
                 missingCode,
-                unresolvedProof)
+                unresolvedProof,
+                unresolvedGroupProof,
+                evidenceScopeAsResult)
             .stream()
             .map(
                 invalid ->
@@ -694,6 +706,72 @@ class MavenElisionReportGenericFindingTest {
                           assertThatThrownBy(() -> MavenElisionReportWriter.read(output))
                               .isInstanceOf(IOException.class);
                         }));
+  }
+
+  @Test
+  void roundTripsNoAffectedAssertionAsAnAssessmentResult() throws IOException {
+    final Path output = temp.resolve("no-affected-assertion.json");
+    MavenElisionReportWriter.write(output, snapshot(finding(), List.of()));
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode report = (ObjectNode) mapper.readTree(output.toFile());
+    final ObjectNode finding = (ObjectNode) report.withArray("genericFindings").get(0);
+    finding.put("applicability", "NO_AFFECTED_ASSERTION");
+    finding.put("intent", (String) null);
+    finding.put("codeGroupStatus", "NOT_APPLICABLE");
+    finding.put("prerequisiteGroupStatus", "NOT_APPLICABLE");
+    finding.put("outcome", "NO_PROOF");
+    finding.put("detail", "No independent affected assertion");
+    mapper.writeValue(output.toFile(), report);
+
+    assertThat(MavenElisionReportWriter.read(output).genericFindings())
+        .singleElement()
+        .satisfies(
+            loaded ->
+                assertThat(loaded.applicability())
+                    .isEqualTo(VersionApplicability.NO_AFFECTED_ASSERTION));
+  }
+
+  @Test
+  void replaysUnresolvedManualDeclarationsWithoutPromotingThemToProof() throws IOException {
+    final GenericFindingAssessment original = finding();
+    final VersionCoverageClaim unresolved =
+        VersionCoverageClaim.unresolvedRange("[1.4,1.6)", "manual scope uncertain");
+    final VulnerabilityFindingContribution contribution =
+        original.contributions().getFirst().withVersionClaim(unresolved);
+    final GenericFindingAssessment unresolvedManual =
+        new GenericFindingAssessment(
+            original.vulnerabilityId(),
+            original.aliases(),
+            original.candidate(),
+            VersionApplicability.AFFECTED,
+            Optional.of(AssessmentIntent.AUTO_VERIFY),
+            ClaimGroupStatus.UNRESOLVED,
+            original.codeAttribution(),
+            original.heuristicLeads(),
+            ClaimGroupStatus.UNRESOLVED,
+            original.effectivePrerequisites(),
+            List.of(unresolved),
+            original.overriddenFields(),
+            original.enrichedFields(),
+            GenericFindingAssessment.Outcome.UNRESOLVED,
+            "Selected manual declarations have unresolved coverage",
+            original.inventoryDisposition(),
+            List.of(contribution));
+    final Path output = temp.resolve("unresolved-manual-declarations.json");
+    MavenElisionReportWriter.write(output, snapshot(unresolvedManual, List.of()));
+    final GenericFindingAssessment replayed =
+        MavenElisionReportWriter.read(output).genericFindings().getFirst();
+
+    assertAll(
+        "report replay preserves declarations and the refusal reason without claiming proof",
+        () -> assertThat(replayed.codeGroupStatus()).isEqualTo(ClaimGroupStatus.UNRESOLVED),
+        () -> assertThat(replayed.prerequisiteGroupStatus()).isEqualTo(ClaimGroupStatus.UNRESOLVED),
+        () ->
+            assertThat(replayed.effectivePrerequisites())
+                .isEqualTo(original.effectivePrerequisites()),
+        () -> assertThat(replayed.unresolvedVersionClaims()).containsExactly(unresolved),
+        () ->
+            assertThat(replayed.outcome()).isEqualTo(GenericFindingAssessment.Outcome.UNRESOLVED));
   }
 
   private GenericFindingAssessment finding() {

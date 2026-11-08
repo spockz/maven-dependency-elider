@@ -323,7 +323,7 @@ class GenericFindingMergeTest {
   }
 
   @Test
-  void unresolvedManualScopeBlocksAutomaticCodeAndIntentFallback() {
+  void unresolvedManualOmittedCodeGroupAllowsAutomaticEnrichment() {
     final GenericVulnerabilityFinding finding =
         GenericVulnerabilityFinding.merge(
             List.of(
@@ -350,11 +350,13 @@ class GenericFindingMergeTest {
                             "manual-version-predicate", "manual range is unsupported"))));
 
     assertAll(
-        "unknown manual scope cannot authorize fallback to automatic proof intent",
+        "an omitted manual code group remains eligible for automatic enrichment",
         () -> assertThat(finding.applicability("1.5")).isEqualTo(VersionApplicability.AFFECTED),
-        () -> assertThat(finding.codeGroupStatusFor("1.5")).isEqualTo(ClaimGroupStatus.UNRESOLVED),
-        () -> assertThat(finding.effectiveCodeClaimsFor("1.5")).isEmpty(),
-        () -> assertThat(finding.intentFor("1.5")).isEmpty());
+        () -> assertThat(finding.codeGroupStatusFor("1.5")).isEqualTo(ClaimGroupStatus.DECLARED),
+        () ->
+            assertThat(finding.codeFor("1.5"))
+                .containsExactly(CodeReference.className("org.example.Automatic")),
+        () -> assertThat(finding.intentFor("1.5")).contains(AssessmentIntent.REVIEW_ONLY));
   }
 
   @Test

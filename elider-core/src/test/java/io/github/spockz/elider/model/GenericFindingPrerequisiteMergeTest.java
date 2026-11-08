@@ -76,7 +76,7 @@ class GenericFindingPrerequisiteMergeTest {
   }
 
   @Test
-  void unknownManualScopeCannotFallBackToAutomaticPrerequisiteProof() {
+  void unknownManualOmittedPrerequisiteCanBeEnrichedAutomatically() {
     final VulnerabilityFindingContribution automatic =
         contribution(
             "[1,4)",
@@ -93,8 +93,10 @@ class GenericFindingPrerequisiteMergeTest {
     assertAll(
         () ->
             assertThat(finding.prerequisiteGroupStatusFor("3"))
-                .isEqualTo(ClaimGroupStatus.UNRESOLVED),
-        () -> assertThat(finding.effectivePrerequisitesFor("3")).isEmpty());
+                .isEqualTo(ClaimGroupStatus.DECLARED),
+        () ->
+            assertThat(finding.effectivePrerequisitesFor("3"))
+                .containsExactly(new PrerequisiteClaim("org.example:first", "p.First")));
   }
 
   @Test

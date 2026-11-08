@@ -17,6 +17,9 @@ public record VersionCoverageClaim(
     if (status == null) {
       throw new IllegalArgumentException("status must not be null");
     }
+    if (status == VersionApplicability.NO_AFFECTED_ASSERTION) {
+      throw new IllegalArgumentException("NO_AFFECTED_ASSERTION is a query result, not a claim");
+    }
     if (status == VersionApplicability.UNRESOLVED) {
       requireText(diagnostic, "diagnostic for unresolved predicate");
     } else if (normalizedMavenRange == null) {
@@ -43,6 +46,12 @@ public record VersionCoverageClaim(
   public static VersionCoverageClaim unaffected(final String mavenRange) {
     return new VersionCoverageClaim(
         mavenRange, mavenRange, VersionApplicability.NOT_AFFECTED, null);
+  }
+
+  /** Creates supplemental metadata scope without asserting affectedness. */
+  public static VersionCoverageClaim evidenceScope(final String mavenRange) {
+    return new VersionCoverageClaim(
+        mavenRange, mavenRange, VersionApplicability.EVIDENCE_SCOPE, null);
   }
 
   /** Creates an affected predicate that cannot be evaluated. */

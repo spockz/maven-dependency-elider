@@ -30,4 +30,14 @@ class VersionCoverageClaimTest {
                 new VersionCoverageClaim("raw", "[1.0,2.0)", VersionApplicability.UNRESOLVED, null))
         .isInstanceOf(IllegalArgumentException.class);
   }
+
+  @Test
+  void queryOnlyApplicabilityStatusCannotBePersisted() {
+    assertThatThrownBy(
+            () ->
+                new VersionCoverageClaim(
+                    "query result", "[1.0,2.0)", VersionApplicability.NO_AFFECTED_ASSERTION, null))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("query result");
+  }
 }

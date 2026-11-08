@@ -6,5 +6,7 @@ package io.github.spockz.elider.model;
 public enum VersionApplicability {
   AFFECTED,
   NOT_AFFECTED,
-  UNRESOLVED
+  UNRESOLVED,
+  EVIDENCE_SCOPE,
+  NO_AFFECTED_ASSERTION
 }

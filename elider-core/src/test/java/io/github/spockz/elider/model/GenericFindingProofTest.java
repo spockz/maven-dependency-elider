@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
@@ -331,117 +332,192 @@ class GenericFindingProofTest {
                 .isInstanceOf(IllegalArgumentException.class));
   }
 
-  @Test
-  void unknownGroupsAreScopedAndIndependentlyOverridden() throws IOException {
-    final ArtifactTrimRecord record =
-        record(jar("group-original.jar", "p/Vulnerable"), jar("group-trimmed.jar"));
-    final OmittedCodeProof.ArchiveInspection archive = OmittedCodeProof.inspect(record);
-    final PreconditionProof.InventoryInspection inventory =
-        PreconditionProof.inspect(
-            PreconditionClassInventory.complete(
-                List.of(Provider.dependencyArchive(COMPONENT, record.originalPath()))));
-    final Set<CodeClaim> code = Set.of(CodeClaim.declared(CodeReference.className("p.Vulnerable")));
-    final Set<PrerequisiteClaim> pairs =
-        Set.of(new PrerequisiteClaim("org.example:missing", "p.Missing"));
-    final VulnerabilityFindingContribution known =
-        finding(code, pairs, AssessmentIntent.AUTO_VERIFY, "known").contributions().getFirst();
-    final VersionCoverageClaim unknown = VersionCoverageClaim.unresolvedRange("[1,2)", "unknown");
-    final VulnerabilityFindingContribution unknownCode =
-        contribution(
-            unknown, FieldValue.supplied(code), FieldValue.omitted(), MergePriority.AUTOMATIC);
-    final VulnerabilityFindingContribution unknownPair =
-        contribution(
-            unknown, FieldValue.omitted(), FieldValue.supplied(pairs), MergePriority.AUTOMATIC);
-    final GenericVulnerabilityFinding knownPlusUnknown =
-        GenericVulnerabilityFinding.merge(List.of(known.withVersionClaim(unknown)));
-    final GenericVulnerabilityFinding codeUncertain =
-        GenericVulnerabilityFinding.merge(List.of(known, unknownCode));
-    final GenericVulnerabilityFinding pairUncertain =
-        GenericVulnerabilityFinding.merge(List.of(known, unknownPair));
-    final GenericVulnerabilityFinding outOfRange =
-        GenericVulnerabilityFinding.merge(
-            List.of(
-                known,
-                contribution(
-                    VersionCoverageClaim.unresolvedRange("[2,3)", "unknown"),
-                    FieldValue.supplied(code),
-                    FieldValue.supplied(pairs),
-                    MergePriority.AUTOMATIC)));
-    final GenericVulnerabilityFinding heuristic =
-        GenericVulnerabilityFinding.merge(
-            List.of(
-                known,
-                contribution(
-                    unknown,
-                    FieldValue.supplied(
-                        Set.of(CodeClaim.heuristic(CodeReference.className("p.Other")))),
-                    FieldValue.omitted(),
-                    MergePriority.AUTOMATIC)));
-    final GenericVulnerabilityFinding omittedManual =
-        GenericVulnerabilityFinding.merge(
-            List.of(
-                known,
-                unknownCode,
-                contribution(
-                    VersionCoverageClaim.affected("[1,2)"),
-                    FieldValue.omitted(),
-                    FieldValue.omitted(),
-                    MergePriority.MANUAL)));
-    final GenericVulnerabilityFinding pairManual =
-        GenericVulnerabilityFinding.merge(
-            List.of(
-                known,
-                unknownPair,
-                contribution(
-                    VersionCoverageClaim.affected("[1,2)"),
-                    FieldValue.omitted(),
-                    FieldValue.supplied(pairs),
-                    MergePriority.MANUAL)));
-    assertAll(
-        () ->
-            assertThat(OmittedCodeProof.prove(knownPlusUnknown, archive, false).evidenceSymbols())
-                .containsExactly("p.Vulnerable"),
-        () ->
-            assertThat(
-                    PreconditionProof.prove(knownPlusUnknown, COMPONENT, inventory)
-                        .requiredPrerequisites())
-                .isEqualTo(pairs),
-        () ->
-            assertThat(codeUncertain.codeFor("1.5"))
-                .containsExactly(CodeReference.className("p.Vulnerable")),
-        () ->
-            assertThatThrownBy(() -> OmittedCodeProof.prove(codeUncertain, archive, false))
-                .isInstanceOf(IllegalArgumentException.class),
-        () ->
-            assertThat(
-                    PreconditionProof.prove(codeUncertain, COMPONENT, inventory)
-                        .requiredPrerequisites())
-                .isEqualTo(pairs),
-        () ->
-            assertThat(OmittedCodeProof.prove(pairUncertain, archive, false).evidenceSymbols())
-                .containsExactly("p.Vulnerable"),
-        () ->
-            assertThatThrownBy(() -> PreconditionProof.prove(pairUncertain, COMPONENT, inventory))
-                .isInstanceOf(IllegalArgumentException.class),
-        () ->
-            assertThat(OmittedCodeProof.prove(outOfRange, archive, false).evidenceSymbols())
-                .containsExactly("p.Vulnerable"),
-        () ->
-            assertThat(
-                    PreconditionProof.prove(outOfRange, COMPONENT, inventory)
-                        .requiredPrerequisites())
-                .isEqualTo(pairs),
-        () ->
-            assertThat(OmittedCodeProof.prove(heuristic, archive, false).evidenceSymbols())
-                .containsExactly("p.Vulnerable"),
-        () ->
-            assertThatThrownBy(() -> OmittedCodeProof.prove(omittedManual, archive, false))
-                .isInstanceOf(IllegalArgumentException.class),
-        () ->
-            assertThat(
-                    PreconditionProof.prove(pairManual, COMPONENT, inventory)
-                        .requiredPrerequisites())
-                .isEqualTo(pairs));
+  /** Groups Slice 2 proof checks for unresolved, selected declaration groups. */
+  @Nested
+  /* package */ class UnresolvedGroupProofCases {
+    /** Creates a nested test instance. */
+    /* package */ UnresolvedGroupProofCases() {
+      super();
+    }
+
+    @Test
+    void unresolvedSelectedGroupsBlockProofAndManualGroupsRemainIndependentlyOverridden()
+        throws IOException {
+      final ArtifactTrimRecord record =
+          record(jar("group-original.jar", "p/Vulnerable"), jar("group-trimmed.jar"));
+      final OmittedCodeProof.ArchiveInspection archive = OmittedCodeProof.inspect(record);
+      final PreconditionProof.InventoryInspection inventory =
+          PreconditionProof.inspect(
+              PreconditionClassInventory.complete(
+                  List.of(Provider.dependencyArchive(COMPONENT, record.originalPath()))));
+      final Set<CodeClaim> code =
+          Set.of(CodeClaim.declared(CodeReference.className("p.Vulnerable")));
+      final Set<PrerequisiteClaim> pairs =
+          Set.of(new PrerequisiteClaim("org.example:missing", "p.Missing"));
+      final VulnerabilityFindingContribution known =
+          finding(code, pairs, AssessmentIntent.AUTO_VERIFY, "known").contributions().getFirst();
+      final VersionCoverageClaim unknown = VersionCoverageClaim.unresolvedRange("[1,2)", "unknown");
+      final VulnerabilityFindingContribution unknownCode =
+          contribution(
+              unknown, FieldValue.supplied(code), FieldValue.omitted(), MergePriority.AUTOMATIC);
+      final VulnerabilityFindingContribution unknownPair =
+          contribution(
+              unknown, FieldValue.omitted(), FieldValue.supplied(pairs), MergePriority.AUTOMATIC);
+      final GenericVulnerabilityFinding knownPlusUnknown =
+          GenericVulnerabilityFinding.merge(List.of(known.withVersionClaim(unknown)));
+      final GenericVulnerabilityFinding codeUncertain =
+          GenericVulnerabilityFinding.merge(List.of(known, unknownCode));
+      final GenericVulnerabilityFinding pairUncertain =
+          GenericVulnerabilityFinding.merge(List.of(known, unknownPair));
+      final GenericVulnerabilityFinding outOfRange =
+          GenericVulnerabilityFinding.merge(
+              List.of(
+                  known,
+                  contribution(
+                      VersionCoverageClaim.unresolvedRange("[2,3)", "unknown"),
+                      FieldValue.supplied(code),
+                      FieldValue.supplied(pairs),
+                      MergePriority.AUTOMATIC)));
+      final GenericVulnerabilityFinding heuristic =
+          GenericVulnerabilityFinding.merge(
+              List.of(
+                  known,
+                  contribution(
+                      unknown,
+                      FieldValue.supplied(
+                          Set.of(CodeClaim.heuristic(CodeReference.className("p.Other")))),
+                      FieldValue.omitted(),
+                      MergePriority.AUTOMATIC)));
+      final GenericVulnerabilityFinding omittedManual =
+          GenericVulnerabilityFinding.merge(
+              List.of(
+                  known,
+                  unknownCode,
+                  contribution(
+                      VersionCoverageClaim.affected("[1,2)"),
+                      FieldValue.omitted(),
+                      FieldValue.omitted(),
+                      MergePriority.MANUAL)));
+      final GenericVulnerabilityFinding pairManual =
+          GenericVulnerabilityFinding.merge(
+              List.of(
+                  known,
+                  unknownPair,
+                  contribution(
+                      VersionCoverageClaim.affected("[1,2)"),
+                      FieldValue.omitted(),
+                      FieldValue.supplied(pairs),
+                      MergePriority.MANUAL)));
+      assertAll(
+          () ->
+              assertThat(knownPlusUnknown.codeGroupStatusFor("1.5"))
+                  .isEqualTo(ClaimGroupStatus.UNRESOLVED),
+          () ->
+              assertThat(knownPlusUnknown.prerequisiteGroupStatusFor("1.5"))
+                  .isEqualTo(ClaimGroupStatus.UNRESOLVED),
+          () ->
+              assertThatThrownBy(() -> OmittedCodeProof.prove(knownPlusUnknown, archive, false))
+                  .isInstanceOf(IllegalArgumentException.class),
+          () ->
+              assertThatThrownBy(
+                      () -> PreconditionProof.prove(knownPlusUnknown, COMPONENT, inventory))
+                  .isInstanceOf(IllegalArgumentException.class),
+          () ->
+              assertThat(codeUncertain.codeFor("1.5"))
+                  .containsExactly(CodeReference.className("p.Vulnerable")),
+          () ->
+              assertThatThrownBy(() -> OmittedCodeProof.prove(codeUncertain, archive, false))
+                  .isInstanceOf(IllegalArgumentException.class),
+          () ->
+              assertThat(
+                      PreconditionProof.prove(codeUncertain, COMPONENT, inventory)
+                          .requiredPrerequisites())
+                  .isEqualTo(pairs),
+          () ->
+              assertThat(OmittedCodeProof.prove(pairUncertain, archive, false).evidenceSymbols())
+                  .containsExactly("p.Vulnerable"),
+          () ->
+              assertThatThrownBy(() -> PreconditionProof.prove(pairUncertain, COMPONENT, inventory))
+                  .isInstanceOf(IllegalArgumentException.class),
+          () ->
+              assertThat(OmittedCodeProof.prove(outOfRange, archive, false).evidenceSymbols())
+                  .containsExactly("p.Vulnerable"),
+          () ->
+              assertThat(
+                      PreconditionProof.prove(outOfRange, COMPONENT, inventory)
+                          .requiredPrerequisites())
+                  .isEqualTo(pairs),
+          () ->
+              assertThat(OmittedCodeProof.prove(heuristic, archive, false).evidenceSymbols())
+                  .containsExactly("p.Vulnerable"),
+          () ->
+              assertThatThrownBy(() -> OmittedCodeProof.prove(omittedManual, archive, false))
+                  .isInstanceOf(IllegalArgumentException.class),
+          () ->
+              assertThat(
+                      PreconditionProof.prove(pairManual, COMPONENT, inventory)
+                          .requiredPrerequisites())
+                  .isEqualTo(pairs));
+    }
+
+    @Test
+    void manualDeclarationsRemainVisibleButUnresolvedGroupsCannotProve() throws IOException {
+      final ArtifactTrimRecord record =
+          record(
+              jar("manual-unresolved-original.jar", "p/Manual"),
+              jar("manual-unresolved-trimmed.jar"));
+      final OmittedCodeProof.ArchiveInspection archive = OmittedCodeProof.inspect(record);
+      final PreconditionProof.InventoryInspection inventory =
+          PreconditionProof.inspect(
+              PreconditionClassInventory.complete(
+                  List.of(Provider.dependencyArchive(COMPONENT, record.originalPath()))));
+      final Set<CodeClaim> automaticCode =
+          Set.of(CodeClaim.declared(CodeReference.className("p.Automatic")));
+      final Set<PrerequisiteClaim> automaticPairs =
+          Set.of(new PrerequisiteClaim("org.example:auto", "p.Automatic"));
+      final CodeClaim manualCode = CodeClaim.declared(CodeReference.className("p.Manual"));
+      final PrerequisiteClaim manualPair = new PrerequisiteClaim("org.example:manual", "p.Manual");
+      final VulnerabilityFindingContribution automatic =
+          finding(automaticCode, automaticPairs, AssessmentIntent.AUTO_VERIFY, "automatic")
+              .contributions()
+              .getFirst();
+      final VulnerabilityFindingContribution manual =
+          new VulnerabilityFindingContribution(
+              "CVE-2026-10000",
+              Set.of(),
+              COMPONENT.groupId(),
+              COMPONENT.artifactId(),
+              COMPONENT.type(),
+              COMPONENT.classifier(),
+              List.of(
+                  VersionCoverageClaim.affected("[1,2)"),
+                  VersionCoverageClaim.unresolvedRange("[1.4,1.6)", "manual scope uncertain")),
+              FieldValue.supplied(Set.of(manualCode)),
+              FieldValue.supplied(Set.of(manualPair)),
+              MergePriority.MANUAL,
+              AssessmentIntent.AUTO_VERIFY,
+              "manual",
+              Set.of());
+      final GenericVulnerabilityFinding finding =
+          GenericVulnerabilityFinding.merge(List.of(automatic, manual));
+
+      assertAll(
+          "unresolved manual groups stay selected but cannot authorize aggregate proof",
+          () -> assertThat(finding.codeFor("1.5")).containsExactly(manualCode.reference()),
+          () -> assertThat(finding.effectivePrerequisitesFor("1.5")).containsExactly(manualPair),
+          () ->
+              assertThat(finding.codeGroupStatusFor("1.5")).isEqualTo(ClaimGroupStatus.UNRESOLVED),
+          () ->
+              assertThat(finding.prerequisiteGroupStatusFor("1.5"))
+                  .isEqualTo(ClaimGroupStatus.UNRESOLVED),
+          () -> assertThat(finding.contributions()).containsExactly(automatic, manual),
+          () ->
+              assertThatThrownBy(() -> OmittedCodeProof.prove(finding, archive, false))
+                  .isInstanceOf(IllegalArgumentException.class),
+          () ->
+              assertThatThrownBy(() -> PreconditionProof.prove(finding, COMPONENT, inventory))
+                  .isInstanceOf(IllegalArgumentException.class));
+    }
   }
 
   private static VulnerabilityFindingContribution contribution(
