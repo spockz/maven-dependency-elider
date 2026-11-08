@@ -53,7 +53,9 @@ public record PrerequisiteProofResult(
       ProviderKind kind,
       ArtifactCoordinate coordinate,
       Path baselinePath,
+      String baselineSha256,
       Path finalPath,
+      String finalSha256,
       PrerequisiteAbsenceAttribution attribution) {
     /** Validates the identity and cause of this provider observation. */
     public ProviderOutcome {
@@ -66,7 +68,19 @@ public record PrerequisiteProofResult(
       if (baselinePath == null && finalPath == null) {
         throw new IllegalArgumentException("Provider outcome requires a baseline or final path");
       }
+      validateDigestForPath(baselinePath, baselineSha256, "baseline");
+      validateDigestForPath(finalPath, finalSha256, "final");
       Objects.requireNonNull(attribution, "attribution");
+    }
+
+    private static void validateDigestForPath(
+        final Path path, final String digest, final String stage) {
+      if (path == null && digest != null) {
+        throw new IllegalArgumentException(stage + " digest requires a provider path");
+      }
+      if (path != null && (digest == null || !digest.matches("[0-9a-f]{64}"))) {
+        throw new IllegalArgumentException(stage + " provider requires a lowercase SHA-256 digest");
+      }
     }
   }
 }

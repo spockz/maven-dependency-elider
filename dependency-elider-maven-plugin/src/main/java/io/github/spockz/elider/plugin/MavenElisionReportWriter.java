@@ -113,7 +113,9 @@ final class MavenElisionReportWriter {
               .withGenericFindings(findings, observations)
               .withCatalogAdoptions(adoptions);
     } catch (final IllegalArgumentException exception) {
-      throw new IOException("Invalid elision report snapshot: " + absolute, exception);
+      throw new IOException(
+          "Invalid elision report snapshot: " + absolute + ": " + exception.getMessage(),
+          exception);
     }
     if (snapshot == null) {
       throw new IOException("Elision report snapshot is empty: " + absolute);

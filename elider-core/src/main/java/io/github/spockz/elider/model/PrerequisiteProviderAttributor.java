@@ -31,6 +31,8 @@ final class PrerequisiteProviderAttributor {
           .thenComparing(
               value -> value.baselinePath() == null ? "" : value.baselinePath().toString())
           .thenComparing(value -> value.finalPath() == null ? "" : value.finalPath().toString())
+          .thenComparing(value -> Objects.toString(value.baselineSha256(), ""))
+          .thenComparing(value -> Objects.toString(value.finalSha256(), ""))
           .thenComparing(value -> value.attribution().name());
 
   private PrerequisiteProviderAttributor() {}
@@ -115,7 +117,9 @@ final class PrerequisiteProviderAttributor {
                         provider.kind(),
                         provider.coordinate(),
                         null,
+                        null,
                         provider.path(),
+                        provider.sha256(),
                         PrerequisiteAbsenceAttribution.PRESENT));
     return Stream.concat(previousProviders, newProviders).sorted(PROVIDER_ORDER).toList();
   }
@@ -132,8 +136,15 @@ final class PrerequisiteProviderAttributor {
     final PrerequisiteAbsenceAttribution attribution =
         providerAttribution(baseline, finalProvider, claim, actualFinal);
     final java.nio.file.Path finalPath = finalProvider == null ? null : finalProvider.path();
+    final String finalSha256 = finalProvider == null ? null : finalProvider.sha256();
     return new ProviderOutcome(
-        baseline.kind(), baseline.coordinate(), baseline.path(), finalPath, attribution);
+        baseline.kind(),
+        baseline.coordinate(),
+        baseline.path(),
+        baseline.sha256(),
+        finalPath,
+        finalSha256,
+        attribution);
   }
 
   private static PrerequisiteAbsenceAttribution providerAttribution(

@@ -123,11 +123,34 @@ final class PrerequisiteAttributionTest {
                       .isEqualTo(PrerequisiteAbsenceAttribution.TRIMMED_CLASS),
               () -> assertThat(provider.baselinePath()).isEqualTo(original.path()),
               () -> assertThat(provider.finalPath()).isEqualTo(staged.path()),
+              () -> assertThat(provider.baselineSha256()).isEqualTo(original.sha256()),
+              () -> assertThat(provider.finalSha256()).isEqualTo(staged.sha256()),
               () -> assertThat(provider.coordinate()).isEqualTo(original.coordinate()));
         });
   }
 
   @Test
+  void prerequisiteProofCannotOmitOneGroupMemberFromRequiredAndObservedPairs() {
+    final PrerequisiteClaim first = new PrerequisiteClaim("org.example:first", "proof.First");
+    final PrerequisiteClaim second = new PrerequisiteClaim("org.example:second", "proof.Second");
+    final PrerequisiteGroup group =
+        new PrerequisiteGroup(PrerequisiteOperator.ALL_OF, java.util.Set.of(first, second));
+    final PrerequisiteMemberObservation onlyObservation =
+        new PrerequisiteMemberObservation(first, PrerequisiteMemberObservation.State.ABSENT);
+
+    assertThatThrownBy(
+            () ->
+                PrerequisiteEvidenceValidator.validatePrerequisiteObservations(
+                    java.util.Set.of(first),
+                    java.util.Set.of(group),
+                    java.util.Set.of(onlyObservation)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("checked prerequisite members");
+  }
+
+  @Test
+  // Identity distinguishes the baseline inspection call from final-byte inspection.
+  @SuppressWarnings("PMD.CompareObjectsWithEquals")
   void baselineSecurityFailureKeepsFinalProofAndMarksCauseUnknown() throws IOException {
     final Provider baselineCandidate =
         PrerequisiteAttributionFixtures.archive(
@@ -305,6 +328,8 @@ final class PrerequisiteAttributionTest {
                         PreconditionClassInventory.ProviderKind.DEPENDENCY_ARCHIVE,
                         PrerequisiteAttributionFixtures.PROVIDER_ONE,
                         original.path(),
+                        original.sha256(),
+                        null,
                         null,
                         PrerequisiteAbsenceAttribution.ELIDED_DEPENDENCY)));
   }

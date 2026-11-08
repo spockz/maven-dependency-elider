@@ -194,6 +194,11 @@ last applied report. Both goals print the same report fields; the `ANALYSIS` sna
 planned actions, while the `APPLIED` snapshot describes the published result. To replay analysis,
 run `dependency-elider:report -Delide.summaryFile=target/dependency-elider-analysis-report.json`.
 The report goal reads the snapshot and does not re-run the analysis or advisory lookup.
+Generic finding rows retain detached `prerequisiteProof` evidence: the selected group
+operators, each prerequisite member's observed final presence, provider paths and digests, and
+baseline-to-final attribution. The `report` goal renders those saved observations without reopening
+the archives; replay does not recreate a proof-capable attestation. `ANALYSIS` snapshots remain
+predictions and cannot contain verified prerequisite-absence evidence.
 
 The saved elision report and Analyze class-usage report include `exclusionReview`, with an explicit
 unavailable reason when the pre-resolution lifecycle capture is absent. Repeated exact exclusions

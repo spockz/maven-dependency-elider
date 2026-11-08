@@ -54,7 +54,8 @@ final class MavenElisionReportGenericPayload {
           "outcome",
           "detail",
           "inventoryDisposition",
-          "contributions");
+          "contributions",
+          "prerequisiteProof");
   private static final Set<String> OBSERVATION_FIELDS =
       Set.of(
           "source",
@@ -92,6 +93,9 @@ final class MavenElisionReportGenericPayload {
       row.put("detail", finding.detail());
       row.put("inventoryDisposition", finding.inventoryDisposition().name());
       row.set("contributions", FindingContributionJsonCodec.encode(finding.contributions()));
+      row.set(
+          "prerequisiteProof",
+          MavenElisionReportPrerequisiteProofCodec.encode(finding.prerequisiteProofEvidence()));
       rows.add(row);
     }
     return rows;
@@ -219,7 +223,10 @@ final class MavenElisionReportGenericPayload {
                   row,
                   "inventoryDisposition",
                   MavenVulnerabilityAssessment.InventoryDisposition.class),
-              FindingContributionJsonCodec.decode(row.get("contributions")));
+              FindingContributionJsonCodec.decode(row.get("contributions")),
+              Optional.empty(),
+              MavenElisionReportPrerequisiteProofCodec.decode(
+                  row.get("prerequisiteProof"), coordinate));
       MavenElisionReportProofValidator.validate(finding);
       rows.add(finding);
     }

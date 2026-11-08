@@ -83,6 +83,9 @@ final class MavenElisionReportGenericRenderer {
                   .map(claim -> claim.requiresDependency() + " / " + claim.requiresClass())
                   .toList());
     }
+    finding
+        .prerequisiteProofEvidence()
+        .ifPresent(evidence -> MavenElisionReportPrerequisiteProofRenderer.append(lines, evidence));
     if (!finding.unresolvedVersionClaims().isEmpty()) {
       lines.add(
           "    Unresolved coverage: "

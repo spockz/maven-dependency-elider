@@ -65,9 +65,13 @@ public final class PreconditionProof {
 
   private record PrerequisiteState(PrerequisiteClaim claim, boolean classPresent) {}
 
-  /** Keeps baseline-refusal handling independently testable without weakening final inspection. */
+  private record PrerequisiteGroupState(PrerequisiteGroup group, List<PrerequisiteState> members) {}
+
+  /** Keeps baseline refusal testable without weakening final inspection. */
+  /* package */
   @FunctionalInterface
   interface InventoryInspector {
+    /** Inspects one inventory using the production scan boundary. */
     InventoryInspection inspect(PreconditionClassInventory inventory) throws IOException;
   }
 
@@ -125,7 +129,7 @@ public final class PreconditionProof {
     return inspectPair(baseline, actualFinal, PreconditionProof::inspect);
   }
 
-  static InventoryPair inspectPair(
+  /* package */ static InventoryPair inspectPair(
       final PreconditionClassInventory baseline,
       final PreconditionClassInventory actualFinal,
       final InventoryInspector inspector)
@@ -170,6 +174,8 @@ public final class PreconditionProof {
         baselineDetail);
   }
 
+  // Each group gets its own immutable outcome for the final attestation.
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
   private static PrerequisiteProofResult evaluatePrerequisites(
       final ArtifactCoordinate candidate,
       final Set<PrerequisiteGroup> groups,
@@ -188,6 +194,8 @@ public final class PreconditionProof {
     }
     final Provider affected =
         findAffectedProvider(candidate, finalInspection.inventory.providers());
+    final List<PrerequisiteGroupState> groupStates = new ArrayList<>();
+    final Set<PrerequisiteMemberObservation> memberObservations = new TreeSet<>();
     for (final PrerequisiteGroup group : new TreeSet<>(groups)) {
       final List<PrerequisiteState> states = prerequisiteStates(group, finalInspection);
       if (!isDisarmed(group.operator(), states)) {
@@ -196,15 +204,23 @@ public final class PreconditionProof {
                 + "present in the complete inventory: "
                 + group.operator());
       }
+      groupStates.add(new PrerequisiteGroupState(group, states));
+      states.stream()
+          .map(
+              state ->
+                  new PrerequisiteMemberObservation(
+                      state.claim(),
+                      state.classPresent()
+                          ? PrerequisiteMemberObservation.State.PRESENT
+                          : PrerequisiteMemberObservation.State.ABSENT))
+          .forEach(memberObservations::add);
     }
     final String impactDetail =
-        "Required prerequisite groups "
-            + new TreeSet<>(groups)
-                .stream()
-                    .sorted()
-                    .map(PreconditionProof::describeGroup)
-                    .collect(java.util.stream.Collectors.joining("; "))
-            + " are absent from the complete declared Maven inventory. The proof does not cover "
+        "Required prerequisite groups were disarmed in the complete declared Maven inventory: "
+            + groupStates.stream()
+                .map(PreconditionProof::describeGroup)
+                .collect(java.util.stream.Collectors.joining("; "))
+            + ". The proof does not cover "
             + "providers introduced outside that inventory.";
     final VexAttestation attestation =
         VexAttestation.genericPrecondition(
@@ -212,6 +228,7 @@ public final class PreconditionProof {
             affected.coordinate(),
             impactDetail,
             Set.copyOf(groups),
+            Set.copyOf(memberObservations),
             affected.path(),
             affected.sha256(),
             finalInspection.inventory.fingerprint());
@@ -240,17 +257,30 @@ public final class PreconditionProof {
     };
   }
 
-  private static String describeGroup(final PrerequisiteGroup group) {
-    return group.operator()
-        + "("
-        + group.members().stream()
-            .sorted()
-            .map(value -> value.requiresDependency() + " / " + value.requiresClass())
-            .collect(java.util.stream.Collectors.joining(", "))
-        + ")";
+  private static String describeGroup(final PrerequisiteGroupState state) {
+    final String disarmingCondition =
+        state.group().operator() == PrerequisiteOperator.ANY_OF
+            ? "every member is absent"
+            : "at least one member is absent";
+    return state.group().operator()
+        + " is disarmed because "
+        + disarmingCondition
+        + ": "
+        + state.members().stream()
+            .sorted(java.util.Comparator.comparing(PrerequisiteState::claim))
+            .map(
+                value ->
+                    value.claim().requiresDependency()
+                        + " / "
+                        + value.claim().requiresClass()
+                        + "="
+                        + (value.classPresent() ? "PRESENT" : "ABSENT"))
+            .collect(java.util.stream.Collectors.joining(", "));
   }
 
-  /** Captures and validates a complete provider inventory for reuse across findings. */
+  /** Builds a reusable index from a complete provider inventory. */
+  // This private index has one writer and is immutable after publication.
+  @SuppressWarnings({"PMD.UseConcurrentHashMap", "PMD.AvoidInstantiatingObjectsInLoops"})
   public static InventoryInspection inspect(final PreconditionClassInventory inventory)
       throws IOException {
     Objects.requireNonNull(inventory, "inventory");
@@ -267,6 +297,7 @@ public final class PreconditionProof {
 
     verifyProviderDigests(inventory.providers());
     final Map<String, List<Provider>> providersByClass = new TreeMap<>();
+    // One inspection thread builds this private index before immutable publication.
     for (final Provider provider : inventory.providers()) {
       for (final String className : readClasses(provider)) {
         providersByClass.computeIfAbsent(className, unused -> new ArrayList<>()).add(provider);
@@ -281,6 +312,8 @@ public final class PreconditionProof {
     private final PreconditionClassInventory inventory;
     private final Map<String, List<Provider>> providersByClass;
 
+    // This defensive copy is local and becomes immutable before publication.
+    @SuppressWarnings("PMD.UseConcurrentHashMap")
     private InventoryInspection(
         final PreconditionClassInventory inventory,
         final Map<String, List<Provider>> providersByClass) {

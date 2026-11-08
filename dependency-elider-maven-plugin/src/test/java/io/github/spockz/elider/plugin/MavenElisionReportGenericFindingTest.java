@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.engine.ClassUsageReport;
 import io.github.spockz.elider.metadata.CycloneDxSbomGenerator;
@@ -25,7 +27,14 @@ import io.github.spockz.elider.model.FieldValue;
 import io.github.spockz.elider.model.GenericVulnerabilityFinding;
 import io.github.spockz.elider.model.MergePriority;
 import io.github.spockz.elider.model.OmittedCodeProof;
+import io.github.spockz.elider.model.PreconditionClassInventory;
+import io.github.spockz.elider.model.PreconditionProof;
+import io.github.spockz.elider.model.PrerequisiteAbsenceAttribution;
 import io.github.spockz.elider.model.PrerequisiteClaim;
+import io.github.spockz.elider.model.PrerequisiteGroup;
+import io.github.spockz.elider.model.PrerequisiteMemberObservation;
+import io.github.spockz.elider.model.PrerequisiteOperator;
+import io.github.spockz.elider.model.PrerequisiteProofResult;
 import io.github.spockz.elider.model.VersionApplicability;
 import io.github.spockz.elider.model.VersionCoverageClaim;
 import io.github.spockz.elider.model.VexAttestation;
@@ -43,10 +52,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import org.apache.maven.project.MavenProject;
@@ -180,6 +191,902 @@ class MavenElisionReportGenericFindingTest {
                   "refresh failed")
               .doesNotContain("https://example.test/advisory", "FieldValue[", "revision:");
         });
+  }
+
+  @Test
+  void proofEvidenceRoundTripsAllOfAndMixedProviderObservationsOffline()
+      throws IOException, ReflectiveOperationException {
+    final ArtifactCoordinate candidate = ArtifactCoordinate.of("org.example", "library", "1.5");
+    final ArtifactCoordinate presentProvider =
+        ArtifactCoordinate.of("org.example", "present-provider", "1.0");
+    final ArtifactCoordinate droppedProvider =
+        ArtifactCoordinate.of("org.example", "dropped-provider", "1.0");
+    final ArtifactCoordinate trimmedProvider =
+        ArtifactCoordinate.of("org.example", "trimmed-provider", "1.0");
+    final Path candidateBaselinePath = providerJar("proof-candidate-baseline.jar");
+    final Path candidateFinalPath = providerJar("proof-candidate-final.jar");
+    final Path presentBaselinePath = providerJar("proof-present-baseline.jar", "proof/Present");
+    final Path presentFinalPath = providerJar("proof-present-final.jar", "proof/Present");
+    final Path droppedBaselinePath = providerJar("proof-dropped-baseline.jar", "proof/Absent");
+    final Path trimmedBaselinePath = providerJar("proof-trimmed-baseline.jar", "proof/Absent");
+    final Path trimmedFinalPath = providerJar("proof-trimmed-final.jar");
+    final PrerequisiteClaim present =
+        new PrerequisiteClaim("org.example:present-provider", "proof.Present");
+    final PrerequisiteClaim absent =
+        new PrerequisiteClaim("org.example:dropped-provider", "proof.Absent");
+    final PrerequisiteGroup group =
+        new PrerequisiteGroup(PrerequisiteOperator.ALL_OF, Set.of(present, absent));
+    final VulnerabilityFindingContribution contribution =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-24680",
+            Set.of(),
+            candidate.groupId(),
+            candidate.artifactId(),
+            candidate.type(),
+            candidate.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.5]")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of(group)),
+            MergePriority.MANUAL,
+            AssessmentIntent.AUTO_VERIFY,
+            "manual:all-of-proof",
+            Set.of(
+                new AdvisoryProvenance(
+                    EvidenceOrigin.POM,
+                    "all-of-proof",
+                    URI.create("https://example.test/advisory"),
+                    null)),
+            io.github.spockz.elider.model.ConfidenceLevel.HIGH);
+    final GenericVulnerabilityFinding merged =
+        GenericVulnerabilityFinding.merge(List.of(contribution));
+    final PreconditionClassInventory baseline =
+        PreconditionClassInventory.complete(
+            List.of(
+                provider(candidate, candidateBaselinePath),
+                provider(presentProvider, presentBaselinePath),
+                provider(droppedProvider, droppedBaselinePath),
+                provider(trimmedProvider, trimmedBaselinePath)));
+    final PreconditionClassInventory actualFinal =
+        PreconditionClassInventory.complete(
+            List.of(
+                provider(candidate, candidateFinalPath),
+                provider(presentProvider, presentFinalPath),
+                provider(trimmedProvider, trimmedFinalPath)));
+    final PrerequisiteProofResult proof =
+        PreconditionProof.proveWithAttribution(merged, candidate, baseline, actualFinal);
+    final GenericFindingAssessment assessment =
+        assessmentRow(candidate, contribution, group, proof);
+    final Path output = temp.resolve("prerequisite-proof-report.json");
+
+    MavenElisionReportWriter.write(output, snapshot(assessment, List.of()));
+    final ObjectNode json = (ObjectNode) new ObjectMapper().readTree(output.toFile());
+    final JsonNode serializedProof =
+        json.withArray("genericFindings").get(0).get("prerequisiteProof");
+
+    assertAll(
+        "saved proof retains the atomic group and provider causes after source archives disappear",
+        () ->
+            assertAll(
+                "the source proof records one present member and mixed causes for the absent"
+                    + " member",
+                () -> assertThat(proof.groups()).hasSize(1),
+                () -> assertThat(proof.groups().getFirst().group()).isEqualTo(group),
+                () ->
+                    assertThat(proof.groups().getFirst().attribution())
+                        .isEqualTo(PrerequisiteAbsenceAttribution.MIXED),
+                () ->
+                    assertThat(proof.groups().getFirst().members())
+                        .extracting(PrerequisiteProofResult.MemberOutcome::claim)
+                        .containsExactly(absent, present),
+                () ->
+                    assertThat(proof.groups().getFirst().members().getFirst().attribution())
+                        .isEqualTo(PrerequisiteAbsenceAttribution.MIXED),
+                () ->
+                    assertThat(proof.groups().getFirst().members().getFirst().providers())
+                        .extracting(PrerequisiteProofResult.ProviderOutcome::attribution)
+                        .containsExactlyInAnyOrder(
+                            PrerequisiteAbsenceAttribution.ELIDED_DEPENDENCY,
+                            PrerequisiteAbsenceAttribution.TRIMMED_CLASS),
+                () ->
+                    assertThat(proof.groups().getFirst().members().get(1).attribution())
+                        .isEqualTo(PrerequisiteAbsenceAttribution.PRESENT),
+                () ->
+                    assertThat(proof.attestation().impactDetail())
+                        .contains("at least one member is absent", "proof.Absent")
+                        .doesNotContain("proof.Present is absent")),
+        () ->
+            assertAll(
+                "serialized proof is detached evidence, not a re-created attestation",
+                () -> assertThat(serializedProof).isNotNull(),
+                () ->
+                    assertSerializedProof(
+                        serializedProof,
+                        new SerializedProofContext(
+                            candidate,
+                            candidateFinalPath,
+                            baseline,
+                            actualFinal,
+                            new ProviderEvidencePaths(
+                                presentProvider,
+                                droppedProvider,
+                                trimmedProvider,
+                                presentBaselinePath,
+                                presentFinalPath,
+                                droppedBaselinePath,
+                                trimmedBaselinePath,
+                                trimmedFinalPath)))),
+        () -> {
+          Files.delete(candidateBaselinePath);
+          Files.delete(candidateFinalPath);
+          Files.delete(presentBaselinePath);
+          Files.delete(presentFinalPath);
+          Files.delete(droppedBaselinePath);
+          Files.delete(trimmedBaselinePath);
+          Files.delete(trimmedFinalPath);
+          final MavenElisionReportSnapshot replayed = MavenElisionReportWriter.read(output);
+          final List<String> messages = new ArrayList<>();
+          final MavenProject project = new MavenProject();
+          project.setGroupId("org.example");
+          project.setArtifactId("consumer");
+          project.setVersion("1");
+          project.setFile(temp.resolve("pom.xml").toFile());
+          final ReportMojo reportMojo = ReportMojoTestSupport.mojo(output, project, messages);
+          reportMojo.execute();
+          final String rendered = String.join("\n", messages);
+          final GenericFindingAssessment sourceFinding = assessment;
+          final GenericFindingAssessment replayedFinding = replayed.genericFindings().getFirst();
+          assertAll(
+              () -> assertThat(replayedFinding.prerequisiteProof()).isEmpty(),
+              () -> assertThat(sourceFinding.prerequisiteProofEvidence()).isPresent(),
+              () ->
+                  assertThat(replayedFinding.prerequisiteProofEvidence())
+                      .isEqualTo(sourceFinding.prerequisiteProofEvidence()),
+              () ->
+                  assertThat(rendered)
+                      .contains(
+                          "PREREQUISITES_ABSENT",
+                          "ALL_OF",
+                          "MIXED",
+                          "proof.Absent",
+                          "PRESENT",
+                          "ABSENT")
+                      .doesNotContain("proof.Present is absent"));
+        });
+  }
+
+  @Test
+  void incompleteBaselineReasonSurvivesDetachedProofReportReplay() throws IOException {
+    final ArtifactCoordinate candidate =
+        ArtifactCoordinate.of("org.example", "unknown-base", "1.5");
+    final Path candidatePath = providerJar("unknown-baseline-candidate.jar");
+    final PrerequisiteClaim claim = new PrerequisiteClaim("org.example:provider", "proof.Optional");
+    final PrerequisiteGroup group =
+        new PrerequisiteGroup(PrerequisiteOperator.ANY_OF, Set.of(claim));
+    final VulnerabilityFindingContribution contribution =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-24682",
+            Set.of(),
+            candidate.groupId(),
+            candidate.artifactId(),
+            candidate.type(),
+            candidate.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.5]")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of(group)),
+            MergePriority.MANUAL,
+            AssessmentIntent.AUTO_VERIFY,
+            "manual:unknown-baseline",
+            Set.of(
+                new AdvisoryProvenance(
+                    EvidenceOrigin.POM,
+                    "unknown-baseline",
+                    URI.create("https://example.test/unknown-baseline"),
+                    null)),
+            io.github.spockz.elider.model.ConfidenceLevel.HIGH);
+    final GenericVulnerabilityFinding finding =
+        GenericVulnerabilityFinding.merge(List.of(contribution));
+    final PreconditionClassInventory.Provider candidateProvider =
+        provider(candidate, candidatePath);
+    final PrerequisiteProofResult proof =
+        PreconditionProof.proveWithAttribution(
+            finding,
+            candidate,
+            PreconditionClassInventory.incomplete(
+                List.of(candidateProvider), "baseline class providers were unavailable"),
+            PreconditionClassInventory.complete(List.of(candidateProvider)));
+    final GenericFindingAssessment assessment =
+        assessmentRow(candidate, contribution, group, proof);
+    final Path output = temp.resolve("unknown-baseline-proof.json");
+    MavenElisionReportWriter.write(output, snapshot(assessment, List.of()));
+    Files.delete(candidatePath);
+    final GenericFindingAssessment replayed =
+        MavenElisionReportWriter.read(output).genericFindings().getFirst();
+
+    assertAll(
+        "baseline uncertainty remains descriptive while final class absence is replayable",
+        () ->
+            assertThat(proof.groups().getFirst().members().getFirst().attribution())
+                .isEqualTo(PrerequisiteAbsenceAttribution.UNKNOWN),
+        () -> assertThat(replayed.prerequisiteProof()).isEmpty(),
+        () -> assertThat(replayed.prerequisiteProofEvidence()).isPresent(),
+        () ->
+            assertThat(replayed.prerequisiteProofEvidence().orElseThrow().baselineDetail())
+                .isEqualTo("baseline class providers were unavailable"),
+        () ->
+            assertThat(
+                    replayed
+                        .prerequisiteProofEvidence()
+                        .orElseThrow()
+                        .groups()
+                        .getFirst()
+                        .members()
+                        .getFirst()
+                        .attribution())
+                .isEqualTo(PrerequisiteAbsenceAttribution.UNKNOWN),
+        () ->
+            assertThat(
+                    replayed
+                        .prerequisiteProofEvidence()
+                        .orElseThrow()
+                        .groups()
+                        .getFirst()
+                        .members()
+                        .getFirst()
+                        .state())
+                .isEqualTo(PrerequisiteMemberObservation.State.ABSENT));
+  }
+
+  @Test
+  void baselineDetailPreservesPresentProviderInAllOfReplay() throws IOException {
+    final ArtifactCoordinate candidate = ArtifactCoordinate.of("org.example", "all-of-base", "1.5");
+    final ArtifactCoordinate presentOwner = ArtifactCoordinate.of("org.example", "present", "1.0");
+    final Path candidatePath = providerJar("all-of-baseline-detail-candidate.jar");
+    final Path presentPath = providerJar("all-of-baseline-detail-present.jar", "proof/Present");
+    final PrerequisiteClaim present = new PrerequisiteClaim("org.example:present", "proof.Present");
+    final PrerequisiteClaim unknown = new PrerequisiteClaim("org.example:unknown", "proof.Unknown");
+    final PrerequisiteGroup group =
+        new PrerequisiteGroup(PrerequisiteOperator.ALL_OF, Set.of(present, unknown));
+    final VulnerabilityFindingContribution contribution =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-24683",
+            Set.of(),
+            candidate.groupId(),
+            candidate.artifactId(),
+            candidate.type(),
+            candidate.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.5]")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of(group)),
+            MergePriority.MANUAL,
+            AssessmentIntent.AUTO_VERIFY,
+            "manual:baseline-detail-all-of",
+            Set.of(
+                new AdvisoryProvenance(
+                    EvidenceOrigin.POM,
+                    "baseline-detail-all-of",
+                    URI.create("https://example.test/baseline-detail-all-of"),
+                    null)),
+            io.github.spockz.elider.model.ConfidenceLevel.HIGH);
+    final GenericVulnerabilityFinding finding =
+        GenericVulnerabilityFinding.merge(List.of(contribution));
+    final PrerequisiteProofResult proof =
+        PreconditionProof.proveWithAttribution(
+            finding,
+            candidate,
+            PreconditionClassInventory.incomplete(
+                List.of(provider(candidate, candidatePath)), "baseline inventory unavailable"),
+            PreconditionClassInventory.complete(
+                List.of(provider(candidate, candidatePath), provider(presentOwner, presentPath))));
+    final Path output = temp.resolve("baseline-detail-all-of.json");
+    MavenElisionReportWriter.write(
+        output, snapshot(assessmentRow(candidate, contribution, group, proof), List.of()));
+    final GenericFindingAssessment replayed =
+        MavenElisionReportWriter.read(output).genericFindings().getFirst();
+    final List<PrerequisiteProofEvidence.MemberEvidence> members =
+        replayed.prerequisiteProofEvidence().orElseThrow().groups().getFirst().members();
+
+    assertAll(
+        "baseline uncertainty applies only to absent members, preserving final PRESENT evidence",
+        () -> assertThat(proof.baselineDetail()).isEqualTo("baseline inventory unavailable"),
+        () -> assertThat(replayed.prerequisiteProof()).isEmpty(),
+        () ->
+            assertThat(
+                    replayed.prerequisiteProofEvidence().orElseThrow().groups().getFirst().group())
+                .isEqualTo(group),
+        () -> assertThat(members).hasSize(2),
+        () ->
+            assertThat(members)
+                .anySatisfy(
+                    member -> {
+                      assertThat(member.claim()).isEqualTo(present);
+                      assertThat(member.state())
+                          .isEqualTo(PrerequisiteMemberObservation.State.PRESENT);
+                      assertThat(member.providers())
+                          .singleElement()
+                          .satisfies(
+                              provider -> {
+                                assertThat(provider.attribution())
+                                    .isEqualTo(PrerequisiteAbsenceAttribution.PRESENT);
+                                assertThat(provider.finalPath()).isEqualTo(presentPath);
+                              });
+                    }),
+        () ->
+            assertThat(members)
+                .anySatisfy(
+                    member -> {
+                      assertThat(member.claim()).isEqualTo(unknown);
+                      assertThat(member.state())
+                          .isEqualTo(PrerequisiteMemberObservation.State.ABSENT);
+                      assertThat(member.attribution())
+                          .isEqualTo(PrerequisiteAbsenceAttribution.UNKNOWN);
+                      assertThat(member.providers()).isEmpty();
+                    }));
+  }
+
+  private static void assertSerializedProof(
+      final JsonNode proof, final SerializedProofContext context) {
+    final ArtifactCoordinate candidate = context.candidate();
+    final Path candidateFinalPath = context.candidateFinalPath();
+    final PreconditionClassInventory baseline = context.baseline();
+    final PreconditionClassInventory actualFinal = context.actualFinal();
+    final ProviderEvidencePaths providerPaths = context.providers();
+    assertThat(proof).isNotNull();
+    assertThat(proof.path("candidate").asText()).isEqualTo(candidate.toString());
+    assertThat(proof.path("finalInventoryFingerprint").asText())
+        .isEqualTo(actualFinal.fingerprint());
+    final JsonNode groups = proof.path("groups");
+    assertThat(groups).hasSize(1);
+    final JsonNode group = groups.get(0);
+    assertThat(group.path("operator").asText()).isEqualTo("ALL_OF");
+    assertThat(group.path("attribution").asText()).isEqualTo("MIXED");
+    final JsonNode members = group.path("members");
+    assertThat(members).hasSize(2);
+    final JsonNode absent = members.get(0);
+    assertAll(
+        "the absent ALL_OF member binds both provider causes independently",
+        () ->
+            assertThat(absent.path("claim").path("requiresDependency").asText())
+                .isEqualTo("org.example:dropped-provider"),
+        () ->
+            assertThat(absent.path("claim").path("requiresClass").asText())
+                .isEqualTo("proof.Absent"),
+        () -> assertThat(absent.path("state").asText()).isEqualTo("ABSENT"),
+        () -> assertThat(absent.path("attribution").asText()).isEqualTo("MIXED"),
+        () -> {
+          final JsonNode providers = absent.path("providers");
+          assertThat(providers).hasSize(2);
+          assertProviderObservation(
+              providers,
+              baseline,
+              actualFinal,
+              providerPaths.droppedProvider(),
+              providerPaths.droppedBaselinePath(),
+              null,
+              "ELIDED_DEPENDENCY");
+          assertProviderObservation(
+              providers,
+              baseline,
+              actualFinal,
+              providerPaths.trimmedProvider(),
+              providerPaths.trimmedBaselinePath(),
+              providerPaths.trimmedFinalPath(),
+              "TRIMMED_CLASS");
+        });
+    final JsonNode present = members.get(1);
+    assertAll(
+        "a present ALL_OF member remains visible in captured proof evidence",
+        () -> assertThat(present.path("state").asText()).isEqualTo("PRESENT"),
+        () -> assertThat(present.path("attribution").asText()).isEqualTo("PRESENT"),
+        () ->
+            assertProviderObservation(
+                present.path("providers"),
+                baseline,
+                actualFinal,
+                providerPaths.presentProvider(),
+                providerPaths.presentBaselinePath(),
+                providerPaths.presentFinalPath(),
+                "PRESENT"));
+    final PreconditionClassInventory.Provider candidateFinal =
+        actualFinal.providers().stream()
+            .filter(value -> candidate.equals(value.coordinate()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(proof.path("affectedArtifactPath").asText())
+        .isEqualTo(candidateFinalPath.toString());
+    assertThat(proof.path("postElisionSha256").asText()).isEqualTo(candidateFinal.sha256());
+  }
+
+  private static void assertProviderObservation(
+      final JsonNode providers,
+      final PreconditionClassInventory baseline,
+      final PreconditionClassInventory actualFinal,
+      final ArtifactCoordinate coordinate,
+      final Path baselinePath,
+      final Path finalPath,
+      final String cause) {
+    final JsonNode row =
+        java.util.stream.StreamSupport.stream(providers.spliterator(), false)
+            .filter(value -> value.path("coordinate").asText().equals(coordinate.toString()))
+            .findFirst()
+            .orElseThrow();
+    final String baselineDigest = inventoryDigest(baseline, baselinePath);
+    final String finalDigest = inventoryDigest(actualFinal, finalPath);
+    assertAll(
+        () -> assertThat(row.path("kind").asText()).isEqualTo("DEPENDENCY_ARCHIVE"),
+        () -> assertThat(row.path("coordinate").asText()).isEqualTo(coordinate.toString()),
+        () ->
+            assertThat(row.path("baselinePath").isNull() ? null : row.path("baselinePath").asText())
+                .isEqualTo(baselinePath == null ? null : baselinePath.toString()),
+        () ->
+            assertThat(
+                    row.path("baselineSha256").isNull()
+                        ? null
+                        : row.path("baselineSha256").asText())
+                .isEqualTo(baselineDigest),
+        () ->
+            assertThat(row.path("finalPath").isNull() ? null : row.path("finalPath").asText())
+                .isEqualTo(finalPath == null ? null : finalPath.toString()),
+        () ->
+            assertThat(row.path("finalSha256").isNull() ? null : row.path("finalSha256").asText())
+                .isEqualTo(finalDigest),
+        () -> assertThat(row.path("attribution").asText()).isEqualTo(cause));
+  }
+
+  private static String inventoryDigest(
+      final PreconditionClassInventory inventory, final Path path) {
+    return path == null
+        ? null
+        : inventory.providers().stream()
+            .filter(value -> value.path().equals(path))
+            .map(PreconditionClassInventory.Provider::sha256)
+            .findFirst()
+            .orElse(null);
+  }
+
+  @Test
+  void rejectsMalformedDetachedPrerequisiteProofEvidence() throws IOException {
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode validPayload = detachedProofPayload(mapper);
+    assertAll(
+        "detached proof evidence requires a unique, complete, well-typed binding",
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "missing-final-fingerprint",
+                "finalInventoryFingerprint",
+                proof -> proof.remove("finalInventoryFingerprint")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "missing-component-binding",
+                "candidate",
+                proof -> proof.remove("candidate")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "empty-members",
+                "groups[0]",
+                proof -> proofMembers(proof).removeAll()),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "invalid-member-state",
+                "state",
+                proof -> ((ObjectNode) proofMembers(proof).get(0)).put("state", "MAYBE")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "invalid-member-cause",
+                "attribution",
+                proof -> ((ObjectNode) proofMembers(proof).get(0)).put("attribution", "MAYBE")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "invalid-provider-cause",
+                "attribution",
+                proof -> {
+                  final ArrayNode providers =
+                      ((ObjectNode) proofMembers(proof).get(0)).withArray("providers");
+                  ((ObjectNode) providers.get(0)).put("attribution", "MAYBE");
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "invalid-group-operator",
+                "operator",
+                proof -> ((ObjectNode) proofGroups(proof).get(0)).put("operator", "XOR")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "duplicate-group",
+                "duplicate",
+                proof -> {
+                  final ObjectNode duplicate = ((ObjectNode) proofGroups(proof).get(0)).deepCopy();
+                  proofGroups(proof).add(duplicate);
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "duplicate-provider-identity-with-distinct-scope-and-path",
+                "duplicate dependency provider identity",
+                proof -> {
+                  final ArrayNode providers =
+                      ((ObjectNode) proofMembers(proof).get(0)).withArray("providers");
+                  final ObjectNode duplicate = ((ObjectNode) providers.get(0)).deepCopy();
+                  final String coordinate = duplicate.path("coordinate").asText();
+                  duplicate.put(
+                      "coordinate",
+                      coordinate.substring(0, coordinate.lastIndexOf(" (")) + " (runtime)");
+                  duplicate.put("baselinePath", "/tmp/duplicate-scope-provider.jar");
+                  providers.add(duplicate);
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "operator-differs-from-selected-source-group",
+                "groups[0].operator",
+                proof -> ((ObjectNode) proofGroups(proof).get(0)).put("operator", "ALL_OF")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "provider-cause-conflicts-with-member",
+                "providers[0]",
+                proof -> proofProvider(proof).put("attribution", "TRIMMED_CLASS")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "group-cause-conflicts-with-member",
+                "groups[0].attribution",
+                proof ->
+                    ((ObjectNode) proofGroups(proof).get(0)).put("attribution", "TRIMMED_CLASS")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "repeated-claim-has-conflicting-provider-outcome",
+                "groups[1].members[0]",
+                proof -> {
+                  final ObjectNode repeatedGroup =
+                      ((ObjectNode) proofGroups(proof).get(0)).deepCopy();
+                  repeatedGroup.put("operator", "ALL_OF");
+                  repeatedGroup.put("attribution", "TRIMMED_CLASS");
+                  ((ObjectNode) repeatedGroup.withArray("members").get(0))
+                      .put("attribution", "TRIMMED_CLASS");
+                  final ObjectNode repeatedMember =
+                      (ObjectNode) repeatedGroup.withArray("members").get(0);
+                  final ObjectNode repeatedProvider =
+                      (ObjectNode) repeatedMember.withArray("providers").get(0);
+                  repeatedProvider.put("attribution", "TRIMMED_CLASS");
+                  repeatedProvider.put("finalPath", "/tmp/repeated-provider-final.jar");
+                  repeatedProvider.put("finalSha256", "a".repeat(64));
+                  proofGroups(proof).add(repeatedGroup);
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "trimmed-class-provider-missing-final-archive",
+                "providers[0]",
+                proof -> proofProvider(proof).put("attribution", "TRIMMED_CLASS")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "elided-provider-has-final-archive",
+                "providers[0]",
+                proof -> {
+                  final ObjectNode provider = proofProvider(proof);
+                  provider.put("finalPath", provider.path("baselinePath").asText());
+                  provider.put("finalSha256", provider.path("baselineSha256").asText());
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "aggregate-cause-on-provider-row",
+                "providers[0]",
+                proof -> proofProvider(proof).put("attribution", "MIXED")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "application-provider-with-dependency-coordinate",
+                "providers[0].coordinate",
+                proof -> proofProvider(proof).put("kind", "APPLICATION_CLASS_FILE")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "dependency-provider-without-coordinate",
+                "providers[0].coordinate",
+                proof -> proofProvider(proof).putNull("coordinate")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "unknown-dependency-provider-is-impossible",
+                "providers[0]",
+                proof -> {
+                  proofProvider(proof).put("attribution", "UNKNOWN");
+                  proofMember(proof).put("attribution", "UNKNOWN");
+                  proofGroup(proof).put("attribution", "UNKNOWN");
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "trimmed-class-must-change-provider-digest",
+                "providers[0]",
+                proof -> {
+                  final ObjectNode provider = proofProvider(proof);
+                  provider.put("attribution", "TRIMMED_CLASS");
+                  provider.put("finalPath", "/tmp/same-digest-provider-final.jar");
+                  provider.put("finalSha256", provider.path("baselineSha256").asText());
+                  proofMember(proof).put("attribution", "TRIMMED_CLASS");
+                  proofGroup(proof).put("attribution", "TRIMMED_CLASS");
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "baseline-detail-requires-unknown-member-without-providers",
+                "groups[0].members[0].attribution",
+                proof -> {
+                  ((ArrayNode)
+                          proof
+                              .withArray("groups")
+                              .get(0)
+                              .withArray("members")
+                              .get(0)
+                              .get("providers"))
+                      .removeAll();
+                  proof.put("baselineDetail", "baseline inventory was incomplete");
+                  proofMember(proof).put("attribution", "ALREADY_ABSENT");
+                  proofGroup(proof).put("attribution", "ALREADY_ABSENT");
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "baseline-detail-cannot-claim-provider-transition-for-absent-member",
+                "groups[0].members[0].attribution",
+                proof -> proof.put("baselineDetail", "baseline inventory was incomplete")),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "complete-baseline-cannot-mark-empty-provider-set-unknown",
+                "groups[0].members[0].attribution",
+                proof -> {
+                  ((ArrayNode)
+                          proof
+                              .withArray("groups")
+                              .get(0)
+                              .withArray("members")
+                              .get(0)
+                              .get("providers"))
+                      .removeAll();
+                  proofMember(proof).put("attribution", "UNKNOWN");
+                  proofGroup(proof).put("attribution", "UNKNOWN");
+                }),
+        () ->
+            assertAcceptedProof(
+                mapper,
+                validPayload,
+                "unknown-application-provider",
+                proof -> {
+                  final ObjectNode provider = proofProvider(proof);
+                  provider.put("kind", "APPLICATION_CLASS_FILE");
+                  provider.putNull("coordinate");
+                  provider.put("attribution", "UNKNOWN");
+                  proofMember(proof).put("attribution", "UNKNOWN");
+                  proofGroup(proof).put("attribution", "UNKNOWN");
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "unknown-application-provider-cannot-change-path",
+                "providers[0]",
+                proof -> {
+                  final ObjectNode provider = proofProvider(proof);
+                  provider.put("kind", "APPLICATION_CLASS_FILE");
+                  provider.putNull("coordinate");
+                  provider.put("attribution", "UNKNOWN");
+                  provider.put("finalPath", "/tmp/application-provider-final");
+                  provider.put("finalSha256", "a".repeat(64));
+                  proofMember(proof).put("attribution", "UNKNOWN");
+                  proofGroup(proof).put("attribution", "UNKNOWN");
+                }),
+        () ->
+            assertMalformedProof(
+                mapper,
+                validPayload,
+                "unknown-application-provider-cannot-have-identical-snapshot-bytes",
+                "providers[0]",
+                proof -> {
+                  final ObjectNode provider = proofProvider(proof);
+                  provider.put("kind", "APPLICATION_CLASS_FILE");
+                  provider.putNull("coordinate");
+                  provider.put("attribution", "UNKNOWN");
+                  provider.put("finalPath", provider.path("baselinePath").asText());
+                  provider.put("finalSha256", provider.path("baselineSha256").asText());
+                  proofMember(proof).put("attribution", "UNKNOWN");
+                  proofGroup(proof).put("attribution", "UNKNOWN");
+                }),
+        () ->
+            assertAcceptedProof(
+                mapper,
+                validPayload,
+                "already-absent-without-provider-rows",
+                proof -> {
+                  ((ArrayNode) proofMembers(proof).get(0).get("providers")).removeAll();
+                  proofMember(proof).put("attribution", "ALREADY_ABSENT");
+                  proofGroup(proof).put("attribution", "ALREADY_ABSENT");
+                }));
+  }
+
+  @Test
+  void readsWellFormedDetachedPrerequisiteProofEvidenceWithoutAttestation() throws IOException {
+    final Path report = temp.resolve("valid-detached-proof.json");
+    final ObjectMapper mapper = new ObjectMapper();
+    mapper.writeValue(report.toFile(), detachedProofPayload(mapper));
+
+    final MavenElisionReportSnapshot replayed = MavenElisionReportWriter.read(report);
+
+    assertAll(
+        () -> assertThat(replayed.genericFindings()).hasSize(1),
+        () -> assertThat(replayed.genericFindings().getFirst().prerequisiteProof()).isEmpty(),
+        () ->
+            assertThat(replayed.genericFindings().getFirst().prerequisiteProofEvidence())
+                .isPresent());
+  }
+
+  @Test
+  void rejectsPhysicalPrerequisiteProofEvidenceOnAnAnalysisOnlyOutcome() throws IOException {
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode payload = detachedProofPayload(mapper);
+    ((ObjectNode) payload.withArray("genericFindings").get(0))
+        .put("outcome", "PLANNED_CODE_ABSENT");
+    final Path report = temp.resolve("planned-outcome-with-physical-proof.json");
+    mapper.writeValue(report.toFile(), payload);
+
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(report))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("prerequisiteProof");
+  }
+
+  @Test
+  void applicationProviderTransitionKeepsOnePathIdentity() {
+    assertThatThrownBy(
+            () ->
+                new PrerequisiteProofEvidence.ProviderEvidence(
+                    PreconditionClassInventory.ProviderKind.APPLICATION_CLASS_FILE,
+                    null,
+                    Path.of("/tmp/application-before"),
+                    "a".repeat(64),
+                    Path.of("/tmp/application-after"),
+                    "b".repeat(64),
+                    PrerequisiteAbsenceAttribution.PRESENT))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("same path");
+  }
+
+  private static ArrayNode proofGroups(final ObjectNode proof) {
+    return proof.withArray("groups");
+  }
+
+  private static ArrayNode proofMembers(final ObjectNode proof) {
+    return ((ObjectNode) proofGroups(proof).get(0)).withArray("members");
+  }
+
+  private static ObjectNode proofProvider(final ObjectNode proof) {
+    return (ObjectNode) proofMember(proof).withArray("providers").get(0);
+  }
+
+  private static ObjectNode proofMember(final ObjectNode proof) {
+    return (ObjectNode) proofMembers(proof).get(0);
+  }
+
+  private static ObjectNode proofGroup(final ObjectNode proof) {
+    return (ObjectNode) proofGroups(proof).get(0);
+  }
+
+  private void assertMalformedProof(
+      final ObjectMapper mapper,
+      final ObjectNode validPayload,
+      final String name,
+      final String expectedField,
+      final Consumer<ObjectNode> mutation)
+      throws IOException {
+    final Path report = temp.resolve(name + ".json");
+    final ObjectNode payload = validPayload.deepCopy();
+    final ObjectNode proof =
+        (ObjectNode) payload.withArray("genericFindings").get(0).get("prerequisiteProof");
+    mutation.accept(proof);
+    mapper.writeValue(report.toFile(), payload);
+    assertThatThrownBy(() -> MavenElisionReportWriter.read(report))
+        .as("malformed prerequisite proof row: %s", name)
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("prerequisiteProof")
+        .hasMessageContaining(expectedField);
+  }
+
+  private void assertAcceptedProof(
+      final ObjectMapper mapper,
+      final ObjectNode validPayload,
+      final String name,
+      final Consumer<ObjectNode> mutation)
+      throws IOException {
+    final ObjectNode payload = validPayload.deepCopy();
+    mutation.accept(
+        (ObjectNode) payload.withArray("genericFindings").get(0).get("prerequisiteProof"));
+    final Path report = temp.resolve(name + ".json");
+    mapper.writeValue(report.toFile(), payload);
+    assertThat(
+            MavenElisionReportWriter.read(report).genericFindings().getFirst().prerequisiteProof())
+        .as("valid detached proof case: %s", name)
+        .isEmpty();
+  }
+
+  private ObjectNode detachedProofPayload(final ObjectMapper mapper) throws IOException {
+    final ArtifactCoordinate candidate = ArtifactCoordinate.of("org.example", "library", "1.5");
+    final ArtifactCoordinate prerequisite =
+        ArtifactCoordinate.of("org.example", "prerequisite", "1.0");
+    final Path candidatePath = providerJar("valid-proof-candidate.jar");
+    final Path originalPrerequisite =
+        providerJar("valid-proof-prerequisite-original.jar", "p/Required");
+    final PrerequisiteClaim claim = new PrerequisiteClaim("org.example:prerequisite", "p.Required");
+    final PrerequisiteGroup group =
+        new PrerequisiteGroup(PrerequisiteOperator.ANY_OF, Set.of(claim));
+    final VulnerabilityFindingContribution contribution =
+        new VulnerabilityFindingContribution(
+            "CVE-2026-24681",
+            Set.of(),
+            candidate.groupId(),
+            candidate.artifactId(),
+            candidate.type(),
+            candidate.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.5]")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of(group)),
+            MergePriority.MANUAL,
+            AssessmentIntent.AUTO_VERIFY,
+            "manual:proof-payload",
+            Set.of(
+                new AdvisoryProvenance(
+                    EvidenceOrigin.POM,
+                    "proof-payload",
+                    URI.create("https://example.test/proof-payload"),
+                    null)),
+            io.github.spockz.elider.model.ConfidenceLevel.HIGH);
+    final GenericVulnerabilityFinding merged =
+        GenericVulnerabilityFinding.merge(List.of(contribution));
+    final PreconditionClassInventory baseline =
+        PreconditionClassInventory.complete(
+            List.of(
+                provider(candidate, candidatePath), provider(prerequisite, originalPrerequisite)));
+    final PreconditionClassInventory actualFinal =
+        PreconditionClassInventory.complete(List.of(provider(candidate, candidatePath)));
+    final PrerequisiteProofResult proof =
+        PreconditionProof.proveWithAttribution(merged, candidate, baseline, actualFinal);
+    final GenericFindingAssessment assessment =
+        assessmentRow(candidate, contribution, group, proof);
+    final Path report = temp.resolve("proof-row-template.json");
+    MavenElisionReportWriter.write(report, snapshot(assessment, List.of()));
+    return (ObjectNode) mapper.readTree(report.toFile());
   }
 
   @Test
@@ -524,6 +1431,54 @@ class MavenElisionReportGenericFindingTest {
     return path;
   }
 
+  // Each archive entry and ASM writer has independent mutable write state.
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  private Path providerJar(final String name, final String... internalNames) throws IOException {
+    final Path path = temp.resolve(name);
+    try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path))) {
+      for (final String internalName : internalNames) {
+        output.putNextEntry(new JarEntry(internalName + ".class"));
+        final ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
+        writer.visitEnd();
+        output.write(writer.toByteArray());
+        output.closeEntry();
+      }
+    }
+    return path;
+  }
+
+  private static PreconditionClassInventory.Provider provider(
+      final ArtifactCoordinate coordinate, final Path path) throws IOException {
+    return PreconditionClassInventory.Provider.dependencyArchive(coordinate, path);
+  }
+
+  private static GenericFindingAssessment assessmentRow(
+      final ArtifactCoordinate candidate,
+      final VulnerabilityFindingContribution contribution,
+      final PrerequisiteGroup group,
+      final PrerequisiteProofResult proof) {
+    return new GenericFindingAssessment(
+        contribution.vulnerabilityId(),
+        Set.of(contribution.vulnerabilityId()),
+        candidate,
+        VersionApplicability.AFFECTED,
+        Optional.of(AssessmentIntent.AUTO_VERIFY),
+        ClaimGroupStatus.OMITTED,
+        List.of(),
+        List.of(),
+        ClaimGroupStatus.DECLARED,
+        group.members().stream().sorted().toList(),
+        List.of(),
+        Set.of(),
+        Set.of(),
+        GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT,
+        proof.attestation().impactDetail(),
+        MavenVulnerabilityAssessment.InventoryDisposition.RETAINED_AND_TRIMMED,
+        List.of(contribution),
+        Optional.of(proof));
+  }
+
   @Test
   void changingSourceLabelsChangesDisplayButNotSavedDecision() throws IOException {
     final GenericFindingAssessment original = finding();
@@ -643,7 +1598,7 @@ class MavenElisionReportGenericFindingTest {
     ((ObjectNode) missingNested.withArray("genericFindings").get(0).path("contributions").get(0))
         .remove("classifier");
     final ObjectNode badReason = original.deepCopy();
-    ((com.fasterxml.jackson.databind.node.ArrayNode)
+    ((ArrayNode)
             badReason
                 .withArray("genericFindings")
                 .get(0)
@@ -861,4 +1816,21 @@ class MavenElisionReportGenericFindingTest {
         new MavenVulnerabilityAssessment.Result(List.of(), List.of(finding), sources, false);
     return MavenElisionReportSnapshot.from(project, analysis, result);
   }
+
+  private record SerializedProofContext(
+      ArtifactCoordinate candidate,
+      Path candidateFinalPath,
+      PreconditionClassInventory baseline,
+      PreconditionClassInventory actualFinal,
+      ProviderEvidencePaths providers) {}
+
+  private record ProviderEvidencePaths(
+      ArtifactCoordinate presentProvider,
+      ArtifactCoordinate droppedProvider,
+      ArtifactCoordinate trimmedProvider,
+      Path presentBaselinePath,
+      Path presentFinalPath,
+      Path droppedBaselinePath,
+      Path trimmedBaselinePath,
+      Path trimmedFinalPath) {}
 }

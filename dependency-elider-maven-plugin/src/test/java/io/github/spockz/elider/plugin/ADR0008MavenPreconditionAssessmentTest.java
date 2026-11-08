@@ -959,10 +959,15 @@ final class ADR0008MavenPreconditionAssessmentTest {
     final Path reportPath = temporaryDirectory.resolve("precondition-replay-report.json");
     MavenElisionReportWriter.write(reportPath, report);
     final MavenElisionReportSnapshot replayed = MavenElisionReportWriter.read(reportPath);
-    assertThat(replayed.genericFindings())
-        .usingRecursiveComparison()
-        .ignoringFields("prerequisiteProof")
-        .isEqualTo(report.genericFindings());
+    final GenericFindingAssessment replayedFinding = replayed.genericFindings().getFirst();
+    final GenericFindingAssessment sourceFinding = report.genericFindings().getFirst();
+    assertAll(
+        "report replay keeps detached evidence without recreating proof authority",
+        () -> assertThat(sourceFinding.prerequisiteProofEvidence()).isPresent(),
+        () ->
+            assertThat(replayedFinding.prerequisiteProofEvidence())
+                .isEqualTo(sourceFinding.prerequisiteProofEvidence()),
+        () -> assertThat(replayedFinding.prerequisiteProof()).isEmpty());
   }
 
   private MavenVulnerabilityAssessment.Result assess(

@@ -21,6 +21,16 @@ final class VexSerializerSupport {
 
   private VexSerializerSupport() {}
 
+  static boolean sameEvidence(final VexAttestation left, final VexAttestation right) {
+    return left.coordinate().equals(right.coordinate())
+        && left.justification().equals(right.justification())
+        && left.impactDetail().equals(right.impactDetail())
+        && left.evidenceSymbols().equals(right.evidenceSymbols())
+        && Objects.equals(left.originalSha256(), right.originalSha256())
+        && Objects.equals(left.trimmedSha256(), right.trimmedSha256())
+        && PreconditionEvidenceIdentity.from(left).equals(PreconditionEvidenceIdentity.from(right));
+  }
+
   static boolean isPrecondition(final VexAttestation attestation) {
     return PRECONDITION.equals(attestation.justification());
   }
@@ -33,20 +43,6 @@ final class VexSerializerSupport {
     final String actualSha256 = CycloneDxSbomGenerator.sha256(component.filePath());
     requireMatchingDigest(attestation, expectedSha256, actualSha256);
     return actualSha256;
-  }
-
-  static boolean sameEvidence(final VexAttestation left, final VexAttestation right) {
-    return left.coordinate().equals(right.coordinate())
-        && left.justification().equals(right.justification())
-        && left.impactDetail().equals(right.impactDetail())
-        && left.evidenceSymbols().equals(right.evidenceSymbols())
-        && Objects.equals(left.originalSha256(), right.originalSha256())
-        && Objects.equals(left.trimmedSha256(), right.trimmedSha256())
-        && left.requiredPrerequisites().equals(right.requiredPrerequisites())
-        && left.requiredPrerequisiteGroups().equals(right.requiredPrerequisiteGroups())
-        && Objects.equals(left.affectedArtifactPath(), right.affectedArtifactPath())
-        && Objects.equals(left.postElisionSha256(), right.postElisionSha256())
-        && Objects.equals(left.inventorySha256(), right.inventorySha256());
   }
 
   /** Keeps proof types separate until each type's conflicts have been checked. */

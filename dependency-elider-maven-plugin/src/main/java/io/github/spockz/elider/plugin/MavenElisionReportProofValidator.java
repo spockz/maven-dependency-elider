@@ -6,6 +6,8 @@ import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.ClaimGroupStatus;
 import io.github.spockz.elider.model.CodeAttributionResolver;
 import io.github.spockz.elider.model.CodeClaim;
+import io.github.spockz.elider.model.GenericVulnerabilityFinding;
+import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.VersionApplicability;
 import java.io.IOException;
 import java.util.List;
@@ -15,6 +17,7 @@ final class MavenElisionReportProofValidator {
   private MavenElisionReportProofValidator() {}
 
   /* package */ static void validate(final GenericFindingAssessment finding) throws IOException {
+    validateDetachedProofEvidence(finding);
     if (!isProof(finding.outcome())) {
       return;
     }
@@ -97,8 +100,89 @@ final class MavenElisionReportProofValidator {
   private static void validatePrerequisites(final GenericFindingAssessment finding)
       throws IOException {
     if (finding.prerequisiteGroupStatus() != ClaimGroupStatus.DECLARED
-        || finding.effectivePrerequisites().isEmpty()) {
+        || finding.effectivePrerequisites().isEmpty()
+        || finding.prerequisiteProofEvidence().isEmpty()) {
       throw new IOException("Saved prerequisite proof requires declared prerequisite pairs");
     }
+  }
+
+  private static void validateDetachedProofEvidence(final GenericFindingAssessment finding)
+      throws IOException {
+    final PrerequisiteProofEvidence evidence = finding.prerequisiteProofEvidence().orElse(null);
+    if (finding.outcome() == GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT
+        && evidence == null) {
+      throw new IOException("Saved prerequisite proof requires prerequisiteProof evidence");
+    }
+    if (evidence == null) {
+      return;
+    }
+    validateProofOutcome(finding);
+    validateProofCandidate(finding, evidence);
+    validateSelectedProofGroups(finding, evidence);
+  }
+
+  private static void validateProofOutcome(final GenericFindingAssessment finding)
+      throws IOException {
+    if (finding.outcome() != GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT) {
+      throw new IOException("prerequisiteProof is not valid for this assessment outcome");
+    }
+  }
+
+  private static void validateProofCandidate(
+      final GenericFindingAssessment finding, final PrerequisiteProofEvidence evidence)
+      throws IOException {
+    if (!evidence.candidate().equals(finding.candidate())) {
+      throw new IOException("prerequisiteProof.candidate does not match the finding candidate");
+    }
+  }
+
+  private static void validateSelectedProofGroups(
+      final GenericFindingAssessment finding, final PrerequisiteProofEvidence evidence)
+      throws IOException {
+    final java.util.Set<io.github.spockz.elider.model.PrerequisiteClaim> members =
+        evidence.groups().stream()
+            .flatMap(group -> group.group().members().stream())
+            .collect(java.util.stream.Collectors.toSet());
+    if (!members.equals(java.util.Set.copyOf(finding.effectivePrerequisites()))) {
+      throw new IOException("prerequisiteProof.groups do not match selected prerequisite members");
+    }
+    final java.util.Set<PrerequisiteGroup> selectedGroups;
+    try {
+      selectedGroups =
+          java.util.Set.copyOf(
+              GenericVulnerabilityFinding.merge(finding.contributions())
+                  .effectivePrerequisiteGroupsFor(finding.candidate().version()));
+    } catch (final IllegalArgumentException exception) {
+      throw new IOException(
+          "prerequisiteProof cannot be matched to selected source groups", exception);
+    }
+    final java.util.Set<PrerequisiteGroup> evidenceGroups =
+        evidence.groups().stream()
+            .map(PrerequisiteProofEvidence.GroupEvidence::group)
+            .collect(java.util.stream.Collectors.toSet());
+    for (int index = 0; index < evidence.groups().size(); index++) {
+      final PrerequisiteGroup group = evidence.groups().get(index).group();
+      validateSelectedGroup(group, index, selectedGroups);
+    }
+    if (!evidenceGroups.equals(selectedGroups)) {
+      throw new IOException("prerequisiteProof.groups omit a selected source group");
+    }
+  }
+
+  private static void validateSelectedGroup(
+      final PrerequisiteGroup group,
+      final int index,
+      final java.util.Set<PrerequisiteGroup> selectedGroups)
+      throws IOException {
+    if (selectedGroups.contains(group)) {
+      return;
+    }
+    final boolean sameMembers =
+        selectedGroups.stream().anyMatch(value -> value.members().equals(group.members()));
+    if (sameMembers) {
+      throw new IOException(
+          "prerequisiteProof.groups[" + index + "].operator differs from the selected source");
+    }
+    throw new IOException("prerequisiteProof.groups[" + index + "] is not a selected source group");
   }
 }

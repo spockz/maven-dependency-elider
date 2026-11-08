@@ -2,8 +2,6 @@
 
 package io.github.spockz.elider.model;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.Objects;
@@ -11,7 +9,9 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /** Immutable evidence for omitted-code or prerequisite-class VEX justifications. */
+// PMD DataClass is intentional: this type is an immutable verified evidence value.
 @SuppressWarnings({
+  "PMD.DataClass",
   "PMD.AvoidFieldNameMatchingMethodName",
   "PMD.CommentDefaultAccessModifier",
   "PMD.TooManyMethods"
@@ -53,6 +53,9 @@ public final class VexAttestation {
   /** Complete operator groups retained from the selected source evidence. */
   private final Set<PrerequisiteGroup> requiredPrerequisiteGroups;
 
+  /** Final-inventory presence state for every checked prerequisite member. */
+  private final Set<PrerequisiteMemberObservation> requiredPrerequisiteObservations;
+
   /** Retained affected artifact path bound by precondition evidence. */
   private final Path affectedArtifactPath;
 
@@ -78,6 +81,7 @@ public final class VexAttestation {
       final String trimmedSha256,
       final Set<PrerequisiteClaim> requiredPrerequisites,
       final Set<PrerequisiteGroup> requiredPrerequisiteGroups,
+      final Set<PrerequisiteMemberObservation> requiredPrerequisiteObservations,
       final Path affectedArtifactPath,
       final String postElisionSha256,
       final String inventorySha256,
@@ -99,23 +103,29 @@ public final class VexAttestation {
     this.requiredPrerequisites = Collections.unmodifiableSet(new TreeSet<>(requiredPrerequisites));
     this.requiredPrerequisiteGroups =
         Collections.unmodifiableSet(new TreeSet<>(requiredPrerequisiteGroups));
+    this.requiredPrerequisiteObservations =
+        Collections.unmodifiableSet(new TreeSet<>(requiredPrerequisiteObservations));
     Path boundArtifactPath = null;
     if (OMITTED_CODE_JUSTIFICATION.equals(justification)) {
-      validateOmittedCodeEvidence(
+      PrerequisiteEvidenceValidator.validateOmittedCode(
           evidenceSymbols,
           originalSha256,
           trimmedSha256,
           this.requiredPrerequisites,
+          this.requiredPrerequisiteGroups,
+          this.requiredPrerequisiteObservations,
           affectedArtifactPath,
           postElisionSha256,
           inventorySha256);
     } else {
       boundArtifactPath =
-          validatePreconditionEvidence(
+          PrerequisiteEvidenceValidator.validatePrecondition(
               evidenceSymbols,
               originalSha256,
               trimmedSha256,
               this.requiredPrerequisites,
+              this.requiredPrerequisiteGroups,
+              this.requiredPrerequisiteObservations,
               affectedArtifactPath,
               postElisionSha256,
               inventorySha256);
@@ -147,6 +157,7 @@ public final class VexAttestation {
         trimmed,
         Set.of(),
         Set.of(),
+        Set.of(),
         null,
         null,
         null,
@@ -160,6 +171,7 @@ public final class VexAttestation {
       final ArtifactCoordinate coordinate,
       final String detail,
       final Set<PrerequisiteGroup> groups,
+      final Set<PrerequisiteMemberObservation> observations,
       final Path path,
       final String digest,
       final String inventoryDigest) {
@@ -177,6 +189,7 @@ public final class VexAttestation {
         null,
         pairs,
         groups,
+        observations,
         path,
         digest,
         inventoryDigest,
@@ -217,6 +230,7 @@ public final class VexAttestation {
         trimmedSha256,
         requiredPrerequisites,
         requiredPrerequisiteGroups,
+        requiredPrerequisiteObservations,
         affectedArtifactPath,
         postElisionSha256,
         inventorySha256,
@@ -269,7 +283,7 @@ public final class VexAttestation {
     return singlePrerequisite().map(PrerequisiteClaim::requiresClass).orElse(null);
   }
 
-  /** Returns every effective prerequisite pair proven absent. */
+  /** Returns checked members; their operators determine the proof state. */
   public Set<PrerequisiteClaim> requiredPrerequisites() {
     return requiredPrerequisites;
   }
@@ -277,6 +291,11 @@ public final class VexAttestation {
   /** Returns the operator groups evaluated by prerequisite proof. */
   public Set<PrerequisiteGroup> requiredPrerequisiteGroups() {
     return requiredPrerequisiteGroups;
+  }
+
+  /** Returns final-inventory presence for every checked prerequisite member. */
+  public Set<PrerequisiteMemberObservation> requiredPrerequisiteObservations() {
+    return requiredPrerequisiteObservations;
   }
 
   private java.util.Optional<PrerequisiteClaim> singlePrerequisite() {
@@ -300,66 +319,5 @@ public final class VexAttestation {
   /** Returns the complete class inventory fingerprint for precondition evidence. */
   public String inventorySha256() {
     return inventorySha256;
-  }
-
-  private static void requireSha256(final String value, final String name) {
-    if (value == null || !value.matches("[0-9a-f]{64}")) {
-      throw new IllegalArgumentException(name + " must be a lowercase SHA-256 digest");
-    }
-  }
-
-  private static void validateOmittedCodeEvidence(
-      final Set<String> evidenceSymbols,
-      final String originalSha256,
-      final String trimmedSha256,
-      final Set<PrerequisiteClaim> requiredPrerequisites,
-      final Path affectedArtifactPath,
-      final String postElisionSha256,
-      final String inventorySha256) {
-    if (evidenceSymbols.isEmpty()) {
-      throw new IllegalArgumentException("evidenceSymbols must not be empty");
-    }
-    requireSha256(originalSha256, "originalSha256");
-    requireSha256(trimmedSha256, "trimmedSha256");
-    if (!requiredPrerequisites.isEmpty()
-        || affectedArtifactPath != null
-        || postElisionSha256 != null
-        || inventorySha256 != null) {
-      throw new IllegalArgumentException(
-          "Omitted-code evidence must not contain precondition data");
-    }
-  }
-
-  private static Path validatePreconditionEvidence(
-      final Set<String> evidenceSymbols,
-      final String originalSha256,
-      final String trimmedSha256,
-      final Set<PrerequisiteClaim> requiredPrerequisites,
-      final Path affectedArtifactPath,
-      final String postElisionSha256,
-      final String inventorySha256) {
-    if (!evidenceSymbols.isEmpty() || originalSha256 != null || trimmedSha256 != null) {
-      throw new IllegalArgumentException(
-          "Precondition evidence must not contain omitted-code symbols or digests");
-    }
-    if (requiredPrerequisites.isEmpty()) {
-      throw new IllegalArgumentException("Precondition evidence requires a prerequisite set");
-    }
-    final Path normalizedPath =
-        canonicalizePath(Objects.requireNonNull(affectedArtifactPath, "affectedArtifactPath"));
-    requireSha256(postElisionSha256, "postElisionSha256");
-    requireSha256(inventorySha256, "inventorySha256");
-    return normalizedPath;
-  }
-
-  private static Path canonicalizePath(final Path path) {
-    try {
-      if (Files.exists(path)) {
-        return path.toRealPath();
-      }
-    } catch (final IOException ignored) {
-      // Fall through to toAbsolutePath().normalize()
-    }
-    return path.toAbsolutePath().normalize();
   }
 }
