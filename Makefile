@@ -24,7 +24,7 @@ endif
 
 .DEFAULT_GOAL := check
 
-.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all coverage test-examples test-reactor-example test-example-scheduler test-format test-sbom-comparison scan-sbom verify-docs site serve
+.PHONY: check check-parallel check-transcripts update-transcripts java-check check-ci tools fix fmt lint lint-check lint-parallel lint-java lint-markdown vuln test-core test-plugin test-all coverage test-examples test-reactor-example test-example-scheduler test-catalog-reproducibility test-format test-sbom-comparison scan-sbom verify-docs site serve
 
 check: ## Format, run Java checks/tests and Markdown lint concurrently, then verify command transcripts
 	$(MAKE) --no-print-directory fmt
@@ -34,9 +34,12 @@ check: ## Format, run Java checks/tests and Markdown lint concurrently, then ver
 update-transcripts: ## Re-run configured example goals and update their documentation transcripts
 	$(GO) run scripts/update-transcripts.go --update
 
-check-transcripts: ## Verify configured command transcripts without rewriting documentation
+check-transcripts: test-catalog-reproducibility ## Verify configured command transcripts without rewriting documentation
 	$(GO) test scripts/update-transcripts.go scripts/update-transcripts_test.go
 	$(GO) run scripts/update-transcripts.go --check
+
+test-catalog-reproducibility: ## Verify the published example catalog archive has stable bytes
+	JAVA_HOME="$(JAVA_HOME)" MAVEN="$(MAVEN)" MAVEN_ARGS="$(MAVEN_ARGS)" bash ./scripts/test-catalog-reproducibility.sh
 
 check-parallel: java-check lint-markdown test-example-scheduler test-format test-sbom-comparison
 

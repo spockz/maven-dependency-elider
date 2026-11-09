@@ -2431,7 +2431,7 @@ Process exit status: 0
 [INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] Adopted vulnerability mapping catalogs:
-[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=1e01a18825c5a284eee487128a7a76e18e0b3071b2614721e5b8afd1599fe865, mappings=2, unresolved=0)
+[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=640572de4b70a9014a5c455d3129f9a81daa30a162147423c2e49e49bef7ad58, mappings=2, unresolved=0)
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
@@ -3527,7 +3527,7 @@ Process exit status: 0
 [INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] Adopted vulnerability mapping catalogs:
-[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=1e01a18825c5a284eee487128a7a76e18e0b3071b2614721e5b8afd1599fe865, mappings=2, unresolved=0)
+[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=640572de4b70a9014a5c455d3129f9a81daa30a162147423c2e49e49bef7ad58, mappings=2, unresolved=0)
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
