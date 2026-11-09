@@ -238,3 +238,12 @@ Both runs used GraalVM JDK 21.0.12+7.1, the repository Maven wrapper (Apache Mav
 ### 2026-11-07: Standalone Cache Benchmark Retirement
 
 The obsolete `elider.cache` package and its sole benchmark caller, `ElisionCacheBenchmark`, were removed because they did not participate in the production Maven trim-cache path. The separate `MavenTrimCacheBenchmark` remains and measures production trim-cache operations. The earlier three-row core-cache timing table is retained in `CONTRIBUTING.md` as historical evidence only; those measurements are not production trim-cache results and the old benchmark command is no longer runnable. Current benchmark instructions point to `MavenTrimCacheBenchmark` and its warm and fresh-request operations.
+
+### 2026-11-08: Wholesale-purge verification boundary
+
+The wholesale-purge work package also removes redundant direct trimming/cache paths and repeated
+inventory revalidation that were not part of the production Maven publication boundary. Stable
+resolved inputs are captured once under [ADR-0004](../adr/0004-assume-resolved-inputs-stable-during-build.md);
+output files retain their per-file safe replacement behavior. This is an architectural cleanup,
+not a new trim-cache latency measurement. The full fixture and repository check results are recorded
+in `.scratch/orchestration-status.md`; no new fast-path timing claim is made here.

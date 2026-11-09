@@ -624,6 +624,7 @@ final class ElideMojoTest {
                 "unused-runtime-valid-jar",
                 Map.of("unused/Entry.java", "package unused; public class Entry {}"),
                 null));
+    final Path unusedRuntimeOriginal = unusedRuntime.getFile().toPath();
     final MavenProject project =
         project(runtime, new LinkedHashSet<>(List.of(directRuntime)), unusedRuntime);
     final Set<Artifact> directBefore = project.getDependencyArtifacts();
@@ -690,10 +691,11 @@ final class ElideMojoTest {
     assertThat(runtime.getFile().toPath()).isNotEqualTo(original).isRegularFile();
     assertThat(log.messages())
         .contains(
-            "Program classes pruned from retained JARs: 1 (uncompressed omitted .class payload"
+            "Program classes pruned from retained JARs: 2 (uncompressed omitted .class payload"
                 + " bytes: "
                 + MavenElisionReportWriter.formatBytes(
-                    classEntrySize(original, "sample/Drop.class"))
+                    classEntrySize(original, "sample/Drop.class")
+                        + classEntrySize(unusedRuntimeOriginal, "unused/Entry.class"))
                 + "; excludes module descriptors and archive metadata)");
     assertThat(log.messages()).doesNotContain("  Classes removed: 0 / N/A (N/A; stage not run)");
     assertAll(
@@ -2145,7 +2147,7 @@ final class ElideMojoTest {
   }
 
   @Test
-  void rootlessRetainedJarSeedsLinksIntoAnIndependentlyRootedSibling()
+  void rootlessRetainedJarDoesNotSeedLinksIntoAnIndependentlyRootedSibling()
       throws IOException, ReflectiveOperationException, MojoFailureException {
     final Path callbackJar =
         compileJarSources(
@@ -2192,15 +2194,13 @@ final class ElideMojoTest {
 
     mojo.execute();
 
-    assertThat(helper.getFile().toPath()).isEqualTo(helperJar);
-    assertJarContains(callback, "callback/Callback.class");
-    try (URLClassLoader loader =
-        new URLClassLoader(
-            new URL[] {helper.getFile().toURI().toURL(), callback.getFile().toURI().toURL()})) {
-      assertThat(loader.loadClass("callback.Helper").getMethod("call").invoke(null))
-          .isEqualTo("callback");
+    assertThat(helper.getFile().toPath()).isNotEqualTo(helperJar).isRegularFile();
+    try (JarFile trimmedHelper = new JarFile(helper.getFile())) {
+      assertThat(trimmedHelper.getEntry("callback/Helper.class")).isNull();
     }
+    assertJarContains(callback, "callback/Independent.class");
     try (JarFile trimmed = new JarFile(callback.getFile())) {
+      assertThat(trimmed.getEntry("callback/Callback.class")).isNull();
       assertThat(trimmed.getEntry("callback/Unused.class")).isNull();
     }
   }

@@ -38,7 +38,10 @@ final class MavenPreconditionPrediction {
     for (final ElisionAnalysisModel.ArtifactSnapshot artifact : prediction.inputArtifacts()) {
       try {
         providers.add(Provider.dependencyArchive(artifact.coordinate(), artifact.filePath()));
-      } catch (final IOException | UncheckedIOException | IllegalArgumentException failure) {
+      } catch (final IOException
+          | UncheckedIOException
+          | IllegalArgumentException
+          | SecurityException failure) {
         failures.add(
             "Could not inspect input artifact " + artifact.coordinate() + ": " + message(failure));
       }

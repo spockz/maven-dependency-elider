@@ -4,7 +4,7 @@
 Maven Dependency Elider provides four primary goals:
 
 * `analyze`: Dry-run that identifies removable dependencies and estimates size savings without changing dependency artifacts, classpaths, or packages. It may write the configured class-usage report.
-* `elide`: Active build-time goal that prunes unneeded JARs and trims unreferenced classes during the `INITIALIZE` phase.
+* `elide`: Active build-time goal that prunes unneeded JARs and trims unreferenced classes during the `process-classes` phase.
 * `report`: Displays the persisted elision snapshot and mediated dependency graph from the last successful build.
 * `update-cve-index`: Refreshes local vulnerability intelligence from OSV and CVEList v5.
 
@@ -70,7 +70,7 @@ $ ./mvnw \
   io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
   -Delide.traceFiles=$TRANSCRIPT_EVIDENCE/example-cve-unused-app.log \
   -Delide.trimJars=true \
-  -Delide.sourceRootsComplete=true \
+  -Delide.productionClassesComplete=true \
   -Dmaven.compiler.proc=none \
   -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-core:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar: \
   -Delide.cveCacheDirectory=$TRANSCRIPT_EVIDENCE/vulnerability-cache \
@@ -83,6 +83,11 @@ Process exit status: 0
 [INFO] --------------------------------[ jar ]---------------------------------
 [INFO]
 [INFO] --- dependency-elider:0.1.0-SNAPSHOT:analyze (default-cli) @ example-cve-unused-app ---
+[WARNING] Dynamic root io.micrometer.context.ThreadLocalAccessor declared by archive io.micrometer:micrometer-observation:jar:1.15.0 (compile) does not resolve to an application or dependency class; it will not retain unrelated archives.
+[WARNING] Dynamic root jakarta.servlet.ServletContainerInitializer declared by archive ch.qos.logback:logback-classic:jar:1.5.18 (compile) does not resolve to an application or dependency class; it will not retain unrelated archives.
+[WARNING] Dynamic root org.springframework.aop.scope.ScopedProxyBeanRegistrationContributionProvider declared by archive org.springframework:spring-aop:jar:6.2.7 (compile) does not resolve to an application or dependency class; it will not retain unrelated archives.
+[WARNING] Dynamic root org.springframework.beans.factory.generator.BeanRegistrationContributionProvider declared by archive org.springframework:spring-aop:jar:6.2.7 (compile) does not resolve to an application or dependency class; it will not retain unrelated archives.
+[WARNING] Dynamic root reactor.blockhound.integration.BlockHoundIntegration declared by archive org.springframework:spring-core:jar:6.2.7 (compile) does not resolve to an application or dependency class; it will not retain unrelated archives.
 [INFO] Dependency Elider report
 [INFO] Project: io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT
 [INFO] Snapshot: analysis prediction at <TIMESTAMP>
@@ -91,9 +96,10 @@ Process exit status: 0
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
-[INFO] Whole artifacts that would be dropped: 0 / 25 (original JAR file bytes: 0 B)
-[INFO] Program classes that would be removed with dropped JARs: 0 (uncompressed .class entry payload bytes: 0 B; excludes module descriptors and archive sanitation metadata)
-[INFO] Raw trace decision drops before graph safety: 0
+[INFO] Whole artifacts that would be dropped: 1 / 26 (original JAR file bytes: 657.80 KiB)
+[INFO] Program classes that would be removed with dropped JARs: 395 (uncompressed .class entry payload bytes: 1.37 MiB; excludes module descriptors and archive sanitation metadata)
+[INFO]   - org.apache.commons:commons-lang3:jar:3.17.0 (compile): 657.80 KiB original JAR, 395 class entries, 1.37 MiB
+[INFO] Raw trace decision drops before graph safety: 2
 [INFO] Planned bans: none
 [INFO] Program classes that would be pruned from retained JARs: 330 (uncompressed omitted .class payload bytes: unknown; excludes module descriptors and archive metadata)
 [INFO]   - com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile): 20 classes, unknown
@@ -109,7 +115,467 @@ Process exit status: 0
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.17 (compile): 5 classes, unknown
 [INFO]     Would remove classes: [org.slf4j.LoggerFactoryFriend, org.slf4j.helpers.MarkerIgnoringBase, org.slf4j.helpers.Slf4jEnvUtil, org.slf4j.spi.LoggerFactoryBinder, org.slf4j.spi.MarkerFactoryBinder]
 [INFO] Analysis only: no trim proof or published changes
-[INFO] Vulnerability findings: 29
+[INFO] Vulnerability findings: 140
+[INFO]   - CVE-2009-1190 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2009-1190, GHSA-wjjr-h4wh-w6vv]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2011-2730 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2011-2730, GHSA-wv88-pf73-x22p]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2011-2894 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2011-2894, GHSA-f866-m9mv-2xr3]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2014-3578 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2014-3578, GHSA-rhcg-rwhx-qj3j]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2015-0201 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2015-0201, GHSA-45vg-2v73-vm62]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2015-5211 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2015-5211, GHSA-pgf9-h69p-pcgf]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2016-5007 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2016-5007, GHSA-8crv-49fr-2h6j]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2017-15095 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2017-15095, GHSA-h592-38cm-4ggp]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2017-17485 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2017-17485, GHSA-rfx6-vp9g-rh7v]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2017-5929 ch.qos.logback:logback-classic:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2017-5929, GHSA-vmfg-rjjm-rjrj]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2017-5929 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2017-5929, GHSA-vmfg-rjjm-rjrj]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2017-7525 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2017-7525, GHSA-qxxx-2pp7-5hmx]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-11040 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2018-11040, GHSA-f26x-pr96-vw86]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-11307 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-11307, GHSA-qr7j-h6gg-jmgc]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-1199 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2018-1199, GHSA-v596-fwhq-8x48]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-12022 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-12022, GHSA-cjjf-94ff-43w7]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-12023 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-12023, GHSA-6wqp-v4v6-c87c]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-1257 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2018-1257, GHSA-rcpf-vj53-7h2m]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-1258 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2018-1258, GHSA-cxrj-66c5-9fmh]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-1271 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2018-1271, GHSA-g8hw-794c-4j9g]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-1272 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2018-1272, GHSA-4487-x383-qpph]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-14718 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-14718, GHSA-645p-88qh-w398]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-14719 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-14719, GHSA-4gq5-ch57-c2mg]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-14720 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-14720, GHSA-x2w5-5m2g-7h5m]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-14721 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-14721, GHSA-9mxf-g3x6-wv74]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-15756 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2018-15756, GHSA-ffvq-7w96-97p7]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-19360 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-19360, GHSA-f9hv-mg5h-xcw9]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-19361 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-19361, GHSA-mx9v-gmh4-mgqw]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-19362 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-19362, GHSA-c8hm-7hpq-7jhg]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-5968 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-5968, GHSA-w3f4-3q6j-rh82]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-7489 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2018-7489, GHSA-cggj-fvv3-cqwv]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-12086 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-12086, GHSA-5ww9-j83m-q7qx]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-12384 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-12384, GHSA-mph4-vhrx-mv67]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-12814 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-12814, GHSA-cmfg-87vq-g5g4]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-14379 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-14379, GHSA-6fpp-rgj9-8rwc]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-14439 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-14439, GHSA-gwp4-hfv6-p7hw]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-14540 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-14540, GHSA-h822-r4r5-v8jg]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-14892 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-14892, GHSA-cf6r-3wgc-h863]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-14893 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-14893, GHSA-qmqc-x3r4-6v39]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-16335 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-16335, GHSA-85cw-hj65-qqv9]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-16942 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-16942, GHSA-mx7p-6679-8g3q]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-16943 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-16943, GHSA-fmmc-742q-jg75]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-17267 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-17267, GHSA-f3j5-rmmp-3fc5]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-17531 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-17531, GHSA-gjmw-vf9h-g25v]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2019-20330 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2019-20330, GHSA-gww7-p5w4-wrfv]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-10650 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-10650, GHSA-rpr3-cw39-3pxh]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-10672 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-10672, GHSA-95cm-88f5-f2c7]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-10673 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-10673, GHSA-fqwf-pjwf-7vqv]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-10968 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-10968, GHSA-rf6r-2c4q-2vwg]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-10969 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-10969, GHSA-758m-v56v-grj4]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-11111 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-11111, GHSA-v3xw-c963-f5hc]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-11112 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-11112, GHSA-58pp-9c76-5625]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-11113 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-11113, GHSA-9vvp-fxw6-jcxr]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-11619 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-11619, GHSA-27xj-rqx5-2255]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-11620 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-11620, GHSA-h4rc-386g-6m85]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-14060 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-14060, GHSA-j823-4qch-3rgm]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-14061 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-14061, GHSA-c2q3-4qrh-fm48]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-14062 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-14062, GHSA-c265-37vj-cwcc]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-14195 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-14195, GHSA-mc6h-4qgp-37qh]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-24616 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-24616, GHSA-h3cw-g4mq-c5x2]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-24750 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-24750, GHSA-qjw2-hr98-qgfh]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-25649 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-25649, GHSA-288c-cq4h-88gq]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-35490 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-35490, GHSA-wh8g-3j2c-rqj5]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-35491 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-35491, GHSA-r3gr-cxrf-hg25]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-35728 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-35728, GHSA-5r5r-6hpj-8gg9]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36179 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36179, GHSA-9gph-22xh-8x98]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36180 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36180, GHSA-8c4j-34r4-xr8g]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36181 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36181, GHSA-cvm9-fjm9-3572]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36182 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36182, GHSA-89qr-369f-5m5x]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36183 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36183, GHSA-9m6f-7xcq-8vf8]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36184 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36184, GHSA-m6x4-97wx-4q27]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36185 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36185, GHSA-8w26-6f25-cm9x]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36186 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36186, GHSA-v585-23hc-c647]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36187 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36187, GHSA-r695-7vr9-jgc2]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36188 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36188, GHSA-f9xh-2qgp-cq57]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36189 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36189, GHSA-vfqx-33qm-g869]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-36518 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-36518, GHSA-57j2-w4cx-62h2]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-8840 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-8840, GHSA-4w82-r329-3q67]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-9546 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-9546, GHSA-5p34-5m6p-p58g]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-9547 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-9547, GHSA-q93h-jc49-78gg]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2020-9548 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2020-9548, GHSA-p43x-xfjf-5jhr]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2021-20190 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [BIT-nifi-2021-20190, CVE-2021-20190, GHSA-5949-rw7g-wx7w]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2021-22060 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2021-22060, GHSA-6gf2-pvqw-37ph]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2021-22096 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2021-22096, GHSA-rfmp-97jj-h8m6]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2021-42550 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2021-42550, GHSA-668q-qrv7-99fm]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2021-46877 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2021-46877, GHSA-3x8x-79m2-3w2w]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2022-22950 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2022-22950, GHSA-558x-2xjg-6232]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2022-22965 org.springframework:spring-beans:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2022-22965, GHSA-36p3-wjmg-h94x]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2022-22968 org.springframework:spring-context:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2022-22968, GHSA-g5mm-vmx4-3rg7]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2022-22970 org.springframework:spring-beans:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2022-22970, GHSA-hh26-6xwr-ggv7]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2022-42003 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2022-42003, GHSA-jjjh-jjxp-wpff]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2022-42004 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2022-42004, GHSA-rgv9-q543-rqg4]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9 (compile) [PLANNED_TRIM]
 [INFO]     Aliases: [CVE-2022-42889, GHSA-599f-7c49-w659]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -119,15 +585,85 @@ Process exit status: 0
 [INFO]     Heuristic leads: [org.apache.commons.text.lookup.StringLookup]
 [INFO]     Overridden fields: [code, intent]
 [INFO]     Sources: [OSV, POM]
+[INFO]   - CVE-2023-20861 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2023-20861, GHSA-564r-hj7v-mcr5]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2023-20863 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2023-20863, GHSA-wxqc-pxw9-g2p8]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2023-6378 ch.qos.logback:logback-classic:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2023-6378, GHSA-vmq6-5m68-f53m]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2023-6378 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2023-6378, GHSA-vmq6-5m68-f53m]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2023-6481 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2023-6481, GHSA-gm62-rw4g-vrc4]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-12798 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-12798, GHSA-pr98-23f8-jwxv]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-12801 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-12801, GHSA-6v67-2wr5-gvf4]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-22233 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-22233, GHSA-r4q3-7g4q-x89m]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-38808 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-38808, GHSA-9cmq-m9j5-mvww]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-38820 org.springframework:spring-context:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-38820, GHSA-4gc7-5j7h-4qph]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2025-11226, GHSA-25qh-j22f-pwp8]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-22233 org.springframework:spring-context:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2025-22233, GHSA-4wp7-92pw-q264]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2025-41249 org.springframework:spring-core:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2025-41249, GHSA-jmp9-x22r-554x]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-48924 org.apache.commons:commons-lang3:jar:3.17.0 (compile) [PLANNED_UNVERIFIED]
+[INFO]     Aliases: [CVE-2025-48924, GHSA-j288-q9x7-2f5v]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2025-49128 com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2025-49128, GHSA-wf8f-6423-gfxg]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-52999 com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2025-52999, GHSA-h46c-h94j-95f3]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
 [INFO]   - CVE-2026-10532 ch.qos.logback:logback-core:jar:1.5.18 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2026-10532, GHSA-jhq6-gfmj-v8fx]
@@ -170,6 +706,11 @@ Process exit status: 0
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41849 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41849, GHSA-775g-4xr8-78h8]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2026-41850 org.springframework:spring-expression:jar:6.2.7 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2026-41850, GHSA-r5w3-xv2f-j59q]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -184,6 +725,11 @@ Process exit status: 0
 [INFO]     Aliases: [CVE-2026-41852, GHSA-9f52-rjqv-25qv]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-50193 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2026-50193, GHSA-3wrr-7qpf-2prh]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
 [INFO]   - CVE-2026-54512 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
 [INFO]     Aliases: [CVE-2026-54512, GHSA-j3rv-43j4-c7qm]
@@ -204,6 +750,21 @@ Process exit status: 0
 [INFO]     Aliases: [CVE-2026-54515, GHSA-5jmj-h7xm-6q6v]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54516 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2026-54516, GHSA-9fxm-vc8v-hj55]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54517 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2026-54517, GHSA-5hh8-q8hv-fr38]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-54518 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
+[INFO]     Aliases: [CVE-2026-54518, GHSA-rcqc-6cw3-h962]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
 [INFO]   - CVE-2026-59888 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [PLANNED_TRIM]
 [INFO]     Aliases: [CVE-2026-59888, GHSA-3pjw-73gf-8qr5]
@@ -310,25 +871,26 @@ Process exit status: 0
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.codehaus.janino:janino:jar:3.1.12 (compile) {nodeId=n4} [RETAINED, WOULD_TRIM]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) {nodeId=n6} [RETAINED]
 [INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) {nodeId=n5} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) -> ch.qos.logback:logback-core:jar:1.5.18 (compile) {nodeId=n9} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) -> org.slf4j:slf4j-api:jar:2.0.17 (compile) {nodeId=n10} [RETAINED, WOULD_TRIM]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) -> com.fasterxml.jackson.core:jackson-annotations:jar:2.19.0 (compile) {nodeId=n7} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) -> com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile) {nodeId=n8} [RETAINED, WOULD_TRIM]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.codehaus.janino:janino:jar:3.1.12 (compile) -> org.codehaus.janino:commons-compiler:jar:3.1.12 (compile) {nodeId=n11} [RETAINED, WOULD_TRIM]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.12.2 (test) {nodeId=n17} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-engine:jar:5.12.2 (test) {nodeId=n19} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-params:jar:5.12.2 (test) {nodeId=n18} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> io.micrometer:micrometer-observation:jar:1.15.0 (compile) {nodeId=n16} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-aop:jar:6.2.7 (compile) {nodeId=n12} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-beans:jar:6.2.7 (compile) {nodeId=n13} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-core:jar:6.2.7 (compile) {nodeId=n14} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-expression:jar:6.2.7 (compile) {nodeId=n15} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.12.2 (test) -> org.apiguardian:apiguardian-api:jar:1.1.2 (test) {nodeId=n24} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.12.2 (test) -> org.junit.platform:junit-platform-commons:jar:1.12.2 (test) {nodeId=n23} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.12.2 (test) -> org.opentest4j:opentest4j:jar:1.3.0 (test) {nodeId=n22} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-engine:jar:5.12.2 (test) -> org.junit.platform:junit-platform-engine:jar:1.12.2 (test) {nodeId=n25} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> io.micrometer:micrometer-observation:jar:1.15.0 (compile) -> io.micrometer:micrometer-commons:jar:1.15.0 (compile) {nodeId=n21} [RETAINED]
-[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-core:jar:6.2.7 (compile) -> org.springframework:spring-jcl:jar:6.2.7 (compile) {nodeId=n20} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) -> ch.qos.logback:logback-core:jar:1.5.18 (compile) {nodeId=n10} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> ch.qos.logback:logback-classic:jar:1.5.18 (compile) -> org.slf4j:slf4j-api:jar:2.0.17 (compile) {nodeId=n11} [RETAINED, WOULD_TRIM]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) -> com.fasterxml.jackson.core:jackson-annotations:jar:2.19.0 (compile) {nodeId=n8} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) -> com.fasterxml.jackson.core:jackson-core:jar:2.19.0 (compile) {nodeId=n9} [RETAINED, WOULD_TRIM]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.apache.commons:commons-text:jar:1.9 (compile) -> org.apache.commons:commons-lang3:jar:3.17.0 (compile) {nodeId=n7} [WOULD_DROP]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.codehaus.janino:janino:jar:3.1.12 (compile) -> org.codehaus.janino:commons-compiler:jar:3.1.12 (compile) {nodeId=n12} [RETAINED, WOULD_TRIM]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.12.2 (test) {nodeId=n18} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-engine:jar:5.12.2 (test) {nodeId=n20} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-params:jar:5.12.2 (test) {nodeId=n19} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> io.micrometer:micrometer-observation:jar:1.15.0 (compile) {nodeId=n17} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-aop:jar:6.2.7 (compile) {nodeId=n13} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-beans:jar:6.2.7 (compile) {nodeId=n14} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-core:jar:6.2.7 (compile) {nodeId=n15} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-expression:jar:6.2.7 (compile) {nodeId=n16} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.12.2 (test) -> org.apiguardian:apiguardian-api:jar:1.1.2 (test) {nodeId=n25} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.12.2 (test) -> org.junit.platform:junit-platform-commons:jar:1.12.2 (test) {nodeId=n24} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-api:jar:5.12.2 (test) -> org.opentest4j:opentest4j:jar:1.3.0 (test) {nodeId=n23} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.junit.jupiter:junit-jupiter:jar:5.11.4 (test) -> org.junit.jupiter:junit-jupiter-engine:jar:5.12.2 (test) -> org.junit.platform:junit-platform-engine:jar:1.12.2 (test) {nodeId=n26} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> io.micrometer:micrometer-observation:jar:1.15.0 (compile) -> io.micrometer:micrometer-commons:jar:1.15.0 (compile) {nodeId=n22} [RETAINED]
+[INFO]   - io.github.spockz:example-cve-unused-app:0.1.0-SNAPSHOT -> org.springframework:spring-context:jar:6.2.7 (compile) -> org.springframework:spring-core:jar:6.2.7 (compile) -> org.springframework:spring-jcl:jar:6.2.7 (compile) {nodeId=n21} [RETAINED]
 [INFO]   JAR trim cache: unavailable (Analyze reports an in-memory prediction only)
 [INFO]   Analysis report: <PROJECT_ROOT>/examples/example-cve-unused-app/target/dependency-elider-analysis-report.json
 [INFO]   Class usage report: <PROJECT_ROOT>/.scratch/transcript-analysis/analyze-cve-unused-app-class-usage.json
@@ -349,7 +911,7 @@ Process exit status: 0
 | `-Delide.trimJars` | `false` | When `true`, simulates intra-JAR trimming and evaluates CVE absence proofs without modifying files. |
 | `-Delide.trimWorkers` | `4` | Maximum worker threads for JAR preparation, closure analysis, and archive sanitization. Actual concurrency is also capped by available processors and pending work; `1` runs sequentially. |
 | `-Delide.retainedArtifacts` | *(empty)* | Comma-separated coordinates (`groupId:artifactId[:version[:type[:classifier]]]`) to retain regardless of trace evidence. |
-| `-Delide.banishedDependencies` | *(empty)* | Comma-separated exact, trimmed `groupId:artifactId` requests; wildcards and version/type/classifier fields are unsupported. Matched or pre-resolution-excluded requests require `elide.sourceRootsComplete=true` or `elide.productionClassesComplete=true` (mutually exclusive). A matching unsupported Maven scope or artifact type fails closed. Analyze predicts matched, pre-resolution-excluded, or unmatched outcomes and never applies them; Elide applies only a validated plan before publication. |
+| `-Delide.banishedDependencies` | *(empty)* | Comma-separated exact, trimmed `groupId:artifactId` requests; wildcards and version/type/classifier fields are unsupported. Matched or pre-resolution-excluded requests require `elide.productionClassesComplete=true` or a trusted `process-classes` lifecycle binding. A matching unsupported Maven scope or artifact type fails closed. Analyze predicts matched, pre-resolution-excluded, or unmatched outcomes and never applies them; Elide applies only a validated plan before publication. |
 | `-Delide.productionOutput` | *(empty)* | Path to compiled classes (e.g. `target/classes`) to enable static code reference scanning. |
 | `-Delide.conservativeServiceLoaderRoots` | `true` | When `true`, retains unproven ServiceLoader SPI roots; when `false`, prunes unproven SPI roots. |
 | `-Delide.reportFile` | `target/dependency-elider-class-usage.json` | Path for the class-usage analysis report. |
@@ -360,7 +922,7 @@ Only resolved regular JARs in `compile` and `runtime` scopes are considered for 
 
 ## 4. Active Build Elision (`elide`)
 
-The `elide` goal runs in Maven's `INITIALIZE` lifecycle phase, removing unused dependencies and trimming unreferenced classes before compilation and packaging plugins execute.
+The `elide` goal defaults to Maven's `process-classes` lifecycle phase, after production compilation and before tests and packaging. An explicit execution phase remains authoritative.
 
 ### Step 1: Enable the Core Extension
 
@@ -427,13 +989,12 @@ Or configure the execution permanently in `pom.xml`:
 | `elide.traceFiles` | *(none)* | Comma-separated paths to runtime telemetry traces (required). |
 | `elide.trimJars` | `false` | Enables ProGuard Core link closure to trim unreferenced classes from retained JARs. |
 | `elide.trimWorkers` | `4` | Maximum worker threads for JAR preparation, closure analysis, and archive sanitization. Actual concurrency is also capped by available processors and pending work; `1` runs sequentially. |
-| `elide.preconditionClassPathComplete` | `false` | Opts into exact prerequisite-class proof during trim-enabled publication. Set `true` only when all declared Maven class-bearing inputs are present and enumerable before `INITIALIZE`. Proof also requires a known Maven Compiler Plugin version from 3.13 through 3.x, explicit `maven.compiler.proc=none` for both `compile` and `testCompile`, and Java release or source/target levels of at least 11. Detected processor paths/lists/argument channels, compiler arguments other than diagnostic-only `-Xlint:all`, compiler plugin dependencies, custom compiler modes, interface assertions, custom generated-source roots, configured clean/site executions with unmodeled ordering, Enforcer executions at or after inventory capture or with unknown phases, filtered resources, unmodeled pre- or post-`INITIALIZE` plugin executions, custom roots/extensions/packaging, missing, unresolved, and conflicting settings, or direct/multiple Maven goal sequences suppress proof. The default generated production and test source roots under `<build.directory>` are inventoried. |
+| `elide.preconditionClassPathComplete` | `false` | Opts into exact prerequisite-class proof during publication. Set `true` only when all declared Maven class-bearing inputs are present and enumerable before `process-classes`. Proof also requires a known Maven Compiler Plugin version from 3.13 through 3.x, explicit `maven.compiler.proc=none` for both `compile` and `testCompile`, and Java release or source/target levels of at least 11. Detected processor paths/lists/argument channels, compiler arguments other than diagnostic-only `-Xlint:all`, compiler plugin dependencies, custom compiler modes, interface assertions, custom generated-source roots, configured clean/site executions with unmodeled ordering, Enforcer executions at or after inventory capture or with unknown phases, filtered resources, unmodeled plugin executions before or after `process-classes`, custom roots/extensions/packaging, missing, unresolved, and conflicting settings, or direct/multiple Maven goal sequences suppress proof. The default generated production and test source roots under `<build.directory>` are inventoried. |
 
 Packaging is modeled only for maven-shade-plugin 3.6.0 with one `package`/`shade` execution and one built-in manifest transformer whose `mainClass` is resolved. The inherited signature-only resource exclusions in the examples are allowed. Other Shade filters, transformers, inputs, dependencies, source-JAR properties, or custom maven-jar-plugin configuration suppress proof.
 If the requested lifecycle reaches `test`, the guard also requires the standard Maven Surefire Plugin 3.5.2 `default-test` execution and explicit `-DskipTests=true`. Test source compilation remains enabled and its classes stay in the inventory; baseline fixture runs do not skip their tests.
-| `elide.sourceRootsComplete` | `false` | Set `true` only if all production and generated sources exist before `INITIALIZE` with no downstream generation. When `false`, all compile-classpath JARs and classes are conservatively retained. |
 | `elide.assumeConventionalJavaSourceLayout` | `true` | Allows the documented conventional Java source-root translation when exact-path lookup does not locate a structured source claim. Set `false` to require an exact archive path. It never waives complete bytecode attribution or verified artifact identity. The assumption is saved in proof/report provenance; `report` uses the value from the last successful elision snapshot. |
-| `elide.productionClassesComplete` | `false` | Asserts that production output contains all compiled production classes. With the Maven extension enabled, this rebinds the default `elide` execution from `initialize` to `process-classes`; the output directory defaults to `${project.build.outputDirectory}` and must contain at least one `.class` file. This assertion is separate from trusted precondition capture: direct CLI goals and missing/other phases keep conservative provider-generation guards. It cannot be combined with `elide.sourceRootsComplete=true`. After compile, bytecode references are unioned with attributed references from compile source roots to retain dependencies used only through inlined constants. |
+| `elide.productionClassesComplete` | `false` | Asserts that production output contains all compiled production classes. The default `elide` phase is `process-classes`; an explicit phase remains authoritative. The output directory defaults to `${project.build.outputDirectory}`. Source-free modules may have absent or empty output, while projects with Java sources must have compiled classes. This assertion is separate from trusted precondition capture: direct CLI goals and missing/other phases keep conservative provider-generation guards. Production roots come from compiled bytecode; retain dependencies used only through inlined constants explicitly with `retainedArtifacts`. The legacy `elide.sourceRootsComplete=true` property is rejected with migration guidance. |
 | `elide.trimRoots` | *(none)* | Comma-separated additional root classes (e.g. `com.example.AppRoot`). |
 | `elide.trimSkipArtifacts` | *(none)* | Comma-separated coordinates of retained JARs to keep byte-identical. Their classes serve as roots for sibling closure. |
 | `elide.snykEnabled` | `false` | Query Snyk for project package findings during `analyze` and `elide`. Requires an authorized API account, `SNYK_TOKEN`, and an organization ID. |
@@ -448,7 +1009,7 @@ If the requested lifecycle reaches `test`, the guard also requires the standard 
 | `elide.analysisSummaryFile` | `target/dependency-elider-analysis-report.json` | Path for the analysis summary. To replay it, pass this path as `elide.summaryFile` to `report`. |
 | `elide.sbomFile` | `target/dependency-elider-sbom.cdx.json` | Path for the post-elision CycloneDX 1.6 SBOM. |
 | `elide.baselineSbomFile` | `target/baseline-sbom.cdx.json` | Path for the pre-elision baseline CycloneDX 1.6 SBOM. |
-| `elide.vexFile` | `target/dependency-elider.openvex.json` | Path for the OpenVEX document written during trim-enabled publication when omission or precondition proof succeeds. |
+| `elide.vexFile` | `target/dependency-elider.openvex.json` | Path for the OpenVEX document written when omission or precondition proof succeeds, whether or not physical JAR trimming is enabled. |
 
 For example, accept duplicated `org.example.Shared` and keep every provider JAR whole with
 `'-Delide.retainDuplicateClassOwners=org.example.Shared'`. To preserve duplicates throughout
@@ -479,11 +1040,11 @@ Set `-Delide.trimWorkers=2` to cap trimming at two workers. This setting limits 
 
 ### Using Post-Compile Elision and Inspecting the Dependency Tree
 
-For projects with source generators or annotation processors, enable the extension and set `elide.productionClassesComplete=true`, or bind the `elide` execution explicitly to `process-classes`. The extension can rebind an initialize-bound execution before Maven creates the lifecycle plan. Use the normal lifecycle so generation and compilation run before capture. A direct `mvn dependency-elider:elide` invocation does not establish this capture point. Unknown writers at `process-classes` or later remain unsupported; `skipTests` also leaves `testCompile` enabled, so test-compiler safeguards continue to apply.
+For projects with source generators or annotation processors, enable the extension and set `elide.productionClassesComplete=true`, or bind the `elide` execution explicitly to `process-classes`. The extension preserves explicit phases and assigns omitted phases to `process-classes` before Maven creates the lifecycle plan. Use the normal lifecycle so generation and compilation run before capture. A direct `mvn dependency-elider:elide` invocation does not establish this capture point. Unknown writers at `process-classes` or later remain unsupported; `skipTests` also leaves `testCompile` enabled, so test-compiler safeguards continue to apply.
 
-In this mode, compile-time source references supplement the production bytecode roots. This keeps dependencies whose primitive or `String` constants were inlined by javac, and the same roots seed JAR trimming. Source attribution includes the completed output directory on its classpath and forces `-proc:none`, so annotation processors are not run again. If source roots are missing or empty, include unsupported languages (`.kt`, `.kts`, `.scala`, `.groovy`), use an unsupported compiler mode, or fail javac attribution, the summary warns and conservatively retains every compile-visible artifact and all of their indexed classes. The class-use report remains bytecode and runtime telemetry evidence; source references do not count as runtime reachability or VEX proof. Source-only references may retain unused compile dependencies, and test-only source references are not covered by this production scan.
+In this mode, production roots come from emitted bytecode. Source files are not scanned; dependencies referenced only through compile-time-inlined constants may not appear in bytecode, so retain those dependencies explicitly with `elide.retainedArtifacts` when needed. The class-use report remains bytecode and runtime telemetry evidence; source files do not count as runtime reachability or VEX proof. Test-only output is outside this production scan. Source-free modules with absent or empty output are supported; if Java source files exist but no production class files were emitted, run compilation first or use the normal lifecycle.
 
-With `.mvn/extensions.xml` and an active `initialize` or `process-classes` elider execution, run `dependency:tree` to inspect the post-elision graph directly. A process-classes binding injects that phase before the tree request unless an equal or later lifecycle phase already appears before it:
+With `.mvn/extensions.xml` and an active elider execution at its selected phase (process-classes by default), run `dependency:tree` to inspect the post-elision graph directly. A process-classes binding injects that phase before the tree request unless an equal or later lifecycle phase already appears before it:
 
 ```sh
 mvn dependency:tree
@@ -511,7 +1072,7 @@ mvn io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:report
 
 * **Dropped Artifacts**: Total count and original on-disk JAR bytes of elided dependencies.
 * **Pruned Classes**: Count and uncompressed `.class` payload bytes removed from dropped JARs and retained JARs (metrics never overlap).
-* **Vulnerability Status**: Separates common package/code findings and unresolved review claims from verified classifications. OSV, CVE List and manual inputs retain provenance for reporting and use the same effective-finding assessment. Automatic normalized code sets and affected-version coverage union, preserving version gaps and code applicability; explicit manual fields override within matching scope and omitted fields enrich. Severity is ignored. Manual `LOW`/`MEDIUM` retains review-only intent and cannot be bypassed by automatic enrichment. Verification requires exact version binding, attributable declared code and physical absence, or complete opted-in prerequisite inventory. Unsupported or ambiguous code remains visible rather than producing a proof. Removed, trimmed and unchanged are inventory facts, not mitigation. The saved `report` goal replays findings, attribution and assumptions without reassessment. Publication and stale-file cleanup retain their digest-bound transaction rules. With `elide.trimJars=false`, SBOM/OpenVEX publication and stale OpenVEX cleanup are not run. See [VEX Evidence Boundary](#vex-evidence-boundary).
+* **Vulnerability Status**: Separates common package/code findings and unresolved review claims from verified classifications. OSV, CVE List and manual inputs retain provenance for reporting and use the same effective-finding assessment. Automatic normalized code sets and affected-version coverage union, preserving version gaps and code applicability; explicit manual fields override within matching scope and omitted fields enrich. Severity is ignored. Manual `LOW`/`MEDIUM` retains review-only intent and cannot be bypassed by automatic enrichment. Verification requires exact version binding, attributable declared code and physical absence, or complete opted-in prerequisite inventory. Unsupported or ambiguous code remains visible rather than producing a proof. Removed, trimmed and unchanged are inventory facts, not mitigation. The saved `report` goal replays findings, attribution and assumptions without reassessment. Each output file is replaced atomically; the set is not all-or-nothing. With `elide.trimJars=false`, physical JAR replacement is disabled while report/SBOM/OpenVEX publication, prerequisite assessment, ownership recording and stale OpenVEX cleanup remain enabled. See [VEX Evidence Boundary](#vex-evidence-boundary).
 * **Mediated Graph**: Visualizes shortest dependency paths with node dispositions: `[RETAINED]`, `[CLASS_TRIMMED]`, `[EFFECTIVE_DROP]`, or `[PROTECTED]`.
 * **Format Versions**: Internal persisted report and cache formats use independent schema version 1; incompatible payloads fail fast with instructions to rerun `elide`. CycloneDX declares `specVersion` 1.6 and OpenVEX uses its 0.2.0 context URL. The top-level `version` in either generated security document is a document revision counter, not a schema version.
 
@@ -612,7 +1173,7 @@ Declared source paths and routines are attributed against the exact original JAR
 
 The omitted-code proof also requires archive inspection to prove every affected class family absent from the retained candidate's trimmed JAR. A dependency removed entirely is reported as dropped from inventory, not as code-absence VEX.
 
-Core mappings, complete-inventory proof, CycloneDX/OpenVEX serialization, and snapshot-aware assessment support precondition evidence. A mapping must name both the prerequisite Maven coordinate and exact prerequisite class; coordinate-only mappings cannot prove absence. The Maven goal requires the explicit `elide.preconditionClassPathComplete=true` assertion that the declared build inventory is complete, and only uses it when `elide.trimJars=true`. The guard requires a known Maven Compiler Plugin version from 3.13 through 3.x, `maven.compiler.proc=none` for both `compile` and `testCompile`, and Java release or source/target levels of at least 11. It checks active and managed compiler plugin configuration plus project and Maven session properties, and rejects detected processor paths, processor lists, compiler arguments other than diagnostic-only `-Xlint:all`, compiler plugin dependencies, custom compiler modes, interface assertions, custom generated-source roots, configured clean/site executions with unmodeled ordering, filtered resources, and unresolved or conflicting settings. It inventories `<build.directory>/generated-sources/annotations` and `<build.directory>/generated-test-sources/test-annotations` even before Maven adds those roots. Pre-capture Enforcer rules are limited to `requireJavaVersion`, `requireMavenVersion`, `requirePluginVersions`, `banDuplicatePomDependencyVersions`, `dependencyConvergence`, and `requireUpperBoundDeps`; custom rule implementations and Enforcer plugin dependencies suppress proof. It also rejects unmodeled plugin executions before and after `INITIALIZE`, custom packaging/extensions, unmodeled compiler or resource roots, and Maven request sequences other than one default-lifecycle goal optionally preceded by one `clean` goal. This opt-in cannot override detected downstream generators. It checks application classes/resources and all effective post-elision dependency archives, binds the result to an inventory fingerprint and per-file digests, and suppresses evidence if any inventory input or provider is unknown. The Maven publisher shares that captured inventory with assessment and both output formats, revalidates provider membership and content before commit, and publishes all files through one rollback transaction. The claim covers only that declared Maven inventory; it cannot prove absence of classes introduced by later packaging or external runtime mechanisms. OpenVEX uses a free-form impact statement without a justification because no OpenVEX justification enum accurately describes the missing prerequisite. When no qualifying VEX remains, a prior file is removed only if its exact path and digest match the generated-output manifest; otherwise it is preserved. With `elide.trimJars=false`, VEX output and stale-file cleanup do not run. See [ADR-0008](https://github.com/spockz/maven-dependency-elider/blob/main/docs/adr/0008-precondition-gated-vex-attestations.md) and [RQ-0013](https://github.com/spockz/maven-dependency-elider/blob/main/docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
+Core mappings, complete-inventory proof, CycloneDX/OpenVEX serialization, and snapshot-aware assessment support precondition evidence. A mapping must name both the prerequisite Maven coordinate and exact prerequisite class; coordinate-only mappings cannot prove absence. The Maven goal requires the explicit `elide.preconditionClassPathComplete=true` assertion that the declared build inventory is complete, independent of `elide.trimJars`. The guard requires a known Maven Compiler Plugin version from 3.13 through 3.x, `maven.compiler.proc=none` for both `compile` and `testCompile`, and Java release or source/target levels of at least 11. It checks active and managed compiler plugin configuration plus project and Maven session properties, and rejects detected processor paths, processor lists, compiler arguments other than diagnostic-only `-Xlint:all`, compiler plugin dependencies, custom compiler modes, interface assertions, custom generated-source roots, configured clean/site executions with unmodeled ordering, filtered resources, and unresolved or conflicting settings. It inventories `<build.directory>/generated-sources/annotations` and `<build.directory>/generated-test-sources/test-annotations` even before Maven adds those roots. Pre-capture Enforcer rules are limited to `requireJavaVersion`, `requireMavenVersion`, `requirePluginVersions`, `banDuplicatePomDependencyVersions`, `dependencyConvergence`, and `requireUpperBoundDeps`; custom rule implementations and Enforcer plugin dependencies suppress proof. It also rejects unmodeled plugin executions before and after `process-classes`, custom packaging/extensions, unmodeled compiler or resource roots, and Maven request sequences other than one default-lifecycle goal optionally preceded by one `clean` goal. This opt-in cannot override detected downstream generators. It checks application classes/resources and all effective post-elision dependency archives, binds the result to an inventory fingerprint and per-file digests, and suppresses evidence if any inventory input or provider is unknown. The Maven publisher shares that captured inventory with assessment and both output formats, revalidates provider membership and content before commit, and publishes all files through one rollback transaction. The claim covers only that declared Maven inventory; it cannot prove absence of classes introduced by later packaging or external runtime mechanisms. OpenVEX uses a free-form impact statement without a justification because no OpenVEX justification enum accurately describes the missing prerequisite. When no qualifying VEX remains, a prior file is removed only if its exact path and digest match the generated-output manifest; otherwise it is preserved. This assessment and report/SBOM/OpenVEX publication also run when `elide.trimJars=false`; that setting disables archive replacement, not inventory assessment. The publisher uses the frozen original artifact view for the baseline and the effective retained artifact view for final CycloneDX/OpenVEX output. Each file is written atomically, while the output set is not one transaction. See [ADR-0008](https://github.com/spockz/maven-dependency-elider/blob/main/docs/adr/0008-precondition-gated-vex-attestations.md) and [RQ-0013](https://github.com/spockz/maven-dependency-elider/blob/main/docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
 The package guard supports `jar` and `pom` projects and accepts only maven-shade-plugin 3.6.0 with one `package`/`shade` execution and a built-in manifest transformer with a resolved `mainClass`. Any request that reaches a modeled JAR package execution must include `clean` first so the standard JAR plugin cannot reuse an older archive; Shade packaging is covered as an additional package path. Clean skip/exclusion/failure overrides and deferred clean modes suppress proof. It allows only the inherited signature-resource exclusions shown in the examples. `war` and `maven-plugin` packaging, other Shade filters, transformers, inputs, dependencies, source-JAR properties, custom maven-jar-plugin configuration, and resource-plugin dependencies suppress proof.
 
 ---

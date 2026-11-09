@@ -41,7 +41,7 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.TearDown;
 
-/** Benchmarks the actual Maven dependency-JAR trim cache-hit operation. */
+/** Benchmarks production Maven trim-cache hits with JMH-managed fixture state. */
 @State(Scope.Thread)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -55,29 +55,29 @@ import org.openjdk.jmh.annotations.TearDown;
 public class MavenTrimCacheBenchmark {
   private static final String PACKAGE = "benchmark.fixture";
   private static final String ROOT_CLASS = PACKAGE + ".CacheRoot";
+  private static final int EXPECTED_TRIMMED_ARCHIVE_COUNT = 1;
 
   private Path fixtureDirectory;
-  private Path originalJar;
   private MavenProject project;
-  private ArtifactCoordinate coordinate;
   private Path trace;
   private ElisionAnalysisModel.EffectiveAnalysis warmedAnalysis;
   private ElisionAnalysisModel.EffectiveAnalysis freshSessionAnalysis;
 
   /** Creates inputs and verifies cache population and warm validation. */
+  // WHY: Setup verifies the cold and warm invariants before JMH records timings.
+  @SuppressWarnings("PMD.CyclomaticComplexity")
   @Setup
   public void setUp() throws IOException, org.apache.maven.plugin.MojoFailureException {
     final Path fixtureRoot = Files.createTempDirectory("elider-trim-cache-benchmark-");
     fixtureDirectory = fixtureRoot;
-    originalJar = createFixtureJar(fixtureRoot);
-    coordinate =
-        new ArtifactCoordinate(
-            "benchmark.fixture", "trim-cache-input", "1.0", "jar", "", "runtime");
-    final Artifact artifact = benchmarkArtifact(originalJar);
+    final Path originalJar = createFixtureJar(fixtureRoot);
+    final ArtifactCoordinate coordinate =
+        new ArtifactCoordinate(PACKAGE, "trim-cache-input", "1.0", "jar", "", "runtime");
+    final Artifact artifact = benchmarkArtifact(originalJar, coordinate);
     project = new MavenProject();
     project.setArtifacts(Set.of(artifact));
     project.setDependencyArtifacts(Set.of(artifact));
-    project.setGroupId("benchmark.fixture");
+    project.setGroupId(PACKAGE);
     project.setArtifactId("trim-cache-consumer");
     project.setVersion("1.0");
     project.getProperties().setProperty("maven.compiler.release", "21");
@@ -87,22 +87,22 @@ public class MavenTrimCacheBenchmark {
     project.setBuild(build);
     trace = fixtureRoot.resolve("roots.txt");
     Files.writeString(trace, ROOT_CLASS + "\n");
-    warmedAnalysis = analysis(newSession());
+    warmedAnalysis = analysis(newSession(), trace);
     final TrimResult cold = trim(warmedAnalysis);
-    if (cold.analysisRuns() == 0 || cold.cacheHits() != 0) {
-      throw new IllegalStateException("Trim cache fixture did not populate via ProGuard analysis");
-    }
-    if (cold.records().size() != 1) {
+    if (cold.records().size() != EXPECTED_TRIMMED_ARCHIVE_COUNT) {
       throw new IllegalStateException("Trim cache fixture did not produce one trimmed archive");
     }
+    final boolean archivePruned;
     try (JarFile trimmed = new JarFile(cold.records().getFirst().trimmedPath().toFile())) {
-      if (trimmed.getEntry("benchmark/fixture/CacheRoot.class") == null
-          || trimmed.getEntry("benchmark/fixture/CacheUnused.class") != null) {
-        throw new IllegalStateException("Trim cache fixture did not prune its unused class");
-      }
+      archivePruned =
+          trimmed.getEntry("benchmark/fixture/CacheRoot.class") != null
+              && trimmed.getEntry("benchmark/fixture/CacheUnused.class") == null;
     }
-    if (Files.size(cold.records().getFirst().trimmedPath()) >= Files.size(originalJar)) {
-      throw new IllegalStateException("Trim cache fixture did not reduce archive bytes");
+    if (cold.analysisRuns() == 0
+        || cold.cacheHits() != 0
+        || !archivePruned
+        || Files.size(cold.records().getFirst().trimmedPath()) >= Files.size(originalJar)) {
+      throw new IllegalStateException("Trim cache fixture failed cold-path validation");
     }
     final TrimResult warm = trim(warmedAnalysis);
     if (warm.analysisRuns() != 0 || warm.cacheHits() != 1) {
@@ -110,11 +110,11 @@ public class MavenTrimCacheBenchmark {
     }
   }
 
-  /** Prepares and warms a fresh session outside the measured cache operation. */
+  /** Warms a fresh session before each measured invocation. */
   @Setup(Level.Invocation)
   public void prepareFreshInvocation()
       throws IOException, org.apache.maven.plugin.MojoFailureException {
-    freshSessionAnalysis = analysis(newSession());
+    freshSessionAnalysis = analysis(newSession(), trace);
     final TrimResult freshWarm = trim(freshSessionAnalysis);
     if (freshWarm.analysisRuns() != 0 || freshWarm.cacheHits() != 1) {
       throw new IllegalStateException(
@@ -148,7 +148,8 @@ public class MavenTrimCacheBenchmark {
     }
   }
 
-  private ElisionAnalysisModel.EffectiveAnalysis analysis(final MavenSession session)
+  private ElisionAnalysisModel.EffectiveAnalysis analysis(
+      final MavenSession session, final Path trace)
       throws IOException, org.apache.maven.plugin.MojoFailureException {
     final AnalysisOptions options =
         new AnalysisOptions(
@@ -167,8 +168,7 @@ public class MavenTrimCacheBenchmark {
                 MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
                 MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
                 new PluginCacheProducerIdentityResolver.Resolution(
-                    Optional.of(
-                        new CacheProducerIdentity("benchmark.fixture", "trim-cache", "1.0", null)),
+                    Optional.of(new CacheProducerIdentity(PACKAGE, "trim-cache", "1.0", null)),
                     Optional.empty())),
             new DynamicRootOptions(false));
     final MavenElisionService service = new MavenElisionService();
@@ -180,7 +180,7 @@ public class MavenTrimCacheBenchmark {
     return MavenDependencyTrimmer.trimEffectiveOutputs(effective);
   }
 
-  private Artifact benchmarkArtifact(final Path originalJar) {
+  private Artifact benchmarkArtifact(final Path originalJar, final ArtifactCoordinate coordinate) {
     final Artifact artifact =
         new DefaultArtifact(
             coordinate.groupId(),

@@ -79,3 +79,22 @@ We introduce **Post-Compile Production Bytecode Completeness (`elide.productionC
 ## 4. Dated Amendment: 2026-11-02 Narrowing to Emitted Bytecode (ADR-0013 / WP-PLATFORM-01)
 
 Under [ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md) and [WP-PLATFORM-01](../handovers/2026-11-02-wp-platform-01-compiler-decoupling-and-live-proof-pivot.md), in-process AST source scanning (`PostCompileSourceAttribution`) is decommissioned. Post-compile analysis is intentionally narrowed to emitted production bytecode (`target/classes`), Spring AOT generated assets, and declared runtime evidence sources. Dependencies referenced exclusively through compile-time inlined primitive or `String` constants (with zero remaining bytecode references in `target/classes`) are retained explicitly via `<retainedArtifacts><retainedArtifact>groupId:artifactId</retainedArtifact></retainedArtifacts>` rather than through redundant in-process `javac` source passes.
+
+## 5. Dated Amendment: 2026-11-08 Default Phase and Provider Boundary
+
+This amendment supersedes the original opt-in description and the 2026-11-02 statement that
+existing `initialize`-bound projects remain the default. The Mojo, lifecycle phase inference,
+standalone `dependency:tree` preparation, and ban activation now agree on `process-classes` as the
+default. The phase is reached after production compilation and before `test-compile`, tests and
+packaging. Consequently, production compile itself uses the original dependencies; subsequent
+goals consume the validated effective Maven view.
+
+`elide.sourceRootsComplete=true` is rejected with migration guidance because source roots are not
+the post-compile proof inventory. A module with no production source can pass this boundary when
+its configured class/resource output is valid; missing output and empty class output are handled
+explicitly. Trusted prerequisite capture requires an actual lifecycle-sourced `process-classes`
+execution. Direct goal invocation cannot assert that provider generation is complete merely by
+setting a property. The guard models configured and default lifecycle bindings, the requested
+phase cutoff and later packaging writers. `maven.test.skip=true` still allows Maven `testCompile`
+to run, so its configured source/resource and annotation-processor providers remain part of the
+guard. See the 2026-11-08 implementation evidence in [RQ-0017](../research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md).

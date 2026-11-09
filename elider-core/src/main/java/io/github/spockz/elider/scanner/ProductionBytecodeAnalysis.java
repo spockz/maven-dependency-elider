@@ -7,9 +7,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -90,33 +88,82 @@ public final class ProductionBytecodeAnalysis {
   public static Snapshot capture(final Path productionOutput, final List<Path> additionalOutputs)
       throws IOException {
     final Path scope = productionOutput.toAbsolutePath().normalize();
-    if (!Files.isDirectory(scope)) {
-      throw new IOException("Production class output directory is missing: " + scope);
+    final boolean missingScope = Files.notExists(scope);
+    if (!missingScope && !Files.isDirectory(scope)) {
+      throw new IOException("Production class output path is not a directory: " + scope);
     }
-    final List<ClassFile> classFiles = new ArrayList<>(captureClassFiles(scope));
-    for (final Path additional : additionalOutputs) {
-      final Path normalizedAdditional = additional.toAbsolutePath().normalize();
-      if (Files.isDirectory(normalizedAdditional)) {
-        classFiles.addAll(captureClassFiles(normalizedAdditional));
-      }
-    }
+    final List<Path> additionalRoots = existingAdditionalRoots(additionalOutputs);
+    final List<Path> roots = fingerprintRoots(scope, additionalRoots);
+    final List<ClassFile> classFiles = captureClassFiles(scope, missingScope, additionalRoots);
     final List<ClassFile> sortedFiles =
         classFiles.stream().sorted(Comparator.comparing(ClassFile::path)).toList();
+    final Set<String> references = scanReferences(sortedFiles);
+    final Set<String> classNames = productionClassNames(classFiles, scope, additionalRoots);
+    final BytecodeReferenceScan referenceScan =
+        new BytecodeReferenceScan(scope, references, classFiles.size(), true);
+    return new Snapshot(
+        fingerprintCapturedFiles(roots, sortedFiles), referenceScan, classNames, classFiles);
+  }
+
+  private static List<Path> existingAdditionalRoots(final List<Path> additionalOutputs) {
+    final List<Path> roots = new ArrayList<>();
+    for (final Path additional : additionalOutputs) {
+      final Path normalized = additional.toAbsolutePath().normalize();
+      if (Files.isDirectory(normalized)) {
+        roots.add(normalized);
+      }
+    }
+    return List.copyOf(roots);
+  }
+
+  private static List<Path> fingerprintRoots(final Path scope, final List<Path> additionalRoots) {
+    final List<Path> roots = new ArrayList<>(additionalRoots.size() + 1);
+    roots.add(scope);
+    roots.addAll(additionalRoots);
+    return List.copyOf(roots);
+  }
+
+  private static List<ClassFile> captureClassFiles(final Path scope) throws IOException {
+    final List<ClassFile> classFiles = new ArrayList<>();
+    try (Stream<Path> paths = Files.walk(scope)) {
+      final Iterator<Path> iterator = paths.iterator();
+      while (iterator.hasNext()) {
+        final Path path = iterator.next();
+        if (Files.isRegularFile(path) && isClassFile(path)) {
+          classFiles.add(new ClassFile(path, Files.readAllBytes(path)));
+        }
+      }
+    }
+    return List.copyOf(classFiles);
+  }
+
+  private static List<ClassFile> captureClassFiles(
+      final Path scope, final boolean missingScope, final List<Path> additionalRoots)
+      throws IOException {
+    final List<ClassFile> classFiles = new ArrayList<>();
+    if (!missingScope) {
+      classFiles.addAll(captureClassFiles(scope));
+    }
+    for (final Path additional : additionalRoots) {
+      classFiles.addAll(captureClassFiles(additional));
+    }
+    return List.copyOf(classFiles);
+  }
+
+  private static Set<String> scanReferences(final List<ClassFile> classFiles) throws IOException {
     final Set<String> references = new java.util.HashSet<>();
-    for (final ClassFile classFile : sortedFiles) {
+    for (final ClassFile classFile : classFiles) {
       ProductionBytecodeReferenceScanner.scanClassFile(
           classFile.path(), classFile.content(), references);
     }
+    return references;
+  }
+
+  private static Set<String> productionClassNames(
+      final List<ClassFile> classFiles, final Path scope, final List<Path> additionalRoots) {
     final Set<String> classNames = new TreeSet<>();
     for (final ClassFile classFile : classFiles) {
-      final Path root =
-          classFile.path().startsWith(scope)
-              ? scope
-              : additionalOutputs.stream()
-                  .map(p -> p.toAbsolutePath().normalize())
-                  .filter(p -> classFile.path().startsWith(p))
-                  .findFirst()
-                  .orElse(scope);
+      final Path root = outputRoot(classFile.path(), scope, additionalRoots);
       final String relativePath = root.relativize(classFile.path()).toString().replace('\\', '/');
       if (!"module-info.class".equals(relativePath)
           && !relativePath.endsWith("/module-info.class")) {
@@ -125,18 +172,17 @@ public final class ProductionBytecodeAnalysis {
                 relativePath.substring(0, relativePath.length() - ".class".length())));
       }
     }
-    final BytecodeReferenceScan referenceScan =
-        new BytecodeReferenceScan(scope, references, classFiles.size(), true);
-    final List<Path> roots = new ArrayList<>();
-    roots.add(scope);
-    for (final Path additional : additionalOutputs) {
-      final Path normalizedAdditional = additional.toAbsolutePath().normalize();
-      if (Files.isDirectory(normalizedAdditional)) {
-        roots.add(normalizedAdditional);
+    return classNames;
+  }
+
+  private static Path outputRoot(
+      final Path classFile, final Path scope, final List<Path> additionalRoots) {
+    for (final Path root : additionalRoots) {
+      if (classFile.startsWith(root)) {
+        return root;
       }
     }
-    return new Snapshot(
-        fingerprintCapturedFiles(roots, sortedFiles), referenceScan, classNames, classFiles);
+    return scope;
   }
 
   /** Computes the versioned fingerprint by rereading the current production output. */
@@ -148,8 +194,9 @@ public final class ProductionBytecodeAnalysis {
   public static String fingerprint(final Path output, final List<Path> additionalOutputs)
       throws IOException {
     final Path scope = output.toAbsolutePath().normalize();
-    if (!Files.isDirectory(scope)) {
-      throw new IOException("Production class output directory is missing: " + scope);
+    final boolean missingScope = Files.notExists(scope);
+    if (!missingScope && !Files.isDirectory(scope)) {
+      throw new IOException("Production class output path is not a directory: " + scope);
     }
     final List<Path> roots = new ArrayList<>();
     roots.add(scope);
@@ -161,6 +208,12 @@ public final class ProductionBytecodeAnalysis {
     }
     final List<Path> classes = new ArrayList<>();
     for (final Path root : roots) {
+      if (Files.notExists(root)) {
+        continue;
+      }
+      if (!Files.isDirectory(root)) {
+        throw new IOException("Production class output path is not a directory: " + root);
+      }
       try (Stream<Path> paths = Files.walk(root)) {
         classes.addAll(
             paths
@@ -176,25 +229,6 @@ public final class ProductionBytecodeAnalysis {
       updateFingerprint(digest, root, classFile, Files.readAllBytes(classFile));
     }
     return HexFormat.of().formatHex(digest.digest());
-  }
-
-  private static List<ClassFile> captureClassFiles(final Path scope) throws IOException {
-    final List<ClassFile> classFiles = new ArrayList<>();
-    try (Stream<Path> paths = Files.walk(scope)) {
-      final Iterator<Path> iterator = paths.iterator();
-      while (iterator.hasNext()) {
-        final Path path = iterator.next();
-        final BasicFileAttributes attributes =
-            Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-        if (attributes.isSymbolicLink()) {
-          throw new IOException("Symbolic link in production class output: " + path);
-        }
-        if (attributes.isRegularFile() && isClassFile(path)) {
-          classFiles.add(new ClassFile(path, Files.readAllBytes(path)));
-        }
-      }
-    }
-    return List.copyOf(classFiles);
   }
 
   private static String fingerprintCapturedFiles(

@@ -64,7 +64,6 @@ class GenericFindingPrerequisiteMergeTest {
   @Test
   void incompatibleSamePriorityOperatorsRemainUnresolvedAndTyped() {
     final PrerequisiteClaim first = new PrerequisiteClaim("org.example:first", "p.First");
-    final PrerequisiteClaim second = new PrerequisiteClaim("org.example:second", "p.Second");
     final VulnerabilityFindingContribution anyOf =
         typedContribution(
             "[1,2)",

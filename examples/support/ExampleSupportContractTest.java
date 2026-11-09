@@ -19,6 +19,12 @@ public final class ExampleSupportContractTest {
   public static void main(final String[] arguments) throws Exception {
     rejectsRelativePath();
     verifiesReactorReportMetricComparison();
+    verifiesRawCandidatesCanBeRetainedByGraphSafety();
+    verifiesSpringExpectedWholeArtifactDrop();
+    verifiesSpringSnakeyamlCandidateCanBeRetainedByGraphSafety();
+    verifiesSharedCatalogExampleWiring();
+    verifiesRemovedCveDependencyDoesNotClaimAbsence();
+    verifiesCveUnusedExpectedWholeArtifactDrop();
     final Path productionOutput = Files.createTempDirectory("example-support-contract-").toRealPath();
     try {
       final ObjectNode nonBoolean = report(productionOutput);
@@ -106,6 +112,342 @@ public final class ExampleSupportContractTest {
     }
   }
 
+  private static void verifiesSpringExpectedWholeArtifactDrop() throws Exception {
+    final Path reportPath = Files.createTempFile("example-spring-drop-", ".json");
+    try {
+      final ObjectNode report = JSON.createObjectNode();
+      report.putArray("droppedArtifacts")
+          .addObject()
+          .put("coordinate", "commons-codec:commons-codec:jar:1.16.1 (compile)")
+          .put("programClassesRemoved", 109);
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+      ExampleSupport.main(new String[] {"verify-spring-expected-drop", reportPath.toString()});
+
+      ((ObjectNode) report.withArray("droppedArtifacts").get(0))
+          .put("coordinate", "org.yaml:snakeyaml:jar:2.2 (compile)");
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+      try {
+        ExampleSupport.main(new String[] {"verify-spring-expected-drop", reportPath.toString()});
+      } catch (final IOException exception) {
+        if (exception.getMessage().contains("expected Commons Codec")) {
+          return;
+        }
+        throw new AssertionError("Unexpected Spring drop rejection", exception);
+      }
+      throw new AssertionError("Spring verifier accepted an unexpected whole-artifact drop");
+    } finally {
+      Files.deleteIfExists(reportPath);
+    }
+  }
+
+  private static void verifiesSpringSnakeyamlCandidateCanBeRetainedByGraphSafety()
+      throws Exception {
+    final Path reportPath = Files.createTempFile("example-spring-snakeyaml-", ".json");
+    try {
+      final ObjectNode report = JSON.createObjectNode();
+      report
+          .putArray("rawDroppedCoordinates")
+          .add("org.yaml:snakeyaml:jar:2.2 (compile)");
+      report.putArray("droppedArtifacts");
+      final ObjectNode trim = report.putArray("trimmedArtifacts").addObject();
+      trim.put("coordinate", "org.yaml:snakeyaml:jar:2.2 (compile)");
+      trim.put("mrjarStatus", "elevated_and_trimmed");
+      final ObjectNode graph = report.putObject("mediatedGraph");
+      final ObjectNode snapshot = graph.putObject("snapshot");
+      final ObjectNode node = snapshot.putArray("nodes").addObject();
+      node.put("id", "n1");
+      node.put("version", "2.2");
+      node.putObject("artifact")
+          .put("groupId", "org.yaml")
+          .put("artifactId", "snakeyaml")
+          .put("version", "2.2");
+      node.putObject("dependency").put("scope", "compile");
+      graph
+          .putArray("nodeStatuses")
+          .addObject()
+          .put("nodeId", "n1")
+          .put("disposition", "RETAINED");
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+      ExampleSupport.main(
+          new String[] {"verify-spring-snakeyaml-retained", reportPath.toString()});
+
+      trim.put("mrjarStatus", "classpath-only");
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+      boolean rejectedInvalidMrjarStatus = false;
+      try {
+        ExampleSupport.main(
+            new String[] {"verify-spring-snakeyaml-retained", reportPath.toString()});
+      } catch (final IOException exception) {
+        if (exception.getMessage().contains("elevated and trimmed MRJAR status")) {
+          rejectedInvalidMrjarStatus = true;
+        } else {
+          throw new AssertionError("Unexpected SnakeYAML MRJAR status rejection", exception);
+        }
+      }
+      if (!rejectedInvalidMrjarStatus) {
+        throw new AssertionError("SnakeYAML verifier accepted a missing elevation result");
+      }
+      trim.put("mrjarStatus", "elevated_and_trimmed");
+
+      ((ObjectNode) graph.withArray("nodeStatuses").get(0)).put("disposition", "SAFE_ELIDED");
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+      try {
+        ExampleSupport.main(
+            new String[] {"verify-spring-snakeyaml-retained", reportPath.toString()});
+      } catch (final IOException exception) {
+        if (exception.getMessage().contains("must remain retained by graph safety")) {
+          return;
+        }
+        throw new AssertionError("Unexpected SnakeYAML graph-safety rejection", exception);
+      }
+      throw new AssertionError("Spring verifier accepted an elided raw SnakeYAML candidate");
+    } finally {
+      Files.deleteIfExists(reportPath);
+    }
+  }
+
+  private static void verifiesRawCandidatesCanBeRetainedByGraphSafety() throws Exception {
+    final Path reportPath = Files.createTempFile("example-raw-candidate-", ".json");
+    try {
+      final ObjectNode report = JSON.createObjectNode();
+      report.putArray("rawDroppedCoordinates")
+          .add("ch.qos.logback:logback-core:jar:1.5.18 (compile)");
+      report.putArray("droppedArtifacts");
+      report.putObject("mediatedGraph").putArray("artifactPaths");
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+      ExampleSupport.main(
+          new String[] {"verify-no-whole-artifact-drops", "CVE fixture", reportPath.toString()});
+    } finally {
+      Files.deleteIfExists(reportPath);
+    }
+  }
+
+  private static void verifiesSharedCatalogExampleWiring() throws IOException {
+    final Path root = Path.of("").toAbsolutePath().normalize();
+    final Path catalog =
+        root.resolve("examples/logback-vulnerability-mapping-catalog/src/main/resources")
+            .resolve("META-INF/elider/vulnerability-mappings.json");
+    if (!Files.isRegularFile(catalog)) {
+      throw new AssertionError("The shared Logback catalog fixture is missing");
+    }
+    final JsonNode mappings = JSON.readTree(Files.readString(catalog));
+    if (!mappings.path("catalogId").asText().equals("logback-core-cve-2025-11226")
+        || mappings.path("schemaVersion").asInt() != 1
+        || mappings.path("mappings").size() != 2) {
+      throw new AssertionError("The shared catalog identity or row count changed");
+    }
+    final List<String> expectedRanges = List.of("[1.5.11]", "[1.5.18]");
+    for (int index = 0; index < expectedRanges.size(); index++) {
+      final JsonNode row = mappings.path("mappings").get(index);
+      final JsonNode claim = row.path("versionClaims").get(0);
+      if (!row.path("groupId").asText().equals("ch.qos.logback")
+          || !row.path("artifactId").asText().equals("logback-core")
+          || !row.path("vulnerabilityId").asText().equals("CVE-2025-11226")
+          || !row.path("confidenceLevel").asText().equals("HIGH")
+          || !row.path("intent").asText().equals("AUTO_VERIFY")
+          || !claim.path("range").asText().equals(expectedRanges.get(index))
+          || !claim.path("status").asText().equals("EVIDENCE_SCOPE")) {
+        throw new AssertionError("Catalog rows must preserve the exact Logback evidence scopes");
+      }
+      final JsonNode prerequisites = row.path("prerequisiteGroups");
+      if (prerequisites.size() != 1
+          || !prerequisites.get(0).path("operator").asText().equals("ANY_OF")
+          || !prerequisites.get(0).path("members").get(0).path("requiresClass").asText()
+              .equals("org.codehaus.janino.ClassBodyEvaluator")) {
+        throw new AssertionError("Catalog rows must preserve the Janino prerequisite group");
+      }
+    }
+
+    final String coordinate =
+        "io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0";
+    for (final String fixture : List.of("example-spring-boot-app", "example-cve-safe-class-app")) {
+      final String pom = Files.readString(root.resolve("examples").resolve(fixture).resolve("pom.xml"));
+      if (!pom.contains(coordinate)) {
+        throw new AssertionError(fixture + " must adopt the shared released catalog artifact");
+      }
+    }
+    final String safeClassPom =
+        Files.readString(root.resolve("examples/example-cve-safe-class-app/pom.xml"));
+    final String springPom = Files.readString(root.resolve("examples/example-spring-boot-app/pom.xml"));
+    if (safeClassPom.contains("<vulnerabilityMappings>")
+        || !safeClassPom.contains("<preconditionClassPathComplete>true</preconditionClassPathComplete>")
+        || !springPom.contains("<preconditionClassPathComplete>true</preconditionClassPathComplete>")) {
+      throw new AssertionError("Catalog examples must retain complete inventory opt-in without inline mappings");
+    }
+    for (final String script :
+        List.of("examples/run-elision-cycle.sh", "scripts/prepare-transcript-examples.sh")) {
+      final String contents = Files.readString(root.resolve(script));
+      final int install = contents.indexOf("logback-vulnerability-mapping-catalog");
+      final int fixture = contents.indexOf("fixture_names=(");
+      if (install < 0 || fixture < 0 || install > fixture) {
+        throw new AssertionError(script + " must install the catalog before running examples");
+      }
+      if (contents.contains("-Delide.productionClassesComplete=true")) {
+        throw new AssertionError(script + " must rely on the process-classes lifecycle default");
+      }
+    }
+    final String cycle = Files.readString(root.resolve("examples/run-elision-cycle.sh"));
+    if (!cycle.contains("analysis_report=")
+        || !cycle.contains("-Delide.analysisSummaryFile=$analysis_report")
+        || !cycle.contains("verify-analyze-precondition \"$analysis_report\"")
+        || !cycle.contains("if [[ $fixture == example-spring-boot-app || $fixture == example-cve-unused-app")
+        || !cycle.contains("catalogId=logback-core-cve-2025-11226")) {
+      throw new AssertionError(
+          "Spring Analyze must assert its non-attesting prediction, adopted catalog, and final VEX");
+    }
+    final JsonNode invocations =
+        JSON.readTree(Files.readString(root.resolve("scripts/transcripts-manifest.json")))
+            .path("invocations");
+    boolean foundDirectAnalyze = false;
+    for (final JsonNode invocation : invocations) {
+      if (!invocation.path("goal").asText().equals("analyze")) {
+        continue;
+      }
+      foundDirectAnalyze = true;
+      boolean declaresProductionCompleteness = false;
+      for (final JsonNode argument : invocation.path("args")) {
+        if (argument.asText().equals("-Delide.productionClassesComplete=true")) {
+          declaresProductionCompleteness = true;
+          break;
+        }
+      }
+      if (!declaresProductionCompleteness) {
+        throw new AssertionError(
+            "Direct Analyze transcript goals must assert complete production bytecode because "
+                + "they do not run in the process-classes lifecycle");
+      }
+    }
+    if (!foundDirectAnalyze) {
+      throw new AssertionError("The transcript manifest must retain direct Analyze examples");
+    }
+  }
+
+  private static void verifiesRemovedCveDependencyDoesNotClaimAbsence() throws Exception {
+    final Path reportPath = Files.createTempFile("example-cve-report-", ".json").toRealPath();
+    final Path outputPath = Files.createTempFile("example-cve-report-", ".out").toRealPath();
+    try {
+      final ObjectNode report = JSON.createObjectNode();
+      final ArrayNode findings = report.putArray("genericFindings");
+      addCveFinding(
+          findings,
+          "CVE-2022-42889",
+          "commons-text",
+          "1.9",
+          "RETAINED_AND_TRIMMED",
+          "DECLARED_CODE_ABSENT",
+          "Commons Text vulnerable code is absent.");
+      addCveFinding(
+          findings,
+          "CVE-2025-48924",
+          "commons-lang3",
+          "3.17.0",
+          "REMOVED",
+          "NO_PROOF",
+          "No complete physical proof was available.");
+      report.putArray("sourceObservations");
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+      Files.writeString(
+          outputPath,
+          cveReportOutput("NO_PROOF", "No complete physical proof was available."));
+
+      ExampleSupport.main(
+          new String[] {
+            "verify-cve-report", "example-cve-unused-app", reportPath.toString(), outputPath.toString()
+          });
+
+      ((ObjectNode) findings.get(1)).put("outcome", "DECLARED_CODE_ABSENT");
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+      Files.writeString(
+          outputPath,
+          cveReportOutput(
+              "DECLARED_CODE_ABSENT", "No complete physical proof was available."));
+      try {
+        ExampleSupport.main(
+            new String[] {
+              "verify-cve-report",
+              "example-cve-unused-app",
+              reportPath.toString(),
+              outputPath.toString()
+            });
+      } catch (final IOException exception) {
+        if (exception.getMessage().contains("generic finding outcomes changed")) {
+          return;
+        }
+        throw new AssertionError("Unexpected CVE report rejection", exception);
+      }
+      throw new AssertionError("CVE verifier accepted an unrelated code absence proof");
+    } finally {
+      Files.deleteIfExists(reportPath);
+      Files.deleteIfExists(outputPath);
+    }
+  }
+
+  private static void verifiesCveUnusedExpectedWholeArtifactDrop() throws Exception {
+    final Path reportPath = Files.createTempFile("example-cve-unused-drop-", ".json").toRealPath();
+    try {
+      final ObjectNode report = JSON.createObjectNode();
+      final ObjectNode dropped =
+          report.putArray("droppedArtifacts").addObject();
+      dropped.put("coordinate", "org.apache.commons:commons-lang3:jar:3.17.0 (compile)");
+      dropped.put("programClassesRemoved", 395);
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+
+      ExampleSupport.main(
+          new String[] {"verify-cve-unused-expected-drop", reportPath.toString()});
+
+      dropped.put("coordinate", "org.apache.commons:commons-text:jar:1.9 (compile)");
+      Files.writeString(reportPath, JSON.writeValueAsString(report));
+      try {
+        ExampleSupport.main(
+            new String[] {"verify-cve-unused-expected-drop", reportPath.toString()});
+      } catch (final IOException exception) {
+        if (exception.getMessage().contains("unused Commons Lang artifact")) {
+          return;
+        }
+        throw new AssertionError("Unexpected CVE whole-artifact rejection", exception);
+      }
+      throw new AssertionError("CVE verifier accepted removal of the vulnerable Commons Text artifact");
+    } finally {
+      Files.deleteIfExists(reportPath);
+    }
+  }
+
+  private static void addCveFinding(
+      final ArrayNode findings,
+      final String vulnerabilityId,
+      final String artifactId,
+      final String version,
+      final String inventoryDisposition,
+      final String outcome,
+      final String detail) {
+    final ObjectNode finding = findings.addObject();
+    finding.put("vulnerabilityId", vulnerabilityId);
+    finding.put("applicability", "AFFECTED");
+    finding.put("outcome", outcome);
+    finding.put("inventoryDisposition", inventoryDisposition);
+    finding.put("detail", detail);
+    final ObjectNode candidate = finding.putObject("candidate");
+    candidate.put("groupId", "org.apache.commons");
+    candidate.put("artifactId", artifactId);
+    candidate.put("version", version);
+    candidate.put("type", "jar");
+    candidate.put("classifier", "");
+    candidate.put("scope", "compile");
+  }
+
+  private static String cveReportOutput(final String unrelatedOutcome, final String unrelatedDetail) {
+    return String.join(
+        "\n",
+        "[INFO] Vulnerability findings:",
+        "[INFO]   - CVE-2022-42889 org.apache.commons:commons-text:jar:1.9 (compile) [RETAINED_AND_TRIMMED]",
+        "[INFO]     Applicability: AFFECTED",
+        "[INFO]     Outcome: DECLARED_CODE_ABSENT; Commons Text vulnerable code is absent.",
+        "[INFO]   - CVE-2025-48924 org.apache.commons:commons-lang3:jar:3.17.0 (compile) [REMOVED]",
+        "[INFO]     Applicability: AFFECTED",
+        "[INFO]     Outcome: " + unrelatedOutcome + "; " + unrelatedDetail,
+        "[INFO] CVE Sources:");
+  }
+
   private static void verifiesExclusionReviewValidation(final Path productionOutput)
       throws IOException {
     final ObjectNode unavailable = reportWithValidPrediction(productionOutput);
@@ -171,6 +513,12 @@ public final class ExampleSupportContractTest {
     report.putArray("sourceObservations");
 
     ExampleSupport.validateGenericFindingReport(report);
+
+    final ObjectNode noAffectedAssertion = report.deepCopy();
+    ((ObjectNode) noAffectedAssertion.path("genericFindings").get(0))
+        .put("applicability", "NO_AFFECTED_ASSERTION");
+    ((ObjectNode) noAffectedAssertion.path("genericFindings").get(0)).put("outcome", "UNRESOLVED");
+    ExampleSupport.validateGenericFindingReport(noAffectedAssertion);
 
     final ObjectNode partial = report.deepCopy();
     final ObjectNode observation = partial.withArray("sourceObservations").addObject();

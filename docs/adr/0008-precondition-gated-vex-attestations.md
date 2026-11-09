@@ -53,6 +53,20 @@ Keep POM mapping overrides ahead of cached mappings when they address the same C
 
 This design rejects cases where only coordinates are known, and it requires callers to affirm that the declared build inventory is complete. It reduces false claims caused by equivalent classes in other artifacts and makes incomplete source or archive evidence suppress VEX. It still cannot certify provider absence in future packaging inputs or deployment-time runtime environments, which must remain visible as a limitation. OpenVEX statements explain the precondition through `impact_statement` rather than an unsupported justification category.
 
+### Dated Amendment: 2026-11-08 Shared Final-Inventory Prerequisite Proof
+
+Prerequisite declarations now retain their operator and complete atomic pair set through common
+finding reconciliation. An `ANY_OF` group is disarmed only when every listed dependency/class pair
+is absent; an `ALL_OF` group is disarmed when at least one required pair is absent. Any present or
+unresolved member that prevents the selected operator from being disarmed suppresses aggregate
+proof. Assessment is based on the
+captured final declared Maven inventory and physical packaged providers, regardless of whether
+class trimming is enabled. Analyze predictions remain distinct from verified Elide output, and
+report replay uses the saved assessment rather than resolving mappings again. The inventory does
+not cover providers outside the declared Maven boundary, including deployment-provided classes or
+recursively nested archives. The Maven lifecycle guard includes downstream `testCompile` providers
+even when test execution is skipped.
+
 ## Dated Amendment: 2026-11-04 Common Finding and Proof Inputs
 
 [ADR-0014](0014-source-independent-vulnerability-findings.md) replaces provider-specific admission with common effective code/prerequisite declarations. Manual corrections retain explicit scoped merge priority, including review-only intent, but are not handled through a separate POM-origin proof route. Missing fields can be enriched; a prerequisite coordinate and class remain one atomic declaration pair. Priority and provenance cannot bypass exact version binding, complete opted-in inventory, archive identity, physical absence or output integrity checks. The inventory boundary and supported CycloneDX/OpenVEX representations above remain unchanged.

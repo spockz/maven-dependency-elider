@@ -344,7 +344,7 @@ final class SingleReleaseTrimInventory {
     }
   }
 
-  /** Merges requested, common, and dynamic roots before the empty-root fallback. */
+  /** Groups the root sources used for a candidate. */
   private record CandidateRootInputs(
       SingleReleaseInventory inventory,
       CommonRootOwners commonRootOwners,
@@ -362,9 +362,6 @@ final class SingleReleaseTrimInventory {
                   roots.add(className);
                 }
               });
-      if (roots.isEmpty()) {
-        roots.addAll(inventory.classesByArtifact().getOrDefault(candidate, Set.of()));
-      }
       return roots;
     }
   }

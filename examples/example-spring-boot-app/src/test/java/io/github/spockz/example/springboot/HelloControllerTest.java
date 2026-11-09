@@ -1,6 +1,4 @@
-/* WHY: Confirms the HTTP contract with an observable response body while keeping the check
- * focused on the endpoint.
- */
+/* WHY: Checks HTTP and dependency behavior in the running app context. */
 
 package io.github.spockz.example.springboot;
 
@@ -39,10 +37,15 @@ class HelloControllerTest {
         .andExpect(content().json("{\"message\":\"hello\"}"));
   }
 
-  /** Confirms policy retains Codec when no whole-artifact drop is safe. */
+  /** WHY: Codec trimming must match observed runtime use. */
   @Test
-  void commonsCodecRemainsAvailableWithNoEffectiveDrop() {
-    assertThat(resource("org/apache/commons/codec/binary/Hex.class")).isNotNull();
+  void unusedCommonsCodecClassIsOnlyPresentInBaselineMode() {
+    final boolean elisionMode = "elision".equals(System.getProperty("elide.mode"));
+    final boolean codecClassMissing = resource("org/apache/commons/codec/binary/Hex.class") == null;
+    org.junit.jupiter.api.Assertions.assertEquals(
+        elisionMode,
+        codecClassMissing,
+        "Commons Codec Hex is absent only when the lifecycle elision mode is active");
   }
 
   /** Confirms mail remains available because the runtime trace observes mail classes. */

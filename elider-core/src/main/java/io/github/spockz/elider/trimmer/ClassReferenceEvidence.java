@@ -14,6 +14,7 @@ import org.objectweb.asm.ConstantDynamic;
 import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.ModuleVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.RecordComponentVisitor;
 import org.objectweb.asm.Type;
@@ -32,7 +33,7 @@ final class ClassReferenceEvidence {
     "PMD.AvoidCatchingGenericException",
     "PMD.CommentDefaultAccessModifier"
   })
-  static Map<String, Set<ReferenceGraph.EdgeKind>> references(
+  static Result references(
       final String sourceClass, final byte[] bytes, final boolean includeMethodBodies) {
     final Map<String, Set<ReferenceGraph.EdgeKind>> references = new LinkedHashMap<>();
     references
@@ -47,8 +48,20 @@ final class ClassReferenceEvidence {
     }
     final Map<String, Set<ReferenceGraph.EdgeKind>> immutable = new HashMap<>();
     references.forEach((target, kinds) -> immutable.put(target, Set.copyOf(kinds)));
-    return Map.copyOf(immutable);
+    try {
+      return new Result(
+          Map.copyOf(immutable), ClassFileAttributeInventory.unrecognizedAttributes(bytes));
+    } catch (final java.io.IOException exception) {
+      throw new IllegalArgumentException(
+          "Could not inspect class-file attributes for class " + sourceClass, exception);
+    }
   }
+
+  // The default access modifier keeps this result internal to the trimmer.
+  // WHY: Graph construction consumes the immutable classification result.
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  record Result(
+      Map<String, Set<ReferenceGraph.EdgeKind>> references, Set<String> unrecognizedAttributes) {}
 
   /** Collects all ASM callbacks into the source class's typed edge set. */
   // WHY: One ASM adapter handles distinct metadata and code events.
@@ -89,6 +102,29 @@ final class ClassReferenceEvidence {
         }
       }
       addSignature(signature, ReferenceGraph.EdgeKind.STRUCTURAL);
+    }
+
+    @Override
+    public ModuleVisitor visitModule(final String name, final int access, final String version) {
+      return new ModuleVisitor(Opcodes.ASM9) {
+        @Override
+        public void visitMainClass(final String mainClass) {
+          addInternalName(mainClass, ReferenceGraph.EdgeKind.STRUCTURAL);
+        }
+
+        @Override
+        public void visitUse(final String service) {
+          addInternalName(service, ReferenceGraph.EdgeKind.STRUCTURAL);
+        }
+
+        @Override
+        public void visitProvide(final String service, final String... providers) {
+          addInternalName(service, ReferenceGraph.EdgeKind.STRUCTURAL);
+          for (final String provider : providers) {
+            addInternalName(provider, ReferenceGraph.EdgeKind.STRUCTURAL);
+          }
+        }
+      };
     }
 
     @Override
@@ -203,10 +239,7 @@ final class ClassReferenceEvidence {
           addInternalName(exception, ReferenceGraph.EdgeKind.STRUCTURAL);
         }
       }
-      if (!includeMethodBodies) {
-        return null;
-      }
-      return new MethodReferenceVisitor(this);
+      return new MethodReferenceVisitor(this, includeMethodBodies);
     }
 
     private AnnotationVisitor annotationVisitor(final ReferenceGraph.EdgeKind kind) {
@@ -378,7 +411,7 @@ final class ClassReferenceEvidence {
       }
       for (int index = 0; index < count; index++) {
         if (types[index] instanceof String name) {
-          addInternalName(name, ReferenceGraph.EdgeKind.BODY);
+          addInternalName(name, ReferenceGraph.EdgeKind.STRUCTURAL);
         }
       }
     }
@@ -405,9 +438,14 @@ final class ClassReferenceEvidence {
     /** Provides the typed-edge sink for method callbacks. */
     private final StructuralAndBodyVisitor owner;
 
-    private MethodReferenceVisitor(final StructuralAndBodyVisitor owner) {
+    /** Excludes instruction references from unchanged sibling libraries. */
+    private final boolean includeMethodBodies;
+
+    private MethodReferenceVisitor(
+        final StructuralAndBodyVisitor owner, final boolean includeMethodBodies) {
       super(Opcodes.ASM9);
       this.owner = owner;
+      this.includeMethodBodies = includeMethodBodies;
     }
 
     @Override
@@ -432,10 +470,55 @@ final class ClassReferenceEvidence {
     }
 
     @Override
+    public AnnotationVisitor visitInsnAnnotation(
+        final int typeRef,
+        final org.objectweb.asm.TypePath typePath,
+        final String descriptor,
+        final boolean visible) {
+      owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.STRUCTURAL);
+      return owner.annotationVisitor(ReferenceGraph.EdgeKind.STRUCTURAL);
+    }
+
+    @Override
+    public AnnotationVisitor visitTryCatchAnnotation(
+        final int typeRef,
+        final org.objectweb.asm.TypePath typePath,
+        final String descriptor,
+        final boolean visible) {
+      owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.STRUCTURAL);
+      return owner.annotationVisitor(ReferenceGraph.EdgeKind.STRUCTURAL);
+    }
+
+    @Override
+    public AnnotationVisitor visitLocalVariableAnnotation(
+        final int typeRef,
+        final org.objectweb.asm.TypePath typePath,
+        final org.objectweb.asm.Label[] start,
+        final org.objectweb.asm.Label[] end,
+        final int[] index,
+        final String descriptor,
+        final boolean visible) {
+      owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.STRUCTURAL);
+      return owner.annotationVisitor(ReferenceGraph.EdgeKind.STRUCTURAL);
+    }
+
+    @Override
     public AnnotationVisitor visitParameterAnnotation(
         final int parameter, final String descriptor, final boolean visible) {
       owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.STRUCTURAL);
       return owner.annotationVisitor(ReferenceGraph.EdgeKind.STRUCTURAL);
+    }
+
+    @Override
+    public void visitLocalVariable(
+        final String name,
+        final String descriptor,
+        final String signature,
+        final org.objectweb.asm.Label start,
+        final org.objectweb.asm.Label end,
+        final int index) {
+      owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.DEBUG_METADATA);
+      owner.addSignature(signature, ReferenceGraph.EdgeKind.DEBUG_METADATA);
     }
 
     @Override
@@ -460,14 +543,18 @@ final class ClassReferenceEvidence {
 
     @Override
     public void visitTypeInsn(final int opcode, final String type) {
-      owner.addInternalName(type, ReferenceGraph.EdgeKind.BODY);
+      if (includeMethodBodies) {
+        owner.addInternalName(type, ReferenceGraph.EdgeKind.BODY);
+      }
     }
 
     @Override
     public void visitFieldInsn(
         final int opcode, final String ownerName, final String fieldName, final String descriptor) {
-      owner.addInternalName(ownerName, ReferenceGraph.EdgeKind.BODY);
-      owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.BODY);
+      if (includeMethodBodies) {
+        owner.addInternalName(ownerName, ReferenceGraph.EdgeKind.BODY);
+        owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.BODY);
+      }
     }
 
     @Override
@@ -477,8 +564,10 @@ final class ClassReferenceEvidence {
         final String methodName,
         final String descriptor,
         final boolean isInterface) {
-      owner.addInternalName(ownerName, ReferenceGraph.EdgeKind.BODY);
-      owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.BODY);
+      if (includeMethodBodies) {
+        owner.addInternalName(ownerName, ReferenceGraph.EdgeKind.BODY);
+        owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.BODY);
+      }
     }
 
     @Override
@@ -487,21 +576,27 @@ final class ClassReferenceEvidence {
         final String descriptor,
         final Handle bootstrapMethodHandle,
         final Object... bootstrapMethodArguments) {
-      owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.BODY);
-      owner.addHandle(bootstrapMethodHandle);
-      for (final Object argument : bootstrapMethodArguments) {
-        owner.addConstant(argument);
+      if (includeMethodBodies) {
+        owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.BODY);
+        owner.addHandle(bootstrapMethodHandle);
+        for (final Object argument : bootstrapMethodArguments) {
+          owner.addConstant(argument);
+        }
       }
     }
 
     @Override
     public void visitLdcInsn(final Object value) {
-      owner.addConstant(value);
+      if (includeMethodBodies) {
+        owner.addConstant(value);
+      }
     }
 
     @Override
     public void visitMultiANewArrayInsn(final String descriptor, final int dimensions) {
-      owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.BODY);
+      if (includeMethodBodies) {
+        owner.addDescriptor(descriptor, ReferenceGraph.EdgeKind.BODY);
+      }
     }
   }
 }

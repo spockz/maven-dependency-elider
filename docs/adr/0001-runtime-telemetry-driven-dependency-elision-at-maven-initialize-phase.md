@@ -49,3 +49,13 @@ Executing at `INITIALIZE` with dependency resolution requires evidence generated
 Early transformation has prior art in [Gradle artifact transforms](https://docs.gradle.org/current/userguide/artifact_transforms.html) and [DepTrim](https://github.com/ASSERT-KTH/deptrim). The product value is oracle integration, dependable Maven orchestration, and explainable validation. A distribution-only shrinker may be sufficient when users do not need reduced dependencies in their normal compile/test lifecycle.
 
 The build can test the intended reduced dependency set only after consumer classpaths and packaged bytes are verified under ADR-0002. A smaller classpath does not establish a faster build; total analysis, transformation, and cache costs require measurement under RQ-0003.
+
+## Dated Amendment: 2026-11-08 Default Lifecycle Phase
+
+[ADR-0010](0010-process-classes-lifecycle-and-bytecode-completeness.md) supersedes this ADR's
+`INITIALIZE` integration target and pre-compile invariant. The default `elide` execution now runs
+at `process-classes`, after production bytecode exists and before test compilation and packaging.
+This moves the default pruning point later in the Maven lifecycle: production compilation uses
+the original resolved dependency graph, while subsequent lifecycle consumers receive the validated
+elided view. Existing explicit phase bindings remain user configuration. The saved report, final
+package, and prerequisite proof continue to require their respective evidence contracts.

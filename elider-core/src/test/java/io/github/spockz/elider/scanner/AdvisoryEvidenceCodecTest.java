@@ -5,6 +5,7 @@ package io.github.spockz.elider.scanner;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +44,8 @@ class AdvisoryEvidenceCodecTest {
   void roundTripsTypedVariantsAndTheirIndependentProvenance() throws IOException {
     final OsvAdvisoryRecord record = recordWithVariants();
     final List<OsvAdvisoryRecord> decoded = read(writer.encode(List.of(record)));
+    final boolean hasCnaEntries =
+        writer.encodeTree(List.of(record)).path("records").get(0).has("cnaAffectedEntries");
 
     assertAll(
         "typed evidence is owned by one OSV record",
@@ -60,14 +63,7 @@ class AdvisoryEvidenceCodecTest {
                 .extracting(value -> value.provenance().origin())
                 .contains(
                     EvidenceOrigin.OSV, EvidenceOrigin.DESCRIPTION, EvidenceOrigin.REFERENCE_URL),
-        () ->
-            assertThat(
-                    writer
-                        .encodeTree(List.of(record))
-                        .path("records")
-                        .get(0)
-                        .has("cnaAffectedEntries"))
-                .isFalse());
+        () -> assertFalse(hasCnaEntries, "schema v1 omits the retired CNA field"));
   }
 
   @Test
@@ -79,10 +75,15 @@ class AdvisoryEvidenceCodecTest {
     ((ObjectNode) oldCnaShape.path("records").get(0)).putArray("cnaAffectedEntries");
     final ObjectNode oldStructuredTag = legacy.deepCopy();
     ((ObjectNode) firstEvidence(oldStructuredTag)).put("kind", "structured-source-class");
+    final JsonNode encodedRecord =
+        writer.encodeTree(List.of(recordWithVariants())).path("records").get(0);
+    final boolean hasCnaEntries = encodedRecord.has("cnaAffectedEntries");
+    final boolean hasLegacyCnaEntries = legacyRecord.has("cnaAffectedEntries");
 
     assertAll(
         "schema v1 accepts source-neutral advisory evidence only",
-        () -> assertThat(legacyRecord.has("cnaAffectedEntries")).isFalse(),
+        () -> assertFalse(hasCnaEntries, "schema v1 omits the retired CNA field"),
+        () -> assertFalse(hasLegacyCnaEntries, "schema v1 rejects the retired CNA field"),
         () -> assertRejected(oldCnaShape, "unknown field"),
         () -> assertRejected(oldStructuredTag, "Unknown advisory evidence discriminator"));
   }

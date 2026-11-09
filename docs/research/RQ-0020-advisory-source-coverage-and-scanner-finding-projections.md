@@ -15,7 +15,7 @@ The agreed reporting direction is to distinguish potential scanner findings proj
 ## Record
 
 - Opened: 2026-11-04
-- Last updated: 2026-11-06
+- Last updated: 2026-11-09
 - Evidence snapshot: 2026-11-04; tool and source behavior below is as checked on that date.
 - Related decisions: [ADR-0006](../adr/0006-dual-source-vulnerability-advisory-ingestion-from-cvelist-v5-and-osv-maven.md), [ADR-0013](../adr/0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md), [RQ-0008](RQ-0008-osv-sbom-comparison-and-vex-evidence.md), [RQ-0011](RQ-0011-persisted-report-scope-and-vulnerability-telemetry.md), [RQ-0013](RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md), [RQ-0015](RQ-0015-actionable-advisory-gap-detection-and-heuristic-elision-candidates.md), and [RQ-0019](RQ-0019-developer-actionable-advisory-workflows-and-ide-quick-fixes.md).
 
@@ -846,3 +846,53 @@ Future chats investigating this topic should update this same RQ rather than cre
 Every new empirical claim should record, as applicable: source URLs and access date; scanner/tool version; database/cache snapshot identity and freshness; exact input inventory and its generation method; scope and inclusion/exclusion rules; query shape; timestamps; units and alias-deduplication rule; uncertainty; durable evidence path; and whether the result is observation, interpretation, or proposal. Keep unresolved and missing values explicit rather than replacing them with zero.
 
 Proposals remain proposals until adopted. Before implementation, define acceptance criteria and identify affected schemas, reports, source contracts, and tests. Any persisted-format or compatibility decision must follow repository policy and have an ADR before promising migration or compatibility behavior. Keep this RQ linked from the research register and related investigations; a new chat on the same topic should continue this record rather than assign another RQ number.
+
+### 2026-11-08: Wholesale liveness and prerequisite proof implementation
+
+The wholesale-purge work package implements the requested shared liveness analysis, opt-in
+`elide.closedWorld` policy, typed prerequisite mapping catalog adoption, and final-inventory VEX
+assessment. Closed-world mode is false by default and requires usable runtime evidence. It can
+suppress body-level reference edges outside the admitted workload set; structural references such
+as supertypes, interfaces, and member types remain live. The mode is part of analysis/cache
+identity. An absent runtime observation is therefore not treated as non-use in default mode, and
+workload evidence does not erase class-file structure required by the supported linkage model.
+
+The real Spring Boot lifecycle cycle passed with one effective whole-artifact drop:
+`commons-codec:commons-codec:jar:1.16.1 (compile)`. Its generated report recorded 91 input
+artifacts, one dropped artifact, 14 trimmed artifacts, 3,283 pruned classes from retained
+artifacts, and 109 program classes from the dropped artifact. The separately measured physical
+package inventory changed from 21,605 to 18,201 `.class` entry paths and from 665 to 532
+non-class resource paths; nested `BOOT-INF/lib` JARs changed from 57 to 56, with Commons Codec
+identified as the removed JAR. Package size changed from 37,148,873 to 32,473,606 bytes. These
+counts use different units: plugin class statistics describe logical analysis results, while the
+package inventory counts physical entry paths across archive tiers and locations.
+
+For CVE-2025-11226, the Spring package's Janino prerequisite check uses the saved final declared
+Maven inventory and physical provider evidence. The VEX result is scoped to the assessed Logback
+component and records `requires_dependency` with the prerequisite already absent; this is not a
+claim that elision removed Janino or that undeclared deployment providers were inventoried. The
+declared Maven boundary excludes providers outside that inventory, including deployment-supplied
+and recursively nested archives. Finding projection, component removal, and prerequisite-based
+VEX assessment remain separate statements. This implementation checkpoint records example
+observations; it does not update the external scanner/CVE coverage measurements above.
+
+### 2026-11-09: Direct Analyze and lifecycle proof boundary
+
+The final Spring example cycle asserts two different evidence states. Its direct `analyze`
+invocation is deliberately not treated as a safe Maven lifecycle, so the report retains the
+Logback finding as `AFFECTED`, emits `NO_PROOF`, and records the Janino prerequisite prediction as
+unknown. The subsequent `clean verify` run uses the configured lifecycle and skips test
+compilation; the example harness verifies that the saved report instead records
+`PREREQUISITES_ABSENT`, with Janino and `ClassBodyEvaluator` attributed as already absent from the
+complete declared Maven inventory. It separately checks the CycloneDX `not_affected` /
+`requires_dependency` assessment and matching OpenVEX statement, bound to the exact Logback Core
+component digest. This distinguishes a valid prerequisite-based assessment from both affectedness
+and an unsupported direct-goal prediction.
+
+Evidence: the assertions are in
+[`ExampleSupport`](../../examples/support/ExampleSupport.java), invoked by the
+[Spring example cycle](../../examples/run-elision-cycle.sh). `make test-examples` passed with JDK 21
+and JDK 25. The test harness removes its temporary proof reports after successful verification;
+the checked-in evidence is the deterministic assertion and successful run, not a retained
+transient report. These example checks do not change the scanner database coverage measurements
+recorded above.

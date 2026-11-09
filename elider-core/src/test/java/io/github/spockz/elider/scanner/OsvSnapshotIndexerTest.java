@@ -23,13 +23,18 @@ import java.util.zip.ZipOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** WHY: These tests share archive and repository fixtures. */
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
   "PMD.AtLeastOneConstructor",
   "PMD.CommentRequired",
-  "PMD.ShortVariable"
+  "PMD.ShortVariable",
+  "PMD.TooManyMethods"
 })
 class OsvSnapshotIndexerTest {
+  /** WHY: Each synthetic archive uses the same record entry name. */
+  private static final String RECORD_JSON_ENTRY = "record.json";
+
   private static final String SHARED_CVE_ALIAS = "CVE-2025-12345";
 
   @TempDir Path tempDir;
@@ -53,7 +58,7 @@ class OsvSnapshotIndexerTest {
     final OsvAdvisoryRecord record =
         new OsvSnapshotIndexer()
             .indexZip(
-                new ByteArrayInputStream(createZip(List.of(new ZipItem("record.json", osv)))),
+                new ByteArrayInputStream(createZip(List.of(new ZipItem(RECORD_JSON_ENTRY, osv)))),
                 tempDir)
             .getFirst();
 
@@ -95,7 +100,7 @@ class OsvSnapshotIndexerTest {
     return new OsvSnapshotIndexer()
         .indexZip(
             new ByteArrayInputStream(
-                createZip(List.of(new ZipItem("record.json", mapper.writeValueAsString(osv))))),
+                createZip(List.of(new ZipItem(RECORD_JSON_ENTRY, mapper.writeValueAsString(osv))))),
             tempDir)
         .getFirst()
         .affectedPackages();
@@ -125,7 +130,7 @@ class OsvSnapshotIndexerTest {
     final List<OsvAdvisoryRecord> records =
         new OsvSnapshotIndexer()
             .indexZip(
-                new ByteArrayInputStream(createZip(List.of(new ZipItem("record.json", osv)))),
+                new ByteArrayInputStream(createZip(List.of(new ZipItem(RECORD_JSON_ENTRY, osv)))),
                 tempDir);
 
     assertThat(records.getFirst().evidence()).isEmpty();
@@ -270,7 +275,7 @@ class OsvSnapshotIndexerTest {
   @Test
   void cveChangesAndWithdrawalCannotChangeOsvOwnedRecord() throws IOException {
     final String osv = OsvSnapshotFixtures.osvJson("GHSA-independent-source", SHARED_CVE_ALIAS);
-    final byte[] zip = createZip(List.of(new ZipItem("record.json", osv)));
+    final byte[] zip = createZip(List.of(new ZipItem(RECORD_JSON_ENTRY, osv)));
     final Path cvePath = tempDir.resolve("cves/2025/12xxx/CVE-2025-12345.json");
     Files.createDirectories(cvePath.getParent());
     Files.writeString(cvePath, cveSourceJson(SHARED_CVE_ALIAS, "PUBLISHED"));

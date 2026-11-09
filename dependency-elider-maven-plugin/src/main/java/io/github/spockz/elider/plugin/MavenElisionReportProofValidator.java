@@ -6,7 +6,6 @@ import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.ClaimGroupStatus;
 import io.github.spockz.elider.model.CodeAttributionResolver;
 import io.github.spockz.elider.model.CodeClaim;
-import io.github.spockz.elider.model.GenericVulnerabilityFinding;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.VersionApplicability;
 import java.io.IOException;
@@ -148,16 +147,11 @@ final class MavenElisionReportProofValidator {
     if (!members.equals(java.util.Set.copyOf(finding.effectivePrerequisites()))) {
       throw new IOException("prerequisiteProof.groups do not match selected prerequisite members");
     }
-    final java.util.Set<PrerequisiteGroup> selectedGroups;
-    try {
-      selectedGroups =
-          java.util.Set.copyOf(
-              GenericVulnerabilityFinding.merge(finding.contributions())
-                  .effectivePrerequisiteGroupsFor(finding.candidate().version()));
-    } catch (final IllegalArgumentException exception) {
-      throw new IOException(
-          "prerequisiteProof cannot be matched to selected source groups", exception);
-    }
+    final java.util.Set<PrerequisiteGroup> selectedGroups =
+        java.util.Set.copyOf(
+            MavenElisionReportFindingReconciliation.requireCanonicalFinding(
+                    finding, "prerequisiteProof")
+                .effectivePrerequisiteGroupsFor(finding.candidate().version()));
     final java.util.Set<PrerequisiteGroup> evidenceGroups =
         evidence.groups().stream()
             .map(PrerequisiteProofEvidence.GroupEvidence::group)

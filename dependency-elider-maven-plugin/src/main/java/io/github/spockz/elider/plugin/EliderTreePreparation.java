@@ -58,7 +58,7 @@ final class EliderTreePreparation {
       return;
     }
     requireSingleProjectReactor(session, request);
-    EliderPluginConfiguration.requireInitializeBinding(execution, project);
+    EliderPluginConfiguration.requireSupportedBinding(execution, project);
 
     final boolean processClassesBinding = "process-classes".equals(requiredPhase);
     final List<String> preparedGoals =

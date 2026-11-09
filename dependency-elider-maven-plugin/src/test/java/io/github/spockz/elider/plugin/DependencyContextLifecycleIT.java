@@ -66,6 +66,7 @@ final class DependencyContextLifecycleIT {
   private static final String MAVEN_WRAPPER = "mvnw";
   private static final String POM_XML = "pom.xml";
   private static final String CLEAN_GOAL = "clean";
+  private static final String PACKAGE_GOAL = "package";
   private static final String MVN_DIRECTORY = ".mvn";
   private static final String EXTENSIONS_XML = "extensions.xml";
   private static final String BUILD_SUCCESS = "BUILD SUCCESS";
@@ -73,6 +74,13 @@ final class DependencyContextLifecycleIT {
 
   private static final String CONSUMER_DIRECTORY = "consumer";
   private static final String TRACE_FILE = "trace.txt";
+  private static final String CLASS_USAGE_REPORT = "dependency-elider-class-usage.json";
+  private static final String CLASS_FILES_SCANNED_FIELD = "classFilesScanned";
+  private static final String ELISION_FAILURE_PREFIX = "Dependency elision failed: ";
+  private static final String APPLICATION_SOURCE_DIRECTORY = "src/main/java/app";
+  private static final String APPLICATION_SOURCE_FILE = "App.java";
+  private static final String APPLICATION_CLASS_SOURCE = "package app; public final class App { ";
+  private static final String PMD_INLINE_RULE = "PMD.VariableCanBeInlined";
   private static final String KEEP_ENTRY_ROOT = "io.github.spockz.elider.fixture.keep.KeepEntry\n";
   private static final String SEED_PLAN_DISABLED = "-Dlifecycle.seedPlan=false";
   private static final String ELIDER_SUMMARY = "Dependency Elider report";
@@ -546,7 +554,7 @@ final class DependencyContextLifecycleIT {
         () ->
             assertExpectedGoalFailure(
                 elideOutput,
-                "Dependency elision failed: "
+                ELISION_FAILURE_PREFIX
                     + fixtureRoot.resolve("ban-invocations/elide/project/trace.txt")),
         () ->
             assertExpectedGoalFailure(
@@ -556,26 +564,26 @@ final class DependencyContextLifecycleIT {
         () ->
             assertExpectedGoalFailure(
                 defaultCliOutput,
-                "Dependency elision failed: At least one supported trace input is required"),
+                ELISION_FAILURE_PREFIX + "At least one supported trace input is required"),
         () ->
             assertExpectedGoalFailure(
                 initializeOutput,
-                "Dependency elision failed: "
+                ELISION_FAILURE_PREFIX
                     + fixtureRoot.resolve("ban-invocations/initialize/project/trace.txt")),
         () ->
             assertExpectedGoalFailure(
                 processClassesOutput,
-                "Dependency elision failed: Analyze inventory matches multiple captured "
-                    + "Resolver graph pairs"),
+                ELISION_FAILURE_PREFIX
+                    + fixtureRoot.resolve("ban-invocations/process-classes/project/trace.txt")),
         () ->
             assertExpectedGoalFailure(
                 treePromotionOutput,
-                "Dependency elision failed: "
+                ELISION_FAILURE_PREFIX
                     + fixtureRoot.resolve("ban-invocations/tree-promotion/project/trace.txt")),
         () ->
             assertExpectedGoalFailure(
                 managementCliOutput,
-                "Dependency elision failed: At least one supported trace input is required"),
+                ELISION_FAILURE_PREFIX + "At least one supported trace input is required"),
         () ->
             assertNoBanInvocationOutputs(
                 fixtureRoot.resolve("ban-invocations"),
@@ -613,7 +621,7 @@ final class DependencyContextLifecycleIT {
             ANALYZE_RUN_GOAL,
             POST_ELIDE_PROBE_GOAL);
     final JsonNode analyzeReport =
-        JSON.readTree(consumer.resolve("target/dependency-elider-class-usage.json").toFile());
+        JSON.readTree(consumer.resolve(TARGET_DIRECTORY).resolve(CLASS_USAGE_REPORT).toFile());
     final JsonNode analyzeBan = analyzeReport.path("dependencyPrediction").path("banPlan").get(0);
     final boolean analyzeBanApplied = analyzeBan.path("applied").asBoolean();
     final List<String> postAnalyzeViews =
@@ -803,9 +811,9 @@ final class DependencyContextLifecycleIT {
     addDropAsKeepLibraryDependency(fixture.localRepository());
     Files.writeString(fixture.consumer().resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
     Files.writeString(
-        Files.createDirectories(fixture.consumer().resolve("src/main/java/app"))
-            .resolve("App.java"),
-        "package app; public final class App { "
+        Files.createDirectories(fixture.consumer().resolve(APPLICATION_SOURCE_DIRECTORY))
+            .resolve(APPLICATION_SOURCE_FILE),
+        APPLICATION_CLASS_SOURCE
             + "private io.github.spockz.elider.fixture.keep.KeepEntry keep; }\n");
 
     final String output =
@@ -825,9 +833,9 @@ final class DependencyContextLifecycleIT {
     addDropAsKeepLibraryDependency(fixture.localRepository());
     Files.writeString(fixture.consumer().resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
     Files.writeString(
-        Files.createDirectories(fixture.consumer().resolve("src/main/java/app"))
-            .resolve("App.java"),
-        "package app; public final class App { "
+        Files.createDirectories(fixture.consumer().resolve(APPLICATION_SOURCE_DIRECTORY))
+            .resolve(APPLICATION_SOURCE_FILE),
+        APPLICATION_CLASS_SOURCE
             + "private io.github.spockz.elider.fixture.keep.KeepEntry keep; }\n");
 
     final String output =
@@ -865,10 +873,9 @@ final class DependencyContextLifecycleIT {
     writeLinkingApiLibrary(fixture.localRepository());
     Files.writeString(fixture.consumer().resolve(TRACE_FILE), "fixture.link.Link\n");
     Files.writeString(
-        Files.createDirectories(fixture.consumer().resolve("src/main/java/app"))
-            .resolve("App.java"),
-        "package app; public final class App { "
-            + "public static void use() { fixture.link.Link.touch(); } }\n");
+        Files.createDirectories(fixture.consumer().resolve(APPLICATION_SOURCE_DIRECTORY))
+            .resolve(APPLICATION_SOURCE_FILE),
+        APPLICATION_CLASS_SOURCE + "public static void use() { fixture.link.Link.touch(); } }\n");
     final Map<Path, String> priorOutputs = seedBanFailureOutputs(fixture.consumer());
 
     final String output = runBanLifecycleFixtureExpectingFailure(fixture, PROCESS_CLASSES_PHASE);
@@ -970,7 +977,7 @@ final class DependencyContextLifecycleIT {
     final Map<Path, String> outputs = new HashMap<>();
     for (final String name :
         List.of(
-            "dependency-elider-class-usage.json",
+            CLASS_USAGE_REPORT,
             "dependency-elider-report.json",
             "dependency-elider-sbom.cdx.json",
             "baseline-sbom.cdx.json",
@@ -1918,7 +1925,8 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
-  @SuppressWarnings("PMD.NcssCount")
+  // WHY: One fixture contrasts extension-enabled and extension-disabled runs.
+  @SuppressWarnings({"PMD.NcssCount", "PMD.CognitiveComplexity"})
   void packagedElideMojoPublishesTrimmedJarForLaterResolution() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
@@ -2000,6 +2008,23 @@ final class DependencyContextLifecycleIT {
           KEEP,
           originalKeep,
           originalKeepHash);
+      final ArtifactState postElideDrop = postElide.direct().artifacts().get(DROP);
+      final Path postElideDropPath = Path.of(postElideDrop.file());
+      final String postElideDropHash = postElideDrop.sha256();
+      final Path retainedDropPath = extensionEnabled ? originalDrop : postElideDropPath;
+      final String retainedDropHash = extensionEnabled ? originalDropHash : postElideDropHash;
+      if (extensionEnabled) {
+        assertThat(postElideDropPath).isEqualTo(originalDrop);
+        assertThat(postElideDropHash).isEqualTo(originalDropHash);
+      } else {
+        assertThat(Files.isRegularFile(postElideDropPath)).isTrue();
+        assertThat(postElideDropPath).isNotEqualTo(originalDrop);
+        assertThat(postElideDropHash).isNotEqualTo(originalDropHash);
+        try (JarFile jar = new JarFile(postElideDropPath.toFile())) {
+          assertThat(jar.stream().filter(entry -> entry.getName().endsWith(".class")).toList())
+              .isEmpty();
+        }
+      }
       final ArtifactState postElideKeep = postElide.direct().artifacts().get(KEEP);
       final Path trimmedJar = Path.of(postElideKeep.file());
       final String trimmedHash = postElideKeep.sha256();
@@ -2008,27 +2033,39 @@ final class DependencyContextLifecycleIT {
       assertThat(trimmedHash).isNotEqualTo(originalKeepHash);
       assertJarEntries(trimmedJar);
       assertArtifacts(
-          postElide.direct(), DROP, originalDrop, originalDropHash, KEEP, trimmedJar, trimmedHash);
+          postElide.direct(),
+          DROP,
+          retainedDropPath,
+          retainedDropHash,
+          KEEP,
+          trimmedJar,
+          trimmedHash);
       if (extensionEnabled) {
         assertArtifacts(postElide.resolved(), KEEP, trimmedJar, trimmedHash);
       } else {
         assertArtifacts(
             postElide.resolved(),
             DROP,
-            originalDrop,
-            originalDropHash,
+            retainedDropPath,
+            retainedDropHash,
             KEEP,
             trimmedJar,
             trimmedHash);
       }
 
       assertArtifacts(
-          later.direct(), DROP, originalDrop, originalDropHash, KEEP, trimmedJar, trimmedHash);
+          later.direct(), DROP, retainedDropPath, retainedDropHash, KEEP, trimmedJar, trimmedHash);
       if (extensionEnabled) {
         assertArtifacts(later.resolved(), KEEP, trimmedJar, trimmedHash);
       } else {
         assertArtifacts(
-            later.resolved(), DROP, originalDrop, originalDropHash, KEEP, trimmedJar, trimmedHash);
+            later.resolved(),
+            DROP,
+            retainedDropPath,
+            retainedDropHash,
+            KEEP,
+            trimmedJar,
+            trimmedHash);
       }
       assertThat(sha256(originalDrop)).isEqualTo(originalDropHash);
       assertThat(sha256(originalKeep)).isEqualTo(originalKeepHash);
@@ -2070,8 +2107,8 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
-  @DisplayName("ADR-0010/extension rebinds elision after generated bytecode exists")
-  void extensionRebindsElideAfterGeneratedBytecodeExists() throws Exception {
+  @DisplayName("ADR-0010/default elide runs after compile and AOT work before dependency:tree")
+  void defaultElideRunsAfterGeneratedAndAotBytecodeBeforeDependencyTree() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     copyLifecycleFixture(repositoryRoot);
     final Path evidenceDirectory = temporaryDirectory.resolve("process-classes-evidence");
@@ -2088,7 +2125,7 @@ final class DependencyContextLifecycleIT {
     final String pom =
         """
         <?xml version="1.0" encoding="UTF-8"?>
-        <!-- WHY: Exercises extension rebinding after Maven compiles source emitted during generate-sources. -->
+        <!-- WHY: Exercises the default lifecycle boundary after generated and AOT output exists. -->
         <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
           <modelVersion>4.0.0</modelVersion><groupId>io.github.spockz.elider.test</groupId><artifactId>process-classes-consumer</artifactId><version>1.0.0</version><packaging>jar</packaging>
           <properties><maven.compiler.release>21</maven.compiler.release><elide.traceFiles>${project.basedir}/trace.txt</elide.traceFiles><elide.summaryFile>${project.build.directory}/dependency-elider-report.json</elide.summaryFile></properties>
@@ -2101,9 +2138,13 @@ final class DependencyContextLifecycleIT {
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.1.0</version><dependencies><dependency><groupId>org.apache.ant</groupId><artifactId>ant</artifactId><version>1.10.15</version></dependency><dependency><groupId>org.apache.ant</groupId><artifactId>ant-launcher</artifactId><version>1.10.15</version></dependency></dependencies><executions><execution><id>generate-bytecode</id><phase>generate-sources</phase><goals><goal>run</goal></goals><configuration><target>
               <mkdir dir="${project.build.sourceDirectory}/generated"/>
               <echo file="${project.build.sourceDirectory}/generated/GeneratedUse.java">package generated; public final class GeneratedUse { public static String create() { return io.github.spockz.elider.fixture.keep.KeepEntry.value(); } }</echo>
+            </target></configuration></execution><execution><id>aot-fixture</id><phase>process-classes</phase><goals><goal>run</goal></goals><configuration><target>
+              <mkdir dir="${project.build.directory}/spring-aot/main/classes/generated"/>
+              <copy file="${project.build.outputDirectory}/generated/GeneratedUse.class" tofile="${project.build.directory}/spring-aot/main/classes/generated/GeneratedUse.class"/>
+              <echo message="AOT_FIXTURE_DONE"/>
             </target></configuration></execution></executions></plugin>
             <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><release>21</release><proc>none</proc></configuration></plugin>
-            <plugin><groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version><executions><execution><id>run-elider</id><phase>initialize</phase><goals><goal>elide</goal></goals></execution></executions></plugin>
+            <plugin><groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version><executions><execution><id>run-elider</id><goals><goal>elide</goal></goals></execution></executions></plugin>
           </plugins></build>
         </project>
         """;
@@ -2117,17 +2158,22 @@ final class DependencyContextLifecycleIT {
         localRepository,
         log,
         PROCESS_TIMEOUT,
-        "-Delide.productionClassesComplete=true",
         "-f",
         consumer.resolve(POM_XML).toString(),
         "dependency:tree");
 
     final String output = Files.readString(log);
-    assertThat(output).contains(BUILD_SUCCESS).contains("Whole artifacts dropped: 1 / 3");
+    assertThat(output)
+        .contains(BUILD_SUCCESS, "Whole artifacts dropped: 1 / 3", "AOT_FIXTURE_DONE");
     assertThat(output).contains("dependency-elider:0.1.0-SNAPSHOT:elide (run-elider)");
+    final int compilerGoal = output.indexOf("compiler:3.13.0:compile (default-compile)");
+    final int aotGoal = output.indexOf("run (aot-fixture)");
     final int elideGoal = output.indexOf("elide (run-elider)");
     final int treeGoal = output.indexOf("dependency:3.7.0:tree (default-cli)");
+    assertThat(compilerGoal).isGreaterThanOrEqualTo(0);
+    assertThat(aotGoal).isGreaterThan(compilerGoal);
     assertThat(elideGoal).isGreaterThanOrEqualTo(0);
+    assertThat(elideGoal).isGreaterThan(aotGoal);
     assertThat(treeGoal).isGreaterThan(elideGoal);
     final int buildSuccess = output.indexOf(BUILD_SUCCESS, treeGoal);
     assertThat(buildSuccess).isGreaterThan(treeGoal);
@@ -2135,12 +2181,398 @@ final class DependencyContextLifecycleIT {
         .contains("keep-library", "drop-library")
         .doesNotContain("unused-library");
     final Path generatedClass = consumer.resolve("target/classes/generated/GeneratedUse.class");
+    final Path aotClass =
+        consumer.resolve("target/spring-aot/main/classes/generated/GeneratedUse.class");
     assertThat(generatedClass).isRegularFile();
+    assertThat(aotClass).isRegularFile();
+    final JsonNode usageReport =
+        JSON.readTree(consumer.resolve(TARGET_DIRECTORY).resolve(CLASS_USAGE_REPORT).toFile());
+    assertThat(usageReport.path(CLASS_FILES_SCANNED_FIELD).asInt())
+        .as("Elide must capture the compiled class and its process-classes AOT output")
+        .isEqualTo(2);
     assertThat(
             new ProductionBytecodeReferenceScanner()
                 .scan(consumer.resolve("target/classes"))
                 .referencedClasses())
         .contains("io.github.spockz.elider.fixture.keep.KeepEntry");
+  }
+
+  @Test
+  void explicitInitializeBindingRemainsBeforeCompiler() throws Exception {
+    final BanLifecycleFixture fixture =
+        banLifecycleFixture("explicit-initialize-binding", "keep-library", "initialize", false);
+    Files.writeString(fixture.consumer().resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+
+    final String output =
+        runFromDirectory(
+            fixture.consumer(),
+            fixture.wrapper(),
+            fixture.settings(),
+            fixture.localRepository(),
+            fixture.consumer().resolve("target/explicit-initialize.log"),
+            PROCESS_TIMEOUT,
+            BAN_PROPERTY + GROUP_ID + ":" + DROP_ARTIFACT_ID,
+            "-f",
+            fixture.pom().toString(),
+            PACKAGE_GOAL);
+
+    final int elideGoal = output.indexOf("elide (run-elider)");
+    final int compilerGoal = output.indexOf("compiler:3.13.0:compile (default-compile)");
+    assertAll(
+        "an explicit initialize execution stays at initialize while the compiler runs later",
+        () -> assertThat(output).contains(BUILD_SUCCESS),
+        () -> assertThat(elideGoal).isGreaterThanOrEqualTo(0),
+        () -> assertThat(compilerGoal).isGreaterThan(elideGoal),
+        () -> {
+          final Path report = fixture.consumer().resolve("target/dependency-elider-report.json");
+          assertThat(report).isRegularFile();
+        });
+  }
+
+  @Test
+  void effectiveTestCompileSkipAllowsPackageBoundaryPrerequisiteInventory() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path evidenceDirectory =
+        Files.createDirectories(temporaryDirectory.resolve("test-compile-skip"));
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path consumer = Files.createDirectories(evidenceDirectory.resolve("consumer"));
+    final Path pom = consumer.resolve(POM_XML);
+    Files.writeString(pom, testCompileSkipPom());
+    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    Files.writeString(
+        Files.createDirectories(consumer.resolve(APPLICATION_SOURCE_DIRECTORY))
+            .resolve(APPLICATION_SOURCE_FILE),
+        APPLICATION_CLASS_SOURCE
+            + "private io.github.spockz.elider.fixture.keep.KeepEntry keep; }\n");
+    Files.writeString(
+        Files.createDirectories(consumer.resolve("src/test/java/app")).resolve("TestOnly.java"),
+        "package app; public final class TestOnly {}\n");
+    Files.writeString(
+        Files.createDirectories(consumer.resolve("src/test/resources")).resolve("test-only.txt"),
+        "test-only resource\n");
+    writeConsumerExtensions(
+        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final String output =
+        runFromDirectory(
+            consumer,
+            repositoryRoot.resolve(MAVEN_WRAPPER),
+            settings,
+            localRepository,
+            evidenceDirectory.resolve("test-compile-skip.log"),
+            PROCESS_TIMEOUT,
+            "-DskipTests=true",
+            "-f",
+            pom.toString(),
+            "clean",
+            PACKAGE_GOAL);
+
+    final int elideGoal = output.indexOf("dependency-elider:0.1.0-SNAPSHOT:elide");
+    final int testCompileGoal = output.indexOf("compiler:3.13.0:testCompile (default-testCompile)");
+    final JsonNode usageReport =
+        JSON.readTree(consumer.resolve(TARGET_DIRECTORY).resolve(CLASS_USAGE_REPORT).toFile());
+    final boolean staticEvidenceAvailable = usageReport.path("staticEvidenceAvailable").asBoolean();
+    assertAll(
+        "a literal testCompile skip is effective when Maven reaches the package boundary",
+        () -> assertThat(output).contains(BUILD_SUCCESS),
+        () -> assertThat(testCompileGoal).isGreaterThan(elideGoal),
+        () -> assertThat(consumer.resolve("target/test-classes/app/TestOnly.class")).doesNotExist(),
+        () -> assertThat(consumer.resolve("target/test-classes/test-only.txt")).doesNotExist(),
+        () ->
+            assertTrue(
+                staticEvidenceAvailable,
+                "explicit testCompile skipping allows package-time prerequisite inventory"),
+        () -> assertThat(usageReport.path(CLASS_FILES_SCANNED_FIELD).asInt()).isEqualTo(1));
+  }
+
+  @Test
+  void sourceFreeReactorRunsDefaultElideWithAbsentClassesAndSkipsLaterPackageWriter()
+      throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path evidenceDirectory =
+        Files.createDirectories(temporaryDirectory.resolve("source-free-reactor"));
+    final Path localRepository = copySeedRepository(evidenceDirectory);
+    final Path settings = writeSettings(evidenceDirectory);
+    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
+    final Path reactor = Files.createDirectories(evidenceDirectory.resolve("reactor"));
+    Files.writeString(
+        reactor.resolve(POM_XML),
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Aggregates one source-free module with one normal compiled application module. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId>
+          <artifactId>source-free-reactor</artifactId>
+          <version>1.0.0</version>
+          <packaging>pom</packaging>
+          <properties>
+            <maven.compiler.release>21</maven.compiler.release>
+            <maven.compiler.proc>none</maven.compiler.proc>
+          </properties>
+          <modules>
+            <module>empty-module</module>
+            <module>application</module>
+          </modules>
+        </project>
+        """);
+    final Path emptyModule = Files.createDirectories(reactor.resolve("empty-module"));
+    Files.writeString(
+        emptyModule.resolve(POM_XML),
+        sourceFreeReactorModulePom(
+            "source-free-reactor", "empty-module", "jar", true, true, false));
+    Files.writeString(emptyModule.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    final Path application = Files.createDirectories(reactor.resolve("application"));
+    Files.writeString(
+        application.resolve(POM_XML),
+        sourceFreeReactorModulePom("source-free-reactor", "application", "jar", true, false, true));
+    Files.writeString(application.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
+    final Path appSource =
+        Files.createDirectories(application.resolve("src/main/java/reactor/app"))
+            .resolve(APPLICATION_SOURCE_FILE);
+    Files.writeString(appSource, "package reactor.app; public final class App {}\n");
+    writeConsumerExtensions(
+        Files.createDirectories(reactor.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
+
+    final Path log = evidenceDirectory.resolve("source-free-reactor.log");
+    final String output =
+        runFromDirectory(
+            reactor,
+            wrapper,
+            settings,
+            localRepository,
+            log,
+            PROCESS_TIMEOUT,
+            "-Dmaven.test.skip=true",
+            "-f",
+            reactor.resolve(POM_XML).toString(),
+            PROCESS_CLASSES_PHASE);
+
+    final Path emptyTarget = emptyModule.resolve("target");
+    final Path applicationTarget = application.resolve("target");
+    final JsonNode emptyUsage = JSON.readTree(emptyTarget.resolve(CLASS_USAGE_REPORT).toFile());
+    final JsonNode applicationUsage =
+        JSON.readTree(applicationTarget.resolve(CLASS_USAGE_REPORT).toFile());
+    final boolean emptyStaticEvidenceAvailable =
+        emptyUsage.path("staticEvidenceAvailable").asBoolean();
+    final int emptyClassFilesScanned = emptyUsage.path(CLASS_FILES_SCANNED_FIELD).asInt();
+    final Path applicationClass = application.resolve("target/classes/reactor/app/App.class");
+    assertAll(
+        "the default lifecycle handles absent production output and leaves later package work"
+            + " unrun",
+        () -> assertThat(output).contains(BUILD_SUCCESS),
+        () -> assertThat(countOccurrences(output, "elide (elide-source-free)")).isEqualTo(2),
+        () -> assertThat(output).doesNotContain("probe (package-writer)"),
+        () ->
+            assertThat(output.indexOf("antrun:3.1.0:run (remove-empty-output)"))
+                .isGreaterThanOrEqualTo(0)
+                .isLessThan(output.indexOf("dependency-elider:0.1.0-SNAPSHOT:elide")),
+        () -> assertThat(emptyModule.resolve("src/main/java")).doesNotExist(),
+        () ->
+            assertTrue(
+                emptyStaticEvidenceAvailable,
+                "the empty project has a complete production output inventory"),
+        () ->
+            org.junit.jupiter.api.Assertions.assertEquals(
+                0, emptyClassFilesScanned, "an empty project has no compiled classes"),
+        () ->
+            assertTrue(
+                Files.isRegularFile(applicationClass),
+                "the compiled application class remains available"),
+        () -> assertThat(applicationUsage.path(CLASS_FILES_SCANNED_FIELD).asInt()).isEqualTo(1));
+  }
+
+  private static String sourceFreeReactorModulePom(
+      final String parentArtifact,
+      final String artifactId,
+      final String packaging,
+      final boolean packageWriter,
+      final boolean removeOutput,
+      final boolean preconditionClassPathComplete) {
+    final String packageWriterPlugin = packageWriter ? packageWriterPlugin() : "";
+    final String emptyOutputPlugin = removeOutput ? removeProductionOutputPlugin() : "";
+    final String preconditionSetting = preconditionClassPathComplete ? "true" : "false";
+    final String template =
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Exercises default elide selection for source-free and compiled reactor modules. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <parent>
+            <groupId>io.github.spockz.elider.test</groupId>
+            <artifactId>%s</artifactId>
+            <version>1.0.0</version>
+            <relativePath>../pom.xml</relativePath>
+          </parent>
+          <artifactId>%s</artifactId>
+          <packaging>%s</packaging>
+          <properties>
+            <elide.traceFiles>${project.basedir}/trace.txt</elide.traceFiles>
+          </properties>
+          <dependencies>
+            <dependency>
+              <groupId>io.github.spockz.elider.test</groupId>
+              <artifactId>keep-library</artifactId>
+              <version>1.0.0</version>
+            </dependency>
+          </dependencies>
+          <build><plugins>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-compiler-plugin</artifactId>
+              <version>3.13.0</version>
+              <configuration><release>21</release><proc>none</proc></configuration>
+            </plugin>
+            <plugin>
+              <groupId>io.github.spockz</groupId>
+              <artifactId>dependency-elider-maven-plugin</artifactId>
+              <version>0.1.0-SNAPSHOT</version>
+              <configuration>
+                <preconditionClassPathComplete>%s</preconditionClassPathComplete>
+                <traceFiles><traceFile>${elide.traceFiles}</traceFile></traceFiles>
+                <summaryFile>${project.build.directory}/dependency-elider-report.json</summaryFile>
+              </configuration>
+              <executions>
+                <execution><id>elide-source-free</id><goals><goal>elide</goal></goals></execution>
+              </executions>
+            </plugin>
+            %s
+            %s
+          </plugins></build>
+        </project>
+        """;
+    return template.formatted(
+        parentArtifact,
+        artifactId,
+        packaging,
+        preconditionSetting,
+        packageWriterPlugin,
+        emptyOutputPlugin);
+  }
+
+  // WHY: Standalone text blocks match Checkstyle's delimiter layout.
+  @SuppressWarnings(PMD_INLINE_RULE)
+  private static String packageWriterPlugin() {
+    final String plugin =
+        """
+        <plugin>
+          <groupId>io.github.spockz.elider.test</groupId>
+          <artifactId>lifecycle-probe-maven-plugin</artifactId>
+          <version>1.0.0</version>
+          <executions>
+            <execution><id>package-writer</id><phase>package</phase><goals><goal>probe</goal></goals></execution>
+          </executions>
+        </plugin>
+        """;
+    return plugin;
+  }
+
+  // WHY: Standalone text blocks match Checkstyle's delimiter layout.
+  @SuppressWarnings(PMD_INLINE_RULE)
+  private static String removeProductionOutputPlugin() {
+    final String plugin =
+        """
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-antrun-plugin</artifactId>
+          <version>3.1.0</version>
+          <executions>
+            <execution>
+              <id>remove-empty-output</id>
+              <phase>process-classes</phase>
+              <goals><goal>run</goal></goals>
+              <configuration>
+                <target>
+                  <delete dir="${project.build.outputDirectory}"/>
+                  <available file="${project.build.outputDirectory}"
+                             type="dir" property="output-exists"/>
+                  <fail if="output-exists"
+                        message="source-free fixture output must be absent before elide"/>
+                </target>
+              </configuration>
+            </execution>
+          </executions>
+        </plugin>
+        """;
+    return plugin;
+  }
+
+  // WHY: Standalone text blocks match Checkstyle's delimiter layout.
+  @SuppressWarnings(PMD_INLINE_RULE)
+  private static String testCompileSkipPom() {
+    final String pom =
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!-- WHY: Verifies effective test resource and compiler skips at package. -->
+        <project xmlns="http://maven.apache.org/POM/4.0.0"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>io.github.spockz.elider.test</groupId>
+          <artifactId>test-compile-skip</artifactId>
+          <version>1.0.0</version>
+          <packaging>jar</packaging>
+          <properties>
+            <maven.compiler.release>21</maven.compiler.release>
+            <maven.compiler.proc>none</maven.compiler.proc>
+          </properties>
+          <dependencies>
+            <dependency>
+              <groupId>io.github.spockz.elider.test</groupId>
+              <artifactId>keep-library</artifactId>
+              <version>1.0.0</version>
+            </dependency>
+          </dependencies>
+          <build><plugins>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-compiler-plugin</artifactId>
+              <version>3.13.0</version>
+              <configuration><release>21</release><proc>none</proc></configuration>
+              <executions>
+                <execution>
+                  <id>default-testCompile</id>
+                  <phase>test-compile</phase>
+                  <goals><goal>testCompile</goal></goals>
+                  <configuration><skip>true</skip></configuration>
+                </execution>
+              </executions>
+            </plugin>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-resources-plugin</artifactId>
+              <version>3.3.1</version>
+              <executions>
+                <execution>
+                  <id>default-testResources</id>
+                  <phase>process-test-resources</phase>
+                  <goals><goal>testResources</goal></goals>
+                  <configuration><skip>true</skip></configuration>
+                </execution>
+              </executions>
+            </plugin>
+            <plugin>
+              <groupId>io.github.spockz</groupId>
+              <artifactId>dependency-elider-maven-plugin</artifactId>
+              <version>0.1.0-SNAPSHOT</version>
+              <configuration>
+                <preconditionClassPathComplete>true</preconditionClassPathComplete>
+                <traceFiles><traceFile>${project.basedir}/trace.txt</traceFile></traceFiles>
+                <summaryFile>${project.build.directory}/dependency-elider-report.json</summaryFile>
+              </configuration>
+              <executions>
+                <execution><id>default-elide</id><goals><goal>elide</goal></goals></execution>
+              </executions>
+            </plugin>
+          </plugins></build>
+        </project>
+        """;
+    return pom;
   }
 
   @Test
@@ -2248,7 +2680,7 @@ final class DependencyContextLifecycleIT {
             "-f",
             consumer.resolve(POM_XML).toString(),
             SHORT_TREE_GOAL,
-            "package");
+            PACKAGE_GOAL);
 
     assertThat(output).contains("Apache Maven 3.9.11", BUILD_SUCCESS);
     assertThat(countOccurrences(output, ELIDER_SUMMARY)).isOne();
@@ -2328,7 +2760,7 @@ final class DependencyContextLifecycleIT {
             "-f",
             pom.toString(),
             SHORT_TREE_GOAL,
-            "package",
+            PACKAGE_GOAL,
             "initialize");
 
     assertThat(output).contains(BUILD_SUCCESS, TREE_HEADER);
@@ -2366,7 +2798,7 @@ final class DependencyContextLifecycleIT {
             "-Delide.skip=false",
             "-f",
             pom.toString(),
-            "package",
+            PACKAGE_GOAL,
             CLEAN_GOAL,
             SHORT_TREE_GOAL);
 
@@ -2406,10 +2838,10 @@ final class DependencyContextLifecycleIT {
             "-Delide.skip=false",
             "-f",
             pom.toString(),
-            "package",
+            PACKAGE_GOAL,
             SHORT_TREE_GOAL,
             CLEAN_GOAL,
-            "package");
+            PACKAGE_GOAL);
 
     assertThat(output)
         .contains("Cannot combine automatic dependency:tree preparation with a later clean goal");
@@ -2602,7 +3034,7 @@ final class DependencyContextLifecycleIT {
             pom.toString(),
             SHORT_TREE_GOAL,
             CLEAN_GOAL,
-            "package");
+            PACKAGE_GOAL);
 
     assertThat(output)
         .contains("Cannot combine automatic dependency:tree preparation with a later clean goal");
@@ -2756,11 +3188,17 @@ final class DependencyContextLifecycleIT {
       final boolean extensionEnabled)
       throws IOException {
     final Path target = consumer.resolve(TARGET_DIRECTORY);
-    final Path classUsageReport = target.resolve("dependency-elider-class-usage.json");
+    final Path classUsageReport = target.resolve(CLASS_USAGE_REPORT);
     final Path summary = target.resolve("lifecycle-elide-summary.json");
     final Path sbom = target.resolve("dependency-elider-sbom.cdx.json");
     assertThat(classUsageReport).isRegularFile();
-    final JsonNode report = JSON.readTree(summary.toFile());
+    assertElisionSummary(JSON.readTree(summary.toFile()), consumer, extensionEnabled);
+    assertElisionSbom(
+        JSON.readTree(sbom.toFile()), trimmedHash, originalKeepHash, extensionEnabled);
+  }
+
+  private static void assertElisionSummary(
+      final JsonNode report, final Path consumer, final boolean extensionEnabled) {
     assertThat(report.path("projectGroupId").asText()).isEqualTo(GROUP_ID);
     assertThat(report.path("projectArtifactId").asText()).isEqualTo("lifecycle-elide-consumer");
     assertThat(report.path("projectVersion").asText()).isEqualTo(VERSION);
@@ -2768,7 +3206,13 @@ final class DependencyContextLifecycleIT {
         .isEqualTo(consumer.toAbsolutePath().normalize().toString());
     assertThat(report.path("wholeArtifactsDropped").asInt()).isEqualTo(extensionEnabled ? 1 : 0);
     assertThat(report.path("rawDroppedCoordinates")).hasSize(1);
-    assertThat(report.path("programClassesPruned").asInt()).isEqualTo(1);
+    assertThat(report.path("programClassesPruned").asInt()).isEqualTo(extensionEnabled ? 1 : 2);
+    assertDroppedArtifactSummary(report, extensionEnabled);
+    assertTrimmedArtifactSummary(report, extensionEnabled);
+  }
+
+  private static void assertDroppedArtifactSummary(
+      final JsonNode report, final boolean extensionEnabled) {
     final int classesInDroppedArtifacts = report.path("droppedProgramClassEntries").asInt();
     final long droppedArtifactClassBytes = report.path("droppedProgramClassBytes").asLong();
     assertThat(classesInDroppedArtifacts).isEqualTo(extensionEnabled ? 1 : 0);
@@ -2786,13 +3230,34 @@ final class DependencyContextLifecycleIT {
           .isEqualTo(droppedArtifactClassBytes)
           .isPositive();
     }
-    assertThat(report.path("trimmedArtifacts")).hasSize(1);
-    assertThat(report.path("trimmedArtifacts").get(0).path("coordinate").asText())
-        .contains("keep-library");
-    assertThat(report.path("trimmedArtifacts").get(0).path("programClassesPruned").asInt())
-        .isEqualTo(1);
+  }
 
-    final JsonNode bom = JSON.readTree(sbom.toFile());
+  private static void assertTrimmedArtifactSummary(
+      final JsonNode report, final boolean extensionEnabled) {
+    final List<JsonNode> trimmedArtifacts =
+        StreamSupport.stream(report.path("trimmedArtifacts").spliterator(), false).toList();
+    assertThat(trimmedArtifacts).hasSize(extensionEnabled ? 1 : 2);
+    final JsonNode trimmedKeepArtifact =
+        trimmedArtifacts.stream()
+            .filter(item -> item.path("coordinate").asText().contains("keep-library"))
+            .findFirst()
+            .orElseThrow();
+    assertThat(trimmedKeepArtifact.path("programClassesPruned").asInt()).isEqualTo(1);
+    if (!extensionEnabled) {
+      final JsonNode trimmedDropArtifact =
+          trimmedArtifacts.stream()
+              .filter(item -> item.path("coordinate").asText().contains("drop-library"))
+              .findFirst()
+              .orElseThrow();
+      assertThat(trimmedDropArtifact.path("programClassesPruned").asInt()).isEqualTo(1);
+    }
+  }
+
+  private static void assertElisionSbom(
+      final JsonNode bom,
+      final String trimmedHash,
+      final String originalKeepHash,
+      final boolean extensionEnabled) {
     assertThat(bom.path("metadata").path("component").path(NAME_FIELD).asText())
         .isEqualTo("lifecycle-elide-consumer");
     assertThat(bom.path("components")).hasSize(extensionEnabled ? 1 : 2);

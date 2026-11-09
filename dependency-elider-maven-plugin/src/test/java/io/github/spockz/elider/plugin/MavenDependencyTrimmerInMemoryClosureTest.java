@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 /** Verifies strict in-memory scanning over complete candidate inventories. */
@@ -140,6 +141,59 @@ final class MavenDependencyTrimmerInMemoryClosureTest
     assertThatThrownBy(() -> fixture.analyze(Set.of(fixture.coordinate("a")), Set.of(), Map.of()))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("org/objectweb/asm/Label");
+  }
+
+  @Test
+  @SuppressWarnings("PMD.UseExplicitTypes")
+  void unrootedOptionalReferenceDoesNotInventCandidateRoots() throws Exception {
+    final Fixture fixture = fixtureWithUnrootedOptionalReference();
+    final Set<io.github.spockz.elider.model.ArtifactCoordinate> retained =
+        fixture.allSnapshots().stream()
+            .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+            .collect(Collectors.toSet());
+
+    final TrimAnalysisResult result = fixture.analyze(retained, Set.of(), Map.of());
+    final var deadArtifact = fixture.coordinate("d");
+
+    assertAll(
+        () -> assertThat(result.candidateRoots().get(deadArtifact)).isEmpty(),
+        () -> assertThat(result.candidateAnalyses().get(deadArtifact).retainedClasses()).isEmpty(),
+        () -> assertThat(result.reachableArtifacts()).doesNotContain(fixture.coordinate("e")));
+  }
+
+  @Test
+  void explicitRootStillRejectsItsUnresolvedOptionalBodyReference() throws Exception {
+    final Fixture fixture = fixtureWithUnrootedOptionalReference();
+    final Set<io.github.spockz.elider.model.ArtifactCoordinate> retained =
+        fixture.allSnapshots().stream()
+            .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+            .collect(Collectors.toSet());
+    final Path path = fixture.snapshot("d").filePath();
+    final TrimArtifactRootKey rootKey =
+        new TrimArtifactRootKey(fixture.coordinate("d"), path, ArtifactDigests.read(path).sha256());
+
+    assertThatThrownBy(
+            () -> fixture.analyze(retained, Set.of(), Map.of(rootKey, Set.of("closure.d.Dead"))))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("fixture/optional/OptionalApi");
+  }
+
+  @Test
+  @SuppressWarnings("PMD.UseExplicitTypes")
+  void unrootedOptionalReferenceDoesNotInventTierCandidateRoots() throws Exception {
+    final Fixture fixture = fixtureWithUnrootedOptionalReference();
+    fixture.addVersionedClassToD();
+    final Set<io.github.spockz.elider.model.ArtifactCoordinate> retained =
+        fixture.allSnapshots().stream()
+            .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+            .collect(Collectors.toSet());
+
+    final TrimAnalysisResult result = fixture.analyze(retained, Set.of(), Map.of());
+    final var deadArtifact = fixture.coordinate("d");
+
+    assertAll(
+        () -> assertThat(result.candidateRoots().get(deadArtifact)).isEmpty(),
+        () -> assertThat(result.candidateAnalyses().get(deadArtifact).retainedClasses()).isEmpty());
   }
 
   @Test
@@ -335,7 +389,9 @@ final class MavenDependencyTrimmerInMemoryClosureTest
     assertThat(multiRelease).isRegularFile();
     final TrimAnalysisResult analysis =
         fixture.analyze(
-            Set.of(fixture.coordinate("a"), fixture.coordinate("c")), Set.of(), Map.of());
+            Set.of(fixture.coordinate("a"), fixture.coordinate("b"), fixture.coordinate("c")),
+            Set.of(),
+            Map.of());
 
     assertThat(analysis.candidateAnalyses()).containsKey(fixture.coordinate("c"));
     assertThat(analysis.candidateRoots().get(fixture.coordinate("c")))

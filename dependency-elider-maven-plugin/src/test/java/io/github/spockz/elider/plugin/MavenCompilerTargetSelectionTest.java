@@ -27,10 +27,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Tests effective Maven target selection. */
-@SuppressWarnings("PMD.AtLeastOneConstructor")
+@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.TooManyMethods"})
 final class MavenCompilerTargetSelectionTest {
   /** Maven property used to select the configured target. */
   private static final String TARGET_PROPERTY = "maven.compiler.target";
+
+  /** Maven property used to select a platform release. */
+  private static final String RELEASE_PROPERTY = "maven.compiler.release";
 
   /** Javac option representing the selected target. */
   private static final String TARGET_OPTION = "-target";
@@ -309,21 +312,21 @@ final class MavenCompilerTargetSelectionTest {
     project.setVersion("1");
     project.setFile(temporaryDirectory.resolve("inherited-release-pom.xml").toFile());
     project.setBuild(new Build());
-    project.getProperties().setProperty("maven.compiler.release", "8");
+    project.getProperties().setProperty(RELEASE_PROPERTY, "8");
     final Properties defaults = new Properties();
-    defaults.setProperty("maven.compiler.release", "11");
+    defaults.setProperty(RELEASE_PROPERTY, "11");
     final Properties userProperties = new Properties(defaults);
     final MavenSession session = session(project, userProperties);
     final AnalysisEnvironment inherited = AnalysisEnvironment.capture(project, session);
     final List<String> inheritedOptions =
         MavenCompilerSettings.platformReleaseOptionsWithEnvironment(project, inherited);
-    userProperties.setProperty("maven.compiler.release", "13");
+    userProperties.setProperty(RELEASE_PROPERTY, "13");
     final AnalysisEnvironment overridden = AnalysisEnvironment.capture(project, session);
 
     assertAll(
         "Maven capture preserves inherited user defaults and explicit user precedence",
         () ->
-            assertThat(inherited.userPropertiesAsProperties().getProperty("maven.compiler.release"))
+            assertThat(inherited.userPropertiesAsProperties().getProperty(RELEASE_PROPERTY))
                 .isEqualTo("11"),
         () -> assertThat(inheritedOptions).containsExactly(RELEASE_OPTION, "11"),
         () ->

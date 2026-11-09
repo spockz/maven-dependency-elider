@@ -33,7 +33,7 @@ final class ElisionReachabilityEngine {
     MavenArtifactInventory.verifyPreparedInventory(prepared);
     ElisionDecision policyInput = rawDecision;
     ElisionDecision effectiveDecision = evaluation.effectiveDecision(rawDecision);
-    final Set<ArtifactCoordinate> forcedUnchanged = initialUnchanged(evaluation);
+    final Set<ArtifactCoordinate> forcedUnchanged = Set.of();
     final Optional<EffectiveAnalysis> noTrimResult =
         failClosedNoTrimResult(
             prepared,
@@ -80,8 +80,6 @@ final class ElisionReachabilityEngine {
       evaluation = EffectiveGraphPolicy.evaluatePair(binding.pair(), policyInput);
       banPlan.verifyGraph(evaluation);
       effectiveDecision = evaluation.effectiveDecision(rawDecision);
-      forcedUnchanged.addAll(newlyReachedDrops);
-      addUnchangedPolicyArtifacts(evaluation, forcedUnchanged);
       discoveredRoots =
           DiscoveredTrimRoots.from(prepared.resolvedSnapshots(), analysis.candidateRoots());
     }
@@ -135,13 +133,6 @@ final class ElisionReachabilityEngine {
         effective, MavenDependencyTrimmer.stageEffectiveOutputs(effective));
   }
 
-  private static Set<ArtifactCoordinate> initialUnchanged(
-      final EffectiveGraphPolicy.Evaluation evaluation) {
-    final Set<ArtifactCoordinate> unchanged = new LinkedHashSet<>();
-    addUnchangedPolicyArtifacts(evaluation, unchanged);
-    return unchanged;
-  }
-
   private static Set<String> closureRoots(
       final PreparedAnalysis prepared,
       final MavenElisionGraphBinding.Result binding,
@@ -175,12 +166,6 @@ final class ElisionReachabilityEngine {
       return null;
     }
     return ResolverArtifactGraphProjection.create(binding.pair(), evaluation.nodeDispositions());
-  }
-
-  private static void addUnchangedPolicyArtifacts(
-      final EffectiveGraphPolicy.Evaluation evaluation, final Set<ArtifactCoordinate> unchanged) {
-    unchanged.addAll(evaluation.ancestorPromotedArtifacts());
-    unchanged.addAll(evaluation.protectedReasons().keySet());
   }
 
   private static ElisionDecision promoteForBytecode(

@@ -218,3 +218,22 @@ did not surface the guard reason. The concrete setup, outcomes and limitations a
 default phase would need a separate compatibility decision and updates to phase inference, goal
 preparation, supported output boundaries, examples, and regression tests; the existing accepted
 `initialize` default has not changed.
+
+## 8. Dated implementation update: 2026-11-08
+
+The wholesale-purge work package supersedes the 2026-11-06 checkpoint above: `elide` now defaults
+to `process-classes`, after production compilation has emitted `target/classes`. The old
+`elide.sourceRootsComplete=true` path is rejected with migration guidance; the lifecycle no longer
+uses source-root scanning as a substitute for compiled output. Source-free modules are supported
+when their configured production output is valid, while missing or empty output is handled as an
+explicit lifecycle case rather than treated as proof that dependencies are unused.
+
+Only an actual lifecycle-sourced `process-classes` execution supplies the trusted provider-capture
+context for prerequisite assessment. A direct goal invocation does not gain that trust from a
+property. The generation guard accounts for Maven's requested phase boundary, configured/default
+phase binding, `testCompile`, and later packaging writers. `maven.test.skip` does not imply that
+`testCompile` was skipped, so test-compilation provider checks remain active. The Spring example
+and lifecycle integration tests exercise the extension-driven phase rebind, later `dependency:tree`
+preparation, and final package behavior. See [ADR-0010](../adr/0010-process-classes-lifecycle-and-bytecode-completeness.md)
+for the accepted lifecycle contract and [RQ-0020](RQ-0020-advisory-source-coverage-and-scanner-finding-projections.md)
+for the real-package evidence and its limits.

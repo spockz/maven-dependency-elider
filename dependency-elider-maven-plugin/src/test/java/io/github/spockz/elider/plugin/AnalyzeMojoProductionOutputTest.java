@@ -236,13 +236,14 @@ final class AnalyzeMojoProductionOutputTest {
     final Path report = tempDir.resolve("invalid-scan.json");
     final AnalyzeMojo mojo = fixture.mojo();
     AnalyzeMojoTestFieldSupport.installLegacyPredictionFixture(mojo);
-    AnalyzeMojoTestFieldSupport.set(
-        mojo, PRODUCTION_OUTPUT_FIELD, tempDir.resolve("missing-classes").toFile());
+    final Path invalidOutput = tempDir.resolve("not-a-class-directory");
+    Files.writeString(invalidOutput, "not a directory");
+    AnalyzeMojoTestFieldSupport.set(mojo, PRODUCTION_OUTPUT_FIELD, invalidOutput.toFile());
     AnalyzeMojoTestFieldSupport.set(mojo, "reportFile", report.toFile());
 
     assertThatThrownBy(mojo::execute)
         .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("Production class output directory is missing");
+        .hasMessageContaining("Production class output path is not a directory");
     assertThat(report).doesNotExist();
   }
 }

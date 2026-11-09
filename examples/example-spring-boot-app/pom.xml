@@ -149,6 +149,12 @@
                 <groupId>io.github.spockz</groupId>
                 <artifactId>dependency-elider-maven-plugin</artifactId>
                 <version>${project.version}</version>
+                <configuration>
+                    <preconditionClassPathComplete>true</preconditionClassPathComplete>
+                    <vulnerabilityMappingCatalogs>
+                        <vulnerabilityMappingCatalog>io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0</vulnerabilityMappingCatalog>
+                    </vulnerabilityMappingCatalogs>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

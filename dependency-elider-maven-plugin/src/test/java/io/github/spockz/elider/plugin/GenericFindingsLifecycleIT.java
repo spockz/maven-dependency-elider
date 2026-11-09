@@ -65,6 +65,12 @@ import org.objectweb.asm.Opcodes;
   "PMD.UnitTestContainsTooManyAsserts"
 })
 final class GenericFindingsLifecycleIT {
+  /** Maven output marker used to verify successful fixture builds. */
+  private static final String BUILD_SUCCESS = "BUILD SUCCESS";
+
+  /** Report field used to identify each adopted dependency. */
+  private static final String COORDINATE_FIELD = "coordinate";
+
   /** Maven property token replaced in the fixture project and extension. */
   private static final String PLUGIN_VERSION_TOKEN = "@PLUGIN_VERSION@";
 
@@ -272,8 +278,8 @@ final class GenericFindingsLifecycleIT {
 
     assertAll(
         "catalog adoption is reported by both goals but stays outside application outputs",
-        () -> assertThat(analyzeOutput).contains("BUILD SUCCESS"),
-        () -> assertThat(elideOutput).contains("BUILD SUCCESS"),
+        () -> assertThat(analyzeOutput).contains(BUILD_SUCCESS),
+        () -> assertThat(elideOutput).contains(BUILD_SUCCESS),
         () -> assertCatalogAdoption(analysis.path("catalogAdoptions"), coordinate),
         () -> assertCatalogAdoption(applied.path("catalogAdoptions"), coordinate),
         () -> assertThat(analysis.path("inputArtifactCount").asInt()).isEqualTo(1),
@@ -287,13 +293,13 @@ final class GenericFindingsLifecycleIT {
     assertThat(adoptions.size()).isEqualTo(1);
     assertAll(
         () ->
-            assertThat(adoptions.get(0).path("coordinate").path("groupId").asText())
+            assertThat(adoptions.get(0).path(COORDINATE_FIELD).path("groupId").asText())
                 .isEqualTo("org.example.policy"),
         () ->
-            assertThat(adoptions.get(0).path("coordinate").path("artifactId").asText())
+            assertThat(adoptions.get(0).path(COORDINATE_FIELD).path("artifactId").asText())
                 .isEqualTo("vulnerability-map"),
         () ->
-            assertThat(adoptions.get(0).path("coordinate").path("version").asText())
+            assertThat(adoptions.get(0).path(COORDINATE_FIELD).path("version").asText())
                 .isEqualTo("1.2.3"),
         () -> assertThat(coordinate).isEqualTo("org.example.policy:vulnerability-map:1.2.3"),
         () -> assertThat(adoptions.get(0).path("mappingIds")).isEmpty(),
@@ -332,13 +338,13 @@ final class GenericFindingsLifecycleIT {
 
     assertAll(
         "mixed source analyze, elide and saved report replay",
-        () -> assertThat(analyzeOutput).contains("BUILD SUCCESS"),
+        () -> assertThat(analyzeOutput).contains(BUILD_SUCCESS),
         () ->
             assertTrue(
                 previousAppliedReportPreserved, "analysis must not overwrite applied results"),
         () -> assertComparableAnalysisReport(analysisSummary, savedReport),
         () -> assertFalse(analyzeProducedVex, "analyze must not publish OpenVEX evidence"),
-        () -> assertThat(elideOutput).contains("BUILD SUCCESS"),
+        () -> assertThat(elideOutput).contains(BUILD_SUCCESS),
         () -> assertThat(cacheDigestAfterGoals).isEqualTo(initialCacheDigest),
         () -> assertTrue(genericFindings.isArray(), "saved report must contain generic findings"),
         () ->
@@ -465,7 +471,7 @@ final class GenericFindingsLifecycleIT {
 
     assertAll(
         "manual mappings with valid empty source snapshots",
-        () -> assertThat(manualOnlyOutput).contains("BUILD SUCCESS"),
+        () -> assertThat(manualOnlyOutput).contains(BUILD_SUCCESS),
         () ->
             assertFindingIds(
                 manualOnlyReport.path(GENERIC_FINDINGS_FIELD),
@@ -1003,8 +1009,8 @@ final class GenericFindingsLifecycleIT {
     final String coordinate =
         "io.github.spockz.elider.test:generic-findings-fixture:jar:1.0.0 (compile)";
     final JsonNode trimRecord =
-        savedReport.path("trimmedArtifacts").findParents("coordinate").stream()
-            .filter(node -> coordinate.equals(node.path("coordinate").asText()))
+        savedReport.path("trimmedArtifacts").findParents(COORDINATE_FIELD).stream()
+            .filter(node -> coordinate.equals(node.path(COORDINATE_FIELD).asText()))
             .findFirst()
             .orElse(null);
     assertAll(

@@ -14,8 +14,22 @@ final class MavenOutputTargetValidation {
   private MavenOutputTargetValidation() {}
 
   /* package */ static void validate(final List<Path> targets) throws IOException {
+    validate(targets, List.of());
+  }
+
+  /* package */ static void validate(final List<Path> targets, final List<Path> artifactPaths)
+      throws IOException {
     final List<Path> normalized =
         targets.stream().map(MavenOutputTargetValidation::normalize).toList();
+    final Set<Path> artifacts =
+        artifactPaths.stream()
+            .map(MavenOutputTargetValidation::normalize)
+            .collect(java.util.stream.Collectors.toSet());
+    for (final Path target : normalized) {
+      if (artifacts.contains(target)) {
+        throw new IOException("Output target collides with an artifact file: " + target);
+      }
+    }
     final Set<Path> seen = new HashSet<>();
     for (final Path target : normalized) {
       validateTarget(target, seen);

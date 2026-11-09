@@ -80,7 +80,7 @@ final class TrimCandidate {
       final Set<String> upperTierClasses) {
     sourceArchive =
         new CandidateArchive(snapshot, classes, multiRelease, logicalClassCount, upperTierClasses);
-    rootNames = new TreeSet<>(multiRelease || !roots.isEmpty() ? roots : classes);
+    rootNames = new TreeSet<>(roots);
     plannedOutput = output;
   }
 

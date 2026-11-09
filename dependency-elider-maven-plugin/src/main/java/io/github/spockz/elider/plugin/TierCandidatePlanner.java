@@ -53,9 +53,6 @@ final class TierCandidatePlanner {
     }
     final MultiReleaseCandidateInfo mrInfo = multiRelease.get(snapshot);
     final Set<String> roots = new TreeSet<>(candidateRoots.get(snapshot));
-    if (roots.isEmpty() && !targetClasses.isEmpty()) {
-      roots.addAll(targetClasses);
-    }
     candidates.put(snapshot, new TierCandidate(targetClasses, roots, mrInfo != null));
   }
 

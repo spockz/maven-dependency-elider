@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
@@ -12,6 +13,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.ClaimGroupStatus;
+import io.github.spockz.elider.model.FieldValue;
+import io.github.spockz.elider.model.MergePriority;
 import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
 import io.github.spockz.elider.model.PrerequisiteAbsenceAttribution;
 import io.github.spockz.elider.model.PrerequisiteClaim;
@@ -19,6 +22,8 @@ import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.PrerequisiteMemberObservation;
 import io.github.spockz.elider.model.PrerequisiteOperator;
 import io.github.spockz.elider.model.VersionApplicability;
+import io.github.spockz.elider.model.VersionCoverageClaim;
+import io.github.spockz.elider.model.VulnerabilityFindingContribution;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -202,6 +207,44 @@ final class MavenElisionReportPrerequisitePredictionCodecTest {
         .hasMessageContaining("Physical proof and Analyze prediction are distinct");
   }
 
+  @Test
+  void validatesAliasLinkedPomAndOsvPredictionAgainstCanonicalFinding() {
+    final PrerequisitePrediction prediction = prediction();
+    final ArtifactCoordinate candidate = prediction.candidate();
+    final PrerequisiteGroup group = prediction.groups().getFirst().group();
+    final VulnerabilityFindingContribution pom =
+        aliasContribution("CVE-2026-99001", Set.of("POM-ALIAS"), candidate, group);
+    final VulnerabilityFindingContribution osv =
+        aliasContribution("GHSA-25qh-j22f-pwp8", Set.of("OSV-ALIAS"), candidate, group);
+    final VulnerabilityFindingContribution bridge =
+        aliasContribution("POM-ALIAS", Set.of("OSV-ALIAS"), candidate, group);
+    final GenericFindingAssessment finding =
+        new GenericFindingAssessment(
+            "CVE-2026-99001",
+            Set.of("CVE-2026-99001", "GHSA-25qh-j22f-pwp8", "POM-ALIAS", "OSV-ALIAS"),
+            candidate,
+            VersionApplicability.AFFECTED,
+            Optional.of(AssessmentIntent.AUTO_VERIFY),
+            ClaimGroupStatus.OMITTED,
+            List.of(),
+            List.of(),
+            ClaimGroupStatus.DECLARED,
+            group.members().stream().toList(),
+            List.of(),
+            Set.of(),
+            Set.of(),
+            GenericFindingAssessment.Outcome.PLANNED_PREREQUISITES_ABSENT,
+            "forecast",
+            MavenVulnerabilityAssessment.InventoryDisposition.PLANNED_TRIM,
+            List.of(pom, bridge, osv),
+            Optional.empty(),
+            Optional.empty(),
+            Optional.of(prediction));
+
+    assertThatCode(() -> MavenElisionReportPredictionValidator.validatePrediction(finding, null))
+        .doesNotThrowAnyException();
+  }
+
   private static void rejects(final JsonNode node, final String message) {
     assertThatThrownBy(() -> MavenElisionReportPrerequisitePredictionCodec.decode(node))
         .isInstanceOf(IOException.class)
@@ -233,6 +276,28 @@ final class MavenElisionReportPrerequisitePredictionCodecTest {
         "b".repeat(64),
         "c".repeat(64),
         List.of(new PrerequisitePrediction.GroupForecast(group, List.of(member), true)),
+        null);
+  }
+
+  private static VulnerabilityFindingContribution aliasContribution(
+      final String vulnerabilityId,
+      final Set<String> aliases,
+      final ArtifactCoordinate candidate,
+      final PrerequisiteGroup group) {
+    return new VulnerabilityFindingContribution(
+        vulnerabilityId,
+        aliases,
+        candidate.groupId(),
+        candidate.artifactId(),
+        candidate.type(),
+        candidate.classifier(),
+        List.of(VersionCoverageClaim.affected("[1.0]")),
+        FieldValue.omitted(),
+        FieldValue.supplied(Set.of(group)),
+        MergePriority.AUTOMATIC,
+        AssessmentIntent.AUTO_VERIFY,
+        "alias-prediction:" + vulnerabilityId,
+        Set.of(),
         null);
   }
 }

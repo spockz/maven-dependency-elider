@@ -126,6 +126,7 @@ final class MavenElisionReportWriter {
 
   private static void validateMode(final MavenElisionReportSnapshot snapshot) throws IOException {
     for (final GenericFindingAssessment finding : snapshot.genericFindings()) {
+      MavenElisionReportProofValidator.validate(finding);
       MavenElisionReportProofValidator.validateForecast(finding, snapshot);
       validateFindingMode(snapshot.mode(), finding);
     }

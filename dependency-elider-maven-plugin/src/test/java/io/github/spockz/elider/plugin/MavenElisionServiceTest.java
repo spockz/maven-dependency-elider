@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
@@ -33,10 +34,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Verifies Maven elision preparation without mutating Maven state. */
+/** WHY: Shared service fixtures isolate analysis from filesystem mutation. */
 @SuppressWarnings({
   "PMD.AvoidDuplicateLiterals",
   "PMD.CouplingBetweenObjects",
+  "PMD.ExcessiveImports",
   "PMD.LawOfDemeter",
   "PMD.TooManyMethods",
   "PMD.UnitTestContainsTooManyAsserts"
@@ -740,10 +742,14 @@ final class MavenElisionServiceTest {
   @Test
   @DisplayName("ADR-0010/empty production bytecode output fails closed")
   void emptyProductionBytecodeOutputFailsClosed() throws Exception {
-    final MavenProject project = projectWith(Set.of(), null);
+    final MavenProject project =
+        projectWith(resolvedArtifact("empty-production", "compile", "empty-production.jar"), null);
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve("empty-production-src"));
+    Files.writeString(sourceRoot.resolve("Source.java"), "final class Source {}\n");
+    project.addCompileSourceRoot(sourceRoot.toString());
     final Path output = Files.createDirectories(tempDir.resolve("empty-production"));
     final Path trace = tempDir.resolve("empty-production.lst");
-    Files.writeString(trace, "trace.Class\n");
+    Files.writeString(trace, "library.Unused\n");
 
     assertThatThrownBy(
             () ->
@@ -767,6 +773,49 @@ final class MavenElisionServiceTest {
                             new ElisionAnalysisModel.DynamicRootOptions(true))))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("requires compiled production class files");
+  }
+
+  @Test
+  @DisplayName("ADR-0010/source-free production output may be absent or empty")
+  void sourceFreeModuleAcceptsAbsentOrEmptyProductionOutput() throws Exception {
+    final Path emptyOutput = Files.createDirectories(tempDir.resolve("source-free-empty-output"));
+    final Path absentOutput = tempDir.resolve("source-free-absent-output");
+
+    assertAll(
+        "a source-free module has no production classes to scan",
+        () ->
+            assertThat(analyzeSourceFree(emptyOutput, "empty-source-free-output.lst")).isNotNull(),
+        () ->
+            assertThat(analyzeSourceFree(absentOutput, "absent-source-free-output.lst"))
+                .isNotNull());
+  }
+
+  private ElisionAnalysisModel.Analysis analyzeSourceFree(final Path output, final String traceName)
+      throws IOException, org.apache.maven.plugin.MojoFailureException {
+    final MavenProject project =
+        projectWith(resolvedArtifact("source-free", "compile", "source-free.jar"), null);
+    final Path sourceRoot = Files.createDirectories(tempDir.resolve(traceName + "-src"));
+    project.addCompileSourceRoot(sourceRoot.toString());
+    final Path trace = tempDir.resolve(traceName);
+    Files.writeString(trace, "library.Unused\n");
+    return new MavenElisionService()
+        .analyze(
+            project,
+            new ElisionAnalysisModel.AnalysisOptions(
+                List.of(trace.toFile()),
+                List.of(),
+                output.toFile(),
+                null,
+                new ElisionAnalysisModel.CompletenessOptions(false, true, false, true),
+                new ElisionAnalysisModel.TrimOptions(
+                    false,
+                    List.of(),
+                    false,
+                    List.of(),
+                    false,
+                    MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                    MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING),
+                new ElisionAnalysisModel.DynamicRootOptions(true)));
   }
 
   @Test

@@ -14,7 +14,6 @@ import io.github.spockz.elider.scanner.JarIndexScanner;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.maven.model.Build;
@@ -82,14 +81,6 @@ final class DetachedAnalyzeCompileClasspathTest {
     detached.setArtifacts(Set.of(resolved, pluginArtifact));
     detached.setDependencyArtifacts(Set.of(resolved));
     final ArtifactClassIndex index = new JarIndexScanner().scan(List.of(artifact));
-    final AnalysisEnvironment environment =
-        new AnalysisEnvironment(
-            Map.of(),
-            Map.of("maven.compiler.release", "17", "maven.compiler.proc", "none"),
-            temporaryDirectory,
-            AnalysisEnvironment.JdkToolchainState.UNSELECTED,
-            null);
-
     final ProductionAnalysisInputs.CompilerInputs inputs =
         ProductionAnalysisInputs.compilerInputs(
             detached, List.of(artifact), index, false, Optional.empty(), Set.of());

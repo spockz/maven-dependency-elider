@@ -39,7 +39,11 @@ public final class ExampleSupport {
     if (arguments.length == 0) {
       throw new IllegalArgumentException(
           "Expected run-spring-endpoint, verify-class-report, verify-effective-graph-report, "
-              + "verify-cve-report, verify-no-whole-artifact-drops, verify-basic-graph-drop, "
+              + "verify-cve-report, verify-analyze-precondition, "
+              + "verify-cve-unused-expected-drop, "
+              + "verify-no-whole-artifact-drops, verify-basic-graph-drop, "
+              + "verify-spring-expected-drop, "
+              + "verify-spring-snakeyaml-retained, "
               + "or verify-reactor-reports");
     }
     switch (arguments[0]) {
@@ -47,9 +51,13 @@ public final class ExampleSupport {
       case "verify-class-report" -> verifyClassReport(arguments);
       case "verify-effective-graph-report" -> verifyEffectiveGraphReport(arguments);
       case "verify-cve-report" -> verifyCveReport(arguments);
+      case "verify-analyze-precondition" -> verifyAnalyzePrecondition(arguments);
       case "verify-cve-sboms" -> verifyCveSboms(arguments);
+      case "verify-cve-unused-expected-drop" -> verifyCveUnusedExpectedDrop(arguments);
       case "verify-no-whole-artifact-drops" -> verifyNoWholeArtifactDrops(arguments);
       case "verify-basic-graph-drop" -> verifyBasicGraphDrop(arguments);
+      case "verify-spring-expected-drop" -> verifySpringExpectedDrop(arguments);
+      case "verify-spring-snakeyaml-retained" -> verifySpringSnakeyamlRetained(arguments);
       case "verify-reactor-reports" -> verifyReactorReports(arguments);
       default -> throw new IllegalArgumentException("Unsupported operation: " + arguments[0]);
     }
@@ -278,7 +286,7 @@ public final class ExampleSupport {
           || !nonblankText(finding, "detail")) {
         throw new IOException("generic finding has missing required fields");
       }
-      if (!Set.of("AFFECTED", "NOT_AFFECTED", "UNRESOLVED")
+      if (!Set.of("AFFECTED", "NOT_AFFECTED", "UNRESOLVED", "NO_AFFECTED_ASSERTION")
           .contains(finding.path("applicability").asText())) {
         throw new IOException("finding applicability is unsupported");
       }
@@ -1080,14 +1088,111 @@ public final class ExampleSupport {
     final String fixture = arguments[1];
     final Path reportPath = requireAbsolutePath(arguments[2], "REPORT_JSON");
     final JsonNode report = JSON.readTree(reportPath.toFile());
-    if (report.path("rawDroppedCoordinates").size() > 0 || report.path("droppedArtifacts").size() > 0) {
-      throw new IOException(fixture + " expects no raw or effective whole-artifact drops");
+    if (report.path("droppedArtifacts").size() > 0) {
+      throw new IOException(fixture + " expects no effective whole-artifact drops");
     }
     for (final JsonNode path : report.path("mediatedGraph").path("artifactPaths")) {
       if ("WHOLE_ARTIFACT_DROPPED".equals(path.path("kind").asText(""))) {
         throw new IOException(fixture + " must not report whole-artifact removal paths");
       }
     }
+  }
+
+  private static void verifyCveUnusedExpectedDrop(final String[] arguments) throws IOException {
+    if (arguments.length != 2) {
+      throw new IllegalArgumentException("Usage: verify-cve-unused-expected-drop REPORT_JSON");
+    }
+    final JsonNode drops =
+        JSON.readTree(requireAbsolutePath(arguments[1], "REPORT_JSON").toFile())
+            .path("droppedArtifacts");
+    if (!drops.isArray() || drops.size() != 1) {
+      throw new IOException("CVE unused fixture must drop only the unused Commons Lang artifact");
+    }
+    final JsonNode drop = drops.get(0);
+    if (!"org.apache.commons:commons-lang3:jar:3.17.0 (compile)"
+            .equals(drop.path("coordinate").asText())
+        || drop.path("programClassesRemoved").asInt(0) <= 0) {
+      throw new IOException(
+          "CVE unused fixture must drop only the unused Commons Lang artifact and its classes");
+    }
+  }
+
+  private static void verifySpringExpectedDrop(final String[] arguments) throws IOException {
+    if (arguments.length != 2) {
+      throw new IllegalArgumentException("Usage: verify-spring-expected-drop REPORT_JSON");
+    }
+    final Path reportPath = requireAbsolutePath(arguments[1], "REPORT_JSON");
+    final JsonNode drops = JSON.readTree(reportPath.toFile()).path("droppedArtifacts");
+    if (!drops.isArray() || drops.size() != 1) {
+      throw new IOException("Spring fixture must drop exactly the unused Commons Codec artifact");
+    }
+    final JsonNode drop = drops.get(0);
+    if (!"commons-codec:commons-codec:jar:1.16.1 (compile)"
+            .equals(drop.path("coordinate").asText())
+        || drop.path("programClassesRemoved").asInt(0) <= 0) {
+      throw new IOException(
+          "Spring fixture must remove the expected Commons Codec artifact and its classes");
+    }
+  }
+
+  private static void verifySpringSnakeyamlRetained(final String[] arguments) throws IOException {
+    if (arguments.length != 2) {
+      throw new IllegalArgumentException("Usage: verify-spring-snakeyaml-retained REPORT_JSON");
+    }
+    final String coordinate = "org.yaml:snakeyaml:jar:2.2 (compile)";
+    final JsonNode report = JSON.readTree(requireAbsolutePath(arguments[1], "REPORT_JSON").toFile());
+    boolean rawCandidate = false;
+    for (final JsonNode item : report.path("rawDroppedCoordinates")) {
+      if (item.isTextual() && coordinate.equals(item.textValue())) {
+        rawCandidate = true;
+        break;
+      }
+    }
+    boolean effectiveDrop = false;
+    for (final JsonNode item : report.path("droppedArtifacts")) {
+      if (coordinate.equals(item.path("coordinate").asText())) {
+        effectiveDrop = true;
+        break;
+      }
+    }
+    if (!rawCandidate || effectiveDrop) {
+      throw new IOException("Spring SnakeYAML must remain a raw candidate without an effective drop");
+    }
+
+    final JsonNode trim =
+        singleMatching(
+            report.path("trimmedArtifacts"),
+            value -> coordinate.equals(value.path("coordinate").asText()),
+            "retained SnakeYAML trim result");
+    if (!"elevated_and_trimmed".equals(trim.path("mrjarStatus").asText())) {
+      throw new IOException("Retained SnakeYAML must preserve its elevated and trimmed MRJAR status");
+    }
+
+    final JsonNode nodes = report.path("mediatedGraph").path("snapshot").path("nodes");
+    final JsonNode statuses = report.path("mediatedGraph").path("nodeStatuses");
+    if (!nodes.isArray() || !statuses.isArray()) {
+      throw new IOException("Spring report is missing the mediated graph needed for retention proof");
+    }
+    String nodeId = null;
+    for (final JsonNode node : nodes) {
+      if ("org.yaml".equals(node.path("artifact").path("groupId").asText())
+          && "snakeyaml".equals(node.path("artifact").path("artifactId").asText())
+          && "2.2".equals(node.path("artifact").path("version").asText())
+          && "compile".equals(node.path("dependency").path("scope").asText())) {
+        nodeId = node.path("id").asText();
+        break;
+      }
+    }
+    if (nodeId == null) {
+      throw new IOException("Spring graph snapshot is missing the SnakeYAML dependency node");
+    }
+    for (final JsonNode status : statuses) {
+      if (nodeId.equals(status.path("nodeId").asText())
+          && "RETAINED".equals(status.path("disposition").asText())) {
+        return;
+      }
+    }
+    throw new IOException("Spring SnakeYAML must remain retained by graph safety");
   }
 
   private static void verifyBasicGraphDrop(final String[] arguments) throws IOException {
@@ -1349,9 +1454,26 @@ public final class ExampleSupport {
       }
       case "example-cve-unused-app" -> {
         if (!provenIds.equals(List.of("CVE-2022-42889"))
-            || !removedIds.isEmpty()
             || !inactiveIds.isEmpty()) {
           throw new IOException("example-cve-unused-app generic finding outcomes changed: " + findings);
+        }
+        final JsonNode removedCommonsLangFinding =
+            singleMatching(
+                findings,
+                value -> "CVE-2025-48924".equals(value.path("vulnerabilityId").asText()),
+                "removed Commons Lang CVE finding");
+        if (!"org.apache.commons"
+                .equals(removedCommonsLangFinding.path("candidate").path("groupId").asText())
+            || !"commons-lang3"
+                .equals(removedCommonsLangFinding.path("candidate").path("artifactId").asText())
+            || !"3.17.0"
+                .equals(removedCommonsLangFinding.path("candidate").path("version").asText())
+            || !"AFFECTED".equals(removedCommonsLangFinding.path("applicability").asText())
+            || !"REMOVED".equals(
+                removedCommonsLangFinding.path("inventoryDisposition").asText())
+            || !"NO_PROOF".equals(removedCommonsLangFinding.path("outcome").asText())) {
+          throw new IOException(
+              "Removed Commons Lang CVE must remain affected without a physical absence proof");
         }
       }
       case "example-cve-safe-class-app" -> {
@@ -1378,8 +1500,16 @@ public final class ExampleSupport {
           throw new IOException("Spring fixture finding must remain unverified without physical proof");
         }
         final Path vexPath = reportJsonPath.getParent().resolve("dependency-elider.openvex.json");
-        if (Files.exists(vexPath)) {
-          throw new IOException("example-spring-boot-app must not emit VEX without a proven finding");
+        if (!Files.isRegularFile(vexPath)) {
+          throw new IOException(
+              "example-spring-boot-app must emit VEX for the physically proven prerequisite finding");
+        }
+        final JsonNode vex = JSON.readTree(vexPath.toFile());
+        for (final JsonNode statement : vex.path("statements")) {
+          if (!"CVE-2025-11226".equals(statement.path("vulnerability").path("name").asText())) {
+            throw new IOException(
+                "Spring VEX must not attest findings without verified physical proof");
+          }
         }
       }
       default -> {}
@@ -1474,13 +1604,13 @@ public final class ExampleSupport {
       if (!foundCommonsTextCve) {
         throw new IOException("OpenVEX missing not_affected statement for CVE-2022-42889");
       }
-    } else {
+    } else if ("example-cve-safe-class-app".equals(fixture)
+        || "example-spring-boot-app".equals(fixture)) {
       if (!before.contains("logback-classic") || !before.contains("logback-core")) {
         throw new IOException("baseline inventory must contain Logback");
       }
       if (before.contains("janino") || after.contains("janino")) {
-        throw new IOException(
-            "safe-class fixture must not include Janino, ensuring precondition is unmet");
+        throw new IOException(fixture + " baseline and final inventories must not include Janino");
       }
       if (!after.contains("logback-classic") || !after.contains("logback-core")) {
         throw new IOException(
@@ -1499,13 +1629,71 @@ public final class ExampleSupport {
       if (!statements.isArray() || statements.isEmpty()) {
         throw new IOException("OpenVEX must contain at least one statement");
       }
-      verifySafeClassPrecondition(report, post, vexJson);
+      verifySafeClassPrecondition(
+          report, post, vexJson, "example-spring-boot-app".equals(fixture) ? "1.5.11" : "1.5.18");
+    } else {
+      throw new IOException("Unsupported CVE SBOM fixture: " + fixture);
+    }
+  }
+
+  private static void verifyAnalyzePrecondition(final String[] arguments) throws IOException {
+    if (arguments.length != 2) {
+      throw new IllegalArgumentException("Usage: verify-analyze-precondition ANALYSIS_REPORT");
+    }
+    final Path reportPath = requireAbsolutePath(arguments[1], "ANALYSIS_REPORT");
+    final JsonNode report = JSON.readTree(reportPath.toFile());
+    singleMatching(
+        report.path("catalogAdoptions"),
+        value -> "logback-core-cve-2025-11226".equals(value.path("catalogId").asText()),
+        "shared Logback catalog adoption");
+    final JsonNode finding =
+        singleMatching(
+            report.path("genericFindings"),
+            value -> "CVE-2025-11226".equals(value.path("vulnerabilityId").asText()),
+            "Analyze Logback prerequisite prediction");
+    if (!"ch.qos.logback".equals(finding.path("candidate").path("groupId").asText())
+        || !"logback-core".equals(finding.path("candidate").path("artifactId").asText())
+        || !"1.5.11".equals(finding.path("candidate").path("version").asText())
+        || !"AFFECTED".equals(finding.path("applicability").asText())
+        || !"NO_PROOF".equals(finding.path("outcome").asText())
+        || !finding.path("prerequisiteProof").isNull()) {
+      throw new IOException(
+          "Analyze must not claim physical proof for an unsupported direct-goal invocation");
+    }
+    final JsonNode prediction = finding.path("prerequisitePrediction");
+    final JsonNode groups = prediction.path("groups");
+    if (!prediction.isObject()
+        || !prediction
+            .path("detail")
+            .asText()
+            .contains("Maven goal sequence is not a safe default lifecycle invocation")
+        || !groups.isArray()
+        || groups.size() != 1
+        || groups.get(0).path("disarmed").asBoolean()
+        || !groups.get(0).path("members").isArray()
+        || groups.get(0).path("members").size() != 1) {
+      throw new IOException("Analyze must retain its complete prerequisite prediction group");
+    }
+    final JsonNode member = groups.get(0).path("members").get(0);
+    if (!"org.codehaus.janino.ClassBodyEvaluator".equals(
+            member.path("claim").path("requiresClass").asText())
+        || !"UNKNOWN".equals(member.path("state").asText())
+        || !"UNKNOWN".equals(member.path("reason").asText())
+        || !member.path("providers").isArray()
+        || !member.path("providers").isEmpty()) {
+      throw new IOException(
+          "Analyze must retain the unknown baseline prerequisite status for the unsupported invocation");
     }
   }
 
   private static void verifySafeClassPrecondition(
-      final JsonNode report, final JsonNode post, final JsonNode vex) throws IOException {
-    final String logbackCorePurl = "pkg:maven/ch.qos.logback/logback-core@1.5.18";
+      final JsonNode report,
+      final JsonNode post,
+      final JsonNode vex,
+      final String logbackCoreVersion)
+      throws IOException {
+    final String logbackCorePurl =
+        "pkg:maven/ch.qos.logback/logback-core@" + logbackCoreVersion;
     final JsonNode component =
         singleMatching(
             post.path("components"),
@@ -1523,15 +1711,30 @@ public final class ExampleSupport {
             "generic precondition finding");
     if (!"ch.qos.logback".equals(finding.path("candidate").path("groupId").asText())
         || !"logback-core".equals(finding.path("candidate").path("artifactId").asText())
-        || !"1.5.18".equals(finding.path("candidate").path("version").asText())
+        || !logbackCoreVersion.equals(finding.path("candidate").path("version").asText())
         || !"jar".equals(finding.path("candidate").path("type").asText())
         || !finding.path("candidate").path("classifier").asText().isEmpty()
+        || !"AFFECTED".equals(finding.path("applicability").asText())
         || !"PREREQUISITES_ABSENT".equals(finding.path("outcome").asText())) {
       throw new IOException("Inactive finding must target the exact Logback Core coordinate");
     }
     final JsonNode prerequisites = finding.path("effectivePrerequisites");
     if (!prerequisites.isArray() || prerequisites.size() != 1) {
       throw new IOException("Generic precondition finding must retain its atomic prerequisite pair");
+    }
+    final JsonNode proof = finding.path("prerequisiteProof");
+    final JsonNode proofGroups = proof.path("groups");
+    if (!proof.isObject()
+        || !proof.path("baselineDetail").isNull()
+        || !proofGroups.isArray()
+        || proofGroups.size() != 1
+        || !"ALREADY_ABSENT".equals(proofGroups.get(0).path("attribution").asText())
+        || !proofGroups.get(0).path("members").isArray()
+        || proofGroups.get(0).path("members").size() != 1
+        || !"ALREADY_ABSENT"
+            .equals(proofGroups.get(0).path("members").get(0).path("attribution").asText())) {
+      throw new IOException(
+          "Final prerequisite proof must attribute Janino absence to the complete baseline inventory");
     }
     final JsonNode prerequisite = prerequisites.get(0);
     if (!"org.codehaus.janino:janino".equals(prerequisite.path("requiresDependency").asText())

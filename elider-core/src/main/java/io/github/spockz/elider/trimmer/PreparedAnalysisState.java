@@ -219,6 +219,7 @@ final class PreparedAnalysisState {
       int expanded = 0;
       while (!pending.isEmpty()) {
         final String current = pending.removeFirst();
+        rejectUnrecognizedClassAttributes(current, graph, queryPolicy);
         if (visitProgram(
             current,
             candidateJar,
@@ -242,21 +243,46 @@ final class PreparedAnalysisState {
         if (edgeFailure != null) {
           throw edgeFailure;
         }
-        rejectUnclassifiedClosedWorldEdges(current, graph, queryPolicy);
         enqueueTargets(current, graph, pending, queryPolicy);
       }
+      rejectUnclassifiedClosedWorldEdges(
+          visitedProgramClasses, visitedLibraryClasses, graph, queryPolicy);
       return expanded;
     }
 
-    private static void rejectUnclassifiedClosedWorldEdges(
+    private static void rejectUnrecognizedClassAttributes(
         final String source, final ReferenceGraph graph, final ClosureQueryPolicy queryPolicy) {
       if (queryPolicy.mode() != ClosureQueryPolicy.Mode.CLOSED_WORLD) {
         return;
       }
-      final Set<String> unclassified = graph.unclassifiedEdges().getOrDefault(source, Set.of());
-      if (!unclassified.isEmpty()) {
+      final Set<String> unrecognized =
+          graph.unrecognizedClassAttributes().getOrDefault(source, Set.of());
+      if (!unrecognized.isEmpty()) {
         throw new IllegalArgumentException(
-            "Unclassified reference targets in " + source + ": " + new TreeSet<>(unclassified));
+            "Unrecognized class-file attributes in " + source + ": " + new TreeSet<>(unrecognized));
+      }
+    }
+
+    private static void rejectUnclassifiedClosedWorldEdges(
+        final Set<String> visitedProgramClasses,
+        final Set<String> visitedLibraryClasses,
+        final ReferenceGraph graph,
+        final ClosureQueryPolicy queryPolicy) {
+      if (queryPolicy.mode() != ClosureQueryPolicy.Mode.CLOSED_WORLD) {
+        return;
+      }
+      // WHY: Typed closure already retains ProGuard's transitive targets.
+      final Set<String> visitedClasses = new LinkedHashSet<>(visitedProgramClasses);
+      visitedClasses.addAll(visitedLibraryClasses);
+      final Set<String> unclassified = new TreeSet<>();
+      for (final String source : visitedClasses) {
+        unclassified.clear();
+        unclassified.addAll(graph.unclassifiedEdges().getOrDefault(source, Set.of()));
+        unclassified.removeAll(visitedClasses);
+        if (!unclassified.isEmpty()) {
+          throw new IllegalArgumentException(
+              "Unclassified reference targets in " + source + ": " + unclassified);
+        }
       }
     }
 
@@ -266,7 +292,9 @@ final class PreparedAnalysisState {
         final Deque<String> pending,
         final ClosureQueryPolicy queryPolicy) {
       if (queryPolicy.mode() == ClosureQueryPolicy.Mode.CONSERVATIVE) {
-        graph.edges().getOrDefault(source, Set.of()).forEach(pending::addLast);
+        graph.edges().getOrDefault(source, Set.of()).stream()
+            .filter(target -> !isDebugMetadataOnlyReference(graph, source, target))
+            .forEach(pending::addLast);
         return;
       }
       graph
@@ -343,7 +371,11 @@ final class PreparedAnalysisState {
         final String source,
         final ClosureQueryPolicy queryPolicy) {
       return links.stream()
-          .anyMatch(link -> !isExcludedBodyTarget(link, graph, source, queryPolicy));
+          .anyMatch(
+              link ->
+                  !isDebugMetadataOnlyTarget(link, graph, source)
+                      && !isUnusedConstantPoolClass(link, graph, source, queryPolicy)
+                      && !isExcludedBodyTarget(link, graph, source, queryPolicy));
     }
 
     private static Set<String> unresolvedDescriptions(
@@ -353,10 +385,45 @@ final class PreparedAnalysisState {
         final ClosureQueryPolicy queryPolicy) {
       final Set<String> descriptions = new TreeSet<>();
       links.stream()
-          .filter(link -> !isExcludedBodyTarget(link, graph, source, queryPolicy))
+          .filter(
+              link ->
+                  !isDebugMetadataOnlyTarget(link, graph, source)
+                      && !isUnusedConstantPoolClass(link, graph, source, queryPolicy)
+                      && !isExcludedBodyTarget(link, graph, source, queryPolicy))
           .map(ReferenceGraph.UnresolvedLink::description)
           .forEach(descriptions::add);
       return descriptions;
+    }
+
+    private static boolean isDebugMetadataOnlyTarget(
+        final ReferenceGraph.UnresolvedLink link, final ReferenceGraph graph, final String source) {
+      return link.kind() == ReferenceGraph.UnresolvedKind.MISSING_CLASS
+          && isDebugMetadataOnlyReference(graph, source, link.targetClass());
+    }
+
+    private static boolean isDebugMetadataOnlyReference(
+        final ReferenceGraph graph, final String source, final String target) {
+      final Set<ReferenceGraph.EdgeKind> kinds =
+          graph.typedEdges().getOrDefault(source, Map.of()).get(target);
+      if (kinds == null) {
+        return false;
+      }
+      return kinds.contains(ReferenceGraph.EdgeKind.DEBUG_METADATA)
+          && !kinds.contains(ReferenceGraph.EdgeKind.STRUCTURAL)
+          && !kinds.contains(ReferenceGraph.EdgeKind.BODY);
+    }
+
+    private static boolean isUnusedConstantPoolClass(
+        final ReferenceGraph.UnresolvedLink link,
+        final ReferenceGraph graph,
+        final String source,
+        final ClosureQueryPolicy queryPolicy) {
+      return queryPolicy.mode() == ClosureQueryPolicy.Mode.CLOSED_WORLD
+          && link.kind() == ReferenceGraph.UnresolvedKind.MISSING_CLASS
+          && graph
+              .unusedConstantPoolEdges()
+              .getOrDefault(source, Set.of())
+              .contains(link.targetClass());
     }
 
     private static boolean isExcludedBodyTarget(

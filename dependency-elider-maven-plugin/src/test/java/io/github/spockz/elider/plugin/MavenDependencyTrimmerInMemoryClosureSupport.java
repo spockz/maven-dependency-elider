@@ -26,6 +26,7 @@ import org.apache.maven.model.Build;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 /** Provides reusable immutable-input fixtures for closure tests. */
@@ -44,17 +45,20 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
   /** Maven field name used for closed-world evidence mode. */
   protected static final String CLOSED_WORLD_FIELD = "closedWorld";
 
-  /** Class name used by generated modular fixture archives. */
-  private static final String FIXTURE_MODULE_CLASS = "module-info";
-
-  /** Service descriptor parsed by the goal output fixture. */
-  private static final String FIXTURE_SERVICE_PATH = "META-INF/services/fixture.service.Spi";
-
-  /** Multi-release entry prefix used by generated upper-tier archives. */
-  private static final String VERSIONED_ENTRY_PREFIX = "META-INF/versions/";
-
   /** Test goal report parser shared by Analyze and Elide output checks. */
   protected final ObjectMapper reportObjectMapper = new ObjectMapper();
+
+  /** Compiled class directory shared by generated fixture archives. */
+  private static final String CLASSES_DIRECTORY = "classes";
+
+  /** Resource entry copied into fixture archives. */
+  private static final String FIXTURE_RESOURCE = "data/fixture.txt";
+
+  /** Resource content used to verify non-class archive entries survive trimming. */
+  private static final String FIXTURE_RESOURCE_CONTENT = "preserve this resource\n";
+
+  /** Class entry shared by graph-ancestor fixture archives. */
+  private static final String ANCESTOR_CLASS_ENTRY = "closure/d/Ancestor.class";
 
   /** Fixture coordinates are shared by generated test artifacts. */
   private static final String GROUP_ID = "fixture";
@@ -183,7 +187,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final boolean unusedSecond)
       throws IOException {
     final Path sourceDirectory = Files.createDirectories(temporaryDirectory.resolve("sources"));
-    final Path classes = Files.createDirectories(temporaryDirectory.resolve("classes"));
+    final Path classes = Files.createDirectories(temporaryDirectory.resolve(CLASSES_DIRECTORY));
     final Path firstSource =
         writeSource(
             sourceDirectory,
@@ -253,9 +257,11 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
                 : List.of("closure/a/Entry.class", EXTRA_CLASS_ENTRY),
             serviceRootInA
                 ? Map.of(
-                    "data/fixture.txt", "preserve this resource\n",
-                    "META-INF/services/closure.a.Entry", "closure.b.Middle\n")
-                : Map.of("data/fixture.txt", "preserve this resource\n"));
+                    FIXTURE_RESOURCE,
+                    FIXTURE_RESOURCE_CONTENT,
+                    "META-INF/services/closure.a.Entry",
+                    "closure.b.Middle\n")
+                : Map.of(FIXTURE_RESOURCE, FIXTURE_RESOURCE_CONTENT));
     if (distinctDuplicateDependencies) {
       Files.writeString(
           extraSource,
@@ -267,13 +273,9 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     final List<String> secondClasses =
         secondArtifactClasses(resourceOnlyB, duplicateClass, unusedSecond);
     final Path secondArtifactPath =
-        jar(
-            "b.jar",
-            classes,
-            secondClasses,
-            Map.of("data/fixture.txt", "preserve this resource\n"));
+        jar("b.jar", classes, secondClasses, Map.of(FIXTURE_RESOURCE, FIXTURE_RESOURCE_CONTENT));
     final Path thirdArtifactPath = jar("c.jar", classes, List.of("closure/c/Leaf.class"));
-    final Path fourthArtifactPath = jar("d.jar", classes, List.of("closure/d/Ancestor.class"));
+    final Path fourthArtifactPath = jar("d.jar", classes, List.of(ANCESTOR_CLASS_ENTRY));
     final Path fifthArtifactPath = jar("e.jar", classes, List.of("closure/e/Leaf.class"));
     return new Fixture(
         firstArtifactPath,
@@ -327,6 +329,79 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
     return fixture(false, false, false, false, release, RUNTIME_SCOPE);
   }
 
+  /** Builds bytecode for a live and uncalled workload. */
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  protected Fixture fixtureWithLiveWorkload() throws IOException {
+    final Fixture base = fixtureWithRuntimeA();
+    final Path sources =
+        Files.createDirectories(temporaryDirectory.resolve("live-workload-source"));
+    final Path liveA =
+        writeSource(
+            sources,
+            "fixture/live/LiveA.java",
+            """
+            package fixture.live;
+            public final class LiveA {
+              public static String used() { return "used"; }
+              public static Object outside() { return new closure.b.Middle(); }
+              public static Object uncalledStructuralMethod(boolean includeFrame) {
+                try {
+                  FrameOnly frameOnly = includeFrame ? new FrameOnly() : null;
+                  return frameOnly;
+                } catch (CatchOnly failure) {
+                  return null;
+                }
+              }
+            }
+            """);
+    final Path frameOnly =
+        writeSource(
+            sources,
+            "fixture/live/FrameOnly.java",
+            "package fixture.live; public final class FrameOnly {} ");
+    final Path catchOnly =
+        writeSource(
+            sources,
+            "fixture/live/CatchOnly.java",
+            "package fixture.live; public final class CatchOnly extends RuntimeException {} ");
+    final Path deadA =
+        writeSource(
+            sources,
+            "fixture/live/DeadA.java",
+            "package fixture.live; public final class DeadA {} ");
+    final Path classes = temporaryDirectory.resolve("live-workload-classes");
+    io.github.spockz.elider.test.CompilationFixtureSupport.compile(
+        classes,
+        List.of(liveA, frameOnly, catchOnly, deadA),
+        "-classpath",
+        base.snapshot("b").filePath().toString());
+    final Path liveArchive = temporaryDirectory.resolve("a-live-workload.jar");
+    final Manifest manifest = new Manifest();
+    manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, VERSION);
+    try (JarOutputStream output =
+        new JarOutputStream(Files.newOutputStream(liveArchive), manifest)) {
+      for (final String entry :
+          List.of(
+              "fixture/live/LiveA.class",
+              "fixture/live/FrameOnly.class",
+              "fixture/live/CatchOnly.class",
+              "fixture/live/DeadA.class")) {
+        output.putNextEntry(new JarEntry(entry));
+        Files.copy(classes.resolve(entry), output);
+        output.closeEntry();
+      }
+    }
+    return new Fixture(
+        liveArchive,
+        base.snapshot("b").filePath(),
+        base.snapshot("c").filePath(),
+        base.snapshot("d").filePath(),
+        base.snapshot("e").filePath(),
+        21,
+        base.snapshot("a").coordinate().scope(),
+        base.snapshot("b").coordinate().scope());
+  }
+
   /** Builds a provided-scope modular artifact. */
   protected Fixture fixtureWithProvidedA(final int release) throws IOException {
     return fixtureWithOptions(
@@ -341,6 +416,69 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
   /** Builds a fixture whose entry class has an unresolved optional ASM type. */
   protected Fixture fixtureWithOptionalAsmReference() throws IOException {
     return fixture(false, false, false, true);
+  }
+
+  /** Builds an unrooted archive class whose body has an unresolved optional target. */
+  protected Fixture fixtureWithUnrootedOptionalReference() throws IOException {
+    final Fixture base = fixture(false);
+    final Path classes = temporaryDirectory.resolve(CLASSES_DIRECTORY);
+    final Path deadClass = classes.resolve("closure/d/Dead.class");
+    Files.createDirectories(deadClass.getParent());
+    Files.write(deadClass, classBytesWithUnresolvedBodyReference());
+    final Path fourthArtifactPath =
+        jar(
+            "d-with-unrooted-optional.jar",
+            classes,
+            List.of(ANCESTOR_CLASS_ENTRY, "closure/d/Dead.class"));
+    return new Fixture(
+        base.snapshot("a").filePath(),
+        base.snapshot("b").filePath(),
+        base.snapshot("c").filePath(),
+        fourthArtifactPath,
+        base.snapshot("e").filePath(),
+        21,
+        base.snapshot("a").coordinate().scope(),
+        base.snapshot("b").coordinate().scope());
+  }
+
+  /** Builds a graph-ancestor archive with a manifest/resource and no runtime roots. */
+  protected Fixture fixtureWithResourceInFourthArtifact() throws IOException {
+    final Fixture base = fixture(false);
+    final Path classes = temporaryDirectory.resolve(CLASSES_DIRECTORY);
+    final Path fourthArtifactPath =
+        jar(
+            "d-with-resource.jar",
+            classes,
+            List.of(ANCESTOR_CLASS_ENTRY),
+            Map.of(
+                "META-INF/MANIFEST.MF",
+                "Manifest-Version: 1.0\n\n",
+                FIXTURE_RESOURCE,
+                FIXTURE_RESOURCE_CONTENT));
+    return new Fixture(
+        base.snapshot("a").filePath(),
+        base.snapshot("b").filePath(),
+        base.snapshot("c").filePath(),
+        fourthArtifactPath,
+        base.snapshot("e").filePath(),
+        21,
+        base.snapshot("a").coordinate().scope(),
+        base.snapshot("b").coordinate().scope());
+  }
+
+  private static byte[] classBytesWithUnresolvedBodyReference() {
+    final ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, "closure/d/Dead", null, "java/lang/Object", null);
+    final MethodVisitor method =
+        writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "invoke", "()V", null, null);
+    method.visitCode();
+    method.visitMethodInsn(
+        Opcodes.INVOKESTATIC, "fixture/optional/OptionalApi", "run", "()V", false);
+    method.visitInsn(Opcodes.RETURN);
+    method.visitMaxs(0, 0);
+    method.visitEnd();
+    writer.visitEnd();
+    return writer.toByteArray();
   }
 
   /** Creates minimal class bytes for unrelated archive entries. */
@@ -521,11 +659,14 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
               .collect(
                   java.util.stream.Collectors.toMap(
                       snapshot -> snapshot.filePath().toAbsolutePath().normalize(),
-                      snapshot ->
-                          new DependencyDynamicRoots.RootScan(
-                              dynamicRoots.getOrDefault(
-                                  snapshot.filePath().toAbsolutePath().normalize(), Set.of()),
-                              true)));
+                      snapshot -> {
+                        final Set<String> snapshotRoots =
+                            dynamicRoots.getOrDefault(
+                                snapshot.filePath().toAbsolutePath().normalize(), Set.of());
+                        return snapshotRoots.isEmpty()
+                            ? EMPTY_ROOT_SCAN
+                            : new DependencyDynamicRoots.RootScan(snapshotRoots, true);
+                      }));
       return MavenDependencyTrimmer.analyzeInMemory(
           new TrimRequest(
               project,
@@ -586,7 +727,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final byte[] baseContent =
           Files.readAllBytes(temporaryDirectory.resolve("classes/closure/c/Leaf.class"));
       final Manifest manifest = new Manifest();
-      manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+      manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, VERSION);
       manifest.getMainAttributes().putValue("Multi-Release", "true");
       try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path), manifest)) {
         output.putNextEntry(new JarEntry("closure/c/Leaf.class"));
@@ -597,6 +738,37 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
         output.closeEntry();
       }
       return path;
+    }
+
+    Path addVersionedClassToD() throws IOException {
+      final Path path = snapshot("d").filePath();
+      final Path versionedClasses = temporaryDirectory.resolve("version-9-classes");
+      io.github.spockz.elider.test.CompilationFixtureSupport.compile(
+          versionedClasses,
+          List.of(
+              temporaryDirectory.resolve("sources/closure/d/Ancestor.java"),
+              temporaryDirectory.resolve("sources/closure/e/Leaf.java")),
+          9);
+      final byte[] versionedAncestor =
+          Files.readAllBytes(versionedClasses.resolve("closure/d/Ancestor.class"));
+      final Manifest manifest = new Manifest();
+      manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, VERSION);
+      manifest.getMainAttributes().putValue("Multi-Release", "true");
+      try (JarOutputStream output = new JarOutputStream(Files.newOutputStream(path), manifest)) {
+        writeClassEntry(output, ANCESTOR_CLASS_ENTRY);
+        writeClassEntry(output, "closure/d/Dead.class");
+        output.putNextEntry(new JarEntry("META-INF/versions/9/closure/d/Ancestor.class"));
+        output.write(versionedAncestor);
+        output.closeEntry();
+      }
+      return path;
+    }
+
+    private void writeClassEntry(final JarOutputStream output, final String entry)
+        throws IOException {
+      output.putNextEntry(new JarEntry(entry));
+      Files.copy(temporaryDirectory.resolve(CLASSES_DIRECTORY).resolve(entry), output);
+      output.closeEntry();
     }
 
     // Recreate each ZIP entry while appending metadata to the archive under test.

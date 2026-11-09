@@ -233,7 +233,6 @@ final class MavenElisionReportGenericPayload {
                   row.get("prerequisiteProof"), coordinate),
               MavenElisionReportPrerequisitePredictionCodec.decode(
                   row.get("prerequisitePrediction")));
-      MavenElisionReportProofValidator.validate(finding);
       rows.add(finding);
     }
     return List.copyOf(rows);

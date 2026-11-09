@@ -21,10 +21,10 @@ import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
 import org.eclipse.aether.RepositorySystem;
 
-/** Applies graph-verified dependency changes during Maven initialization. */
+/** Applies graph-verified dependency changes after production classes are compiled. */
 @Mojo(
     name = "elide",
-    defaultPhase = LifecyclePhase.INITIALIZE,
+    defaultPhase = LifecyclePhase.PROCESS_CLASSES,
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
 @SuppressWarnings({"PMD.TooManyFields", "PMD.ImmutableField"})
@@ -274,7 +274,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
             configuredVulnerabilityMappings(),
             SnykPackageIssuesIntegration.Configuration.configured(
                 snykEnabled, session != null && session.isOffline(), snykOrgId, snykApiBaseUri),
-            trimJars && preconditionClassPathComplete,
+            preconditionClassPathComplete,
             assumeConventionalJavaSourceLayout,
             afterGenerationStaging));
   }

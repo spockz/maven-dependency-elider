@@ -64,7 +64,7 @@ final class EliderPluginConfiguration {
     return List.copyOf(active);
   }
 
-  static void requireInitializeBinding(final PluginExecution execution, final MavenProject project)
+  static void requireSupportedBinding(final PluginExecution execution, final MavenProject project)
       throws MavenExecutionException {
     effectivePhase(execution, project);
   }
@@ -73,7 +73,9 @@ final class EliderPluginConfiguration {
       throws MavenExecutionException {
     final String configuredPhase = execution.getPhase();
     final String phase =
-        configuredPhase == null || configuredPhase.isBlank() ? INITIALIZE_PHASE : configuredPhase;
+        configuredPhase == null || configuredPhase.isBlank()
+            ? PROCESS_CLASSES_PHASE
+            : configuredPhase;
     if (!INITIALIZE_PHASE.equals(phase) && !PROCESS_CLASSES_PHASE.equals(phase)) {
       throw failure(
           project,

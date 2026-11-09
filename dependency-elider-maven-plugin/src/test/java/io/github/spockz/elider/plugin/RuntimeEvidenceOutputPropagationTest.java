@@ -3,12 +3,15 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.test.CompilationFixtureSupport;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Enumeration;
@@ -25,7 +28,7 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
 /** Checks that service admission reaches bytecode closure and archive generation. */
-@SuppressWarnings("PMD.AtLeastOneConstructor")
+@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.TooManyMethods"})
 final class RuntimeEvidenceOutputPropagationTest extends MavenElisionServiceEffectiveOutputSupport {
   /** Class admitted by both runtime evidence formats. */
   private static final String ENTRY = "closure/a/Entry";
@@ -46,8 +49,44 @@ final class RuntimeEvidenceOutputPropagationTest extends MavenElisionServiceEffe
         () -> assertThat(conservative.generatedArtifacts()).contains("a"),
         () -> assertThat(closedWorld.generatedArtifacts()).contains("a"),
         () -> assertThat(conservative.middleEntries()).contains("closure/b/Middle.class"),
-        () -> assertThat(conservative.middleEntries()).contains("closure/b/Unused.class"),
+        () -> assertThat(conservative.middleEntries()).doesNotContain("closure/b/Unused.class"),
         () -> assertThat(closedWorld.middleEntries()).isEmpty());
+  }
+
+  @Test
+  void closedWorldTransformedArchiveRunsTracedMethodAndRetainsUncalledStructuralTypes()
+      throws Exception {
+    final Fixture fixture = fixtureWithLiveWorkload();
+    final Path evidence = trace(temporaryDirectory, "fixture.live.LiveA");
+    final ServiceOperation operation = runtimeEvidenceOperation(fixture, List.of(evidence), true);
+    final ElisionAnalysisModel.Analysis analysis = operation.service().finish(operation.prepared());
+    final TrimResult trimmed = analysis.trimResult();
+    final ArtifactTrimRecord recordA = recordFor(trimmed, "a");
+    final Set<String> retainedProviders =
+        MavenArtifactPlan.prepare(fixture.mavenProject(), analysis).resolvedArtifacts().stream()
+            .map(Artifact::getArtifactId)
+            .collect(java.util.stream.Collectors.toSet());
+    final Set<String> archiveEntries = artifactEntries(trimmed, fixture, "a");
+
+    assertAll(
+        "closed-world output omits the body-only provider and retains structural linkage",
+        () ->
+            assertAll(
+                "transformed archives omit jar-b and preserve frame/catch types",
+                () -> assertThat(retainedProviders).doesNotContain("b"),
+                () ->
+                    assertThat(trimmed.records())
+                        .extracting(record -> record.coordinate().artifactId())
+                        .contains("a")
+                        .doesNotContain("b"),
+                () ->
+                    assertThat(archiveEntries)
+                        .contains(
+                            "fixture/live/LiveA.class",
+                            "fixture/live/FrameOnly.class",
+                            "fixture/live/CatchOnly.class")
+                        .doesNotContain("closure/b/Middle.class", "fixture/live/DeadA.class")),
+        () -> assertTransformedRuntime(recordA));
   }
 
   @Test
@@ -191,6 +230,23 @@ final class RuntimeEvidenceOutputPropagationTest extends MavenElisionServiceEffe
       output.closeEntry();
     }
     Files.move(rewritten, sourceJar, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+  }
+
+  private static void assertTransformedRuntime(final ArtifactTrimRecord record)
+      throws IOException, ReflectiveOperationException {
+    try (URLClassLoader isolatedLoader =
+        new URLClassLoader(new java.net.URL[] {record.trimmedPath().toUri().toURL()}, null)) {
+      final Class<?> liveA = Class.forName("fixture.live.LiveA", true, isolatedLoader);
+      assertAll(
+          "isolated transformed archive supports traced use and rejects untraced use",
+          () -> assertThat(liveA.getMethod("used").invoke(null)).isEqualTo("used"),
+          () ->
+              assertThatThrownBy(() -> liveA.getMethod("outside").invoke(null))
+                  .isInstanceOf(InvocationTargetException.class)
+                  .cause()
+                  .isInstanceOf(NoClassDefFoundError.class)
+                  .hasMessageContaining("closure/b/Middle"));
+    }
   }
 
   private record OutputObservation(

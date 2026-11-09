@@ -76,3 +76,21 @@ Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2
 * Vertical shading retains the target baseline required by surviving overrides and preserves every upper-tier class and helper byte-for-byte, allowing distributions to retain newer-JRE behavior while removing proven-unreachable code from tiers that are transformed.
 * Downstream vulnerability scanners consuming the CycloneDX 1.6 SBOM can reconcile the trimmed JAR's disk hash while maintaining verifiable ancestry back to the official Maven Central package.
 * Trimming requires additional build-time analysis. The existing single-release JMH operation measured a same-request warmed cache hit at 0.093 ms and a fresh-context cache hit at 93.465 ms; only the warmed operation meets the $<10\text{ ms}$ target. These measurements do not establish whole-build latency or MRJAR cache performance. See [RQ-0003](../research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md).
+
+## Dated Amendment: 2026-11-08 Shared Cross-Artifact Liveness
+
+The work package keeps ProGuard Core as the class-file/archive transformation library but removes
+the redundant direct `DirectTrim*` pipeline. Whole-artifact candidate selection and retained-class
+trimming now consume the same cross-artifact liveness closure and analyzed dataset. Conservative
+mode continues to traverse static body references. With explicit `elide.closedWorld=true`, only
+body-level reference edges whose targets are outside validated workload evidence can be excluded;
+structural linkage edges remain live. This opt-in is workload-scoped and is not a claim of
+universal verifier or JDK loadability. Multi-release tier handling, service-provider retention,
+byte-for-byte pass-through of untouched archives, and physical omission checks remain acceptance
+obligations.
+
+Local-variable descriptors and generic signatures in `LocalVariableTable` and
+`LocalVariableTypeTable` are debug metadata, not runtime linkage edges. They do not create
+liveness edges or block analysis when the named type is absent. A class observed independently or
+explicitly rooted remains live. Stack-map frame types remain structural because bytecode
+verification can require them.

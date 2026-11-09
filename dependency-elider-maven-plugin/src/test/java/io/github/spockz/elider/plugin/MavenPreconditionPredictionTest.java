@@ -15,6 +15,7 @@ import io.github.spockz.elider.model.PrerequisiteOperator;
 import io.github.spockz.elider.model.VersionApplicability;
 import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import java.io.IOException;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -53,6 +54,56 @@ import org.objectweb.asm.Opcodes;
 })
 final class MavenPreconditionPredictionTest {
   @TempDir Path temporaryDirectory;
+
+  @Test
+  void securityFailureCapturingDependencyProviderProducesUnknownForecast() throws IOException {
+    final ArtifactCoordinate candidate = ArtifactCoordinate.of("org.example", "library", "1.0");
+    final ArtifactCoordinate provider = ArtifactCoordinate.of("org.example", "prerequisite", "2.0");
+    final Artifact providerArtifact =
+        artifact(provider, temporaryDirectory.resolve("provider.jar"));
+    final AnalyzePrediction template =
+        prediction(List.of(providerArtifact), provider, Set.of(), emptyEvidence());
+    final Path inaccessiblePath =
+        (Path)
+            Proxy.newProxyInstance(
+                ClassLoader.getPlatformClassLoader(),
+                new Class<?>[] {Path.class},
+                (proxy, method, arguments) -> {
+                  throw new SecurityException("provider read denied");
+                });
+    final AnalyzePrediction prediction =
+        new AnalyzePrediction(
+            template.provenance(),
+            List.of(
+                new ElisionAnalysisModel.ArtifactSnapshot(
+                    providerArtifact, provider, inaccessiblePath)),
+            template.retainedArtifacts(),
+            template.wouldElideArtifacts(),
+            template.plannedTrims(),
+            template.evidence(),
+            template.environmentFingerprint(),
+            template.inventoryFingerprint(),
+            template.operationFingerprint());
+
+    final MavenProject project = project(temporaryDirectory);
+    final MavenPreconditionPrediction.Capture capture =
+        MavenPreconditionPrediction.capture(project, processClassesSession(project), prediction);
+    final PrerequisitePrediction forecast =
+        capture.predict(
+            candidate,
+            Set.of(
+                new PrerequisiteGroup(
+                    PrerequisiteOperator.ANY_OF,
+                    Set.of(new PrerequisiteClaim("org.example:library", "org.example.Required")))));
+    final PrerequisitePrediction.MemberForecast member = forecast.groups().get(0).members().get(0);
+
+    assertAll(
+        "a denied baseline provider read must keep the Analyze forecast incomplete",
+        () -> assertThat(member.state()).isEqualTo(PrerequisitePrediction.MemberState.UNKNOWN),
+        () -> assertThat(member.reason()).isEqualTo(PrerequisitePrediction.MemberReason.UNKNOWN),
+        () -> assertThat(member.detail()).contains("Could not inspect input artifact"),
+        () -> assertThat(forecast.detail()).contains("provider read denied"));
+  }
 
   @Test
   void plannedPrerequisiteRemovalKeepsRetainedAffectedProviderAsPredictionOnly()

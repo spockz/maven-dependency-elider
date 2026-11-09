@@ -61,6 +61,9 @@ main() {
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
     -pl dependency-elider-maven-plugin -am install -Dmaven.test.skip=true
 
+  "$maven" "${maven_options[@]}" -f \
+    "$repo_root/examples/logback-vulnerability-mapping-catalog/pom.xml" install -Dmaven.test.skip=true
+
   bash "$repo_root/scripts/prepare-example-vulnerability-cache.sh" \
     "$cache_dir" "$maven" "${maven_options[@]}"
 
@@ -158,11 +161,10 @@ main() {
       -Delide.mode=elision
       "-Delide.traceFiles=$trace"
       -Delide.trimJars=true
-      -Delide.sourceRootsComplete=true
       -Dmaven.compiler.proc=none
     )
     if [[ $fixture == example-cve-safe-class-app ]]; then
-      elision_options+=(-DskipTests=true)
+      elision_options+=(-DskipTests=true -Dmaven.test.skip=true)
     else
       elision_options+=(-Dmaven.test.skip=true)
     fi

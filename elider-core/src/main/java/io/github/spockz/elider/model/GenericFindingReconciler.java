@@ -76,6 +76,41 @@ public final class GenericFindingReconciler {
     return new Result(findings, List.copyOf(diagnostics));
   }
 
+  /** Merges one saved component against its already-resolved alias identity class. */
+  public static GenericVulnerabilityFinding reconcileResolvedIdentity(
+      final List<VulnerabilityFindingContribution> contributions,
+      final Set<String> identityAliases) {
+    Objects.requireNonNull(contributions, "contributions");
+    Objects.requireNonNull(identityAliases, "identityAliases");
+    if (contributions.isEmpty() || identityAliases.isEmpty()) {
+      throw new IllegalArgumentException("contributions and saved alias class must be nonempty");
+    }
+    final Set<String> aliases = new TreeSet<>(identityAliases);
+    validateContributionIdentities(contributions, aliases);
+    return GenericVulnerabilityFinding.mergeResolvedIdentity(
+        canonicalIdentity(aliases), aliases, contributions);
+  }
+
+  private static void validateContributionIdentities(
+      final List<VulnerabilityFindingContribution> contributions, final Set<String> aliases) {
+    for (final VulnerabilityFindingContribution contribution : contributions) {
+      Objects.requireNonNull(contribution, "contribution");
+      if (!aliases.contains(contribution.vulnerabilityId())
+          || !aliases.containsAll(contribution.aliases())) {
+        throw new IllegalArgumentException("contribution identity is outside saved alias class");
+      }
+    }
+  }
+
+  private static String canonicalIdentity(final Set<String> aliases) {
+    final List<String> cves =
+        aliases.stream().filter(GenericVulnerabilityFinding::isCveIdentifier).toList();
+    if (cves.size() > MAX_UNAMBIGUOUS_CVES) {
+      throw new IllegalArgumentException("saved alias class has ambiguous CVE identities");
+    }
+    return cves.isEmpty() ? aliases.iterator().next() : cves.getFirst();
+  }
+
   /** Immutable common findings and identity diagnostics. */
   public record Result(List<GenericVulnerabilityFinding> findings, List<String> diagnostics) {
     /** Freezes findings and diagnostics for assessment and reporting. */

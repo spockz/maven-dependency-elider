@@ -45,8 +45,8 @@ final class MavenElisionServiceEffectiveReportTest
             true,
             true,
             effective.graphEvaluation().afterFingerprint(),
-            List.of(fixture.coordinate("a")),
-            List.of(fixture.coordinate("a")));
+            List.of(fixture.coordinate("a"), fixture.coordinate("b")),
+            List.of(fixture.coordinate("a"), fixture.coordinate("b")));
   }
 
   @Test

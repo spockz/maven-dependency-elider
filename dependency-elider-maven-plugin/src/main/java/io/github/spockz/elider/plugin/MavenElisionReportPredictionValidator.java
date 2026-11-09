@@ -23,7 +23,9 @@ final class MavenElisionReportPredictionValidator {
     }
     requireAnalysisMode(snapshot);
     requireCandidateMatch(finding, prediction);
-    final GenericVulnerabilityFinding merged = mergeContributions(finding);
+    final GenericVulnerabilityFinding merged =
+        MavenElisionReportFindingReconciliation.requireCanonicalFinding(
+            finding, "prerequisitePrediction");
     requireSelectedGroups(finding, prediction, merged);
     requireSelectedProjection(finding, merged);
     validateProviderPlans(prediction, snapshot);
@@ -51,15 +53,6 @@ final class MavenElisionReportPredictionValidator {
       throws IOException {
     if (!prediction.candidate().equals(finding.candidate())) {
       throw new IOException("prerequisitePrediction.candidate does not match finding candidate");
-    }
-  }
-
-  private static GenericVulnerabilityFinding mergeContributions(
-      final GenericFindingAssessment finding) throws IOException {
-    try {
-      return GenericVulnerabilityFinding.merge(finding.contributions());
-    } catch (final IllegalArgumentException exception) {
-      throw new IOException("prerequisitePrediction cannot be matched to source groups", exception);
     }
   }
 

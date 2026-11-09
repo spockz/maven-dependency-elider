@@ -22,7 +22,11 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 
 /** Publishes effective analysis reports, Maven views, and the resolver plan. */
-@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
+@SuppressWarnings({
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.TooManyMethods",
+  "PMD.CouplingBetweenObjects"
+})
 // Coordinates independent per-file outputs with the final Maven-view update.
 final class MavenElisionOutputPublisher {
   private MavenElisionOutputPublisher() {
@@ -60,8 +64,8 @@ final class MavenElisionOutputPublisher {
     final Path summary =
         MavenElisionReportWriter.outputPath(request.files().summary(), request.project());
     final List<Path> outputTargets = outputTargets(request, summary);
-    MavenOutputTargetValidation.validate(outputTargets);
-    final List<ArtifactFileRef> baselineInventory = captureBaselineInventory(request);
+    final List<ArtifactFileRef> baselineInventory = captureBaselineInventory(plan);
+    MavenOutputTargetValidation.validate(outputTargets, artifactPaths(request, plan));
     final MavenPreconditionInventory.Snapshot inventory = captureInventory(request, plan);
     final MavenVulnerabilityAssessment.Result assessment = assess(request, inventory);
     final Optional<String> staleVexDigest = staleVexDigest(request, assessment);
@@ -70,26 +74,38 @@ final class MavenElisionOutputPublisher {
             .withExclusionReview(exclusionReview);
     writeReports(request, plan, reportSnapshot, summary, baselineInventory, inventory, assessment);
     cleanupStaleVex(request, assessment, staleVexDigest);
-    if (request.files().trimJars()) {
-      final List<Path> generated =
-          MavenGeneratedOutputs.Paths.generatedOutputPaths(
-              request.project(),
-              request.files().sbom(),
-              request.files().baselineSbom(),
-              request.files().vex(),
-              hasVex(assessment));
-      MavenGeneratedOutputs.record(request.project(), generated);
-    }
+    final List<Path> generated =
+        MavenGeneratedOutputs.Paths.generatedOutputPaths(
+            request.project(),
+            request.files().sbom(),
+            request.files().baselineSbom(),
+            request.files().vex(),
+            hasVex(assessment));
+    MavenGeneratedOutputs.record(request.project(), generated);
     publishViewsAndPlan(request, plan);
     return assessment;
   }
 
-  private static List<ArtifactFileRef> captureBaselineInventory(final Request request)
-      throws IOException {
-    if (!request.files().trimJars()) {
-      return List.of();
+  private static List<ArtifactFileRef> captureBaselineInventory(
+      final ElisionAnalysisModel.ApplyPlan plan) throws IOException {
+    return MavenPreconditionArtifactInventory.captureOriginal(plan, false);
+  }
+
+  @SuppressWarnings("PMD.LawOfDemeter") // Maven Artifact exposes its input path through getFile().
+  private static List<Path> artifactPaths(
+      final Request request, final ElisionAnalysisModel.ApplyPlan plan) throws IOException {
+    final Set<Path> paths = new LinkedHashSet<>();
+    MavenPreconditionArtifactInventory.captureOriginal(plan, false)
+        .forEach(ref -> paths.add(ref.filePath()));
+    MavenPreconditionArtifactInventory.capture(plan, request.analysis(), false)
+        .forEach(ref -> paths.add(ref.filePath()));
+    for (final Artifact artifact : plan.directArtifacts()) {
+      final File artifactFile = artifact.getFile();
+      if (artifactFile != null) {
+        paths.add(artifactFile.toPath());
+      }
     }
-    return MavenSbomWriter.captureOriginalInventory(request.project());
+    return List.copyOf(paths);
   }
 
   private static MavenPreconditionInventory.Snapshot captureInventory(
@@ -117,7 +133,7 @@ final class MavenElisionOutputPublisher {
 
   private static Optional<String> staleVexDigest(
       final Request request, final MavenVulnerabilityAssessment.Result assessment) {
-    if (!request.files().trimJars() || hasVex(assessment)) {
+    if (hasVex(assessment)) {
       return Optional.empty();
     }
     return unchangedOwnedVexDigest(request, true);
@@ -128,7 +144,7 @@ final class MavenElisionOutputPublisher {
       final MavenVulnerabilityAssessment.Result assessment,
       final Optional<String> originalDigest)
       throws IOException {
-    if (!request.files().trimJars() || hasVex(assessment)) {
+    if (hasVex(assessment)) {
       return;
     }
     if (originalDigest.isPresent()) {
@@ -141,16 +157,15 @@ final class MavenElisionOutputPublisher {
     final List<Path> targets = new ArrayList<>();
     targets.add(files.classUsage().toPath());
     targets.add(summary);
-    if (files.trimJars()) {
-      targets.add(files.sbom().toPath());
-      targets.add(files.baselineSbom().toPath());
-      targets.add(files.vex().toPath());
-      targets.addAll(MavenSbomWriter.embeddedSbomPaths(request.project()));
-      targets.add(MavenGeneratedOutputs.Paths.manifestPath(request.project()));
-      final Path buildDir =
-          Path.of(request.project().getBuild().getDirectory()).toAbsolutePath().normalize();
-      targets.add(buildDir.resolve(AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME));
-    }
+    targets.add(files.sbom().toPath());
+    targets.add(files.baselineSbom().toPath());
+    targets.add(files.vex().toPath());
+    targets.addAll(MavenSbomWriter.embeddedSbomPaths(request.project()));
+    targets.add(MavenGeneratedOutputs.Paths.manifestPath(request.project()));
+    targets.add(
+        MavenGeneratedOutputs.Paths.outputFile(
+                null, request.project(), AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME)
+            .toPath());
     return targets;
   }
 
@@ -170,55 +185,51 @@ final class MavenElisionOutputPublisher {
         analysis.evidence().bytecodeScan(),
         null,
         reportSnapshot.exclusionReview());
-    if (request.files().trimJars()) {
-      final List<io.github.spockz.elider.model.VexAttestation> attestations =
-          assessment.attestations();
-      final Path sbom = request.files().sbom().toPath();
-      MavenSbomWriter.write(
-          request.project(), sbom, plan, analysis, attestations, inventory.artifactFiles());
-      MavenSbomWriter.writeBaseline(
-          request.project(), request.files().baselineSbom().toPath(), baselineInventory, analysis);
-      if (hasVex(assessment)) {
-        MavenSbomWriter.writeOpenVex(
-            request.project(),
-            request.files().vex().toPath(),
-            plan,
-            analysis,
-            attestations,
-            inventory.artifactFiles());
-      }
-      final List<Path> embeddedSboms = MavenSbomWriter.embeddedSbomPaths(request.project());
-      for (final Path embeddedSbom : embeddedSboms) {
-        MavenSbomWriter.writeEmbeddedSbom(sbom, embeddedSbom);
-      }
-      final Path advisoryModulesPath =
-          Path.of(request.project().getBuild().getDirectory())
-              .toAbsolutePath()
-              .normalize()
-              .resolve(AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME);
-      final List<Path> inputs = new ArrayList<>();
-      final List<Path> classPath = new ArrayList<>();
-      if (request.project().getBuild() != null
-          && request.project().getBuild().getOutputDirectory() != null) {
-        inputs.add(Path.of(request.project().getBuild().getOutputDirectory()));
-      }
-      SpringAotAssetPaths.resolveMainClasses(request.project()).ifPresent(inputs::add);
-      for (final ArtifactFileRef ref : inventory.artifactFiles()) {
-        if (ref.filePath().toString().endsWith(".jar")
-            || ref.filePath().toString().endsWith(".class")) {
-          classPath.add(ref.filePath());
-        }
-      }
-      final Set<String> recommendedModules =
-          new AdvisoryJdkModulesAnalyzer()
-              .analyze(
-                  inputs, classPath, analysis.trimResult().executionEnvironment().targetRelease());
-      final String formattedModules =
-          AdvisoryJdkModulesAnalyzer.formatModuleList(recommendedModules);
-      MavenGeneratedOutputs.writeAtomically(
-          advisoryModulesPath,
-          temporary -> java.nio.file.Files.writeString(temporary, formattedModules));
+    final List<io.github.spockz.elider.model.VexAttestation> attestations =
+        assessment.attestations();
+    final Path sbom = request.files().sbom().toPath();
+    MavenSbomWriter.write(
+        request.project(), sbom, plan, analysis, attestations, inventory.artifactFiles());
+    MavenSbomWriter.writeBaseline(
+        request.project(), request.files().baselineSbom().toPath(), baselineInventory, analysis);
+    if (hasVex(assessment)) {
+      MavenSbomWriter.writeOpenVex(
+          request.project(),
+          request.files().vex().toPath(),
+          plan,
+          analysis,
+          attestations,
+          inventory.artifactFiles());
     }
+    final List<Path> embeddedSboms = MavenSbomWriter.embeddedSbomPaths(request.project());
+    for (final Path embeddedSbom : embeddedSboms) {
+      MavenSbomWriter.writeEmbeddedSbom(sbom, embeddedSbom);
+    }
+    final List<Path> inputs = new ArrayList<>();
+    final List<Path> classPath = new ArrayList<>();
+    if (request.project().getBuild() != null
+        && request.project().getBuild().getOutputDirectory() != null) {
+      inputs.add(Path.of(request.project().getBuild().getOutputDirectory()));
+    }
+    SpringAotAssetPaths.resolveMainClasses(request.project()).ifPresent(inputs::add);
+    for (final ArtifactFileRef ref : inventory.artifactFiles()) {
+      if (ref.filePath().toString().endsWith(".jar")
+          || ref.filePath().toString().endsWith(".class")) {
+        classPath.add(ref.filePath());
+      }
+    }
+    final Path advisoryModulesPath =
+        MavenGeneratedOutputs.Paths.outputFile(
+                null, request.project(), AdvisoryJdkModulesAnalyzer.ADVISORY_MODULES_FILENAME)
+            .toPath();
+    final Set<String> recommendedModules =
+        new AdvisoryJdkModulesAnalyzer()
+            .analyze(
+                inputs, classPath, analysis.trimResult().executionEnvironment().targetRelease());
+    final String formattedModules = AdvisoryJdkModulesAnalyzer.formatModuleList(recommendedModules);
+    MavenGeneratedOutputs.writeAtomically(
+        advisoryModulesPath,
+        temporary -> java.nio.file.Files.writeString(temporary, formattedModules));
     MavenElisionReportWriter.write(summary, reportSnapshot);
   }
 

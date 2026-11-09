@@ -56,14 +56,15 @@ type commandResult struct {
 }
 
 var (
-	snapshotAt     = regexp.MustCompile(`(?m)^(\[INFO\] Snapshot: (?:analysis prediction|last successful elide run) at )[^\s]+`)
-	runtimeRelease = regexp.MustCompile(`(?m)^(\[INFO\] Elider runtime JDK release: )\d+$`)
-	buildTime      = regexp.MustCompile(`(?m)^(\[INFO\] Total time:)\s*.*$`)
-	finishedAt     = regexp.MustCompile(`(?m)^(\[INFO\] Finished at:)\s*.*$`)
-	cacheHitTime   = regexp.MustCompile(`maximum validated hit [0-9.]+ ms`)
-	processID      = regexp.MustCompile(`(?i)\b(pid|process id)(\s*[:=]\s*)[0-9]+`)
-	markerID       = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
-	safeArg        = regexp.MustCompile(`^[A-Za-z0-9_./:=,@%+${}-]+$`)
+	snapshotAt                = regexp.MustCompile(`(?m)^(\[INFO\] Snapshot: (?:analysis prediction|last successful elide run) at )[^\s]+`)
+	runtimeRelease            = regexp.MustCompile(`(?m)^(\[INFO\] Elider runtime JDK release: )\d+$`)
+	buildTime                 = regexp.MustCompile(`(?m)^(\[INFO\] Total time:)\s*.*$`)
+	finishedAt                = regexp.MustCompile(`(?m)^(\[INFO\] Finished at:)\s*.*$`)
+	cacheHitTime              = regexp.MustCompile(`maximum validated hit [0-9.]+ ms`)
+	processID                 = regexp.MustCompile(`(?i)\b(pid|process id)(\s*[:=]\s*)[0-9]+`)
+	pathBoundProofFingerprint = regexp.MustCompile(`(?m)^(\[INFO\]\s+Prerequisite proof evidence: final inventory )[0-9a-f]{64}$`)
+	markerID                  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	safeArg                   = regexp.MustCompile(`^[A-Za-z0-9_./:=,@%+${}-]+$`)
 )
 
 func main() {
@@ -636,6 +637,7 @@ func normalizeOutput(output, root, evidencePath string) []string {
 		line = finishedAt.ReplaceAllString(line, "${1} <TIMESTAMP>")
 		line = cacheHitTime.ReplaceAllString(line, "maximum validated hit <CACHE_HIT_TIME>")
 		line = processID.ReplaceAllString(line, "${1}${2}<PID>")
+		line = pathBoundProofFingerprint.ReplaceAllString(line, "${1}<PATH_BOUND_SHA256>")
 		line = strings.TrimRight(line, " \t")
 		result = append(result, line)
 	}

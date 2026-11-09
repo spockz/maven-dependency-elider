@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Test;
 
 /** Proves a pre-compile request cannot stand in for process-classes preparation. */
 final class EliderGoalOrderTest {
+  /** Goals used to test a lifecycle phase before dependency tree collection. */
+  private static final List<String> COMPILE_AND_TREE_GOALS = List.of("compile", "dependency:tree");
+
   /** Creates the test instance. */
   @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.UncommentedEmptyConstructor"})
   EliderGoalOrderTest() {}
@@ -19,7 +22,7 @@ final class EliderGoalOrderTest {
   void compileDoesNotSatisfyProcessClassesTreePreparation() {
     assertThat(
             EliderGoalOrder.hasPreparedLifecycleAfter(
-                List.of("compile", "dependency:tree"), -1, 1, "process-classes"))
+                COMPILE_AND_TREE_GOALS, -1, 1, "process-classes"))
         .isFalse();
   }
 
@@ -27,9 +30,14 @@ final class EliderGoalOrderTest {
   @DisplayName("ADR-0010/initialize preparation accepts a compile goal")
   void compileSatisfiesInitializeTreePreparation() {
     assertThat(
-            EliderGoalOrder.hasPreparedLifecycleAfter(
-                List.of("compile", "dependency:tree"), -1, 1, "initialize"))
+            EliderGoalOrder.hasPreparedLifecycleAfter(COMPILE_AND_TREE_GOALS, -1, 1, "initialize"))
         .isTrue();
+  }
+
+  @Test
+  @DisplayName("ADR-0010/omitted elide phase uses process-classes tree preparation")
+  void compileDoesNotSatisfyOmittedPhaseTreePreparation() {
+    assertThat(EliderGoalOrder.hasPreparedLifecycleAfter(COMPILE_AND_TREE_GOALS, -1, 1)).isFalse();
   }
 
   @Test

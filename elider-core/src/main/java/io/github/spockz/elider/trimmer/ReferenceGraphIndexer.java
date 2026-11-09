@@ -11,10 +11,10 @@ import java.util.function.Function;
 import proguard.classfile.ClassPool;
 import proguard.classfile.Clazz;
 import proguard.classfile.util.InvalidReferenceVisitor;
-import proguard.classfile.visitor.ClassVisitor;
 
-/** Initializes reference roles and freezes adjacency and unresolved-link evidence. */
+/** WHY: One indexer owns candidate precedence, typed edges, and graph diagnostics. */
 @SuppressWarnings({
+  "PMD.TooManyMethods",
   "PMD.UseConcurrentHashMap",
   "PMD.CompareObjectsWithEquals",
   "PMD.CommentDefaultAccessModifier"
@@ -106,25 +106,45 @@ final class ReferenceGraphIndexer {
       final Map<String, RuntimeException> edgeFailures) {
     final Map<String, Set<String>> edges = new HashMap<>();
     final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges = new HashMap<>();
+    final Map<String, Set<String>> unrecognizedAttributes = new HashMap<>();
     classBytes.forEach(
         (name, bytes) -> {
           try {
-            typedEdges.put(
-                name,
-                ClassReferenceEvidence.references(name, bytes, programPool.getClass(name) != null));
+            final ClassReferenceEvidence.Result result =
+                ClassReferenceEvidence.references(name, bytes, programPool.getClass(name) != null);
+            typedEdges.put(name, result.references());
+            if (!result.unrecognizedAttributes().isEmpty()) {
+              unrecognizedAttributes.put(name, result.unrecognizedAttributes());
+            }
           } catch (final RuntimeException exception) {
             edgeFailures.put(name, classificationFailure(name, exception));
           }
         });
     final EdgeCollector collector = new EdgeCollector(programPool, libraryPool, platformClasses);
+    final Map<String, Set<String>> classConstantTargets = new HashMap<>();
+    final Map<String, Set<String>> nonPoolTargets = new HashMap<>();
     for (final Clazz clazz : programPool.classes()) {
       collectEdges(
-          clazz, classLookup, signaturePolymorphicResolver, collector, edges, edgeFailures);
+          clazz,
+          classLookup,
+          signaturePolymorphicResolver,
+          collector,
+          edges,
+          classConstantTargets,
+          nonPoolTargets,
+          edgeFailures);
     }
     for (final Clazz clazz : libraryPool.classes()) {
       if (!platformClasses.contains(clazz.getName())) {
         collectEdges(
-            clazz, classLookup, signaturePolymorphicResolver, collector, edges, edgeFailures);
+            clazz,
+            classLookup,
+            signaturePolymorphicResolver,
+            collector,
+            edges,
+            classConstantTargets,
+            nonPoolTargets,
+            edgeFailures);
       }
     }
     recordMissingTypedTargets(
@@ -132,13 +152,19 @@ final class ReferenceGraphIndexer {
     typedEdges.forEach(
         (source, targets) ->
             edges.computeIfAbsent(source, ignored -> new TreeSet<>()).addAll(targets.keySet()));
-    final Map<String, Set<String>> unclassifiedEdges = unclassifiedEdges(edges, typedEdges);
+    final Map<String, Set<String>> unusedConstantPoolEdges =
+        unusedConstantPoolEdges(
+            classConstantTargets, nonPoolTargets, typedEdges, unrecognizedAttributes);
+    final Map<String, Set<String>> unclassifiedEdges =
+        unclassifiedEdges(edges, typedEdges, unusedConstantPoolEdges);
     return new ReferenceGraph(
         classNames(programPool),
         classNames(libraryPool, platformClasses),
         immutableSetMap(edges),
         Map.copyOf(typedEdges),
         immutableSetMap(unclassifiedEdges),
+        immutableSetMap(unusedConstantPoolEdges),
+        immutableSetMap(unrecognizedAttributes),
         immutableSetMap(unresolvedPrograms),
         immutableSetMap(unresolvedLibraries),
         Map.copyOf(edgeFailures),
@@ -159,12 +185,18 @@ final class ReferenceGraphIndexer {
               (target, kinds) -> {
                 if (classLookup.apply(target) == null) {
                   final String evidence =
-                      kinds.contains(ReferenceGraph.EdgeKind.STRUCTURAL) ? "structural" : "body";
+                      kinds.contains(ReferenceGraph.EdgeKind.STRUCTURAL)
+                          ? "structural"
+                          : kinds.contains(ReferenceGraph.EdgeKind.BODY)
+                              ? "body"
+                              : "debug metadata";
                   unresolved
                       .computeIfAbsent(source, unused -> new LinkedHashSet<>())
                       .add(
                           new ReferenceGraph.UnresolvedLink(
-                              target, source + " -> unresolved " + evidence + " class " + target));
+                              target,
+                              ReferenceGraph.UnresolvedKind.MISSING_CLASS,
+                              source + " -> unresolved " + evidence + " class " + target));
                 }
               });
         });
@@ -172,17 +204,40 @@ final class ReferenceGraphIndexer {
 
   private static Map<String, Set<String>> unclassifiedEdges(
       final Map<String, Set<String>> completeEdges,
-      final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges) {
+      final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges,
+      final Map<String, Set<String>> unusedConstantPoolEdges) {
     final Map<String, Set<String>> unclassifiedBySource = new HashMap<>();
     completeEdges.forEach(
         (source, targets) -> {
           final Set<String> unclassified = new TreeSet<>(targets);
           unclassified.removeAll(typedEdges.getOrDefault(source, Map.of()).keySet());
+          unclassified.removeAll(unusedConstantPoolEdges.getOrDefault(source, Set.of()));
           if (!unclassified.isEmpty()) {
             unclassifiedBySource.put(source, unclassified);
           }
         });
     return unclassifiedBySource;
+  }
+
+  private static Map<String, Set<String>> unusedConstantPoolEdges(
+      final Map<String, Set<String>> classConstantTargets,
+      final Map<String, Set<String>> nonPoolTargets,
+      final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges,
+      final Map<String, Set<String>> unrecognizedAttributes) {
+    final Map<String, Set<String>> unusedBySource = new HashMap<>();
+    classConstantTargets.forEach(
+        (source, targets) -> {
+          if (unrecognizedAttributes.containsKey(source)) {
+            return;
+          }
+          final Set<String> unused = new TreeSet<>(targets);
+          unused.removeAll(nonPoolTargets.getOrDefault(source, Set.of()));
+          unused.removeAll(typedEdges.getOrDefault(source, Map.of()).keySet());
+          if (!unused.isEmpty()) {
+            unusedBySource.put(source, unused);
+          }
+        });
+    return unusedBySource;
   }
 
   @SuppressWarnings("PMD.AvoidCatchingGenericException")
@@ -192,9 +247,14 @@ final class ReferenceGraphIndexer {
       final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver,
       final EdgeCollector edgeCollector,
       final Map<String, Set<String>> edges,
+      final Map<String, Set<String>> classConstantTargets,
+      final Map<String, Set<String>> nonPoolTargets,
       final Map<String, RuntimeException> edgeFailures) {
     final Set<String> targets = new LinkedHashSet<>();
-    edgeCollector.collectInto(targets);
+    edgeCollector.collectInto(
+        targets,
+        classConstantTargets.computeIfAbsent(clazz.getName(), unused -> new TreeSet<>()),
+        nonPoolTargets.computeIfAbsent(clazz.getName(), unused -> new TreeSet<>()));
     try {
       clazz.accept(ProGuardReferenceVisitors.complete(edgeCollector, classLookup));
       signaturePolymorphicResolver.enqueueDescriptorTypes(clazz, edgeCollector);
@@ -232,7 +292,8 @@ final class ReferenceGraphIndexer {
   }
 
   /** Collects candidate and sibling nodes, excluding platform classes. */
-  private static final class EdgeCollector implements ClassVisitor {
+  private static final class EdgeCollector
+      implements ProGuardReferenceVisitors.OriginTrackingClassVisitor {
     /** Candidate pool establishes ProgramClass identity precedence. */
     private final ClassPool programPool;
 
@@ -245,6 +306,15 @@ final class ReferenceGraphIndexer {
     /** Target set currently receiving ProGuard visitor callbacks. */
     private Set<String> currentEdges = Set.of();
 
+    /** WHY: Preserves constant-pool origins for the current visitor callback target. */
+    private Set<String> currentClassConstants = Set.of();
+
+    /** WHY: Separates references outside the indexed candidate and sibling pools. */
+    private Set<String> currentNonPoolTargets = Set.of();
+
+    /** WHY: Restores nested ProGuard callback roles after each scoped visitor call. */
+    private int currentOriginMask;
+
     private EdgeCollector(
         final ClassPool programPool,
         final ClassPool libraryPool,
@@ -254,8 +324,40 @@ final class ReferenceGraphIndexer {
       this.platformLibraryClasses = platformLibraryClasses;
     }
 
-    private void collectInto(final Set<String> edges) {
+    private void collectInto(
+        final Set<String> edges,
+        final Set<String> classConstantTargets,
+        final Set<String> nonPoolTargets) {
       currentEdges = edges;
+      currentClassConstants = classConstantTargets;
+      currentNonPoolTargets = nonPoolTargets;
+    }
+
+    @Override
+    @SuppressWarnings("PMD.UnusedAssignment")
+    public void withOrigin(
+        final ProGuardReferenceVisitors.EdgeOrigin origin, final Runnable action) {
+      final int previous = currentOriginMask;
+      currentOriginMask |= origin.mask;
+      try {
+        action.run();
+      } finally {
+        currentOriginMask = previous;
+      }
+    }
+
+    @Override
+    public void recordClassConstant(final String name) {
+      final org.objectweb.asm.Type type =
+          name.startsWith("[") ? org.objectweb.asm.Type.getType(name) : null;
+      if (type == null) {
+        currentClassConstants.add(name);
+      } else {
+        final org.objectweb.asm.Type element = type.getElementType();
+        if (element.getSort() == org.objectweb.asm.Type.OBJECT) {
+          currentClassConstants.add(element.getInternalName());
+        }
+      }
     }
 
     @Override
@@ -264,6 +366,12 @@ final class ReferenceGraphIndexer {
           || (libraryPool.getClass(clazz.getName()) == clazz
               && !platformLibraryClasses.contains(clazz.getName()))) {
         currentEdges.add(clazz.getName());
+        if ((currentOriginMask & ProGuardReferenceVisitors.EdgeOrigin.CLASS_CONSTANT.mask) != 0) {
+          currentClassConstants.add(clazz.getName());
+        }
+        if ((currentOriginMask & ProGuardReferenceVisitors.EdgeOrigin.OTHER.mask) != 0) {
+          currentNonPoolTargets.add(clazz.getName());
+        }
       }
     }
   }

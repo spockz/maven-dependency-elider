@@ -29,6 +29,9 @@ class PreparedAnalysisStateTest {
   /** Names a node excluded by the query root. */
   private static final String DEAD_CLASS = "fixture/Dead";
 
+  /** A class exposed by an over-approximated edge and by typed structural closure. */
+  private static final String TRANSITIVE_CLASS = "fixture/Transitive";
+
   /** Fails exactly the initial graph build before allowing deterministic retry. */
   private static final int FIRST_BUILD = 1;
 
@@ -86,6 +89,8 @@ class PreparedAnalysisStateTest {
             Map.of(),
             Map.of(),
             Map.of(),
+            Map.of(),
+            Map.of(),
             2);
 
     final DependencyJarTrimmer.TrimAnalysis analysis =
@@ -107,6 +112,8 @@ class PreparedAnalysisStateTest {
             Map.of(),
             Map.of(),
             Map.of(),
+            Map.of(),
+            Map.of(),
             2);
 
     assertThatThrownBy(
@@ -118,6 +125,67 @@ class PreparedAnalysisStateTest {
   }
 
   @Test
+  void closedWorldAcceptsUnclassifiedEdgeWhenTypedClosureRetainsItsTarget() throws Exception {
+    final ReferenceGraph graph =
+        new ReferenceGraph(
+            Set.of(ROOT_CLASS, LINKED_CLASS, TRANSITIVE_CLASS),
+            Set.of(),
+            Map.of(
+                ROOT_CLASS, Set.of(LINKED_CLASS, TRANSITIVE_CLASS),
+                LINKED_CLASS, Set.of(TRANSITIVE_CLASS)),
+            Map.of(
+                ROOT_CLASS,
+                Map.of(LINKED_CLASS, Set.of(ReferenceGraph.EdgeKind.STRUCTURAL)),
+                LINKED_CLASS,
+                Map.of(TRANSITIVE_CLASS, Set.of(ReferenceGraph.EdgeKind.STRUCTURAL))),
+            Map.of(ROOT_CLASS, Set.of(TRANSITIVE_CLASS)),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            3);
+
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        state(() -> graph, Set.of(ROOT_CLASS, LINKED_CLASS, TRANSITIVE_CLASS))
+            .analyze(List.of(ROOT_NAME), ClosureQueryPolicy.closedWorld(Set.of(ROOT_NAME)));
+
+    assertThat(analysis.retainedClasses())
+        .containsExactlyInAnyOrder(ROOT_CLASS, LINKED_CLASS, TRANSITIVE_CLASS);
+  }
+
+  @Test
+  void unusedClassConstantDoesNotSuppressMissingMemberEvidence() {
+    final String missingMember = ROOT_CLASS + " -> member " + LINKED_CLASS + ".call()V";
+    final ReferenceGraph graph =
+        new ReferenceGraph(
+            Set.of(ROOT_CLASS),
+            Set.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(ROOT_CLASS, Set.of(LINKED_CLASS)),
+            Map.of(),
+            Map.of(
+                ROOT_CLASS,
+                Set.of(
+                    new ReferenceGraph.UnresolvedLink(
+                        LINKED_CLASS,
+                        ReferenceGraph.UnresolvedKind.MISSING_MEMBER,
+                        missingMember))),
+            Map.of(),
+            Map.of(),
+            1);
+
+    assertThatThrownBy(
+            () ->
+                state(() -> graph)
+                    .analyze(List.of(ROOT_NAME), ClosureQueryPolicy.closedWorld(Set.of(ROOT_NAME))))
+        .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
+        .hasMessageContaining(missingMember);
+  }
+
+  @Test
   void closedWorldQueryDoesNotFailForUnclassifiedEdgeFromDeadSource() throws Exception {
     final ReferenceGraph graph =
         new ReferenceGraph(
@@ -126,6 +194,8 @@ class PreparedAnalysisStateTest {
             Map.of(DEAD_CLASS, Set.of(LINKED_CLASS)),
             Map.of(DEAD_CLASS, Map.of()),
             Map.of(DEAD_CLASS, Set.of(LINKED_CLASS)),
+            Map.of(),
+            Map.of(),
             Map.of(),
             Map.of(),
             Map.of(),
@@ -152,6 +222,8 @@ class PreparedAnalysisStateTest {
     return new ReferenceGraph(
         Set.of(ROOT_CLASS),
         Set.of(),
+        Map.of(),
+        Map.of(),
         Map.of(),
         Map.of(),
         Map.of(),

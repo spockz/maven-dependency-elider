@@ -94,3 +94,15 @@ We establish **Mandatory Multi-JDK Portability (JDK 21+)**, **Compiler Decouplin
 ### Negative / Lost Capabilities
 
 * **Loss of Automated Live Source-to-Binary Reproduction**: The tool no longer attempts to automatically validate unmapped CVE v5 `programFiles` / `programRoutines` source claims against binary bytecode without a typed advisory or explicit POM mapping. Such claims remain descriptive review leads in the audit report.
+
+## 5. Dated Amendment: 2026-11-08 Closed-World Liveness
+
+The work package adds false-by-default `elide.closedWorld` to the report-driven analysis policy.
+When explicitly enabled, usable runtime evidence defines the admitted workload classes. The shared
+cross-artifact closure may omit body-level reference edges whose targets are outside that set, but
+it continues to traverse structural references required by class hierarchy and member linkage.
+Default mode retains the complete supported static closure. Missing, malformed, unreadable or
+irrelevant evidence cannot activate the closed-world policy. Evidence kind and normalized allowed
+classes participate in policy/cache identity so conservative and workload-scoped results cannot
+be interchanged. This mode is a user-supplied workload boundary; it does not claim that every JVM
+will avoid resolving types from unexecuted bytecode bodies.

@@ -33,10 +33,18 @@ import org.apache.maven.model.PluginExecution;
 import org.apache.maven.model.PluginManagement;
 import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.logging.SystemStreamLog;
+import org.apache.maven.project.DependencyResolutionResult;
 import org.apache.maven.project.MavenProject;
+import org.apache.maven.project.ProjectDependenciesResolver;
 import org.apache.maven.toolchain.ToolchainManager;
 import org.codehaus.plexus.PlexusContainer;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
+import org.eclipse.aether.DefaultRepositorySystemSession;
+import org.eclipse.aether.collection.DependencyGraphTransformationContext;
+import org.eclipse.aether.collection.DependencyGraphTransformer;
+import org.eclipse.aether.graph.DefaultDependencyNode;
+import org.eclipse.aether.graph.Dependency;
+import org.eclipse.aether.graph.DependencyNode;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -51,6 +59,8 @@ import org.objectweb.asm.Opcodes;
   "PMD.CouplingBetweenObjects",
   "PMD.ExcessiveImports",
   "PMD.GodClass",
+  "PMD.AvoidDuplicateLiterals",
+  "PMD.LawOfDemeter",
   "PMD.TooManyMethods",
   "PMD.UnitTestContainsTooManyAsserts",
   "checkstyle:AbbreviationAsWordInName"
@@ -109,6 +119,76 @@ final class MavenOutputPublicationTest {
                           "org.example:prerequisite", "org.example.prerequisite.EntryPoint"));
             });
     assertThat(report.trimmedArtifacts()).isEmpty();
+  }
+
+  @Test
+  void trimOffStillPublishesVerifiedReportsAndOwnershipWithoutReplacingRetainedJars()
+      throws Exception {
+    final Fixture fixture = fixture("verified-trim-off", false, false);
+    final Artifact droppedPrerequisite = addDroppedPrerequisite(fixture);
+    configure(fixture, true);
+    set(fixture.mojo(), "trimJars", false);
+    set(fixture.mojo(), "closedWorld", true);
+    final byte[] affectedBytes = Files.readAllBytes(fixture.affectedJar());
+    final Path originalAffectedFile = artifactFile(fixture.affected());
+    fixture.mojo().execute();
+
+    final Path ownership = MavenGeneratedOutputs.Paths.manifestPath(fixture.project());
+    assertAll(
+        "trim-off still publishes verified output from the final Maven artifact view",
+        () -> assertThat(fixture.classUsage()).isRegularFile(),
+        () -> assertThat(fixture.summary()).isRegularFile(),
+        () -> assertThat(fixture.sbom()).isRegularFile(),
+        () -> assertThat(fixture.baselineSbom()).isRegularFile(),
+        () -> assertThat(fixture.vex()).isRegularFile(),
+        () -> assertThat(ownership).isRegularFile(),
+        () ->
+            assertThat(JSON.readTree(fixture.sbom().toFile()).findValuesAsText("name"))
+                .doesNotContain("prerequisite"),
+        () ->
+            assertThat(JSON.readTree(fixture.baselineSbom().toFile()).findValuesAsText("name"))
+                .contains("prerequisite"),
+        () -> assertThat(fixture.project().getArtifacts()).doesNotContain(droppedPrerequisite),
+        () -> assertThat(artifactFile(fixture.affected())).isEqualTo(originalAffectedFile),
+        () -> assertThat(Files.readAllBytes(fixture.affectedJar())).containsExactly(affectedBytes));
+  }
+
+  @Test
+  void trimOffSecondExecutionDoesNotReuseFirstExecutionTrimRecords() throws Exception {
+    final Fixture fixture = fixture("trim-off-no-prior-trim-state", false, false);
+    configure(fixture, false);
+    set(fixture.mojo(), "closedWorld", true);
+    set(fixture.mojo(), "trimSkipArtifacts", List.of());
+    writeJar(fixture.affectedJar(), "sample/Keep", "sample/Unused");
+    final String inputDigest = ArtifactFileDigest.sha256(fixture.affectedJar());
+
+    fixture.mojo().execute();
+
+    final MavenElisionReportSnapshot first = MavenElisionReportWriter.read(fixture.summary());
+    final Path firstOutput = fixture.affected().getFile().toPath();
+    final String firstOutputDigest = ArtifactFileDigest.sha256(firstOutput);
+    assertThat(first.trimmedArtifacts()).isNotEmpty();
+    assertThat(firstOutput).isNotEqualTo(fixture.affectedJar());
+    assertThat(firstOutputDigest).isNotEqualTo(inputDigest);
+    set(fixture.mojo(), "trimJars", false);
+
+    fixture.mojo().execute();
+
+    final MavenElisionReportSnapshot second = MavenElisionReportWriter.read(fixture.summary());
+    assertAll(
+        "second output reflects its current no-trim analysis rather than earlier staged records",
+        () -> assertThat(second.trimmedArtifacts()).isEmpty(),
+        () ->
+            assertThat(second.genericFindings())
+                .singleElement()
+                .satisfies(
+                    finding -> {
+                      assertThat(finding.outcome())
+                          .isEqualTo(GenericFindingAssessment.Outcome.NO_PROOF);
+                      assertThat(finding.prerequisiteProof()).isEmpty();
+                    }),
+        () -> assertThat(fixture.affected().getFile().toPath()).isEqualTo(firstOutput),
+        () -> assertThat(ArtifactFileDigest.sha256(firstOutput)).isEqualTo(firstOutputDigest));
   }
 
   @Test
@@ -177,6 +257,7 @@ final class MavenOutputPublicationTest {
       throws Exception {
     final Fixture retainedCoordinate = fixture("retained-coordinate", true, false);
     configure(retainedCoordinate, true);
+    set(retainedCoordinate.mojo(), "trimJars", false);
     retainedCoordinate.mojo().execute();
     assertThat(retainedCoordinate.vex()).doesNotExist();
     assertThat(prerequisiteFindings(MavenElisionReportWriter.read(retainedCoordinate.summary())))
@@ -184,10 +265,147 @@ final class MavenOutputPublicationTest {
 
     final Fixture compiledProvider = fixture("compiled-provider", false, true);
     configure(compiledProvider, true);
+    set(compiledProvider.mojo(), "trimJars", false);
     compiledProvider.mojo().execute();
     assertThat(compiledProvider.vex()).doesNotExist();
     assertThat(prerequisiteFindings(MavenElisionReportWriter.read(compiledProvider.summary())))
         .isEmpty();
+  }
+
+  @Test
+  void trimOffAlternateDependencyAndResourceProvidersBlockPhysicalProof() throws Exception {
+    assertAll(
+        "alternate dependency and application resource providers remain physical blockers",
+        () ->
+            assertTrimOffDoesNotPublishProofForAlternateDependency(
+                fixture("trim-off-alternate-provider", false, false)),
+        () ->
+            assertTrimOffDoesNotPublishProofForApplicationResource(
+                fixture("trim-off-resource-provider", false, false)));
+  }
+
+  private void assertTrimOffDoesNotPublishProofForAlternateDependency(final Fixture fixture)
+      throws IOException, org.apache.maven.plugin.MojoFailureException {
+    configure(fixture, true);
+    set(fixture.mojo(), "trimJars", false);
+    final Path alternateJar = fixture.basedir().resolve("alternate-provider.jar");
+    writeJar(alternateJar, "org/example/prerequisite/EntryPoint", "sample/AlternateKeep");
+    addArtifact(fixture, runtimeArtifact("alternate-provider", alternateJar));
+    Files.writeString(fixture.trace(), "sample.Keep\nsample.AlternateKeep\n");
+
+    fixture.mojo().execute();
+
+    assertThat(fixture.vex()).doesNotExist();
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(fixture.summary()))).isEmpty();
+  }
+
+  private void assertTrimOffDoesNotPublishProofForApplicationResource(final Fixture fixture)
+      throws IOException, org.apache.maven.plugin.MojoFailureException {
+    configure(fixture, true);
+    set(fixture.mojo(), "trimJars", false);
+    final Path classResource =
+        fixture.resourceRoot().resolve("org/example/prerequisite/EntryPoint.class");
+    Files.createDirectories(classResource.getParent());
+    Files.write(classResource, classBytes("org/example/prerequisite/EntryPoint"));
+
+    fixture.mojo().execute();
+
+    assertThat(fixture.vex()).doesNotExist();
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(fixture.summary()))).isEmpty();
+  }
+
+  private static void addArtifact(final Fixture fixture, final Artifact artifact) {
+    final Set<Artifact> artifacts = new LinkedHashSet<>(fixture.project().getArtifacts());
+    artifacts.add(artifact);
+    fixture.project().setArtifacts(artifacts);
+    fixture.project().setDependencyArtifacts(new LinkedHashSet<>(artifacts));
+    capturePlannerGraph(fixture.project(), fixture.session().getRepositorySession());
+  }
+
+  @Test
+  void trimOffCleansOnlyUnchangedOwnedStaleVexAndWarnsForModifiedOrUnownedFiles() throws Exception {
+    final Fixture owned = fixture("trim-off-owned-stale-vex", false, false);
+    configure(owned, false);
+    set(owned.mojo(), "trimJars", false);
+    writeVex(owned.vex(), PREVIOUS_GENERATED_OPENVEX);
+    MavenGeneratedOutputs.record(owned.project(), List.of(owned.vex()));
+    owned.mojo().execute();
+
+    final JsonNode ownership =
+        JSON.readTree(MavenGeneratedOutputs.Paths.manifestPath(owned.project()).toFile());
+
+    final Fixture modified = fixture("trim-off-modified-stale-vex", false, false);
+    configure(modified, false);
+    set(modified.mojo(), "trimJars", false);
+    writeVex(modified.vex(), PREVIOUS_GENERATED_OPENVEX);
+    MavenGeneratedOutputs.record(modified.project(), List.of(modified.vex()));
+    writeVex(modified.vex(), "user modified OpenVEX");
+    final RecordingMavenLog modifiedLog = new RecordingMavenLog();
+    modified.mojo().setLog(modifiedLog);
+    modified.mojo().execute();
+
+    final Fixture unowned = fixture("trim-off-unowned-stale-vex", false, false);
+    configure(unowned, false);
+    set(unowned.mojo(), "trimJars", false);
+    writeVex(unowned.vex(), "user-owned OpenVEX");
+    final RecordingMavenLog unownedLog = new RecordingMavenLog();
+    unowned.mojo().setLog(unownedLog);
+    unowned.mojo().execute();
+
+    assertAll(
+        "trim-off applies the same ownership-aware stale OpenVEX policy",
+        () -> assertThat(owned.vex()).doesNotExist(),
+        () ->
+            assertThat(ownership.path(OUTPUTS_FIELD).findValuesAsText("path"))
+                .doesNotContain(owned.vex().toAbsolutePath().normalize().toString()),
+        () -> assertThat(modified.vex()).hasContent("user modified OpenVEX"),
+        () ->
+            assertThat(modifiedLog.warnings())
+                .anyMatch(message -> message.contains("Preserving OpenVEX output")),
+        () -> assertThat(unowned.vex()).hasContent("user-owned OpenVEX"),
+        () ->
+            assertThat(unownedLog.warnings())
+                .anyMatch(message -> message.contains("Preserving OpenVEX output")));
+  }
+
+  @Test
+  void trimOffRejectsOutputCollisionsWithOriginalArchivesBeforeWritingReports() throws Exception {
+    final Fixture fixture = fixture("trim-off-output-archive-collision", false, false);
+    configure(fixture, true);
+    set(fixture.mojo(), "trimJars", false);
+    set(fixture.mojo(), "sbomFile", fixture.affectedJar().toFile());
+    final byte[] archiveBytes = Files.readAllBytes(fixture.affectedJar());
+    Files.writeString(fixture.classUsage(), "prior class usage");
+    Files.writeString(fixture.summary(), "prior summary");
+
+    assertThatThrownBy(fixture.mojo()::execute)
+        .isInstanceOf(org.apache.maven.plugin.MojoFailureException.class)
+        .hasMessageContaining("collides with an artifact file");
+
+    assertAll(
+        "invalid output paths are rejected before report or archive writes",
+        () -> assertThat(fixture.classUsage()).hasContent("prior class usage"),
+        () -> assertThat(fixture.summary()).hasContent("prior summary"),
+        () -> assertThat(Files.readAllBytes(fixture.affectedJar())).containsExactly(archiveBytes));
+  }
+
+  @Test
+  void trimOffRejectsOutputCollisionsBeforeWritingReports() throws Exception {
+    final Fixture fixture = fixture("trim-off-output-output-collision", false, false);
+    configure(fixture, false);
+    set(fixture.mojo(), "trimJars", false);
+    set(fixture.mojo(), "sbomFile", fixture.summary().toFile());
+    Files.writeString(fixture.classUsage(), "prior class usage");
+    Files.writeString(fixture.summary(), "prior summary");
+
+    assertThatThrownBy(fixture.mojo()::execute)
+        .isInstanceOf(org.apache.maven.plugin.MojoFailureException.class)
+        .hasMessageContaining("Duplicate output target path");
+
+    assertAll(
+        "output collisions leave existing reports untouched",
+        () -> assertThat(fixture.classUsage()).hasContent("prior class usage"),
+        () -> assertThat(fixture.summary()).hasContent("prior summary"));
   }
 
   @Test
@@ -200,6 +418,35 @@ final class MavenOutputPublicationTest {
 
     assertThat(fixture.vex()).doesNotExist();
     assertThat(prerequisiteFindings(MavenElisionReportWriter.read(fixture.summary()))).isEmpty();
+  }
+
+  @Test
+  void trimOffPublishesReportsButSuppressesVexForOptOutAndIncompleteInventory() throws Exception {
+    final Fixture optedOut = fixture("trim-off-proof-opt-out", false, false);
+    configure(optedOut, false);
+    set(optedOut.mojo(), "trimJars", false);
+    optedOut.mojo().execute();
+
+    final Fixture incomplete = fixture("trim-off-incomplete-proof", false, false);
+    configure(incomplete, true);
+    set(incomplete.mojo(), "trimJars", false);
+    addUnknownGenerator(incomplete, "process-classes");
+    incomplete.mojo().execute();
+
+    assertAll(
+        "trim-off report generation does not relax physical proof requirements",
+        () -> assertThat(optedOut.summary()).isRegularFile(),
+        () -> assertThat(optedOut.sbom()).isRegularFile(),
+        () -> assertThat(optedOut.vex()).doesNotExist(),
+        () ->
+            assertThat(prerequisiteFindings(MavenElisionReportWriter.read(optedOut.summary())))
+                .isEmpty(),
+        () -> assertThat(incomplete.summary()).isRegularFile(),
+        () -> assertThat(incomplete.sbom()).isRegularFile(),
+        () -> assertThat(incomplete.vex()).doesNotExist(),
+        () ->
+            assertThat(prerequisiteFindings(MavenElisionReportWriter.read(incomplete.summary())))
+                .isEmpty());
   }
 
   @Test
@@ -643,6 +890,14 @@ final class MavenOutputPublicationTest {
     return artifact;
   }
 
+  private Artifact addDroppedPrerequisite(final Fixture fixture) throws IOException {
+    final Path jar = fixture.basedir().resolve("prerequisite.jar");
+    writeJar(jar, "org/example/prerequisite/EntryPoint", null);
+    final Artifact prerequisite = runtimeArtifact("prerequisite", jar);
+    addArtifact(fixture, prerequisite);
+    return prerequisite;
+  }
+
   private static void addUnknownGenerator(final Fixture fixture, final String phase) {
     final Plugin generator = new Plugin();
     generator.setGroupId("com.example");
@@ -658,9 +913,54 @@ final class MavenOutputPublicationTest {
   private static MavenSession newSession(final MavenProject project) {
     final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
     request.setGoals(List.of("clean", "verify"));
-    final MavenSession session = new MavenSession(testContainer(), request, null, project);
+    request.setBaseDirectory(project.getBasedir());
+    final DefaultRepositorySystemSession baseSession = new DefaultRepositorySystemSession();
+    final org.eclipse.aether.RepositorySystemSession capturedSession =
+        new EliderMediatedGraphCaptureDecorator().decorate(project, baseSession);
+    baseSession
+        .getData()
+        .set(
+            ResolverArtifactPlanPublisher.SESSION_DATA_KEY,
+            ResolverArtifactPlanStore.empty()
+                .withPlan(EliderMediatedGraphCaptureDecoratorTestSupport.emptyPlan(project))
+                .toPayload());
+    capturePlannerGraph(project, capturedSession);
+    final MavenSession session = new MavenSession(testContainer(), capturedSession, request, null);
+    session.setCurrentProject(project);
     session.getUserProperties().setProperty("skipTests", "true");
     return session;
+  }
+
+  private static void capturePlannerGraph(
+      final MavenProject project,
+      final org.eclipse.aether.RepositorySystemSession repositorySession) {
+    final DependencyNode root =
+        new DefaultDependencyNode(
+            new Dependency(
+                new org.eclipse.aether.artifact.DefaultArtifact(
+                    project.getGroupId(), project.getArtifactId(), "", "pom", project.getVersion()),
+                "",
+                false));
+    root.setChildren(
+        project.getArtifacts().stream()
+            .map(artifact -> publicationDependency(project, artifact.getArtifactId()))
+            .map(DefaultDependencyNode::new)
+            .map(node -> (DependencyNode) node)
+            .toList());
+    try {
+      repositorySession
+          .getDependencyGraphTransformer()
+          .transformGraph(
+              root,
+              (DependencyGraphTransformationContext)
+                  Proxy.newProxyInstance(
+                      Thread.currentThread().getContextClassLoader(),
+                      new Class<?>[] {DependencyGraphTransformationContext.class},
+                      (proxy, method, arguments) ->
+                          "getSession".equals(method.getName()) ? repositorySession : null));
+    } catch (final org.eclipse.aether.RepositoryException exception) {
+      throw new IllegalStateException("Planner graph capture failed", exception);
+    }
   }
 
   private static Plugin surefirePlugin() {
@@ -674,7 +974,77 @@ final class MavenOutputPublicationTest {
   private static ElideMojo newMojo(final MavenSession session) {
     final ElideMojo mojo = new ElideMojo();
     set(mojo, "session", session);
+    set(mojo, "projectDependenciesResolver", publicationResolver(session.getCurrentProject()));
     return mojo;
+  }
+
+  private static ProjectDependenciesResolver publicationResolver(final MavenProject project) {
+    return resolutionRequest -> {
+      final org.eclipse.aether.RepositorySystemSession repositorySession =
+          resolutionRequest.getRepositorySession();
+      final List<Dependency> dependencies =
+          project.getArtifacts().stream()
+              .map(artifact -> publicationDependency(project, artifact.getArtifactId()))
+              .toList();
+      final DependencyNode root =
+          new DefaultDependencyNode(
+              new Dependency(
+                  new org.eclipse.aether.artifact.DefaultArtifact(
+                      "org.example", "consumer", "", "pom", "1.0"),
+                  "",
+                  false));
+      root.setChildren(
+          dependencies.stream().<DependencyNode>map(DefaultDependencyNode::new).toList());
+      final DependencyGraphTransformer transformer =
+          repositorySession.getDependencyGraphTransformer();
+      final DependencyNode graph;
+      try {
+        graph =
+            transformer.transformGraph(
+                root,
+                (DependencyGraphTransformationContext)
+                    Proxy.newProxyInstance(
+                        Thread.currentThread().getContextClassLoader(),
+                        new Class<?>[] {DependencyGraphTransformationContext.class},
+                        (proxy, method, arguments) ->
+                            "getSession".equals(method.getName()) ? repositorySession : null));
+      } catch (final org.eclipse.aether.RepositoryException exception) {
+        throw new IllegalStateException("Publication graph capture failed", exception);
+      }
+      return (DependencyResolutionResult)
+          Proxy.newProxyInstance(
+              Thread.currentThread().getContextClassLoader(),
+              new Class<?>[] {DependencyResolutionResult.class},
+              (proxy, method, arguments) ->
+                  switch (method.getName()) {
+                    case "getCollectionErrors",
+                        "getUnresolvedDependencies",
+                        "getResolutionErrors" ->
+                        List.of();
+                    case "getResolvedDependencies" -> dependencies;
+                    case "getDependencyGraph" -> graph;
+                    default -> null;
+                  });
+    };
+  }
+
+  private static Dependency publicationDependency(
+      final MavenProject project, final String artifactId) {
+    final Artifact projectArtifact =
+        project.getArtifacts().stream()
+            .filter(artifact -> artifactId.equals(artifact.getArtifactId()))
+            .findFirst()
+            .orElseThrow();
+    final org.eclipse.aether.artifact.Artifact artifact =
+        new org.eclipse.aether.artifact.DefaultArtifact(
+            "org.example",
+            artifactId,
+            "",
+            "jar",
+            "1.0",
+            java.util.Map.of(),
+            projectArtifact.getFile());
+    return new Dependency(artifact, "runtime", false);
   }
 
   private static List<GenericFindingAssessment> prerequisiteFindings(

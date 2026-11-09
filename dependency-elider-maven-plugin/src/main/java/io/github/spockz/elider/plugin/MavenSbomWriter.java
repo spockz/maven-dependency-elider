@@ -86,18 +86,6 @@ final class MavenSbomWriter {
     new CycloneDxSbomGenerator().writeBaseline(output, root(project), inventory, metadata());
   }
 
-  static List<ArtifactFileRef> captureOriginalInventory(final MavenProject project)
-      throws IOException {
-    final List<ArtifactFileRef> inventory = new ArrayList<>();
-    for (final Artifact artifact : project.getArtifacts()) {
-      final java.io.File artifactFile = artifact.getFile();
-      if (artifactFile != null) {
-        inventory.add(ArtifactFileRef.fromPath(coordinate(artifact), artifactFile.toPath()));
-      }
-    }
-    return List.copyOf(inventory);
-  }
-
   static void writeOpenVex(
       final MavenProject project,
       final Path output,

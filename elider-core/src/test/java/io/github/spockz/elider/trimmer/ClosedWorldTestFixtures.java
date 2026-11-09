@@ -9,12 +9,15 @@ import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import org.objectweb.asm.Attribute;
+import org.objectweb.asm.ByteVector;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import proguard.classfile.ClassPool;
 
-/** Shared fixtures keep closure tests on one prepared-analysis path. */
+/** WHY: These builders share one class-file vocabulary across closure tests. */
+@SuppressWarnings("PMD.TooManyMethods")
 public final class ClosedWorldTestFixtures {
   /** Candidate root class in bytecode form. */
   public static final String ROOT = "fixture/Root";
@@ -55,6 +58,12 @@ public final class ClosedWorldTestFixtures {
   /** Shared platform classes avoid repeated JDK scans across the nested suites. */
   private static final ClassPool JDK_CLASS_TABLE = readRuntimeApi();
 
+  /** WHY: Fixture methods all use one invocation name for bytecode targets. */
+  private static final String CALL_METHOD_NAME = "call";
+
+  /** WHY: Fixture methods use the same empty void method descriptor. */
+  private static final String NO_ARGUMENT_VOID_DESCRIPTOR = "()V";
+
   /** Prevents fixture utility construction. */
   private ClosedWorldTestFixtures() {}
 
@@ -73,7 +82,7 @@ public final class ClosedWorldTestFixtures {
   }
 
   /** Writes one fixture archive. */
-  // WHY: JarOutputStream requires a fresh JarEntry for each archive member.
+  // WHY: Each archive member needs a fresh JarEntry.
   @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
   public static Path writeJar(
       final Path directory, final String name, final Map<String, byte[]> classes)
@@ -94,11 +103,128 @@ public final class ClosedWorldTestFixtures {
     final ClassWriter writer = new ClassWriter(0);
     writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, OBJECT, null);
     final MethodVisitor method =
-        writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "call", "()V", null, null);
+        writer.visitMethod(
+            Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+            CALL_METHOD_NAME,
+            NO_ARGUMENT_VOID_DESCRIPTOR,
+            null,
+            null);
     method.visitCode();
     method.visitInsn(Opcodes.RETURN);
     method.visitMaxs(0, 0);
     method.visitEnd();
+    writer.visitEnd();
+    return writer.toByteArray();
+  }
+
+  /** Emits a stack-map frame naming a class absent from instructions. */
+  public static byte[] classWithFrameReference(final String name, final String frameType) {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, OBJECT, null);
+    final MethodVisitor method =
+        writer.visitMethod(
+            Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+            "run",
+            NO_ARGUMENT_VOID_DESCRIPTOR,
+            null,
+            null);
+    final org.objectweb.asm.Label framed = new org.objectweb.asm.Label();
+    method.visitCode();
+    method.visitInsn(Opcodes.ACONST_NULL);
+    method.visitLabel(framed);
+    method.visitFrame(Opcodes.F_SAME1, 0, null, 1, new Object[] {frameType});
+    method.visitInsn(Opcodes.POP);
+    method.visitInsn(Opcodes.RETURN);
+    method.visitMaxs(1, 0);
+    method.visitEnd();
+    writer.visitEnd();
+    return writer.toByteArray();
+  }
+
+  /** Emits local-variable metadata naming a class absent from operations. */
+  public static byte[] classWithLocalVariableType(final String name, final String localType) {
+    return classWithLocalVariableMetadata(name, "L" + localType + ";", null, null);
+  }
+
+  /** Emits local-variable debug descriptors and generic signatures. */
+  public static byte[] classWithLocalVariableMetadata(
+      final String name, final String descriptor, final String signature) {
+    return classWithLocalVariableMetadata(name, descriptor, signature, null);
+  }
+
+  private static byte[] classWithLocalVariableMetadata(
+      final String name, final String descriptor, final String signature, final String fieldType) {
+    return classWithLocalVariableMetadata(name, descriptor, signature, fieldType, null);
+  }
+
+  private static byte[] classWithLocalVariableMetadata(
+      final String name,
+      final String descriptor,
+      final String signature,
+      final String fieldType,
+      final String bodyType) {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, OBJECT, null);
+    if (fieldType != null) {
+      writer
+          .visitField(Opcodes.ACC_PUBLIC, "reference", "L" + fieldType + ";", null, null)
+          .visitEnd();
+    }
+    final MethodVisitor method =
+        writer.visitMethod(
+            Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+            "run",
+            NO_ARGUMENT_VOID_DESCRIPTOR,
+            null,
+            null);
+    final org.objectweb.asm.Label start = new org.objectweb.asm.Label();
+    final org.objectweb.asm.Label end = new org.objectweb.asm.Label();
+    method.visitCode();
+    method.visitLabel(start);
+    method.visitInsn(Opcodes.ACONST_NULL);
+    method.visitVarInsn(Opcodes.ASTORE, 0);
+    method.visitVarInsn(Opcodes.ALOAD, 0);
+    method.visitInsn(Opcodes.POP);
+    if (bodyType != null) {
+      method.visitMethodInsn(
+          Opcodes.INVOKESTATIC, bodyType, CALL_METHOD_NAME, NO_ARGUMENT_VOID_DESCRIPTOR, false);
+    }
+    method.visitLabel(end);
+    method.visitInsn(Opcodes.RETURN);
+    method.visitLocalVariable("unused", descriptor, signature, start, end, 0);
+    method.visitMaxs(1, 1);
+    method.visitEnd();
+    writer.visitEnd();
+    return writer.toByteArray();
+  }
+
+  /** Emits field linkage and local-variable debug metadata in one class. */
+  public static byte[] classWithFieldAndLocalVariableType(final String name, final String type) {
+    return classWithLocalVariableMetadata(name, "L" + type + ";", null, type);
+  }
+
+  /** Emits a body call and local-variable debug metadata to the same class. */
+  public static byte[] classWithLocalVariableTypeAndBodyCall(
+      final String name, final String localType, final String bodyType) {
+    return classWithLocalVariableMetadata(name, "L" + localType + ";", null, null, bodyType);
+  }
+
+  /** Emits a class with an attribute the reference visitor cannot interpret. */
+  public static byte[] classWithUnknownAttribute(final String name, final String attributeName) {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, OBJECT, null);
+    writer.visitAttribute(
+        new Attribute(attributeName) {
+          @Override
+          protected ByteVector write(
+              final ClassWriter classWriter,
+              final byte[] code,
+              final int codeLength,
+              final int maxStack,
+              final int maxLocals) {
+            return new ByteVector();
+          }
+        });
     writer.visitEnd();
     return writer.toByteArray();
   }
@@ -110,6 +236,29 @@ public final class ClosedWorldTestFixtures {
     writer
         .visitField(Opcodes.ACC_PUBLIC, "reference", "L" + fieldType + ";", null, null)
         .visitEnd();
+    writer.visitEnd();
+    return writer.toByteArray();
+  }
+
+  /** Emits an annotated method whose body invokes another class. */
+  public static byte[] classWithAnnotatedMethodAndBodyCall(
+      final String name, final String annotationType, final String bodyType) {
+    final ClassWriter writer = new ClassWriter(0);
+    writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, OBJECT, null);
+    final MethodVisitor method =
+        writer.visitMethod(
+            Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+            "run",
+            NO_ARGUMENT_VOID_DESCRIPTOR,
+            null,
+            null);
+    method.visitAnnotation("L" + annotationType + ";", true).visitEnd();
+    method.visitCode();
+    method.visitMethodInsn(
+        Opcodes.INVOKESTATIC, bodyType, CALL_METHOD_NAME, NO_ARGUMENT_VOID_DESCRIPTOR, false);
+    method.visitInsn(Opcodes.RETURN);
+    method.visitMaxs(0, 0);
+    method.visitEnd();
     writer.visitEnd();
     return writer.toByteArray();
   }
@@ -140,10 +289,11 @@ public final class ClosedWorldTestFixtures {
     writer.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, superclass, null);
     if (targets.length > 0) {
       final MethodVisitor method =
-          writer.visitMethod(Opcodes.ACC_PUBLIC, "invoke", "()V", null, null);
+          writer.visitMethod(Opcodes.ACC_PUBLIC, "invoke", NO_ARGUMENT_VOID_DESCRIPTOR, null, null);
       method.visitCode();
       for (final String target : targets) {
-        method.visitMethodInsn(Opcodes.INVOKESTATIC, target, "call", "()V", false);
+        method.visitMethodInsn(
+            Opcodes.INVOKESTATIC, target, CALL_METHOD_NAME, NO_ARGUMENT_VOID_DESCRIPTOR, false);
       }
       method.visitInsn(Opcodes.RETURN);
       method.visitMaxs(0, 0);

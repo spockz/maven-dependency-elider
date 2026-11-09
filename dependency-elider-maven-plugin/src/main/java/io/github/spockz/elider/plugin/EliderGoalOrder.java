@@ -62,7 +62,7 @@ final class EliderGoalOrder {
   static void validateCleanOrdering(
       final List<String> goals, final int treeIndex, final MavenProject project)
       throws MavenExecutionException {
-    validateCleanOrdering(goals, treeIndex, project, "initialize");
+    validateCleanOrdering(goals, treeIndex, project, "process-classes");
   }
 
   static void validateCleanOrdering(
@@ -90,7 +90,7 @@ final class EliderGoalOrder {
 
   static boolean hasPreparedLifecycleAfter(
       final List<String> goals, final int lastCleanIndex, final int treeIndex) {
-    return hasPreparedLifecycleAfter(goals, lastCleanIndex, treeIndex, "initialize");
+    return hasPreparedLifecycleAfter(goals, lastCleanIndex, treeIndex, "process-classes");
   }
 
   static boolean hasPreparedLifecycleAfter(

@@ -46,7 +46,8 @@ final class MavenAnalysisEvidence {
         ProductionAnalysisInputs.productionBytecodeInputs(
             MavenProductionOutputPaths.resolve(project, options),
             additionalBytecodeRoots,
-            completeness.productionClassesComplete());
+            completeness.productionClassesComplete(),
+            project.getCompileSourceRoots());
     final ProductionAnalysisInputs.CompilerInputs compiler =
         ProductionAnalysisInputs.compilerInputs(
             project,

@@ -45,6 +45,41 @@ class GenericFindingReconcilerTest {
   }
 
   @Test
+  void mergesComponentContributionsAgainstPersistedAliasClassClosure() {
+    final VulnerabilityFindingContribution pom =
+        contribution("CVE-2026-10003", Set.of("POM-ALIAS"), "jar", "", "[1,2)", "p.Code");
+    final VulnerabilityFindingContribution osv =
+        contribution("GHSA-linked", Set.of("OSV-ALIAS"), "jar", "", "[1,2)", "p.Other");
+    final Set<String> aliases = Set.of("CVE-2026-10003", "GHSA-linked", "POM-ALIAS", "OSV-ALIAS");
+    final GenericVulnerabilityFinding finding =
+        GenericFindingReconciler.reconcileResolvedIdentity(List.of(pom, osv), aliases);
+    final VulnerabilityFindingContribution outsideClass =
+        contribution("GHSA-outsider", Set.of(), "jar", "", "[1,2)", "p.Outside");
+    final Set<String> ambiguousAliases =
+        Set.of("CVE-2026-10003", "CVE-2026-10004", "GHSA-linked", "POM-ALIAS", "OSV-ALIAS");
+
+    assertAll(
+        "a persisted flattened alias class keeps cross-component bridges resolvable",
+        () -> assertThat(finding.vulnerabilityId()).isEqualTo("CVE-2026-10003"),
+        () -> assertThat(finding.aliases()).isEqualTo(aliases),
+        () -> assertThat(finding.effectivePrerequisiteGroupsFor("1.5")).isEmpty(),
+        () ->
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                    () ->
+                        GenericFindingReconciler.reconcileResolvedIdentity(
+                            List.of(pom, outsideClass), aliases))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("outside saved alias class"),
+        () ->
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                    () ->
+                        GenericFindingReconciler.reconcileResolvedIdentity(
+                            List.of(pom, osv), ambiguousAliases))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("ambiguous"));
+  }
+
+  @Test
   void preservesAdvisoryOnlyFindingsAndExactComponentDiscriminators() {
     final VulnerabilityFindingContribution first =
         contribution("GHSA-a", Set.of("GHSA-b"), "jar", "", "[1,2)", "p.First");

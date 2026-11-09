@@ -9,6 +9,7 @@ import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.scanner.ProductionBytecodeAnalysis;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.HashSet;
@@ -16,12 +17,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.project.MavenProject;
 
-/** Resolves compiler and production bytecode roots before artifact pruning. */
-@SuppressWarnings(
-    "PMD.CouplingBetweenObjects") // Aggregates Maven compile and production inputs for analysis
+/** WHY: Separate helpers preserve distinct Maven classpath and bytecode checks. */
+@SuppressWarnings("PMD.TooManyMethods")
 final class ProductionAnalysisInputs {
   /** Dependency scopes Maven places on its production compile classpath. */
   private static final Set<String> COMPILE_VISIBLE_SCOPES = Set.of("compile", "provided", "system");
@@ -164,32 +165,78 @@ final class ProductionAnalysisInputs {
       final List<Path> additionalOutputs,
       final boolean productionClassesComplete)
       throws IOException {
+    return productionBytecodeInputs(
+        output, additionalOutputs, productionClassesComplete, List.of());
+  }
+
+  /* default */ static ProductionBytecodeInputs productionBytecodeInputs(
+      final File output,
+      final List<Path> additionalOutputs,
+      final boolean productionClassesComplete,
+      final List<String> compileSourceRoots)
+      throws IOException {
     if (output == null) {
-      if (productionClassesComplete) {
-        throw new IOException(
-            "elide.productionClassesComplete=true requires a production class output directory");
-      }
-      return new ProductionBytecodeInputs("none", Optional.empty(), Set.of(), Set.of());
+      return missingProductionOutput(productionClassesComplete);
     }
     final Path path = output.toPath();
     final ProductionBytecodeAnalysis.Snapshot snapshot =
         ProductionBytecodeAnalysis.capture(path, additionalOutputs);
-    if (productionClassesComplete && snapshot.bytecodeReferences().classFilesScanned() == 0) {
-      throw new IOException(
-          "elide.productionClassesComplete=true requires compiled production class files in "
-              + path.toAbsolutePath().normalize()
-              + "; run 'mvn compile' first or bind to process-classes");
-    }
+    requireCompiledProductionClasses(productionClassesComplete, compileSourceRoots, path, snapshot);
     final Set<String> provenServiceInterfaces =
         snapshot.scanServiceLoaderCalls().provenServiceInterfaces();
-    final String after = ProductionOutputFingerprint.fingerprint(path, additionalOutputs);
-    if (!snapshot.fingerprint().equals(after)) {
-      throw new IOException("Production output changed during bytecode analysis");
-    }
     return new ProductionBytecodeInputs(
         snapshot.fingerprint(),
         Optional.of(snapshot.bytecodeReferences()),
         provenServiceInterfaces,
         snapshot.classNames());
+  }
+
+  private static ProductionBytecodeInputs missingProductionOutput(
+      final boolean productionClassesComplete) throws IOException {
+    if (productionClassesComplete) {
+      throw new IOException(
+          "elide.productionClassesComplete=true requires a production class output directory");
+    }
+    return new ProductionBytecodeInputs("none", Optional.empty(), Set.of(), Set.of());
+  }
+
+  private static void requireCompiledProductionClasses(
+      final boolean productionClassesComplete,
+      final List<String> compileSourceRoots,
+      final Path output,
+      final ProductionBytecodeAnalysis.Snapshot snapshot)
+      throws IOException {
+    if (productionClassesComplete
+        && snapshot.bytecodeReferences().classFilesScanned() == 0
+        && hasJavaSources(compileSourceRoots)) {
+      throw new IOException(
+          "elide.productionClassesComplete=true requires compiled production class files in "
+              + output.toAbsolutePath().normalize()
+              + "; run 'mvn compile' first or bind to process-classes");
+    }
+  }
+
+  private static boolean hasJavaSources(final List<String> sourceRoots) throws IOException {
+    for (final String sourceRoot : sourceRoots) {
+      final Path root;
+      try {
+        root = Path.of(sourceRoot);
+      } catch (final InvalidPathException exception) {
+        throw new IOException("Invalid Maven compile source root: " + sourceRoot, exception);
+      }
+      if (Files.notExists(root)) {
+        continue;
+      }
+      if (!Files.isDirectory(root)) {
+        throw new IOException("Maven compile source root is not a directory: " + root);
+      }
+      try (Stream<Path> paths = Files.walk(root)) {
+        if (paths.anyMatch(
+            path -> Files.isRegularFile(path) && path.toString().endsWith(".java"))) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 }

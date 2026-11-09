@@ -126,12 +126,14 @@ final class MavenElisionServiceEffectiveAnalysisTest
             fixture.coordinate("c"),
             fixture.coordinate("d"),
             fixture.coordinate("e"));
-    assertThat(result.effectiveDecision().elidedArtifacts()).isEmpty();
+    assertThat(result.effectiveDecision().elidedArtifacts()).contains(fixture.coordinate("e"));
     assertThat(result.effectiveDecision().retainedArtifacts())
-        .containsExactlyInAnyOrderElementsOf(
-            fixture.allSnapshots().stream()
-                .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
-                .toList());
+        .contains(
+            fixture.coordinate("a"),
+            fixture.coordinate("b"),
+            fixture.coordinate("c"),
+            fixture.coordinate("d"))
+        .doesNotContain(fixture.coordinate("e"));
     assertThat(result.graphEvaluation().ancestorPromotedArtifacts())
         .contains(fixture.coordinate("d"));
     assertThat(result.trimAnalysis().reachableArtifacts()).isEmpty();
@@ -139,6 +141,14 @@ final class MavenElisionServiceEffectiveAnalysisTest
         .contains(ENTRY_CLASS);
     assertThat(result.trimAnalysis().candidateAnalyses().get(fixture.coordinate("a")).roots())
         .contains(ENTRY_CLASS.replace('.', '/'));
+    assertThat(result.trimAnalysis().candidateRoots().get(fixture.coordinate("d"))).isEmpty();
+    assertThat(
+            result
+                .trimAnalysis()
+                .candidateAnalyses()
+                .get(fixture.coordinate("d"))
+                .retainedClasses())
+        .isEmpty();
     assertThat(fixture.mavenProject().getArtifacts())
         .containsExactlyInAnyOrderElementsOf(beforeArtifacts);
     assertThat(temporaryDirectory.resolve("build/elided-artifacts")).doesNotExist();

@@ -5,22 +5,26 @@ package io.github.spockz.elider.scanner;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import org.junit.jupiter.api.Assumptions;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-/** Covers shared production bytecode capture. */
+/** WHY: One captured class inventory feeds all production evidence passes. */
 final class ProductionBytecodeAnalysisTest {
   /** ASM owner used by the cross-class constant fixture. */
   private static final String SERVICE_LOADER = "java/util/ServiceLoader";
+
+  /** WHY: Fixture roots share one package identity. */
+  private static final String SAMPLE_PACKAGE = "sample";
 
   /** Isolated output root for each test case. */
   @TempDir private Path temporaryDirectory;
@@ -33,17 +37,20 @@ final class ProductionBytecodeAnalysisTest {
   @Test
   void analyzesOneSnapshotAndResolvesCrossClassServiceConstants() throws IOException {
     final Path output = Files.createDirectory(temporaryDirectory.resolve("classes"));
-    final Path packageDirectory = Files.createDirectory(output.resolve("sample"));
-    Files.write(packageDirectory.resolve("App.class"), appClass("sample/App"));
+    final Path packageDirectory = Files.createDirectory(output.resolve(SAMPLE_PACKAGE));
+    Files.write(packageDirectory.resolve("App.class"), appClass(SAMPLE_PACKAGE + "/App"));
     final ProductionBytecodeAnalysis.Snapshot snapshot = ProductionBytecodeAnalysis.capture(output);
+    final BytecodeReferenceScan references = snapshot.bytecodeReferences();
+    final Set<String> directReferences = references.referencedClasses();
+    final int classFilesScanned = references.classFilesScanned();
 
     assertAll(
         () ->
             assertThat(snapshot.fingerprint())
                 .isEqualTo(ProductionBytecodeAnalysis.fingerprint(output)),
-        () -> assertThat(snapshot.bytecodeReferences().referencedClasses()).contains("sample.Base"),
-        () -> assertThat(snapshot.bytecodeReferences().classFilesScanned()).isEqualTo(1),
-        () -> assertThat(snapshot.classNames()).containsExactly("sample.App"),
+        () -> assertThat(directReferences).contains(SAMPLE_PACKAGE + ".Base"),
+        () -> assertThat(classFilesScanned).isEqualTo(1),
+        () -> assertThat(snapshot.classNames()).containsExactly(SAMPLE_PACKAGE + ".App"),
         () -> assertThat(snapshot.scanServiceLoaderCalls().provenServiceInterfaces()).isEmpty(),
         () ->
             assertThat(scanCrossClassServiceConstants().provenServiceInterfaces())
@@ -59,10 +66,10 @@ final class ProductionBytecodeAnalysisTest {
   void capturesClassesAcrossAdditionalRoots() throws IOException {
     final Path mainOutput = Files.createDirectory(temporaryDirectory.resolve("main-classes"));
     final Path aotOutput = Files.createDirectory(temporaryDirectory.resolve("aot-classes"));
-    final Path mainPkg = Files.createDirectory(mainOutput.resolve("sample"));
-    final Path aotPkg = Files.createDirectory(aotOutput.resolve("sample"));
-    Files.write(mainPkg.resolve("MainApp.class"), appClass("sample/MainApp"));
-    Files.write(aotPkg.resolve("AotGenerated.class"), appClass("sample/AotGenerated"));
+    final Path mainPkg = Files.createDirectory(mainOutput.resolve(SAMPLE_PACKAGE));
+    final Path aotPkg = Files.createDirectory(aotOutput.resolve(SAMPLE_PACKAGE));
+    Files.write(mainPkg.resolve("MainApp.class"), appClass(SAMPLE_PACKAGE + "/MainApp"));
+    Files.write(aotPkg.resolve("AotGenerated.class"), appClass(SAMPLE_PACKAGE + "/AotGenerated"));
 
     final ProductionBytecodeAnalysis.Snapshot snapshot =
         ProductionBytecodeAnalysis.capture(mainOutput, List.of(aotOutput));
@@ -70,7 +77,8 @@ final class ProductionBytecodeAnalysisTest {
     assertAll(
         () ->
             assertThat(snapshot.classNames())
-                .containsExactlyInAnyOrder("sample.MainApp", "sample.AotGenerated"),
+                .containsExactlyInAnyOrder(
+                    SAMPLE_PACKAGE + ".MainApp", SAMPLE_PACKAGE + ".AotGenerated"),
         () -> assertThat(snapshot.bytecodeReferences().classFilesScanned()).isEqualTo(2),
         () ->
             assertThat(snapshot.fingerprint())
@@ -78,17 +86,50 @@ final class ProductionBytecodeAnalysisTest {
   }
 
   @Test
-  void rejectsSymbolicLinksInProductionOutput() throws IOException {
-    final Path output = Files.createDirectory(temporaryDirectory.resolve("linked-classes"));
-    try {
-      Files.createSymbolicLink(output.resolve("Alias.class"), Path.of("Target.class"));
-    } catch (final IOException | UnsupportedOperationException exception) {
-      Assumptions.assumeTrue(false, "Filesystem cannot create symbolic links: " + exception);
-    }
+  void missingOutputForProjectWithoutSourcesIsEmpty() throws IOException {
+    final Path output = temporaryDirectory.resolve("no-production-output");
+
+    final ProductionBytecodeAnalysis.Snapshot snapshot = ProductionBytecodeAnalysis.capture(output);
+    final BytecodeReferenceScan references = snapshot.bytecodeReferences();
+    final boolean complete = references.complete();
+    final int classFilesScanned = references.classFilesScanned();
+    final Set<String> directReferences = references.referencedClasses();
+
+    assertAll(
+        () -> assertTrue(complete, "a missing output is a complete empty snapshot"),
+        () ->
+            org.junit.jupiter.api.Assertions.assertEquals(
+                0, classFilesScanned, "missing output has no class files"),
+        () -> assertThat(directReferences).isEmpty(),
+        () -> assertThat(snapshot.classNames()).isEmpty());
+  }
+
+  @Test
+  void missingPrimaryKeepsAdditionalOutputAndFingerprint() throws IOException {
+    final Path output = temporaryDirectory.resolve("missing-primary");
+    final Path aotOutput = Files.createDirectory(temporaryDirectory.resolve("aot-only"));
+    final Path packageDirectory = Files.createDirectory(aotOutput.resolve("sample"));
+    Files.write(packageDirectory.resolve("AotGenerated.class"), appClass("sample/AotGenerated"));
+
+    final ProductionBytecodeAnalysis.Snapshot snapshot =
+        ProductionBytecodeAnalysis.capture(output, List.of(aotOutput));
+
+    assertAll(
+        () -> assertThat(snapshot.bytecodeReferences().classFilesScanned()).isEqualTo(1),
+        () -> assertThat(snapshot.classNames()).containsExactly("sample.AotGenerated"),
+        () ->
+            assertThat(snapshot.fingerprint())
+                .isEqualTo(ProductionBytecodeAnalysis.fingerprint(output, List.of(aotOutput))));
+  }
+
+  @Test
+  void presentNonDirectoryPrimaryStillFails() throws IOException {
+    final Path output = temporaryDirectory.resolve("not-a-directory");
+    Files.writeString(output, "not a directory");
 
     assertThatThrownBy(() -> ProductionBytecodeAnalysis.capture(output))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("Symbolic link in production class output");
+        .hasMessageContaining("Production class output path is not a directory");
   }
 
   private static ServiceLoaderCallScanner.ScanResult scanCrossClassServiceConstants()

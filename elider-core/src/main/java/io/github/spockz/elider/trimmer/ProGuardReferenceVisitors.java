@@ -12,6 +12,7 @@ import proguard.classfile.attribute.Attribute;
 import proguard.classfile.attribute.RecordAttribute;
 import proguard.classfile.attribute.RecordComponentInfo;
 import proguard.classfile.attribute.visitor.RecordComponentInfoVisitor;
+import proguard.classfile.constant.ClassConstant;
 import proguard.classfile.constant.Constant;
 import proguard.classfile.constant.DynamicConstant;
 import proguard.classfile.constant.RefConstant;
@@ -19,16 +20,40 @@ import proguard.classfile.util.InvalidReferenceVisitor;
 import proguard.classfile.visitor.ClassVisitor;
 import proguard.classfile.visitor.ReferencedClassVisitor;
 
-/** ProGuard callbacks used to build role-scoped reference evidence. */
+/** WHY: ProGuard callbacks build role-scoped reference evidence. */
 /* Package access keeps callback plumbing out of the public API. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class ProGuardReferenceVisitors {
+  /** WHY: Class tokens need distinct handling from other reference callbacks. */
+  enum EdgeOrigin {
+    /** WHY: Class-file parsing verifies whether this origin is structural. */
+    CLASS_CONSTANT(1),
+    /** WHY: Other callbacks preserve conservative body and member references. */
+    OTHER(2);
+
+    /** WHY: Nested callbacks combine origins with the enclosing visitor context. */
+    final int mask;
+
+    EdgeOrigin(final int mask) {
+      this.mask = mask;
+    }
+  }
+
+  /** WHY: This visitor carries origin information through ProGuard callbacks. */
+  interface OriginTrackingClassVisitor extends ClassVisitor {
+    /** WHY: Keeps nested callbacks associated with their originating ProGuard role. */
+    void withOrigin(EdgeOrigin origin, Runnable action);
+
+    /** WHY: Allows class-file evidence to identify symbolic class tokens separately. */
+    void recordClassConstant(String name);
+  }
+
   /** Prevents construction of the visitor factory. */
   private ProGuardReferenceVisitors() {}
 
   /* Package access keeps callback construction internal to the trimmer. */
   static ClassVisitor complete(
-      final ClassVisitor classVisitor, final Function<String, Clazz> classLookup) {
+      final OriginTrackingClassVisitor classVisitor, final Function<String, Clazz> classLookup) {
     return new CompleteReferencedClassVisitor(classVisitor, classLookup);
   }
 
@@ -51,14 +76,14 @@ final class ProGuardReferenceVisitors {
   static final class CompleteReferencedClassVisitor extends ReferencedClassVisitor
       implements RecordComponentInfoVisitor {
     /** Receives newly reached candidate and sibling classes. */
-    private final ClassVisitor classVisitor;
+    private final OriginTrackingClassVisitor classVisitor;
 
     /** Resolves descriptor names against the merged analysis pools. */
     private final Function<String, Clazz> classLookup;
 
     /* Package access lets the factory instantiate this visitor. */
     CompleteReferencedClassVisitor(
-        final ClassVisitor classVisitor, final Function<String, Clazz> classLookup) {
+        final OriginTrackingClassVisitor classVisitor, final Function<String, Clazz> classLookup) {
       super(classVisitor);
       this.classVisitor = classVisitor;
       this.classLookup = classLookup;
@@ -66,25 +91,65 @@ final class ProGuardReferenceVisitors {
 
     @Override
     public void visitAnyConstant(final Clazz clazz, final Constant constant) {
-      if (constant instanceof DynamicConstant dynamicConstant) {
-        dynamicConstant.referencedClassesAccept(classVisitor);
-        dynamicConstant.bootstrapMethodHandleAccept(clazz, this);
+      if (constant instanceof ClassConstant) {
+        super.visitAnyConstant(clazz, constant);
+        return;
       }
-      super.visitAnyConstant(clazz, constant);
+      classVisitor.withOrigin(
+          EdgeOrigin.OTHER,
+          () -> {
+            if (constant instanceof DynamicConstant dynamicConstant) {
+              dynamicConstant.referencedClassesAccept(classVisitor);
+              dynamicConstant.bootstrapMethodHandleAccept(clazz, this);
+            }
+            super.visitAnyConstant(clazz, constant);
+          });
+    }
+
+    @Override
+    public void visitClassConstant(final Clazz clazz, final ClassConstant classConstant) {
+      classVisitor.withOrigin(
+          EdgeOrigin.CLASS_CONSTANT,
+          () -> {
+            classVisitor.recordClassConstant(classConstant.getName(clazz));
+            super.visitClassConstant(clazz, classConstant);
+          });
     }
 
     @Override
     public void visitAnyRefConstant(final Clazz clazz, final RefConstant refConstant) {
-      super.visitAnyRefConstant(clazz, refConstant);
-      visitDescriptorClasses(refConstant.getType(clazz), classLookup, classVisitor);
+      classVisitor.withOrigin(
+          EdgeOrigin.OTHER,
+          () -> {
+            super.visitAnyRefConstant(clazz, refConstant);
+            visitDescriptorClasses(refConstant.getType(clazz), classLookup, classVisitor);
+          });
+    }
+
+    @Override
+    public void visitInvokeDynamicConstant(
+        final Clazz clazz, final proguard.classfile.constant.InvokeDynamicConstant constant) {
+      classVisitor.withOrigin(
+          EdgeOrigin.OTHER, () -> super.visitInvokeDynamicConstant(clazz, constant));
+    }
+
+    @Override
+    public void visitMethodTypeConstant(
+        final Clazz clazz, final proguard.classfile.constant.MethodTypeConstant constant) {
+      classVisitor.withOrigin(
+          EdgeOrigin.OTHER, () -> super.visitMethodTypeConstant(clazz, constant));
     }
 
     @Override
     public void visitAnyAttribute(final Clazz clazz, final Attribute attribute) {
-      if (attribute instanceof RecordAttribute recordAttribute) {
-        recordAttribute.componentsAccept(clazz, this);
-      }
-      super.visitAnyAttribute(clazz, attribute);
+      classVisitor.withOrigin(
+          EdgeOrigin.OTHER,
+          () -> {
+            if (attribute instanceof RecordAttribute recordAttribute) {
+              recordAttribute.componentsAccept(clazz, this);
+            }
+            super.visitAnyAttribute(clazz, attribute);
+          });
     }
 
     @Override
@@ -140,7 +205,11 @@ final class ProGuardReferenceVisitors {
 
     @Override
     public void visitMissingClass(final Clazz referencingClass, final String missingClassName) {
-      add(referencingClass, missingClassName, "class " + missingClassName);
+      add(
+          referencingClass,
+          missingClassName,
+          ReferenceGraph.UnresolvedKind.MISSING_CLASS,
+          "class " + missingClassName);
     }
 
     @Override
@@ -161,16 +230,20 @@ final class ProGuardReferenceVisitors {
       add(
           referencingClass,
           targetClass.getName(),
+          ReferenceGraph.UnresolvedKind.MISSING_MEMBER,
           "member " + targetClass.getName() + "." + memberName + memberDescriptor);
     }
 
     private void add(
-        final Clazz referencingClass, final String targetClass, final String missingReference) {
+        final Clazz referencingClass,
+        final String targetClass,
+        final ReferenceGraph.UnresolvedKind kind,
+        final String missingReference) {
       unresolvedReferences
           .computeIfAbsent(referencingClass.getName(), unused -> new LinkedHashSet<>())
           .add(
               new ReferenceGraph.UnresolvedLink(
-                  targetClass, referencingClass.getName() + " -> " + missingReference));
+                  targetClass, kind, referencingClass.getName() + " -> " + missingReference));
     }
   }
 
@@ -193,7 +266,11 @@ final class ProGuardReferenceVisitors {
 
     @Override
     public void visitMissingClass(final Clazz referencingClass, final String missingClassName) {
-      add(referencingClass, missingClassName, "class " + missingClassName);
+      add(
+          referencingClass,
+          missingClassName,
+          ReferenceGraph.UnresolvedKind.MISSING_CLASS,
+          "class " + missingClassName);
     }
 
     @Override
@@ -214,16 +291,20 @@ final class ProGuardReferenceVisitors {
       add(
           referencingClass,
           targetClass.getName(),
+          ReferenceGraph.UnresolvedKind.MISSING_MEMBER,
           "member " + targetClass.getName() + "." + memberName + memberDescriptor);
     }
 
     private void add(
-        final Clazz referencingClass, final String targetClass, final String missingReference) {
+        final Clazz referencingClass,
+        final String targetClass,
+        final ReferenceGraph.UnresolvedKind kind,
+        final String missingReference) {
       unresolvedReferences
           .computeIfAbsent(referencingClass.getName(), unused -> new LinkedHashSet<>())
           .add(
               new ReferenceGraph.UnresolvedLink(
-                  targetClass, referencingClass.getName() + " -> " + missingReference));
+                  targetClass, kind, referencingClass.getName() + " -> " + missingReference));
     }
   }
 }

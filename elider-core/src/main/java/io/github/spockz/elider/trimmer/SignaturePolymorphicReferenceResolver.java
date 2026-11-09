@@ -121,7 +121,9 @@ final class SignaturePolymorphicReferenceResolver {
           .computeIfAbsent(referencingClass.getName(), unused -> new LinkedHashSet<>())
           .add(
               new ReferenceGraph.UnresolvedLink(
-                  className, referencingClass.getName() + " -> class " + className));
+                  className,
+                  ReferenceGraph.UnresolvedKind.MISSING_CLASS,
+                  referencingClass.getName() + " -> class " + className));
       return;
     }
     descriptorTypes

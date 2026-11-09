@@ -37,7 +37,7 @@ final class DynamicRootDiagnostics {
                                 + archive
                                 + " does not resolve to an application or dependency class; "
                                 + "it will not retain unrelated archives.")));
-    return List.copyOf(diagnostics);
+    return diagnostics.stream().sorted().toList();
   }
 
   private static String normalize(final String className) {

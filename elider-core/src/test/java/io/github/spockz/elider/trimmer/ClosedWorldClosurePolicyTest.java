@@ -5,6 +5,7 @@ package io.github.spockz.elider.trimmer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -44,6 +45,94 @@ class ClosedWorldClosurePolicyTest {
       DEFAULT_ACCESS_RULE
     })
     QueryPolicyCases() {}
+
+    @Test
+    @DisplayName("ADR-0003: unused class constants are not treated as links")
+    void unusedConstantPoolClassDoesNotBlockClosedWorldClosure() throws Exception {
+      final byte[] rootBytes =
+          ClassFileConstantPool.appendUnreferencedClassConstant(
+              ClosedWorldTestFixtures.simpleClass(ClosedWorldTestFixtures.ROOT),
+              ClosedWorldTestFixtures.MISSING_BODY);
+      final boolean hasUnreferencedClassToken =
+          ClassFileConstantPool.containsClassConstant(
+              rootBytes, ClosedWorldTestFixtures.MISSING_BODY);
+      final Path candidate =
+          writeJar("unused-class-constant.jar", Map.of(ClosedWorldTestFixtures.ROOT, rootBytes));
+
+      final DependencyJarTrimmer.TrimAnalysis bounded =
+          ClosedWorldTestFixtures.prepare(candidate)
+              .analyze(
+                  List.of(ClosedWorldTestFixtures.ROOT_NAME),
+                  ClosureQueryPolicy.closedWorld(Set.of(ClosedWorldTestFixtures.ROOT_NAME)));
+
+      assertAll(
+          "unreferenced class tokens do not enter closed-world closure",
+          () ->
+              assertTrue(
+                  hasUnreferencedClassToken,
+                  "the fixture contains the constant before closure is analyzed"),
+          () ->
+              assertThat(bounded.retainedClasses()).containsExactly(ClosedWorldTestFixtures.ROOT));
+    }
+
+    @Test
+    @DisplayName("ADR-0003: only closed-world closure ignores unused class constants")
+    void unusedClassConstantIsIgnoredOnlyByClosedWorldClosure() throws Exception {
+      final String unusedClass = "fixture/UnusedConstant";
+      final byte[] rootBytes =
+          ClassFileConstantPool.appendUnreferencedClassConstant(
+              ClosedWorldTestFixtures.simpleClass(ClosedWorldTestFixtures.ROOT), unusedClass);
+      final Path candidate =
+          writeJar(
+              "conservative-unused-class-constant.jar",
+              Map.of(
+                  ClosedWorldTestFixtures.ROOT,
+                  rootBytes,
+                  unusedClass,
+                  ClosedWorldTestFixtures.simpleClass(unusedClass)));
+      final DependencyJarTrimmer.PreparedAnalysis prepared =
+          ClosedWorldTestFixtures.prepare(candidate);
+
+      final DependencyJarTrimmer.TrimAnalysis conservative =
+          prepared.analyze(
+              List.of(ClosedWorldTestFixtures.ROOT_NAME), ClosureQueryPolicy.conservative());
+      final DependencyJarTrimmer.TrimAnalysis closedWorld =
+          prepared.analyze(
+              List.of(ClosedWorldTestFixtures.ROOT_NAME),
+              ClosureQueryPolicy.closedWorld(Set.of(ClosedWorldTestFixtures.ROOT_NAME)));
+
+      assertAll(
+          "closed-world liveness filters only the query whose contract permits it",
+          () -> assertThat(conservative.retainedClasses()).contains(unusedClass),
+          () ->
+              assertThat(closedWorld.retainedClasses())
+                  .containsExactly(ClosedWorldTestFixtures.ROOT));
+    }
+
+    @Test
+    @DisplayName("ADR-0003: an unknown class-file attribute blocks pool-entry classification")
+    void unknownAttributePreventsIgnoringUnclassifiedClassConstant() throws Exception {
+      final byte[] classWithUnknownAttribute =
+          ClassFileConstantPool.appendUnreferencedClassConstant(
+              ClosedWorldTestFixtures.classWithUnknownAttribute(
+                  ClosedWorldTestFixtures.ROOT, "FixtureUnknownAttribute"),
+              ClosedWorldTestFixtures.MISSING_BODY);
+      final Path candidate =
+          writeJar(
+              "unknown-attribute-reference.jar",
+              Map.of(ClosedWorldTestFixtures.ROOT, classWithUnknownAttribute));
+
+      assertThatThrownBy(
+              () ->
+                  ClosedWorldTestFixtures.prepare(candidate)
+                      .analyze(
+                          List.of(ClosedWorldTestFixtures.ROOT_NAME),
+                          ClosureQueryPolicy.closedWorld(
+                              Set.of(ClosedWorldTestFixtures.ROOT_NAME))))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("Unrecognized class-file attributes in fixture/Root")
+          .hasMessageContaining("FixtureUnknownAttribute");
+    }
 
     @Test
     @DisplayName("ADR-0003: prepared closure distinguishes closed-world empty from conservative")
@@ -217,10 +306,10 @@ class ClosedWorldClosurePolicyTest {
     }
   }
 
-  /** Covers structural metadata and sibling-library role behavior. */
+  /** WHY: Structural variants share one prepared-analysis fixture. */
   /* The default access modifier is required for JUnit discovery. */
   @Nested
-  @SuppressWarnings(DEFAULT_ACCESS_RULE)
+  @SuppressWarnings({"PMD.TooManyMethods", DEFAULT_ACCESS_RULE})
   class StructuralEvidenceCases {
     // The default access modifier lets JUnit construct the nested suite.
     @SuppressWarnings({
@@ -253,6 +342,149 @@ class ClosedWorldClosurePolicyTest {
           () ->
               assertThat(conservative.retainedClasses())
                   .containsAll(ClosedWorldTestFixtures.Structural.targets()));
+    }
+
+    @Test
+    @DisplayName(
+        "ADR-0003: stack-map frame types remain structural when their methods are uncalled")
+    void frameTypeRemainsLiveOutsideTheAllowedBodySet() throws Exception {
+      final String frameType = "fixture/FrameType";
+      final Path candidate =
+          writeJar(
+              "stack-map-frame-reference.jar",
+              Map.of(
+                  ClosedWorldTestFixtures.ROOT,
+                  ClosedWorldTestFixtures.classWithFrameReference(
+                      ClosedWorldTestFixtures.ROOT, frameType),
+                  frameType,
+                  ClosedWorldTestFixtures.simpleClass(frameType)));
+
+      final DependencyJarTrimmer.TrimAnalysis bounded =
+          ClosedWorldTestFixtures.prepare(candidate)
+              .analyze(
+                  List.of(ClosedWorldTestFixtures.ROOT_NAME),
+                  ClosureQueryPolicy.closedWorld(Set.of(ClosedWorldTestFixtures.ROOT_NAME)));
+
+      assertThat(bounded.retainedClasses())
+          .containsExactlyInAnyOrder(ClosedWorldTestFixtures.ROOT, frameType);
+    }
+
+    @Test
+    @DisplayName("ADR-0003: debug local-variable metadata does not create a structural link")
+    void localVariableDebugTypeDoesNotBlockClosedWorldClosure() throws Exception {
+      final String debugOnlyType = "fixture/DebugOnlyType";
+      final Path candidate =
+          writeJar(
+              "local-variable-debug-reference.jar",
+              Map.of(
+                  ClosedWorldTestFixtures.ROOT,
+                  ClosedWorldTestFixtures.classWithLocalVariableType(
+                      ClosedWorldTestFixtures.ROOT, debugOnlyType),
+                  debugOnlyType,
+                  ClosedWorldTestFixtures.simpleClass(debugOnlyType)));
+      final DependencyJarTrimmer.PreparedAnalysis prepared =
+          ClosedWorldTestFixtures.prepare(candidate);
+
+      final DependencyJarTrimmer.TrimAnalysis conservative =
+          prepared.analyze(
+              List.of(ClosedWorldTestFixtures.ROOT_NAME), ClosureQueryPolicy.conservative());
+      final DependencyJarTrimmer.TrimAnalysis bounded =
+          prepared.analyze(
+              List.of(ClosedWorldTestFixtures.ROOT_NAME),
+              ClosureQueryPolicy.closedWorld(Set.of(ClosedWorldTestFixtures.ROOT_NAME)));
+      final DependencyJarTrimmer.TrimAnalysis observedDebugType =
+          prepared.analyze(
+              List.of(ClosedWorldTestFixtures.ROOT_NAME),
+              ClosureQueryPolicy.closedWorld(
+                  Set.of(ClosedWorldTestFixtures.ROOT_NAME, debugOnlyType.replace('/', '.'))));
+
+      assertAll(
+          "debug-only local variable types do not become live classes",
+          () ->
+              assertThat(conservative.retainedClasses())
+                  .containsExactly(ClosedWorldTestFixtures.ROOT),
+          () -> assertThat(bounded.retainedClasses()).containsExactly(ClosedWorldTestFixtures.ROOT),
+          () ->
+              assertThat(observedDebugType.retainedClasses())
+                  .containsExactlyInAnyOrder(ClosedWorldTestFixtures.ROOT, debugOnlyType));
+    }
+
+    @Test
+    @DisplayName("ADR-0003: missing local-variable debug descriptor and signature are ignored")
+    void missingLocalVariableDebugTypesDoNotBlockClosure() throws Exception {
+      final byte[] rootBytes =
+          ClosedWorldTestFixtures.classWithLocalVariableMetadata(
+              ClosedWorldTestFixtures.ROOT,
+              "Lfixture/DebugDescriptorType;",
+              "Ljava/util/List<Lfixture/DebugGenericType;>;");
+      final Path candidate =
+          writeJar(
+              "missing-local-variable-debug-types.jar",
+              Map.of(ClosedWorldTestFixtures.ROOT, rootBytes));
+      final DependencyJarTrimmer.PreparedAnalysis prepared =
+          ClosedWorldTestFixtures.prepare(candidate);
+
+      final DependencyJarTrimmer.TrimAnalysis conservative =
+          prepared.analyze(
+              List.of(ClosedWorldTestFixtures.ROOT_NAME), ClosureQueryPolicy.conservative());
+      final DependencyJarTrimmer.TrimAnalysis bounded =
+          prepared.analyze(
+              List.of(ClosedWorldTestFixtures.ROOT_NAME),
+              ClosureQueryPolicy.closedWorld(Set.of(ClosedWorldTestFixtures.ROOT_NAME)));
+
+      assertAll(
+          "debug-only local descriptors and signatures do not require their target classes",
+          () ->
+              assertThat(conservative.retainedClasses())
+                  .containsExactly(ClosedWorldTestFixtures.ROOT),
+          () ->
+              assertThat(bounded.retainedClasses()).containsExactly(ClosedWorldTestFixtures.ROOT));
+    }
+
+    @Test
+    @DisplayName("ADR-0003: debug metadata does not hide a missing structural field type")
+    void localVariableDebugTypeDoesNotHideStructuralReference() throws Exception {
+      final String target = "fixture/StructuralAndDebugType";
+      final Path candidate =
+          writeJar(
+              "structural-and-debug-reference.jar",
+              Map.of(
+                  ClosedWorldTestFixtures.ROOT,
+                  ClosedWorldTestFixtures.classWithFieldAndLocalVariableType(
+                      ClosedWorldTestFixtures.ROOT, target)));
+
+      assertThatThrownBy(
+              () ->
+                  ClosedWorldTestFixtures.prepare(candidate)
+                      .analyze(
+                          List.of(ClosedWorldTestFixtures.ROOT_NAME),
+                          ClosureQueryPolicy.closedWorld(
+                              Set.of(ClosedWorldTestFixtures.ROOT_NAME))))
+          .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
+          .hasMessageContaining("unresolved structural class " + target);
+    }
+
+    @Test
+    @DisplayName("ADR-0003: debug metadata does not hide a missing allowed body type")
+    void localVariableDebugTypeDoesNotHideAllowedBodyReference() throws Exception {
+      final String target = "fixture/AllowedBodyAndDebugType";
+      final Path candidate =
+          writeJar(
+              "allowed-body-and-debug-reference.jar",
+              Map.of(
+                  ClosedWorldTestFixtures.ROOT,
+                  ClosedWorldTestFixtures.classWithLocalVariableTypeAndBodyCall(
+                      ClosedWorldTestFixtures.ROOT, target, target)));
+
+      assertThatThrownBy(
+              () ->
+                  ClosedWorldTestFixtures.prepare(candidate)
+                      .analyze(
+                          List.of(ClosedWorldTestFixtures.ROOT_NAME),
+                          ClosureQueryPolicy.closedWorld(
+                              Set.of(ClosedWorldTestFixtures.ROOT_NAME, target.replace('/', '.')))))
+          .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
+          .hasMessageContaining("unresolved body class " + target);
     }
 
     @Test
@@ -289,6 +521,48 @@ class ClosedWorldClosurePolicyTest {
       assertAll(
           "the library role follows declarations but not method bodies",
           () -> assertThat(bounded.retainedClasses()).containsExactly(ClosedWorldTestFixtures.ROOT),
+          () ->
+              assertThat(bounded.reachableLibraryClasses())
+                  .containsExactly(ClosedWorldTestFixtures.LIBRARY_ROOT));
+    }
+
+    @Test
+    @DisplayName("ADR-0003: reached sibling method annotations remain structural")
+    void closedWorldFollowsSiblingMethodMetadataButNotItsBody() throws Exception {
+      final String annotationType = "fixture/MethodAnnotation";
+      final String bodyType = "fixture/BodyOnly";
+      final Path candidate =
+          writeJar(
+              "sibling-method-metadata-candidate.jar",
+              Map.of(
+                  ClosedWorldTestFixtures.ROOT,
+                  ClosedWorldTestFixtures.classWithField(
+                      ClosedWorldTestFixtures.ROOT, ClosedWorldTestFixtures.LIBRARY_ROOT),
+                  annotationType,
+                  ClosedWorldTestFixtures.simpleClass(annotationType),
+                  bodyType,
+                  ClosedWorldTestFixtures.simpleClass(bodyType)));
+      final Path sibling =
+          writeJar(
+              "sibling-method-metadata-library.jar",
+              Map.of(
+                  ClosedWorldTestFixtures.LIBRARY_ROOT,
+                  ClosedWorldTestFixtures.classWithAnnotatedMethodAndBodyCall(
+                      ClosedWorldTestFixtures.LIBRARY_ROOT, annotationType, bodyType)));
+
+      final DependencyJarTrimmer.TrimAnalysis bounded =
+          ClosedWorldTestFixtures.prepare(candidate, List.of(sibling))
+              .analyze(
+                  List.of(ClosedWorldTestFixtures.ROOT_NAME),
+                  ClosureQueryPolicy.closedWorld(
+                      Set.of(ClosedWorldTestFixtures.ROOT_NAME, "fixture.LibraryRoot")));
+
+      assertAll(
+          "sibling declaration metadata stays live while its method body stays out of scope",
+          () ->
+              assertThat(bounded.retainedClasses())
+                  .containsExactlyInAnyOrder(ClosedWorldTestFixtures.ROOT, annotationType)
+                  .doesNotContain(bodyType),
           () ->
               assertThat(bounded.reachableLibraryClasses())
                   .containsExactly(ClosedWorldTestFixtures.LIBRARY_ROOT));

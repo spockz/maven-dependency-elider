@@ -41,6 +41,15 @@ func TestNormalizeOutputDoesNotPinTheEliderRuntimeRelease(t *testing.T) {
 	}
 }
 
+func TestNormalizeOutputRedactsPathBoundProofInventoryFingerprints(t *testing.T) {
+	output := "[INFO]     Prerequisite proof evidence: final inventory " + strings.Repeat("a", 64) + "\n"
+	got := normalizeOutput(output, "/repo", "/repo/.scratch/evidence")
+	want := []string{"[INFO]     Prerequisite proof evidence: final inventory <PATH_BOUND_SHA256>"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalized proof fingerprint = %#v, want %#v", got, want)
+	}
+}
+
 func TestNormalizeOutputRemovesBothSnapshotTimestamps(t *testing.T) {
 	output := "[INFO] Snapshot: analysis prediction at 2026-11-05T08:41:32Z\n" +
 		"[INFO] Snapshot: last successful elide run at 2026-11-05T08:41:33Z\n"

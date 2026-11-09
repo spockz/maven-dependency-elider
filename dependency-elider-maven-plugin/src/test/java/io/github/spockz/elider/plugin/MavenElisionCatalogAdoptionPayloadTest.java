@@ -16,6 +16,9 @@ import org.junit.jupiter.api.Test;
 /** Verifies strict, deterministic persistence of catalog adoption evidence. */
 @SuppressWarnings("PMD.AtLeastOneConstructor")
 final class MavenElisionCatalogAdoptionPayloadTest {
+  /** Classifier shared by the catalog fixtures. */
+  private static final String RULES_CLASSIFIER = "rules";
+
   /** WHY: Payload mutations are built with the same Jackson tree type as the codec. */
   private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -32,7 +35,7 @@ final class MavenElisionCatalogAdoptionPayloadTest {
         () -> assertThat(decoded.getFirst().mappingIds()).isEmpty(),
         () -> assertThat(decoded.getFirst().coordinate().groupId()).isEqualTo("catalog.fixture"),
         () -> assertThat(decoded.getFirst().coordinate().artifactId()).isEqualTo("empty-policy"),
-        () -> assertThat(decoded.getFirst().coordinate().classifier()).isEqualTo("rules"),
+        () -> assertThat(decoded.getFirst().coordinate().classifier()).isEqualTo(RULES_CLASSIFIER),
         () -> assertThat(decoded.getFirst().sha256()).isEqualTo("a".repeat(64)));
   }
 
@@ -52,7 +55,7 @@ final class MavenElisionCatalogAdoptionPayloadTest {
             assertThat(decoded.getFirst().provenance())
                 .isEqualTo("explicit-maven-catalog-coordinate"),
         () -> assertThat(decoded.getFirst().coordinate().type()).isEqualTo("zip"),
-        () -> assertThat(decoded.getFirst().coordinate().classifier()).isEqualTo("rules"),
+        () -> assertThat(decoded.getFirst().coordinate().classifier()).isEqualTo(RULES_CLASSIFIER),
         () -> assertThat(decoded.getFirst().sha256()).isEqualTo("c".repeat(64)),
         () -> assertThat(decoded.getFirst().mappingIds()).containsExactly("mapping-valid"),
         () ->
@@ -123,7 +126,7 @@ final class MavenElisionCatalogAdoptionPayloadTest {
   private static MavenVulnerabilityMappingCatalogResolver.Adoption adoption() {
     return new MavenVulnerabilityMappingCatalogResolver.Adoption(
         new MavenVulnerabilityMappingCatalogResolver.Coordinate(
-            "catalog.fixture", "empty-policy", "1.2.3", "jar", "rules"),
+            "catalog.fixture", "empty-policy", "1.2.3", "jar", RULES_CLASSIFIER),
         "a".repeat(64),
         "empty-catalog",
         1,
@@ -138,7 +141,7 @@ final class MavenElisionCatalogAdoptionPayloadTest {
   private static MavenVulnerabilityMappingCatalogResolver.Adoption populatedAdoption() {
     return new MavenVulnerabilityMappingCatalogResolver.Adoption(
         new MavenVulnerabilityMappingCatalogResolver.Coordinate(
-            "catalog.fixture", "policy", "2.3.4", "zip", "rules"),
+            "catalog.fixture", "policy", "2.3.4", "zip", RULES_CLASSIFIER),
         "c".repeat(64),
         "policy-catalog",
         1,

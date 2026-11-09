@@ -3,7 +3,9 @@
 package io.github.spockz.elider.trimmer;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Set;
 
@@ -24,6 +26,9 @@ public final class ClassFileConstantPool {
   /** JVM constant-pool tag for modified UTF-8 text. */
   private static final int UTF8_CONSTANT_TAG = 1;
 
+  /** Maximum unsigned-short constant-pool count. */
+  private static final int MAX_CONSTANT_POOL_COUNT = 0xffff;
+
   private ClassFileConstantPool() {}
 
   /** Checks whether the class-file constant pool names the requested class. */
@@ -42,6 +47,41 @@ public final class ClassFileConstantPool {
       }
       return classIndexNamesExpected(classIndices, utf8, expectedName);
     }
+  }
+
+  /** Appends a class constant that has no class-file use site. */
+  public static byte[] appendUnreferencedClassConstant(
+      final byte[] classFile, final String internalName) throws IOException {
+    final int oldCount;
+    final int poolEnd;
+    try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(classFile))) {
+      input.readInt();
+      input.readUnsignedShort();
+      input.readUnsignedShort();
+      oldCount = input.readUnsignedShort();
+      final String[] utf8 = new String[oldCount];
+      final int[] classIndices = new int[oldCount];
+      int index = 1;
+      while (index < oldCount) {
+        index += readEntry(input, input.readUnsignedByte(), index, utf8, classIndices);
+      }
+      poolEnd = classFile.length - input.available();
+    }
+    if (oldCount > MAX_CONSTANT_POOL_COUNT - 2) {
+      throw new IOException("Class-file constant pool has no room for fixture entries");
+    }
+    final ByteArrayOutputStream bytes = new ByteArrayOutputStream(classFile.length + 64);
+    bytes.write(classFile, 0, 8);
+    try (DataOutputStream output = new DataOutputStream(bytes)) {
+      output.writeShort(oldCount + 2);
+      bytes.write(classFile, 10, poolEnd - 10);
+      output.writeByte(UTF8_CONSTANT_TAG);
+      output.writeUTF(internalName);
+      output.writeByte(CLASS_CONSTANT_TAG);
+      output.writeShort(oldCount);
+      bytes.write(classFile, poolEnd, classFile.length - poolEnd);
+    }
+    return bytes.toByteArray();
   }
 
   private static boolean classIndexNamesExpected(
@@ -101,6 +141,6 @@ public final class ClassFileConstantPool {
       input.skipNBytes(3);
       return 1;
     }
-    throw new IOException("Unknown class-file constant-pool tag");
+    throw new IOException("Unknown class-file constant-pool tag: " + tag + " at index " + index);
   }
 }

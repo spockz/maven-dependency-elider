@@ -179,6 +179,31 @@ final class ADR0008PreconditionProofTest {
   }
 
   @Test
+  @DisplayName("ADR-0008/present ClassBodyEvaluator blocks proof when ScriptEvaluator is absent")
+  void janinoClassBodyEvaluatorBlocksProofEvenWhenScriptEvaluatorIsAbsent() throws Exception {
+    final Provider affected = affectedProvider();
+    final String requiredClass = "org.codehaus.janino.ClassBodyEvaluator";
+    final Path janinoPath =
+        archive(
+            "janino.jar",
+            Map.of(
+                "org/codehaus/janino/ClassBodyEvaluator.class",
+                classBytes("org/codehaus/janino/ClassBodyEvaluator")));
+    final Provider janino =
+        Provider.dependencyArchive(
+            ArtifactCoordinate.of("org.codehaus.janino", "janino", "3.1.12"), janinoPath);
+    final PreconditionClassInventory inventory =
+        PreconditionClassInventory.complete(List.of(affected, janino));
+
+    assertThatThrownBy(
+            () ->
+                GenericProofTestSupport.prerequisiteProof(
+                    mapping(requiredClass, "org.codehaus.janino:janino", "HIGH"), inventory))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Required class is present");
+  }
+
+  @Test
   @DisplayName("ADR-0008/group operators are evaluated against every physical provider")
   void evaluatesAtomicGroupsAgainstTheSamePhysicalProviderState() throws Exception {
     final Provider affected = affectedProvider();

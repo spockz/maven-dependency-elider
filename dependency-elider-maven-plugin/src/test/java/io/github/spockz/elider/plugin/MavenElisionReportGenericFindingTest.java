@@ -24,6 +24,7 @@ import io.github.spockz.elider.model.CodeReference;
 import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.FieldValue;
+import io.github.spockz.elider.model.GenericFindingReconciler;
 import io.github.spockz.elider.model.GenericVulnerabilityFinding;
 import io.github.spockz.elider.model.MergePriority;
 import io.github.spockz.elider.model.OmittedCodeProof;
@@ -60,6 +61,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import java.util.stream.StreamSupport;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -193,7 +195,9 @@ class MavenElisionReportGenericFindingTest {
         });
   }
 
+  // Validation precedes writing and replaying the same proof fixture.
   @Test
+  @SuppressWarnings("PMD.UnitTestContainsTooManyAsserts")
   void proofEvidenceRoundTripsAllOfAndMixedProviderObservationsOffline()
       throws IOException, ReflectiveOperationException {
     final ArtifactCoordinate candidate = ArtifactCoordinate.of("org.example", "library", "1.5");
@@ -216,10 +220,12 @@ class MavenElisionReportGenericFindingTest {
         new PrerequisiteClaim("org.example:dropped-provider", "proof.Absent");
     final PrerequisiteGroup group =
         new PrerequisiteGroup(PrerequisiteOperator.ALL_OF, Set.of(present, absent));
+    final ArtifactCoordinate bridgeCandidate =
+        ArtifactCoordinate.of("org.example", "alias-bridge", "1.0");
     final VulnerabilityFindingContribution contribution =
         new VulnerabilityFindingContribution(
             "CVE-2026-24680",
-            Set.of(),
+            Set.of("POM-ALIAS"),
             candidate.groupId(),
             candidate.artifactId(),
             candidate.type(),
@@ -237,8 +243,59 @@ class MavenElisionReportGenericFindingTest {
                     URI.create("https://example.test/advisory"),
                     null)),
             io.github.spockz.elider.model.ConfidenceLevel.HIGH);
+    final VulnerabilityFindingContribution linkedOsvContribution =
+        new VulnerabilityFindingContribution(
+            "GHSA-25qh-j22f-pwp8",
+            Set.of("OSV-ALIAS"),
+            candidate.groupId(),
+            candidate.artifactId(),
+            candidate.type(),
+            candidate.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.5]")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of(group)),
+            MergePriority.AUTOMATIC,
+            AssessmentIntent.AUTO_VERIFY,
+            "osv:alias-linked-proof",
+            Set.of(
+                new AdvisoryProvenance(
+                    EvidenceOrigin.OSV,
+                    "GHSA-25qh-j22f-pwp8",
+                    URI.create("https://example.test/ghsa"),
+                    null)),
+            io.github.spockz.elider.model.ConfidenceLevel.HIGH);
+    final VulnerabilityFindingContribution aliasBridge =
+        new VulnerabilityFindingContribution(
+            "POM-ALIAS",
+            Set.of("OSV-ALIAS"),
+            bridgeCandidate.groupId(),
+            bridgeCandidate.artifactId(),
+            bridgeCandidate.type(),
+            bridgeCandidate.classifier(),
+            List.of(VersionCoverageClaim.affected("[1.5]")),
+            FieldValue.omitted(),
+            FieldValue.supplied(Set.of(group)),
+            MergePriority.AUTOMATIC,
+            AssessmentIntent.AUTO_VERIFY,
+            "alias:bridge",
+            Set.of(),
+            io.github.spockz.elider.model.ConfidenceLevel.HIGH);
+    final List<VulnerabilityFindingContribution> allContributions =
+        List.of(contribution, aliasBridge, linkedOsvContribution);
+    final GenericFindingReconciler.Result reconciliation =
+        GenericFindingReconciler.reconcile(allContributions);
     final GenericVulnerabilityFinding merged =
-        GenericVulnerabilityFinding.merge(List.of(contribution));
+        reconciliation.findings().stream()
+            .filter(
+                row ->
+                    row.contributions().stream()
+                        .anyMatch(
+                            value ->
+                                value.groupId().equals(candidate.groupId())
+                                    && value.artifactId().equals(candidate.artifactId())))
+            .findFirst()
+            .orElseThrow();
+    final List<VulnerabilityFindingContribution> linkedContributions = merged.contributions();
     final PreconditionClassInventory baseline =
         PreconditionClassInventory.complete(
             List.of(
@@ -255,13 +312,141 @@ class MavenElisionReportGenericFindingTest {
     final PrerequisiteProofResult proof =
         PreconditionProof.proveWithAttribution(merged, candidate, baseline, actualFinal);
     final GenericFindingAssessment assessment =
-        assessmentRow(candidate, contribution, group, proof);
+        assessmentRow(
+            candidate,
+            "CVE-2026-24680",
+            Set.of("CVE-2026-24680", "GHSA-25qh-j22f-pwp8", "POM-ALIAS", "OSV-ALIAS"),
+            linkedContributions,
+            group,
+            proof);
+    assertAll(
+        "proof validation requires one canonical alias component matching its saved row",
+        () ->
+            assertProofRejected(
+                assessmentRow(candidate, "GHSA-25qh-j22f-pwp8", assessment, group, proof),
+                "saved canonical mismatch"),
+        () -> {
+          assertAll(
+              "the reconciled component key includes every GATC field",
+              () ->
+                  assertWrongComponentRejected(
+                      candidate,
+                      contribution,
+                      linkedOsvContribution,
+                      ArtifactCoordinate.of("org.other", "library", "1.5"),
+                      group,
+                      proof),
+              () ->
+                  assertWrongComponentRejected(
+                      candidate,
+                      contribution,
+                      linkedOsvContribution,
+                      ArtifactCoordinate.of("org.example", "other-library", "1.5"),
+                      group,
+                      proof),
+              () ->
+                  assertWrongComponentRejected(
+                      candidate,
+                      contribution,
+                      linkedOsvContribution,
+                      new ArtifactCoordinate(
+                          candidate.groupId(),
+                          candidate.artifactId(),
+                          candidate.version(),
+                          "test-jar",
+                          "",
+                          candidate.scope()),
+                      group,
+                      proof),
+              () ->
+                  assertWrongComponentRejected(
+                      candidate,
+                      contribution,
+                      linkedOsvContribution,
+                      new ArtifactCoordinate(
+                          candidate.groupId(),
+                          candidate.artifactId(),
+                          candidate.version(),
+                          candidate.type(),
+                          "tests",
+                          candidate.scope()),
+                      group,
+                      proof));
+        },
+        () -> {
+          final VulnerabilityFindingContribution outsideAlias =
+              copyContribution(
+                  linkedOsvContribution, "GHSA-outside-class", Set.of(), candidate, group);
+          assertProofRejected(
+              assessmentRow(
+                  candidate,
+                  assessment.vulnerabilityId(),
+                  assessment.aliases(),
+                  List.of(contribution, outsideAlias),
+                  group,
+                  proof),
+              "component contribution falls outside the persisted alias class");
+        },
+        () -> {
+          final VulnerabilityFindingContribution competingCve =
+              copyContribution(
+                  linkedOsvContribution,
+                  "CVE-2026-99999",
+                  linkedOsvContribution.aliases(),
+                  candidate,
+                  group);
+          assertProofRejected(
+              assessmentRow(
+                  candidate,
+                  "CVE-2026-24680",
+                  Set.of(
+                      "CVE-2026-24680",
+                      "CVE-2026-99999",
+                      "GHSA-25qh-j22f-pwp8",
+                      "POM-ALIAS",
+                      "OSV-ALIAS"),
+                  List.of(contribution, competingCve),
+                  group,
+                  proof),
+              "ambiguous competing CVE aliases");
+        },
+        () -> {
+          final PrerequisiteGroup changedGroup =
+              new PrerequisiteGroup(PrerequisiteOperator.ANY_OF, group.members());
+          final List<VulnerabilityFindingContribution> changedGroups =
+              linkedContributions.stream()
+                  .map(
+                      value ->
+                          copyContribution(
+                              value,
+                              value.vulnerabilityId(),
+                              value.aliases(),
+                              candidate,
+                              changedGroup))
+                  .toList();
+          assertProofRejected(
+              assessmentRow(
+                  candidate,
+                  assessment.vulnerabilityId(),
+                  assessment.aliases(),
+                  changedGroups,
+                  changedGroup,
+                  proof),
+              "saved proof operator differs from the reconciled source group");
+        });
     final Path output = temp.resolve("prerequisite-proof-report.json");
 
-    MavenElisionReportWriter.write(output, snapshot(assessment, List.of()));
+    final MavenElisionReportSnapshot savedSnapshot =
+        snapshot(assessment, List.of()).withGenericFindings(List.of(assessment), List.of());
+    MavenElisionReportWriter.write(output, savedSnapshot);
     final ObjectNode json = (ObjectNode) new ObjectMapper().readTree(output.toFile());
-    final JsonNode serializedProof =
-        json.withArray("genericFindings").get(0).get("prerequisiteProof");
+    final JsonNode savedProofRow =
+        StreamSupport.stream(json.withArray("genericFindings").spliterator(), false)
+            .filter(row -> "CVE-2026-24680".equals(row.path("vulnerabilityId").asText()))
+            .filter(row -> "library".equals(row.path("candidate").path("artifactId").asText()))
+            .findFirst()
+            .orElseThrow();
+    final JsonNode serializedProof = savedProofRow.get("prerequisiteProof");
 
     assertAll(
         "saved proof retains the atomic group and provider causes after source archives disappear",
@@ -270,6 +455,13 @@ class MavenElisionReportGenericFindingTest {
                 "the source proof records one present member and mixed causes for the absent"
                     + " member",
                 () -> assertThat(proof.groups()).hasSize(1),
+                () -> assertThat(reconciliation.findings()).hasSize(2),
+                () -> assertThat(merged.vulnerabilityId()).isEqualTo("CVE-2026-24680"),
+                () ->
+                    assertThat(merged.aliases())
+                        .contains(
+                            "CVE-2026-24680", "GHSA-25qh-j22f-pwp8", "POM-ALIAS", "OSV-ALIAS"),
+                () -> assertThat(linkedContributions).doesNotContain(aliasBridge),
                 () -> assertThat(proof.groups().getFirst().group()).isEqualTo(group),
                 () ->
                     assertThat(proof.groups().getFirst().attribution())
@@ -334,7 +526,16 @@ class MavenElisionReportGenericFindingTest {
           reportMojo.execute();
           final String rendered = String.join("\n", messages);
           final GenericFindingAssessment sourceFinding = assessment;
-          final GenericFindingAssessment replayedFinding = replayed.genericFindings().getFirst();
+          final GenericFindingAssessment replayedFinding =
+              replayed.genericFindings().stream()
+                  .filter(
+                      value ->
+                          "CVE-2026-24680".equals(value.vulnerabilityId())
+                              && value.candidate().equals(candidate)
+                              && value.outcome()
+                                  == GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT)
+                  .findFirst()
+                  .orElseThrow();
           assertAll(
               () -> assertThat(replayedFinding.prerequisiteProof()).isEmpty(),
               () -> assertThat(sourceFinding.prerequisiteProofEvidence()).isPresent(),
@@ -605,7 +806,7 @@ class MavenElisionReportGenericFindingTest {
       final Path finalPath,
       final String cause) {
     final JsonNode row =
-        java.util.stream.StreamSupport.stream(providers.spliterator(), false)
+        StreamSupport.stream(providers.spliterator(), false)
             .filter(value -> value.path("coordinate").asText().equals(coordinate.toString()))
             .findFirst()
             .orElseThrow();
@@ -1458,9 +1659,25 @@ class MavenElisionReportGenericFindingTest {
       final VulnerabilityFindingContribution contribution,
       final PrerequisiteGroup group,
       final PrerequisiteProofResult proof) {
-    return new GenericFindingAssessment(
+    return assessmentRow(
+        candidate,
         contribution.vulnerabilityId(),
         Set.of(contribution.vulnerabilityId()),
+        List.of(contribution),
+        group,
+        proof);
+  }
+
+  private static GenericFindingAssessment assessmentRow(
+      final ArtifactCoordinate candidate,
+      final String vulnerabilityId,
+      final Set<String> aliases,
+      final List<VulnerabilityFindingContribution> contributions,
+      final PrerequisiteGroup group,
+      final PrerequisiteProofResult proof) {
+    return new GenericFindingAssessment(
+        vulnerabilityId,
+        aliases,
         candidate,
         VersionApplicability.AFFECTED,
         Optional.of(AssessmentIntent.AUTO_VERIFY),
@@ -1475,8 +1692,71 @@ class MavenElisionReportGenericFindingTest {
         GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT,
         proof.attestation().impactDetail(),
         MavenVulnerabilityAssessment.InventoryDisposition.RETAINED_AND_TRIMMED,
-        List.of(contribution),
+        contributions,
         Optional.of(proof));
+  }
+
+  private static GenericFindingAssessment assessmentRow(
+      final ArtifactCoordinate candidate,
+      final String vulnerabilityId,
+      final GenericFindingAssessment source,
+      final PrerequisiteGroup group,
+      final PrerequisiteProofResult proof) {
+    return assessmentRow(
+        candidate, vulnerabilityId, source.aliases(), source.contributions(), group, proof);
+  }
+
+  private static VulnerabilityFindingContribution copyContribution(
+      final VulnerabilityFindingContribution source,
+      final String vulnerabilityId,
+      final Set<String> aliases,
+      final ArtifactCoordinate component,
+      final PrerequisiteGroup group) {
+    return new VulnerabilityFindingContribution(
+        vulnerabilityId,
+        aliases,
+        component.groupId(),
+        component.artifactId(),
+        component.type(),
+        component.classifier(),
+        source.versionClaims(),
+        source.codeGroup(),
+        FieldValue.supplied(Set.of(group)),
+        source.priority(),
+        source.intent(),
+        source.provenance(),
+        source.sourceProvenance(),
+        source.confidenceLevel(),
+        source.unresolvedFields());
+  }
+
+  private static void assertProofRejected(
+      final GenericFindingAssessment finding, final String reason) {
+    assertThatThrownBy(() -> MavenElisionReportProofValidator.validate(finding))
+        .as(reason)
+        .isInstanceOf(IOException.class);
+  }
+
+  private static void assertWrongComponentRejected(
+      final ArtifactCoordinate candidate,
+      final VulnerabilityFindingContribution pom,
+      final VulnerabilityFindingContribution osv,
+      final ArtifactCoordinate wrongComponent,
+      final PrerequisiteGroup group,
+      final PrerequisiteProofResult proof) {
+    final List<VulnerabilityFindingContribution> contributions =
+        List.of(
+            pom,
+            copyContribution(osv, osv.vulnerabilityId(), osv.aliases(), wrongComponent, group));
+    final GenericFindingAssessment finding =
+        assessmentRow(
+            candidate,
+            "CVE-2026-24680",
+            Set.of("CVE-2026-24680", "GHSA-25qh-j22f-pwp8", "POM-ALIAS", "OSV-ALIAS"),
+            contributions,
+            group,
+            proof);
+    assertProofRejected(finding, "alias-linked advisory on another GATC component");
   }
 
   @Test

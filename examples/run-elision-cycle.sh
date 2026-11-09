@@ -94,6 +94,9 @@ main() {
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
     -pl dependency-elider-maven-plugin -am install -DskipTests
 
+  "$maven" "${maven_options[@]}" -f \
+    "$repo_root/examples/logback-vulnerability-mapping-catalog/pom.xml" install -DskipTests
+
   vulnerability_cache="$test_dir/vulnerability-cache"
   bash "$repo_root/scripts/prepare-example-vulnerability-cache.sh" \
     "$vulnerability_cache" "$maven" "${maven_options[@]}"
@@ -199,22 +202,22 @@ MANIFEST
     if [[ $fixture == example-basic-app ]]; then
       elision_options+=(
         -Delide.trimJars=true
-        -Delide.sourceRootsComplete=true
         -Dmaven.compiler.proc=none
         -Delide.retainedArtifacts=commons-io:commons-io,org.apache.commons:commons-lang3
       )
     elif [[ $fixture == example-spring-boot-app ]]; then
       elision_options+=(
         -Delide.trimJars=true
-        -Delide.sourceRootsComplete=true
         -Dmaven.compiler.proc=none
+        # Baseline tests run; the elision proof must prevent later testCompile provider changes.
+        -DskipTests=true
+        -Dmaven.test.skip=true
         -Delide.trimRoots=freemarker.template.Configuration,groovy.text.markup.MarkupTemplateEngine,jakarta.validation.Validation,org.webjars.WebJarAssetLocator,org.reactivestreams.Publisher,io.micrometer.context.ContextSnapshot,reactor.core.publisher.Flux,reactor.core.publisher.Mono,reactor.util.context.Context,jakarta.servlet.jsp.jstl.core.Config,javax.annotation.Nonnull,edu.umd.cs.findbugs.annotations.SuppressFBWarnings,com.thoughtworks.xstream.XStream,com.thoughtworks.xstream.io.xml.StaxDriver
-        -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework.boot:spring-boot-actuator:3.3.5:jar:,org.springframework.boot:spring-boot-actuator-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,org.springframework:spring-core:6.1.14:jar:,io.projectreactor:reactor-core:3.6.11:jar:,io.micrometer:micrometer-core:1.13.6:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,io.micrometer:micrometer-jakarta9:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:
+        -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework.boot:spring-boot-actuator:3.3.5:jar:,org.springframework.boot:spring-boot-actuator-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-webmvc:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,org.springframework:spring-core:6.1.14:jar:,io.projectreactor:reactor-core:3.6.11:jar:,io.micrometer:micrometer-core:1.13.6:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,io.micrometer:micrometer-jakarta9:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:
       )
     elif [[ $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
       elision_options+=(
         -Delide.trimJars=true
-        -Delide.sourceRootsComplete=true
         -Dmaven.compiler.proc=none
         -Delide.trimSkipArtifacts=org.springframework:spring-context:6.2.7:jar:,org.springframework:spring-beans:6.2.7:jar:,org.springframework:spring-aop:6.2.7:jar:,org.springframework:spring-expression:6.2.7:jar:,org.springframework:spring-core:6.2.7:jar:,org.springframework:spring-jcl:6.2.7:jar:,io.micrometer:micrometer-observation:1.15.0:jar:,io.micrometer:micrometer-commons:1.15.0:jar:
       )
@@ -222,13 +225,12 @@ MANIFEST
       archive_file="$mrjar_fixture_jar"
     else
       elision_options+=(
-        -Delide.sourceRootsComplete=true
         -Delide.trimJars=true
         -Dmaven.compiler.proc=none
       )
     fi
     if [[ $fixture == example-cve-safe-class-app ]]; then
-      elision_options+=(-DskipTests=true)
+      elision_options+=(-DskipTests=true -Dmaven.test.skip=true)
     fi
 
     run_timed "$baseline_seconds" run_fixture_maven "$fixture_dir" -f "$pom" clean verify \
@@ -248,6 +250,7 @@ MANIFEST
     "$jar" tf "$archive_file" >"$baseline_entries"
     verify_baseline_archive "$fixture" "$baseline_entries"
     if [[ $fixture == example-spring-boot-app ]]; then
+      capture_spring_package_inventory "$archive_file" "$test_dir/$fixture-baseline-inventory"
       mail_artifacts="$test_dir/$fixture-mail-artifacts"
       capture_spring_mail_artifacts "$jar_file" "$mail_artifacts"
       capture_spring_webmvc "$jar_file" "$test_dir/$fixture-spring-webmvc.jar"
@@ -257,6 +260,20 @@ MANIFEST
     if [[ $fixture == example-spring-boot-app ]]; then
       run_spring_boot_endpoint "$jar_file" "$trace" "$baseline_output"
       verify_spring_unused_trace "$trace"
+      analysis_report="$test_dir/$fixture-analysis-report.json"
+      analysis_output="$test_dir/$fixture-analysis.out"
+      run_fixture_maven "$fixture_dir" -f "$pom" "${elision_options[@]}" \
+        io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze \
+        "-Delide.analysisSummaryFile=$analysis_report" >"$analysis_output"
+      if ! rg -Fq "io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0" "$analysis_output" \
+        || ! rg -Fq "catalogId=logback-core-cve-2025-11226" "$analysis_output" \
+        || ! rg -Fq "CVE-2025-11226" "$analysis_output"; then
+        echo "Spring Analyze did not report the shared Logback catalog and finding" >&2
+        cat -- "$analysis_output" >&2
+        exit 1
+      fi
+      "$java" --class-path "$support_classpath" ExampleSupport \
+        verify-analyze-precondition "$analysis_report"
       production_output="$test_dir/$fixture-production-classes"
       usage_report="$test_dir/$fixture-class-usage.json"
       cp -a -- "$fixture_dir/target/classes" "$production_output"
@@ -269,7 +286,6 @@ MANIFEST
       cp -a -- "$fixture_dir/target/classes" "$production_output"
       elision_options+=(
         -Delide.trimJars=true
-        -Delide.sourceRootsComplete=true
         -Dmaven.compiler.proc=none
         "-Delide.productionOutput=$production_output"
       )
@@ -313,7 +329,8 @@ MANIFEST
       test -f "$fixture_dir/target/classes/META-INF/native-image/sbom.json"
     fi
 
-    if [[ $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
+    if [[ $fixture == example-spring-boot-app || $fixture == example-cve-unused-app ||
+      $fixture == example-cve-safe-class-app ]]; then
       verify_cve_sboms "$fixture" "$fixture_dir/target/baseline-sbom.cdx.json" \
         "$fixture_dir/target/dependency-elider-sbom.cdx.json" \
         "$fixture_dir/target/dependency-elider.openvex.json"
@@ -345,6 +362,11 @@ MANIFEST
 
     entries="$test_dir/$fixture.jar-entries"
     "$jar" tf "$archive_file" >"$entries"
+    if [[ $fixture == example-spring-boot-app ]]; then
+      capture_spring_package_inventory "$archive_file" "$test_dir/$fixture-final-inventory"
+      compare_spring_package_inventory \
+        "$test_dir/$fixture-baseline-inventory" "$test_dir/$fixture-final-inventory"
+    fi
     if [[ $fixture == example-mrjar-app ]]; then
       "$jar" --validate --file "$archive_file"
     fi
@@ -374,7 +396,7 @@ MANIFEST
         "$test_dir/basic-original/commons-compress-1.28.0.jar" "$baseline_package_bytes"
     elif [[ $fixture == example-spring-boot-app ]]; then
       compare_spring_webmvc "$jar_file" "$test_dir/$fixture-spring-webmvc.jar"
-      compare_spring_passthrough "$jar_file" "$test_dir/$fixture-passthrough-jars"
+      compare_spring_passthrough "$jar_file" "$test_dir/$fixture-passthrough-jars" "$fixture_dir"
       final_package_bytes=$(wc -c <"$jar_file")
       if (( final_package_bytes >= baseline_package_bytes )); then
         echo "Spring Boot package did not shrink: $baseline_package_bytes to $final_package_bytes bytes" >&2
@@ -422,7 +444,6 @@ run_reactor_fixture() {
     "-Delide.cveCacheDirectory=$vulnerability_cache"
     "-Delide.traceFiles=$trace"
     -Delide.trimJars=true
-    -Delide.sourceRootsComplete=true
     -Dmaven.compiler.proc=none
     -Delider.verifyElision=true
   )
@@ -676,6 +697,73 @@ capture_spring_mail_artifacts() {
   sort -o "$manifest" "$manifest"
 }
 
+capture_spring_package_inventory() {
+  local archive=$1
+  local output_dir=$2
+  local archive_entries="$output_dir/archive-entries.txt"
+  local nested_archives="$output_dir/nested-archives.txt"
+  local inventory="$output_dir/physical-entries.tsv"
+  local entry
+  local name
+  local nested
+  local nested_entries
+  mkdir -p -- "$output_dir"
+  "$jar" tf "$archive" >"$archive_entries"
+  grep -E '^BOOT-INF/lib/[^/]+\.jar$' "$archive_entries" | LC_ALL=C sort >"$nested_archives"
+  : >"$inventory"
+  while IFS= read -r entry; do
+    name=${entry##*/}
+    nested="$output_dir/$name"
+    nested_entries="$output_dir/$name.entries"
+    extract_nested_jar "$archive" "$entry" "$nested"
+    "$jar" tf "$nested" >"$nested_entries"
+    awk -v archive="$name" \
+      '$0 !~ /\/$/ { kind = $0 ~ /\.class$/ ? "class" : "resource"; print kind "\t" archive "\t" $0 }' \
+      "$nested_entries" >>"$inventory"
+  done <"$nested_archives"
+  awk -F/ \
+    '/^BOOT-INF\/classes\/[^/]/ { path = substr($0, length("BOOT-INF/classes/") + 1); if (path !~ /\/$/) { kind = path ~ /\.class$/ ? "class" : "resource"; print kind "\tapplication\t" path } }' \
+    "$archive_entries" >>"$inventory"
+  LC_ALL=C sort --output="$inventory" "$inventory"
+}
+
+compare_spring_package_inventory() {
+  local baseline_dir=$1
+  local final_dir=$2
+  local baseline_archives="$baseline_dir/nested-archives.txt"
+  local final_archives="$final_dir/nested-archives.txt"
+  local baseline_entries="$baseline_dir/physical-entries.tsv"
+  local final_entries="$final_dir/physical-entries.tsv"
+  local kind
+  local baseline_count
+  local final_count
+  local removed_count
+  local added_count
+  for kind in class resource; do
+    baseline_count=$(awk -F '\t' -v kind="$kind" '$1 == kind { count++ } END { print count + 0 }' "$baseline_entries")
+    final_count=$(awk -F '\t' -v kind="$kind" '$1 == kind { count++ } END { print count + 0 }' "$final_entries")
+    removed_count=$(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$baseline_entries" | \
+      comm -23 - <(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$final_entries") | wc -l)
+    added_count=$(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$final_entries" | \
+      comm -13 <(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$baseline_entries") - | wc -l)
+    printf 'Spring package %s entries: baseline=%s, final=%s, retained=%s, removed=%s, added=%s\n' \
+      "$kind" "$baseline_count" "$final_count" "$((final_count - added_count))" \
+      "$removed_count" "$added_count"
+  done
+  baseline_count=$(wc -l <"$baseline_archives")
+  final_count=$(wc -l <"$final_archives")
+  comm -23 "$baseline_archives" "$final_archives" >"$test_dir/spring-removed-archives.txt"
+  comm -13 "$baseline_archives" "$final_archives" >"$test_dir/spring-added-archives.txt"
+  if [[ $(<"$test_dir/spring-removed-archives.txt") != "BOOT-INF/lib/commons-codec-1.16.1.jar" ||
+    -s $test_dir/spring-added-archives.txt ]]; then
+    echo "Spring packaged dependency archive change did not match the expected Commons Codec removal" >&2
+    cat -- "$test_dir/spring-removed-archives.txt" "$test_dir/spring-added-archives.txt" >&2
+    exit 1
+  fi
+  printf 'Spring dependency archives: baseline=%s, final=%s, retained=%s, elided=%s\n' \
+    "$baseline_count" "$final_count" "$final_count" 1
+}
+
 compare_spring_mail_artifacts() {
   local archive=$1
   local baseline_dir=$2
@@ -711,36 +799,12 @@ compare_spring_webmvc() {
   local archive=$1
   local baseline=$2
   local current="$test_dir/spring-webmvc-current.jar"
-  local baseline_classes="$test_dir/spring-webmvc-baseline-classes"
-  local current_classes="$test_dir/spring-webmvc-current-classes"
-  local extra_classes="$test_dir/spring-webmvc-extra-classes"
   capture_spring_webmvc "$archive" "$current"
-  "$jar" tf "$baseline" | grep '\.class$' | sort >"$baseline_classes"
-  "$jar" tf "$current" | grep '\.class$' | sort >"$current_classes"
-  comm -23 "$current_classes" "$baseline_classes" >"$extra_classes"
-  if [[ -s $extra_classes ]]; then
-    echo "Trimmed Spring MVC JAR contains class entries absent from the original" >&2
-    cat "$extra_classes" >&2
+  if ! cmp --silent -- "$baseline" "$current"; then
+    echo "Configured Spring MVC pass-through archive changed during elision" >&2
     exit 1
   fi
-  local missing_classes="$test_dir/spring-webmvc-missing-classes"
-  comm -13 "$current_classes" "$baseline_classes" >"$missing_classes"
-  if [[ ! -s $missing_classes ]]; then
-    echo "Nested Spring MVC JAR did not lose any class entries" >&2
-    exit 1
-  fi
-  has_entry "$current_classes" 'org/springframework/web/servlet/DispatcherServlet.class'
-  local baseline_bytes
-  local current_bytes
-  baseline_bytes=$(wc -c <"$baseline")
-  current_bytes=$(wc -c <"$current")
-  if (( current_bytes >= baseline_bytes )); then
-    echo "Nested Spring MVC JAR did not shrink: $baseline_bytes to $current_bytes bytes" >&2
-    exit 1
-  fi
-  printf 'Nested Spring MVC JAR shrank from %s to %s bytes and from %s to %s classes\n' \
-    "$baseline_bytes" "$current_bytes" \
-    "$(wc -l <"$baseline_classes")" "$(wc -l <"$current_classes")"
+  printf 'Configured Spring MVC pass-through archive remained byte-identical\n'
 }
 
 capture_spring_passthrough() {
@@ -750,9 +814,11 @@ capture_spring_passthrough() {
 compare_spring_passthrough() {
   local archive=$1
   local baseline_dir=$2
+  local fixture_dir=$3
   local current_dir="$test_dir/passthrough-current"
   local baseline_names="$test_dir/passthrough-baseline-names"
   local current_names="$test_dir/passthrough-current-names"
+  verify_spring_snakeyaml_retained "$fixture_dir"
   collect_spring_passthrough "$archive" "$current_dir" true
   find "$baseline_dir" -type f -name '*.jar' -printf '%f\n' | sort >"$baseline_names"
   local transformed
@@ -817,14 +883,6 @@ verify_spring_nested_vertical_shading() {
       "$current_entries")
     baseline_classes=$(awk '/\.class$/ { count++ } END { print count + 0 }' "$baseline_entries")
     current_classes=$(awk '/\.class$/ { count++ } END { print count + 0 }' "$current_entries")
-    if (( baseline_target_versioned == 0 || current_target_versioned != 0 )); then
-      echo "Nested MRJAR retained implementation classes at or below Java 21: $name" >&2
-      exit 1
-    fi
-    if (( current_classes >= baseline_classes )); then
-      echo "Vertically shaded MRJAR did not prune physical class entries: $name" >&2
-      exit 1
-    fi
     case $name in
       jackson-core-2.18.2.jar)
         retained_class='com/fasterxml/jackson/core/JsonFactory.class'
@@ -840,6 +898,23 @@ verify_spring_nested_vertical_shading() {
         ;;
       *) echo "No retained-class assertion for vertically shaded MRJAR: $name" >&2; exit 1 ;;
     esac
+    if [[ $name == snakeyaml-2.2.jar ]]; then
+      has_entry "$baseline_entries" "$selected_version"
+      has_entry "$current_entries" "$selected_root"
+      lacks_entry "$current_entries" "$selected_version"
+      compare_nested_entry_bytes \
+        "$baseline" "$selected_version" "$current" "$selected_root" "$name" elevated-implementation
+      printf 'Nested SnakeYAML MRJAR implementation was elevated and retained during trimming\n'
+      continue
+    fi
+    if (( baseline_target_versioned == 0 || current_target_versioned != 0 )); then
+      echo "Nested MRJAR retained implementation classes at or below Java 21: $name" >&2
+      exit 1
+    fi
+    if (( current_classes >= baseline_classes )); then
+      echo "Vertically shaded MRJAR did not prune physical class entries: $name" >&2
+      exit 1
+    fi
     has_entry "$current_entries" "$retained_class"
     has_entry "$baseline_entries" "$selected_version"
     has_entry "$current_entries" "$selected_root"
@@ -854,6 +929,14 @@ verify_spring_nested_vertical_shading() {
       "$name" "$baseline_target_versioned" "$baseline_classes" \
       "$current_target_versioned" "$current_classes"
   done
+}
+
+verify_spring_snakeyaml_retained() {
+  local fixture_dir=$1
+  local report="$fixture_dir/target/dependency-elider-report.json"
+  test -f "$report"
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-spring-snakeyaml-retained "$report"
 }
 
 compare_nested_entry_bytes() {
@@ -981,7 +1064,7 @@ JAVA
   (cd -- "$probe_fixture" && "$maven" "${maven_options[@]}" --offline -f "$probe_pom" clean compile \
     -Delide.mode=elision -Delide.traceFiles="$trace" -Delider.verifyElision=false \
     "-Delide.cveCacheDirectory=$vulnerability_cache" \
-    -Delide.sourceRootsComplete=true -Dmaven.compiler.proc=none) \
+        -Dmaven.compiler.proc=none) \
     >"$active_log" 2>&1
   if [[ ! -f $probe_fixture/target/classes/io/github/spockz/example/basic/ElidedHttpClientReference.class ]]; then
     echo "Compiler did not produce the source-root probe class when elision was enabled" >&2
@@ -1089,8 +1172,12 @@ verify_archive() {
   local fixture_dir=$3
   case $fixture in
     example-basic-app) verify_effective_graph_report "$fixture_dir" 2 ;;
-    example-spring-boot-app) verify_effective_graph_report "$fixture_dir" 0 ;;
-    example-cve-unused-app|example-cve-safe-class-app)
+    example-spring-boot-app) verify_effective_graph_report "$fixture_dir" 1 ;;
+    example-cve-unused-app)
+      verify_effective_graph_report "$fixture_dir" 1
+      verify_cve_unused_expected_drop "$fixture_dir"
+      ;;
+    example-cve-safe-class-app)
       verify_effective_graph_report "$fixture_dir" 0
       verify_no_cve_whole_artifact_drops "$fixture_dir"
       ;;
@@ -1104,11 +1191,11 @@ verify_archive() {
       lacks_entry "$entries" 'org/apache/commons/compress/archivers/tar/TarArchiveEntry.class'
       ;;
     example-spring-boot-app)
-      verify_no_spring_whole_artifact_drops "$fixture_dir"
+      verify_spring_expected_drop "$fixture_dir"
       has_pattern "$entries" 'BOOT-INF/lib/spring-webmvc-[^/]+\.jar'
       has_entry "$entries" 'META-INF/sbom/application.cdx.json'
       has_entry "$entries" 'META-INF/native-image/sbom.json'
-      has_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
+      lacks_pattern "$entries" 'BOOT-INF/lib/commons-codec-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/snakeyaml-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/spring-context-support-[^/]+\.jar'
       has_pattern "$entries" 'BOOT-INF/lib/jakarta.mail-[^/]+\.jar'
@@ -1175,11 +1262,11 @@ verify_cve_report() {
     verify-cve-report "$fixture" "$report_json" "$report_output"
 }
 
-verify_no_spring_whole_artifact_drops() {
+verify_spring_expected_drop() {
   local report="$1/target/dependency-elider-report.json"
   test -f "$report"
   "$java" --class-path "$support_classpath" ExampleSupport \
-    verify-no-whole-artifact-drops "Spring fixture" "$report"
+    verify-spring-expected-drop "$report"
 }
 
 verify_no_cve_whole_artifact_drops() {
@@ -1187,6 +1274,13 @@ verify_no_cve_whole_artifact_drops() {
   test -f "$report"
   "$java" --class-path "$support_classpath" ExampleSupport \
     verify-no-whole-artifact-drops "CVE fixture" "$report"
+}
+
+verify_cve_unused_expected_drop() {
+  local report="$1/target/dependency-elider-report.json"
+  test -f "$report"
+  "$java" --class-path "$support_classpath" ExampleSupport \
+    verify-cve-unused-expected-drop "$report"
 }
 
 verify_basic_trimmed_artifacts() {

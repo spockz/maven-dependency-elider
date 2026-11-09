@@ -3,7 +3,6 @@
 package io.github.spockz.elider.plugin;
 
 import java.util.List;
-import java.util.Properties;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -17,13 +16,12 @@ import org.apache.maven.plugin.MavenPluginManager;
 import org.apache.maven.plugin.prefix.PluginPrefixResolver;
 import org.apache.maven.plugin.version.PluginVersionResolver;
 import org.apache.maven.project.MavenProject;
-import org.codehaus.plexus.util.xml.Xpp3Dom;
 
 /** Schedules configured elision before eligible standalone tree requests. */
 @Named
 @Singleton
 public final class EliderLifecycleParticipant extends AbstractMavenLifecycleParticipant {
-  /** Number of goals required to safely rebind an execution. */
+  /** Number of goals required to assign an independent phase priority. */
   private static final int SINGLE_GOAL_COUNT = 1;
 
   /** Resolves goal descriptors without configuring or executing the selected Mojo. */
@@ -43,16 +41,14 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
   @Override
   public void afterProjectsRead(final MavenSession session) throws MavenExecutionException {
     MavenOriginalInputAudit.markHookPresent(session);
-    rebindProductionBytecodeExecutions(session);
+    assignDefaultElidePhases(session);
     EliderTreePreparation.schedule(session);
     new BanishedDependencyLifecycleActivation(
             mavenPluginManager, pluginPrefixResolver, pluginVersionResolver)
         .activate(session);
   }
 
-  // WHY: Rebinding must fail closed when an execution cannot move by itself.
-  @SuppressWarnings({"PMD.CognitiveComplexity", "PMD.CyclomaticComplexity"})
-  private static void rebindProductionBytecodeExecutions(final MavenSession session)
+  private static void assignDefaultElidePhases(final MavenSession session)
       throws MavenExecutionException {
     if (session.getProjects() == null) {
       return;
@@ -68,28 +64,7 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
         continue;
       }
       for (final PluginExecution execution : plugin.getExecutions()) {
-        if (!execution.getGoals().contains("elide")
-            || !(execution.getPhase() == null
-                || execution.getPhase().isBlank()
-                || "initialize".equals(execution.getPhase()))) {
-          continue;
-        }
-        if (!"initialize".equals(EliderPluginConfiguration.effectivePhase(execution, project))) {
-          continue;
-        }
-        if (!productionClassesComplete(session, project, plugin, execution)
-            || sourceRootsComplete(session, project, plugin, execution)) {
-          continue;
-        }
-        if (execution.getGoals().size() != SINGLE_GOAL_COUNT) {
-          throw new MavenExecutionException(
-              "Cannot rebind dependency-elider execution "
-                  + execution.getId()
-                  + " because it combines elide with other goals",
-              project.getFile());
-        }
-        execution.setPhase("process-classes");
-        execution.setPriority(Integer.MAX_VALUE);
+        applyDefaultPhase(execution, project);
       }
       if (plugin.getExecutions().stream()
           .anyMatch(
@@ -102,95 +77,29 @@ public final class EliderLifecycleParticipant extends AbstractMavenLifecyclePart
     }
   }
 
-  private static boolean productionClassesComplete(
-      final MavenSession session,
-      final MavenProject project,
-      final Plugin plugin,
-      final PluginExecution execution) {
-    return effectiveBoolean(
-        session,
-        project,
-        plugin,
-        execution,
-        "elide.productionClassesComplete",
-        "productionClassesComplete");
-  }
-
-  private static boolean sourceRootsComplete(
-      final MavenSession session,
-      final MavenProject project,
-      final Plugin plugin,
-      final PluginExecution execution) {
-    return effectiveBoolean(
-        session, project, plugin, execution, "elide.sourceRootsComplete", "sourceRootsComplete");
-  }
-
-  private static boolean effectiveBoolean(
-      final MavenSession session,
-      final MavenProject project,
-      final Plugin plugin,
-      final PluginExecution execution,
-      final String propertyName,
-      final String configurationName) {
-    final Properties interpolationProperties = new Properties();
-    interpolationProperties.putAll(project.getProperties());
-    if (session.getSystemProperties() != null) {
-      interpolationProperties.putAll(session.getSystemProperties());
+  // The default access modifier keeps lifecycle ordering internal to the plugin.
+  // WHY: This callback changes only executions using the modeled default phase.
+  @SuppressWarnings("PMD.CommentDefaultAccessModifier")
+  static void applyDefaultPhase(final PluginExecution execution, final MavenProject project)
+      throws MavenExecutionException {
+    if (!execution.getGoals().contains("elide")) {
+      return;
     }
-    if (session.getUserProperties() != null) {
-      interpolationProperties.putAll(session.getUserProperties());
+    final boolean omittedPhase = execution.getPhase() == null || execution.getPhase().isBlank();
+    if (!omittedPhase && !"process-classes".equals(execution.getPhase())) {
+      return;
     }
-    final String executionValue =
-        configurationValue(
-            execution.getConfiguration(), configurationName, interpolationProperties);
-    if (executionValue != null) {
-      return Boolean.parseBoolean(executionValue);
+    final String phase = EliderPluginConfiguration.effectivePhase(execution, project);
+    if (execution.getGoals().size() != SINGLE_GOAL_COUNT) {
+      throw new MavenExecutionException(
+          "Cannot assign the process-classes phase priority to dependency-elider execution "
+              + execution.getId()
+              + " because it combines elide with other goals",
+          project.getFile());
     }
-    final String pluginValue =
-        configurationValue(plugin.getConfiguration(), configurationName, interpolationProperties);
-    if (pluginValue != null) {
-      return Boolean.parseBoolean(pluginValue);
+    if (omittedPhase) {
+      execution.setPhase(phase);
     }
-    for (final Properties source :
-        new Properties[] {
-          session.getUserProperties(), session.getSystemProperties(), project.getProperties()
-        }) {
-      if (source == null) {
-        continue;
-      }
-      final String propertyValue = source.getProperty(propertyName);
-      if (propertyValue != null) {
-        return Boolean.parseBoolean(propertyValue.trim());
-      }
-    }
-    return false;
-  }
-
-  private static String configurationValue(
-      final Object configuration, final String name, final Properties properties) {
-    if (!(configuration instanceof Xpp3Dom root)) {
-      return null;
-    }
-    final Xpp3Dom child = root.getChild(name);
-    if (child == null || child.getValue() == null) {
-      return null;
-    }
-    String value = child.getValue().trim();
-    for (int iteration = 0; iteration < properties.size(); iteration++) {
-      final int start = value.indexOf("${");
-      if (start < 0) {
-        break;
-      }
-      final int end = value.indexOf('}', start + 2);
-      if (end < 0) {
-        return null;
-      }
-      final String replacement = properties.getProperty(value.substring(start + 2, end));
-      if (replacement == null) {
-        return null;
-      }
-      value = value.substring(0, start) + replacement + value.substring(end + 1);
-    }
-    return value.contains("${") ? null : value;
+    execution.setPriority(Integer.MAX_VALUE);
   }
 }
