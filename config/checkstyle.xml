@@ -195,6 +195,17 @@
     <module name="UpperEll"/>
     <module name="ModifierOrder"/>
     <module name="TextBlockGoogleStyleFormatting"/>
+    <module name="UseEnhancedSwitch"/>
+    <module name="WhenShouldBeUsed"/>
+    <module name="UnnecessaryNullCheckWithInstanceOf"/>
+    <module name="UnnecessaryPermitsClause"/>
+    <module name="MissingNullCaseInSwitch"/>
+    <module name="UnnecessaryTypeArgumentsWithRecordPattern"/>
+    <module name="PatternVariableAssignment"/>
+    <module name="ExpressionOverBlockLambda"/>
+    <module name="AvoidDoubleBraceInitialization"/>
+    <module name="UnnecessarySemicolonInTryWithResources"/>
+    <module name="PreferCodeOrSnippetJavadocInlineTag"/>
     <module name="EmptyLineSeparator">
       <property name="tokens"
                value="PACKAGE_DEF, IMPORT, STATIC_IMPORT, CLASS_DEF, INTERFACE_DEF, ENUM_DEF,
@@ -468,6 +479,17 @@
     </module>
     <module name="EmptyCatchBlock">
       <property name="commentFormat" value="\w+"/>
+    </module>
+    <module name="IllegalType">
+      <property name="illegalClassNames"
+                value="java.util.Enumeration, java.util.StringTokenizer, java.util.Vector, java.util.Hashtable, java.util.Stack"/>
+    </module>
+    <module name="MatchXpath">
+      <property name="id" value="AvoidLegacyIterationWhileLoop"/>
+      <property name="query"
+                value="//LITERAL_WHILE/EXPR//METHOD_CALL/DOT/IDENT[@text='hasNext' or @text='hasMoreElements']"/>
+      <message key="matchxpath.match"
+               value="Prefer stream() or enhanced for-each over while(hasNext()/hasMoreElements()) loops."/>
     </module>
     <module name="CommentsIndentation">
       <property name="tokens" value="SINGLE_LINE_COMMENT, BLOCK_COMMENT_BEGIN"/>

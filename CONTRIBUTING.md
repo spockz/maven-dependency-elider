@@ -20,14 +20,29 @@ The Maven Wrapper (`mvnw`) is included in the repository, so a separate Maven in
 
 | Path | Purpose |
 | --- | --- |
-| `elider-core/` | Core analysis, graph pruning, ProGuard-based bytecode slicing, and CycloneDX SBOM/VEX generation components. |
-| `dependency-elider-maven-plugin/` | Maven plugin module providing the `analyze` and `elide` Mojos and plugin documentation site. |
+| `elider-core/` | Core analysis, graph pruning, ProGuard-based bytecode slicing, advisory/VEX matching, and CycloneDX SBOM/VEX generation components. |
+| `elider-native-image/` | GraalVM Native Image `META-INF/native-image/**` metadata parsing and Spring AOT root resolution. |
+| `elider-maven-lifecycle/` | Maven core extension hooks, Resolver graph capture/projection, effective-graph policy, and banished-dependency preflight. |
+| `dependency-elider-maven-plugin/` | Maven plugin module providing `analyze`, `elide`, `report`, and advisory Mojos, analysis/report orchestration, and the plugin documentation site. |
 | `elider-benchmarks/` | Performance benchmark module containing JMH microbenchmarks. |
 | `examples/` | Example consumer applications (Basic App, Spring Boot App, CVE fixtures) for integration tests. |
 | `docs/adr/` | Accepted Architecture Decision Records (ADRs). |
 | `docs/research/` | Research questions (RQs), empirical benchmarks, and technical investigations. |
 | `docs/handovers/` | Session handovers and continuity notes. |
 | `scripts/` | Deterministic build and documentation helper scripts. |
+
+### Where changes belong
+
+Modules form an acyclic dependency chain: `elider-core` -> `elider-native-image` -> `elider-maven-lifecycle` -> `dependency-elider-maven-plugin`. Place changes in the lowest module that has the required types:
+
+| Functionality / Change | Target module | Notes |
+| --- | --- | --- |
+| Trace readers (CDS, JFR, JaCoCo, `-Xlog:class+load`), bytecode scanning, ProGuard trimming, multi-release class inventory, CycloneDX/OpenVEX/advisory codecs & matching | `elider-core` | Must stay free of Maven Mojo/Resolver lifecycle APIs and `elider-native-image` / `elider-maven-lifecycle` dependencies. |
+| GraalVM `META-INF/native-image/**` option/descriptor parsing, `reflect-config`/`resource-config`/`jni-config`/`reachability-metadata` matching, Spring metadata roots | `elider-native-image` | Depends only on `elider-core`. Shared value primitives (e.g., `HexDigest`, `MultiReleaseClassInventory`) live in `elider-core`. |
+| Maven lifecycle participant, `RepositorySystemSession` / Resolver decorators, `dependency:tree` preparation, graph capture/projection, effective-graph retention safety, `banishedDependencies` preflight & original-model capture, exclusion provenance | `elider-maven-lifecycle` | Depends on `elider-core` and `elider-native-image`; must not depend on `ElisionAnalysisModel` or Mojo/report classes. |
+| `analyze` / `elide` / `report` / `update-cve-index` Mojos, `MavenElisionService`, `ElisionAnalysisModel`, ban/report orchestration, JSON/console report renderers, Failsafe lifecycle ITs | `dependency-elider-maven-plugin` | Top-level Maven plugin module; wires the lower modules together. |
+| JMH microbenchmarks | `elider-benchmarks` | Benchmarks production hot paths without shipping in the plugin runtime. |
+| End-to-end Maven consumer fixtures and transcript examples | `examples/` | Run `make update-transcripts` if documented command output changes. |
 
 ## Build and checks
 
@@ -42,7 +57,7 @@ make check
 
 - `make lint-java` — Run Checkstyle, PMD, and SpotBugs.
 - `make lint-markdown` — Run `markdownlint-cli2` across all documentation.
-- `make test-core` — Run `elider-core` unit tests.
+- `make test-core` — Run `elider-core`, `elider-native-image`, and `elider-maven-lifecycle` unit tests and coverage checks.
 - `make test-plugin` — Run Maven plugin tests with reactor dependencies.
 - `make coverage` — Run a clean reactor verification and generate JaCoCo HTML and XML reports for production modules.
 - `make test-examples` — Run end-to-end integration cycles across example applications.

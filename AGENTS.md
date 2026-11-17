@@ -29,6 +29,15 @@
 - Do not double-hash files before and after reading them. Read or hash once in a single pass.
 - Keep file writing simple: use standard sequential streaming or basic temporary file replacement without distributed locking, transaction managers, or multi-tenant atomic coordinators.
 
+## Modern Java 21+ idioms and Checkstyle/PMD alignment
+
+- Prefer modern Java 21+ APIs over legacy pre-Java 5/8 idioms enforced by [config/checkstyle.xml](config/checkstyle.xml) (`IllegalType`, `AvoidLegacyIterationWhileLoop`) and [config/pmd-ruleset.xml](config/pmd-ruleset.xml) (`AvoidLegacyCollectionAndEnumerationTypes`):
+  - Do not use `java.util.Enumeration`, `java.util.StringTokenizer`, `java.util.Vector`, `java.util.Hashtable`, or `java.util.Stack`.
+  - Prefer `stream()` (e.g., `archive.stream().toList()`, `archive.size()` for entry counts) or enhanced `for` loops over `while (hasNext())` / `while (hasMoreElements())` `Iterator`/`Enumeration` loops. Note: when reading archives that may contain duplicate physical entries with the same name, use `ZipInputStream` sequentially rather than `JarFile.stream()` + `getInputStream(entry)`.
+  - For Jackson `JsonNode` object traversal, iterate `node.properties()` with an enhanced `for` loop instead of `fieldNames()`/`fields()` `Iterator` loops.
+  - For whitespace tokenization, use `String.trim().split("\\s+")` or precompiled `Pattern`s instead of `StringTokenizer`.
+  - Reuse shared compiled validators (`HexDigest`, `AsciiBinaryClassName`, `MultiReleaseEntryPath`) instead of ad-hoc `String.matches(...)` or computing unused digests (`ArtifactDigests.read(...).sha256()` when only SHA-256 is needed).
+
 ## Test efficiency and assertion coverage
 
 - Minimize test runtime while preserving every distinct scenario, behavioral coverage, assertion strength, and useful failure diagnostics.
@@ -46,6 +55,19 @@
   2. Check whether the tests cover the required acceptance criteria and verify that the tests fail for the intended reasons.
   3. Write the minimal production code necessary to satisfy the tests.
   4. Verify that all tests pass, preserving aggregate assertion diagnostics and test efficiency.
+
+## Verifying custom and hand-rolled optimizations
+
+- When implementing optimizations that use custom code, hand-rolled parsing, or memory/layout tricks instead of standard library or layered APIs:
+  1. Write differential tests (preferably property-based) verifying that the optimized implementation produces identical results and error behavior to the reference library/layered implementation across both normal and edge-case inputs.
+  2. Add JMH benchmarks in `elider-benchmarks` comparing the old and optimized implementations to prove the new code is actually faster. Keep the old implementation around as verbatim as possible in a reference class next to the JMH benchmark (outside production code) so it can still be benchmarked as the code was.
+
+## Inner-loop verification
+
+- During active Java edits, use lightweight inner-loop checks instead of running `make check` on every iteration:
+  - Run targeted tests first (e.g., `./mvnw -pl elider-core -Dtest=... test` or `make test-core`), then `make check-fast` (or `make java-check`) to verify formatting, Checkstyle, PMD, SpotBugs, `elider-core`, and `dependency-elider-maven-plugin` without running `check-transcripts`.
+  - When running in an environment where Maven Daemon (`mvnd`) IPC is permitted, pass `USE_MVND=true` (or `MAVEN=.scratch/toolchains/maven-mvnd-1.0.6/bin/mvnd`) to avoid repeated Maven JVM startups across `fmt`, `lint-java`, `test-core`, and `test-plugin`. Use `./mvnw` when `mvnd` is unavailable or blocked by sandbox restrictions.
+  - Reserve full `make check` (and `make test-examples` / `make update-transcripts` when example fixtures or documented outputs change) for pre-commit and final wrap-up verification.
 
 ## Generated command examples
 

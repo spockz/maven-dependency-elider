@@ -23,15 +23,28 @@
     <Class name="io.github.spockz.elider.model.CveAffectedEntryContext" />
   </Match>
   <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
+    <Class name="io.github.spockz.elider.model.MultiReleaseClassInventory$Snapshot" />
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
+    <Class name="~io\.github\.spockz\.elider\.plugin\.ElisionAnalysisModel\$.*" />
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP" />
+    <Class name="io.github.spockz.elider.plugin.TrimResult" />
+  </Match>
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP" />
+    <Class name="io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext" />
+  </Match>
+  <Match>
     <Bug pattern="UI_INHERITANCE_UNSAFE_GETRESOURCE" />
     <Class name="io.github.spockz.dependency_elider_maven_plugin.HelpMojo" />
   </Match>
   <!-- WHY: JMH-generated harness fields are synthetic and trigger analyzer false positives. -->
   <Match>
-    <Class name="~io\.github\.spockz\.elider\.benchmark\.jmh_generated\..*" />
-  </Match>
-  <Match>
-    <Class name="~io\.github\.spockz\.elider\.plugin\.jmh_generated\..*" />
+    <Class name="~io\.github\.spockz\.elider\..*\.jmh_generated\..*" />
   </Match>
   <!-- WHY: Indexed visitor failures must retain their runtime type when reached. -->
   <Match>

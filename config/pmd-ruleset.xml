@@ -29,4 +29,24 @@
   <rule ref="category/java/multithreading.xml" />
   <rule ref="category/java/performance.xml" />
   <rule ref="category/java/security.xml" />
+  <rule name="AvoidLegacyCollectionAndEnumerationTypes"
+        language="java"
+        message="Prefer modern Collection/stream/split APIs over legacy Enumeration, StringTokenizer, Vector, Hashtable, or Stack."
+        class="net.sourceforge.pmd.lang.rule.xpath.XPathRule">
+    <description>Flags declarations and expressions of legacy Enumeration, StringTokenizer, Vector, Hashtable, and Stack types, including var locals.</description>
+    <priority>3</priority>
+    <properties>
+      <property name="xpath">
+        <value><![CDATA[
+          //VariableId[
+            pmd-java:typeIs('java.util.Enumeration')
+            or pmd-java:typeIsExactly('java.util.StringTokenizer')
+            or pmd-java:typeIsExactly('java.util.Vector')
+            or pmd-java:typeIsExactly('java.util.Hashtable')
+            or pmd-java:typeIsExactly('java.util.Stack')
+          ]
+        ]]></value>
+      </property>
+    </properties>
+  </rule>
 </ruleset>
