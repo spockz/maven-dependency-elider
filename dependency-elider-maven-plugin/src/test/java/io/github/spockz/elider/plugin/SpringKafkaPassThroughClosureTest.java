@@ -93,6 +93,94 @@ final class SpringKafkaPassThroughClosureTest {
         .hasMessageContaining("candidate/Entry -> class missing/Required");
   }
 
+  @Test
+  void passThroughUsesLivenessRootsInsteadOfAllClasses() throws Exception {
+    final Artifact bridge =
+        artifact(
+            "example",
+            "bridge",
+            "1.0",
+            writeJar(
+                "liveness-bridge",
+                Map.of(
+                    "bridge/LiveRoot", classBytes("bridge/LiveRoot", "candidate/LiveTarget", null),
+                    "bridge/DeadClass",
+                        classBytes("bridge/DeadClass", "optional/OptionalCaller", null))));
+    final Artifact candidate =
+        artifact(
+            "example",
+            "candidate",
+            "1.0",
+            writeJar(
+                "liveness-candidate",
+                Map.of(
+                    "candidate/Entry", classBytes("candidate/Entry", null, null),
+                    "candidate/LiveTarget", classBytes("candidate/LiveTarget", null, null),
+                    "candidate/DeadOnlyViaBridge",
+                        classBytes("candidate/DeadOnlyViaBridge", null, null))));
+    final Artifact optional =
+        artifact(
+            "example",
+            "optional",
+            "1.0",
+            writeJar(
+                "liveness-optional",
+                Map.of(
+                    "optional/OptionalCaller",
+                    classBytes("optional/OptionalCaller", null, "missing/OptionalDep"))));
+    final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots =
+        MavenArtifactInventory.snapshots(List.of(bridge, candidate, optional));
+    final List<ArtifactFileRef> refs = new ArrayList<>();
+    for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : snapshots) {
+      refs.add(ArtifactFileRef.fromPath(snapshot.coordinate(), snapshot.filePath()));
+    }
+    final Map<Path, DependencyDynamicRoots.RootScan> scans =
+        snapshots.stream()
+            .collect(
+                java.util.stream.Collectors.toMap(
+                    ElisionAnalysisModel.ArtifactSnapshot::filePath,
+                    snapshot -> new DependencyDynamicRoots.RootScan(Set.of(), true)));
+    final MavenProject project = new MavenProject();
+    project.setGroupId("example");
+    project.setArtifactId("consumer");
+    project.setVersion("1.0");
+    project.setArtifacts(Set.of(bridge, candidate, optional));
+    project.getProperties().setProperty("maven.compiler.release", "21");
+    final Build build = new Build();
+    build.setDirectory(tempDir.resolve("liveness-target").toString());
+    project.setBuild(build);
+    final TrimRequest request =
+        new TrimRequest(
+            project,
+            null,
+            snapshots,
+            new TrimScanInputs(new JarIndexScanner().scan(refs), scans),
+            snapshots.stream()
+                .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+                .collect(java.util.stream.Collectors.toSet()),
+            new TrimEvidence(
+                TraceData.of(Set.of("candidate.Entry", "bridge.LiveRoot")),
+                Set.of(),
+                Set.of(),
+                Set.of()),
+            new TrimPolicy(
+                List.of(),
+                false,
+                List.of("example:bridge:1.0:jar:"),
+                false,
+                MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING,
+                true,
+                true,
+                MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
+                DuplicateClassPolicy.NONE));
+
+    final TrimAnalysisResult result =
+        MavenDependencyTrimmer.analyzeInMemory(request, Map.of(), Set.of());
+    final ArtifactCoordinate candidateCoord = coordinate("example", "candidate", "1.0");
+    assertThat(result.candidateAnalyses().get(candidateCoord).retainedClasses())
+        .containsExactlyInAnyOrder("candidate/Entry", "candidate/LiveTarget");
+  }
+
   private static void assertClosure(final TrimAnalysisResult result, final Fixture fixture) {
     assertAll(
         () -> assertThat(result.candidateAnalyses()).doesNotContainKey(fixture.spring()),
@@ -197,7 +285,10 @@ final class SpringKafkaPassThroughClosureTest {
               scans,
               retained,
               new TrimEvidence(
-                  TraceData.of(Set.of("candidate.Entry")), Set.of(), Set.of(), Set.of()),
+                  TraceData.of(Set.of("candidate.Entry", "bridge.Root")),
+                  Set.of(),
+                  Set.of(),
+                  Set.of()),
               new TrimPolicy(
                   List.of(),
                   false,

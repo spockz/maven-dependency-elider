@@ -23,14 +23,13 @@ final class TierRootResolution {
   /* package */ void addCommonRoots(
       final Set<String> roots,
       final List<TierContext> contexts,
-      final Set<ElisionAnalysisModel.ArtifactSnapshot> candidates,
-      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> candidateRoots,
+      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> rootsByOwner,
       final Set<ArtifactCoordinate> reachableArtifacts) {
     for (final String rawRoot : roots) {
       final String root = rawRoot.replace('/', '.');
       for (final TierContext context : contexts) {
         for (final ElisionAnalysisModel.ArtifactSnapshot owner : context.ownersOf(root)) {
-          addOwnedRoot(owner, root, candidates, candidateRoots, reachableArtifacts);
+          addOwnedRoot(owner, root, rootsByOwner, reachableArtifacts);
         }
       }
     }
@@ -39,8 +38,7 @@ final class TierRootResolution {
   private void addOwnedRoot(
       final ElisionAnalysisModel.ArtifactSnapshot owner,
       final String root,
-      final Set<ElisionAnalysisModel.ArtifactSnapshot> candidates,
-      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> candidateRoots,
+      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> rootsByOwner,
       final Set<ArtifactCoordinate> reachableArtifacts) {
     if (owner == null) {
       return;
@@ -48,21 +46,22 @@ final class TierRootResolution {
     if (!operation.request().retainedCoordinates().contains(owner.coordinate())) {
       reachableArtifacts.add(owner.coordinate());
     }
+    final Set<String> ownedRoots = rootsByOwner.get(owner);
     if (operation.request().retainedCoordinates().contains(owner.coordinate())
-        && candidates.contains(owner)) {
-      candidateRoots.get(owner).add(root);
+        && ownedRoots != null) {
+      ownedRoots.add(root);
     }
   }
 
   /* package */ void addRequestedRoots(
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> requested,
       final List<TierContext> contexts,
-      final Set<ElisionAnalysisModel.ArtifactSnapshot> candidates,
-      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> candidateRoots)
+      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> rootsByOwner)
       throws IOException {
     for (final Map.Entry<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> entry :
         requested.entrySet()) {
-      if (!candidates.contains(entry.getKey()) || entry.getValue().isEmpty()) {
+      final Set<String> ownedRoots = rootsByOwner.get(entry.getKey());
+      if (ownedRoots == null || entry.getValue().isEmpty()) {
         continue;
       }
       final Set<String> matching =
@@ -72,7 +71,7 @@ final class TierRootResolution {
             "Previously discovered roots are absent from every analyzed tier: "
                 + entry.getKey().coordinate());
       }
-      candidateRoots.get(entry.getKey()).addAll(matching);
+      ownedRoots.addAll(matching);
     }
   }
 
@@ -91,14 +90,13 @@ final class TierRootResolution {
   /* package */ void addDynamicRoots(
       final List<ElisionAnalysisModel.ArtifactSnapshot> retainedLibraries,
       final List<TierContext> contexts,
-      final Set<ElisionAnalysisModel.ArtifactSnapshot> candidates,
-      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> candidateRoots,
+      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> rootsByOwner,
       final Set<ArtifactCoordinate> reachableArtifacts)
       throws IOException {
     for (final ElisionAnalysisModel.ArtifactSnapshot source : retainedLibraries) {
       for (final String root :
           TrimRootPlanner.dynamicRoots(operation.request(), source.filePath())) {
-        addDynamicRoot(root, contexts, candidates, candidateRoots, reachableArtifacts);
+        addDynamicRoot(root, contexts, rootsByOwner, reachableArtifacts);
       }
     }
   }
@@ -106,12 +104,11 @@ final class TierRootResolution {
   private void addDynamicRoot(
       final String root,
       final List<TierContext> contexts,
-      final Set<ElisionAnalysisModel.ArtifactSnapshot> candidates,
-      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> candidateRoots,
+      final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> rootsByOwner,
       final Set<ArtifactCoordinate> reachableArtifacts) {
     for (final TierContext context : contexts) {
       for (final ElisionAnalysisModel.ArtifactSnapshot owner : context.ownersOf(root)) {
-        addOwnedRoot(owner, root, candidates, candidateRoots, reachableArtifacts);
+        addOwnedRoot(owner, root, rootsByOwner, reachableArtifacts);
       }
     }
   }

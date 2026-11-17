@@ -39,8 +39,27 @@ final class TierRootPlanner {
         findCandidateSnapshots(
             inventory.passThrough(), projections, inventory.multiReleaseCandidates());
     final Set<ElisionAnalysisModel.ArtifactSnapshot> candidates = Set.copyOf(snapshots);
+    final List<ElisionAnalysisModel.ArtifactSnapshot> retainedLibraries =
+        TrimPassThroughPlanner.retainedAnalysisLibraries(operation.request());
+    final List<ElisionAnalysisModel.ArtifactSnapshot> unchangedPrograms =
+        retainedLibraries.stream().filter(snapshot -> !candidates.contains(snapshot)).toList();
+    final Set<ArtifactCoordinate> retainJarOwners = retainJarDuplicateOwners(projections);
+    final Set<ElisionAnalysisModel.ArtifactSnapshot> wholeJarPrograms =
+        unchangedPrograms.stream()
+            .filter(
+                snapshot ->
+                    TrimPassThroughPlanner.unchangedScope(snapshot.coordinate())
+                        || operation.forcedUnchanged().contains(snapshot.coordinate())
+                        || retainJarOwners.contains(snapshot.coordinate()))
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots =
         emptyCandidateRoots(snapshots);
+    final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> programRoots =
+        emptyCandidateRoots(unchangedPrograms);
+    final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> allRoots =
+        LinkedHashMap.newLinkedHashMap(snapshots.size() + unchangedPrograms.size());
+    allRoots.putAll(roots);
+    allRoots.putAll(programRoots);
     final Set<ArtifactCoordinate> reachable = new LinkedHashSet<>();
     final TierRootResolution resolution = new TierRootResolution(operation);
     final Set<String> duplicates =
@@ -49,22 +68,13 @@ final class TierRootPlanner {
             .filter(entry -> entry.getValue().size() > 1)
             .map(Map.Entry::getKey)
             .collect(java.util.stream.Collectors.toSet());
-    resolution.addCommonRoots(duplicates, projections, candidates, roots, reachable);
+    resolution.addCommonRoots(duplicates, projections, allRoots, reachable);
     resolution.addCommonRoots(
-        TrimRootPlanner.commonRoots(operation.request()),
-        projections,
-        candidates,
-        roots,
-        reachable);
-    resolution.addRequestedRoots(requested, projections, candidates, roots);
-    resolution.addDynamicRoots(
-        TrimPassThroughPlanner.retainedAnalysisLibraries(operation.request()),
-        projections,
-        candidates,
-        roots,
-        reachable);
+        TrimRootPlanner.commonRoots(operation.request()), projections, allRoots, reachable);
+    resolution.addRequestedRoots(requested, projections, allRoots);
+    resolution.addDynamicRoots(retainedLibraries, projections, allRoots, reachable);
     addRequiredTargetRoots(inventory.multiReleaseCandidates(), roots);
-    return new RootPlan(snapshots, candidates, roots, reachable);
+    return new RootPlan(snapshots, candidates, wholeJarPrograms, roots, programRoots, reachable);
   }
 
   private static boolean isPlatformClass(
@@ -161,6 +171,8 @@ final class TierRootPlanner {
   /* package */ record RootPlan(
       List<ElisionAnalysisModel.ArtifactSnapshot> candidateSnapshots,
       Set<ElisionAnalysisModel.ArtifactSnapshot> candidateSet,
+      Set<ElisionAnalysisModel.ArtifactSnapshot> wholeJarPrograms,
       Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots,
+      Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> programRoots,
       Set<ArtifactCoordinate> reachableArtifacts) {}
 }

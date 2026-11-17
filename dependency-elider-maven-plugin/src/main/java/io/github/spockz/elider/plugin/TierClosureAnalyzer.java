@@ -80,7 +80,8 @@ final class TierClosureAnalyzer {
             context.programEntries().stream()
                 .filter(
                     entry ->
-                        !rootsForProgram(context, entry.getKey(), candidates.get(entry.getKey()))
+                        !rootsForProgram(
+                                context, entry.getKey(), candidates.get(entry.getKey()), roots)
                             .isEmpty())
                 .toList();
     final List<DependencyJarTrimmer.TrimAnalysis> analyses =
@@ -91,7 +92,8 @@ final class TierClosureAnalyzer {
                 entry
                     .getValue()
                     .analyze(
-                        rootsForProgram(context, entry.getKey(), candidates.get(entry.getKey())),
+                        rootsForProgram(
+                            context, entry.getKey(), candidates.get(entry.getKey()), roots),
                         closureQueryPolicy));
     for (int index = 0; index < entries.size(); index++) {
       final Map.Entry<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
@@ -114,8 +116,21 @@ final class TierClosureAnalyzer {
   private Set<String> rootsForProgram(
       final TierContext context,
       final ElisionAnalysisModel.ArtifactSnapshot owner,
-      final TierCandidate candidate) {
-    if (candidate == null || context.release() <= operation.targetRelease()) {
+      final TierCandidate candidate,
+      final RootPlan rootPlan) {
+    if (candidate == null) {
+      if (rootPlan.wholeJarPrograms().contains(owner)) {
+        return context.classesOf(owner);
+      }
+      final Set<String> liveRoots = rootPlan.programRoots().get(owner);
+      if (liveRoots == null || liveRoots.isEmpty()) {
+        return Set.of();
+      }
+      final Set<String> scoped = new TreeSet<>(liveRoots);
+      scoped.retainAll(context.classesOf(owner));
+      return scoped;
+    }
+    if (context.release() <= operation.targetRelease()) {
       return context.classesOf(owner);
     }
     final MultiReleaseCandidateInfo info = context.multiReleaseInfo(owner);
@@ -205,6 +220,8 @@ final class TierClosureAnalyzer {
         final TierCandidate candidate = candidates.get(owner);
         if (candidate != null) {
           changed |= candidate.roots().add(dotted);
+        } else if (roots.programRoots().containsKey(owner)) {
+          changed |= roots.programRoots().get(owner).add(dotted);
         } else if (!operation.request().retainedCoordinates().contains(owner.coordinate())) {
           roots.reachableArtifacts().add(owner.coordinate());
         }

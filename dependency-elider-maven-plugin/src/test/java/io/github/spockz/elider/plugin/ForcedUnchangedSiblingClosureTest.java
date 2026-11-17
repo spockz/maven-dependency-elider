@@ -277,7 +277,7 @@ final class ForcedUnchangedSiblingClosureTest {
             snapshots,
             new TrimScanInputs(new JarIndexScanner().scan(refs), scans),
             retained,
-            new TrimEvidence(TraceData.of(Set.of("candidate.Entry")), Set.of(), Set.of(), Set.of()),
+            new TrimEvidence(TraceData.of(traceRoots(scoped)), Set.of(), Set.of(), Set.of()),
             new TrimPolicy(
                 List.of(),
                 false,
@@ -289,6 +289,10 @@ final class ForcedUnchangedSiblingClosureTest {
                 MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS,
                 DuplicateClassPolicy.NONE));
     return new Fixture(request, coordinate("unchanged"), coordinate("candidate"), retainUnchanged);
+  }
+
+  private static Set<String> traceRoots(final boolean scoped) {
+    return scoped ? Set.of("candidate.Entry") : Set.of("candidate.Entry", FIRST.replace('/', '.'));
   }
 
   private Artifact artifact(final String name, final Map<String, byte[]> classes)
