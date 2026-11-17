@@ -45,35 +45,46 @@ import org.openjdk.jmh.annotations.TearDown;
 @State(Scope.Thread)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-// JMH invokes the implicit constructor for this public benchmark state.
-@SuppressWarnings({
-  "PMD.CommentRequired",
-  "PMD.ExcessiveImports",
-  "PMD.AvoidInstantiatingObjectsInLoops",
-  "PMD.AtLeastOneConstructor"
-})
+@SuppressWarnings("PMD.ExcessiveImports")
 public class MavenTrimCacheBenchmark {
+  /** Synthetic package for benchmark fixture classes. */
   private static final String PACKAGE = "benchmark.fixture";
+
+  /** Root class kept in the trimmed fixture JAR. */
   private static final String ROOT_CLASS = PACKAGE + ".CacheRoot";
+
+  /** Number of trimmed archives produced by the fixture. */
   private static final int EXPECTED_TRIMMED_ARCHIVE_COUNT = 1;
 
+  /** Temporary fixture directory cleaned up at teardown. */
   private Path fixtureDirectory;
+
+  /** Synthetic Maven project for the benchmark fixture. */
   private MavenProject project;
+
+  /** Trace file listing the single root class. */
   private Path trace;
+
+  /** Warmed analysis reused across invocations. */
   private ElisionAnalysisModel.EffectiveAnalysis warmedAnalysis;
+
+  /** Per-invocation fresh-session analysis. */
   private ElisionAnalysisModel.EffectiveAnalysis freshSessionAnalysis;
 
+  /** Creates benchmark state before JMH setup runs. */
+  public MavenTrimCacheBenchmark() {
+    // JMH populates fixture state in @Setup.
+  }
+
   /** Creates inputs and verifies cache population and warm validation. */
-  // WHY: Setup verifies the cold and warm invariants before JMH records timings.
-  @SuppressWarnings("PMD.CyclomaticComplexity")
   @Setup
   public void setUp() throws IOException, org.apache.maven.plugin.MojoFailureException {
     final Path fixtureRoot = Files.createTempDirectory("elider-trim-cache-benchmark-");
     fixtureDirectory = fixtureRoot;
-    final Path originalJar = createFixtureJar(fixtureRoot);
+    final Path originalJar = BenchmarkFixture.createFixtureJar(fixtureRoot);
     final ArtifactCoordinate coordinate =
         new ArtifactCoordinate(PACKAGE, "trim-cache-input", "1.0", "jar", "", "runtime");
-    final Artifact artifact = benchmarkArtifact(originalJar, coordinate);
+    final Artifact artifact = BenchmarkFixture.benchmarkArtifact(originalJar, coordinate);
     project = new MavenProject();
     project.setArtifacts(Set.of(artifact));
     project.setDependencyArtifacts(Set.of(artifact));
@@ -89,21 +100,7 @@ public class MavenTrimCacheBenchmark {
     Files.writeString(trace, ROOT_CLASS + "\n");
     warmedAnalysis = analysis(newSession(), trace);
     final TrimResult cold = trim(warmedAnalysis);
-    if (cold.records().size() != EXPECTED_TRIMMED_ARCHIVE_COUNT) {
-      throw new IllegalStateException("Trim cache fixture did not produce one trimmed archive");
-    }
-    final boolean archivePruned;
-    try (JarFile trimmed = new JarFile(cold.records().getFirst().trimmedPath().toFile())) {
-      archivePruned =
-          trimmed.getEntry("benchmark/fixture/CacheRoot.class") != null
-              && trimmed.getEntry("benchmark/fixture/CacheUnused.class") == null;
-    }
-    if (cold.analysisRuns() == 0
-        || cold.cacheHits() != 0
-        || !archivePruned
-        || Files.size(cold.records().getFirst().trimmedPath()) >= Files.size(originalJar)) {
-      throw new IllegalStateException("Trim cache fixture failed cold-path validation");
-    }
+    BenchmarkFixture.validateColdResult(cold, originalJar, EXPECTED_TRIMMED_ARCHIVE_COUNT);
     final TrimResult warm = trim(warmedAnalysis);
     if (warm.analysisRuns() != 0 || warm.cacheHits() != 1) {
       throw new IllegalStateException("Trim cache fixture did not pass the production warm path");
@@ -180,25 +177,13 @@ public class MavenTrimCacheBenchmark {
     return MavenDependencyTrimmer.trimEffectiveOutputs(effective);
   }
 
-  private Artifact benchmarkArtifact(final Path originalJar, final ArtifactCoordinate coordinate) {
-    final Artifact artifact =
-        new DefaultArtifact(
-            coordinate.groupId(),
-            coordinate.artifactId(),
-            coordinate.version(),
-            coordinate.scope(),
-            coordinate.type(),
-            null,
-            new DefaultArtifactHandler("jar"));
-    artifact.setFile(originalJar.toFile());
-    return artifact;
-  }
-
   private MavenSession newSession() {
     return new BenchmarkSession(new DefaultMavenExecutionRequest(), project);
   }
 
+  /** Minimal MavenSession stub supplying a no-op ToolchainManager. */
   private static final class BenchmarkSession extends MavenSession {
+    /** No-op toolchain manager for isolated trim-cache benchmark sessions. */
     private static final ToolchainManager TOOLCHAIN_MANAGER =
         new ToolchainManager() {
           @Override
@@ -216,8 +201,8 @@ public class MavenTrimCacheBenchmark {
           }
         };
 
-    @SuppressWarnings("PMD.CommentDefaultAccessModifier")
-    BenchmarkSession(final DefaultMavenExecutionRequest request, final MavenProject project) {
+    private BenchmarkSession(
+        final DefaultMavenExecutionRequest request, final MavenProject project) {
       super(null, request, null, project);
     }
 
@@ -227,43 +212,86 @@ public class MavenTrimCacheBenchmark {
     }
   }
 
-  private Path createFixtureJar(final Path fixtureRoot) throws IOException {
-    final Path sourceDirectory = fixtureRoot.resolve("src");
-    final Path classesDirectory = fixtureRoot.resolve("classes");
-    final Path packageDirectory = sourceDirectory.resolve("benchmark/fixture");
-    Files.createDirectories(packageDirectory);
-    Files.createDirectories(classesDirectory);
-    final Path rootSource = packageDirectory.resolve("CacheRoot.java");
-    final Path unusedSource = packageDirectory.resolve("CacheUnused.java");
-    Files.writeString(rootSource, "package benchmark.fixture; final class CacheRoot {}\n");
-    Files.writeString(unusedSource, "package benchmark.fixture; final class CacheUnused {}\n");
-    final int compileResult =
-        ToolProvider.getSystemJavaCompiler()
-            .run(
-                null,
-                null,
-                null,
-                "--release",
-                "21",
-                "-proc:none",
-                "-d",
-                classesDirectory.toString(),
-                rootSource.toString(),
-                unusedSource.toString());
-    if (compileResult != 0) {
-      throw new IOException("Could not compile the trim cache benchmark fixture");
-    }
-    final Path jarPath = fixtureRoot.resolve("trim-cache-input.jar");
-    try (ZipOutputStream archive = new ZipOutputStream(Files.newOutputStream(jarPath));
-        Stream<Path> files = Files.walk(classesDirectory)) {
-      for (final Path classFile : files.filter(Files::isRegularFile).toList()) {
-        final String entryName =
-            classesDirectory.relativize(classFile).toString().replace('\\', '/');
-        archive.putNextEntry(new ZipEntry(entryName));
-        Files.copy(classFile, archive);
-        archive.closeEntry();
+  /** Fixture compilation, packaging, and cold-path validation helpers. */
+  private static final class BenchmarkFixture {
+    private static void validateColdResult(
+        final TrimResult cold, final Path originalJar, final int expectedArchiveCount)
+        throws IOException {
+      if (cold.records().size() != expectedArchiveCount) {
+        throw new IllegalStateException("Trim cache fixture did not produce one trimmed archive");
+      }
+      final boolean archivePruned;
+      try (JarFile trimmed = new JarFile(cold.records().getFirst().trimmedPath().toFile())) {
+        archivePruned =
+            trimmed.getEntry("benchmark/fixture/CacheRoot.class") != null
+                && trimmed.getEntry("benchmark/fixture/CacheUnused.class") == null;
+      }
+      if (cold.analysisRuns() == 0
+          || cold.cacheHits() != 0
+          || !archivePruned
+          || Files.size(cold.records().getFirst().trimmedPath()) >= Files.size(originalJar)) {
+        throw new IllegalStateException("Trim cache fixture failed cold-path validation");
       }
     }
-    return jarPath;
+
+    private static Artifact benchmarkArtifact(
+        final Path originalJar, final ArtifactCoordinate coordinate) {
+      final Artifact artifact =
+          new DefaultArtifact(
+              coordinate.groupId(),
+              coordinate.artifactId(),
+              coordinate.version(),
+              coordinate.scope(),
+              coordinate.type(),
+              null,
+              new DefaultArtifactHandler("jar"));
+      artifact.setFile(originalJar.toFile());
+      return artifact;
+    }
+
+    private static Path createFixtureJar(final Path fixtureRoot) throws IOException {
+      final Path sourceDirectory = fixtureRoot.resolve("src");
+      final Path classesDirectory = fixtureRoot.resolve("classes");
+      final Path packageDirectory = sourceDirectory.resolve("benchmark/fixture");
+      Files.createDirectories(packageDirectory);
+      Files.createDirectories(classesDirectory);
+      final Path rootSource = packageDirectory.resolve("CacheRoot.java");
+      final Path unusedSource = packageDirectory.resolve("CacheUnused.java");
+      Files.writeString(rootSource, "package benchmark.fixture; final class CacheRoot {}\n");
+      Files.writeString(unusedSource, "package benchmark.fixture; final class CacheUnused {}\n");
+      final int compileResult =
+          ToolProvider.getSystemJavaCompiler()
+              .run(
+                  null,
+                  null,
+                  null,
+                  "--release",
+                  "21",
+                  "-proc:none",
+                  "-d",
+                  classesDirectory.toString(),
+                  rootSource.toString(),
+                  unusedSource.toString());
+      if (compileResult != 0) {
+        throw new IOException("Could not compile the trim cache benchmark fixture");
+      }
+      final Path jarPath = fixtureRoot.resolve("trim-cache-input.jar");
+      try (ZipOutputStream archive = new ZipOutputStream(Files.newOutputStream(jarPath));
+          Stream<Path> files = Files.walk(classesDirectory)) {
+        for (final Path classFile : files.filter(Files::isRegularFile).toList()) {
+          writeJarEntry(archive, classesDirectory, classFile);
+        }
+      }
+      return jarPath;
+    }
+
+    private static void writeJarEntry(
+        final ZipOutputStream archive, final Path classesDirectory, final Path classFile)
+        throws IOException {
+      final String entryName = classesDirectory.relativize(classFile).toString().replace('\\', '/');
+      archive.putNextEntry(new ZipEntry(entryName));
+      Files.copy(classFile, archive);
+      archive.closeEntry();
+    }
   }
 }

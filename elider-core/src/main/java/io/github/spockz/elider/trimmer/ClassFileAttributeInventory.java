@@ -4,8 +4,9 @@ package io.github.spockz.elider.trimmer;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
+import java.io.EOFException;
 import java.io.IOException;
-import java.util.Map;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -51,26 +52,6 @@ final class ClassFileAttributeInventory {
           "StackMapTable",
           "Synthetic");
 
-  /** WHY: These widths let the class-file walk avoid reference callbacks. */
-  private static final Map<Integer, Integer> CONSTANT_POOL_ENTRY_BYTES =
-      Map.ofEntries(
-          Map.entry(3, 4),
-          Map.entry(4, 4),
-          Map.entry(5, 8),
-          Map.entry(6, 8),
-          Map.entry(7, 2),
-          Map.entry(8, 2),
-          Map.entry(9, 4),
-          Map.entry(10, 4),
-          Map.entry(11, 4),
-          Map.entry(12, 4),
-          Map.entry(15, 3),
-          Map.entry(16, 2),
-          Map.entry(17, 4),
-          Map.entry(18, 4),
-          Map.entry(19, 2),
-          Map.entry(20, 2));
-
   /** WHY: UTF8 entries provide names used by the attribute inventory. */
   private static final int UTF8_CONSTANT_TAG = 1;
 
@@ -86,133 +67,284 @@ final class ClassFileAttributeInventory {
   /** WHY: Record attributes contain nested component attributes. */
   private static final String RECORD_ATTRIBUTE_NAME = "Record";
 
+  /** WHY: Constant-pool payload widths indexed by tag, or -1 for invalid/UTF-8 tags. */
+  private static final int[] CONSTANT_POOL_WIDTHS = {
+    -1, -1, -1, 4, 4, 8, 8, 2, 2, 4, 4, 4, 4, -1, -1, 3, 2, 4, 4, 2, 2
+  };
+
   private ClassFileAttributeInventory() {}
 
   // The default access modifier keeps this inventory internal to the trimmer.
   // WHY: Graph construction is the only consumer of the parsed attribute names.
   @SuppressWarnings("PMD.CommentDefaultAccessModifier")
   static Set<String> unrecognizedAttributes(final byte[] bytes) throws IOException {
-    final Set<String> unrecognized = new TreeSet<>();
-    try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes))) {
-      if (input.readInt() != CLASS_FILE_MAGIC) {
-        throw new IOException("Invalid class-file magic");
-      }
-      input.readUnsignedShort();
-      input.readUnsignedShort();
-      final String[] utf8 = readConstantPool(input);
-      input.readUnsignedShort();
-      input.readUnsignedShort();
-      input.readUnsignedShort();
-      skipEntries(input, input.readUnsignedShort(), 2);
-      readMembers(input, utf8, unrecognized);
-      readMembers(input, utf8, unrecognized);
-      readAttributes(input, utf8, input.readUnsignedShort(), unrecognized);
-      if (input.available() != 0) {
-        throw new IOException("Unexpected trailing bytes after class attributes");
-      }
+    final ByteCursor cursor = new ByteCursor(bytes, 0, bytes.length);
+    if (cursor.readInt() != CLASS_FILE_MAGIC) {
+      throw new IOException("Invalid class-file magic");
     }
-    return Set.copyOf(unrecognized);
+    cursor.skip(4);
+    final ConstantPoolUtf8Table utf8 = readConstantPool(cursor);
+    cursor.skip(6);
+    cursor.skip(cursor.readUnsignedShort() * 2L);
+    Set<String> unrecognized = readMembers(cursor, utf8, null);
+    unrecognized = readMembers(cursor, utf8, unrecognized);
+    unrecognized = readAttributes(cursor, utf8, cursor.readUnsignedShort(), unrecognized);
+    if (cursor.remaining() != 0) {
+      throw new IOException("Unexpected trailing bytes after class attributes");
+    }
+    return unrecognized == null ? Set.of() : Set.copyOf(unrecognized);
   }
 
-  private static String[] readConstantPool(final DataInputStream input) throws IOException {
-    final int count = input.readUnsignedShort();
-    final String[] utf8 = new String[count];
+  private static ConstantPoolUtf8Table readConstantPool(final ByteCursor cursor)
+      throws IOException {
+    final int count = cursor.readUnsignedShort();
+    final int[] offsets = new int[count];
     int index = 1;
     while (index < count) {
-      final int tag = input.readUnsignedByte();
+      final int tag = cursor.readUnsignedByte();
       if (tag == UTF8_CONSTANT_TAG) {
-        utf8[index] = input.readUTF();
+        final int lengthOffset = cursor.position();
+        final int utfLength = cursor.readUnsignedShort();
+        cursor.skip(utfLength);
+        offsets[index] = lengthOffset;
       } else {
-        final Integer width = CONSTANT_POOL_ENTRY_BYTES.get(tag);
-        if (width == null) {
-          throw new IOException("Unknown class-file constant-pool tag: " + tag);
-        }
-        input.skipNBytes(width);
+        cursor.skip(constantPoolEntryWidth(tag));
       }
       index += tag == LONG_CONSTANT_TAG || tag == DOUBLE_CONSTANT_TAG ? 2 : 1;
     }
-    return utf8;
+    return new ConstantPoolUtf8Table(cursor.bytes, offsets);
   }
 
-  private static void readMembers(
-      final DataInputStream input, final String[] utf8, final Set<String> unrecognizedAttributes)
-      throws IOException {
-    final int count = input.readUnsignedShort();
-    for (int index = 0; index < count; index++) {
-      input.skipNBytes(6);
-      readAttributes(input, utf8, input.readUnsignedShort(), unrecognizedAttributes);
+  private static int constantPoolEntryWidth(final int tag) throws IOException {
+    if (tag < 0 || tag >= CONSTANT_POOL_WIDTHS.length || CONSTANT_POOL_WIDTHS[tag] < 0) {
+      throw new IOException("Unknown class-file constant-pool tag: " + tag);
     }
+    return CONSTANT_POOL_WIDTHS[tag];
   }
 
-  private static void readAttributes(
-      final DataInputStream input,
-      final String[] utf8,
+  private static Set<String> readMembers(
+      final ByteCursor cursor,
+      final ConstantPoolUtf8Table utf8,
+      final Set<String> unrecognizedAttributes)
+      throws IOException {
+    Set<String> unrecognized = unrecognizedAttributes;
+    final int count = cursor.readUnsignedShort();
+    for (int index = 0; index < count; index++) {
+      cursor.skip(6);
+      unrecognized = readAttributes(cursor, utf8, cursor.readUnsignedShort(), unrecognized);
+    }
+    return unrecognized;
+  }
+
+  private static Set<String> readAttributes(
+      final ByteCursor cursor,
+      final ConstantPoolUtf8Table utf8,
       final int count,
       final Set<String> unrecognizedAttributes)
       throws IOException {
+    Set<String> unrecognized = unrecognizedAttributes;
     for (int index = 0; index < count; index++) {
-      final String name = utf8At(utf8, input.readUnsignedShort());
-      final long length = Integer.toUnsignedLong(input.readInt());
+      final String name = utf8.at(cursor.readUnsignedShort());
+      final long length = cursor.readUnsignedInt();
       if (length > Integer.MAX_VALUE) {
         throw new IOException("Class-file attribute is too large: " + name);
       }
-      final byte[] contents = input.readNBytes((int) length);
-      if (contents.length != (int) length) {
+      if (length > cursor.remaining()) {
         throw new IOException("Truncated class-file attribute: " + name);
       }
       if (!STANDARD_ATTRIBUTES.contains(name)) {
-        unrecognizedAttributes.add(name);
+        unrecognized = addUnrecognized(unrecognized, name);
       }
-      if (CODE_ATTRIBUTE_NAME.equals(name)) {
-        readCodeAttribute(contents, utf8, unrecognizedAttributes);
-      } else if (RECORD_ATTRIBUTE_NAME.equals(name)) {
-        readRecordAttribute(contents, utf8, unrecognizedAttributes);
+      unrecognized = readAttributePayload(cursor, name, (int) length, utf8, unrecognized);
+    }
+    return unrecognized;
+  }
+
+  private static Set<String> addUnrecognized(final Set<String> unrecognized, final String name) {
+    final Set<String> target = unrecognized == null ? new TreeSet<>() : unrecognized;
+    target.add(name);
+    return target;
+  }
+
+  private static Set<String> readAttributePayload(
+      final ByteCursor cursor,
+      final String name,
+      final int length,
+      final ConstantPoolUtf8Table utf8,
+      final Set<String> unrecognized)
+      throws IOException {
+    if (CODE_ATTRIBUTE_NAME.equals(name)) {
+      return readCodeAttribute(cursor, length, utf8, unrecognized);
+    }
+    if (RECORD_ATTRIBUTE_NAME.equals(name)) {
+      return readRecordAttribute(cursor, length, utf8, unrecognized);
+    }
+    cursor.skip(length);
+    return unrecognized;
+  }
+
+  private static Set<String> readCodeAttribute(
+      final ByteCursor cursor,
+      final int length,
+      final ConstantPoolUtf8Table utf8,
+      final Set<String> unrecognizedAttributes)
+      throws IOException {
+    final int end = cursor.position() + length;
+    final ByteCursor nested = cursor.slice(length);
+    nested.skip(4);
+    final long codeLength = nested.readUnsignedInt();
+    nested.skip(codeLength);
+    nested.skip(nested.readUnsignedShort() * 8L);
+    final Set<String> unrecognized =
+        readAttributes(nested, utf8, nested.readUnsignedShort(), unrecognizedAttributes);
+    if (nested.remaining() != 0) {
+      throw new IOException("Malformed nested Code attribute");
+    }
+    cursor.advanceTo(end);
+    return unrecognized;
+  }
+
+  private static Set<String> readRecordAttribute(
+      final ByteCursor cursor,
+      final int length,
+      final ConstantPoolUtf8Table utf8,
+      final Set<String> unrecognizedAttributes)
+      throws IOException {
+    final int end = cursor.position() + length;
+    final ByteCursor nested = cursor.slice(length);
+    Set<String> unrecognized = unrecognizedAttributes;
+    final int components = nested.readUnsignedShort();
+    for (int index = 0; index < components; index++) {
+      nested.skip(4);
+      unrecognized = readAttributes(nested, utf8, nested.readUnsignedShort(), unrecognized);
+    }
+    if (nested.remaining() != 0) {
+      throw new IOException("Malformed nested Record attribute");
+    }
+    cursor.advanceTo(end);
+    return unrecognized;
+  }
+
+  /** Lazy constant-pool UTF-8 table for attribute names. */
+  private static final class ConstantPoolUtf8Table {
+    /** Backing class-file bytes. */
+    private final byte[] bytes;
+
+    /** Offset of each CONSTANT_Utf8 length prefix, or 0 for non-UTF8 slots. */
+    private final int[] offsets;
+
+    /** Lazily decoded strings indexed by constant-pool slot. */
+    private final String[] cache;
+
+    private ConstantPoolUtf8Table(final byte[] bytes, final int... offsets) {
+      this.bytes = bytes;
+      this.offsets = offsets;
+      this.cache = new String[offsets.length];
+    }
+
+    private String at(final int index) throws IOException {
+      if (index <= 0 || index >= offsets.length || offsets[index] == 0) {
+        throw new IOException("Invalid class-file attribute name index: " + index);
+      }
+      String cached = cache[index];
+      if (cached == null) {
+        cached = decode(offsets[index]);
+        cache[index] = cached;
+      }
+      return cached;
+    }
+
+    private String decode(final int lengthOffset) throws IOException {
+      final int utfLength = ((bytes[lengthOffset] & 0xff) << 8) | (bytes[lengthOffset + 1] & 0xff);
+      final int dataOffset = lengthOffset + 2;
+      for (int index = 0; index < utfLength; index++) {
+        if (bytes[dataOffset + index] < 0) {
+          return decodeModifiedUtf8(lengthOffset, utfLength);
+        }
+      }
+      return new String(bytes, dataOffset, utfLength, StandardCharsets.US_ASCII);
+    }
+
+    private String decodeModifiedUtf8(final int lengthOffset, final int utfLength)
+        throws IOException {
+      try (DataInputStream input =
+          new DataInputStream(new ByteArrayInputStream(bytes, lengthOffset, utfLength + 2))) {
+        return input.readUTF();
       }
     }
   }
 
-  private static void readCodeAttribute(
-      final byte[] contents, final String[] utf8, final Set<String> unrecognizedAttributes)
-      throws IOException {
-    try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(contents))) {
-      input.skipNBytes(4);
-      final long codeLength = Integer.toUnsignedLong(input.readInt());
-      input.skipNBytes(codeLength);
-      skipEntries(input, input.readUnsignedShort(), 8);
-      readAttributes(input, utf8, input.readUnsignedShort(), unrecognizedAttributes);
-      requireConsumed(input, "Code");
-    }
-  }
+  /** Bounded big-endian cursor over a backing byte array. */
+  private static final class ByteCursor {
+    /** Backing byte array. */
+    private final byte[] bytes;
 
-  private static void readRecordAttribute(
-      final byte[] contents, final String[] utf8, final Set<String> unrecognizedAttributes)
-      throws IOException {
-    try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(contents))) {
-      final int components = input.readUnsignedShort();
-      for (int index = 0; index < components; index++) {
-        input.skipNBytes(4);
-        readAttributes(input, utf8, input.readUnsignedShort(), unrecognizedAttributes);
+    /** Exclusive upper bound in the backing byte array. */
+    private final int limit;
+
+    /** Current read position. */
+    private int pos;
+
+    private ByteCursor(final byte[] bytes, final int start, final int limit) {
+      this.bytes = bytes;
+      this.pos = start;
+      this.limit = limit;
+    }
+
+    private int position() {
+      return pos;
+    }
+
+    private int remaining() {
+      return limit - pos;
+    }
+
+    private void advanceTo(final int nextPos) {
+      pos = nextPos;
+    }
+
+    private ByteCursor slice(final int length) {
+      return new ByteCursor(bytes, pos, pos + length);
+    }
+
+    private void requireRemaining(final long count) throws IOException {
+      if (count < 0 || count > remaining()) {
+        throw new EOFException("Unexpected end of class-file bytes");
       }
-      requireConsumed(input, "Record");
     }
-  }
 
-  private static void skipEntries(
-      final DataInputStream input, final int count, final int entryBytes) throws IOException {
-    input.skipNBytes((long) count * entryBytes);
-  }
-
-  private static String utf8At(final String[] utf8, final int index) throws IOException {
-    if (index <= 0 || index >= utf8.length || utf8[index] == null) {
-      throw new IOException("Invalid class-file attribute name index: " + index);
+    private void skip(final long count) throws IOException {
+      requireRemaining(count);
+      pos += (int) count;
     }
-    return utf8[index];
-  }
 
-  private static void requireConsumed(final DataInputStream input, final String attribute)
-      throws IOException {
-    if (input.available() != 0) {
-      throw new IOException("Malformed nested " + attribute + " attribute");
+    private int readUnsignedByte() throws IOException {
+      requireRemaining(1);
+      final int value = bytes[pos] & 0xff;
+      pos += 1;
+      return value;
+    }
+
+    private int readUnsignedShort() throws IOException {
+      requireRemaining(2);
+      final int value = ((bytes[pos] & 0xff) << 8) | (bytes[pos + 1] & 0xff);
+      pos += 2;
+      return value;
+    }
+
+    private int readInt() throws IOException {
+      requireRemaining(4);
+      final int value =
+          ((bytes[pos] & 0xff) << 24)
+              | ((bytes[pos + 1] & 0xff) << 16)
+              | ((bytes[pos + 2] & 0xff) << 8)
+              | (bytes[pos + 3] & 0xff);
+      pos += 4;
+      return value;
+    }
+
+    private long readUnsignedInt() throws IOException {
+      return Integer.toUnsignedLong(readInt());
     }
   }
 }

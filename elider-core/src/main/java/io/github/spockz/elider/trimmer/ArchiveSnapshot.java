@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import org.objectweb.asm.ClassReader;
@@ -39,6 +40,14 @@ final class ArchiveSnapshot {
   /** Caches symbolic declarations while materializing mutable classes per graph. */
   private final LibraryArchiveTemplates libraryTemplates;
 
+  /** Full reference evidence cache per class across candidate analyses. */
+  private final Map<String, ClassReferenceEvidence.Result> programEvidence =
+      new ConcurrentHashMap<>();
+
+  /** Structural reference evidence cache per library class across candidate analyses. */
+  private final Map<String, ClassReferenceEvidence.Result> libraryEvidence =
+      new ConcurrentHashMap<>();
+
   private ArchiveSnapshot(final Map<String, byte[]> classBytes, final boolean hasModuleDescriptor) {
     this.classesByName = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(classBytes));
     this.hasModuleDescriptor = hasModuleDescriptor;
@@ -52,8 +61,7 @@ final class ArchiveSnapshot {
         || entryName.endsWith(".ear");
   }
 
-  @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.CognitiveComplexity"})
-  static ArchiveSnapshot read(final Path archivePath, final boolean candidate) throws IOException {
+  static void validatePath(final Path archivePath, final boolean candidate) throws IOException {
     final Path fileName = archivePath.getFileName();
     if (candidate && !Files.isRegularFile(archivePath)) {
       throw new IllegalArgumentException("Candidate JAR is not a regular file: " + archivePath);
@@ -64,12 +72,15 @@ final class ArchiveSnapshot {
             || !fileName.toString().endsWith(".jar"))) {
       throw new IOException("Only flat sibling JAR libraries are supported: " + archivePath);
     }
+  }
+
+  @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.CognitiveComplexity"})
+  static ArchiveSnapshot read(final Path archivePath, final boolean candidate) throws IOException {
+    validatePath(archivePath, candidate);
     final Map<String, byte[]> classes = new LinkedHashMap<>();
     boolean hasModuleDescriptor = false;
     try (JarFile archive = new JarFile(archivePath.toFile())) {
-      final java.util.Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : archive.stream().toList()) {
         final String entryName = entry.getName();
         if (entry.isDirectory() || !entryName.endsWith(".class")) {
           if (isNestedArchive(entryName)) {
@@ -147,6 +158,23 @@ final class ArchiveSnapshot {
 
   Map<String, byte[]> classBytes() {
     return classesByName;
+  }
+
+  ClassReferenceEvidence.Result referenceEvidence(
+      final String className, final boolean includeMethodBodies) {
+    final Map<String, ClassReferenceEvidence.Result> cache =
+        includeMethodBodies ? programEvidence : libraryEvidence;
+    ClassReferenceEvidence.Result result = cache.get(className);
+    if (result == null) {
+      result =
+          ClassReferenceEvidence.references(
+              className, classesByName.get(className), includeMethodBodies);
+      final ClassReferenceEvidence.Result existing = cache.putIfAbsent(className, result);
+      if (existing != null) {
+        result = existing;
+      }
+    }
+    return result;
   }
 
   ClassPool newClassPool(final boolean library) throws IOException {

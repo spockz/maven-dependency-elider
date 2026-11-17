@@ -29,9 +29,11 @@ import org.openjdk.jmh.annotations.TearDown;
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
-@SuppressWarnings({"PMD.CommentRequired", "PMD.AvoidInstantiatingObjectsInLoops"})
 public class ZipCenScannerBenchmark {
+  /** Number of fixture JARs generated per trial. */
   private static final int JAR_COUNT = 100;
+
+  /** Number of class entries written into each fixture JAR. */
   private static final int CLASS_COUNT_PER_JAR = 32;
 
   /** Temporary root containing the trial's JAR files. */
@@ -54,12 +56,18 @@ public class ZipCenScannerBenchmark {
     fixtureDirectory = Files.createTempDirectory("elider-cen-benchmark-");
     artifacts = new ArrayList<>(JAR_COUNT);
     for (int jarIndex = 0; jarIndex < JAR_COUNT; jarIndex++) {
-      final Path jarPath = fixtureDirectory.resolve("fixture-%03d.jar".formatted(jarIndex));
-      createFixtureJar(jarPath, jarIndex);
-      artifacts.add(
-          ArtifactFileRef.fromPath(
-              ArtifactCoordinate.of("benchmark.fixture", "fixture-" + jarIndex, "1.0"), jarPath));
+      addFixtureArtifact(artifacts, fixtureDirectory, jarIndex);
     }
+  }
+
+  private static void addFixtureArtifact(
+      final List<ArtifactFileRef> artifacts, final Path fixtureDirectory, final int jarIndex)
+      throws IOException {
+    final Path jarPath = fixtureDirectory.resolve("fixture-%03d.jar".formatted(jarIndex));
+    createFixtureJar(jarPath, jarIndex);
+    artifacts.add(
+        ArtifactFileRef.fromPath(
+            ArtifactCoordinate.of("benchmark.fixture", "fixture-" + jarIndex, "1.0"), jarPath));
   }
 
   /** Removes the trial's temporary JARs after JMH has finished using the fixture. */
@@ -74,8 +82,7 @@ public class ZipCenScannerBenchmark {
     }
   }
 
-  /** Includes parallel task creation, JAR opening, class name normalization, and index assembly. */
-  @SuppressWarnings("PMD.CommentSize")
+  /** Scans fixture JARs in parallel. */
   @Benchmark
   public int scannerClassIndex() throws IOException {
     return scanner.scan(artifacts).classesByArtifact().values().stream()
@@ -95,12 +102,7 @@ public class ZipCenScannerBenchmark {
     try (OutputStream output = Files.newOutputStream(jarPath);
         ZipOutputStream zip = new ZipOutputStream(output)) {
       for (int classIndex = 0; classIndex < CLASS_COUNT_PER_JAR; classIndex++) {
-        final String entryName = "fixture/%03d/Type%03d.class".formatted(jarIndex, classIndex);
-        final ZipEntry classEntry = new ZipEntry(entryName);
-        classEntry.setTime(0);
-        zip.putNextEntry(classEntry);
-        zip.write(new byte[] {(byte) jarIndex, (byte) classIndex});
-        zip.closeEntry();
+        writeClassEntry(zip, jarIndex, classIndex);
       }
       final ZipEntry dataEntry = new ZipEntry("fixture/%03d/data.txt".formatted(jarIndex));
       dataEntry.setTime(0);
@@ -108,5 +110,15 @@ public class ZipCenScannerBenchmark {
       zip.write("deterministic fixture".getBytes(java.nio.charset.StandardCharsets.UTF_8));
       zip.closeEntry();
     }
+  }
+
+  private static void writeClassEntry(
+      final ZipOutputStream zip, final int jarIndex, final int classIndex) throws IOException {
+    final String entryName = "fixture/%03d/Type%03d.class".formatted(jarIndex, classIndex);
+    final ZipEntry classEntry = new ZipEntry(entryName);
+    classEntry.setTime(0);
+    zip.putNextEntry(classEntry);
+    zip.write(new byte[] {(byte) jarIndex, (byte) classIndex});
+    zip.closeEntry();
   }
 }
