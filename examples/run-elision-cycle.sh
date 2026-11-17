@@ -4,11 +4,11 @@ set -euo pipefail
 export LC_ALL=C
 
 configured_passthrough_names=(
-  groovy-templates-4.0.23.jar micrometer-commons-1.13.6.jar micrometer-jakarta9-1.13.6.jar
-  micrometer-observation-1.13.6.jar spring-aop-6.1.14.jar
-  spring-beans-6.1.14.jar spring-boot-3.3.5.jar
-  spring-boot-autoconfigure-3.3.5.jar spring-context-6.1.14.jar
-  spring-context-support-6.1.14.jar spring-expression-6.1.14.jar spring-web-6.1.14.jar
+  groovy-templates-4.0.23.jar kafka-clients-3.7.1.jar micrometer-commons-1.13.6.jar
+  micrometer-jakarta9-1.13.6.jar micrometer-observation-1.13.6.jar spring-aop-6.1.14.jar
+  spring-beans-6.1.14.jar spring-boot-3.3.5.jar spring-boot-autoconfigure-3.3.5.jar
+  spring-context-6.1.14.jar spring-context-support-6.1.14.jar spring-expression-6.1.14.jar
+  spring-kafka-3.2.4.jar spring-messaging-6.1.14.jar spring-tx-6.1.14.jar spring-web-6.1.14.jar
 )
 automatic_passthrough_names=(
   angus-activation-2.0.2.jar jackson-annotations-2.18.2.jar
@@ -17,7 +17,7 @@ automatic_passthrough_names=(
   log4j-to-slf4j-2.23.1.jar logback-classic-1.5.11.jar logback-core-1.5.11.jar
   micrometer-core-1.13.6.jar
   reactor-core-3.6.11.jar spring-core-6.1.14.jar tomcat-embed-core-10.1.31.jar
-  tomcat-embed-el-10.1.31.jar tomcat-embed-websocket-10.1.31.jar
+  tomcat-embed-el-10.1.31.jar tomcat-embed-websocket-10.1.31.jar zstd-jni-1.5.6-3.jar
 )
 vertically_shaded_mrjar_names=(jackson-core-2.18.2.jar snakeyaml-2.2.jar)
 
@@ -213,7 +213,7 @@ MANIFEST
         # Test compilation stays enabled; isolated test outputs are outside the runtime inventory.
         -DskipTests=true
         -Delide.trimRoots=freemarker.template.Configuration,groovy.text.markup.MarkupTemplateEngine,jakarta.validation.Validation,org.webjars.WebJarAssetLocator,org.reactivestreams.Publisher,io.micrometer.context.ContextSnapshot,reactor.core.publisher.Flux,reactor.core.publisher.Mono,reactor.util.context.Context,jakarta.servlet.jsp.jstl.core.Config,javax.annotation.Nonnull,edu.umd.cs.findbugs.annotations.SuppressFBWarnings,com.thoughtworks.xstream.XStream,com.thoughtworks.xstream.io.xml.StaxDriver
-        -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework.boot:spring-boot-actuator:3.3.5:jar:,org.springframework.boot:spring-boot-actuator-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-webmvc:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,org.springframework:spring-core:6.1.14:jar:,io.projectreactor:reactor-core:3.6.11:jar:,io.micrometer:micrometer-core:1.13.6:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,io.micrometer:micrometer-jakarta9:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:
+        -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework.boot:spring-boot-actuator:3.3.5:jar:,org.springframework.boot:spring-boot-actuator-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-webmvc:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,org.springframework:spring-core:6.1.14:jar:,org.springframework:spring-messaging:6.1.14:jar:,org.springframework:spring-tx:6.1.14:jar:,io.projectreactor:reactor-core:3.6.11:jar:,io.micrometer:micrometer-core:1.13.6:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,io.micrometer:micrometer-jakarta9:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:,org.springframework.kafka:spring-kafka:3.2.4:jar:,org.apache.kafka:kafka-clients:3.7.1:jar:
       )
     elif [[ $fixture == example-cve-unused-app || $fixture == example-cve-safe-class-app ]]; then
       elision_options+=(

@@ -667,12 +667,12 @@ Process exit status: 0
 [INFO] Policy: retained=[], banished=[]
 [INFO] The snapshot does not revalidate changed inputs when this goal runs.
 [INFO] Conventional Java source layout assumption saved for this run: true
-[INFO] Whole artifacts dropped: 1 / 91 (original JAR file bytes: 356.90 KiB)
+[INFO] Whole artifacts dropped: 1 / 99 (original JAR file bytes: 356.90 KiB)
 [INFO] Program classes removed with dropped JARs: 109 (uncompressed .class entry payload bytes: 398.93 KiB; excludes module descriptors and archive sanitation metadata)
 [INFO]   - commons-codec:commons-codec:jar:1.16.1 (compile): 356.90 KiB original JAR, 109 class entries, 398.93 KiB
-[INFO] Raw trace decision drops before graph safety: 3
+[INFO] Raw trace decision drops before graph safety: 7
 [INFO] Applied bans: none
-[INFO] Program classes pruned from retained JARs: 3441 (uncompressed omitted .class payload bytes: 8.61 MiB; excludes module descriptors and archive metadata)
+[INFO] Program classes pruned from retained JARs: 3590 (uncompressed omitted .class payload bytes: 9.05 MiB; excludes module descriptors and archive metadata)
 [INFO]   - com.fasterxml.jackson.core:jackson-core:jar:2.18.2 (compile): 20 classes, 82.33 KiB
 [INFO]   - com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile): 53 classes, 92.44 KiB
 [INFO]   - com.fasterxml.jackson.datatype:jackson-datatype-jsr310:jar:2.18.2 (compile): 4 classes, 18.07 KiB
@@ -680,17 +680,20 @@ Process exit status: 0
 [INFO]   - com.google.code.findbugs:jsr305:jar:3.0.2 (runtime): 23 classes, 13.91 KiB
 [INFO]   - com.thoughtworks.xstream:xstream:jar:1.4.21 (runtime): 215 classes, 532.65 KiB
 [INFO]   - io.micrometer:context-propagation:jar:1.1.2 (runtime): 10 classes, 22.33 KiB
-[INFO]   - org.apache.groovy:groovy-xml:jar:4.0.23 (runtime): 48 classes, 186.54 KiB
+[INFO]   - org.apache.groovy:groovy-xml:jar:4.0.23 (runtime): 50 classes, 198.45 KiB
 [INFO]   - org.apache.groovy:groovy:jar:4.0.23 (runtime): 2541 classes, 6.19 MiB
 [INFO]   - org.freemarker:freemarker:jar:2.3.33 (runtime): 304 classes, 809.26 KiB
 [INFO]   - org.hdrhistogram:HdrHistogram:jar:2.2.2 (runtime): 37 classes, 118.76 KiB
 [INFO]   - org.latencyutils:LatencyUtils:jar:2.0.3 (runtime): 3 classes, 10.14 KiB
+[INFO]   - org.lz4:lz4-java:jar:1.8.0 (runtime): 57 classes, 172.60 KiB
 [INFO]   - org.slf4j:slf4j-api:jar:2.0.16 (compile): 5 classes, 6.38 KiB
+[INFO]   - org.springframework.retry:spring-retry:jar:2.0.10 (compile): 66 classes, 191.70 KiB
 [INFO]   - org.springframework:spring-jcl:jar:6.1.14 (compile): 1 classes, 1.24 KiB
 [INFO]   - org.springframework:spring-webmvc:jar:6.1.14 (compile): 146 classes, 524.46 KiB
 [INFO]   - org.webjars:webjars-locator-core:jar:0.58 (runtime): 1 classes, 10.66 KiB
+[INFO]   - org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime): 24 classes, 74.68 KiB
 [INFO]   - org.yaml:snakeyaml:jar:2.2 (compile): 9 classes, 25.85 KiB
-[INFO] Vulnerability findings: 343
+[INFO] Vulnerability findings: 385
 [INFO]   - CVE-2008-1947 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2008-1947, GHSA-f98p-9pp6-7q6c]
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
@@ -788,6 +791,11 @@ Process exit status: 0
 [INFO]     Sources: [OSV]
 [INFO]   - CVE-2016-9878 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
 [INFO]     Aliases: [CVE-2016-9878, GHSA-2m8h-fgr8-2q9w]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2017-12610 org.apache.kafka:kafka-clients:jar:3.7.1 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2017-12610, GHSA-xm78-4m3g-7wm7]
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
@@ -901,6 +909,11 @@ Process exit status: 0
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-1270 org.springframework:spring-messaging:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2018-1270, GHSA-p5hg-3xm3-gcjg]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2018-1271 org.springframework:spring-core:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2018-1271, GHSA-g8hw-794c-4j9g]
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
@@ -908,6 +921,11 @@ Process exit status: 0
 [INFO]     Sources: [OSV]
 [INFO]   - CVE-2018-1272 org.springframework:spring-core:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2018-1272, GHSA-4487-x383-qpph]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2018-1275 org.springframework:spring-messaging:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2018-1275, GHSA-3rmv-2pg5-xvqj]
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
@@ -1436,6 +1454,11 @@ Process exit status: 0
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2021-38153 org.apache.kafka:kafka-clients:jar:3.7.1 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-kafka-2021-38153, CVE-2021-38153, GHSA-3j6g-hxx5-3q26]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2021-39139 com.thoughtworks.xstream:xstream:jar:1.4.21 (runtime) [RETAINED_AND_TRIMMED]
 [INFO]     Aliases: [CVE-2021-39139, GHSA-64xx-cq4q-mf44]
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
@@ -1561,6 +1584,11 @@ Process exit status: 0
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2022-22971 org.springframework:spring-messaging:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2022-22971, GHSA-rqph-vqwm-22vc]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2022-25857 org.yaml:snakeyaml:jar:2.2 (compile) [RETAINED_AND_TRIMMED]
 [INFO]     Aliases: [CVE-2022-25857, GHSA-3mc7-4q67-w48m]
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
@@ -1666,6 +1694,11 @@ Process exit status: 0
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2023-34040 org.springframework.kafka:spring-kafka:jar:3.2.4 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2023-34040, GHSA-crqf-q9fp-hwjw]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2023-34053 org.springframework:spring-webmvc:jar:6.1.14 (compile) [RETAINED_AND_TRIMMED]
 [INFO]     Aliases: [CVE-2023-34053, GHSA-v94h-hvhg-mf9h]
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
@@ -1673,6 +1706,21 @@ Process exit status: 0
 [INFO]     Sources: [OSV]
 [INFO]   - CVE-2023-34055 org.springframework.boot:spring-boot-actuator:jar:3.3.5 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2023-34055, GHSA-jjfh-589g-3hjx]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2023-34453 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2023-34453, GHSA-pqr6-cmr2-h8hf]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2023-34454 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2023-34454, GHSA-fjpj-2g6w-x25r]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2023-34455 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2023-34455, GHSA-qcwq-55hx-v3vh]
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
@@ -1688,6 +1736,11 @@ Process exit status: 0
 [INFO]     Sources: [OSV]
 [INFO]   - CVE-2023-42795 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [BIT-tomcat-2023-42795, CVE-2023-42795, GHSA-g8pj-r55q-5c2v]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2023-43642 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2023-43642, GHSA-55g7-9cwv-5qfv]
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
@@ -1771,6 +1824,12 @@ Process exit status: 0
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2024-31141 org.apache.kafka:kafka-clients:jar:3.7.1 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2024-31141, GHSA-2x2g-32r7-p4x8]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=2.3.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=3.5.2,changes=[], version=3.6.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=3.6.2,changes=[], version=3.7.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=2.3.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=3.5.2,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=3.6.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=3.6.2,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=3.7.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
 [INFO]   - CVE-2024-31573 org.xmlunit:xmlunit-core:jar:2.9.1 (test) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2024-31573, GHSA-chfm-68vv-pvw5]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -1856,6 +1915,12 @@ Process exit status: 0
 [INFO]         org.codehaus.janino:janino / org.codehaus.janino.ClassBodyEvaluator=ABSENT (ALREADY_ABSENT)
 [INFO]     Overridden fields: [intent]
 [INFO]     Sources: [CATALOG, OSV]
+[INFO]   - CVE-2025-12183 org.lz4:lz4-java:jar:1.8.0 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2025-12183, GHSA-vqf4-7m7x-wgfc]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=1.0.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=1.8.0,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=1.0.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=1.8.0,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
 [INFO]   - CVE-2025-22233 org.springframework:spring-context:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2025-22233, GHSA-4wp7-92pw-q264]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -1868,6 +1933,11 @@ Process exit status: 0
 [INFO]     Sources: [OSV]
 [INFO]   - CVE-2025-24813 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [BIT-tomcat-2025-24813, CVE-2025-24813, GHSA-83qj-6fr2-vhqg]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-27817 org.apache.kafka:kafka-clients:jar:3.7.1 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-kafka-2025-27817, CVE-2025-27817, GHSA-vgq5-3255-v292]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [OSV]
@@ -1968,6 +2038,11 @@ Process exit status: 0
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2025-66566 org.lz4:lz4-java:jar:1.8.0 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2025-66566, GHSA-cmp6-m4wj-q63q]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2025-66614 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [BIT-tomcat-2025-66614, CVE-2025-66614, GHSA-fpj8-gq4v-p354]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -1978,6 +2053,44 @@ Process exit status: 0
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-106449 org.lz4:lz4-java:jar:1.8.0 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-106449, GHSA-343h-94h5-c4wr]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-106450 org.lz4:lz4-java:jar:1.8.0 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-106450, GHSA-gm45-99xc-r7wv]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-106451 org.lz4:lz4-java:jar:1.8.0 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-106451, GHSA-mcr4-qmvw-px4g]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-106452 org.lz4:lz4-java:jar:1.8.0 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-106452, GHSA-4v53-57pg-c464]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-106453 org.lz4:lz4-java:jar:1.8.0 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-106453, GHSA-6cx8-rjf8-pr8g]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-108104 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=1.1.7.4,status=affected,versionType=custom,lessThan=1.1.10.10,lessThanOrEqual=null,changes=[], version=1.1.10.10,status=unaffected,versionType=custom,lessThan=null,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=1.1.10.10,status=unaffected,versionType=custom,lessThan=null,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=1.1.7.4,status=affected,versionType=custom,lessThan=1.1.10.10,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-108106 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-108106, GHSA-q233-g92q-qxp6]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [org.xerial.snappy.Snappy] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [org.xerial.snappy.Snappy]
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=0,status=affected,versionType=custom,lessThan=1.1.10.9,lessThanOrEqual=null,changes=[], version=1.1.10.9,status=unaffected,versionType=custom,lessThan=null,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=0,status=affected,versionType=custom,lessThan=1.1.10.9,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=1.1.10.9,status=unaffected,versionType=custom,lessThan=null,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
 [INFO]   - CVE-2026-110257 org.ow2.asm:asm:jar:9.10.1 (test) [RETAINED_UNCHANGED]
 [INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
@@ -2023,6 +2136,11 @@ Process exit status: 0
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-111551 org.apache.kafka:kafka-clients:jar:3.7.1 (compile) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[1]:defaultStatus=unaffected:[version=0.10.0.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.1.2,changes=[], version=4.2.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.2.1,changes=[], version=4.3.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.3.1,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[1]:version=0.10.0.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.1.2,changes=[]: Unsupported CVE versionType, containers.cna.affected[1]:version=4.2.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.2.1,changes=[]: Unsupported CVE versionType, containers.cna.affected[1]:version=4.3.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.3.1,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST]
 [INFO]   - CVE-2026-112046 org.ow2.asm:asm:jar:9.10.1 (test) [RETAINED_UNCHANGED]
 [INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
@@ -2038,6 +2156,11 @@ Process exit status: 0
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=0,status=affected,versionType=custom,lessThan=3.6,lessThanOrEqual=null,changes=[], version=3.6,status=unaffected,versionType=custom,lessThan=null,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=0,status=affected,versionType=custom,lessThan=3.6,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=3.6,status=unaffected,versionType=custom,lessThan=null,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
 [INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-116590 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-116590, GHSA-xqrx-qh46-34m7]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2026-1225 ch.qos.logback:logback-core:jar:1.5.11 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2026-1225, GHSA-qqpg-mvqg-649v]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -2121,6 +2244,17 @@ Process exit status: 0
 [INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
 [INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-33557 org.apache.kafka:kafka-clients:jar:3.7.1 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-kafka-2026-33557, CVE-2026-33557, GHSA-28jg-cgg7-j4wc]
+[INFO]     Applicability: NO_AFFECTED_ASSERTION; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-33558 org.apache.kafka:kafka-clients:jar:3.7.1 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [BIT-kafka-2026-33558, CVE-2026-33558, GHSA-wf66-mphr-4c4r]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Unresolved coverage: [containers.cna.affected[1]:defaultStatus=unaffected:[version=0.11.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=3.9.1,changes=[], version=4.0.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[1]:version=0.11.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=3.9.1,changes=[]: Unsupported CVE versionType, containers.cna.affected[1]:version=4.0.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
 [INFO]   - CVE-2026-34483 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [BIT-tomcat-2026-34483, CVE-2026-34483, GHSA-rv64-5gf8-9qq8]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -2131,6 +2265,12 @@ Process exit status: 0
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-35554 org.apache.kafka:kafka-clients:jar:3.7.1 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-35554, GHSA-5qcv-4rpc-jp93]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=2.8.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=3.9.1,changes=[], version=4.0.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.0.1,changes=[], version=4.1.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.1.1,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=2.8.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=3.9.1,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=4.0.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.0.1,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=4.1.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=4.1.1,changes=[]: Unsupported CVE versionType]
+[INFO]     Sources: [CVE_LIST, OSV]
 [INFO]   - CVE-2026-40973 org.springframework.boot:spring-boot:jar:3.3.5 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2026-40973, GHSA-wwpq-f5c3-7hvx]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -2168,6 +2308,26 @@ Process exit status: 0
 [INFO]     Sources: [OSV]
 [INFO]   - CVE-2026-41293 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [BIT-tomcat-2026-41293, CVE-2026-41293, GHSA-r29c-68gh-xp6x]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41710 org.springframework.retry:spring-retry:jar:2.0.10 (compile) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-41710, GHSA-2827-2mxx-j8pv]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41726 org.springframework.kafka:spring-kafka:jar:3.2.4 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41726, GHSA-xvfq-4q6q-gxx7]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41727 org.springframework.kafka:spring-kafka:jar:3.2.4 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41727, GHSA-53w6-v7cv-fc9h]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
+[INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-41731 org.springframework.kafka:spring-kafka:jar:3.2.4 (compile) [RETAINED_UNCHANGED]
+[INFO]     Aliases: [CVE-2026-41731, GHSA-xq69-5h5v-x9x4]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration. No unique trimmed artifact is available for physical omission proof
 [INFO]     Sources: [OSV]
@@ -2346,6 +2506,11 @@ Process exit status: 0
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
 [INFO]     Sources: [OSV]
+[INFO]   - CVE-2026-59949 org.lz4:lz4-java:jar:1.8.0 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-59949, GHSA-xx22-p4ch-683r]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Sources: [OSV]
 [INFO]   - CVE-2026-65182 org.apache.tomcat.embed:tomcat-embed-core:jar:10.1.31 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [BIT-tomcat-2026-65182, CVE-2026-65182, GHSA-gcx9-497g-6cp6]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -2409,6 +2574,41 @@ Process exit status: 0
 [INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
 [INFO]     Unresolved coverage: [containers.cna.affected[0]:defaultStatus=unaffected:[version=2.2.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=2.3.34,changes=[], version=2.3.35,status=unaffected,versionType=semver,lessThan=null,lessThanOrEqual=null,changes=[]]: CVE default, explicit status, or overlapping statuses are unresolved, containers.cna.affected[0]:version=2.2.0,status=affected,versionType=semver,lessThan=null,lessThanOrEqual=2.3.34,changes=[]: Unsupported CVE versionType, containers.cna.affected[0]:version=2.3.35,status=unaffected,versionType=semver,lessThan=null,lessThanOrEqual=null,changes=[]: Unsupported CVE versionType]
 [INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-87795 com.github.luben:zstd-jni:jar:1.5.6-3 (runtime) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/com.github.luben/zstd-jni,collectionURL=https://repo1.maven.org/maven2/com/github/luben/zstd-jni/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-87823 com.github.luben:zstd-jni:jar:1.5.6-3 (runtime) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/com.github.luben/zstd-jni,collectionURL=https://repo1.maven.org/maven2/com/github/luben/zstd-jni/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-87824 com.github.luben:zstd-jni:jar:1.5.6-3 (runtime) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/com.github.luben/zstd-jni,collectionURL=https://repo1.maven.org/maven2/com/github/luben/zstd-jni/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-87825 com.github.luben:zstd-jni:jar:1.5.6-3 (runtime) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/com.github.luben/zstd-jni,collectionURL=https://repo1.maven.org/maven2/com/github/luben/zstd-jni/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-87877 com.github.luben:zstd-jni:jar:1.5.6-3 (runtime) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/com.github.luben/zstd-jni,collectionURL=https://repo1.maven.org/maven2/com/github/luben/zstd-jni/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-89045 com.github.luben:zstd-jni:jar:1.5.6-3 (runtime) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/com.github.luben/zstd-jni,collectionURL=https://repo1.maven.org/maven2/com/github/luben/zstd-jni/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-89046 com.github.luben:zstd-jni:jar:1.5.6-3 (runtime) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/com.github.luben/zstd-jni,collectionURL=https://repo1.maven.org/maven2/com/github/luben/zstd-jni/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
 [INFO]   - CVE-2026-89407 com.fasterxml.jackson.core:jackson-core:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
 [INFO]     Aliases: [CVE-2026-89407, GHSA-p6pp-m3f8-5c89]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -2423,6 +2623,16 @@ Process exit status: 0
 [INFO]     Outcome: NO_PROOF; Vulnerable class survives trimmed archive: com.fasterxml.jackson.core.json.UTF8DataInputJsonParser
 [INFO]     Declared code: [com.fasterxml.jackson.core.json.UTF8DataInputJsonParser._reportInvalidToken] RESOLVED; classes: [com.fasterxml.jackson.core.json.UTF8DataInputJsonParser]; reasons: []
 [INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-90559 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.xerial.snappy/snappy-java,collectionURL=https://repo1.maven.org/maven2/org/xerial/snappy-java/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
+[INFO]   - CVE-2026-90560 com.github.luben:zstd-jni:jar:1.5.6-3 (runtime) [RETAINED_UNCHANGED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/com.github.luben/zstd-jni,collectionURL=https://repo1.maven.org/maven2/com/github/luben/zstd-jni/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
 [INFO]   - CVE-2026-91776 com.fasterxml.jackson.core:jackson-databind:jar:2.18.2 (compile) [RETAINED_AND_TRIMMED]
 [INFO]     Aliases: [CVE-2026-91776, GHSA-wv8q-qhhj-9h54]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -2436,6 +2646,19 @@ Process exit status: 0
 [INFO]     Declared code: [com.fasterxml.jackson.databind.deser.std.CollectionDeserializer.CollectionReferringAccumulator.resolveForwardReference] UNRESOLVED; classes: []; reasons: [ROUTINE_OWNER_NOT_FOUND]
 [INFO]     Declared code: [com.fasterxml.jackson.databind.deser.std.MapDeserializer.MapReferringAccumulator.resolveForwardReference] UNRESOLVED; classes: []; reasons: [ROUTINE_OWNER_NOT_FOUND]
 [INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-93451 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Aliases: [CVE-2026-93451, GHSA-gwq9-9ffj-mvrv]
+[INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
+[INFO]     Outcome: NO_PROOF; No complete physical proof was available for an effective declaration
+[INFO]     Declared code: [org.xerial.snappy.Snappy] REVIEW_LEAD; classes: []; reasons: [HEURISTIC_REQUIRES_REVIEW]
+[INFO]     Heuristic leads: [org.xerial.snappy.Snappy]
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.xerial.snappy/snappy-java,collectionURL=https://repo1.maven.org/maven2/org/xerial/snappy-java/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST, OSV]
+[INFO]   - CVE-2026-93452 org.xerial.snappy:snappy-java:jar:1.1.10.5 (runtime) [RETAINED_AND_TRIMMED]
+[INFO]     Applicability: UNRESOLVED; intent: UNRESOLVED
+[INFO]     Outcome: UNRESOLVED; Applicability or assessment intent is unresolved for this version
+[INFO]     Unresolved coverage: [containers.cna.affected[0]:packageURL=pkg:maven/org.xerial.snappy/snappy-java,collectionURL=https://repo1.maven.org/maven2/org/xerial/snappy-java/,packageName=null: Conflicting or unsupported CVE package identities]
+[INFO]     Sources: [CVE_LIST]
 [INFO]   - CVE-2026-9828 ch.qos.logback:logback-core:jar:1.5.11 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2026-9828, GHSA-p47f-322f-whfh]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
@@ -2463,9 +2686,9 @@ Process exit status: 0
 [INFO]   exclusionReview.snapshot.diagnostics.
 [INFO] Mediated TEST dependency graph (captured and saved by the elide goal):
 [INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT {nodeId=n0} [RETAINED]
-[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n7} [RETAINED, CLASS_TRIMMED]
-[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.google.code.findbugs:jsr305:jar:3.0.2 (runtime) {nodeId=n15} [RETAINED, CLASS_TRIMMED]
-[INFO]   ... 89 dependency graph rows elided (sha256:b9f90252b8e5b90c56c2c4e2bcf798e875af6976a6e3aa2019ab21e754970f3b)
+[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.github.spotbugs:spotbugs-annotations:jar:4.10.5 (runtime) {nodeId=n8} [RETAINED, CLASS_TRIMMED]
+[INFO]   - io.github.spockz:example-spring-boot-app:0.1.0-SNAPSHOT -> com.google.code.findbugs:jsr305:jar:3.0.2 (runtime) {nodeId=n16} [RETAINED, CLASS_TRIMMED]
+[INFO]   ... 97 dependency graph rows elided (sha256:e957cce5f3e721799305b99071e4a52a25af1d70c8ae95ea85acb96fb08a14d1)
 [INFO] ------------------------------------------------------------------------
 [INFO] ------------------------------------------------------------------------
 [INFO] Total time: <BUILD_TIME>
