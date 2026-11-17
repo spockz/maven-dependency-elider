@@ -58,8 +58,8 @@ main() {
   }
   trap cleanup EXIT
 
-  "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
-    -pl dependency-elider-maven-plugin -am install -Dmaven.test.skip=true
+  "$maven" "${maven_options[@]}" -T "${MAVEN_THREADS:-4}" -f "$repo_root/pom.xml" \
+    -pl dependency-elider-maven-plugin -am install -Dmaven.test.skip=true -Djacoco.skip=true
 
   "$maven" "${maven_options[@]}" -f \
     "$repo_root/examples/logback-vulnerability-mapping-catalog/pom.xml" install -Dmaven.test.skip=true
@@ -107,10 +107,19 @@ main() {
   }
   export -f wait_for_spring_endpoint
 
-  for fixture in "${fixture_names[@]}"; do
-    fixture_dir="$repo_root/examples/$fixture"
-    jar_file="$fixture_dir/target/$fixture-0.1.0-SNAPSHOT.jar"
-    trace="$evidence_dir/$fixture.log"
+  prepare_fixture() {
+    local fixture=$1
+    local fixture_dir="$repo_root/examples/$fixture"
+    local jar_file="$fixture_dir/target/$fixture-0.1.0-SNAPSHOT.jar"
+    local trace="$evidence_dir/$fixture.log"
+    local spring_pid=""
+    cleanup_fixture() {
+      if [[ -n ${spring_pid:-} ]]; then
+        kill -TERM "$spring_pid" 2>/dev/null || true
+        wait "$spring_pid" 2>/dev/null || true
+      fi
+    }
+    trap cleanup_fixture EXIT
 
     run_fixture_maven "$fixture_dir" clean package \
       -Dmaven.test.skip=true -Delide.mode=baseline
@@ -120,27 +129,27 @@ main() {
     fi
 
     if [[ $fixture == example-spring-boot-app ]]; then
-      production_output="$evidence_dir/$fixture-production-classes"
+      local production_output="$evidence_dir/$fixture-production-classes"
       cp -a -- "$fixture_dir/target/classes" "$production_output"
-      spring_log="$evidence_dir/$fixture-startup.log"
-      response_file="$evidence_dir/$fixture-endpoint-response.json"
+      local spring_log="$evidence_dir/$fixture-startup.log"
+      local response_file="$evidence_dir/$fixture-endpoint-response.json"
       "$java" "-Xlog:class+load=info:file=$trace" "-Djava.io.tmpdir=$evidence_dir" \
         -jar "$jar_file" --server.port=0 >"$spring_log" 2>&1 &
-      active_process_pid=$!
-      status=0
+      spring_pid=$!
+      local status=0
       timeout --signal=TERM --kill-after=5s "$app_timeout" \
-        bash -c 'wait_for_spring_endpoint "$@"' _ "$active_process_pid" "$spring_log" "$response_file" || status=$?
+        bash -c 'wait_for_spring_endpoint "$@"' _ "$spring_pid" "$spring_log" "$response_file" || status=$?
       if [[ $status -ne 0 ]]; then
-        kill -TERM "$active_process_pid" 2>/dev/null || true
-        wait "$active_process_pid" 2>/dev/null || true
-        active_process_pid=""
+        kill -TERM "$spring_pid" 2>/dev/null || true
+        wait "$spring_pid" 2>/dev/null || true
+        spring_pid=""
         cat -- "$spring_log" >&2
         echo "Spring Boot endpoint did not return HTTP 200 with the expected body before readiness timeout (status $status)" >&2
         exit 1
       fi
-      kill -TERM "$active_process_pid" 2>/dev/null || true
-      wait "$active_process_pid" 2>/dev/null || true
-      active_process_pid=""
+      kill -TERM "$spring_pid" 2>/dev/null || true
+      wait "$spring_pid" 2>/dev/null || true
+      spring_pid=""
     else
       timeout --signal=TERM --kill-after=5s "$app_timeout" \
         "$java" "-Xlog:class+load=info:file=$trace" "-Djava.io.tmpdir=$evidence_dir" \
@@ -150,24 +159,16 @@ main() {
       echo "Runtime trace was not created: $trace" >&2
       exit 1
     fi
-  done
 
-  for fixture in "${fixture_names[@]}"; do
-    fixture_dir="$repo_root/examples/$fixture"
-    trace="$evidence_dir/$fixture.log"
-    elision_options=(
+    local -a elision_options=(
       --offline
       "-Delide.cveCacheDirectory=$cache_dir"
       -Delide.mode=elision
       "-Delide.traceFiles=$trace"
       -Delide.trimJars=true
       -Dmaven.compiler.proc=none
+      -DskipTests=true
     )
-    if [[ $fixture == example-cve-safe-class-app ]]; then
-      elision_options+=(-DskipTests=true -Dmaven.test.skip=true)
-    else
-      elision_options+=(-Dmaven.test.skip=true)
-    fi
     case "$fixture" in
       example-basic-app)
         elision_options+=(
@@ -193,10 +194,10 @@ main() {
     esac
     run_fixture_maven "$fixture_dir" clean package "${elision_options[@]}"
     if [[ $fixture == example-cve-safe-class-app ]]; then
-      support_classpath_file="$evidence_dir/example-support.classpath"
+      local support_classpath_file="$evidence_dir/example-support.classpath"
       "$maven" "${maven_options[@]}" -f "$repo_root/dependency-elider-maven-plugin/pom.xml" \
         dependency:build-classpath -DincludeScope=test "-Dmdep.outputFile=$support_classpath_file"
-      support_classes="$evidence_dir/example-support-classes"
+      local support_classes="$evidence_dir/example-support-classes"
       mkdir -p -- "$support_classes"
       "$javac" -classpath "$(<"$support_classpath_file")" -d "$support_classes" \
         "$repo_root/examples/support/ExampleSupport.java"
@@ -208,6 +209,15 @@ main() {
         "$repo_root/elider-core/src/test/resources/schema/bom-1.6.schema.json" \
         "$repo_root/elider-core/src/test/resources/schema/openvex-0.2.0.schema.json"
     fi
+  }
+
+  local -a fixture_pids=()
+  for fixture in "${fixture_names[@]}"; do
+    prepare_fixture "$fixture" &
+    fixture_pids+=($!)
+  done
+  for pid in "${fixture_pids[@]}"; do
+    wait "$pid"
   done
 
 }

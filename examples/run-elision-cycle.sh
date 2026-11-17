@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # WHY: Runs reproducible example checks with project paths and temporary evidence anchored at the repository root.
 set -euo pipefail
+export LC_ALL=C
 
 configured_passthrough_names=(
   groovy-templates-4.0.23.jar micrometer-commons-1.13.6.jar micrometer-jakarta9-1.13.6.jar
@@ -92,7 +93,7 @@ main() {
   trap cleanup EXIT
 
   "$maven" "${maven_options[@]}" -f "$repo_root/pom.xml" \
-    -pl dependency-elider-maven-plugin -am install -DskipTests
+    -pl dependency-elider-maven-plugin -am install -DskipTests -Djacoco.skip=true
 
   "$maven" "${maven_options[@]}" -f \
     "$repo_root/examples/logback-vulnerability-mapping-catalog/pom.xml" install -DskipTests
@@ -147,7 +148,7 @@ MANIFEST
     "$jar" --create --file "$mrjar_fixture_jar" --manifest "$manifest" -C "$classes" .
     "$jar" --validate --file "$mrjar_fixture_jar"
     "$maven" "${maven_options[@]}" \
-      org.apache.maven.plugins:maven-install-plugin:3.1.3:install-file \
+      org.apache.maven.plugins:maven-install-plugin:3.1.2:install-file \
       "-Dfile=$mrjar_fixture_jar" \
       -DgroupId=io.github.spockz.fixtures \
       -DartifactId=example-mrjar-fixture \
@@ -209,9 +210,8 @@ MANIFEST
       elision_options+=(
         -Delide.trimJars=true
         -Dmaven.compiler.proc=none
-        # Baseline tests run; the elision proof must prevent later testCompile provider changes.
+        # Test compilation stays enabled; isolated test outputs are outside the runtime inventory.
         -DskipTests=true
-        -Dmaven.test.skip=true
         -Delide.trimRoots=freemarker.template.Configuration,groovy.text.markup.MarkupTemplateEngine,jakarta.validation.Validation,org.webjars.WebJarAssetLocator,org.reactivestreams.Publisher,io.micrometer.context.ContextSnapshot,reactor.core.publisher.Flux,reactor.core.publisher.Mono,reactor.util.context.Context,jakarta.servlet.jsp.jstl.core.Config,javax.annotation.Nonnull,edu.umd.cs.findbugs.annotations.SuppressFBWarnings,com.thoughtworks.xstream.XStream,com.thoughtworks.xstream.io.xml.StaxDriver
         -Delide.trimSkipArtifacts=org.springframework.boot:spring-boot:3.3.5:jar:,org.springframework.boot:spring-boot-autoconfigure:3.3.5:jar:,org.springframework.boot:spring-boot-actuator:3.3.5:jar:,org.springframework.boot:spring-boot-actuator-autoconfigure:3.3.5:jar:,org.springframework:spring-web:6.1.14:jar:,org.springframework:spring-webmvc:6.1.14:jar:,org.springframework:spring-context:6.1.14:jar:,org.springframework:spring-context-support:6.1.14:jar:,org.springframework:spring-beans:6.1.14:jar:,org.springframework:spring-aop:6.1.14:jar:,org.springframework:spring-expression:6.1.14:jar:,org.springframework:spring-core:6.1.14:jar:,io.projectreactor:reactor-core:3.6.11:jar:,io.micrometer:micrometer-core:1.13.6:jar:,io.micrometer:micrometer-observation:1.13.6:jar:,io.micrometer:micrometer-commons:1.13.6:jar:,io.micrometer:micrometer-jakarta9:1.13.6:jar:,org.apache.groovy:groovy-templates:4.0.23:jar:
       )
@@ -230,7 +230,7 @@ MANIFEST
       )
     fi
     if [[ $fixture == example-cve-safe-class-app ]]; then
-      elision_options+=(-DskipTests=true -Dmaven.test.skip=true)
+      elision_options+=(-DskipTests=true)
     fi
 
     run_timed "$baseline_seconds" run_fixture_maven "$fixture_dir" -f "$pom" clean verify \
@@ -743,9 +743,11 @@ compare_spring_package_inventory() {
     baseline_count=$(awk -F '\t' -v kind="$kind" '$1 == kind { count++ } END { print count + 0 }' "$baseline_entries")
     final_count=$(awk -F '\t' -v kind="$kind" '$1 == kind { count++ } END { print count + 0 }' "$final_entries")
     removed_count=$(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$baseline_entries" | \
-      comm -23 - <(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$final_entries") | wc -l)
+      LC_ALL=C sort | \
+      comm -23 - <(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$final_entries" | LC_ALL=C sort) | wc -l)
     added_count=$(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$final_entries" | \
-      comm -13 <(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$baseline_entries") - | wc -l)
+      LC_ALL=C sort | \
+      comm -13 <(awk -F '\t' -v kind="$kind" '$1 == kind { print $2 "\t" $3 }' "$baseline_entries" | LC_ALL=C sort) - | wc -l)
     printf 'Spring package %s entries: baseline=%s, final=%s, retained=%s, removed=%s, added=%s\n' \
       "$kind" "$baseline_count" "$final_count" "$((final_count - added_count))" \
       "$removed_count" "$added_count"

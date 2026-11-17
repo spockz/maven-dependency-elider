@@ -29,6 +29,8 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class ExampleSupport {
   private static final ObjectMapper JSON = new ObjectMapper();
@@ -75,70 +77,64 @@ public final class ExampleSupport {
     final Path log = requireAbsolutePath(arguments[4], "LOG");
     final Path expectedSbom =
         arguments.length == 6 ? requireAbsolutePath(arguments[5], "EXPECTED_SBOM") : null;
-    for (int attempt = 1; attempt <= 3; attempt++) {
-      final int port;
-      try (ServerSocket socket = new ServerSocket(0)) {
-        socket.setReuseAddress(true);
-        port = socket.getLocalPort();
-      }
-      final Process process =
-          new ProcessBuilder(
-                  java.toString(),
-                  "-Xlog:class+load=info:file=" + trace,
-                  "-Djava.io.tmpdir=" + trace.getParent(),
-                  "-jar",
-                  jar.toString(),
-                  "--server.port=" + port)
-              .redirectErrorStream(true)
-              .redirectOutput(log.toFile())
-              .start();
-      try {
-        final HttpClient client =
-            HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+    final Process process =
+        new ProcessBuilder(
+                java.toString(),
+                "-Xlog:class+load=info:file=" + trace,
+                "-Djava.io.tmpdir=" + trace.getParent(),
+                "-jar",
+                jar.toString(),
+                "--server.port=0")
+            .redirectErrorStream(true)
+            .redirectOutput(log.toFile())
+            .start();
+    try {
+      final HttpClient client =
+          HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+      final Pattern portPattern = Pattern.compile("Tomcat started on port (\\d+)");
+      int port = 0;
+      final long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+      while (System.nanoTime() < deadline) {
+        if (!process.isAlive()) {
+          process.waitFor();
+          throw new IOException("Spring Boot exited before serving the endpoint; see " + log);
+        }
+        if (port == 0) {
+          if (Files.exists(log)) {
+            final String logContent = Files.readString(log);
+            final Matcher matcher = portPattern.matcher(logContent);
+            if (matcher.find()) {
+              port = Integer.parseInt(matcher.group(1));
+            }
+          }
+          if (port == 0) {
+            TimeUnit.MILLISECONDS.sleep(100);
+            continue;
+          }
+        }
         final HttpRequest request =
             HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/hello"))
                 .timeout(Duration.ofSeconds(2))
                 .GET()
                 .build();
-        final long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
-        boolean portCollision = false;
-        while (System.nanoTime() < deadline) {
-          if (!process.isAlive()) {
-            process.waitFor();
-            final String logContent = Files.exists(log) ? Files.readString(log) : "";
-            if (logContent.contains("was already in use") && attempt < 3) {
-              portCollision = true;
-              break;
-            }
-            throw new IOException(
-                "Spring Boot exited before serving the endpoint; see " + log);
-          }
-          try {
-            final HttpResponse<String> response =
-                client.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200
-                || !"{\"message\":\"hello\"}".equals(response.body())) {
-              throw new IOException("Unexpected Spring Boot endpoint response: " + response.body());
-            }
+        try {
+          final HttpResponse<String> response =
+              client.send(request, HttpResponse.BodyHandlers.ofString());
+          if (response.statusCode() == 200
+              && "{\"message\":\"hello\"}".equals(response.body())) {
             verifySpringSbom(client, port, expectedSbom);
             return;
-          } catch (final ConnectException exception) {
-            TimeUnit.MILLISECONDS.sleep(250);
-          } catch (final java.net.http.HttpTimeoutException exception) {
-            TimeUnit.MILLISECONDS.sleep(250);
           }
+        } catch (final ConnectException | java.net.http.HttpTimeoutException exception) {
+          TimeUnit.MILLISECONDS.sleep(250);
         }
-        if (portCollision) {
-          TimeUnit.MILLISECONDS.sleep(500);
-          continue;
-        }
-        throw new IOException("Spring Boot did not serve the endpoint; see " + log);
-      } finally {
-        process.destroy();
-        if (!process.waitFor(20, TimeUnit.SECONDS)) {
-          process.destroyForcibly();
-          process.waitFor();
-        }
+      }
+      throw new IOException("Spring Boot did not serve the endpoint; see " + log);
+    } finally {
+      process.destroy();
+      if (!process.waitFor(20, TimeUnit.SECONDS)) {
+        process.destroyForcibly();
+        process.waitFor();
       }
     }
   }
@@ -1662,11 +1658,10 @@ public final class ExampleSupport {
     }
     final JsonNode prediction = finding.path("prerequisitePrediction");
     final JsonNode groups = prediction.path("groups");
+    final String detail = prediction.path("detail").asText();
     if (!prediction.isObject()
-        || !prediction
-            .path("detail")
-            .asText()
-            .contains("Maven goal sequence is not a safe default lifecycle invocation")
+        || (!detail.contains("direct analyze requires elide.productionClassesComplete=true for runtime proof")
+            && !detail.contains("Maven goal sequence is not a safe default lifecycle invocation"))
         || !groups.isArray()
         || groups.size() != 1
         || groups.get(0).path("disarmed").asBoolean()

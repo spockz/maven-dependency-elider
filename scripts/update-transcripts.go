@@ -804,7 +804,10 @@ func writeDocuments(root string, paths []string, documents map[string]string) er
 	for _, document := range paths {
 		path, _ := safeRepositoryPath(root, document)
 		if err := os.Rename(tempFiles[document], path); err != nil {
-			return fmt.Errorf("replace transcript document %s: %w", document, err)
+			if writeErr := os.WriteFile(path, []byte(documents[document]), 0o644); writeErr != nil {
+				return fmt.Errorf("replace transcript document %s: %w", document, err)
+			}
+			_ = os.Remove(tempFiles[document])
 		}
 		delete(tempFiles, document)
 	}
