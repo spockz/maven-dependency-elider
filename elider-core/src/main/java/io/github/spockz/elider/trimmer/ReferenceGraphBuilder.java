@@ -12,12 +12,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import proguard.classfile.ClassPool;
 import proguard.classfile.Clazz;
+import proguard.classfile.LibraryClass;
 
 /** Constructs a graph from candidate, ordered siblings, platform, and role policy. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 final class ReferenceGraphBuilder {
   /** Candidate archive establishes program-class ownership. */
   private final Path candidateJar;
@@ -25,8 +25,8 @@ final class ReferenceGraphBuilder {
   /** Sibling paths retain lookup precedence during pool construction. */
   private final Collection<Path> libraryClassPath;
 
-  /** API class entries are captured at preparation to isolate later pool mutations. */
-  private final List<Clazz> platformClasses;
+  /** Read-only JDK class templates resolved lazily on demand. */
+  private final ClassPool jdkClassTable;
 
   /** Reuses validated archive bytes for this invocation. */
   private final ArchiveProvider archiveProvider;
@@ -34,11 +34,11 @@ final class ReferenceGraphBuilder {
   private ReferenceGraphBuilder(
       final Path candidateJar,
       final Collection<Path> libraryClassPath,
-      final List<Clazz> platformClasses,
+      final ClassPool jdkClassTable,
       final ArchiveProvider archiveProvider) {
     this.candidateJar = candidateJar;
     this.libraryClassPath = libraryClassPath;
-    this.platformClasses = platformClasses;
+    this.jdkClassTable = jdkClassTable;
     this.archiveProvider = archiveProvider;
   }
 
@@ -50,6 +50,26 @@ final class ReferenceGraphBuilder {
       final boolean tolerateUnresolvedProgramReferences,
       final Set<String> toleratedUnresolvedLibraryClasses,
       final ArchiveProvider archiveProvider)
+      throws IOException {
+    return prepareWithSharedTier(
+        candidateJar,
+        libraryClassPath,
+        jdkClassTable,
+        tolerateUnresolvedProgramReferences,
+        toleratedUnresolvedLibraryClasses,
+        archiveProvider,
+        null);
+  }
+
+  /** Defers graph construction for one candidate, reusing a shared tier index. */
+  static PreparedAnalysisState prepareWithSharedTier(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool jdkClassTable,
+      final boolean tolerateUnresolvedProgramReferences,
+      final Set<String> toleratedUnresolvedLibraryClasses,
+      final ArchiveProvider archiveProvider,
+      final TierLibraryIndex.Supplier sharedTierSupplier)
       throws IOException {
     requireInputs(
         candidateJar,
@@ -67,12 +87,19 @@ final class ReferenceGraphBuilder {
     if (candidate.classNames().isEmpty()) {
       throw new IllegalArgumentException("Candidate JAR contains no classes: " + candidateJar);
     }
-    final List<Clazz> platformClasses = snapshotJdkClassTable(jdkClassTable);
+    final ClassPool isolatedJdkTable = isolateJdkClassTable(jdkClassTable);
     final ReferenceGraphBuilder builder =
-        new ReferenceGraphBuilder(candidateJar, orderedLibraries, platformClasses, archiveProvider);
+        new ReferenceGraphBuilder(
+            candidateJar, orderedLibraries, isolatedJdkTable, archiveProvider);
     return new PreparedAnalysisState(
         candidateJar,
-        () -> builder.build(candidate),
+        () -> {
+          final TierLibraryIndex sharedTier =
+              sharedTierSupplier == null ? null : sharedTierSupplier.get();
+          return sharedTier == null
+              ? builder.build(candidate)
+              : builder.buildWithSharedTier(candidate, sharedTier);
+        },
         candidate.classNames(),
         tolerateUnresolvedProgramReferences,
         toleratedUnresolvedLibraryClasses);
@@ -90,8 +117,23 @@ final class ReferenceGraphBuilder {
     }
   }
 
-  private static List<Clazz> snapshotJdkClassTable(final ClassPool jdkClassTable) {
-    return PlatformClassSnapshot.copyOf(jdkClassTable);
+  static ClassPool isolateJdkClassTable(final ClassPool jdkClassTable) {
+    if (jdkClassTable instanceof FrozenClassPool frozen && frozen.isPlainLibraryClassesOnly()) {
+      return frozen;
+    }
+    for (final Clazz clazz : jdkClassTable.classes()) {
+      if (!(clazz instanceof LibraryClass libraryClass)) {
+        throw new IllegalArgumentException(
+            "JDK class table entries must be LibraryClass instances: " + clazz.getName());
+      }
+      if (libraryClass.kotlinMetadata != null) {
+        throw new IllegalArgumentException(
+            "JDK class table entries with Kotlin metadata are unsupported: " + clazz.getName());
+      }
+    }
+    return jdkClassTable instanceof FrozenClassPool
+        ? jdkClassTable
+        : FrozenClassPool.copyOf(PlatformClassSnapshot.copyOf(jdkClassTable));
   }
 
   private static void requireInputs(
@@ -108,7 +150,7 @@ final class ReferenceGraphBuilder {
     java.util.Objects.requireNonNull(archiveProvider, "archiveProvider");
   }
 
-  private ClassPool checkedPool(
+  static ClassPool checkedPool(
       final ArchiveSnapshot snapshot, final boolean library, final Path source) throws IOException {
     final ClassPool pool = snapshot.newClassPool(library);
     final Set<String> ingested = classNames(pool);
@@ -127,17 +169,18 @@ final class ReferenceGraphBuilder {
   }
 
   private LibraryPools libraryPools(
-      final ClassPool programPool, final Map<String, byte[]> classBytes) throws IOException {
-    final ClassPool libraryPool = new ClassPool();
+      final ClassPool programPool, final Map<String, ArchiveSnapshot> archiveByClass)
+      throws IOException {
     final Set<String> platformNames = new HashSet<>();
+    final LazyPlatformClassPool libraryPool =
+        new LazyPlatformClassPool(programPool, jdkClassTable, platformNames);
     for (final Path libraryPath : libraryClassPath) {
       if (libraryPath == null || !Files.exists(libraryPath)) {
         throw new IllegalArgumentException(
             "Library classpath entry does not exist: " + libraryPath);
       }
-      addSiblingClasses(libraryPath, programPool, libraryPool, classBytes);
+      addSiblingClasses(libraryPath, programPool, libraryPool, archiveByClass);
     }
-    addPlatformClasses(programPool, libraryPool, platformNames);
     return new LibraryPools(libraryPool, platformNames);
   }
 
@@ -145,7 +188,7 @@ final class ReferenceGraphBuilder {
       final Path libraryPath,
       final ClassPool programPool,
       final ClassPool libraryPool,
-      final Map<String, byte[]> classBytes)
+      final Map<String, ArchiveSnapshot> archiveByClass)
       throws IOException {
     final ArchiveSnapshot archive = archiveProvider.read(libraryPath, false);
     final ClassPool siblingPool = checkedPool(archive, true, libraryPath);
@@ -153,40 +196,51 @@ final class ReferenceGraphBuilder {
       if (programPool.getClass(clazz.getName()) == null
           && libraryPool.getClass(clazz.getName()) == null) {
         libraryPool.addClass(clazz);
-        classBytes.putIfAbsent(clazz.getName(), archive.classBytes().get(clazz.getName()));
-      }
-    }
-  }
-
-  private void addPlatformClasses(
-      final ClassPool programPool, final ClassPool libraryPool, final Set<String> platformNames) {
-    for (final Clazz clazz : platformClasses) {
-      if (programPool.getClass(clazz.getName()) == null
-          && libraryPool.getClass(clazz.getName()) == null) {
-        libraryPool.addClass(clazz);
-        platformNames.add(clazz.getName());
+        archiveByClass.putIfAbsent(clazz.getName(), archive);
       }
     }
   }
 
   private static Set<String> classNames(final ClassPool pool) {
-    final Set<String> names = new TreeSet<>();
+    final Set<String> names = HashSet.newHashSet(pool.size());
     pool.classNames().forEachRemaining(names::add);
-    return Set.copyOf(names);
+    return names;
   }
 
   private record LibraryPools(ClassPool pool, Set<String> platformNames) {}
 
-  // WHY: The local archive map is built by one thread before graph publication.
-  @SuppressWarnings("PMD.UseConcurrentHashMap")
   private ReferenceGraph build(final ArchiveSnapshot candidateArchive) throws IOException {
     final ClassPool programPool =
         FrozenClassPool.copyOf(checkedPool(candidateArchive, false, candidateJar));
-    final Map<String, byte[]> classBytes = new LinkedHashMap<>(candidateArchive.classBytes());
-    final LibraryPools libraries = libraryPools(programPool, classBytes);
-    final ClassPool frozenLibraryPool = FrozenClassPool.copyOf(libraries.pool());
+    final Map<String, ArchiveSnapshot> archiveByClass =
+        LinkedHashMap.newLinkedHashMap(candidateArchive.classNames().size());
+    for (final String name : candidateArchive.classNames()) {
+      archiveByClass.put(name, candidateArchive);
+    }
+    final LibraryPools libraries = libraryPools(programPool, archiveByClass);
     return new ReferenceGraphIndexer(
-            programPool, frozenLibraryPool, libraries.platformNames(), classBytes)
+            programPool, libraries.pool(), libraries.platformNames(), archiveByClass)
         .build();
+  }
+
+  private ReferenceGraph buildWithSharedTier(
+      final ArchiveSnapshot candidateArchive, final TierLibraryIndex sharedTier)
+      throws IOException {
+    final ClassPool programPool =
+        FrozenClassPool.copyOf(checkedPool(candidateArchive, false, candidateJar));
+    final Map<String, ArchiveSnapshot> archiveByClass =
+        LinkedHashMap.newLinkedHashMap(candidateArchive.classNames().size());
+    for (final String name : candidateArchive.classNames()) {
+      archiveByClass.put(name, candidateArchive);
+    }
+    final Set<String> platformNames = new HashSet<>();
+    final LazyPlatformClassPool lazyLibraryPool =
+        new LazyPlatformClassPool(
+            programPool,
+            sharedTier.isolatedJdkTable(),
+            sharedTier.siblingTemplates(),
+            platformNames);
+    return new ReferenceGraphIndexer(programPool, lazyLibraryPool, platformNames, archiveByClass)
+        .buildProgramWithSharedTier(sharedTier);
   }
 }

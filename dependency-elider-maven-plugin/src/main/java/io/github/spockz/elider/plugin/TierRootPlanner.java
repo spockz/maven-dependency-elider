@@ -34,8 +34,7 @@ final class TierRootPlanner {
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> requested =
         TrimRootPlanner.validateDiscoveredRoots(
             operation.discoveredRoots(), inventory.snapshots(), inventory.classesBySourcePath());
-    final Set<String> platformNames = platformClassNames(platforms.values());
-    validateStrictRoots(projections, platformNames);
+    validateStrictRoots(projections, platforms.values());
     final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots =
         findCandidateSnapshots(
             inventory.passThrough(), projections, inventory.multiReleaseCandidates());
@@ -68,16 +67,19 @@ final class TierRootPlanner {
     return new RootPlan(snapshots, candidates, roots, reachable);
   }
 
-  private Set<String> platformClassNames(final Iterable<ClassPool> classTables) {
-    final Set<String> names = new HashSet<>();
+  private static boolean isPlatformClass(
+      final Iterable<ClassPool> classTables, final String binaryClassName) {
+    final String internalName = binaryClassName.replace('.', '/');
     for (final ClassPool jdkClassTable : classTables) {
-      jdkClassTable.classNames().forEachRemaining(name -> names.add(name.replace('/', '.')));
+      if (jdkClassTable.getClass(internalName) != null) {
+        return true;
+      }
     }
-    return names;
+    return false;
   }
 
   private void validateStrictRoots(
-      final List<TierContext> projections, final Set<String> platformNames) throws IOException {
+      final List<TierContext> projections, final Iterable<ClassPool> platforms) throws IOException {
     final Set<String> roots = new HashSet<>();
     operation.request().evidence().sourceRoots().forEach(root -> roots.add(root.replace('/', '.')));
     operation
@@ -88,21 +90,46 @@ final class TierRootPlanner {
     operation.request().policy().explicitRoots().forEach(root -> roots.add(root.replace('/', '.')));
     for (final String root : roots) {
       if (operation.request().evidence().projectOutputClasses().contains(root)
-          || platformNames.contains(root)) {
+          || isPlatformClass(platforms, root)) {
         continue;
       }
       if (projections.stream().noneMatch(context -> context.ownerOf(root) != null)) {
-        throw new IOException("Required class root has no analyzed tier owner: " + root);
+        throw new IOException("Required class root has no recognized owner: " + root);
       }
     }
+  }
+
+  private Set<ArtifactCoordinate> retainJarDuplicateOwners(final List<TierContext> projections) {
+    final DuplicateClassPolicy policy = operation.request().policy().duplicateClasses();
+    if (policy.isEmpty()) {
+      return Set.of();
+    }
+    final Set<ArtifactCoordinate> retainedOwners = new HashSet<>();
+    for (final TierContext projection : projections) {
+      projection
+          .ownersByClass()
+          .forEach(
+              (className, owners) -> {
+                if (owners.size() > 1
+                    && policy
+                        .actionFor(className)
+                        .filter(DuplicateClassPolicy.Action.RETAIN_JARS::equals)
+                        .isPresent()) {
+                  owners.forEach(owner -> retainedOwners.add(owner.coordinate()));
+                }
+              });
+    }
+    return Set.copyOf(retainedOwners);
   }
 
   private List<ElisionAnalysisModel.ArtifactSnapshot> findCandidateSnapshots(
       final TrimPassThroughPlan passThrough,
       final List<TierContext> projections,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, MultiReleaseCandidateInfo> multiRelease) {
+    final Set<ArtifactCoordinate> retainJarOwners = retainJarDuplicateOwners(projections);
     return passThrough.retained().stream()
         .filter(snapshot -> !operation.forcedUnchanged().contains(snapshot.coordinate()))
+        .filter(snapshot -> !retainJarOwners.contains(snapshot.coordinate()))
         .filter(
             snapshot ->
                 !TierAnalysisViews.classesInTargetTier(snapshot, projections).isEmpty()

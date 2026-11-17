@@ -16,8 +16,9 @@ import proguard.classfile.ClassPool;
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 public final class DependencyJarTrimmer {
   /** Creates a dependency trimmer backed by ProGuard Core's class-file model. */
-  @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  public DependencyJarTrimmer() {}
+  public DependencyJarTrimmer() {
+    // Stateless trimmer.
+  }
 
   /**
    * Computes closure from caller roots and flat, non-MR sibling JARs.
@@ -168,7 +169,7 @@ public final class DependencyJarTrimmer {
     /** Holds transactional traversal state and the lazily constructed adjacency graph. */
     private final PreparedAnalysisState state;
 
-    private PreparedAnalysis(final PreparedAnalysisState state) {
+    /* default */ PreparedAnalysis(final PreparedAnalysisState state) {
       this.state = state;
     }
 
@@ -221,7 +222,23 @@ public final class DependencyJarTrimmer {
 
   /** Package scope shares the accepted archive rule with the sanitizer. */
   static boolean isVersionedModuleDescriptor(final String entryName) {
-    return entryName.matches("META-INF/versions/[0-9]+/module-info\\.class");
+    if (!entryName.startsWith(io.github.spockz.elider.model.MultiReleaseEntryPath.PREFIX)
+        || !entryName.endsWith("/module-info.class")) {
+      return false;
+    }
+    final String tier =
+        entryName.substring(
+            io.github.spockz.elider.model.MultiReleaseEntryPath.PREFIX.length(),
+            entryName.length() - "/module-info.class".length());
+    if (tier.isEmpty()) {
+      return false;
+    }
+    for (int i = 0; i < tier.length(); i++) {
+      if (!Character.isDigit(tier.charAt(i))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /** Immutable analysis result preserving roots for audit callers. */

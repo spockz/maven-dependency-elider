@@ -4,7 +4,6 @@
 package io.github.spockz.elider.trimmer;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.HashSet;
@@ -14,10 +13,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.locks.ReentrantLock;
 import proguard.classfile.ClassPool;
 
 /** Holds immutable input snapshots for one multi-candidate trim invocation. */
-@SuppressWarnings("PMD.CommentSize")
+@SuppressWarnings({"PMD.CommentSize", "PMD.TooManyMethods"})
 public final class TrimAnalysisSession {
   /** Engine used to construct an isolated reference model for each analysis. */
   private final DependencyJarTrimmer trimmer;
@@ -179,6 +179,135 @@ public final class TrimAnalysisSession {
     return normalized;
   }
 
+  private DependencyJarTrimmer.PreparedAnalysis prepareWithSharedTier(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool jdkClassTable,
+      final boolean tolerateUnresolvedProgramReferences,
+      final Set<String> toleratedUnresolvedLibraryClasses,
+      final ArchiveProvider archiveProvider,
+      final TierLibraryIndex.Supplier sharedTierSupplier)
+      throws IOException {
+    return new DependencyJarTrimmer.PreparedAnalysis(
+        ReferenceGraphBuilder.prepareWithSharedTier(
+            candidateJar,
+            libraryClassPath,
+            jdkClassTable,
+            tolerateUnresolvedProgramReferences,
+            toleratedUnresolvedLibraryClasses,
+            archiveProvider,
+            sharedTierSupplier));
+  }
+
+  private ArchiveSnapshot readArchive(
+      final Path path, final boolean candidate, final boolean allowModularCandidate)
+      throws IOException {
+    return archives.read(path, candidate, allowModularCandidate);
+  }
+
+  /**
+   * Creates a shared tier context that pre-indexes library-role edges once across targets.
+   *
+   * @param tierArchives all unique-owner archives in the tier classpath
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
+   * @return shared tier preparation context
+   */
+  public SharedTierContext prepareSharedTierContext(
+      final Collection<Path> tierArchives, final ClassPool jdkClassTable) {
+    Objects.requireNonNull(tierArchives, "tierArchives");
+    Objects.requireNonNull(jdkClassTable, "jdkClassTable");
+    return new SharedTierContext(this, java.util.List.copyOf(tierArchives), jdkClassTable);
+  }
+
+  /** Shares one lazily constructed library-role reference index across a tier's targets. */
+  public static final class SharedTierContext {
+    /** Owning session providing archive snapshots and trimmer engine. */
+    private final TrimAnalysisSession session;
+
+    /** Ordered tier archives whose library-role edges are indexed once. */
+    private final Collection<Path> tierArchives;
+
+    /** JDK class table templates for the tier. */
+    private final ClassPool jdkClassTable;
+
+    /** Serializes lazy single-flight index construction across parallel workers. */
+    private final ReentrantLock buildLock = new ReentrantLock();
+
+    /** True once {@link #getOrBuild()} has attempted construction. */
+    private boolean attempted;
+
+    /** Cached library-role tier index, or {@code null} when duplicates force fallback. */
+    private TierLibraryIndex cachedIndex;
+
+    private SharedTierContext(
+        final TrimAnalysisSession session,
+        final Collection<Path> tierArchives,
+        final ClassPool jdkClassTable) {
+      this.session = session;
+      this.tierArchives = tierArchives;
+      this.jdkClassTable = jdkClassTable;
+    }
+
+    /** Prepares an unchanged pass-through program archive using the shared tier index. */
+    public DependencyJarTrimmer.PreparedAnalysis prepareUnchangedPassThrough(
+        final Path candidateJar,
+        final Collection<Path> libraryClassPath,
+        final Collection<String> unchangedPassThroughClassNames)
+        throws IOException {
+      return session.prepareWithSharedTier(
+          candidateJar,
+          libraryClassPath,
+          jdkClassTable,
+          true,
+          normalizeClassNames(unchangedPassThroughClassNames),
+          session::archive,
+          this::getOrBuild);
+    }
+
+    /** Prepares candidate closure using the shared tier index. */
+    public DependencyJarTrimmer.PreparedAnalysis prepareWithUnchangedPassThroughLibraries(
+        final Path candidateJar,
+        final Collection<Path> libraryClassPath,
+        final Collection<String> unchangedPassThroughClassNames,
+        final boolean allowModularCandidate)
+        throws IOException {
+      return session.prepareWithSharedTier(
+          candidateJar,
+          libraryClassPath,
+          jdkClassTable,
+          false,
+          normalizeClassNames(unchangedPassThroughClassNames),
+          (path, candidate) -> session.readArchive(path, candidate, allowModularCandidate),
+          this::getOrBuild);
+    }
+
+    /* default */ boolean indexBuilt() {
+      buildLock.lock();
+      try {
+        return attempted;
+      } finally {
+        buildLock.unlock();
+      }
+    }
+
+    private TierLibraryIndex getOrBuild() throws IOException {
+      buildLock.lock();
+      try {
+        if (!attempted) {
+          cachedIndex =
+              TierLibraryIndex.build(
+                  tierArchives,
+                  jdkClassTable,
+                  (path, candidate) -> session.readArchive(path, false, false));
+          attempted = true;
+        }
+        return cachedIndex;
+      } finally {
+        buildLock.unlock();
+      }
+    }
+  }
+
   /** Coordinates path-keyed single-flight archive snapshot loading. */
   private static final class ArchiveSnapshots {
     /** Single-flight archive reads keyed by normalized path. */
@@ -209,16 +338,7 @@ public final class TrimAnalysisSession {
     }
 
     private static void validatePath(final Path path, final boolean candidate) throws IOException {
-      if (candidate && !Files.isRegularFile(path)) {
-        throw new IllegalArgumentException("Candidate JAR is not a regular file: " + path);
-      }
-      final Path fileName = path.getFileName();
-      if (!candidate
-          && (Files.isDirectory(path)
-              || fileName == null
-              || !fileName.toString().endsWith(".jar"))) {
-        throw new IOException("Only flat sibling JAR libraries are supported: " + path);
-      }
+      ArchiveSnapshot.validatePath(path, candidate);
     }
 
     // Restore interrupt status so the caller can cancel its parallel stage.

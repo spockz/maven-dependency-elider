@@ -3,6 +3,7 @@
 package io.github.spockz.elider.trimmer;
 
 import java.util.Map;
+import java.util.Set;
 import proguard.classfile.ClassPool;
 import proguard.classfile.Clazz;
 import proguard.classfile.kotlin.KotlinConstants;
@@ -20,13 +21,32 @@ final class ProGuardReferenceInitialization {
   static void libraries(
       final ClassPool programPool,
       final ClassPool libraryPool,
+      final Set<String> platformNames,
       final InvalidReferenceVisitor invalidReferenceVisitor,
       final Map<String, RuntimeException> edgeFailures) {
     final ClassSuperHierarchyInitializer hierarchyInitializer =
         new ClassSuperHierarchyInitializer(programPool, libraryPool, invalidReferenceVisitor);
-    visitClasses(libraryPool, clazz -> clazz.accept(hierarchyInitializer), edgeFailures);
-    initializeClassReferences(
-        libraryPool, programPool, libraryPool, invalidReferenceVisitor, edgeFailures);
+    if (libraryPool instanceof LazyPlatformClassPool lazyPool) {
+      lazyPool.attachHierarchyInitializer(hierarchyInitializer);
+    }
+    visitClasses(
+        libraryPool,
+        clazz -> {
+          if (!platformNames.contains(clazz.getName())) {
+            clazz.accept(hierarchyInitializer);
+          }
+        },
+        edgeFailures);
+    final ClassReferenceInitializer initializer =
+        new ClassReferenceInitializer(programPool, libraryPool, false, invalidReferenceVisitor);
+    visitClasses(
+        libraryPool,
+        clazz -> {
+          if (!platformNames.contains(clazz.getName())) {
+            clazz.accept(initializer);
+          }
+        },
+        edgeFailures);
   }
 
   // The default access modifier keeps pool initialization internal to the trimmer.
@@ -39,6 +59,9 @@ final class ProGuardReferenceInitialization {
       final Map<String, RuntimeException> edgeFailures) {
     final ClassSuperHierarchyInitializer hierarchyInitializer =
         new ClassSuperHierarchyInitializer(programPool, libraryPool, invalidReferenceVisitor);
+    if (libraryPool instanceof LazyPlatformClassPool lazyPool) {
+      lazyPool.attachHierarchyInitializer(hierarchyInitializer);
+    }
     visitClasses(programPool, clazz -> clazz.accept(hierarchyInitializer), edgeFailures);
     initializeClassReferences(
         programPool, programPool, libraryPool, invalidReferenceVisitor, edgeFailures);

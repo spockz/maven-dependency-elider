@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /** Prepares isolated pools for each analyzed runtime tier. */
@@ -97,6 +98,8 @@ final class TierAnalysisPreparer {
       final DependencyJarTrimmer trimmer)
       throws IOException {
     final TrimAnalysisSession session = new TrimAnalysisSession(trimmer);
+    final TrimAnalysisSession.SharedTierContext sharedTier =
+        sharedTierContext(projection, inventory, session);
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         candidatePrepared =
             prepareCandidateAnalyses(
@@ -105,7 +108,8 @@ final class TierAnalysisPreparer {
                 candidateSnapshots,
                 candidates,
                 unchangedClasses,
-                session);
+                session,
+                sharedTier);
     final Set<ElisionAnalysisModel.ArtifactSnapshot> programSnapshots =
         programSnapshots(projection.release(), candidateSnapshots, unchangedPrograms, candidates);
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
@@ -116,8 +120,28 @@ final class TierAnalysisPreparer {
                 programSnapshots,
                 skippedIdentities,
                 unchangedClasses,
-                session);
+                session,
+                sharedTier);
     return projection.withPrepared(candidatePrepared, programPrepared);
+  }
+
+  private static TrimAnalysisSession.SharedTierContext sharedTierContext(
+      final TierContext projection, final Inventory inventory, final TrimAnalysisSession session) {
+    final boolean hasDuplicateOwners =
+        projection.ownersByClass().values().stream().anyMatch(owners -> owners.size() > 1);
+    if (hasDuplicateOwners) {
+      return null;
+    }
+    final List<Path> tierArchives =
+        inventory.snapshots().stream()
+            .filter(
+                snapshot ->
+                    MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(
+                        snapshot.coordinate().scope()))
+            .map(projection::pathFor)
+            .filter(Objects::nonNull)
+            .toList();
+    return session.prepareSharedTierContext(tierArchives, projection.jdkClassTable());
   }
 
   private Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
@@ -127,7 +151,8 @@ final class TierAnalysisPreparer {
           final List<ElisionAnalysisModel.ArtifactSnapshot> candidateSnapshots,
           final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> candidates,
           final Set<String> unchangedClasses,
-          final TrimAnalysisSession session)
+          final TrimAnalysisSession session,
+          final TrimAnalysisSession.SharedTierContext sharedTier)
           throws IOException {
     final List<ElisionAnalysisModel.ArtifactSnapshot> preparable =
         candidateSnapshots.stream()
@@ -148,12 +173,15 @@ final class TierAnalysisPreparer {
               final boolean allowModular =
                   MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(
                       operation.request().policy().mrjarStrategy());
-              return session.prepareWithUnchangedPassThroughLibraries(
-                  projection.pathFor(snapshot),
-                  siblings,
-                  projection.jdkClassTable(),
-                  unchangedClasses,
-                  allowModular);
+              return sharedTier != null
+                  ? sharedTier.prepareWithUnchangedPassThroughLibraries(
+                      projection.pathFor(snapshot), siblings, unchangedClasses, allowModular)
+                  : session.prepareWithUnchangedPassThroughLibraries(
+                      projection.pathFor(snapshot),
+                      siblings,
+                      projection.jdkClassTable(),
+                      unchangedClasses,
+                      allowModular);
             });
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         prepared =
@@ -186,7 +214,8 @@ final class TierAnalysisPreparer {
           final Set<ElisionAnalysisModel.ArtifactSnapshot> programs,
           final Set<String> skippedIdentities,
           final Set<String> unchangedClasses,
-          final TrimAnalysisSession session)
+          final TrimAnalysisSession session,
+          final TrimAnalysisSession.SharedTierContext sharedTier)
           throws IOException {
     final List<ElisionAnalysisModel.ArtifactSnapshot> preparable =
         programs.stream()
@@ -199,7 +228,13 @@ final class TierAnalysisPreparer {
             operation.request().policy().trimWorkers(),
             snapshot ->
                 prepareProgram(
-                    snapshot, projection, inventory, skippedIdentities, unchangedClasses, session));
+                    snapshot,
+                    projection,
+                    inventory,
+                    skippedIdentities,
+                    unchangedClasses,
+                    session,
+                    sharedTier));
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         prepared =
             LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
@@ -215,16 +250,23 @@ final class TierAnalysisPreparer {
       final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
       final Set<String> skippedIdentities,
       final Set<String> unchangedClasses,
-      final TrimAnalysisSession session)
+      final TrimAnalysisSession session,
+      final TrimAnalysisSession.SharedTierContext sharedTier)
       throws IOException {
     final List<Path> siblings = TierAnalysisViews.tierSiblings(inventory, projection, snapshot);
     final Path programPath = projection.pathFor(snapshot);
-    if (skippedIdentities.contains(
-        TrimPassThroughPlanner.artifactIdentity(snapshot.coordinate()))) {
-      return session.prepareUnchangedPassThrough(
-          programPath, siblings, projection.jdkClassTable(), unchangedClasses);
+    final boolean skipped =
+        skippedIdentities.contains(TrimPassThroughPlanner.artifactIdentity(snapshot.coordinate()));
+    if (sharedTier != null) {
+      return skipped
+          ? sharedTier.prepareUnchangedPassThrough(programPath, siblings, unchangedClasses)
+          : sharedTier.prepareWithUnchangedPassThroughLibraries(
+              programPath, siblings, unchangedClasses, false);
     }
-    return session.prepareWithUnchangedPassThroughLibraries(
-        programPath, siblings, projection.jdkClassTable(), unchangedClasses);
+    return skipped
+        ? session.prepareUnchangedPassThrough(
+            programPath, siblings, projection.jdkClassTable(), unchangedClasses)
+        : session.prepareWithUnchangedPassThroughLibraries(
+            programPath, siblings, projection.jdkClassTable(), unchangedClasses);
   }
 }

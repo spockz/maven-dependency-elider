@@ -2,12 +2,14 @@
 
 package io.github.spockz.elider.trimmer;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import proguard.classfile.ClassPool;
 import proguard.classfile.Clazz;
 import proguard.classfile.util.InvalidReferenceVisitor;
@@ -29,8 +31,8 @@ final class ReferenceGraphIndexer {
   /** Platform entries resolve references but do not enter candidate closure. */
   private final Set<String> platformNames;
 
-  /** Original class bytes support explicit structural/body edge classification. */
-  private final Map<String, byte[]> classBytes;
+  /** Owning archive snapshots supply cached per-class reference evidence. */
+  private final Map<String, ArchiveSnapshot> archiveByClass;
 
   /** Captures the isolated pools whose classes define the graph context. */
   ReferenceGraphIndexer(
@@ -42,11 +44,11 @@ final class ReferenceGraphIndexer {
       final ClassPool programPool,
       final ClassPool libraryPool,
       final Set<String> platformNames,
-      final Map<String, byte[]> classBytes) {
+      final Map<String, ArchiveSnapshot> archiveByClass) {
     this.programPool = programPool;
     this.libraryPool = libraryPool;
     this.platformNames = platformNames;
-    this.classBytes = classBytes;
+    this.archiveByClass = archiveByClass;
   }
 
   /** Initializes references and freezes the resulting graph. */
@@ -60,7 +62,7 @@ final class ReferenceGraphIndexer {
     final InvalidReferenceVisitor libraryInvalidVisitor =
         ProGuardReferenceVisitors.recordingLibraryInvalid(unresolvedLibraries, signatureResolver);
     ProGuardReferenceInitialization.libraries(
-        programPool, libraryPool, libraryInvalidVisitor, edgeFailures);
+        programPool, libraryPool, platformNames, libraryInvalidVisitor, edgeFailures);
     final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedPrograms = new HashMap<>();
     final InvalidReferenceVisitor programInvalidVisitor =
         ProGuardReferenceVisitors.recordingInvalid(unresolvedPrograms, signatureResolver);
@@ -74,8 +76,122 @@ final class ReferenceGraphIndexer {
         signatureResolver,
         unresolvedPrograms,
         unresolvedLibraries,
-        classBytes,
+        archiveByClass,
         edgeFailures);
+  }
+
+  /** Initializes and freezes only the shared library tier graph for reuse. */
+  ReferenceGraph buildLibraryTier() {
+    final Function<String, Clazz> lookup = classLookup(programPool, libraryPool);
+    final Map<String, RuntimeException> edgeFailures = new HashMap<>();
+    final Map<String, Set<String>> signatureTypes = new HashMap<>();
+    final SignaturePolymorphicReferenceResolver signatureResolver =
+        new SignaturePolymorphicReferenceResolver(signatureTypes, lookup);
+    final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedLibraries = new HashMap<>();
+    final InvalidReferenceVisitor libraryInvalidVisitor =
+        ProGuardReferenceVisitors.recordingLibraryInvalid(unresolvedLibraries, signatureResolver);
+    ProGuardReferenceInitialization.libraries(
+        programPool, libraryPool, platformNames, libraryInvalidVisitor, edgeFailures);
+    final Map<String, Set<String>> edges = new HashMap<>();
+    final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges = new HashMap<>();
+    final Map<String, Set<String>> unrecognizedAttributes = new HashMap<>();
+    collectTypedEvidence(
+        archiveByClass, programPool, typedEdges, unrecognizedAttributes, edgeFailures);
+    final EdgeCollector collector = new EdgeCollector(programPool, libraryPool, platformNames);
+    final Map<String, Set<String>> classConstantTargets = new HashMap<>();
+    final Map<String, Set<String>> nonPoolTargets = new HashMap<>();
+    for (final Clazz clazz : libraryPool.classes()) {
+      if (!platformNames.contains(clazz.getName())) {
+        collectEdges(
+            clazz,
+            lookup,
+            signatureResolver,
+            collector,
+            edges,
+            classConstantTargets,
+            nonPoolTargets,
+            edgeFailures);
+      }
+    }
+    final Predicate<String> targetExists =
+        targetExistsLookup(programPool, libraryPool, archiveByClass);
+    recordMissingTypedTargets(
+        programPool, targetExists, typedEdges, new HashMap<>(), unresolvedLibraries);
+    mergeTypedEdges(edges, typedEdges);
+    final Map<String, Set<String>> unusedConstantPoolEdges =
+        unusedConstantPoolEdges(
+            classConstantTargets, nonPoolTargets, typedEdges, unrecognizedAttributes);
+    final Map<String, Set<String>> unclassifiedEdges =
+        unclassifiedEdges(edges, typedEdges, unusedConstantPoolEdges);
+    return new ReferenceGraph(
+        Set.of(),
+        classNames(libraryPool, platformNames),
+        wrapUnmodifiableSets(edges),
+        Collections.unmodifiableMap(typedEdges),
+        wrapUnmodifiableSets(unclassifiedEdges),
+        wrapUnmodifiableSets(unusedConstantPoolEdges),
+        wrapUnmodifiableSets(unrecognizedAttributes),
+        Map.of(),
+        wrapUnmodifiableSets(unresolvedLibraries),
+        Collections.unmodifiableMap(edgeFailures),
+        0);
+  }
+
+  /** Indexes candidate program classes and overlays them onto a shared tier. */
+  ReferenceGraph buildProgramWithSharedTier(final TierLibraryIndex libraryIndex) {
+    final Function<String, Clazz> lookup = classLookup(programPool, libraryPool);
+    final Map<String, RuntimeException> edgeFailures = new HashMap<>();
+    final Map<String, Set<String>> signatureTypes = new HashMap<>();
+    final SignaturePolymorphicReferenceResolver signatureResolver =
+        new SignaturePolymorphicReferenceResolver(signatureTypes, lookup);
+    final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedPrograms = new HashMap<>();
+    final InvalidReferenceVisitor programInvalidVisitor =
+        ProGuardReferenceVisitors.recordingInvalid(unresolvedPrograms, signatureResolver);
+    ProGuardReferenceInitialization.program(
+        programPool, libraryPool, programInvalidVisitor, edgeFailures);
+    final Map<String, Set<String>> edges = new HashMap<>();
+    final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges = new HashMap<>();
+    final Map<String, Set<String>> unrecognizedAttributes = new HashMap<>();
+    collectTypedEvidence(
+        archiveByClass, programPool, typedEdges, unrecognizedAttributes, edgeFailures);
+    final EdgeCollector collector = new EdgeCollector(programPool, libraryPool, platformNames);
+    final Map<String, Set<String>> classConstantTargets = new HashMap<>();
+    final Map<String, Set<String>> nonPoolTargets = new HashMap<>();
+    for (final Clazz clazz : programPool.classes()) {
+      collectEdges(
+          clazz,
+          lookup,
+          signatureResolver,
+          collector,
+          edges,
+          classConstantTargets,
+          nonPoolTargets,
+          edgeFailures);
+    }
+    final Predicate<String> targetExists =
+        targetExistsLookup(programPool, libraryPool, archiveByClass, libraryIndex);
+    recordMissingTypedTargets(
+        programPool, targetExists, typedEdges, unresolvedPrograms, new HashMap<>());
+    mergeTypedEdges(edges, typedEdges);
+    final Map<String, Set<String>> unusedConstantPoolEdges =
+        unusedConstantPoolEdges(
+            classConstantTargets, nonPoolTargets, typedEdges, unrecognizedAttributes);
+    final Map<String, Set<String>> unclassifiedEdges =
+        unclassifiedEdges(edges, typedEdges, unusedConstantPoolEdges);
+    final ReferenceGraph programGraph =
+        new ReferenceGraph(
+            classNames(programPool),
+            Set.of(),
+            wrapUnmodifiableSets(edges),
+            Collections.unmodifiableMap(typedEdges),
+            wrapUnmodifiableSets(unclassifiedEdges),
+            wrapUnmodifiableSets(unusedConstantPoolEdges),
+            wrapUnmodifiableSets(unrecognizedAttributes),
+            wrapUnmodifiableSets(unresolvedPrograms),
+            Map.of(),
+            Collections.unmodifiableMap(edgeFailures),
+            programPool.size());
+    return libraryIndex.overlayWithProgram(programGraph);
   }
 
   private static Function<String, Clazz> classLookup(
@@ -86,32 +202,50 @@ final class ReferenceGraphIndexer {
     };
   }
 
-  static IllegalArgumentException classificationFailure(
-      final String className, final RuntimeException cause) {
-    return new IllegalArgumentException(
-        "Could not classify unclassified reference evidence for class " + className, cause);
+  private static Predicate<String> targetExistsLookup(
+      final ClassPool programPool,
+      final ClassPool libraryPool,
+      final Map<String, ArchiveSnapshot> archiveByClass) {
+    return targetExistsLookup(programPool, libraryPool, archiveByClass, null);
+  }
+
+  private static Predicate<String> targetExistsLookup(
+      final ClassPool programPool,
+      final ClassPool libraryPool,
+      final Map<String, ArchiveSnapshot> archiveByClass,
+      final TierLibraryIndex libraryIndex) {
+    final Set<String> verifiedPresent = new HashSet<>();
+    return target -> {
+      if (verifiedPresent.contains(target)) {
+        return true;
+      }
+      final boolean exists =
+          (libraryIndex != null && libraryIndex.containsClass(target))
+              || archiveByClass.containsKey(target)
+              || programPool.getClass(target) != null
+              || (libraryPool instanceof LazyPlatformClassPool lazyPool
+                  ? lazyPool.hasClass(target)
+                  : libraryPool.getClass(target) != null);
+      if (exists) {
+        verifiedPresent.add(target);
+      }
+      return exists;
+    };
   }
 
   // WHY: ASM reports malformed class records through unchecked failures.
   @SuppressWarnings("PMD.AvoidCatchingGenericException")
-  private static ReferenceGraph graph(
+  private static void collectTypedEvidence(
+      final Map<String, ArchiveSnapshot> archiveByClass,
       final ClassPool programPool,
-      final ClassPool libraryPool,
-      final Set<String> platformClasses,
-      final Function<String, Clazz> classLookup,
-      final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver,
-      final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedPrograms,
-      final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedLibraries,
-      final Map<String, byte[]> classBytes,
+      final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges,
+      final Map<String, Set<String>> unrecognizedAttributes,
       final Map<String, RuntimeException> edgeFailures) {
-    final Map<String, Set<String>> edges = new HashMap<>();
-    final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges = new HashMap<>();
-    final Map<String, Set<String>> unrecognizedAttributes = new HashMap<>();
-    classBytes.forEach(
-        (name, bytes) -> {
+    archiveByClass.forEach(
+        (name, archive) -> {
           try {
             final ClassReferenceEvidence.Result result =
-                ClassReferenceEvidence.references(name, bytes, programPool.getClass(name) != null);
+                archive.referenceEvidence(name, programPool.getClass(name) != null);
             typedEdges.put(name, result.references());
             if (!result.unrecognizedAttributes().isEmpty()) {
               unrecognizedAttributes.put(name, result.unrecognizedAttributes());
@@ -120,6 +254,37 @@ final class ReferenceGraphIndexer {
             edgeFailures.put(name, classificationFailure(name, exception));
           }
         });
+  }
+
+  private static void mergeTypedEdges(
+      final Map<String, Set<String>> edges,
+      final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges) {
+    typedEdges.forEach(
+        (source, targets) ->
+            edges.computeIfAbsent(source, ignored -> new HashSet<>()).addAll(targets.keySet()));
+  }
+
+  static IllegalArgumentException classificationFailure(
+      final String className, final RuntimeException cause) {
+    return new IllegalArgumentException(
+        "Could not classify unclassified reference evidence for class " + className, cause);
+  }
+
+  private static ReferenceGraph graph(
+      final ClassPool programPool,
+      final ClassPool libraryPool,
+      final Set<String> platformClasses,
+      final Function<String, Clazz> classLookup,
+      final SignaturePolymorphicReferenceResolver signaturePolymorphicResolver,
+      final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedPrograms,
+      final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedLibraries,
+      final Map<String, ArchiveSnapshot> archiveByClass,
+      final Map<String, RuntimeException> edgeFailures) {
+    final Map<String, Set<String>> edges = new HashMap<>();
+    final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges = new HashMap<>();
+    final Map<String, Set<String>> unrecognizedAttributes = new HashMap<>();
+    collectTypedEvidence(
+        archiveByClass, programPool, typedEdges, unrecognizedAttributes, edgeFailures);
     final EdgeCollector collector = new EdgeCollector(programPool, libraryPool, platformClasses);
     final Map<String, Set<String>> classConstantTargets = new HashMap<>();
     final Map<String, Set<String>> nonPoolTargets = new HashMap<>();
@@ -147,11 +312,11 @@ final class ReferenceGraphIndexer {
             edgeFailures);
       }
     }
+    final Predicate<String> targetExists =
+        targetExistsLookup(programPool, libraryPool, archiveByClass);
     recordMissingTypedTargets(
-        programPool, classLookup, typedEdges, unresolvedPrograms, unresolvedLibraries);
-    typedEdges.forEach(
-        (source, targets) ->
-            edges.computeIfAbsent(source, ignored -> new TreeSet<>()).addAll(targets.keySet()));
+        programPool, targetExists, typedEdges, unresolvedPrograms, unresolvedLibraries);
+    mergeTypedEdges(edges, typedEdges);
     final Map<String, Set<String>> unusedConstantPoolEdges =
         unusedConstantPoolEdges(
             classConstantTargets, nonPoolTargets, typedEdges, unrecognizedAttributes);
@@ -160,20 +325,20 @@ final class ReferenceGraphIndexer {
     return new ReferenceGraph(
         classNames(programPool),
         classNames(libraryPool, platformClasses),
-        immutableSetMap(edges),
-        Map.copyOf(typedEdges),
-        immutableSetMap(unclassifiedEdges),
-        immutableSetMap(unusedConstantPoolEdges),
-        immutableSetMap(unrecognizedAttributes),
-        immutableSetMap(unresolvedPrograms),
-        immutableSetMap(unresolvedLibraries),
-        Map.copyOf(edgeFailures),
+        wrapUnmodifiableSets(edges),
+        Collections.unmodifiableMap(typedEdges),
+        wrapUnmodifiableSets(unclassifiedEdges),
+        wrapUnmodifiableSets(unusedConstantPoolEdges),
+        wrapUnmodifiableSets(unrecognizedAttributes),
+        wrapUnmodifiableSets(unresolvedPrograms),
+        wrapUnmodifiableSets(unresolvedLibraries),
+        Collections.unmodifiableMap(edgeFailures),
         programPool.size());
   }
 
   private static void recordMissingTypedTargets(
       final ClassPool programPool,
-      final Function<String, Clazz> classLookup,
+      final Predicate<String> targetExists,
       final Map<String, Map<String, Set<ReferenceGraph.EdgeKind>>> typedEdges,
       final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedPrograms,
       final Map<String, Set<ReferenceGraph.UnresolvedLink>> unresolvedLibraries) {
@@ -183,7 +348,7 @@ final class ReferenceGraphIndexer {
               programPool.getClass(source) == null ? unresolvedLibraries : unresolvedPrograms;
           targets.forEach(
               (target, kinds) -> {
-                if (classLookup.apply(target) == null) {
+                if (!targetExists.test(target)) {
                   final String evidence =
                       kinds.contains(ReferenceGraph.EdgeKind.STRUCTURAL)
                           ? "structural"
@@ -209,14 +374,25 @@ final class ReferenceGraphIndexer {
     final Map<String, Set<String>> unclassifiedBySource = new HashMap<>();
     completeEdges.forEach(
         (source, targets) -> {
-          final Set<String> unclassified = new TreeSet<>(targets);
-          unclassified.removeAll(typedEdges.getOrDefault(source, Map.of()).keySet());
-          unclassified.removeAll(unusedConstantPoolEdges.getOrDefault(source, Set.of()));
-          if (!unclassified.isEmpty()) {
+          final Set<String> typedTargets = typedEdges.getOrDefault(source, Map.of()).keySet();
+          final Set<String> unusedTargets = unusedConstantPoolEdges.getOrDefault(source, Set.of());
+          Set<String> unclassified = null;
+          for (final String target : targets) {
+            if (!typedTargets.contains(target) && !unusedTargets.contains(target)) {
+              unclassified = addMissing(unclassified, target);
+            }
+          }
+          if (unclassified != null) {
             unclassifiedBySource.put(source, unclassified);
           }
         });
     return unclassifiedBySource;
+  }
+
+  private static Set<String> addMissing(final Set<String> existing, final String target) {
+    final Set<String> targetSet = existing == null ? new HashSet<>() : existing;
+    targetSet.add(target);
+    return targetSet;
   }
 
   private static Map<String, Set<String>> unusedConstantPoolEdges(
@@ -230,10 +406,15 @@ final class ReferenceGraphIndexer {
           if (unrecognizedAttributes.containsKey(source)) {
             return;
           }
-          final Set<String> unused = new TreeSet<>(targets);
-          unused.removeAll(nonPoolTargets.getOrDefault(source, Set.of()));
-          unused.removeAll(typedEdges.getOrDefault(source, Map.of()).keySet());
-          if (!unused.isEmpty()) {
+          final Set<String> nonPool = nonPoolTargets.getOrDefault(source, Set.of());
+          final Set<String> typed = typedEdges.getOrDefault(source, Map.of()).keySet();
+          Set<String> unused = null;
+          for (final String target : targets) {
+            if (!nonPool.contains(target) && !typed.contains(target)) {
+              unused = addMissing(unused, target);
+            }
+          }
+          if (unused != null) {
             unusedBySource.put(source, unused);
           }
         });
@@ -251,10 +432,7 @@ final class ReferenceGraphIndexer {
       final Map<String, Set<String>> nonPoolTargets,
       final Map<String, RuntimeException> edgeFailures) {
     final Set<String> targets = new LinkedHashSet<>();
-    edgeCollector.collectInto(
-        targets,
-        classConstantTargets.computeIfAbsent(clazz.getName(), unused -> new TreeSet<>()),
-        nonPoolTargets.computeIfAbsent(clazz.getName(), unused -> new TreeSet<>()));
+    edgeCollector.collectInto(targets);
     try {
       clazz.accept(ProGuardReferenceVisitors.complete(edgeCollector, classLookup));
       signaturePolymorphicResolver.enqueueDescriptorTypes(clazz, edgeCollector);
@@ -263,16 +441,24 @@ final class ReferenceGraphIndexer {
       edgeFailures.putIfAbsent(clazz.getName(), classificationFailure(clazz.getName(), exception));
     }
     edges.put(clazz.getName(), targets);
+    final Set<String> classConstants = edgeCollector.drainClassConstants();
+    if (!classConstants.isEmpty()) {
+      classConstantTargets.put(clazz.getName(), classConstants);
+    }
+    final Set<String> nonPool = edgeCollector.drainNonPoolTargets();
+    if (!nonPool.isEmpty()) {
+      nonPoolTargets.put(clazz.getName(), nonPool);
+    }
   }
 
   private static Set<String> classNames(final ClassPool pool) {
-    final Set<String> names = new TreeSet<>();
+    final Set<String> names = HashSet.newHashSet(pool.size());
     pool.classNames().forEachRemaining(names::add);
-    return Set.copyOf(names);
+    return Collections.unmodifiableSet(names);
   }
 
   private static Set<String> classNames(final ClassPool pool, final Set<String> excludedNames) {
-    final Set<String> names = new TreeSet<>();
+    final Set<String> names = HashSet.newHashSet(pool.size());
     pool.classNames()
         .forEachRemaining(
             name -> {
@@ -280,15 +466,12 @@ final class ReferenceGraphIndexer {
                 names.add(name);
               }
             });
-    return Set.copyOf(names);
+    return Collections.unmodifiableSet(names);
   }
 
-  private static <T> Map<String, Set<T>> immutableSetMap(final Map<String, Set<T>> source) {
-    final Map<String, Set<T>> result = new HashMap<>();
-    source.forEach(
-        (name, values) ->
-            result.put(name, java.util.Collections.unmodifiableSet(new LinkedHashSet<>(values))));
-    return Map.copyOf(result);
+  private static <T> Map<String, Set<T>> wrapUnmodifiableSets(final Map<String, Set<T>> source) {
+    source.replaceAll((name, values) -> Collections.unmodifiableSet(values));
+    return Collections.unmodifiableMap(source);
   }
 
   /** Collects candidate and sibling nodes, excluding platform classes. */
@@ -324,13 +507,36 @@ final class ReferenceGraphIndexer {
       this.platformLibraryClasses = platformLibraryClasses;
     }
 
-    private void collectInto(
-        final Set<String> edges,
-        final Set<String> classConstantTargets,
-        final Set<String> nonPoolTargets) {
+    private void collectInto(final Set<String> edges) {
       currentEdges = edges;
-      currentClassConstants = classConstantTargets;
-      currentNonPoolTargets = nonPoolTargets;
+      currentClassConstants = Set.of();
+      currentNonPoolTargets = Set.of();
+    }
+
+    private Set<String> drainClassConstants() {
+      final Set<String> drained = currentClassConstants;
+      currentClassConstants = Set.of();
+      return drained;
+    }
+
+    private Set<String> drainNonPoolTargets() {
+      final Set<String> drained = currentNonPoolTargets;
+      currentNonPoolTargets = Set.of();
+      return drained;
+    }
+
+    private Set<String> classConstants() {
+      if (currentClassConstants.isEmpty()) {
+        currentClassConstants = new HashSet<>();
+      }
+      return currentClassConstants;
+    }
+
+    private Set<String> nonPoolTargets() {
+      if (currentNonPoolTargets.isEmpty()) {
+        currentNonPoolTargets = new HashSet<>();
+      }
+      return currentNonPoolTargets;
     }
 
     @Override
@@ -351,11 +557,11 @@ final class ReferenceGraphIndexer {
       final org.objectweb.asm.Type type =
           name.startsWith("[") ? org.objectweb.asm.Type.getType(name) : null;
       if (type == null) {
-        currentClassConstants.add(name);
+        classConstants().add(name);
       } else {
         final org.objectweb.asm.Type element = type.getElementType();
         if (element.getSort() == org.objectweb.asm.Type.OBJECT) {
-          currentClassConstants.add(element.getInternalName());
+          classConstants().add(element.getInternalName());
         }
       }
     }
@@ -367,10 +573,10 @@ final class ReferenceGraphIndexer {
               && !platformLibraryClasses.contains(clazz.getName()))) {
         currentEdges.add(clazz.getName());
         if ((currentOriginMask & ProGuardReferenceVisitors.EdgeOrigin.CLASS_CONSTANT.mask) != 0) {
-          currentClassConstants.add(clazz.getName());
+          classConstants().add(clazz.getName());
         }
         if ((currentOriginMask & ProGuardReferenceVisitors.EdgeOrigin.OTHER.mask) != 0) {
-          currentNonPoolTargets.add(clazz.getName());
+          nonPoolTargets().add(clazz.getName());
         }
       }
     }
