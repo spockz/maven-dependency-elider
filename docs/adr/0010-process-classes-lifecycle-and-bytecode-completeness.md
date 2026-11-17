@@ -27,25 +27,20 @@ Modern Java applications routinely rely on source generators and annotation proc
 
 ## 2. Decision
 
-We introduce **Post-Compile Production Bytecode Completeness (`elide.productionClassesComplete`)** and first-class **`process-classes` lifecycle execution**:
+We introduce **Post-Compile Production Bytecode Completeness (`elide.productionClassesComplete`)** and default **`process-classes` lifecycle execution**:
 
 1. **Production Bytecode Attribution (`elide.productionClassesComplete=true`)**:
    * Both `ElideMojo` and `AnalyzeMojo` expose `@Parameter(property = "elide.productionClassesComplete", defaultValue = "false")`.
-   * When `ElideMojo` executes in the `process-classes` lifecycle phase (and `sourceRootsComplete=false`), `productionClassesComplete` is automatically enabled.
-   * `productionClassesComplete=true` and `sourceRootsComplete=true` are mutually exclusive; setting both fails closed.
-   * When `productionClassesComplete=true` and `productionOutput` is not explicitly configured, `productionOutput` defaults to `${project.build.outputDirectory}` (`target/classes`). The directory must exist and contain at least one compiled `.class` file (`scannedClassFileCount() > 0`).
-   * In `MavenElisionService.prepare`, `productionBytecodeInputs(productionOutput)` is evaluated before `compilerInputs`. When `productionClassesComplete=true`, `compilerInputs` unions references from `target/classes` bytecode with semantically attributed references from all declared compile source roots. This source pass uses the completed output directory on its classpath and forces `-proc:none`; it does not pass configured processor arguments or rerun annotation processors.
-     * `requiredClasses` = `bytecodeScan.referencedClasses()` ∪ attributed compile-source references
-     * `compileVisibleCoordinates` = `compileVisibleArtifacts` whose indexed classes intersect that union
-     * `declaredClasses` = `classNamesInOutput(bytecodeScan.scope())`
-   * The source union preserves dependencies used only through compile-time-inlined primitive or `String` constants. It also intentionally may keep source-only references that do not appear in emitted bytecode. Missing or empty source roots, unsupported source languages or compiler modes, and incomplete javac attribution trigger an explicit conservative fallback: all compile-visible artifacts and their indexed classes are retained, and the goal summary warns with the reason. This fallback is confined to post-compile mode.
-   * Source-union references seed both whole-artifact pruning and JAR trimming. They are not added to `BytecodeReferenceScan`, class-use categories, runtime telemetry, or runtime reachability claims. The class-usage report continues to describe bytecode and runtime evidence only; source-root retention is separate compile evidence. It does not guarantee dependencies used only by test sources.
+   * `ElideMojo` defaults to `LifecyclePhase.PROCESS_CLASSES`. When `ElideMojo` runs in `process-classes` (and `productionClassesComplete` is not explicitly set), `productionClassesComplete` is automatically enabled.
+   * `sourceRootsComplete=true` is rejected; compiler-coupled source attribution (`PostCompileSourceAttribution`) has been removed per [ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md).
+   * When `productionClassesComplete=true` and `productionOutput` is not explicitly configured, `productionOutput` defaults to `${project.build.outputDirectory}` (`target/classes`). The directory must exist and contain at least one class or resource file (`scannedClassFileCount() > 0` or `scannedResourceFileCount() > 0`), so source-free / resource-only modules pass when their configured output directory is valid.
+   * `MavenElisionService.prepare` scans compiled production bytecode (`productionBytecodeInputs(productionOutput)`) and unions it with explicit `elide.retainedArtifacts` (`ADR-0013`) and runtime telemetry / framework evaluators rather than invoking `javac`.
    * Static link-closure across `target/classes` and retained dependency JARs is enforced by the fixed-point bytecode reachability loop in `MavenElisionService.finishAnalysis` (`newlyReachedDrops` $\rightarrow$ `promoteForBytecode`).
 
-2. **Lifecycle Binding & Dynamic Phase Rebinding (`EliderLifecycleParticipant`)**:
-   * `ElideMojo` retains `defaultPhase = LifecyclePhase.INITIALIZE` in `plugin.xml` for backwards compatibility with existing `initialize`-bound builds.
-   * Users may bind `dependency-elider:elide` explicitly to `<phase>process-classes</phase>` in `pom.xml`, or set `elide.productionClassesComplete=true` (via POM `<configuration>`, project `<properties>`, or CLI `-Delide.productionClassesComplete=true`).
-   * Because Maven computes lifecycle execution plans before Mojo parameter injection, `EliderLifecycleParticipant.afterProjectsRead(MavenSession)` inspects effective properties and plugin configuration; when `elide.productionClassesComplete=true` is active, any `elide` execution with phase `null` or `initialize` is dynamically rebound to `process-classes`.
+2. **Lifecycle Binding (`EliderLifecycleParticipant`)**:
+   * `ElideMojo` declares `defaultPhase = LifecyclePhase.PROCESS_CLASSES` in `plugin.xml`.
+   * Users may also bind `dependency-elider:elide` explicitly or set `elide.productionClassesComplete=true` (via POM `<configuration>`, project `<properties>`, or CLI `-Delide.productionClassesComplete=true`).
+   * `EliderLifecycleParticipant.afterProjectsRead(MavenSession)` inspects effective properties and plugin configuration; when `elide.productionClassesComplete=true` is active, any `elide` execution with phase `null` or `initialize` is dynamically rebound to `process-classes`.
 
 3. **Phase-Aware `mvn dependency:tree` Preparation (`EliderTreePreparation`)**:
    * `EliderPluginConfiguration` and `EliderGoalOrder` accept `elide` executions bound to either `initialize` or `process-classes`.
@@ -55,8 +50,8 @@ We introduce **Post-Compile Production Bytecode Completeness (`elide.productionC
    * When `elide.preconditionClassPathComplete=true` is evaluated with `productionClassesComplete=true` (at `process-classes`), lifecycle phases `generate-sources` through `compile` have already completed and their emitted `.class` files in `target/classes` are directly hashed by `MavenPreconditionProviderRoots.capture`.
    * Pre-capture source generators (`generate-sources`..`process-resources`) and `maven-compiler-plugin` annotation processor settings for `compile` are permitted when `productionClassesComplete=true`, while unmodeled provider-generating executions in phases after `process-classes` remain rejected.
    * Conversely, at `initialize` (`sourceRootsComplete=true`), `MavenElisionService.hasUnknownSourceGeneration` is tightened to also reject `maven-compiler-plugin` configurations that declare `annotationProcessorPaths`, `annotationProcessors`, or `proc` values other than `none`, with an error message directing the user to `elide.productionClassesComplete=true` / `process-classes`.
-   * The class-output assertion and lifecycle provenance are separate values. Only a Mojo execution whose source is `MojoExecution.Source.LIFECYCLE` and whose exact phase is `process-classes` gets the trusted precondition-capture context. A direct CLI goal or a missing/other phase may use an explicitly supplied bytecode-completeness assertion for attribution, but keeps the existing conservative provider-generation guards.
-   * Only configured writers in phases strictly before `process-classes` can be accepted as pre-capture writers. Unknown writers at the capture phase or later are rejected, including later-bound compiler executions. `skipTests` does not skip `testCompile`; its processor safeguards remain active.
+   * The lifecycle phase supports post-compile attribution and phase-sensitive writer checks, but lifecycle origin does not grant proof authority. Direct `elide` and `analyze` goals may capture a complete physical runtime inventory when `elide.productionClassesComplete=true` is explicit. With `elide.preconditionClassPathComplete=true`, Analyze can prove prerequisite absence in the current inventory; planned removals remain predictions until their output is inspected.
+   * Unknown production writers that can change captured output remain rejected. Test-only output is excluded when separate from production roots, and test-scoped dependency archives are excluded from the runtime provider inventory. Ordinary `testCompile` and `testResources` do not block proof. Custom test output redirection is rejected, and `skipTests=true` prevents tests from changing production output after capture.
 
 5. **Complete Root-Member Capture and Platform Options**:
    * Every declared source-root member remains part of the provider inventory and its digest. `.java` members are parsed for declarations; other regular files in a mixed source root are captured as resource providers. Known source forms the Java scanner cannot parse, including `.scala`, `.kt`, `.kts`, and `.groovy`, keep the inventory incomplete after capture. No root member is filtered out.
@@ -71,7 +66,7 @@ We introduce **Post-Compile Production Bytecode Completeness (`elide.productionC
   * Existing `initialize`-bound projects and test suites remain 100% compatible.
 * **Negative / Trade-offs**:
   * When `elide` runs at `process-classes`, `compile` executes against the un-elided compile classpath; elision and trimming take effect immediately after `compile` for `test-compile`, `test`, `package`, SBOM/VEX generation, and `dependency:tree`.
-  * The trusted capture behavior depends on the Maven extension and its lifecycle source metadata; direct CLI goal invocations cannot claim a post-compile provider inventory.
+  * The extension provides convenient post-compile lifecycle ordering; a direct `elide` goal can also capture completed output when explicitly asserted and physically inspected.
   * The source supplement can retain dependencies referenced only by source and not by emitted bytecode. If semantic attribution fails (including sources that rely on compiler-generated members such as Lombok accessors), the post-compile fallback retains all compile-visible artifacts and their indexed classes. Test-only references are outside this production-root guarantee.
 
 ---
@@ -92,9 +87,9 @@ goals consume the validated effective Maven view.
 `elide.sourceRootsComplete=true` is rejected with migration guidance because source roots are not
 the post-compile proof inventory. A module with no production source can pass this boundary when
 its configured class/resource output is valid; missing output and empty class output are handled
-explicitly. Trusted prerequisite capture requires an actual lifecycle-sourced `process-classes`
-execution. Direct goal invocation cannot assert that provider generation is complete merely by
-setting a property. The guard models configured and default lifecycle bindings, the requested
-phase cutoff and later packaging writers. `maven.test.skip=true` still allows Maven `testCompile`
-to run, so its configured source/resource and annotation-processor providers remain part of the
-guard. See the 2026-11-08 implementation evidence in [RQ-0017](../research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md).
+explicitly. Direct `elide` and `analyze` goals can capture physical runtime providers when
+`elide.productionClassesComplete=true` explicitly asserts complete compiled production output and
+the goal inspects those bytes; runtime inventory scoping, isolated test-output exclusions, and
+precondition-proof gating follow [ADR-0008](0008-precondition-gated-vex-attestations.md). See
+the 2026-11-08 implementation evidence in
+[RQ-0017](../research/RQ-0017-source-generation-lifecycle-integration-and-deferred-source-root-completeness.md).

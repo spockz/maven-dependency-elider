@@ -40,6 +40,19 @@ The plugin models class roots and supported reachability descriptors from depend
 
 ---
 
+## Project Modules
+
+| Module | Purpose |
+| --- | --- |
+| `elider-core` | Maven-independent analysis engine: trace readers, bytecode scanning, ProGuard link-closure trimming, advisory/VEX matching, and CycloneDX 1.6 SBOM/VEX generation. |
+| `elider-native-image` | GraalVM Native Image `META-INF/native-image/**` descriptor/configuration parsing and Spring AOT root resolution. |
+| `elider-maven-lifecycle` | Maven core extension (`EliderLifecycleParticipant`, Resolver decorators/session hooks), graph capture/projection, effective-graph safety policy, and banished-dependency preflight. |
+| `dependency-elider-maven-plugin` | Maven plugin (`analyze`, `elide`, `report`, and advisory index Mojos), Maven execution/report orchestration, and plugin documentation site. |
+| `elider-benchmarks` | JMH microbenchmarks for trim-cache and elision hot paths. |
+| `examples` | Consumer application fixtures (Basic, Spring Boot, CVE/advisory fixtures) used by integration checks. |
+
+---
+
 ## Quick Start
 
 ### 1. Install the Plugin
@@ -197,12 +210,16 @@ The report goal reads the snapshot and does not re-run the analysis or advisory 
 Generic finding rows retain detached `prerequisiteProof` evidence: the selected group
 operators, each prerequisite member's observed final presence, provider paths and digests, and
 baseline-to-final attribution. The `report` goal renders those saved observations without reopening
-the archives; replay does not recreate a proof-capable attestation. `ANALYSIS` snapshots remain
-predictions and cannot contain verified prerequisite-absence evidence.
-Analyze may also save a separate `prerequisitePrediction` for selected prerequisite groups. It
-compares baseline provider bytes with planned artifact/class removals and is labeled as a forecast;
-it has no final archive fingerprint, never creates VEX, and is replayed without reopening the
-baseline archives. Only `APPLIED` reports can carry physical prerequisite proof.
+the archives; replay does not recreate a proof-capable attestation. An `ANALYSIS` report may carry
+verified prerequisite absence from a complete scan of the current runtime inventory when
+`elide.preconditionClassPathComplete=true` is enabled. Direct Analyze also requires
+`elide.productionClassesComplete=true`. This proof does not depend on Elide having removed the
+class during the current invocation. Analyze does not publish CycloneDX or OpenVEX files.
+
+Analyze may also save a separate `prerequisitePrediction` when it forecasts planned artifact or
+class removals. It has no final archive fingerprint and remains a forecast; planned absence is not
+physical proof. Reports replay both the captured physical observations and forecasts without
+reopening the providers.
 
 The saved elision report and Analyze class-usage report include `exclusionReview`, with an explicit
 unavailable reason when the pre-resolution lifecycle capture is absent. Repeated exact exclusions
@@ -273,9 +290,9 @@ Removing an artifact or class removes package bloat, but a formal VEX statement 
 * Malformed CVE List and OSV records or affected entries are skipped independently. The affected source is reported as `PARTIAL` with diagnostics and a count, so the remaining findings can be used without implying complete coverage.
 * Omitted-code proof requires exact component/version binding, unambiguous attribution of the effective declared code to the original artifact, and physical absence of every required declared class from the resulting artifact. Manual priority and confidence labels cannot bypass those checks. Manual `LOW`/`MEDIUM` preserves review-only intent, including when code is enriched from automatic sources. Package-only findings, heuristic hints and unresolved attribution do not establish omission proof. The observation covers declared code, not the independent truth or completeness of an advisory. Precondition evidence additionally requires the complete opted-in inventory described in [ADR-0008](docs/adr/0008-precondition-gated-vex-attestations.md).
 * `elide.assumeConventionalJavaSourceLayout` controls the supported source-root translation and is retained with attribution in the saved report; it does not authorize ambiguous filename matching or waive physical verification. The `report` goal replays saved results without reassessing the current configuration. Package-only and heuristic findings retain source attribution and explicit unsupported data; advisory-only identities remain visible without fabricated CVEs. Removed, trimmed and unchanged describe inventory facts rather than mitigation.
-* Precondition VEX requires an exact prerequisite class as well as its coordinate, plus explicit `-Delide.preconditionClassPathComplete=true` confirmation that the declared Maven build inventory is complete. The opt-in cannot override detected downstream generators: both `compile` and `testCompile` must explicitly resolve `maven.compiler.proc=none` under a known Maven Compiler Plugin version from 3.13 through 3.x, with Java release or source/target at least 11. Processor paths, processor lists, compiler arguments other than the exact diagnostic-only `-Xlint:all`, custom compiler/executable modes, compiler plugin dependencies, and missing, unresolved, or conflicting settings leave proof incomplete. Unmodeled plugin executions before or after `process-classes`, configured clean/site executions with unmodeled ordering, Enforcer executions at or after inventory capture or with unknown phases, filtered resources, resource plugin dependencies, unsupported packaging/extensions, and custom compiler/resource roots also suppress proof. Proof supports `jar` and `pom` packaging; `war` and `maven-plugin` packaging remain incomplete because their provider-generation paths are not modeled. The inventory includes `<build.directory>/generated-sources/annotations` and `<build.directory>/generated-test-sources/test-annotations`; custom generated-source directories suppress proof. Pre-capture Enforcer rules are limited to verified built-ins, without custom implementation attributes or plugin dependencies. Interface assertions are also rejected because javac can emit an additional helper class for them. The Maven request must contain one default-lifecycle goal, optionally preceded by `clean`; direct plugin goals and multiple lifecycle segments suppress proof. The publisher revalidates provider membership and digests before commit; serializers recheck the affected component path and digest. Unchanged plugin-owned OpenVEX is removed when no qualifying evidence remains. Modified or unowned output is preserved. `elide.trimJars=false` disables physical JAR replacement only; report, SBOM and OpenVEX publication, complete-inventory assessment, and ownership-aware stale OpenVEX cleanup still run. The claim does not cover providers added by later packaging or deployment runtime mechanisms. See [RQ-0013](docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
+* Precondition VEX requires an exact prerequisite class and coordinate plus `-Delide.preconditionClassPathComplete=true` to opt into a complete inventory. The proof's class-provider scan covers production class/resource outputs and non-test-scoped effective dependency archives. Isolated test sources, classes, resources, and test-scoped dependency archives are excluded from that scan; their dependency-scope rows remain in the resolver decision and SBOM. Default `testCompile` and `testResources` may run. Test output overlapping production roots, custom test compiler arguments or output directories that could redirect providers, and unmodeled production writers still suppress proof. Only production compilation needs the modeled compiler processor and target settings. If Maven reaches tests, `-DskipTests=true` is required to prevent test code from changing production outputs after capture; `maven.test.skip=true` is not required. Direct `elide` and `analyze` can inspect current runtime inputs when `elide.productionClassesComplete=true` asserts complete compiled output; lifecycle provenance alone is not required. Analyze records physical absence from the current complete inventory, while removals present only in its plan remain predictions. The proof concerns declared Maven runtime inputs; it does not inspect later packaging or deployment-provided classes. See [ADR-0008](docs/adr/0008-precondition-gated-vex-attestations.md) and [RQ-0013](docs/research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
 The guard models packaging only for maven-shade-plugin 3.6.0 with one `package`/`shade` execution and a built-in manifest transformer with a resolved main class. Any request that reaches a modeled JAR package execution must include `clean` first so the standard JAR plugin cannot reuse an older archive; Shade packaging is covered as an additional package path. Clean skip/exclusion/failure overrides and deferred clean modes suppress proof. It accepts only the inherited signature-resource exclusions shown in the examples; custom Shade filters, transformers, inputs, dependencies, source-JAR properties, and custom JAR plugin configuration suppress proof.
-If the requested lifecycle reaches `test`, exact-class proof also requires the standard Maven Surefire Plugin 3.5.2 `default-test` execution and explicit `-DskipTests=true`. Maven still compiles test sources so they remain inventoried; the example harness runs baseline tests normally.
+If the requested lifecycle reaches `test`, exact-class proof also requires the standard Maven Surefire Plugin 3.5.2 `default-test` execution and explicit `-DskipTests=true`. Maven still compiles test sources, but isolated test outputs are excluded from the runtime inventory; the example harness runs baseline tests normally.
 * `PREREQUISITES_ABSENT` requires a complete opted-in inventory proving every effective prerequisite coordinate/class pair absent for the exact affected version. Same-priority pairs combine as sets, and manual supplied pairs replace automatic pairs within scope. Missing or unresolved prerequisites and review-only intent prevent that proof. Code and prerequisite groups are assessed independently; if both proofs succeed, omitted-code evidence is published once.
 * Run `make scan-sbom` to run OSV-Scanner offline against baseline and post-elision SBOMs, producing a hash-backed comparison report in `target/sbom-comparison/`.
 * A finding is marked eliminated only when its package component is absent from the post-elision SBOM.
@@ -337,7 +354,7 @@ These statuses summarize current evidence in the repository. Fixture and unit-te
 ### Configuration Rules & Safeguards
 
 * **Reactor Leaf Modules (`elide.leafOnly`)**: Defaults to `true`. In multi-module Maven reactors, the plugin by default only elides leaf modules (modules with no downstream dependents in the reactor DAG, such as packaging applications, fat JARs, and Native Images). Intermediate library modules skip elision, ensuring internal libraries build and test against standard dependencies while the leaf module performs definitive elision across the unified dependency graph. Set `-Delide.leafOnly=false` (or `<elide.leafOnly>false</elide.leafOnly>`) to run elision across every submodule.
-* **Production Bytecode (`elide.productionClassesComplete`)**: The default `elide` phase is `process-classes`; an explicit phase remains authoritative. Source-free modules may have absent or empty production output, while projects with Java sources must have compiled production class files. Analysis derives production roots from emitted bytecode in `target/classes`; dependencies referenced only through compile-time-inlined constants can be retained explicitly via `<retainedArtifacts>`. Source roots do not count as runtime evidence, and test-only references are not guaranteed. The legacy `elide.sourceRootsComplete=true` assertion is rejected; bind the goal to `process-classes` and use compiled production output. A direct `dependency-elider:elide` invocation does not establish trusted lifecycle capture. Unknown writers at `process-classes` or later remain unsupported, and `skipTests` does not skip `testCompile` safeguards.
+* **Production Bytecode (`elide.productionClassesComplete`)**: The default `elide` phase is `process-classes`; an explicit phase remains authoritative. Source-free modules may have absent or empty production output, while projects with Java sources must have compiled production class files. Analysis derives production roots from emitted bytecode in `target/classes`; dependencies referenced only through compile-time-inlined constants can be retained explicitly via `<retainedArtifacts>`. Source roots do not count as runtime evidence, and test-only references are outside this production scan. The legacy `elide.sourceRootsComplete=true` assertion is rejected; use compiled production output. A direct `dependency-elider:elide` can capture physical runtime inputs when `elide.productionClassesComplete=true` asserts the output is complete. Isolated test output is excluded, so ordinary test compilation may continue. Unknown production writers remain unsupported, and `skipTests` prevents tests from changing production output after capture.
 * **Conservative ServiceLoader Roots (`elide.conservativeServiceLoaderRoots`)**: Defaults to `true`. Scans application bytecode for constant `ServiceLoader.load` calls. When enabled, unproven SPI providers are retained for runtime safety. Set to `false` (or `-Delide.conservativeServiceLoaderRoots=false`) to permit pruning those providers when they are unnecessary for your application. Vulnerability attribution and physical proof checks still apply.
 * **Framework Metadata Protection**: Service providers (`META-INF/services`), Spring factories, and GraalVM reflection configs automatically protect declaring and provider JARs from whole-artifact removal.
 * **Bytecode Sanitization**: Trimmed JARs are written to `target/elided-artifacts/` with original files untouched. JAR digital signatures are removed to avoid signature validation failures.
@@ -594,7 +611,7 @@ Process exit status: 0
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven
+[INFO]   Exclusion provenance incomplete for 14 dependency or exclusion origins. Maven
 [INFO]   supplied no source location/identity or the location matched zero or multiple
 [INFO]   original POM rows. This advisory review does not affect elision.
 [INFO]   Full evidence is in the JSON snapshot fields
@@ -1832,8 +1849,11 @@ Process exit status: 0
 [INFO]   - CVE-2025-11226 ch.qos.logback:logback-core:jar:1.5.11 (compile) [RETAINED_UNCHANGED]
 [INFO]     Aliases: [CVE-2025-11226, GHSA-25qh-j22f-pwp8]
 [INFO]     Applicability: AFFECTED; intent: AUTO_VERIFY
-[INFO]     Outcome: NO_PROOF; Could not capture complete Maven class-provider inventory: Maven downstream provider generation is unsupported: Maven tests must be explicitly skipped with effective skipTests=true. No unique trimmed artifact is available for physical omission proof
+[INFO]     Outcome: PREREQUISITES_ABSENT; Required prerequisite groups were disarmed in the complete declared Maven inventory: ANY_OF is disarmed because every member is absent: org.codehaus.janino:janino / org.codehaus.janino.ClassBodyEvaluator=ABSENT. The proof does not cover providers introduced outside that inventory.
 [INFO]     Effective prerequisites: [org.codehaus.janino:janino / org.codehaus.janino.ClassBodyEvaluator]
+[INFO]     Prerequisite proof evidence: final inventory <PATH_BOUND_SHA256>
+[INFO]       ANY_OF group attribution: ALREADY_ABSENT
+[INFO]         org.codehaus.janino:janino / org.codehaus.janino.ClassBodyEvaluator=ABSENT (ALREADY_ABSENT)
 [INFO]     Overridden fields: [intent]
 [INFO]     Sources: [CATALOG, OSV]
 [INFO]   - CVE-2025-22233 org.springframework:spring-context:jar:6.1.14 (compile) [RETAINED_UNCHANGED]
@@ -2431,11 +2451,11 @@ Process exit status: 0
 [INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] Adopted vulnerability mapping catalogs:
-[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=640572de4b70a9014a5c455d3129f9a81daa30a162147423c2e49e49bef7ad58, mappings=2, unresolved=0)
+[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=a1339af5e23c58c06ca8ebb86dda095173d3f52de8363284fce031014bf82ff2, mappings=2, unresolved=0)
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 1529 dependency or exclusion origins.
+[INFO]   Exclusion provenance incomplete for 1531 dependency or exclusion origins.
 [INFO]   Maven supplied no source location/identity or the location matched zero or
 [INFO]   multiple original POM rows. This advisory review does not affect elision.
 [INFO]   Full evidence is in the JSON snapshot fields
@@ -3239,7 +3259,7 @@ Process exit status: 0
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
+[INFO]   Exclusion provenance incomplete for 1536 dependency or exclusion origins.
 [INFO]   Maven supplied no source location/identity or the location matched zero or
 [INFO]   multiple original POM rows. This advisory review does not affect elision.
 [INFO]   Full evidence is in the JSON snapshot fields
@@ -3527,11 +3547,11 @@ Process exit status: 0
 [INFO]     Source diagnostics are in the JSON snapshot
 [INFO]   - OSV CURRENT
 [INFO] Adopted vulnerability mapping catalogs:
-[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=640572de4b70a9014a5c455d3129f9a81daa30a162147423c2e49e49bef7ad58, mappings=2, unresolved=0)
+[INFO]   - io.github.spockz.catalogs:logback-vulnerability-mapping-catalog:1.0.0:jar: (catalogId=logback-core-cve-2025-11226, sha256=a1339af5e23c58c06ca8ebb86dda095173d3f52de8363284fce031014bf82ff2, mappings=2, unresolved=0)
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 1534 dependency or exclusion origins.
+[INFO]   Exclusion provenance incomplete for 1536 dependency or exclusion origins.
 [INFO]   Maven supplied no source location/identity or the location matched zero or
 [INFO]   multiple original POM rows. This advisory review does not affect elision.
 [INFO]   Full evidence is in the JSON snapshot fields
@@ -3715,7 +3735,7 @@ Process exit status: 0
 [INFO] POM exclusion review (advisory only):
 [INFO]   Repeated POM exclusions:
 [INFO]     none found across effective dependency paths
-[INFO]   Exclusion provenance incomplete for 12 dependency or exclusion origins. Maven
+[INFO]   Exclusion provenance incomplete for 14 dependency or exclusion origins. Maven
 [INFO]   supplied no source location/identity or the location matched zero or multiple
 [INFO]   original POM rows. This advisory review does not affect elision.
 [INFO]   Full evidence is in the JSON snapshot fields

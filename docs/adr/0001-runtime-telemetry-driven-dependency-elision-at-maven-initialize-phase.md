@@ -1,9 +1,9 @@
 <!-- WHY: Records the evidence and lifecycle boundaries needed to integrate dependency reduction into Maven compilation and testing. -->
 # ADR-0001: Runtime Telemetry-Driven Dependency Elision at Maven INITIALIZE Phase
 
-* **Status**: Accepted
+* **Status**: Accepted (Runtime Oracle & Multi-Format Ingestion); Superseded on Lifecycle Phase and Source Attribution by [ADR-0010](0010-process-classes-lifecycle-and-bytecode-completeness.md) and [ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md)
 * **Date**: 2026-10-24
-* **Last Updated**: 2026-10-28
+* **Last Updated**: 2026-11-13
 
 <!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
 | Key | Value |
@@ -23,22 +23,18 @@ Static dependency analysis (such as `maven-dependency-plugin:analyze`) relies on
 
 Ground automated dependency elision in an external usage oracle, including runtime telemetry and explicit retention configuration. Supported evidence sources include JVM unified class loading logs (`-Xlog:class+load`), HotSpot Class Data Sharing dumps (`-XX:DumpLoadedClassList`), JDK Flight Recorder (`jdk.ClassLoad` and execution events), GraalVM metadata, and JaCoCo execution data (`jacoco.exec`). These sources have different semantics: observation, sampling, and declared reachability are not interchangeable completeness guarantees.
 
-For source-aware trimming, combine oracle roots, resolved source compilation roots, and framework/resource roots, then compute their required dependency closure. Static analysis complements external evidence; neither source references nor observed execution alone establish arbitrary dynamic usage. Current source attribution covers Java type references, constant owners, generic bounds, and annotation types when the user explicitly asserts complete source availability. It does not activate member deletion.
-
-Bind the core `elide` Mojo to the Maven `INITIALIZE` lifecycle phase, declaring `requiresDependencyResolution = ResolutionScope.TEST`. Current end-to-end evidence covers single-project fixtures and the `reactor-common` → `reactor-service` → `reactor-app` fixture with Maven CLI 3.9.11 on GraalVM JDK 21.0.12. The reactor chain passes sequential and `-T 4` `clean verify` builds with module-local reports; it has no independent siblings and does not establish general reactor concurrency safety. Other Maven 3 releases, Maven 4, and arbitrary active multi-module consumer reactors remain unverified. By resolving the dependency graph at `INITIALIZE`:
-
-1. Maven resolves the project's TEST dependency context before the goal indexes eligible local JAR files.
-2. The goal publishes validated decisions before compilation and testing. Each downstream consumer's actual inputs require independent verification.
-3. Compilation and testing expose missing dependencies on the source and execution paths they cover. Passing them is useful validation, not a proof of completeness for unexercised paths.
-
-`INITIALIZE` is the current whole-artifact integration target. Generated-source completeness cannot generally be established before lifecycle generators and compiler processors run. The plugin therefore exposes `elide.sourceRootsComplete`, defaulting to `false`. In that mode it skips source attribution and retains all effective compile-classpath JARs and their indexed classes, so those artifacts remain available for later intra-JAR trimming. Setting it to `true` is an explicit assertion that all production and generated sources are present before `INITIALIZE` and no later processor or generator adds compile references. With that assertion, the plugin uses supported effective Maven compiler settings and fails closed on unsupported compiler/toolchain modes, unknown source-generation executions, and missing or empty source roots. Runtime evidence still must match at least one supplied dependency class; source-only matches cannot authorize pruning. The conservative default can limit elision, but avoids treating current roots as proof that future generated sources do not exist.
+> **Supersession Note**: The original `2026-10-24` decision bound `elide` to `INITIALIZE`, introduced `elide.sourceRootsComplete` for Java source attribution, and cited `GraalVM JDK 21.0.12`. Those parts are superseded:
+>
+> * Default lifecycle execution is `process-classes` ([ADR-0010](0010-process-classes-lifecycle-and-bytecode-completeness.md)).
+> * Source attribution and `sourceRootsComplete=true` are removed/rejected in favor of compiled bytecode link-closure and `elide.productionClassesComplete` ([ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md)).
+> * Execution is decoupled to any compliant JDK 21+ runtime ([ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md)).
 
 ## Invariants
 
-* **Evidence Contract**: Positive oracle evidence supplies retention roots. Missing classes or methods are not proof of non-use without an explicit coverage/completeness contract. Class-level evidence must not silently authorize member removal.
-* **Pre-Compile Execution**: The `elide` Mojo must execute prior to `compile` and `test` phases whenever elision is active.
+* **Evidence Contract**: Positive oracle evidence supplies retention roots. Missing classes or methods are not proof of non-use without an explicit coverage/completeness contract (e.g., `closedWorld=true` under [ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md)). Class-level evidence must not silently authorize member removal.
+* **Post-Compile Default Execution**: Default `elide` execution runs at `process-classes` ([ADR-0010](0010-process-classes-lifecycle-and-bytecode-completeness.md)); explicit phase bindings remain user configuration.
 * **Validation Boundary**: Compiler and test failures must propagate. Runtime-only dependencies on unexercised paths may still be missing after a passing build.
-* **Multi-Format Ingestion**: The runtime ingestion layer must accept plain class lists, JFR recordings, and GraalVM JSON files through a unified abstraction.
+* **Multi-Format Ingestion**: The runtime ingestion layer must accept plain class lists, JFR recordings, JaCoCo `.exec` data, and GraalVM JSON files through a unified abstraction.
 
 ## Consequences
 

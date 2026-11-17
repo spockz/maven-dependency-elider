@@ -69,8 +69,9 @@ We establish **Mandatory Multi-JDK Portability (JDK 21+)**, **Compiler Decouplin
 * **Live Proof Telemetry**: Non-execution is attested through external JVM reports:
   * HotSpot Class-Data Sharing (CDS) class lists (`-XX:DumpLoadedClassList`).
   * JDK Flight Recorder (JFR) `jdk.ClassLoad` events.
-  * JaCoCo execution data (`jacoco.exec`).
+  * JaCoCo execution data (`jacoco.exec` only; `.xml`/`.csv` exports are rejected). Zero-hit records are excluded, and JaCoCo evidence is labeled as execution evidence rather than class-load evidence.
   * Closed-world framework evaluators (Spring AOT generated registrations and GraalVM reachability metadata).
+  * In `closedWorld=true` mode, missing, empty, malformed, unreadable, or incomplete trace evidence fails closed rather than falling back to static retention.
 
 ---
 

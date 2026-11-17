@@ -3,7 +3,7 @@
 
 * **Status**: Accepted
 * **Date**: 2026-10-24
-* **Last Updated**: 2026-10-28
+* **Last Updated**: 2026-11-13
 
 <!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
 | Key | Value |
@@ -38,8 +38,9 @@ For each supported plugin/version combination, verify the intended outcomes:
 * **Deterministic Filtering**: Given identical runtime traces and dependency sets, the mutated artifact set must be strictly deterministic across builds.
 * **Original Immutability**: Never modify original artifacts in the shared Maven repository. Write outputs under the build directory or an isolated transformation cache with traceable input/output identities and hashes.
 * **Consumer Consistency**: Verify compile, test, runtime, packaging, and reporting inventories independently; mutation surviving one consumer does not prove the others.
-* **Compilation Contract**: A single compile/runtime output must retain all compilation requirements. Separate compilation/runtime outputs are an unresolved design option, not an implicit optimization.
-* **Compatibility Evidence**: Limit compatibility claims to verified Maven, JDK, consumer-plugin, and project configurations. Maven CLI 3.9.11 single-project fixtures and the strict three-module reactor chain are verified on GraalVM JDK 21.0.12, including sequential and `-T 4` builds. The reactor chain has no independent siblings, so arbitrary multi-module concurrency remains unverified; other Maven releases are also unverified.
+* **Compilation Contract**: Under default `process-classes` execution ([ADR-0010](0010-process-classes-lifecycle-and-bytecode-completeness.md)), production compilation uses the original resolved dependency graph while `testCompile` and downstream consumers observe the elided view. Any future separate compilation-only vs runtime outputs require explicit execution and packaging policy.
+* **Publication Decoupling**: SBOM, baseline SBOM, summary report, and precondition-gated VEX publication are decoupled from `trimJars`; setting `trimJars=false` leaves dependency archives byte-identical while still running full assessment and report/VEX publication.
+* **Compatibility Evidence**: Limit compatibility claims to verified Maven, JDK, consumer-plugin, and project configurations. Maven CLI 3.9.11 single-project fixtures and the strict three-module reactor chain are verified on compliant JDK 21+ installations ([ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md)), including sequential and `-T 4` builds. The reactor chain has no independent siblings, so arbitrary multi-module concurrency remains unverified; other Maven releases are also unverified.
 
 ## Consequences
 
@@ -47,6 +48,6 @@ The consumer verification contract here does not imply that a ban rewrites a con
 
 Avoiding bespoke downstream adapters is a design goal, conditional on lifecycle integration evidence. If a consumer re-resolves originals, record the limitation and resolve the integration boundary rather than claim transparent support. Broader reactor topologies, independent-module concurrency, IDE/direct goal invocations, and publication of specialized artifacts need explicit investigation in RQ-0012 and RQ-0004.
 
-A second JAR cannot supplement individual fields of an existing class: classpath selection chooses a class definition and does not merge members. Source-driven constant retention should preserve the required fields in their owning transformed classes. Any future compilation-only artifacts need explicit execution and packaging policy. Maven scope alone is insufficient: [Boot includes `provided` dependencies by default](https://docs.spring.io/spring-boot/maven-plugin/packaging.html), and they are available to tests.
+A second JAR cannot supplement individual fields of an existing class: classpath selection chooses a class definition and does not merge members. Compile-time inlined constants that leave no bytecode reference require explicit `elide.retainedArtifacts` ([ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md)). Maven scope alone is insufficient: [Boot includes `provided` dependencies by default](https://docs.spring.io/spring-boot/maven-plugin/packaging.html), and they are available to tests.
 
-Preserving individual JAR boundaries reduces resource collisions and identity changes but does not solve signatures, modules, package sealing, multi-release entries, or resource descriptors. RQ-0001 records these transformation requirements and the unresolved engine/licensing decision. The plugin's Apache 2.0 license does not determine third-party engine redistribution or transformed-library obligations.
+Preserving individual JAR boundaries reduces resource collisions and identity changes but does not solve signatures, modules, package sealing, multi-release entries, or resource descriptors; [ADR-0003](0003-proguard-core-intra-jar-trimming-and-cyclonedx-pedigree.md) defines the ProGuard Core transformation engine and archive-sanitization rules. The plugin's Apache 2.0 license does not determine third-party engine redistribution or transformed-library obligations.

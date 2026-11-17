@@ -26,7 +26,7 @@ CycloneDX 1.6 defines `analysis.justification = requires_dependency` for a missi
 
 Support a separate precondition proof for a retained affected component. A mapping is eligible only when it specifies both the prerequisite Maven coordinate and the exact prerequisite class whose presence is required for exploitability. Coordinate-only metadata is not sufficient.
 
-Require explicit `elide.preconditionClassPathComplete=true` opt-in for this proof. The verifier must construct a complete, immutable inventory for the declared Maven build scope, including application classes/resources and every effective post-elision dependency archive. It must bind the proof to a deterministic inventory fingerprint and per-file digests, and search that inventory for the exact prerequisite class. If any source, resource provider, dependency archive, or inventory input is unknown or cannot be verified, suppress the precondition VEX statement.
+Require explicit `elide.preconditionClassPathComplete=true` opt-in for this proof. The verifier must construct a complete, immutable inventory for the declared Maven runtime scope, including application production classes/resources and every non-test-scoped effective dependency archive. Test-only outputs and test-scoped dependency archives are outside this inventory. It must bind the proof to a deterministic inventory fingerprint and per-file digests, and search that inventory for the exact prerequisite class. If any runtime source, resource provider, dependency archive, or inventory input is unknown or cannot be verified, suppress the precondition VEX statement.
 
 The completeness opt-in is a user assertion about the declared Maven build inventory. It does not prove absence of classes or equivalent providers introduced later by packaging, launch-time agents, container layers, application servers, or other external runtime mechanisms. Documentation and generated impact text must preserve this boundary and must not describe the result as unconditional runtime closure.
 
@@ -60,12 +60,16 @@ finding reconciliation. An `ANY_OF` group is disarmed only when every listed dep
 is absent; an `ALL_OF` group is disarmed when at least one required pair is absent. Any present or
 unresolved member that prevents the selected operator from being disarmed suppresses aggregate
 proof. Assessment is based on the
-captured final declared Maven inventory and physical packaged providers, regardless of whether
-class trimming is enabled. Analyze predictions remain distinct from verified Elide output, and
-report replay uses the saved assessment rather than resolving mappings again. The inventory does
-not cover providers outside the declared Maven boundary, including deployment-provided classes or
-recursively nested archives. The Maven lifecycle guard includes downstream `testCompile` providers
-even when test execution is skipped.
+captured current/final declared Maven inventory and physical providers, regardless of whether
+class trimming ran. A complete current inventory can prove absence even when the prerequisite was
+already absent before Analyze; only removals that exist solely in Analyze's plan remain forecasts.
+Report replay uses the saved assessment rather than resolving mappings again.
+
+Causal attribution for proven or disarmed findings is derived separately from the baseline vs.
+final inventory using the taxonomy `ALREADY_ABSENT`, `ELIDED_DEPENDENCY`, `TRIMMED_CLASS`,
+`MIXED`, `PRESENT`, and `UNKNOWN`: a complete baseline is needed for cause attribution, not for
+proving final absence (an incomplete baseline yields `UNKNOWN` attribution while still permitting
+physical VEX proof when the final inventory is complete).
 
 ## Dated Amendment: 2026-11-04 Common Finding and Proof Inputs
 
@@ -74,3 +78,31 @@ even when test execution is skipped.
 ### Dated Amendment: 2026-11-08 Manual Applicability and Supplemental Scope
 
 As clarified by [ADR-0014](0014-source-independent-vulnerability-findings.md), a POM mapping's `versionRangeSpec` scopes supplemental code and prerequisite declarations. `assertsAffected` defaults to `false`, including for an exact-version fallback; only `assertsAffected=true` asserts affectedness. Scope-only evidence cannot establish either affectedness or unaffectedness outside its range. This changes applicability input, not the complete-inventory or physical-absence requirements in this ADR. Without a matching affected, unresolved, or explicit unaffected claim, assessment reports `NO_AFFECTED_ASSERTION` and emits no VEX statement.
+
+### Dated Amendment: 2026-11-09 Runtime-Only Inventory and Direct Elide Capture
+
+The captured inventory is limited to production class/resource output and non-test-scoped effective
+dependency archives; it excludes deployment-provided classes and recursively nested archives.
+Isolated test source, class, and resource output and test-scoped archives are excluded from the
+precondition provider scan (resolved scope rows still remain in the Elide decision and generated
+SBOM). Standard `testCompile` and `testResources` may run (`maven.test.skip=true` is not a
+prerequisite), while a test output root that overlaps production or custom test compiler settings
+that can redirect output keeps proof incomplete. Test execution remains skipped after capture
+because arbitrary test code could mutate production output.
+
+Lifecycle origin is not a proof requirement. Direct `elide` and `analyze` goals can capture physical
+runtime providers when `elide.productionClassesComplete=true` asserts that compiled production
+output is complete. The `elide.preconditionClassPathComplete=true` opt-in and all physical inventory
+checks still apply. Analyze records proof from current physical bytes; a planned trim remains a
+forecast until its resulting bytes are inspected. The claim concerns the captured declared runtime
+inventory, not a later assembled package or external runtime providers. Analyze records this proof
+in its report but does not publish VEX files.
+
+### Dated Amendment: 2026-11-13 Stale VEX Cleanup and `trimJars=false` Publication Parity
+
+`MavenGeneratedOutputs` maintains a digest-backed ownership registry for emitted VEX documents.
+When `elide` runs with `trimJars=false`, SBOM and VEX publication remains active for any findings
+proven absent by the captured final inventory (including `ELIDED_DEPENDENCY` and `ALREADY_ABSENT`).
+When a subsequent run no longer produces a VEX artifact, stale VEX cleanup deletes only
+unchanged plugin-owned VEX files whose content matches the recorded digest, preserving any
+externally modified or unowned files.

@@ -16,7 +16,7 @@ Concurrent edits to files used by a build make that build nondeterministic regar
 
 ## Decision
 
-Treat resolved dependency inputs as stable for the duration of one Maven invocation. For current JDK identity, capture the active runtime's standard modules once per analysis context. Sort module and class-resource names, include module descriptor identity and each listed class resource's name, length, and bytes in the digest, and parse each class from the same transient byte array before discarding it. Module descriptors contribute to identity but are not ordinary entries in the JDK class table. Retain compact module identities and parsed class templates, not raw runtime bytes or source paths; materialize isolated JDK class tables from those templates. Do not rehash inputs at publication time solely to detect concurrent edits. Keep output publication safe against incomplete writes, independently of input stability checks.
+Treat resolved dependency inputs as stable for the duration of one Maven invocation. For current JDK platform identity, capture the active runtime's standard-module snapshot once per analysis context as specified in [ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md), and materialize isolated JDK class tables from those parsed templates. Do not rehash inputs at publication time solely to detect concurrent edits. Keep output publication safe against incomplete writes, independently of input stability checks.
 
 Earlier statements in this ADR about normalized platform source paths, release/source-selection evidence, JMOD inventories, and `ct.sym` reads describe the replaced archive-based design. They are not current requirements; see [ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md). The configured target release remains a separate responsibility and does not select a historical JDK class table.
 
@@ -27,7 +27,7 @@ If an input changes after identity capture, the current invocation may use a mix
 - The elider avoids repeated reads of every input archive solely for a race that Maven itself does not prevent.
 - Builds that concurrently modify resolved archives remain outside the determinism guarantee, as they are for other Maven consumers such as the compiler.
 - The cache remains content-addressed: changed content produces a different cache identity on the next invocation.
-- The active-runtime identity snapshot stores compact module identities and parsed templates rather than archive paths or raw runtime bytes; an analysis context reuses that snapshot while each consumer receives an isolated JDK class table.
+- The active-runtime identity snapshot is reused across the analysis context while each consumer receives an isolated JDK class table ([ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md)).
 - Input stability is an invocation-level assumption; output staging and atomic replacement still protect against exposing partially written trimmed archives.
 
 ## References

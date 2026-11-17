@@ -255,3 +255,11 @@ make test-examples
 * Full `make check` passed after the final guard changes: 226 core tests, 374 plugin tests, 15 lifecycle integration tests, 8 SBOM-comparison tests, Markdown lint, and transcript drift verification. `make update-transcripts` reported all configured transcripts up to date; the manifest requires the safe-class report to contain the exact Logback Core finding.
 * Earlier `make check` passed before the final guard changes with 226 core tests, 308 plugin tests, 15 lifecycle tests, 8 SBOM-comparison tests, clean formatting/Checkstyle/PMD/SpotBugs, and Markdown lint over 49 files with 0 issues. Full log: `/tmp/wp-vex-02-make-check-final-20261030-r3.log`; SHA-256 `7ed2aa306cb2d7182083ed3448acdd2e20397c64087c7a3128d3177677026bc7`.
 * Earlier `make test-examples` passed for all four fixtures. The safe-class verifier schema-validates the actual CycloneDX and OpenVEX outputs and checks unique CVE findings/statements plus exact Logback Core PURL and matching SHA-256 bindings. Full log: `/tmp/wp-vex-02-test-examples-final-20261030-r2.log`; SHA-256 `c6d15304de822652d01c142ddc0be1dd270b1045970215ce0b44bc022fe2e616`.
+
+### Dated Clarification: 2026-11-09
+
+This handover records the original test-output inventory requirement. The accepted boundary has
+since narrowed to production class/resource roots and effective runtime dependency archives.
+Isolated test outputs are excluded, normal `testCompile` and `testResources` may run, and lifecycle
+origin is not proof authority. Direct `elide` can capture physically inspected output when
+`elide.productionClassesComplete=true` is explicit. See the current [ADR-0008 amendment](../adr/0008-precondition-gated-vex-attestations.md#dated-amendment-2026-11-09-runtime-only-inventory-and-direct-elide-capture).

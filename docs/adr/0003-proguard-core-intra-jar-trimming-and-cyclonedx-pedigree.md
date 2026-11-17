@@ -3,6 +3,7 @@
 
 * **Status**: Accepted
 * **Date**: 2026-10-29 (MRJAR decision added)
+* **Last Updated**: 2026-11-17
 
 <!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
 | Key | Value |
@@ -27,8 +28,8 @@ Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2
 1. **Root Set Formulation**:
    Construct the root set $R$ for each retained dependency by combining:
    * Positive runtime telemetry (CDS class lists, `-Xlog:class+load`, JFR `jdk.ClassLoad`, JaCoCo execution probes).
-   * Source compilation roots (direct type references in `src/main/java`, inlined constants, erased type bounds, and annotations).
-   * Dynamic entry points (Java SPI `META-INF/services/*`, GraalVM `reflect-config.json`, and Spring auto-configuration condition classes).
+   * Compiled application bytecode roots (direct type references, supertypes/interfaces, field/method/generic signatures, and annotations in compiled production classes; compile-time inlined constants require explicit `elide.retainedArtifacts`).
+   * Dynamic entry points (Java SPI `META-INF/services/*` and GraalVM `reflect-config.json`; `META-INF/spring-autoconfigure-metadata.properties` is not read as a root-generation fallback).
 
 2. **Per-JAR Intra-Link Closure**:
    Load the candidate dependency JAR into a `ProgramClassPool` and the surrounding classpath (JDK and other dependencies) into a `LibraryClassPool`. Use ProGuard Core's visitor graph and `ClassReferenceInitializer` to compute the transitive fixed-point closure of required internal classes within the dependency JAR, preserving all required compilation and runtime metadata (`Signature`, `Exceptions`, `InnerClasses`, `EnclosingMethod`, and annotations).
@@ -42,7 +43,7 @@ Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2
    * **Multi-Release Archive Sanitization and Vertical Shading**: For a retained candidate with `META-INF/versions/`, select each class's effective baseline version $V_{\text{base}} = \max\{v \in S(C) \mid v \le T\}$ and write that implementation at the archive root. Omit superseded lower-version bytecodes. Preserve every physical class entry above $T$ byte-for-byte, including higher-tier overrides and helpers. Keep `Multi-Release: true` if and only if versioned entries remain; otherwise remove the attribute so the output is a standard single-release archive.
 
 4. **In-Memory Redirection (ADR-0002)**:
-   Redirect the in-memory artifact file pointer via `artifact.setFile(trimmedJarPath)` during the `INITIALIZE` phase so that downstream packaging plugins (`maven-shade-plugin`, `spring-boot-maven-plugin:repackage`, assembly) bundle the trimmed JARs into terminal distributions without bespoke adapters.
+   Redirect the in-memory artifact file pointer via `artifact.setFile(trimmedJarPath)` during the default `process-classes` phase ([ADR-0010](0010-process-classes-lifecycle-and-bytecode-completeness.md)) so that downstream packaging plugins (`maven-shade-plugin`, `spring-boot-maven-plugin:repackage`, assembly) bundle the trimmed JARs into terminal distributions without bespoke adapters.
 
 5. **CycloneDX 1.6 Pedigree Provenance**:
    Emit schema-valid CycloneDX 1.6 SBOM records for each trimmed dependency:
@@ -56,7 +57,7 @@ Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2
    * Elevate the effective class definitions at $T$ to the root, remove superseded lower-tier definitions, and analyze each class-tier breakpoint from $T$ through $R$ in its own platform and sibling context. Union retained classes and cross-artifact reachability before writing output.
    * Preserve every class entry above $T$ byte-for-byte, except versioned `module-info.class` entries, which are removed from trimmed output. Analyze class-tier breakpoints through $R$ to union intra-JAR and sibling closure; entries above $R$ remain preserved but their sibling links are unverified. `elide.mrjarStrategy=pass-through` opts a multi-release candidate out of archive transformation.
    * Keep `Multi-Release: true` when versioned entries remain and remove it when the result is a single-release archive. Root module descriptors continue to use the classpath pass-through policy.
-   * Keep SPI descriptors at root. Filter provider names removed from the globally retained class set, preserve unknown or external provider names, and do not emit versioned `META-INF` resources.
+   * Keep SPI descriptors at root using 3-state reconciliation (`UNCHANGED`, `REPLACED`, `OMIT`): retain provider names present in the global retained class set (preserving duplicate provider declarations when another retained archive supplies the provider, and retaining root providers viable in an upper MRJAR tier), preserve unknown or external provider names, omit descriptors left with zero retained/unknown providers, and do not emit versioned `META-INF` resources.
 
 ## Invariants
 
@@ -67,7 +68,7 @@ Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2
 * **JEP 238 Multi-Release Structural Integrity**: Every surviving higher-tier public or protected override has its target-baseline implementation at the root. Trimmed output must pass `jar --validate` without missing-base warnings.
 * **Upper-Tier Forward-Execution Preservation**: Class entries above $T$ and their internal helpers pass through byte-for-byte because their closure is not used to prune those tiers. This preserves forward execution on newer JREs; sibling links above $R$ remain unverified.
 * **Logical and Physical Metrics**: Class totals count unique logical class names across tiers; input and output ZIP-entry totals count physical entries.
-* **Original Immutability**: Original JARs in the local repository cache (`~/.m2/repository`) must never be modified. All trimmed outputs are isolated under the project build directory (`target/elided-artifacts/`).
+* **Original Immutability**: See [ADR-0002](0002-in-memory-artifact-mutation-for-downstream-packaging-transparency.md) (`Original Immutability`); all trimmed outputs are isolated under `target/elided-artifacts/`.
 * **Signature Sanitization**: Any trimmed JAR containing signature block files must have those signatures stripped to prevent JVM class-loading security exceptions.
 
 ## Consequences
@@ -79,18 +80,16 @@ Adopt **`com.guardsquare:proguard-core:9.4.0`** (licensed under Apache License 2
 
 ## Dated Amendment: 2026-11-08 Shared Cross-Artifact Liveness
 
-The work package keeps ProGuard Core as the class-file/archive transformation library but removes
-the redundant direct `DirectTrim*` pipeline. Whole-artifact candidate selection and retained-class
-trimming now consume the same cross-artifact liveness closure and analyzed dataset. Conservative
-mode continues to traverse static body references. With explicit `elide.closedWorld=true`, only
-body-level reference edges whose targets are outside validated workload evidence can be excluded;
-structural linkage edges remain live. This opt-in is workload-scoped and is not a claim of
-universal verifier or JDK loadability. Multi-release tier handling, service-provider retention,
-byte-for-byte pass-through of untouched archives, and physical omission checks remain acceptance
-obligations.
+ProGuard Core remains the class-file/archive transformation library, while the redundant direct `DirectTrim*` pipeline, keep-all poison pills on unresolved dynamic roots, empty-root `100%` class fallbacks, and `forcedUnchanged` promotion inflation are removed. Whole-artifact candidate selection and retained-class trimming consume the same cross-artifact liveness closure and analyzed dataset; see [ADR-0013](0013-compiler-decoupling-multi-jdk-portability-and-report-driven-liveness.md) for the canonical `closedWorld` opt-in contract.
 
-Local-variable descriptors and generic signatures in `LocalVariableTable` and
-`LocalVariableTypeTable` are debug metadata, not runtime linkage edges. They do not create
-liveness edges or block analysis when the named type is absent. A class observed independently or
-explicitly rooted remains live. Stack-map frame types remain structural because bytecode
-verification can require them.
+Local-variable descriptors and generic signatures in `LocalVariableTable` and `LocalVariableTypeTable` are debug metadata, not runtime linkage edges. They do not create liveness edges or block analysis when the named type is absent. A class observed independently or explicitly rooted remains live. Stack-map frame types remain structural because bytecode verification can require them.
+
+## Dated Amendment: 2026-11-17 Tier-Shared Reference Indexing and Lazy Graph Isolation
+
+When analyzing multiple candidate and unchanged-program archives against the same release-tier classpath, reference-graph construction follows these principles:
+
+1. **Compute once per invariant scope, overlay the delta**: Index library-role edges (`includeMethodBodies = false`) once lazily per unique-owner tier (`TierLibraryIndex`), and overlay each target archive's `ProgramClass` graph (`includeMethodBodies = true`) via read-only views rather than re-indexing all sibling JARs per target.
+2. **Share immutable templates, isolate mutable state on demand**: Keep shared JDK and sibling `LibraryClass` templates immutable, cloning and linking them lazily per target (`LazyPlatformClassPool`) only when referenced so parallel workers never race on ProGuard's mutable `subClasses` arrays or clone unused classes.
+3. **Query presence without materializing; wrap without copying**: Check target existence (`hasClass`) without instantiating `LibraryClass` objects, wrap owned maps in place as unmodifiable views, and allocate auxiliary collector sets only when non-empty.
+4. **Optimize the common invariant, fall back cleanly on exceptions**: Use the shared tier index only when class owners in the tier are unique; fall back transparently to the isolated per-target path when duplicate class owners require target-specific precedence.
+5. **Prove optimizations with end-to-end profiles and differential baselines**: Validate custom parsers and graph optimizations with differential tests and JMH benchmarks against verbatim baselines, and measure full-build JFR/GraalVM profiles to separate allocation savings from parallel CPU and wall-clock impact.
