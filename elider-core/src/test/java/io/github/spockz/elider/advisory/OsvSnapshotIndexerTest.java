@@ -1,0 +1,368 @@
+/* WHY: Verifies OSV ownership and preservation of distinct advisory evidence sources. */
+
+package io.github.spockz.elider.advisory;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.model.EvidenceOrigin;
+import io.github.spockz.elider.model.HeuristicCandidateEvidence;
+import io.github.spockz.elider.model.OsvAdvisoryRecord;
+import io.github.spockz.elider.model.OsvAffectedPackage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+/** WHY: These tests share archive and repository fixtures. */
+@SuppressWarnings({
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.AtLeastOneConstructor",
+  "PMD.CommentRequired",
+  "PMD.ShortVariable",
+  "PMD.TooManyMethods"
+})
+class OsvSnapshotIndexerTest {
+  /** WHY: Each synthetic archive uses the same record entry name. */
+  private static final String RECORD_JSON_ENTRY = "record.json";
+
+  private static final String SHARED_CVE_ALIAS = "CVE-2025-12345";
+
+  @TempDir Path tempDir;
+
+  @Test
+  void sortsVersionsArrayToResolveValidAscendingMavenRange() throws IOException {
+    final String osv =
+        """
+        {
+          "id": "GHSA-reversed-versions",
+          "modified": "2026-11-04T00:00:00Z",
+          "aliases": ["CVE-2026-99999"],
+          "affected": [
+            {
+              "package": {"ecosystem": "Maven", "name": "org.example:library"},
+              "versions": ["0.10.0", "0.9.4", "0.9.3"]
+            }
+          ]
+        }
+        """;
+    final OsvAdvisoryRecord record =
+        new OsvSnapshotIndexer()
+            .indexZipIsolated(
+                new ByteArrayInputStream(createZip(List.of(new ZipItem(RECORD_JSON_ENTRY, osv)))))
+            .records()
+            .getFirst();
+
+    assertThat(record.evidence().getFirst().scope().versionRangeSpec()).isEqualTo("[0.9.3,0.10.0]");
+  }
+
+  @Test
+  void recognizesOnlyMavenEcosystemIdentitiesAcceptedByTheIndexer() throws IOException {
+    final List<String> recognized = List.of("maven", "Maven", "MAVEN", "Maven:https://repo.test");
+    final List<String> rejected = List.of("npm", "mavenish", " maven");
+
+    assertAll(
+        "OSV ecosystem identity is normalized case insensitively without trimming or widening"
+            + " prefixes",
+        () ->
+            assertThat(recognized)
+                .allSatisfy(
+                    ecosystem ->
+                        assertThat(
+                                indexedAffectedPackages(
+                                    ecosystem,
+                                    "GHSA-recognized-" + Integer.toHexString(ecosystem.hashCode())))
+                            .as("recognized ecosystem %s", ecosystem)
+                            .hasSize(1)),
+        () ->
+            assertThat(rejected)
+                .allSatisfy(
+                    ecosystem ->
+                        assertThat(
+                                indexedAffectedPackages(
+                                    ecosystem,
+                                    "GHSA-rejected-" + Integer.toHexString(ecosystem.hashCode())))
+                            .as("rejected ecosystem %s", ecosystem)
+                            .isEmpty()));
+  }
+
+  private List<OsvAffectedPackage> indexedAffectedPackages(final String ecosystem, final String id)
+      throws IOException {
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode osv = mapper.createObjectNode();
+    osv.put("id", id).put("modified", "2026-11-04T00:00:00Z");
+    final ObjectNode affected = osv.putArray("affected").addObject();
+    affected.putObject("package").put("ecosystem", ecosystem).put("name", "org.example:library");
+    affected.putArray("versions").add("1.0");
+    return new OsvSnapshotIndexer()
+        .indexZipIsolated(
+            new ByteArrayInputStream(
+                createZip(List.of(new ZipItem(RECORD_JSON_ENTRY, mapper.writeValueAsString(osv))))))
+        .records()
+        .getFirst()
+        .affectedPackages();
+  }
+
+  @Test
+  void rejectsOrSkipsMalformedVersionRangeGracefullyWithoutCrashingIndex() throws IOException {
+    final String osv =
+        """
+        {
+          "id": "GHSA-malformed-range",
+          "modified": "2026-11-04T00:00:00Z",
+          "aliases": ["CVE-2026-99998"],
+          "affected": [
+            {
+              "package": {"ecosystem": "Maven", "name": "org.example:library"},
+              "ranges": [
+                {
+                  "type": "ECOSYSTEM",
+                  "events": [{"introduced": "2.0"}, {"fixed": "1.0"}]
+                }
+              ]
+            }
+          ]
+        }
+        """;
+    final List<OsvAdvisoryRecord> records =
+        new OsvSnapshotIndexer()
+            .indexZipIsolated(
+                new ByteArrayInputStream(createZip(List.of(new ZipItem(RECORD_JSON_ENTRY, osv)))))
+            .records();
+
+    assertThat(records.getFirst().evidence()).isEmpty();
+  }
+
+  @Test
+  void preservesOsvOwnershipScopesCnaAndIndependentSourceOrigins() throws IOException {
+    final Path cvePath = tempDir.resolve("cves/2025/12xxx/CVE-2025-12345.json");
+    Files.createDirectories(cvePath.getParent());
+    Files.writeString(
+        cvePath,
+        """
+        {
+          "cveMetadata":{"cveId":"CVE-2025-12345","state":"PUBLISHED"},
+          "containers": {
+            "cna": {
+              "descriptions": [{"lang":"en","value":"org.example.One is affected"}],
+              "affected": [
+                {
+                  "vendor":"Example One",
+                  "product":"library-one",
+                  "packageURL":"pkg:maven/org.example/library-one",
+                  "defaultStatus":"affected",
+                  "versions":[{"version":"1.0","status":"affected","versionType":"semver","lessThan":"2.0","lessThanOrEqual":null,"changes":[{"at":"1.5","status":"unaffected"}]}],
+                  "programFiles":["src/main/java/org/example/One.java"],
+                  "programRoutines":["parse"]
+                },
+                {
+                  "vendor":"Example Two",
+                  "product":"library-two",
+                  "packageURL":"pkg:maven/org.example/library-two",
+                  "versions":[{"version":"2.0","status":"affected"}],
+                  "programRoutines":[{"name":"decode"}]
+                },
+                {
+                  "vendor":"Unmatched Example",
+                  "product":"library-one",
+                  "packageURL":"pkg:maven/other/library-three",
+                  "versions":[{"version":"1.0","status":"affected"}],
+                  "programRoutines":["unmatchedRoutine"]
+                }
+              ],
+              "references":[{"url":"https://example.test/fix"}]
+            }
+          }
+        }
+        """);
+    final String first =
+        """
+        {
+          "id":"GHSA-owner-one",
+          "modified":"2026-10-30T12:00:00Z",
+          "aliases":["CVE-2025-12345","GHSA-alias-one"],
+          "summary":"Vulnerability in org.example.One",
+          "details":"org.example.Two is a separate candidate",
+          "references":[{"type":"FIX","url":"https://github.com/example/repo/commit/abc/src/main/java/org/example/One.java"}],
+          "affected":[
+            {"package":{"ecosystem":"Maven","name":"org.example:library-one"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"2.0"}]},{"type":"GIT","repo":"https://github.com/example/repo","events":[{"introduced":"0"},{"fixed":"2.0"}]}]},
+            {"package":{"ecosystem":"Maven:https://repo.example.test","name":"org.example:library-two"},"versions":["2.0","3.0"]}
+          ]
+        }
+        """;
+    final String second =
+        """
+        {
+          "id":"GHSA-owner-two",
+          "modified":"2026-10-30T12:00:00Z",
+          "aliases":["CVE-2025-12345"],
+          "affected":[{"package":{"ecosystem":"Maven","name":"org.example:library-one"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"1.0"},{"last_affected":"1.5"}]}]}]
+        }
+        """;
+    final String noCve =
+        """
+        {
+          "id":"GHSA-without-cve",
+          "modified":"2026-10-30T12:00:00Z",
+          "aliases":["GHSA-alias-only"],
+          "affected":[{"package":{"ecosystem":"Maven:custom","name":"org.example:library-three"},"versions":["3.1"],"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"3.0"},{"fixed":"3.2"}]}]}]
+        }
+        """;
+
+    final List<OsvAdvisoryRecord> records =
+        new OsvSnapshotIndexer()
+            .indexZipIsolated(
+                new ByteArrayInputStream(
+                    createZip(
+                        List.of(
+                            new ZipItem("first.json", first),
+                            new ZipItem("second.json", second),
+                            new ZipItem("no-cve.json", noCve)))))
+            .records();
+    final OsvAdvisoryRecord firstRecord = find(records, "GHSA-owner-one");
+    final OsvAdvisoryRecord secondRecord = find(records, "GHSA-owner-two");
+    final OsvAdvisoryRecord noCveRecord = find(records, "GHSA-without-cve");
+    final List<HeuristicCandidateEvidence> referenceCandidates =
+        firstRecord.evidence().stream()
+            .filter(HeuristicCandidateEvidence.class::isInstance)
+            .map(HeuristicCandidateEvidence.class::cast)
+            .filter(value -> value.provenance().origin() == EvidenceOrigin.REFERENCE_URL)
+            .toList();
+
+    assertAll(
+        "OSV projections retain OSV facts and leave CVE claims to the independent adapter",
+        () -> assertThat(records).hasSize(3),
+        () -> assertThat(firstRecord.modified()).isEqualTo("2026-10-30T12:00:00Z"),
+        () -> assertThat(noCveRecord.modified()).isEqualTo("2026-10-30T12:00:00Z"),
+        () ->
+            assertThat(firstRecord.aliases())
+                .containsExactlyInAnyOrder(SHARED_CVE_ALIAS, "GHSA-alias-one"),
+        () -> assertThat(secondRecord.aliases()).containsExactly(SHARED_CVE_ALIAS),
+        () -> assertThat(firstRecord.affectedPackages()).hasSize(2),
+        () ->
+            assertThat(firstRecord.affectedPackages().getFirst().ranges().get(1).repo())
+                .isEqualTo("https://github.com/example/repo"),
+        () -> assertThat(firstRecord.affectedPackages().get(1).ecosystem()).startsWith("Maven"),
+        () ->
+            assertThat(firstRecord.affectedPackages().get(1).packageName())
+                .isEqualTo("org.example:library-two"),
+        () ->
+            assertThat(firstRecord.evidence())
+                .extracting(value -> value.provenance().origin())
+                .contains(
+                    EvidenceOrigin.OSV, EvidenceOrigin.DESCRIPTION, EvidenceOrigin.REFERENCE_URL),
+        () -> assertThat(referenceCandidates).hasSize(2),
+        () ->
+            assertThat(referenceCandidates)
+                .allSatisfy(
+                    value ->
+                        assertAll(
+                            () -> assertThat(value.candidateClasses()).isEmpty(),
+                            () ->
+                                assertThat(value.provenance().origin())
+                                    .isEqualTo(EvidenceOrigin.REFERENCE_URL))),
+        () -> assertThat(noCveRecord.aliases()).containsExactly("GHSA-alias-only"),
+        () -> assertThat(noCveRecord.evidence()).isEmpty(),
+        () ->
+            assertThat(noCveRecord.affectedPackages())
+                .singleElement()
+                .satisfies(value -> assertThat(value.versions()).containsExactly("3.1")));
+  }
+
+  @Test
+  void cveChangesAndWithdrawalCannotChangeOsvOwnedRecord() throws IOException {
+    final String osv = OsvSnapshotFixtures.osvJson("GHSA-independent-source", SHARED_CVE_ALIAS);
+    final byte[] zip = createZip(List.of(new ZipItem(RECORD_JSON_ENTRY, osv)));
+    final Path cvePath = tempDir.resolve("cves/2025/12xxx/CVE-2025-12345.json");
+    Files.createDirectories(cvePath.getParent());
+    Files.writeString(cvePath, cveSourceJson(SHARED_CVE_ALIAS, "PUBLISHED"));
+    final OsvAdvisoryRecord first =
+        new OsvSnapshotIndexer()
+            .indexZipIsolated(new ByteArrayInputStream(zip))
+            .records()
+            .getFirst();
+
+    Files.writeString(cvePath, cveSourceJson(SHARED_CVE_ALIAS, "REJECTED"));
+    final OsvAdvisoryRecord changed =
+        new OsvSnapshotIndexer()
+            .indexZipIsolated(new ByteArrayInputStream(zip))
+            .records()
+            .getFirst();
+    Files.delete(cvePath);
+    final OsvAdvisoryRecord withdrawn =
+        new OsvSnapshotIndexer()
+            .indexZipIsolated(new ByteArrayInputStream(zip))
+            .records()
+            .getFirst();
+
+    assertAll(
+        "CVE claims have their own lifecycle and do not persist inside OSV projections",
+        () -> assertThat(changed).isEqualTo(first),
+        () -> assertThat(withdrawn).isEqualTo(first));
+  }
+
+  @Test
+  void sourceModifiedValueRoundTripsInTypedAdvisoryDocument() throws IOException {
+    final byte[] source =
+        OsvSnapshotFixtures.osvJson("GHSA-modified", "CVE-2026-12345")
+            .getBytes(StandardCharsets.UTF_8);
+    final OsvSnapshotIndexer.IndexedOsvRecord sourceRecord =
+        new OsvSnapshotIndexer().indexRecord(source, "GHSA-modified");
+    final OsvAdvisoryRecord indexed = sourceRecord.advisory().orElseThrow();
+    final AdvisoryEvidenceWriter writer = new AdvisoryEvidenceWriter();
+    final OsvAdvisoryRecord decoded =
+        new AdvisoryEvidenceReader()
+            .read(new ByteArrayInputStream(writer.encode(List.of(indexed))))
+            .getFirst();
+    assertAll(
+        () -> assertThat(sourceRecord.modified()).isEqualTo("2026-10-31T00:00:00Z"),
+        () -> assertThat(indexed.modified()).isEqualTo(sourceRecord.modified()),
+        () -> assertThat(decoded.modified()).isEqualTo(indexed.modified()));
+  }
+
+  private static String cveSourceJson(final String cveId, final String state) {
+    final ObjectMapper mapper = new ObjectMapper();
+    final ObjectNode root = mapper.createObjectNode();
+    root.putObject("cveMetadata").put("cveId", cveId).put("state", state);
+    final ObjectNode affected =
+        root.putObject("containers").putObject("cna").putArray("affected").addObject();
+    affected
+        .put("vendor", "Example")
+        .put("product", "library")
+        .put("packageURL", "pkg:maven/org.example/library");
+    affected.putArray("versions").addObject().put("version", "1.0").put("status", "affected");
+    affected.putArray("programFiles").add("src/main/java/org/example/Library.java");
+    return root.toString();
+  }
+
+  private static OsvAdvisoryRecord find(final List<OsvAdvisoryRecord> records, final String id) {
+    return records.stream().filter(record -> record.osvId().equals(id)).findFirst().orElseThrow();
+  }
+
+  private static byte[] createZip(final List<ZipItem> items) throws IOException {
+    final ByteArrayOutputStream output = new ByteArrayOutputStream();
+    try (ZipOutputStream zip = new ZipOutputStream(output)) {
+      for (final ZipItem item : items) {
+        zip.putNextEntry(zipEntry(item.name()));
+        zip.write(item.content().getBytes(StandardCharsets.UTF_8));
+        zip.closeEntry();
+      }
+    }
+    return output.toByteArray();
+  }
+
+  private static ZipEntry zipEntry(final String name) {
+    return new ZipEntry(name);
+  }
+
+  private record ZipItem(String name, String content) {}
+}

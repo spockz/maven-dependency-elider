@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.MultiReleaseClassInventory;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisEvidence;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.MavenAnalysisResolutionContext.Provenance;
@@ -302,19 +303,9 @@ record AnalyzePrediction(
     if (!analysis.prepared().options().trim().enabled()) {
       return List.of();
     }
-    final TrimGenerationPublisher.EffectiveOutputPlan outputPlan =
-        EffectiveOutputPlanFactory.create(analysis);
-    final TrimPassThroughPlan passThrough = TrimPassThroughPlanner.passThroughPlan(trimRequest);
-    final TrimCandidatePlanner.CandidatePlan candidates =
-        EffectiveCandidatePlanner.effectiveCandidatePlan(
-            trimRequest.project(),
-            passThrough.retainedLibraries(),
-            passThrough.retained(),
-            trimRequest.scanInputs().classIndex().classesByArtifact(),
-            outputPlan);
-    TrimCandidatePlanner.assignEffectiveAnalyses(candidates, analysis.trimAnalysis());
-    ServiceProviderTrimInventory.planDescriptorOutputs(outputPlan, candidates.work());
-    return candidates.work();
+    return EffectiveCandidatePlanner.planWork(
+            trimRequest, EffectiveOutputPlanFactory.create(analysis))
+        .work();
   }
 
   private static Map<ArtifactCoordinate, List<ServiceDescriptorChange>>

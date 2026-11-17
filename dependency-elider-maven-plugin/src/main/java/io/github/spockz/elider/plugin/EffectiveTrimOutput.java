@@ -3,8 +3,8 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.model.CacheProducerIdentity;
-import io.github.spockz.elider.plugin.TrimCandidatePlanner.CandidatePlan;
 import io.github.spockz.elider.plugin.TrimFingerprint.FingerprintOptions;
 import io.github.spockz.elider.plugin.TrimFingerprint.FingerprintSnapshot;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
@@ -13,6 +13,7 @@ import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
@@ -28,23 +29,18 @@ final class EffectiveTrimOutput {
       final EffectiveOutputPlan effectiveOutput)
       throws IOException, MojoFailureException {
     final MavenProject project = request.project();
-    final TrimPassThroughPlan passThrough = TrimPassThroughPlanner.passThroughPlan(request);
-    final CandidatePlan plan =
-        EffectiveCandidatePlanner.effectiveCandidatePlan(
-            project,
-            passThrough.retainedLibraries(),
-            passThrough.retained(),
-            request.scanInputs().classIndex().classesByArtifact(),
-            effectiveOutput);
+    final EffectiveCandidatePlanner.PlannedWork planned =
+        EffectiveCandidatePlanner.planWork(request, effectiveOutput);
+    final TrimPassThroughPlan passThrough = planned.passThrough();
     final List<Path> retainedInputPaths =
         TrimCandidatePlanner.fullJarInventory(request.candidates()).stream()
             .map(ElisionAnalysisModel.ArtifactSnapshot::filePath)
             .toList();
-    final List<TrimCandidate> work = plan.work();
-    TrimCandidatePlanner.assignEffectiveAnalyses(plan, effectiveOutput.analysis());
-    ServiceProviderTrimInventory.planDescriptorOutputs(effectiveOutput, work);
+    final List<TrimCandidate> work = planned.work();
     final Path manifest = TrimPaths.cacheManifestPath(project);
     final long cacheStart = System.nanoTime();
+    final Map<Path, ArtifactDigests> inputDigests =
+        TrimInputDigests.inputDigests(retainedInputPaths);
     final FingerprintSnapshot fingerprint =
         TrimFingerprint.fingerprint(
             work,
@@ -57,17 +53,12 @@ final class EffectiveTrimOutput {
                 TrimFingerprint.ENGINE_VERSION,
                 platformContext,
                 effectiveOutput.analysis().analyzedTiers(),
-                EffectiveTrimCacheContext.effectiveCacheContext(request, effectiveOutput),
+                EffectiveTrimCacheContext.effectiveCacheContext(
+                    request, effectiveOutput, inputDigests),
                 request
                     .cacheProducerIdentity()
-                    .map(CacheProducerIdentity::canonicalCompatibilityIdentity)));
-    final List<String> platformIdentities =
-        fingerprint.platformSnapshots().stream()
-            .map(JdkPlatformContext.PlatformSnapshot::identity)
-            .toList();
-    if (!platformIdentities.equals(effectiveOutput.analysis().platformIdentities())) {
-      throw new IOException("JDK platform identity changed after effective analysis");
-    }
+                    .map(CacheProducerIdentity::canonicalCompatibilityIdentity)),
+            inputDigests);
     final String completeFingerprint = fingerprint.value();
     final Path generation =
         request.cacheProducerIdentity().isPresent()

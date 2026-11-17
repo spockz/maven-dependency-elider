@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
@@ -29,30 +30,30 @@ final class MavenElisionServiceEffectiveReportTest
     final ElisionAnalysisModel.Analysis analysis =
         operation.service().finishEffectiveOutputs(effective);
 
-    assertThat(
-            List.of(
-                analysis.mediatedGraph() != null,
-                analysis.mediatedGraph().available(),
-                analysis.mediatedGraph().snapshot().graphFingerprint(),
-                analysis.mediatedGraph().artifactPaths().stream()
-                    .filter(path -> CLASS_TRIMMED.equals(path.kind()))
-                    .map(MediatedGraphReport.ArtifactPath::coordinate)
-                    .toList(),
-                analysis.trimResult().records().stream()
-                    .map(ArtifactTrimRecord::coordinate)
-                    .toList()))
-        .containsExactly(
-            true,
-            true,
-            effective.graphEvaluation().afterFingerprint(),
-            List.of(fixture.coordinate("a"), fixture.coordinate("b")),
-            List.of(fixture.coordinate("a"), fixture.coordinate("b")));
+    assertAll(
+        "effective output analysis carries trimmed artifact paths and graph fingerprint",
+        () -> assertThat(analysis.mediatedGraph()).isNotNull(),
+        () ->
+            assertTrue(analysis.mediatedGraph().available(), "mediated graph should be available"),
+        () ->
+            assertThat(analysis.mediatedGraph().snapshot().graphFingerprint())
+                .isEqualTo(effective.graphEvaluation().afterFingerprint()),
+        () ->
+            assertThat(
+                    analysis.mediatedGraph().artifactPaths().stream()
+                        .filter(path -> CLASS_TRIMMED.equals(path.kind()))
+                        .map(MediatedGraphReport.ArtifactPath::coordinate)
+                        .toList())
+                .containsExactly(fixture.coordinate("a"), fixture.coordinate("b")),
+        () ->
+            assertThat(
+                    analysis.trimResult().records().stream()
+                        .map(ArtifactTrimRecord::coordinate)
+                        .toList())
+                .containsExactly(fixture.coordinate("a"), fixture.coordinate("b")));
   }
 
   @Test
-  @SuppressWarnings(
-      "PMD.UnitTestContainsTooManyAsserts") // Prior manifest, files, and generation form one
-  // rollback invariant.
   void reportConstructionFailureLeavesCompletedTrimOutputsAvailable() throws Exception {
     final Fixture fixture = fixture(false);
     final Path traceFile = trace(temporaryDirectory, "closure/a/Entry");
@@ -87,16 +88,22 @@ final class MavenElisionServiceEffectiveReportTest
             valid.operationFingerprint(),
             valid.graphProjection());
 
-    assertThatThrownBy(() -> secondOperation.service().finishEffectiveOutputs(invalidReport))
-        .isInstanceOf(java.io.IOException.class)
-        .hasMessageContaining("missing a successful policy evaluation");
-
-    assertThat(Files.readAllBytes(manifest)).isNotEqualTo(priorManifest);
-    priorOutputs.forEach(
-        path ->
-            assertTrue(Files.isRegularFile(path), "Completed output remains available: " + path));
-    assertThat(EffectiveOutputCacheTestFiles.generationCount(fixture.mavenProject()))
-        .as("both completed output generations remain available")
-        .isEqualTo(2);
+    assertAll(
+        "report construction failure preserves completed trim outputs across generations",
+        () ->
+            assertThatThrownBy(
+                    () -> secondOperation.service().finishEffectiveOutputs(invalidReport))
+                .isInstanceOf(java.io.IOException.class)
+                .hasMessageContaining("missing a successful policy evaluation"),
+        () -> assertThat(Files.readAllBytes(manifest)).isNotEqualTo(priorManifest),
+        () ->
+            priorOutputs.forEach(
+                path ->
+                    assertTrue(
+                        Files.isRegularFile(path), "Completed output remains available: " + path)),
+        () ->
+            assertThat(EffectiveOutputCacheTestFiles.generationCount(fixture.mavenProject()))
+                .as("both completed output generations remain available")
+                .isEqualTo(2));
   }
 }

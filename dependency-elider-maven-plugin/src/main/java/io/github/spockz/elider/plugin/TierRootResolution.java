@@ -62,6 +62,9 @@ final class TierRootResolution {
       throws IOException {
     for (final Map.Entry<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> entry :
         requested.entrySet()) {
+      if (!candidates.contains(entry.getKey()) || entry.getValue().isEmpty()) {
+        continue;
+      }
       final Set<String> matching =
           rootsPresentInAnyTier(entry.getKey(), entry.getValue(), contexts);
       if (matching.isEmpty()) {
@@ -69,9 +72,7 @@ final class TierRootResolution {
             "Previously discovered roots are absent from every analyzed tier: "
                 + entry.getKey().coordinate());
       }
-      if (candidates.contains(entry.getKey())) {
-        candidateRoots.get(entry.getKey()).addAll(matching);
-      }
+      candidateRoots.get(entry.getKey()).addAll(matching);
     }
   }
 

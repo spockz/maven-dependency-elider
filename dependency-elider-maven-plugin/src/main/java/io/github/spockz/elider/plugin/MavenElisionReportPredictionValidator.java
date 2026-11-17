@@ -119,7 +119,7 @@ final class MavenElisionReportPredictionValidator {
       final Set<String> droppedIds)
       throws IOException {
     if (provider.kind()
-        != io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind
+        != io.github.spockz.elider.applicability.PreconditionClassInventory.ProviderKind
             .DEPENDENCY_ARCHIVE) {
       return;
     }

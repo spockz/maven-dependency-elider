@@ -23,8 +23,9 @@ import java.util.zip.ZipFile;
 @SuppressWarnings({"PMD.DoNotUseThreads", "PMD.PreserveStackTrace"})
 public final class JarIndexScanner {
   /** Creates a scanner that uses virtual threads for artifact scans. */
-  @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  public JarIndexScanner() {}
+  public JarIndexScanner() {
+    // Stateless scanner.
+  }
 
   /** Scans all artifact JARs concurrently using Java virtual threads. */
   @SuppressWarnings("PMD.UseConcurrentHashMap")
@@ -68,9 +69,7 @@ public final class JarIndexScanner {
   private static Set<String> scanJar(final Path jarPath) throws IOException {
     final Set<String> classes = new HashSet<>();
     try (ZipFile zipFile = new ZipFile(jarPath.toFile())) {
-      final java.util.Enumeration<? extends ZipEntry> entries = zipFile.entries();
-      while (entries.hasMoreElements()) {
-        final ZipEntry entry = entries.nextElement();
+      for (final ZipEntry entry : zipFile.stream().toList()) {
         final String name = entry.getName();
         if (!entry.isDirectory() && name.endsWith(".class")) {
           final String classPath = logicalClassPath(name);

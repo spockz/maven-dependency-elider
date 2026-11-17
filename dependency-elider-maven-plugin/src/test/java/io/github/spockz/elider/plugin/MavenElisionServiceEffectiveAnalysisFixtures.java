@@ -12,14 +12,14 @@ import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.DependencyNode;
 
 /** Shared fixture construction for effective graph analysis tests. */
-@SuppressWarnings("PMD.CommentDefaultAccessModifier")
-final class MavenElisionServiceEffectiveAnalysisFixtures {
+public final class MavenElisionServiceEffectiveAnalysisFixtures {
   /** Scope for fixture edges used to test transitive ancestor closure. */
   private static final String RUNTIME_SCOPE = "runtime";
 
   private MavenElisionServiceEffectiveAnalysisFixtures() {}
 
-  static ElisionAnalysisModel.AnalysisOptions options(
+  /** Test fixture helper method. */
+  public static ElisionAnalysisModel.AnalysisOptions options(
       final List<File> traceFiles, final File productionOutput, final boolean trimJars) {
     return new ElisionAnalysisModel.AnalysisOptions(
         traceFiles,
@@ -38,7 +38,8 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
         new ElisionAnalysisModel.DynamicRootOptions(true));
   }
 
-  static ElisionAnalysisModel.PreparedAnalysis withBinding(
+  /** Test fixture helper method. */
+  public static ElisionAnalysisModel.PreparedAnalysis withBinding(
       final ElisionAnalysisModel.PreparedAnalysis prepared,
       final MavenElisionGraphBinding.Result binding) {
     return new ElisionAnalysisModel.PreparedAnalysis(
@@ -68,7 +69,8 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
         prepared.banPlan());
   }
 
-  static ArtifactCoordinate coordinate(
+  /** Test fixture helper method. */
+  public static ArtifactCoordinate coordinate(
       final List<ElisionAnalysisModel.ArtifactSnapshot> snapshots, final String artifactId) {
     return snapshots.stream()
         .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
@@ -77,12 +79,14 @@ final class MavenElisionServiceEffectiveAnalysisFixtures {
         .orElseThrow();
   }
 
-  static ResolverArtifactGraphCapturePair graphPair(
+  /** Test fixture helper method. */
+  public static ResolverArtifactGraphCapturePair graphPair(
       final MavenDependencyTrimmerInMemoryClosureSupport.Fixture fixture) {
     return graphPairWithAncestorEdges(fixture, true);
   }
 
-  static ResolverArtifactGraphCapturePair graphPairWithAncestorEdges(
+  /** Test fixture helper method. */
+  public static ResolverArtifactGraphCapturePair graphPairWithAncestorEdges(
       final MavenDependencyTrimmerInMemoryClosureSupport.Fixture fixture,
       final boolean includeAncestorEdges) {
     final MavenProject project = fixture.mavenProject();

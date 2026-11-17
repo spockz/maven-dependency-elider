@@ -10,22 +10,24 @@ import java.util.List;
 import org.apache.maven.plugin.MojoFailureException;
 
 /** Builds effective analyses paired with the fixture's exact resolver inventory. */
+@SuppressWarnings("PMD.CommentDefaultAccessModifier")
 abstract class MavenElisionServiceEffectiveOutputSupport
     extends MavenDependencyTrimmerInMemoryClosureSupport {
+
   /** Creates shared fixture support for effective-output tests. */
-  protected MavenElisionServiceEffectiveOutputSupport() {
+  MavenElisionServiceEffectiveOutputSupport() {
     super();
   }
 
   /** Builds an operation with the standard Maven trimming options. */
-  protected ServiceOperation operation(
+  ServiceOperation operation(
       final Fixture fixture, final Path traceFile, final File productionOutput)
       throws IOException, MojoFailureException {
     return operation(fixture, traceFile, productionOutput, true);
   }
 
   /** Builds an operation with the requested JAR-trimming mode. */
-  protected ServiceOperation operation(
+  ServiceOperation operation(
       final Fixture fixture,
       final Path traceFile,
       final File productionOutput,
@@ -35,7 +37,7 @@ abstract class MavenElisionServiceEffectiveOutputSupport
   }
 
   /** Builds an operation with an explicit trimmer pass-through list. */
-  protected ServiceOperation operation(
+  ServiceOperation operation(
       final Fixture fixture,
       final Path traceFile,
       final File productionOutput,
@@ -47,7 +49,7 @@ abstract class MavenElisionServiceEffectiveOutputSupport
   }
 
   /** Builds an operation with explicit MRJAR strategy. */
-  protected ServiceOperation operation(
+  ServiceOperation operation(
       final Fixture fixture,
       final Path traceFile,
       final File productionOutput,
@@ -68,7 +70,7 @@ abstract class MavenElisionServiceEffectiveOutputSupport
   }
 
   /** Prepares an operation using an explicitly selected plugin producer identity. */
-  protected ServiceOperation operationWithProducer(
+  ServiceOperation operationWithProducer(
       final Fixture fixture,
       final Path traceFile,
       final PluginCacheProducerIdentityResolver.Resolution producerResolution)
@@ -86,7 +88,7 @@ abstract class MavenElisionServiceEffectiveOutputSupport
   }
 
   /** Retains coordinates through raw exclusion configuration. */
-  protected ServiceOperation operationWithExcludedArtifacts(
+  ServiceOperation operationWithExcludedArtifacts(
       final Fixture fixture,
       final Path traceFile,
       final File productionOutput,
@@ -106,7 +108,7 @@ abstract class MavenElisionServiceEffectiveOutputSupport
   }
 
   /** Prepares the operation from raw exclusions and output pass-through coordinates. */
-  protected ServiceOperation buildOperation(
+  ServiceOperation buildOperation(
       final Fixture fixture,
       final List<Path> traceFiles,
       final File productionOutput,
@@ -165,30 +167,28 @@ abstract class MavenElisionServiceEffectiveOutputSupport
 
   private File completeProductionClasses(final Fixture fixture, final Path output)
       throws IOException {
-    final Path sourceRoot = Files.createDirectories(temporaryDirectory.resolve("complete-source"));
-    final Path seed = sourceRoot.resolve("fixture/Seed.java");
-    Files.createDirectories(seed.getParent());
-    Files.writeString(seed, "package fixture; public class Seed {}\n");
-    io.github.spockz.elider.test.CompilationFixtureSupport.compile(output, List.of(seed));
+    final Path seedClass = output.resolve("fixture/Seed.class");
+    Files.createDirectories(seedClass.getParent());
+    Files.write(seedClass, ClosureFixtureCompileCache.seedClassBytes());
     fixture.mavenProject().getBuild().setOutputDirectory(output.toString());
     return output.toFile();
   }
 
   /** Runs the isolated effective output engine without changing Maven project views. */
-  protected TrimResult trimEffective(final ServiceOperation operation)
+  TrimResult trimEffective(final ServiceOperation operation)
       throws IOException, MojoFailureException {
     return MavenDependencyTrimmer.trimEffectiveOutputs(
         operation.service().finishAnalysis(operation.prepared()));
   }
 
   /** Writes one trace root using the native trace file format. */
-  protected static Path trace(final Path directory, final String className) throws IOException {
+  static Path trace(final Path directory, final String className) throws IOException {
     Files.createDirectories(directory);
     final Path file = directory.resolve("runtime.lst");
     Files.writeString(file, className + "\n");
     return file;
   }
 
-  protected record ServiceOperation(
+  record ServiceOperation(
       MavenElisionService service, ElisionAnalysisModel.PreparedAnalysis prepared) {}
 }

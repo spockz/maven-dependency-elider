@@ -3,8 +3,10 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.MultiReleaseClassInventory;
+import io.github.spockz.elider.plugin.TierArchiveProjector.TierContext;
+import io.github.spockz.elider.trimmer.JdkApiClassTableReader;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
-import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -12,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import proguard.classfile.ClassPool;
 
 /** Reads archive ownership and MRJAR target requirements. */
 final class TierInventoryReader {
@@ -22,15 +25,38 @@ final class TierInventoryReader {
     this.operation = operation;
   }
 
-  /* package */ Inventory readInventory() throws IOException {
+  /* package */ static PreparedInventory prepare(
+      final MultiReleaseTrimContext operation, final TrimPassThroughPlan passThrough)
+      throws IOException {
+    final TierInventoryReader reader = new TierInventoryReader(operation);
+    Inventory inventory = reader.readInventory(passThrough);
+    final JdkClassTablePlan classTables = reader.readJdkClassTables(inventory.tiers());
+    inventory = inventory.withPlatformSnapshots(classTables.snapshots());
+    final List<TierContext> projections =
+        new TierArchiveProjector(operation).projectInventory(inventory, classTables);
+    return new PreparedInventory(inventory, classTables, projections);
+  }
+
+  /* package */ JdkClassTablePlan readJdkClassTables(final List<Integer> tiers) throws IOException {
+    final JdkPlatformContext.PlatformSnapshot snapshot =
+        MavenPlatformContextHolder.forOperation(operation.request().session()).snapshot();
+    final JdkApiClassTableReader reader = new JdkApiClassTableReader();
+    final ClassPool frozenTable = reader.readFrozen(snapshot);
+    final Map<Integer, ClassPool> tablesByRelease =
+        LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
+    for (final int tier : tiers) {
+      tablesByRelease.put(tier, frozenTable);
+    }
+    return new JdkClassTablePlan(List.of(snapshot), Map.copyOf(tablesByRelease));
+  }
+
+  /* package */ Inventory readInventory(final TrimPassThroughPlan passThrough) throws IOException {
     final List<ElisionAnalysisModel.ArtifactSnapshot> inventory =
         operation.request().candidates().stream()
             .filter(
                 snapshot -> MavenDependencyTrimmer.JAR_TYPE.equals(snapshot.coordinate().type()))
             .toList();
     TrimRootPlanner.validateAnalysisInventory(inventory);
-    final TrimPassThroughPlan passThrough =
-        TrimPassThroughPlanner.passThroughPlan(operation.request());
     final Path projectionDirectory =
         TrimPaths.analysisLibraryDirectory(
             operation.request().project(), operation.request().environment());
@@ -41,26 +67,36 @@ final class TierInventoryReader {
     tiers.add(operation.runtimeRelease());
     final Map<Path, Set<String>> classesBySourcePath =
         LinkedHashMap.newLinkedHashMap(MultiReleaseTrimContext.DEFAULT_EXPECTED_MAP_SIZE);
+    final Set<Path> projectedSources = new TreeSet<>();
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : inventory) {
       final Path source = snapshot.filePath().toAbsolutePath().normalize();
-      classesBySourcePath.put(source, TrimPaths.logicalClassNames(source));
-      if (!MultiReleaseClassInventory.hasUnsupportedVersionedClasses(source)) {
+      final MultiReleaseClassInventory.Snapshot classInventory =
+          MultiReleaseClassInventory.inspect(source);
+      classesBySourcePath.put(source, classInventory.logicalClassNames());
+      if (classInventory.hasUnsupportedVersionedClasses()
+          || classInventory.hasRootModuleDescriptor()) {
+        projectedSources.add(source);
+      }
+      if (!classInventory.hasUnsupportedVersionedClasses()) {
         continue;
       }
-      addAnalyzedTiers(source, tiers);
-      addMultiReleaseCandidate(snapshot, source, passThrough, projectionDirectory, multiRelease);
+      addAnalyzedTiers(classInventory, tiers);
+      addMultiReleaseCandidate(
+          snapshot, source, classInventory, passThrough, projectionDirectory, multiRelease);
     }
     return new Inventory(
         inventory,
         passThrough,
         projectionDirectory,
         Map.copyOf(classesBySourcePath),
+        Set.copyOf(projectedSources),
         Map.copyOf(multiRelease),
         tiers.stream().sorted().toList());
   }
 
-  private void addAnalyzedTiers(final Path source, final Set<Integer> tiers) throws IOException {
-    for (final int release : MultiReleaseClassInventory.versionedClassReleases(source)) {
+  private void addAnalyzedTiers(
+      final MultiReleaseClassInventory.Snapshot classInventory, final Set<Integer> tiers) {
+    for (final int release : classInventory.versionedClassReleases()) {
       if (release > operation.targetRelease() && release <= operation.runtimeRelease()) {
         tiers.add(release);
       }
@@ -70,37 +106,20 @@ final class TierInventoryReader {
   private void addMultiReleaseCandidate(
       final ElisionAnalysisModel.ArtifactSnapshot snapshot,
       final Path source,
+      final MultiReleaseClassInventory.Snapshot classInventory,
       final TrimPassThroughPlan passThrough,
       final Path projectionDirectory,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, MultiReleaseCandidateInfo> candidates)
       throws IOException {
-    if (!passThrough.retained().contains(snapshot)
-        || MultiReleaseLibraryProjection.hasRootModuleDescriptor(source)) {
+    if (!passThrough.retained().contains(snapshot) || classInventory.hasRootModuleDescriptor()) {
       return;
-    }
-    final Path targetProjection =
-        MultiReleaseLibraryProjection.create(
-            source, snapshot.coordinate(), projectionDirectory, operation.targetRelease());
-    final Set<String> targetClasses = TrimPaths.classNames(targetProjection);
-    final MultiReleaseArchivePlan.PluginView view =
-        MultiReleaseArchivePlan.create(source, operation.targetRelease(), Set.of(), Set.of())
-            .pluginView();
-    final Set<String> viewClasses = dottedNames(view.targetPresentClasses());
-    if (!viewClasses.equals(targetClasses)) {
-      throw new IOException(
-          "MRJAR target projection and archive plan disagree for " + snapshot.coordinate());
     }
     candidates.put(
         snapshot,
         new MultiReleaseCandidateInfo(
-            dottedNames(view.requiredRootClasses()),
-            MultiReleaseClassInventory.classNamesAboveRelease(source, operation.targetRelease())));
-  }
-
-  private static Set<String> dottedNames(final Set<String> names) {
-    return names.stream()
-        .map(name -> name.replace('/', '.'))
-        .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            MultiReleaseLibraryProjection.requiredTargetRoots(
+                source, snapshot.coordinate(), projectionDirectory, operation.targetRelease()),
+            classInventory.classNamesAboveRelease(operation.targetRelease())));
   }
 
   /* package */ record Inventory(
@@ -108,6 +127,7 @@ final class TierInventoryReader {
       TrimPassThroughPlan passThrough,
       Path projectionDirectory,
       Map<Path, Set<String>> classesBySourcePath,
+      Set<Path> projectedSources,
       Map<ElisionAnalysisModel.ArtifactSnapshot, MultiReleaseCandidateInfo> multiReleaseCandidates,
       List<Integer> tiers,
       List<JdkPlatformContext.PlatformSnapshot> platformSnapshots) {
@@ -116,6 +136,7 @@ final class TierInventoryReader {
         final TrimPassThroughPlan passThrough,
         final Path projectionDirectory,
         final Map<Path, Set<String>> classesBySourcePath,
+        final Set<Path> projectedSources,
         final Map<ElisionAnalysisModel.ArtifactSnapshot, MultiReleaseCandidateInfo>
             multiReleaseCandidates,
         final List<Integer> tiers) {
@@ -124,6 +145,7 @@ final class TierInventoryReader {
           passThrough,
           projectionDirectory,
           Map.copyOf(classesBySourcePath),
+          Set.copyOf(projectedSources),
           Map.copyOf(multiReleaseCandidates),
           List.copyOf(tiers),
           List.of());
@@ -136,6 +158,7 @@ final class TierInventoryReader {
           passThrough,
           projectionDirectory,
           classesBySourcePath,
+          projectedSources,
           multiReleaseCandidates,
           tiers,
           List.copyOf(snapshots));
@@ -149,4 +172,10 @@ final class TierInventoryReader {
       versionedClasses = Set.copyOf(versionedClasses);
     }
   }
+
+  /* package */ record JdkClassTablePlan(
+      List<JdkPlatformContext.PlatformSnapshot> snapshots, Map<Integer, ClassPool> byRelease) {}
+
+  /* package */ record PreparedInventory(
+      Inventory inventory, JdkClassTablePlan classTables, List<TierContext> projections) {}
 }

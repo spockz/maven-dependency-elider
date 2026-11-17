@@ -7,16 +7,16 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.Provider;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.ProviderKind;
+import io.github.spockz.elider.applicability.PreconditionProof;
+import io.github.spockz.elider.applicability.PrerequisiteProofResult;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.model.ConfidenceLevel;
-import io.github.spockz.elider.model.PreconditionClassInventory;
-import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
-import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
-import io.github.spockz.elider.model.PreconditionProof;
 import io.github.spockz.elider.model.PrerequisiteAbsenceAttribution;
-import io.github.spockz.elider.model.PrerequisiteProofResult;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.net.StandardProtocolFamily;
@@ -62,6 +62,7 @@ import org.objectweb.asm.Opcodes;
 @DisplayName("ADR-0008: Maven precondition inventory completeness and freshness")
 @Isolated("The javac plugin fixture communicates with a compiler through a JVM system property")
 @SuppressWarnings({
+  "PMD.AvoidDuplicateLiterals",
   "PMD.AtLeastOneConstructor",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CouplingBetweenObjects",
@@ -74,6 +75,9 @@ import org.objectweb.asm.Opcodes;
 final class ADR0008MavenPreconditionInventoryTest {
   /** WHY: These names identify Maven lifecycle goals and plugin configuration. */
   private static final String TEST = "test";
+
+  /** WHY: Test compiler goal entries are matched by their exact Maven name. */
+  private static final String GOAL_TEST_COMPILE = "testCompile";
 
   /** WHY: Maven plugin configuration uses this exact skip key. */
   private static final String SKIP = "skip";
@@ -92,6 +96,9 @@ final class ADR0008MavenPreconditionInventoryTest {
 
   /** WHY: Maven model fixtures use one stable example coordinate namespace. */
   private static final String EXAMPLE_GROUP = "com.example";
+
+  /** WHY: Legacy provider fixtures use this Maven group identity. */
+  private static final String ORG_EXAMPLE_GROUP = "org.example";
 
   /** WHY: Repeated version fixtures represent the same Maven artifact version. */
   private static final String TEST_VERSION = "1.0";
@@ -187,7 +194,8 @@ final class ADR0008MavenPreconditionInventoryTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void capturesCompiledOutputAndDeclaredResourcesWithoutScanningSourceRoots() throws IOException {
+  void capturesRuntimeOutputAndProductionResourcesWithoutTestRootsOrSourceRoots()
+      throws IOException {
     final Fixture fixture = fixture();
     final Path productionSource =
         writeSource(
@@ -214,7 +222,10 @@ final class ADR0008MavenPreconditionInventoryTest {
     assertThat(snapshot.classProviders().providers())
         .noneMatch(
             provider ->
-                provider.path().equals(productionSource) || provider.path().equals(testSource));
+                provider.path().equals(productionSource)
+                    || provider.path().equals(testSource)
+                    || provider.path().equals(testClass)
+                    || provider.path().equals(testResource));
     assertThat(snapshot.classProviders().providers())
         .anySatisfy(
             provider -> {
@@ -223,19 +234,64 @@ final class ADR0008MavenPreconditionInventoryTest {
             })
         .anySatisfy(
             provider -> {
-              assertThat(provider.path()).isEqualTo(testClass);
-              assertThat(provider.kind()).isEqualTo(ProviderKind.APPLICATION_CLASS_FILE);
-            })
-        .anySatisfy(
-            provider -> {
               assertThat(provider.path()).isEqualTo(resource);
               assertThat(provider.kind()).isEqualTo(ProviderKind.APPLICATION_RESOURCE_FILE);
-            })
-        .anySatisfy(
-            provider -> {
-              assertThat(provider.path()).isEqualTo(testResource);
-              assertThat(provider.kind()).isEqualTo(ProviderKind.APPLICATION_RESOURCE_FILE);
             });
+  }
+
+  @Test
+  void testScopedDependencyArchivesAreExcludedFromRuntimeProviderInventory() throws IOException {
+    final Fixture fixture = fixture("test-scoped-dependency");
+    final Path testDependencyJar = temporaryDirectory.resolve("test-scoped-provider.jar");
+    ImmutableTestJar.write(
+        testDependencyJar,
+        Map.of(
+            "META-INF/MANIFEST.MF",
+            "Manifest-Version: 1.0\n\n".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+            "org/example/TestOnlyProvider.class",
+            classBytes("org/example/TestOnlyProvider")));
+    final Artifact testDependency =
+        new DefaultArtifact(
+            ORG_EXAMPLE_GROUP,
+            "test-support",
+            TEST_VERSION,
+            Artifact.SCOPE_TEST,
+            JAR_TYPE,
+            null,
+            new DefaultArtifactHandler(JAR_TYPE));
+    testDependency.setFile(testDependencyJar.toFile());
+    final Set<Artifact> resolvedArtifacts = new LinkedHashSet<>(fixture.plan().resolvedArtifacts());
+    resolvedArtifacts.add(testDependency);
+    fixture.project().setArtifacts(resolvedArtifacts);
+    final ElisionAnalysisModel.ApplyPlan plan =
+        new ElisionAnalysisModel.ApplyPlan(
+            resolvedArtifacts,
+            fixture.plan().directArtifactsPresent(),
+            fixture.plan().directArtifacts());
+
+    final MavenPreconditionInventory.Snapshot snapshot =
+        MavenPreconditionInventory.capture(
+            fixture.project(),
+            sessionForGoals(fixture.project(), GOAL_CLEAN, GOAL_VERIFY),
+            plan,
+            trustedProcessClassesAnalysis(fixture.analysis()),
+            true);
+
+    assertAll(
+        "test-scoped dependency classes do not enter runtime proof inventory",
+        () ->
+            Assertions.assertTrue(
+                snapshot.complete(), "snapshot must be complete when no violations occur"),
+        () ->
+            Assertions.assertTrue(
+                snapshot.classProviders().providers().stream()
+                    .noneMatch(provider -> provider.path().equals(testDependencyJar)),
+                "test-scoped archive must not contribute runtime class providers"),
+        () ->
+            Assertions.assertTrue(
+                snapshot.artifactFiles().stream()
+                    .anyMatch(file -> Artifact.SCOPE_TEST.equals(file.coordinate().scope())),
+                "publication inventory retains resolved test-scope rows for the SBOM"));
   }
 
   @Test
@@ -357,7 +413,7 @@ final class ADR0008MavenPreconditionInventoryTest {
             classBytes("org/example/DroppedProvider")));
     final Artifact droppedArtifact =
         new DefaultArtifact(
-            "org.example",
+            ORG_EXAMPLE_GROUP,
             "dropped-provider",
             TEST_VERSION,
             GOAL_COMPILE,
@@ -459,7 +515,7 @@ final class ADR0008MavenPreconditionInventoryTest {
     Files.writeString(malformedJar, "not a jar");
     final Artifact droppedArtifact =
         new DefaultArtifact(
-            "org.example",
+            ORG_EXAMPLE_GROUP,
             "malformed-provider",
             TEST_VERSION,
             GOAL_COMPILE,
@@ -693,7 +749,7 @@ final class ADR0008MavenPreconditionInventoryTest {
     }
 
     @Test
-    void customCompilerGeneratedTestSourceRootSuppressesProof() throws IOException {
+    void customCompilerGeneratedTestSourceRootIsExcludedFromProof() throws IOException {
       final Fixture fixture = fixture("custom-test-generated-source-root");
       final Plugin compiler = compilerPlugin();
       final PluginExecution testCompile = new PluginExecution();
@@ -707,8 +763,7 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
 
-      assertThat(snapshot.complete()).isFalse();
-      assertThat(snapshot.classProviders().detail()).contains("generatedTestSourcesDirectory");
+      assertThat(snapshot.complete()).isTrue();
 
       final Fixture propertyFixture = fixture("custom-test-generated-source-property");
       propertyFixture
@@ -719,9 +774,7 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       final MavenPreconditionInventory.Snapshot propertySnapshot = capture(propertyFixture);
 
-      assertThat(propertySnapshot.complete()).isFalse();
-      assertThat(propertySnapshot.classProviders().detail())
-          .contains("maven.compiler.generatedTestSourcesDirectory");
+      assertThat(propertySnapshot.complete()).isTrue();
     }
 
     @Test
@@ -832,6 +885,52 @@ final class ADR0008MavenPreconditionInventoryTest {
     }
 
     @Test
+    void explicitCompiledOutputAllowsDirectElideProofWithoutLifecycleProvenance()
+        throws IOException {
+      final Fixture fixture = fixture("direct-elide-complete-output");
+      final Path applicationClass = fixture.productionOutput().resolve("app/Main.class");
+      writeClass(applicationClass, "app/Main");
+      final MavenSession session =
+          sessionForGoals(
+              fixture.project(), "io.github.spockz:dependency-elider-maven-plugin:elide");
+
+      final MavenPreconditionInventory.Snapshot snapshot =
+          MavenPreconditionInventory.capture(
+              fixture.project(),
+              session,
+              fixture.plan(),
+              explicitProductionClassesAnalysis(fixture.analysis()),
+              true);
+
+      assertAll(
+          "explicit production completeness plus inspected runtime providers is sufficient",
+          () -> Assertions.assertTrue(snapshot.complete(), snapshot.classProviders().detail()),
+          () ->
+              assertThat(snapshot.classProviders().providers())
+                  .anySatisfy(provider -> assertThat(provider.path()).isEqualTo(applicationClass)));
+    }
+
+    @Test
+    void directGoalCoordinateFormsRequireExplicitProductionCompleteness() throws IOException {
+      final Fixture fixture = fixture("direct-goal-coordinate-forms");
+      for (final String goal :
+          List.of(
+              "dependency-elider:elide",
+              "io.github.spockz:dependency-elider-maven-plugin:elide",
+              "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:elide",
+              "dependency-elider:analyze",
+              "io.github.spockz:dependency-elider-maven-plugin:analyze",
+              "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:analyze")) {
+        final MavenSession session = sessionForGoals(fixture.project(), goal);
+        assertThatCode(
+                () ->
+                    MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
+                        fixture.project(), session, false, true))
+            .doesNotThrowAnyException();
+      }
+    }
+
+    @Test
     void requestedGoalsMustBeOneKnownDefaultLifecycleInvocation() throws IOException {
       final Fixture safe = fixture("safe-goals");
       final Plugin clean = cleanPlugin();
@@ -869,14 +968,14 @@ final class ADR0008MavenPreconditionInventoryTest {
       assertThat(customCleanSnapshot.complete()).isFalse();
       assertThat(customCleanSnapshot.classProviders().detail()).contains("custom configuration");
 
-      for (final List<String> goals :
+      final List<List<String>> unsupportedGoals =
           List.of(
               List.of(GOAL_VERIFY, GOAL_SITE),
               List.of(GOAL_SITE),
               List.of(GOAL_VERIFY, GOAL_CLEAN),
               List.of(GOAL_VERIFY, "validate"),
-              List.of(GOAL_CLEAN, GOAL_VERIFY, GOAL_SITE),
-              List.of("io.github.spockz:dependency-elider-maven-plugin:elide"))) {
+              List.of(GOAL_CLEAN, GOAL_VERIFY, GOAL_SITE));
+      for (final List<String> goals : unsupportedGoals) {
         final Fixture fixture = fixture("unsafe-goals-" + goals.hashCode());
         final MavenPreconditionInventory.Snapshot snapshot =
             capture(fixture, sessionForGoals(fixture.project(), goals.toArray(String[]::new)));
@@ -884,6 +983,28 @@ final class ADR0008MavenPreconditionInventoryTest {
         assertThat(snapshot.complete()).isFalse();
         assertThat(snapshot.classProviders().detail()).contains("Maven goal sequence");
       }
+
+      final Fixture directElideWithoutOutputAssertion =
+          fixture("direct-elide-without-output-assertion");
+      final MavenPreconditionInventory.Snapshot directElideSnapshot =
+          capture(
+              directElideWithoutOutputAssertion,
+              sessionForGoals(
+                  directElideWithoutOutputAssertion.project(),
+                  "io.github.spockz:dependency-elider-maven-plugin:elide"));
+      assertThat(directElideSnapshot.complete()).isFalse();
+      assertThat(directElideSnapshot.classProviders().detail())
+          .contains("direct elide requires elide.productionClassesComplete=true");
+
+      final Fixture directAnalyzeWithoutOutputAssertion = fixture("direct-analyze-incomplete");
+      final MavenPreconditionInventory.Snapshot directAnalyzeSnapshot =
+          capture(
+              directAnalyzeWithoutOutputAssertion,
+              sessionForGoals(
+                  directAnalyzeWithoutOutputAssertion.project(), "dependency-elider:analyze"));
+      assertThat(directAnalyzeSnapshot.complete()).isFalse();
+      assertThat(directAnalyzeSnapshot.classProviders().detail())
+          .contains("direct analyze requires elide.productionClassesComplete=true");
 
       final Fixture missingSession = fixture("missing-session");
       final MavenPreconditionInventory.Snapshot missingSessionSnapshot =
@@ -1050,7 +1171,7 @@ final class ADR0008MavenPreconditionInventoryTest {
     }
 
     @Test
-    void processorPathAndDefaultTestCompileExecutionMakeInventoryIncomplete() throws IOException {
+    void productionCompilerProvidersAreGuardedButTestProvidersAreExcluded() throws IOException {
       final Fixture processorPath = fixture();
       final Plugin activeCompiler = compilerPlugin();
       activeCompiler.setConfiguration(configuration(PROCESSING_SETTING, PROCESSING_NONE));
@@ -1081,9 +1202,7 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       final MavenPreconditionInventory.Snapshot testCompileSnapshot = capture(testCompile);
 
-      assertThat(testCompileSnapshot.complete()).isFalse();
-      assertThat(testCompileSnapshot.classProviders().detail())
-          .contains("conflicting or unsupported proc value in execution default-testCompile");
+      assertThat(testCompileSnapshot.complete()).isTrue();
 
       final Fixture compile = fixture(DEFAULT_COMPILE);
       final Plugin compileManagedCompiler = compilerPlugin();
@@ -1114,13 +1233,12 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       final MavenPreconditionInventory.Snapshot sourceOverrideSnapshot = capture(sourceOverride);
 
-      assertThat(sourceOverrideSnapshot.complete()).isFalse();
-      assertThat(sourceOverrideSnapshot.classProviders().detail()).contains("compileSourceRoots");
+      assertThat(sourceOverrideSnapshot.complete()).isTrue();
     }
 
     @Test
-    @DisplayName("ADR-0008/trusted capture preserves the test compile processor safeguard")
-    void trustedCaptureAllowsCompileProcessorButKeepsTestCompileSafeguard() throws IOException {
+    @DisplayName("ADR-0008/trusted capture excludes isolated test compiler output")
+    void trustedCaptureAllowsTestCompileProcessorsWithIsolatedOutput() throws IOException {
       final Fixture fixture = fixture("trusted-compile-processors");
       fixture.project().getProperties().remove(PROCESSING_PROPERTY);
       final Plugin compiler = compilerPlugin();
@@ -1133,8 +1251,8 @@ final class ADR0008MavenPreconditionInventoryTest {
       compiler.addExecution(compile);
       final PluginExecution testCompile = new PluginExecution();
       testCompile.setId(DEFAULT_TEST_COMPILE);
-      testCompile.setGoals(List.of("testCompile"));
-      testCompile.setConfiguration(configuration(PROCESSING_SETTING, PROCESSING_NONE));
+      testCompile.setGoals(List.of(GOAL_TEST_COMPILE));
+      testCompile.setConfiguration(new Xpp3Dom(CONFIGURATION_ELEMENT));
       compiler.addExecution(testCompile);
       fixture.project().getBuild().addPlugin(compiler);
       final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
@@ -1148,15 +1266,7 @@ final class ADR0008MavenPreconditionInventoryTest {
                       fixture.project(), session, true))
           .doesNotThrowAnyException();
 
-      testCompile.setConfiguration(new Xpp3Dom(CONFIGURATION_ELEMENT));
-
-      assertThatThrownBy(
-              () ->
-                  MavenCompilerGenerationGuard.requireSafeCompilerConfiguration(
-                      fixture.project(), session, true))
-          .isInstanceOf(IOException.class)
-          .hasMessageContaining(
-              "explicit proc=none is required for compiler execution default-testCompile");
+      assertThat(testCompile.getConfiguration()).isNotNull();
     }
 
     @Test
@@ -1179,7 +1289,7 @@ final class ADR0008MavenPreconditionInventoryTest {
       compiler.addExecution(compile);
       final PluginExecution testCompile = new PluginExecution();
       testCompile.setId(DEFAULT_TEST_COMPILE);
-      testCompile.setGoals(List.of("testCompile"));
+      testCompile.setGoals(List.of(GOAL_TEST_COMPILE));
       testCompile.setConfiguration(configuration(PROCESSING_SETTING, PROCESSING_NONE));
       compiler.addExecution(testCompile);
       fixture.project().getBuild().addPlugin(compiler);
@@ -1211,13 +1321,12 @@ final class ADR0008MavenPreconditionInventoryTest {
               fixture.plan(),
               trustedProcessClassesAnalysis(fixture.analysis()),
               true);
-      assertThat(unsafe.complete()).isFalse();
-      assertThat(unsafe.classProviders().detail()).contains("default-testCompile");
+      assertThat(unsafe.complete()).isTrue();
     }
 
     @Test
-    void testOnlySourceSuppressesProofUntilTestCompilationIsSkipped() throws IOException {
-      final Fixture fixture = fixture("future-test-source");
+    void testOnlyProvidersDoNotBlockRuntimeProofWhenTestCompilationRuns() throws IOException {
+      final Fixture fixture = fixture("isolated-test-output");
       final Path testOnlySource =
           writeSource(
               fixture.testSources(),
@@ -1225,113 +1334,112 @@ final class ADR0008MavenPreconditionInventoryTest {
               "package testonly; public final class FuturePrerequisite {}\n");
       final ElisionAnalysisModel.Analysis trusted =
           trustedProcessClassesAnalysis(fixture.analysis());
-      fixture.project().getProperties().setProperty(MAVEN_TEST_SKIP, TRUE);
-      final Path compiledTestClass = fixture.testOutput().resolve("testonly/Compiled.class");
-      writeClass(compiledTestClass, "testonly/Compiled");
-      final MavenSession testSession = sessionForGoals(fixture.project(), GOAL_CLEAN, TEST);
+      final Path testClass = fixture.testOutput().resolve("testonly/FuturePrerequisite.class");
+      writeClass(testClass, "testonly/FuturePrerequisite");
+      final Path testResource = fixture.testResources().resolve("META-INF/test-only.txt");
+      Files.createDirectories(testResource.getParent());
+      Files.writeString(testResource, "test-only");
+      final Resource filteredTestResource = new Resource();
+      filteredTestResource.setDirectory(fixture.testResources().toString());
+      filteredTestResource.setFiltering(true);
+      fixture.project().getBuild().setTestResources(List.of(filteredTestResource));
+      addDefaultTestResourcesExecution(fixture.project(), null);
+      final MavenSession testSession = sessionForGoals(fixture.project(), GOAL_CLEAN, GOAL_VERIFY);
+      testSession.getUserProperties().setProperty(SKIP_TESTS, TRUE);
       testSession.getUserProperties().setProperty(MAVEN_TEST_SKIP, FALSE);
+      final Plugin testCompiler = compilerPlugin();
+      final PluginExecution testCompile = new PluginExecution();
+      testCompile.setId(DEFAULT_TEST_COMPILE);
+      testCompile.setGoals(List.of(GOAL_TEST_COMPILE));
+      testCompile.setConfiguration(configuration(PROCESSING_SETTING, PROCESSING_FULL));
+      testCompiler.addExecution(testCompile);
+      fixture.project().getBuild().addPlugin(testCompiler);
+
+      final MavenPreconditionInventory.Snapshot snapshot =
+          MavenPreconditionInventory.capture(
+              fixture.project(), testSession, fixture.plan(), trusted, true);
 
       assertAll(
-          "each lifecycle boundary independently controls prerequisite inventory completeness",
-          () -> {
-            final MavenPreconditionInventory.Snapshot beforeTestCompile =
-                MavenPreconditionInventory.capture(
-                    fixture.project(), testSession, fixture.plan(), trusted, true);
-            final boolean completeBeforeTestCompile = beforeTestCompile.complete();
-            assertAll(
-                "test-only source keeps the process-classes proof incomplete before test"
-                    + " compilation",
-                () ->
-                    Assertions.assertFalse(
-                        completeBeforeTestCompile,
-                        "later test compilation may add providers after process-classes"),
-                () ->
-                    assertThat(beforeTestCompile.classProviders().detail())
-                        .contains("Maven test compilation can add providers after process-classes"),
-                () ->
-                    assertThat(beforeTestCompile.classProviders().providers())
-                        .noneMatch(provider -> provider.path().equals(testOnlySource)));
-          },
-          () -> {
-            testSession.getUserProperties().setProperty(MAVEN_TEST_SKIP, TRUE);
-            final MavenPreconditionInventory.Snapshot testCompilationSkipped =
-                MavenPreconditionInventory.capture(
-                    fixture.project(), testSession, fixture.plan(), trusted, true);
-            final boolean completeAfterTestCompileSkip = testCompilationSkipped.complete();
-            assertAll(
-                "skipping Maven test compilation permits proof while existing test output remains"
-                    + " scanned",
-                () ->
-                    Assertions.assertTrue(
-                        completeAfterTestCompileSkip,
-                        "skipping Maven test compilation keeps the provider inventory complete"),
-                () ->
-                    assertThat(testCompilationSkipped.classProviders().providers())
-                        .anySatisfy(
-                            provider -> assertThat(provider.path()).isEqualTo(compiledTestClass)));
-          },
-          () -> {
-            final Plugin compiler = compilerPlugin();
-            final PluginExecution testCompile = new PluginExecution();
-            testCompile.setId(DEFAULT_TEST_COMPILE);
-            testCompile.setConfiguration(configuration(SKIP, TRUE));
-            compiler.addExecution(testCompile);
-            fixture.project().getBuild().addPlugin(compiler);
-            fixture.project().getProperties().setProperty(MAVEN_TEST_SKIP, FALSE);
-            testSession.getUserProperties().setProperty(MAVEN_TEST_SKIP, FALSE);
-            final MavenPreconditionInventory.Snapshot configuredCompilerSkip =
-                MavenPreconditionInventory.capture(
-                    fixture.project(), testSession, fixture.plan(), trusted, true);
-            final boolean completeAfterConfiguredSkip = configuredCompilerSkip.complete();
-            assertAll(
-                "an effective literal default-testCompile skip closes the later provider path",
-                () ->
-                    Assertions.assertTrue(
-                        completeAfterConfiguredSkip,
-                        "an explicit testCompile skip must establish a complete inventory"),
-                () ->
-                    assertThat(configuredCompilerSkip.classProviders().providers())
-                        .anySatisfy(
-                            provider -> assertThat(provider.path()).isEqualTo(compiledTestClass)));
-          },
-          () -> {
-            final Fixture explicitFalse = fixture("test-compile-skip-false");
-            final Plugin compiler = compilerPlugin();
-            final PluginExecution testCompile = new PluginExecution();
-            testCompile.setId(DEFAULT_TEST_COMPILE);
-            testCompile.setConfiguration(configuration(SKIP, FALSE));
-            compiler.addExecution(testCompile);
-            explicitFalse.project().getBuild().addPlugin(compiler);
-            explicitFalse.project().getProperties().setProperty(MAVEN_TEST_SKIP, TRUE);
-            final MavenSession conflictingSession =
-                sessionForGoals(explicitFalse.project(), GOAL_CLEAN, TEST);
-            conflictingSession.getUserProperties().setProperty(MAVEN_TEST_SKIP, TRUE);
-            final MavenPreconditionInventory.Snapshot conflictingSkip =
-                MavenPreconditionInventory.capture(
-                    explicitFalse.project(),
-                    conflictingSession,
-                    explicitFalse.plan(),
-                    trustedProcessClassesAnalysis(explicitFalse.analysis()),
-                    true);
+          "isolated test compilation and test resources do not change runtime provider inventory",
+          () ->
+              Assertions.assertTrue(
+                  snapshot.complete(), "test-only compiler settings preserve runtime completeness"),
+          () ->
+              assertThat(snapshot.classProviders().providers())
+                  .noneMatch(
+                      provider ->
+                          provider.path().equals(testOnlySource)
+                              || provider.path().equals(testClass)
+                              || provider.path().equals(testResource)),
+          () ->
+              assertThat(snapshot.classProviders().providers())
+                  .noneMatch(
+                      provider ->
+                          provider.path().startsWith(fixture.testOutput())
+                              || provider.path().startsWith(fixture.testResources())));
+    }
 
-            assertAll(
-                "an explicit false testCompile skip overrides the broader maven.test.skip flag",
-                () ->
-                    Assertions.assertFalse(
-                        conflictingSkip.complete(), "explicit false overrides the skip property"),
-                () ->
-                    assertThat(conflictingSkip.classProviders().detail())
-                        .contains(
-                            "Maven test compilation can add providers after process-classes"));
-          },
-          () -> {
-            final MavenSession processClassesSession =
-                sessionForGoals(fixture.project(), GOAL_CLEAN, PROCESS_CLASSES_PHASE);
-            final MavenPreconditionInventory.Snapshot beforeTestPhaseRequested =
-                MavenPreconditionInventory.capture(
-                    fixture.project(), processClassesSession, fixture.plan(), trusted, true);
-            assertThat(beforeTestPhaseRequested.complete()).isTrue();
-          });
+    @Test
+    void testOutputOverlappingProductionOutputStillBlocksRuntimeProof() throws IOException {
+      final Fixture fixture = fixture("test-output-overlaps-runtime");
+      fixture
+          .project()
+          .getBuild()
+          .setTestOutputDirectory(fixture.productionOutput().resolve("test-classes").toString());
+      final MavenSession session = sessionForGoals(fixture.project(), GOAL_CLEAN, GOAL_VERIFY);
+      session.getUserProperties().setProperty(SKIP_TESTS, TRUE);
+      session.getUserProperties().setProperty(MAVEN_TEST_SKIP, FALSE);
+
+      final MavenPreconditionInventory.Snapshot snapshot =
+          MavenPreconditionInventory.capture(
+              fixture.project(),
+              session,
+              fixture.plan(),
+              trustedProcessClassesAnalysis(fixture.analysis()),
+              true);
+
+      assertThat(snapshot.complete()).isFalse();
+      assertThat(snapshot.classProviders().detail())
+          .contains("Maven test output overlaps production provider root");
+    }
+
+    @Test
+    void rootCompilerConfigurationCannotRedirectTestOutputIntoProduction() throws IOException {
+      final Fixture fixture = fixture("test-output-root-configuration");
+      final Plugin compiler = compilerPlugin();
+      compiler.setConfiguration(
+          configuration("testOutputDirectory", fixture.productionOutput().toString()));
+      fixture.project().getBuild().addPlugin(compiler);
+
+      final MavenPreconditionInventory.Snapshot snapshot =
+          MavenPreconditionInventory.capture(
+              fixture.project(),
+              sessionForGoals(fixture.project(), GOAL_CLEAN, PROCESS_CLASSES_PHASE),
+              fixture.plan(),
+              trustedProcessClassesAnalysis(fixture.analysis()),
+              true);
+
+      assertThat(snapshot.complete()).isFalse();
+      assertThat(snapshot.classProviders().detail()).contains("testOutputDirectory");
+    }
+
+    @Test
+    void testCompileTargetDoesNotRestrictRuntimeProof() throws IOException {
+      final Fixture fixture = fixture("test-compile-target");
+      fixture.project().getProperties().setProperty("maven.compiler.testRelease", "8");
+      final MavenSession session = sessionForGoals(fixture.project(), GOAL_CLEAN, GOAL_VERIFY);
+      session.getUserProperties().setProperty(SKIP_TESTS, TRUE);
+      session.getUserProperties().setProperty(MAVEN_TEST_SKIP, FALSE);
+
+      final MavenPreconditionInventory.Snapshot snapshot =
+          MavenPreconditionInventory.capture(
+              fixture.project(),
+              session,
+              fixture.plan(),
+              trustedProcessClassesAnalysis(fixture.analysis()),
+              true);
+
+      assertThat(snapshot.complete()).isTrue();
     }
 
     @Test
@@ -1348,7 +1456,7 @@ final class ADR0008MavenPreconditionInventoryTest {
       addCompilerExecution(
           compiler,
           "extra-testCompile",
-          "testCompile",
+          GOAL_TEST_COMPILE,
           configuration(PROCESSING_SETTING, PROCESSING_NONE));
       customExecutions.project().getBuild().addPlugin(compiler);
 
@@ -1536,7 +1644,7 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       final Fixture oldTestRelease = fixture("old-test-release");
       oldTestRelease.project().getProperties().setProperty("maven.compiler.testRelease", "8");
-      assertIncompleteTarget(oldTestRelease);
+      assertThat(capture(oldTestRelease).complete()).isTrue();
 
       final Fixture oldTestSourceTarget = fixture("old-test-source-target");
       oldTestSourceTarget.project().getProperties().remove("maven.compiler.release");
@@ -1545,7 +1653,7 @@ final class ADR0008MavenPreconditionInventoryTest {
       oldTestSourceTarget.project().getProperties().remove("maven.compiler.testRelease");
       oldTestSourceTarget.project().getProperties().setProperty("maven.compiler.testSource", "8");
       oldTestSourceTarget.project().getProperties().setProperty("maven.compiler.testTarget", "8");
-      assertIncompleteTarget(oldTestSourceTarget);
+      assertThat(capture(oldTestSourceTarget).complete()).isTrue();
 
       final Fixture oldTestExecutionTarget = fixture("old-test-execution-target");
       final Plugin compiler = compilerPlugin();
@@ -1554,7 +1662,7 @@ final class ADR0008MavenPreconditionInventoryTest {
       testCompile.setConfiguration(configuration("testRelease", "8"));
       compiler.addExecution(testCompile);
       oldTestExecutionTarget.project().getBuild().addPlugin(compiler);
-      assertIncompleteTarget(oldTestExecutionTarget);
+      assertThat(capture(oldTestExecutionTarget).complete()).isTrue();
     }
   }
 
@@ -1592,18 +1700,13 @@ final class ADR0008MavenPreconditionInventoryTest {
 
       assertThat(capture(earlierEnforcer).complete()).isTrue();
 
-      assertFilteredResourceRejected(false);
-      assertFilteredResourceRejected(true);
-    }
+      final Fixture filteredProductionResources = fixture("filtered-production-resources");
+      filteredProductionResources.project().getBuild().getResources().get(0).setFiltering(true);
+      assertGenerationIncomplete(filteredProductionResources, "resources enable filtering");
 
-    private void assertFilteredResourceRejected(final boolean testResource) throws IOException {
-      final Fixture fixture = fixture("filtered-resource-" + testResource);
-      final List<Resource> resources =
-          testResource
-              ? fixture.project().getBuild().getTestResources()
-              : fixture.project().getBuild().getResources();
-      resources.get(0).setFiltering(true);
-      assertGenerationIncomplete(fixture, "resources enable filtering");
+      final Fixture filteredTestResources = fixture("filtered-test-resources");
+      filteredTestResources.project().getBuild().getTestResources().get(0).setFiltering(true);
+      assertThat(capture(filteredTestResources).complete()).isTrue();
     }
 
     @Test
@@ -1722,14 +1825,15 @@ final class ADR0008MavenPreconditionInventoryTest {
     }
 
     @Test
-    @DisplayName("ADR-0008/skip test resources keeps their existing output inventoried")
-    void skippedDefaultTestResourcesPreserveCompleteInventory() throws IOException {
+    @DisplayName("ADR-0008/testResources output is outside runtime inventory")
+    void defaultTestResourcesAreExcludedFromRuntimeInventory() throws IOException {
       final Fixture fixture = fixture("trusted-skipped-test-resources");
       addDefaultTestResourcesExecution(fixture.project(), null);
       final Path staleTestClass = fixture.testOutput().resolve("stale/Provider.class");
       writeClass(staleTestClass, "stale/Provider");
       final MavenSession session = sessionForGoals(fixture.project(), GOAL_CLEAN, GOAL_PACKAGE);
-      session.getUserProperties().setProperty(MAVEN_TEST_SKIP, TRUE);
+      session.getUserProperties().setProperty(MAVEN_TEST_SKIP, FALSE);
+      session.getUserProperties().setProperty(SKIP_TESTS, TRUE);
 
       final MavenPreconditionInventory.Snapshot snapshot =
           MavenPreconditionInventory.capture(
@@ -1740,22 +1844,16 @@ final class ADR0008MavenPreconditionInventoryTest {
               true);
 
       assertAll(
-          "testResources is ignored only because Maven test compilation is skipped",
-          () ->
-              Assertions.assertTrue(
-                  snapshot.complete(), "skipped test resources preserve completeness"),
+          "testResources output does not enter the packaged runtime provider inventory",
+          () -> Assertions.assertTrue(snapshot.complete(), "test resources preserve completeness"),
           () ->
               assertThat(snapshot.classProviders().providers())
-                  .anySatisfy(
-                      provider -> {
-                        assertThat(provider.path()).isEqualTo(staleTestClass);
-                        assertThat(provider.kind()).isEqualTo(ProviderKind.APPLICATION_CLASS_FILE);
-                      }));
+                  .noneMatch(provider -> provider.path().equals(staleTestClass)));
     }
 
     @Test
-    @DisplayName("ADR-0008/testResources needs the effective maven.test.skip property")
-    void skippedDefaultTestResourcesRejectsSkipTestsOnlyAndConflictingSkip() throws IOException {
+    @DisplayName("ADR-0008/testResources does not require maven.test.skip")
+    void defaultTestResourcesAllowsEitherTestCompilationSkipSetting() throws IOException {
       final Fixture skipTestsOnly = fixture("trusted-test-resources-skip-tests-only");
       addDefaultTestResourcesExecution(skipTestsOnly.project(), null);
       final MavenSession skipTestsSession =
@@ -1783,24 +1881,18 @@ final class ADR0008MavenPreconditionInventoryTest {
               true);
 
       assertAll(
-          "unsupported testResources skip configurations remain incomplete",
+          "test compilation skip settings do not define runtime provider completeness",
           () ->
-              Assertions.assertFalse(
-                  skipTestsSnapshot.complete(), "skipTests alone cannot skip test resources"),
+              Assertions.assertTrue(
+                  skipTestsSnapshot.complete(), "skipTests does not change runtime completeness"),
           () ->
-              assertThat(skipTestsSnapshot.classProviders().detail())
-                  .contains("maven.test.skip=true"),
-          () ->
-              Assertions.assertFalse(
-                  skipFalseSnapshot.complete(), "explicit false leaves test resources enabled"),
-          () ->
-              assertThat(skipFalseSnapshot.classProviders().detail())
-                  .contains("testResources effective skip configuration is false"));
+              Assertions.assertTrue(
+                  skipFalseSnapshot.complete(), "test compiler skip does not change completeness"));
     }
 
     @Test
-    @DisplayName("ADR-0008/effective default testResources skip follows Maven config precedence")
-    void defaultTestResourcesUsesEffectiveSkipConfiguration() throws IOException {
+    @DisplayName("ADR-0008/testResources skip flags do not affect runtime inventory")
+    void defaultTestResourcesSkipFlagsDoNotAffectRuntimeInventory() throws IOException {
       final Fixture explicitExecutionSkip = fixture("test-resources-explicit-execution-skip");
       addDefaultTestResourcesExecution(explicitExecutionSkip.project(), configuration(SKIP, TRUE));
       final MavenPreconditionInventory.Snapshot explicitSkip =
@@ -1844,7 +1936,7 @@ final class ADR0008MavenPreconditionInventoryTest {
               true);
 
       assertAll(
-          "only the effective default testResources skip makes later output safe",
+          "valid skip values are irrelevant to the runtime inventory boundary",
           () ->
               Assertions.assertTrue(
                   explicitSkip.complete(), "explicit skip preserves completeness"),
@@ -1852,11 +1944,12 @@ final class ADR0008MavenPreconditionInventoryTest {
               Assertions.assertTrue(
                   executionSkip.complete(), "execution skip preserves completeness"),
           () ->
-              Assertions.assertFalse(
-                  pluginFalse.complete(), "plugin false leaves test resources enabled"),
+              Assertions.assertTrue(
+                  pluginFalse.complete(), "plugin skip does not change runtime completeness"),
           () ->
-              Assertions.assertFalse(
-                  executionFalse.complete(), "execution false leaves test resources enabled"));
+              Assertions.assertTrue(
+                  executionFalse.complete(),
+                  "execution skip does not change runtime completeness"));
     }
 
     @Test
@@ -1989,6 +2082,35 @@ final class ADR0008MavenPreconditionInventoryTest {
       unusedManagedShade.setConfiguration(configuration("relocations", "unmodeled"));
       inactiveManagement.project().getBuild().getPluginManagement().addPlugin(unusedManagedShade);
       assertThat(capture(inactiveManagement).complete()).isTrue();
+    }
+
+    @Test
+    void untrustedPackagePluginDoesNotBlockBuildStoppingAtProcessClasses() throws IOException {
+      final Fixture packagePluginFixture = fixture("package-plugin-after-process-classes");
+      final Plugin customPackager = new Plugin();
+      customPackager.setGroupId("org.example");
+      customPackager.setArtifactId("custom-packager");
+      final PluginExecution execution = new PluginExecution();
+      execution.setId("repackage-custom");
+      execution.setPhase("package");
+      customPackager.addExecution(execution);
+      packagePluginFixture.project().getBuild().addPlugin(customPackager);
+
+      final MavenPreconditionInventory.Snapshot atProcessClasses =
+          capture(
+              packagePluginFixture,
+              sessionForGoals(packagePluginFixture.project(), "process-classes"));
+      final MavenPreconditionInventory.Snapshot atVerify =
+          capture(
+              packagePluginFixture, sessionForGoals(packagePluginFixture.project(), GOAL_VERIFY));
+
+      assertAll(
+          "Untrusted package-phase plugin is ignored when build stops at process-classes",
+          () ->
+              Assertions.assertTrue(
+                  atProcessClasses.complete(), "process-classes snapshot should be complete"),
+          () ->
+              Assertions.assertFalse(atVerify.complete(), "verify snapshot should be incomplete"));
     }
 
     @Test
@@ -2527,6 +2649,18 @@ final class ADR0008MavenPreconditionInventoryTest {
 
   private static ElisionAnalysisModel.Analysis trustedProcessClassesAnalysis(
       final ElisionAnalysisModel.Analysis analysis) {
+    return analysisWithProductionCompleteness(analysis, true, true);
+  }
+
+  private static ElisionAnalysisModel.Analysis explicitProductionClassesAnalysis(
+      final ElisionAnalysisModel.Analysis analysis) {
+    return analysisWithProductionCompleteness(analysis, true, false);
+  }
+
+  private static ElisionAnalysisModel.Analysis analysisWithProductionCompleteness(
+      final ElisionAnalysisModel.Analysis analysis,
+      final boolean productionClassesComplete,
+      final boolean trustedProcessClassesContext) {
     return new ElisionAnalysisModel.Analysis(
         new ElisionAnalysisModel.ArtifactViews(
             analysis.artifacts().resolvedSnapshots(),
@@ -2538,8 +2672,8 @@ final class ADR0008MavenPreconditionInventoryTest {
             analysis.evidence().classUsageReport(),
             analysis.evidence().bytecodeScan(),
             analysis.evidence().unprovenServiceRoots(),
-            true,
-            true,
+            productionClassesComplete,
+            trustedProcessClassesContext,
             null),
         new TrimResult(
             analysis.trimResult().records(),
@@ -2587,7 +2721,7 @@ final class ADR0008MavenPreconditionInventoryTest {
     writeJar(dependency);
     final Artifact artifact =
         new DefaultArtifact(
-            "org.example",
+            ORG_EXAMPLE_GROUP,
             "affected",
             TEST_VERSION,
             GOAL_COMPILE,
@@ -2703,13 +2837,6 @@ final class ADR0008MavenPreconditionInventoryTest {
     dependency.setArtifactId("custom-compiler-provider");
     dependency.setVersion(TEST_VERSION);
     return dependency;
-  }
-
-  private void assertIncompleteTarget(final Fixture fixture) throws IOException {
-    final MavenPreconditionInventory.Snapshot snapshot = capture(fixture);
-
-    assertThat(snapshot.complete()).isFalse();
-    assertThat(snapshot.classProviders().detail()).contains("at least 11");
   }
 
   private static void addUnknownGenerator(final Fixture fixture, final String phase) {

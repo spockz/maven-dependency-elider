@@ -7,9 +7,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.plugin.DuplicateClassPolicy.Action;
 import io.github.spockz.elider.scanner.BytecodeReferenceScan;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;

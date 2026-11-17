@@ -4,8 +4,8 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.HexDigest;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
@@ -39,8 +39,6 @@ final class DiscoveredTrimRoots {
       throw new IOException("Discovered roots have no artifact file: " + coordinate);
     }
     return new TrimArtifactRootKey(
-        snapshot.coordinate(),
-        snapshot.filePath(),
-        ArtifactDigests.read(snapshot.filePath()).sha256());
+        snapshot.coordinate(), snapshot.filePath(), HexDigest.sha256(snapshot.filePath()));
   }
 }

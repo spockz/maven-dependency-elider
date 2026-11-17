@@ -16,7 +16,7 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 
 /** Coordinates candidate analysis and output staging. */
-final class MavenDependencyTrimmer {
+public final class MavenDependencyTrimmer {
   /** Analyzes each implementation tier before trimming a multi-release archive. */
   /* package */ static final String MRJAR_VERTICAL_SHADING =
       MrjarStrategy.VERTICAL_SHADING.configurationValue();
@@ -61,7 +61,6 @@ final class MavenDependencyTrimmer {
       final ElisionAnalysisModel.EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
     final ElisionAnalysisModel.PreparedAnalysis prepared = effective.prepared();
-    MavenArtifactInventory.verifyPreparedInventory(prepared);
     final ElisionAnalysisModel.AnalysisOptions options = prepared.options();
     final TrimRequest request =
         new TrimRequest(
@@ -104,13 +103,11 @@ final class MavenDependencyTrimmer {
           .withToleratedDuplicates(duplicates);
     }
     final EffectiveOutputPlan outputPlan = EffectiveOutputPlanFactory.create(effective);
-    final TrimExecutionEnvironment executionEnvironment = executionEnvironment(request);
-    verifyAnalysisPlatform(effective, executionEnvironment);
     final JdkPlatformContext context = MavenPlatformContextHolder.forOperation(request.session());
     return EffectiveTrimOutput.trimEffectivePrepared(
             request,
-            executionEnvironment.targetRelease(),
-            executionEnvironment.runtimeRelease(),
+            effective.trimAnalysis().targetRelease(),
+            effective.trimAnalysis().runtimeRelease(),
             context,
             outputPlan)
         .withToleratedDuplicates(duplicates);
@@ -145,17 +142,6 @@ final class MavenDependencyTrimmer {
     }
     return new TrimExecutionEnvironment(
         TrimPlatform.targetReleaseFromOptions(compilerOptions), Runtime.version().feature());
-  }
-
-  private static void verifyAnalysisPlatform(
-      final ElisionAnalysisModel.EffectiveAnalysis effective,
-      final TrimExecutionEnvironment executionEnvironment)
-      throws IOException {
-    final TrimAnalysisResult analysis = effective.trimAnalysis();
-    if (executionEnvironment.targetRelease() != analysis.targetRelease()
-        || executionEnvironment.runtimeRelease() != analysis.runtimeRelease()) {
-      throw new IOException("Target or runtime release changed after effective analysis");
-    }
   }
 
   /* package */ static TrimAnalysisResult analyzeInMemory(

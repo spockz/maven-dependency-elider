@@ -10,15 +10,12 @@ import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.VexAttestation;
 import java.io.IOException;
 import java.net.URI;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
-import java.util.UUID;
 
 /** Generates deterministic OpenVEX documents for verified vulnerability evidence. */
 @SuppressWarnings({
@@ -75,22 +72,8 @@ public final class OpenVexGenerator {
       DocumentMetadata metadata)
       throws IOException {
     Objects.requireNonNull(output, "output must not be null");
-    byte[] bytes = generate(root, postElisionInventory, attestations, metadata);
-    Path absolute = output.toAbsolutePath();
-    Path parent = absolute.getParent();
-    if (parent == null) {
-      throw new IOException("Output path must have a parent directory: " + absolute);
-    }
-    Files.createDirectories(parent);
-    Path temporary =
-        parent.resolve("." + absolute.getFileName() + "." + UUID.randomUUID() + ".tmp");
-    try {
-      Files.write(temporary, bytes);
-      Files.move(
-          temporary, absolute, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-    } finally {
-      Files.deleteIfExists(temporary);
-    }
+    CycloneDxSbomGenerator.writeAtomically(
+        output, generate(root, postElisionInventory, attestations, metadata));
   }
 
   /** Generates OpenVEX JSON referencing components in the post-elision SBOM. */
@@ -144,10 +127,12 @@ public final class OpenVexGenerator {
       throws IOException {
     Map<String, VexAttestation> omittedCode = new TreeMap<>();
     Map<String, VexAttestation> preconditions = new TreeMap<>();
+    Map<String, String> sha256ByPurl = new java.util.HashMap<>();
     for (VexAttestation attestation : attestations) {
       Objects.requireNonNull(attestation, "VEX attestation must not be null");
-      String componentSha256 = validateAttestation(attestation, componentsByPurl);
       final String purl = CycloneDxSbomGenerator.componentPurl(attestation.coordinate());
+      String componentSha256 =
+          validateAttestation(attestation, purl, componentsByPurl, sha256ByPurl);
       String key = attestation.cveId() + "\u0000" + purl;
       VexSerializerSupport.addAttestation(omittedCode, preconditions, key, attestation);
       componentDigests.put(key, componentSha256);
@@ -192,15 +177,23 @@ public final class OpenVexGenerator {
   }
 
   private static String validateAttestation(
-      VexAttestation attestation, Map<String, ArtifactFileRef> componentsByPurl)
+      VexAttestation attestation,
+      String purl,
+      Map<String, ArtifactFileRef> componentsByPurl,
+      Map<String, String> sha256ByPurl)
       throws IOException {
-    String purl = CycloneDxSbomGenerator.componentPurl(attestation.coordinate());
     ArtifactFileRef component = componentsByPurl.get(purl);
     if (component == null) {
       throw new IllegalArgumentException(
           "VEX attestation has no matching post-elision component: " + purl);
     }
-    return VexSerializerSupport.verifyAttestation(attestation, component);
+    String cachedSha256 = sha256ByPurl.get(purl);
+    if (cachedSha256 == null) {
+      cachedSha256 = VexSerializerSupport.verifyAttestation(attestation, component);
+      sha256ByPurl.put(purl, cachedSha256);
+      return cachedSha256;
+    }
+    return VexSerializerSupport.verifyAttestation(attestation, component, cachedSha256);
   }
 
   private static void requireResolved(ArtifactCoordinate coordinate) {

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import io.github.spockz.elider.scanner.JarIndexScanner;
 import java.io.IOException;
 import java.net.JarURLConnection;

@@ -2,11 +2,11 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.scanner.GenericFindingCacheManager;
-import io.github.spockz.elider.scanner.GenericFindingCacheManager.CacheResult;
-import io.github.spockz.elider.scanner.GenericFindingCacheManager.Source;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
+import io.github.spockz.elider.advisory.GenericFindingCacheManager;
+import io.github.spockz.elider.advisory.GenericFindingCacheManager.CacheResult;
+import io.github.spockz.elider.advisory.GenericFindingCacheManager.Source;
+import io.github.spockz.elider.advisory.VulnerabilityCacheManager;
+import io.github.spockz.elider.advisory.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
@@ -63,7 +63,7 @@ public final class UpdateCveIndexMojo extends PluginCacheMojoSupport {
                       .filter(
                           snapshot ->
                               snapshot.status()
-                                  == io.github.spockz.elider.scanner.FindingSourceSnapshot.Status
+                                  == io.github.spockz.elider.advisory.FindingSourceSnapshot.Status
                                       .PARTIAL)
                       .forEach(
                           snapshot ->

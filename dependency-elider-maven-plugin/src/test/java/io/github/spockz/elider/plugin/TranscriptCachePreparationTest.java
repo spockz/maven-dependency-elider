@@ -6,18 +6,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.github.spockz.elider.advisory.CveListFindingIndexer;
+import io.github.spockz.elider.advisory.FindingSource;
+import io.github.spockz.elider.advisory.FindingSourceSnapshot;
+import io.github.spockz.elider.advisory.GenericFindingCacheEnvelope;
+import io.github.spockz.elider.advisory.GenericFindingCacheEnvelopeReader;
+import io.github.spockz.elider.advisory.GenericFindingCacheEnvelopeWriter;
+import io.github.spockz.elider.advisory.OsvSnapshotIndexer;
+import io.github.spockz.elider.advisory.OsvVulnerabilityFindingAdapter;
 import io.github.spockz.elider.model.CacheProducerIdentity;
 import io.github.spockz.elider.model.GenericFindingReconciler;
 import io.github.spockz.elider.model.GenericVulnerabilityFinding;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;
-import io.github.spockz.elider.scanner.CveListFindingIndexer;
-import io.github.spockz.elider.scanner.FindingSource;
-import io.github.spockz.elider.scanner.FindingSourceSnapshot;
-import io.github.spockz.elider.scanner.GenericFindingCacheEnvelope;
-import io.github.spockz.elider.scanner.GenericFindingCacheEnvelopeReader;
-import io.github.spockz.elider.scanner.GenericFindingCacheEnvelopeWriter;
-import io.github.spockz.elider.scanner.OsvSnapshotIndexer;
-import io.github.spockz.elider.scanner.OsvVulnerabilityFindingAdapter;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -101,7 +101,7 @@ class TranscriptCachePreparationTest {
     final Path cveInput = Path.of(requiredProperty(CVE_INPUT_PROPERTY));
     final OsvSnapshotIndexer.PartialIndex osv;
     try (InputStream input = Files.newInputStream(Path.of(inputSetting))) {
-      osv = new OsvSnapshotIndexer().indexZipIsolated(input, cveInput);
+      osv = new OsvSnapshotIndexer().indexZipIsolated(input);
     }
     final CveListFindingIndexer.IndexResult cve = new CveListFindingIndexer().index(cveInput);
     assertAll(

@@ -2,7 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.scanner.FindingSource;
+import io.github.spockz.elider.advisory.FindingSource;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;

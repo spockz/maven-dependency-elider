@@ -2,18 +2,25 @@
 
 package io.github.spockz.elider.metadata;
 
+import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.model.PrerequisiteClaim;
+import io.github.spockz.elider.model.PrerequisiteGroup;
+import io.github.spockz.elider.model.PrerequisiteMemberObservation;
 import io.github.spockz.elider.model.VexAttestation;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 
 /** Shared validation for proof-backed VEX statements emitted by either format. */
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
-  "PMD.UseConcurrentHashMap"
+  "PMD.UseConcurrentHashMap",
+  "PMD.TooManyMethods"
 })
 final class VexSerializerSupport {
   private static final String OMITTED_CODE = "vulnerable_code_not_present";
@@ -28,7 +35,12 @@ final class VexSerializerSupport {
         && left.evidenceSymbols().equals(right.evidenceSymbols())
         && Objects.equals(left.originalSha256(), right.originalSha256())
         && Objects.equals(left.trimmedSha256(), right.trimmedSha256())
-        && PreconditionEvidenceIdentity.from(left).equals(PreconditionEvidenceIdentity.from(right));
+        && left.requiredPrerequisites().equals(right.requiredPrerequisites())
+        && left.requiredPrerequisiteGroups().equals(right.requiredPrerequisiteGroups())
+        && left.requiredPrerequisiteObservations().equals(right.requiredPrerequisiteObservations())
+        && Objects.equals(left.affectedArtifactPath(), right.affectedArtifactPath())
+        && Objects.equals(left.postElisionSha256(), right.postElisionSha256())
+        && Objects.equals(left.inventorySha256(), right.inventorySha256());
   }
 
   static boolean isPrecondition(final VexAttestation attestation) {
@@ -37,10 +49,18 @@ final class VexSerializerSupport {
 
   static String verifyAttestation(final VexAttestation attestation, final ArtifactFileRef component)
       throws IOException {
+    final String actualSha256 =
+        io.github.spockz.elider.model.HexDigest.sha256(component.filePath());
+    return verifyAttestation(attestation, component, actualSha256);
+  }
+
+  static String verifyAttestation(
+      final VexAttestation attestation,
+      final ArtifactFileRef component,
+      final String actualSha256) {
     requireText(attestation.cveId(), "VEX vulnerability id");
     requireText(attestation.impactDetail(), "VEX impact detail");
     final String expectedSha256 = expectedSha256(attestation, component);
-    final String actualSha256 = CycloneDxSbomGenerator.sha256(component.filePath());
     requireMatchingDigest(attestation, expectedSha256, actualSha256);
     return actualSha256;
   }
@@ -105,7 +125,7 @@ final class VexSerializerSupport {
     return expectedSha256;
   }
 
-  private static java.nio.file.Path canonicalizePath(final java.nio.file.Path path) {
+  private static Path canonicalizePath(final Path path) {
     if (path == null) {
       return null;
     }
@@ -151,6 +171,36 @@ final class VexSerializerSupport {
   private static void requireText(final String value, final String name) {
     if (value == null || value.isBlank()) {
       throw new IllegalArgumentException(name + " must not be blank");
+    }
+  }
+
+  record PreconditionEvidenceIdentity(
+      ArtifactCoordinate candidate,
+      String justification,
+      Set<PrerequisiteClaim> requiredPrerequisites,
+      Set<PrerequisiteGroup> groups,
+      Set<PrerequisiteMemberObservation> memberObservations,
+      Path affectedArtifactPath,
+      String postElisionSha256,
+      String inventorySha256) {
+    PreconditionEvidenceIdentity {
+      Objects.requireNonNull(candidate, "candidate");
+      Objects.requireNonNull(justification, "justification");
+      requiredPrerequisites = Set.copyOf(requiredPrerequisites);
+      groups = Set.copyOf(groups);
+      memberObservations = Set.copyOf(memberObservations);
+    }
+
+    static PreconditionEvidenceIdentity from(final VexAttestation attestation) {
+      return new PreconditionEvidenceIdentity(
+          attestation.coordinate(),
+          attestation.justification(),
+          attestation.requiredPrerequisites(),
+          attestation.requiredPrerequisiteGroups(),
+          attestation.requiredPrerequisiteObservations(),
+          attestation.affectedArtifactPath(),
+          attestation.postElisionSha256(),
+          attestation.inventorySha256());
     }
   }
 }

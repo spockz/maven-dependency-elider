@@ -5,8 +5,9 @@ package io.github.spockz.elider.plugin;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.model.CacheProducerIdentity.CompatibilityIdentity;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.model.HexDigest;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -54,6 +55,21 @@ final class TrimFingerprint {
       final Set<String> skippedArtifactIdentities,
       final FingerprintOptions options)
       throws IOException {
+    return fingerprint(
+        candidates,
+        allRetainedInputs,
+        skippedArtifactIdentities,
+        options,
+        TrimInputDigests.inputDigests(allRetainedInputs));
+  }
+
+  /* package */ static FingerprintSnapshot fingerprint(
+      final List<TrimCandidate> candidates,
+      final List<Path> allRetainedInputs,
+      final Set<String> skippedArtifactIdentities,
+      final FingerprintOptions options,
+      final Map<Path, ArtifactDigests> inputDigests)
+      throws IOException {
     final List<String> candidateIdentities = new ArrayList<>();
     final Set<String> roots = new TreeSet<>();
     for (final TrimCandidate candidate : candidates) {
@@ -74,8 +90,6 @@ final class TrimFingerprint {
     candidateIdentities.add("runtime-release:" + options.runtimeRelease());
     final List<JdkPlatformContext.PlatformSnapshot> platformSnapshots =
         List.of(options.platformContext().snapshot());
-    final Map<Path, ArtifactDigests> inputDigests =
-        TrimInputDigests.inputDigests(allRetainedInputs);
     final String value =
         fingerprintForPlatformSnapshots(
             candidateIdentities,
@@ -127,7 +141,7 @@ final class TrimFingerprint {
       platformIdentities.add(
           platformInput.toAbsolutePath().normalize().getFileName()
               + ":"
-              + TrimInputDigests.sha256(platformInput));
+              + HexDigest.sha256(platformInput));
     }
     return fingerprintForPlatformIdentities(
         candidateIdentities,
@@ -213,8 +227,7 @@ final class TrimFingerprint {
           .append(platformIdentities.get(index))
           .append('\n');
     }
-    return TrimInputDigests.hash(
-        input.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    return HexDigest.sha256(input.toString());
   }
 
   private static String encodeProducerIdentity(

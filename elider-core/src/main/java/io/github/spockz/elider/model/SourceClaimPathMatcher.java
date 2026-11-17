@@ -8,7 +8,6 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /** Applies conservative checks to source-file paths. */
-@SuppressWarnings("PMD.GodClass")
 public final class SourceClaimPathMatcher {
   /** Java source suffix retained by structured source claims. */
   private static final String JAVA_SUFFIX = ".java";
@@ -46,51 +45,15 @@ public final class SourceClaimPathMatcher {
     return normalized.substring(separator + 1);
   }
 
-  /** Checks path/package suffix agreement without asserting exact source location. */
-  public static boolean hasPackageSuffix(final String sourceClaim, final String classPackage) {
-    final String normalized = sourceClaim.replace('\\', '/');
-    final int basenameSeparator = normalized.lastIndexOf('/');
-    if (basenameSeparator <= 0) {
-      return false;
-    }
-    final String parent = normalized.substring(0, basenameSeparator);
-    final String[] pathSegments = parent.split("/");
-    final String[] packageSegments = classPackage.split("\\.");
-    if (pathSegments.length < packageSegments.length) {
-      return false;
-    }
-    for (final String segment : pathSegments) {
-      if (segment.isBlank() || ".".equals(segment) || "..".equals(segment)) {
-        return false;
-      }
-    }
-    for (int index = 0; index < packageSegments.length; index++) {
-      if (!packageSegments[packageSegments.length - index - 1].equals(
-          pathSegments[pathSegments.length - index - 1])) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   /** Returns the package portion of a binary class name. */
   public static String classPackage(final String classEntry) {
     final int separator = classEntry.lastIndexOf('.');
     return separator < 0 ? "" : classEntry.substring(0, separator);
   }
 
-  /** Describes the limited package suffix comparison for review-only findings. */
-  public static String packageComparison(final String sourceClaim, final String classEntry) {
-    return "source path package suffix matches class package "
-        + classPackage(classEntry)
-        + "; exact source location and sibling class set remain unverified ("
-        + sourceClaim
-        + ")";
-  }
-
   /** Returns normalized package-relative paths from the claim's original spellings. */
   @SuppressWarnings({"PMD.CognitiveComplexity", "PMD.CyclomaticComplexity"})
-  /* default */ static Set<String> packageRelativeSourcePaths(
+  public static Set<String> packageRelativeSourcePaths(
       final CodeReference reference, final boolean conventionalLayoutAssumed) {
     if (reference.kind() != CodeReference.Kind.SOURCE_FILE) {
       return Set.of();
@@ -120,7 +83,8 @@ public final class SourceClaimPathMatcher {
     return java.util.Collections.unmodifiableSet(paths);
   }
 
-  /* default */ static boolean containsConventionalSourceRoot(final CodeReference reference) {
+  /** Checks whether any claimed path starts with a conventional source root. */
+  public static boolean containsConventionalSourceRoot(final CodeReference reference) {
     return reference.originalValues().stream()
         .map(SourceClaimPathMatcher::normalizeRelativePath)
         .filter(java.util.Objects::nonNull)

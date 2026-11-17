@@ -4,6 +4,7 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.MultiReleaseClassInventory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -11,7 +12,6 @@ import java.util.List;
 import java.util.Set;
 
 /** Applies the same unsupported-archive policy to analysis and publication. */
-@SuppressWarnings("PMD.TooManyMethods")
 final class TrimPassThroughPlanner {
   /** Production scopes eligible for candidate trimming. */
   /* package */ static final Set<String> TRIMMABLE_SCOPES = Set.of("compile", "runtime");
@@ -33,30 +33,6 @@ final class TrimPassThroughPlanner {
   /* package */ static boolean unchangedScope(final ArtifactCoordinate coordinate) {
     return MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(coordinate.scope())
         && !TRIMMABLE_SCOPES.contains(coordinate.scope());
-  }
-
-  /* package */ static boolean passThroughCoordinate(
-      final TrimRequest request, final ElisionAnalysisModel.ArtifactSnapshot snapshot)
-      throws IOException {
-    final boolean multiRelease =
-        MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath());
-    final boolean moduleInfo =
-        MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath());
-    if (!request.retainedCoordinates().contains(snapshot.coordinate())) {
-      return multiRelease || moduleInfo;
-    }
-    if (moduleInfo && request.policy().failOnUnsupportedModuleInfo()) {
-      throw new IOException(
-          "Unsupported root module descriptor in retained classpath JAR: " + snapshot.coordinate());
-    }
-    final MrjarStrategy strategy = MrjarStrategy.parse(request.policy().mrjarStrategy());
-    final boolean modulePassThrough = moduleInfo && strategy != MrjarStrategy.CLASSPATH_ONLY;
-    final boolean multiReleasePassThrough =
-        switch (strategy) {
-          case PASS_THROUGH -> multiRelease;
-          case VERTICAL_SHADING, CLASSPATH_ONLY -> false;
-        };
-    return modulePassThrough || multiReleasePassThrough;
   }
 
   /* package */ static TrimPassThroughPlan passThroughPlan(final TrimRequest request)
@@ -116,8 +92,8 @@ final class TrimPassThroughPlanner {
     final List<ElisionAnalysisModel.ArtifactSnapshot> moduleInfo = new ArrayList<>();
     final MrjarStrategy strategy = MrjarStrategy.parse(request.policy().mrjarStrategy());
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : retainedLibraries) {
-      if (MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath())
-          && strategy == MrjarStrategy.PASS_THROUGH) {
+      if (strategy == MrjarStrategy.PASS_THROUGH
+          && MultiReleaseClassInventory.hasUnsupportedVersionedClasses(snapshot.filePath())) {
         multiRelease.add(snapshot);
       }
       if (MultiReleaseLibraryProjection.hasRootModuleDescriptor(snapshot.filePath())) {
@@ -140,15 +116,7 @@ final class TrimPassThroughPlanner {
       List<ElisionAnalysisModel.ArtifactSnapshot> moduleInfo) {}
 
   /* package */ static String artifactIdentity(final ArtifactCoordinate coordinate) {
-    return coordinate.groupId()
-        + ":"
-        + coordinate.artifactId()
-        + ":"
-        + coordinate.version()
-        + ":"
-        + coordinate.type()
-        + ":"
-        + coordinate.classifier();
+    return MavenArtifactIdentity.from(coordinate).format();
   }
 
   /* package */ static Set<String> identities(
@@ -164,9 +132,16 @@ final class TrimPassThroughPlanner {
       throws IOException {
     final Set<String> requestedIdentities = new LinkedHashSet<>();
     for (final String raw : requested) {
-      final RequestedCoordinate coordinate = requestedCoordinate(raw);
+      final MavenArtifactIdentity coordinate;
+      try {
+        coordinate = MavenArtifactIdentity.parsePassThrough(raw);
+      } catch (final IllegalArgumentException exception) {
+        throw new IOException(exception.getMessage(), exception);
+      }
       final List<ElisionAnalysisModel.ArtifactSnapshot> matches =
-          retainedLibraries.stream().filter(coordinate::matches).toList();
+          retainedLibraries.stream()
+              .filter(snapshot -> coordinate.matches(snapshot.coordinate()))
+              .toList();
       if (matches.isEmpty()) {
         throw new IOException(
             "elide.trimSkipArtifacts coordinate is not a retained compile/runtime JAR: " + raw);
@@ -178,47 +153,5 @@ final class TrimPassThroughPlanner {
     return retainedLibraries.stream()
         .filter(snapshot -> requestedIdentities.contains(artifactIdentity(snapshot.coordinate())))
         .toList();
-  }
-
-  private static RequestedCoordinate requestedCoordinate(final String raw) throws IOException {
-    final String[] parts = requestedParts(raw);
-    final String type =
-        parts.length > 3 && !parts[3].isBlank() ? parts[3] : MavenDependencyTrimmer.JAR_TYPE;
-    final String classifier = parts.length > 4 ? parts[4] : "";
-    return new RequestedCoordinate(parts[0], parts[1], parts[2], type, classifier);
-  }
-
-  private static String[] requestedParts(final String raw) throws IOException {
-    if (raw == null || raw.isBlank()) {
-      throw new IOException("elide.trimSkipArtifacts must not contain blank coordinates");
-    }
-    final String[] parts = raw.trim().split(":", -1);
-    if (!validCoordinateParts(parts)) {
-      throw new IOException(
-          "Invalid elide.trimSkipArtifacts coordinate; expected "
-              + "group:artifact:version[:type[:classifier]]: "
-              + raw);
-    }
-    return parts;
-  }
-
-  private static boolean validCoordinateParts(final String... parts) {
-    if (parts.length < 3 || parts.length > 5) {
-      return false;
-    }
-    return !parts[0].isBlank() && !parts[1].isBlank() && !parts[2].isBlank();
-  }
-
-  /** Scope-independent coordinates match only the supplied retained inventory. */
-  private record RequestedCoordinate(
-      String groupId, String artifactId, String version, String type, String classifier) {
-    private boolean matches(final ElisionAnalysisModel.ArtifactSnapshot snapshot) {
-      final ArtifactCoordinate coordinate = snapshot.coordinate();
-      return coordinate.groupId().equals(groupId)
-          && coordinate.artifactId().equals(artifactId)
-          && coordinate.version().equals(version)
-          && coordinate.type().equals(type)
-          && coordinate.classifier().equals(classifier);
-    }
   }
 }

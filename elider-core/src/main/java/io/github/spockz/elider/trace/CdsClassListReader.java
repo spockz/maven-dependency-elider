@@ -22,8 +22,9 @@ public final class CdsClassListReader implements RuntimeTraceReader {
   }
 
   /** Creates a reader for HotSpot CDS class-list files. */
-  @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  public CdsClassListReader() {}
+  public CdsClassListReader() {
+    // Stateless reader.
+  }
 
   /** Recognizes conventional {@code .lst} CDS class-list paths. */
   @Override

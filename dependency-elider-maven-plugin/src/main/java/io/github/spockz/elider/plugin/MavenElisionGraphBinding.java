@@ -4,12 +4,11 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.model.HexDigest;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageConsumedInput;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -52,7 +51,7 @@ final class MavenElisionGraphBinding {
     final List<ElisionAnalysisModel.ArtifactSnapshot> inventory =
         context.artifacts().resolvedSnapshots();
     final String projectKey = projectKey(project);
-    final String inventoryFingerprint = ResolvedArtifactInventoryFingerprint.fingerprint(inventory);
+    final String inventoryFingerprint = context.resolvedFingerprint();
     final String operationFingerprint =
         sha256(
             List.of(
@@ -235,7 +234,7 @@ final class MavenElisionGraphBinding {
     if (graphIdentities.size() != SINGLE_GRAPH_IDENTITY) {
       throw new IOException("Analyze inventory matches multiple captured Resolver graph pairs");
     }
-    return compatible.get(0);
+    return compatible.getFirst();
   }
 
   @SuppressWarnings(
@@ -250,12 +249,6 @@ final class MavenElisionGraphBinding {
     }
     final org.eclipse.aether.SessionData sessionData = repositorySession.getData();
     return sessionData.get(EliderMediatedGraphCaptureDecorator.SESSION_DATA_KEY);
-  }
-
-  static void verifyInventoryFingerprint(
-      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory, final String expectedFingerprint)
-      throws IOException {
-    ResolvedArtifactInventoryFingerprint.verifyFingerprint(inventory, expectedFingerprint);
   }
 
   private static Result failClosed(
@@ -377,18 +370,7 @@ final class MavenElisionGraphBinding {
   }
 
   static String sha256(final List<String> values) {
-    try {
-      final MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      for (final String value : values) {
-        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        digest.update(Integer.toString(bytes.length).getBytes(StandardCharsets.US_ASCII));
-        digest.update((byte) ':');
-        digest.update(bytes);
-      }
-      return java.util.HexFormat.of().formatHex(digest.digest());
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new AssertionError("SHA-256 is unavailable", exception);
-    }
+    return HexDigest.sha256LengthPrefixed(values);
   }
 
   record Result(

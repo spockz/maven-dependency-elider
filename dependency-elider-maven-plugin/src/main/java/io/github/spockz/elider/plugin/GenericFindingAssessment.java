@@ -2,13 +2,13 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.CodeAttributionResolver;
+import io.github.spockz.elider.applicability.PrerequisiteProofResult;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.ClaimGroupStatus;
-import io.github.spockz.elider.model.CodeAttributionResolver;
 import io.github.spockz.elider.model.CodeReference;
 import io.github.spockz.elider.model.PrerequisiteClaim;
-import io.github.spockz.elider.model.PrerequisiteProofResult;
 import io.github.spockz.elider.model.VersionApplicability;
 import io.github.spockz.elider.model.VersionCoverageClaim;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;

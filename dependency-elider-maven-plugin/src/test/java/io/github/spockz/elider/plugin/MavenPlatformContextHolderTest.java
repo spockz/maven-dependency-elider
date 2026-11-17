@@ -60,8 +60,18 @@ class MavenPlatformContextHolderTest {
             Optional.empty());
     try (JdkPlatformContext requestContext = MavenPlatformContextHolder.forOperation(session)) {
       final JdkPlatformContext.PlatformSnapshot requestSnapshot = requestContext.snapshot();
-      final SingleReleasePlatforms.AnalysisPlatform analysis =
-          SingleReleasePlatforms.prepare(request);
+      final TrimExecutionEnvironment executionEnvironment =
+          MavenDependencyTrimmer.executionEnvironment(request);
+      final MultiReleaseTrimContext operation =
+          new MultiReleaseTrimContext(
+              request,
+              Map.of(),
+              Set.of(),
+              executionEnvironment.targetRelease(),
+              executionEnvironment.runtimeRelease());
+      final TierInventoryReader.JdkClassTablePlan analysis =
+          new TierInventoryReader(operation)
+              .readJdkClassTables(List.of(executionEnvironment.runtimeRelease()));
 
       assertAll(
           "one active-runtime snapshot backs the complete candidate analysis",

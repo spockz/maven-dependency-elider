@@ -31,6 +31,8 @@ final class DynamicRootDiagnosticsTest {
         DynamicRootDiagnostics.unresolvedRoots(roots, Set.of(), Set.of("fixture.ApplicationRoot"));
 
     assertAll(
+        "unknown dynamic root is reported once with declaring archive while known classes are"
+            + " omitted",
         () -> assertThat(diagnostics).hasSize(1),
         () ->
             assertThat(diagnostics.getFirst())

@@ -28,14 +28,7 @@ public record PrerequisiteGroup(PrerequisiteOperator operator, Set<PrerequisiteC
     if (operatorOrder != 0) {
       return operatorOrder;
     }
-    final java.util.Iterator<PrerequisiteClaim> left = members.iterator();
-    final java.util.Iterator<PrerequisiteClaim> right = other.members.iterator();
-    while (left.hasNext() && right.hasNext()) {
-      final int memberOrder = left.next().compareTo(right.next());
-      if (memberOrder != 0) {
-        return memberOrder;
-      }
-    }
-    return Boolean.compare(left.hasNext(), right.hasNext());
+    return java.util.Arrays.compare(
+        members.toArray(PrerequisiteClaim[]::new), other.members.toArray(PrerequisiteClaim[]::new));
   }
 }

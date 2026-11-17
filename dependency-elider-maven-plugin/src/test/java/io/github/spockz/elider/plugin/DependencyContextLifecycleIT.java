@@ -14,11 +14,13 @@ import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -43,10 +45,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
 /** Verifies artifact-view changes across a real Maven lifecycle. */
+@Execution(ExecutionMode.CONCURRENT)
 @SuppressWarnings({
   "PMD.AddEmptyString",
   "PMD.AtLeastOneConstructor",
@@ -143,45 +148,6 @@ final class DependencyContextLifecycleIT {
   private static final String LIFECYCLE_REPLACEMENT_FILE_PROPERTY = "-Dlifecycle.replacementFile=";
 
   private static final Duration PROCESS_TIMEOUT = Duration.ofSeconds(180);
-
-  @Test
-  void settingsMirrorUsesConfiguredMavenCacheAndFallsBackToUserHome() throws Exception {
-    final Path userHome = temporaryDirectory.resolve("user-home");
-    final Path configuredRepository = temporaryDirectory.resolve("outer-maven-cache");
-    final String configuredRepositoryUri =
-        cachedRepositoryUri(configuredRepository.toString(), userHome.toString());
-    final String fallbackRepositoryUri = cachedRepositoryUri(" ", userHome.toString());
-    final Path configuredSettingsDirectory =
-        Files.createDirectories(temporaryDirectory.resolve("configured-settings"));
-    final Path fallbackSettingsDirectory =
-        Files.createDirectories(temporaryDirectory.resolve("fallback-settings"));
-    final String configuredSettings =
-        Files.readString(writeSettings(configuredSettingsDirectory, configuredRepositoryUri));
-    final String fallbackSettings =
-        Files.readString(writeSettings(fallbackSettingsDirectory, fallbackRepositoryUri));
-
-    assertAll(
-        "Lifecycle mirrors use the selected local cache and block remote repositories",
-        () ->
-            assertThat(configuredRepositoryUri)
-                .isEqualTo(configuredRepository.toUri().toASCIIString()),
-        () -> assertThat(URI.create(configuredRepositoryUri).getScheme()).isEqualTo("file"),
-        () ->
-            assertThat(configuredSettings)
-                .contains(
-                    "<id>cached-local-mirror</id>",
-                    "<mirrorOf>*</mirrorOf>",
-                    "<url>" + configuredRepositoryUri + "</url>"),
-        () ->
-            assertThat(fallbackRepositoryUri)
-                .isEqualTo(Path.of(userHome.toString(), ".m2/repository").toUri().toASCIIString()),
-        () ->
-            assertThat(fallbackSettings)
-                .contains(
-                    "<id>cached-local-mirror</id>",
-                    "<mirrorOf>*</mirrorOf>",
-                    "<url>" + fallbackRepositoryUri + "</url>"));
-  }
 
   @Test
   void analyzeWithoutCoreExtensionReportsDetachedPredictionWithoutPublishingTrimOutputs()
@@ -281,9 +247,11 @@ final class DependencyContextLifecycleIT {
   }
 
   private static void installMediationConflict(final Path localRepository) throws IOException {
-    final Path group = localRepository.resolve("io/github/spockz/elider/test");
-    final Path keepPom = group.resolve("keep-library/1.0.0/keep-library-1.0.0.pom");
-    final String keepModel = Files.readString(keepPom);
+    final String keepRelative =
+        "io/github/spockz/elider/test/keep-library/1.0.0/keep-library-1.0.0.pom";
+    final Path keepPom = localRepository.resolve(keepRelative);
+    Files.createDirectories(keepPom.getParent());
+    final String keepModel = Files.readString(resolveSeedOrLocal(localRepository, keepRelative));
     Files.writeString(
         keepPom,
         keepModel.replace(
@@ -291,10 +259,13 @@ final class DependencyContextLifecycleIT {
             "<dependencies><dependency><groupId>io.github.spockz.elider.test</groupId>"
                 + "<artifactId>drop-library</artifactId><version>1.0.0</version>"
                 + "</dependency></dependencies></project>"));
+    final Path group = localRepository.resolve("io/github/spockz/elider/test");
     final Path version = group.resolve("drop-library/2.0.0");
     Files.createDirectories(version);
     Files.copy(
-        group.resolve("drop-library/1.0.0/drop-library-1.0.0.jar"),
+        resolveSeedOrLocal(
+            localRepository,
+            "io/github/spockz/elider/test/drop-library/1.0.0/drop-library-1.0.0.jar"),
         version.resolve("drop-library-2.0.0.jar"));
     Files.writeString(
         version.resolve("drop-library-2.0.0.pom"),
@@ -324,21 +295,27 @@ final class DependencyContextLifecycleIT {
             PROCESS_TIMEOUT,
             "-version");
     assertThat(versionOutput).contains("Apache Maven 3.9.11");
-    run(
-        repositoryRoot,
-        wrapper,
-        settings,
-        seedRepository,
-        evidenceDirectory.resolve("production-install.log"),
-        PROCESS_TIMEOUT,
-        "-f",
-        repositoryRoot.resolve(POM_XML).toString(),
-        "-pl",
-        "dependency-elider-maven-plugin",
-        "-am",
-        "install",
-        "-DskipTests",
-        "-Djacoco.skip=true");
+    final Path installLock = repositoryRoot.resolve("target/it-install.lock");
+    Files.createDirectories(installLock.getParent());
+    try (FileChannel channel =
+            FileChannel.open(installLock, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+        FileLock ignored = channel.lock()) {
+      run(
+          repositoryRoot,
+          wrapper,
+          settings,
+          seedRepository,
+          evidenceDirectory.resolve("production-install.log"),
+          PROCESS_TIMEOUT,
+          "-f",
+          repositoryRoot.resolve(POM_XML).toString(),
+          "-pl",
+          "dependency-elider-maven-plugin",
+          "-am",
+          "install",
+          "-DskipTests",
+          "-Djacoco.skip=true");
+    }
     run(
         repositoryRoot,
         wrapper,
@@ -473,81 +450,103 @@ final class DependencyContextLifecycleIT {
             + "${elide.banishedDependencies}</banishedDependencies>"
             + originalPom.substring(pluginConfigurationIndex + pluginConfiguration.length()));
 
-    final String elideOutput =
-        runBanGoal(
-            fixtureRoot,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("elide.log"),
-            ban,
-            consumerPom,
-            ELIDE_RUN_GOAL);
-    final String analyzeOutput =
-        runBanGoal(
-            fixtureRoot,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("analyze.log"),
-            ban,
-            consumerPom,
-            ANALYZE_RUN_GOAL);
-    final String defaultCliOutput =
-        runBanGoal(
-            fixtureRoot,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("default-cli.log"),
-            ban,
-            consumerPom,
-            "dependency-elider:elide");
-    final String initializeOutput =
-        runBanGoal(
-            fixtureRoot,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("initialize.log"),
-            ban,
-            consumerPom,
-            "initialize");
-    final String processClassesOutput =
-        runBanGoal(
-            fixtureRoot,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("process-classes.log"),
-            ban,
-            consumerPom,
-            "-Delide.productionClassesComplete=true",
-            PROCESS_CLASSES_PHASE);
-    final String treePromotionOutput =
-        runBanGoal(
-            fixtureRoot,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("tree-promotion.log"),
-            ban,
-            consumerPom,
-            "dependency:tree");
-
     final Path managementPom = evidenceDirectory.resolve("plugin-management/pom.xml");
     Files.createDirectories(managementPom.getParent());
     Files.writeString(managementPom, pluginManagementOnlyPom());
-    final String managementCliOutput =
-        runBanGoal(
-            fixtureRoot,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("plugin-management-cli.log"),
-            ban,
-            managementPom,
-            "io.github.spockz:dependency-elider-maven-plugin:elide");
+
+    final java.util.concurrent.CompletableFuture<String> elideFuture =
+        java.util.concurrent.CompletableFuture.supplyAsync(
+            () ->
+                runBanGoalUnchecked(
+                    fixtureRoot,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("elide.log"),
+                    ban,
+                    consumerPom,
+                    ELIDE_RUN_GOAL));
+    final java.util.concurrent.CompletableFuture<String> analyzeFuture =
+        java.util.concurrent.CompletableFuture.supplyAsync(
+            () ->
+                runBanGoalUnchecked(
+                    fixtureRoot,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("analyze.log"),
+                    ban,
+                    consumerPom,
+                    ANALYZE_RUN_GOAL));
+    final java.util.concurrent.CompletableFuture<String> defaultCliFuture =
+        java.util.concurrent.CompletableFuture.supplyAsync(
+            () ->
+                runBanGoalUnchecked(
+                    fixtureRoot,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("default-cli.log"),
+                    ban,
+                    consumerPom,
+                    "dependency-elider:elide"));
+    final java.util.concurrent.CompletableFuture<String> initializeFuture =
+        java.util.concurrent.CompletableFuture.supplyAsync(
+            () ->
+                runBanGoalUnchecked(
+                    fixtureRoot,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("initialize.log"),
+                    ban,
+                    consumerPom,
+                    "initialize"));
+    final java.util.concurrent.CompletableFuture<String> processClassesFuture =
+        java.util.concurrent.CompletableFuture.supplyAsync(
+            () ->
+                runBanGoalUnchecked(
+                    fixtureRoot,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("process-classes.log"),
+                    ban,
+                    consumerPom,
+                    "-Delide.productionClassesComplete=true",
+                    PROCESS_CLASSES_PHASE));
+    final java.util.concurrent.CompletableFuture<String> treePromotionFuture =
+        java.util.concurrent.CompletableFuture.supplyAsync(
+            () ->
+                runBanGoalUnchecked(
+                    fixtureRoot,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("tree-promotion.log"),
+                    ban,
+                    consumerPom,
+                    "dependency:tree"));
+    final java.util.concurrent.CompletableFuture<String> managementCliFuture =
+        java.util.concurrent.CompletableFuture.supplyAsync(
+            () ->
+                runBanGoalUnchecked(
+                    fixtureRoot,
+                    wrapper,
+                    settings,
+                    localRepository,
+                    evidenceDirectory.resolve("plugin-management-cli.log"),
+                    ban,
+                    managementPom,
+                    "io.github.spockz:dependency-elider-maven-plugin:elide"));
+
+    final String elideOutput = elideFuture.join();
+    final String analyzeOutput = analyzeFuture.join();
+    final String defaultCliOutput = defaultCliFuture.join();
+    final String initializeOutput = initializeFuture.join();
+    final String processClassesOutput = processClassesFuture.join();
+    final String treePromotionOutput = treePromotionFuture.join();
+    final String managementCliOutput = managementCliFuture.join();
 
     assertAll(
         "Selected invocations validate the frozen policy before failing on a specific input guard",
@@ -568,12 +567,12 @@ final class DependencyContextLifecycleIT {
         () ->
             assertExpectedGoalFailure(
                 initializeOutput,
-                ELISION_FAILURE_PREFIX
+                "elide.traceFiles entry must be an existing readable file: "
                     + fixtureRoot.resolve("ban-invocations/initialize/project/trace.txt")),
         () ->
             assertExpectedGoalFailure(
                 processClassesOutput,
-                ELISION_FAILURE_PREFIX
+                "elide.traceFiles entry must be an existing readable file: "
                     + fixtureRoot.resolve("ban-invocations/process-classes/project/trace.txt")),
         () ->
             assertExpectedGoalFailure(
@@ -1265,6 +1264,27 @@ final class DependencyContextLifecycleIT {
         () -> assertThat(resolvedRows).anyMatch(row -> row.contains("drop-library")));
   }
 
+  @SuppressWarnings("PMD.DoNotUseThreads")
+  private static String runBanGoalUnchecked(
+      final Path workingDirectory,
+      final Path wrapper,
+      final Path settings,
+      final Path localRepository,
+      final Path log,
+      final String ban,
+      final Path pom,
+      final String... goals) {
+    try {
+      return runBanGoal(workingDirectory, wrapper, settings, localRepository, log, ban, pom, goals);
+    } catch (final IOException | XMLStreamException exception) {
+      throw new java.io.UncheckedIOException(
+          new IOException("Ban goal invocation failed: " + log, exception));
+    } catch (final InterruptedException exception) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted while running ban goal: " + log, exception);
+    }
+  }
+
   private static String runBanGoal(
       final Path workingDirectory,
       final Path wrapper,
@@ -1404,13 +1424,16 @@ final class DependencyContextLifecycleIT {
 
   private static void addDropAsKeepLibraryDependency(final Path localRepository)
       throws IOException {
-    final Path keepPom =
-        localRepository
-            .resolve(GROUP_ID.replace('.', '/'))
-            .resolve("keep-library")
-            .resolve(VERSION)
-            .resolve("keep-library-" + VERSION + ".pom");
-    final String original = Files.readString(keepPom);
+    final String keepRelative =
+        GROUP_ID.replace('.', '/')
+            + "/keep-library/"
+            + VERSION
+            + "/keep-library-"
+            + VERSION
+            + ".pom";
+    final Path keepPom = localRepository.resolve(keepRelative);
+    Files.createDirectories(keepPom.getParent());
+    final String original = Files.readString(resolveSeedOrLocal(localRepository, keepRelative));
     Files.writeString(
         keepPom,
         original.replace(
@@ -1529,212 +1552,6 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
-  void legacyRetentionPomElementFailsBothGoalsBeforeReportPublication() throws Exception {
-    final Path repositoryRoot = repositoryRoot();
-    final Path evidenceDirectory = temporaryDirectory.resolve("legacy-retention-pom");
-    Files.createDirectories(evidenceDirectory);
-    final Path localRepository = copySeedRepository(evidenceDirectory);
-    final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path fixtureDirectory =
-        Files.createDirectories(evidenceDirectory.resolve("legacy-consumer"));
-    final Path target = Files.createDirectories(fixtureDirectory.resolve(TARGET_DIRECTORY));
-    final Path report = target.resolve("class-usage.json");
-    final Path summary = target.resolve("dependency-elider-report.json");
-    final String reportContents = "previous class report";
-    final String summaryContents = "previous elision report";
-    Files.writeString(report, reportContents);
-    Files.writeString(summary, summaryContents);
-    Files.writeString(
-        fixtureDirectory.resolve(TRACE_FILE), "io.github.spockz.elider.fixture.keep.KeepEntry\n");
-    final Path pom = fixtureDirectory.resolve(POM_XML);
-    Files.writeString(
-        pom,
-        """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!-- WHY: Exercises a legacy parameter that Maven's plugin descriptor strips before Mojo injection. -->
-        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-          <modelVersion>4.0.0</modelVersion>
-          <groupId>io.github.spockz.elider.test</groupId><artifactId>legacy-retention-consumer</artifactId><version>1.0.0</version><packaging>pom</packaging>
-          <build><plugins><plugin>
-            <groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version>
-            <configuration>
-              <excludedArtifacts>org.example:legacy</excludedArtifacts>
-              <traceFiles>${project.basedir}/trace.txt</traceFiles>
-              <reportFile>${project.build.directory}/class-usage.json</reportFile>
-              <summaryFile>${project.build.directory}/dependency-elider-report.json</summaryFile>
-              <leafOnly>false</leafOnly>
-            </configuration>
-          </plugin></plugins></build>
-        </project>
-        """);
-    final Path executionPom = fixtureDirectory.resolve("execution-config-pom.xml");
-    Files.writeString(
-        executionPom,
-        """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!-- WHY: Exercises execution-level legacy configuration before Maven merges mojo parameters. -->
-        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-          <modelVersion>4.0.0</modelVersion>
-          <groupId>io.github.spockz.elider.test</groupId><artifactId>legacy-execution-consumer</artifactId><version>1.0.0</version><packaging>pom</packaging>
-          <build><plugins><plugin>
-            <groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version>
-            <executions>
-              <execution><id>legacy-elide</id><goals><goal>elide</goal></goals><configuration><excludedArtifacts>org.example:legacy</excludedArtifacts><reportFile>${project.build.directory}/class-usage.json</reportFile><summaryFile>${project.build.directory}/dependency-elider-report.json</summaryFile></configuration></execution>
-              <execution><id>legacy-analyze</id><goals><goal>analyze</goal></goals><configuration><excludedArtifacts>org.example:legacy</excludedArtifacts><reportFile>${project.build.directory}/class-usage.json</reportFile></configuration></execution>
-            </executions>
-          </plugin></plugins></build>
-        </project>
-        """);
-    final Path currentSettingPom = fixtureDirectory.resolve("current-retention-pom.xml");
-    Files.createDirectories(fixtureDirectory.resolve("target/classes"));
-    Files.writeString(fixtureDirectory.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
-    Files.writeString(
-        currentSettingPom,
-        """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!-- WHY: Confirms Maven accepts the current global retention parameter through its descriptor. -->
-        <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-          <modelVersion>4.0.0</modelVersion>
-          <groupId>io.github.spockz.elider.test</groupId><artifactId>current-retention-consumer</artifactId><version>1.0.0</version><packaging>pom</packaging>
-          <dependencies><dependency><groupId>io.github.spockz.elider.test</groupId><artifactId>keep-library</artifactId><version>1.0.0</version></dependency></dependencies>
-          <build><plugins><plugin>
-            <groupId>io.github.spockz</groupId><artifactId>dependency-elider-maven-plugin</artifactId><version>0.1.0-SNAPSHOT</version>
-            <configuration>
-              <retainedArtifacts>org.example:current</retainedArtifacts>
-              <traceFiles>${project.basedir}/trace.txt</traceFiles>
-              <reportFile>${project.build.directory}/class-usage.json</reportFile>
-              <leafOnly>false</leafOnly>
-            </configuration>
-          </plugin></plugins></build>
-        </project>
-        """);
-    final String goalPrefix = "io.github.spockz:dependency-elider-maven-plugin:0.1.0-SNAPSHOT:";
-
-    assertAll(
-        "legacy POM configuration is rejected before either goal can publish",
-        () ->
-            assertLegacyPomGoalRejected(
-                new LegacyPomGoal(
-                    fixtureDirectory,
-                    wrapper,
-                    settings,
-                    localRepository,
-                    evidenceDirectory.resolve("elide.log"),
-                    pom,
-                    goalPrefix + "elide",
-                    report,
-                    reportContents,
-                    summary,
-                    summaryContents)),
-        () ->
-            assertLegacyPomGoalRejected(
-                new LegacyPomGoal(
-                    fixtureDirectory,
-                    wrapper,
-                    settings,
-                    localRepository,
-                    evidenceDirectory.resolve("analyze.log"),
-                    pom,
-                    goalPrefix + "analyze",
-                    report,
-                    reportContents,
-                    summary,
-                    summaryContents)),
-        () ->
-            assertLegacyPomGoalRejected(
-                new LegacyPomGoal(
-                    fixtureDirectory,
-                    wrapper,
-                    settings,
-                    localRepository,
-                    evidenceDirectory.resolve("elide-execution.log"),
-                    executionPom,
-                    goalPrefix + "elide@legacy-elide",
-                    report,
-                    reportContents,
-                    summary,
-                    summaryContents)),
-        () ->
-            assertLegacyPomGoalRejected(
-                new LegacyPomGoal(
-                    fixtureDirectory,
-                    wrapper,
-                    settings,
-                    localRepository,
-                    evidenceDirectory.resolve("analyze-execution.log"),
-                    executionPom,
-                    goalPrefix + "analyze@legacy-analyze",
-                    report,
-                    reportContents,
-                    summary,
-                    summaryContents)),
-        () ->
-            assertCurrentRetentionPomAccepted(
-                fixtureDirectory,
-                wrapper,
-                settings,
-                localRepository,
-                evidenceDirectory.resolve("current-retention.log"),
-                currentSettingPom,
-                goalPrefix + "analyze",
-                report));
-  }
-
-  private static void assertCurrentRetentionPomAccepted(
-      final Path workingDirectory,
-      final Path wrapper,
-      final Path settings,
-      final Path localRepository,
-      final Path logFile,
-      final Path pom,
-      final String goal,
-      final Path report)
-      throws IOException, InterruptedException {
-    Files.deleteIfExists(report);
-    final SubprocessExecution execution =
-        executeSubprocess(
-            workingDirectory,
-            wrapper,
-            settings,
-            localRepository,
-            logFile,
-            PROCESS_TIMEOUT,
-            "-f",
-            pom.toString(),
-            goal);
-    final int exitCode = execution.exitCode();
-    assertAll(
-        "Maven accepts the current retainedArtifacts setting",
-        () -> org.junit.jupiter.api.Assertions.assertEquals(0, exitCode, execution.output()),
-        () -> assertThat(execution.output()).doesNotContain("elide.excludedArtifacts is obsolete"),
-        () -> assertThat(report).exists());
-  }
-
-  private static void assertLegacyPomGoalRejected(final LegacyPomGoal scenario)
-      throws IOException, InterruptedException {
-    final SubprocessExecution execution =
-        executeSubprocess(
-            scenario.workingDirectory(),
-            scenario.wrapper(),
-            scenario.settings(),
-            scenario.localRepository(),
-            scenario.logFile(),
-            PROCESS_TIMEOUT,
-            "-f",
-            scenario.pom().toString(),
-            scenario.goal());
-    final int exitCode = execution.exitCode();
-    assertAll(
-        scenario.goal(),
-        () -> org.junit.jupiter.api.Assertions.assertNotEquals(0, exitCode),
-        () -> assertThat(execution.output()).contains("elide.excludedArtifacts is obsolete"),
-        () -> assertThat(Files.readString(scenario.report())).isEqualTo(scenario.reportContents()),
-        () ->
-            assertThat(Files.readString(scenario.summary())).isEqualTo(scenario.summaryContents()));
-  }
-
-  @Test
   void implicitDefaultCompileConfigurationMatchesEliderTargetAndEmittedBytecode() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     final Path evidenceDirectory =
@@ -1839,19 +1656,6 @@ final class DependencyContextLifecycleIT {
   private record BanLifecycleFixture(
       Path wrapper, Path settings, Path localRepository, Path consumer, Path pom) {}
 
-  private record LegacyPomGoal(
-      Path workingDirectory,
-      Path wrapper,
-      Path settings,
-      Path localRepository,
-      Path logFile,
-      Path pom,
-      String goal,
-      Path report,
-      String reportContents,
-      Path summary,
-      String summaryContents) {}
-
   @Test
   void packagedProductionExtensionSubstitutesOnlyThePositiveConsumerRetainedJar() throws Exception {
     final Path repositoryRoot = repositoryRoot();
@@ -1862,11 +1666,7 @@ final class DependencyContextLifecycleIT {
     final Path settings = writeSettings(evidenceDirectory);
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
 
-    final Path productionJar =
-        localRepository.resolve(
-            "io/github/spockz/dependency-elider-maven-plugin/0.1.0-SNAPSHOT/"
-                + "dependency-elider-maven-plugin-0.1.0-SNAPSHOT.jar");
-    assertProductionExtensionPackage(productionJar);
+    assertProductionExtensionPackage(localRepository);
 
     final Path dropJar = repositoryArtifact(localRepository, "drop-library");
     final Path keepJar = repositoryArtifact(localRepository, "keep-library");
@@ -2586,10 +2386,7 @@ final class DependencyContextLifecycleIT {
     final Path settings = writeSettings(evidenceDirectory);
     final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
 
-    assertProductionExtensionPackage(
-        localRepository.resolve(
-            "io/github/spockz/dependency-elider-maven-plugin/0.1.0-SNAPSHOT/"
-                + "dependency-elider-maven-plugin-0.1.0-SNAPSHOT.jar"));
+    assertProductionExtensionPackage(localRepository);
     final Path originalDrop = repositoryArtifact(localRepository, "drop-library");
     final Path originalKeep = repositoryArtifact(localRepository, "keep-library");
     final String originalDropHash = sha256(originalDrop);
@@ -2769,203 +2566,6 @@ final class DependencyContextLifecycleIT {
   }
 
   @Test
-  void cleanAfterEarlierPackageFailsInsteadOfReusingInvalidatedOutputs() throws Exception {
-    final Path repositoryRoot = repositoryRoot();
-    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
-    final Path evidenceDirectory = temporaryDirectory.resolve("package-clean-tree-evidence");
-    Files.createDirectories(evidenceDirectory);
-    final Path localRepository = copySeedRepository(evidenceDirectory);
-    final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path consumer = evidenceDirectory.resolve("package-clean-tree");
-    Files.createDirectories(consumer);
-    final Path pom = consumer.resolve(POM_XML);
-    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
-    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
-    writeConsumerExtensions(
-        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
-
-    final String output =
-        runExpectingFailure(
-            consumer,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("package-clean-tree.log"),
-            PROCESS_TIMEOUT,
-            "--show-version",
-            SEED_PLAN_DISABLED,
-            "-Delide.skip=false",
-            "-f",
-            pom.toString(),
-            PACKAGE_GOAL,
-            CLEAN_GOAL,
-            SHORT_TREE_GOAL);
-
-    assertThat(output)
-        .contains(
-            "Cannot prepare dependency:tree after clean invalidated earlier lifecycle outputs")
-        .doesNotContain(TREE_HEADER);
-  }
-
-  @Test
-  void cleanAfterEarlierTreeIsRejectedEvenWhenPackagePrecedesTree() throws Exception {
-    final Path repositoryRoot = repositoryRoot();
-    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
-    final Path evidenceDirectory =
-        temporaryDirectory.resolve("package-tree-clean-package-evidence");
-    Files.createDirectories(evidenceDirectory);
-    final Path localRepository = copySeedRepository(evidenceDirectory);
-    final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path consumer = evidenceDirectory.resolve("package-tree-clean-package");
-    Files.createDirectories(consumer);
-    final Path pom = consumer.resolve(POM_XML);
-    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
-    writeConsumerExtensions(
-        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
-
-    final String output =
-        runExpectingFailure(
-            consumer,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("package-tree-clean-package.log"),
-            PROCESS_TIMEOUT,
-            "--show-version",
-            SEED_PLAN_DISABLED,
-            "-Delide.skip=false",
-            "-f",
-            pom.toString(),
-            PACKAGE_GOAL,
-            SHORT_TREE_GOAL,
-            CLEAN_GOAL,
-            PACKAGE_GOAL);
-
-    assertThat(output)
-        .contains("Cannot combine automatic dependency:tree preparation with a later clean goal");
-  }
-
-  @Test
-  void treeAutoPreparationRejectsAnyMultiProjectReactor() throws Exception {
-    final Path repositoryRoot = repositoryRoot();
-    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
-    final Path evidenceDirectory = temporaryDirectory.resolve("multi-project-tree-evidence");
-    Files.createDirectories(evidenceDirectory);
-    final Path localRepository = copySeedRepository(evidenceDirectory);
-    final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path reactor = evidenceDirectory.resolve("multi-project");
-    final Path consumer = reactor.resolve(CONSUMER_DIRECTORY);
-    Files.createDirectories(consumer);
-    Files.writeString(
-        reactor.resolve(POM_XML),
-        "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">"
-            + "<modelVersion>4.0.0</modelVersion><groupId>fixture</groupId>"
-            + "<artifactId>reactor</artifactId><version>1</version><packaging>pom</packaging>"
-            + "<modules><module>consumer</module></modules></project>");
-    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), consumer.resolve(POM_XML));
-    writeConsumerExtensions(
-        Files.createDirectories(reactor.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
-
-    final String output =
-        runExpectingFailure(
-            reactor,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("multi-project-tree.log"),
-            PROCESS_TIMEOUT,
-            "-T2",
-            "--show-version",
-            SEED_PLAN_DISABLED,
-            "-Delide.skip=false",
-            "-f",
-            reactor.resolve(POM_XML).toString(),
-            SHORT_TREE_GOAL);
-
-    assertThat(output)
-        .contains(
-            "Automatic dependency:tree preparation does not support multi-project Maven reactors")
-        .doesNotContain(TREE_HEADER);
-  }
-
-  @Test
-  void alreadyPreparedTreeRequestDoesNotAddAnotherElideExecution() throws Exception {
-    final Path repositoryRoot = repositoryRoot();
-    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
-    final Path evidenceDirectory = temporaryDirectory.resolve("prepared-tree-evidence");
-    Files.createDirectories(evidenceDirectory);
-    final Path localRepository = copySeedRepository(evidenceDirectory);
-    final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path consumer = evidenceDirectory.resolve("prepared-tree");
-    Files.createDirectories(consumer);
-    final Path pom = consumer.resolve(POM_XML);
-    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
-    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
-    writeConsumerExtensions(
-        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
-
-    final String output =
-        runFromDirectory(
-            consumer,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("prepared-tree.log"),
-            PROCESS_TIMEOUT,
-            "--show-version",
-            SEED_PLAN_DISABLED,
-            "-Delide.skip=false",
-            "-f",
-            pom.toString(),
-            "initialize",
-            SHORT_TREE_GOAL);
-
-    assertThat(output).contains(BUILD_SUCCESS);
-    assertThat(countOccurrences(output, ELIDER_SUMMARY)).isOne();
-    assertTreeRows(output, 1, 0, 1);
-  }
-
-  @Test
-  void ordinaryTestLifecycleDoesNotTriggerTreePreparation() throws Exception {
-    final Path repositoryRoot = repositoryRoot();
-    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
-    final Path evidenceDirectory = temporaryDirectory.resolve("ordinary-test-evidence");
-    Files.createDirectories(evidenceDirectory);
-    final Path localRepository = copySeedRepository(evidenceDirectory);
-    final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path consumer = evidenceDirectory.resolve("ordinary-test");
-    Files.createDirectories(consumer);
-    final Path pom = consumer.resolve(POM_XML);
-    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
-    Files.writeString(consumer.resolve(TRACE_FILE), KEEP_ENTRY_ROOT);
-    writeConsumerExtensions(
-        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
-
-    final String output =
-        runFromDirectory(
-            consumer,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("ordinary-test.log"),
-            PROCESS_TIMEOUT,
-            "--show-version",
-            SEED_PLAN_DISABLED,
-            "-Delide.skip=false",
-            "-f",
-            pom.toString(),
-            "test");
-
-    assertThat(output).contains(BUILD_SUCCESS).doesNotContain(":tree");
-    assertThat(countOccurrences(output, ELIDER_SUMMARY)).isOne();
-  }
-
-  @Test
   void explicitPomSkipWinsOverUserPropertyForAutoPreparedTree() throws Exception {
     final Path repositoryRoot = repositoryRoot();
     final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
@@ -3001,43 +2601,6 @@ final class DependencyContextLifecycleIT {
 
     assertThat(output).contains(BUILD_SUCCESS, TREE_HEADER).doesNotContain(ELIDER_SUMMARY);
     assertThat(consumer.resolve(LIFECYCLE_ELIDE_SUMMARY)).doesNotExist();
-  }
-
-  @Test
-  void cleanAfterTreeBeforePackageFailsBeforeGoalRewrite() throws Exception {
-    final Path repositoryRoot = repositoryRoot();
-    final Path fixtureRoot = copyLifecycleFixture(repositoryRoot);
-    final Path evidenceDirectory = temporaryDirectory.resolve("tree-clean-package-evidence");
-    Files.createDirectories(evidenceDirectory);
-    final Path localRepository = copySeedRepository(evidenceDirectory);
-    final Path settings = writeSettings(evidenceDirectory);
-    final Path wrapper = repositoryRoot.resolve(MAVEN_WRAPPER);
-    final Path consumer = evidenceDirectory.resolve("tree-clean-package");
-    Files.createDirectories(consumer);
-    final Path pom = consumer.resolve(POM_XML);
-    Files.copy(fixtureRoot.resolve(CONSUMER_ELIDE_POM), pom);
-    writeConsumerExtensions(
-        Files.createDirectories(consumer.resolve(MVN_DIRECTORY)).resolve(EXTENSIONS_XML), true);
-
-    final String output =
-        runExpectingFailure(
-            consumer,
-            wrapper,
-            settings,
-            localRepository,
-            evidenceDirectory.resolve("tree-clean-package.log"),
-            PROCESS_TIMEOUT,
-            "--show-version",
-            SEED_PLAN_DISABLED,
-            "-Delide.skip=false",
-            "-f",
-            pom.toString(),
-            SHORT_TREE_GOAL,
-            CLEAN_GOAL,
-            PACKAGE_GOAL);
-
-    assertThat(output)
-        .contains("Cannot combine automatic dependency:tree preparation with a later clean goal");
   }
 
   private static void writeConsumerExtensions(
@@ -3076,10 +2639,21 @@ final class DependencyContextLifecycleIT {
     xml.writeEndElement();
   }
 
-  private static void assertProductionExtensionPackage(final Path productionJar)
+  private static void assertProductionExtensionPackage(final Path localRepository)
       throws IOException {
+    final Path productionJar =
+        resolveSeedOrLocal(
+            localRepository,
+            "io/github/spockz/dependency-elider-maven-plugin/0.1.0-SNAPSHOT/"
+                + "dependency-elider-maven-plugin-0.1.0-SNAPSHOT.jar");
+    final Path lifecycleJar =
+        resolveSeedOrLocal(
+            localRepository,
+            "io/github/spockz/elider-maven-lifecycle/0.1.0-SNAPSHOT/"
+                + "elider-maven-lifecycle-0.1.0-SNAPSHOT.jar");
     assertThat(productionJar).isRegularFile();
-    try (JarFile jar = new JarFile(productionJar.toFile())) {
+    assertThat(lifecycleJar).isRegularFile();
+    try (JarFile jar = new JarFile(lifecycleJar.toFile())) {
       final JarEntry index = jar.getJarEntry("META-INF/sisu/javax.inject.Named");
       assertThat(index).isNotNull();
       try (InputStream input = jar.getInputStream(index)) {
@@ -3098,6 +2672,8 @@ final class DependencyContextLifecycleIT {
           .isNotNull();
       assertThat(jar.getJarEntry("io/github/spockz/elider/plugin/EliderLifecycleParticipant.class"))
           .isNotNull();
+    }
+    try (JarFile jar = new JarFile(productionJar.toFile())) {
       assertThat(
               jar.getJarEntry("io/github/spockz/elider/test/resolver/ResolverSessionProbe.class"))
           .isNull();
@@ -3753,9 +3329,7 @@ final class DependencyContextLifecycleIT {
   }
 
   private static Path copySeedRepository(final Path evidenceDirectory) throws IOException {
-    final Path repository = evidenceDirectory.resolve("repository");
-    copyDirectoryTree(seedRepository, repository);
-    return repository;
+    return Files.createDirectories(evidenceDirectory.resolve("repository"));
   }
 
   private static void copyDirectoryTree(final Path source, final Path destination)
@@ -3783,17 +3357,8 @@ final class DependencyContextLifecycleIT {
   }
 
   private static String cachedRepositoryUri() {
-    return cachedRepositoryUri(
+    return MavenFixtureRepositorySettings.cachedRepositoryUri(
         System.getProperty("maven.repo.local"), System.getProperty("user.home"));
-  }
-
-  private static String cachedRepositoryUri(
-      final String configuredRepository, final String userHome) {
-    final Path repository =
-        configuredRepository == null || configuredRepository.isBlank()
-            ? Path.of(userHome, ".m2/repository")
-            : Path.of(configuredRepository);
-    return repository.toUri().toASCIIString();
   }
 
   private static void writeTextElement(
@@ -3845,6 +3410,9 @@ final class DependencyContextLifecycleIT {
     command.add("-Delide.osvSnapshotUri=");
     command.add("-Delide.cveListGitUri=");
     command.add("-Dmaven.repo.local=" + localRepository);
+    if (seedRepository != null && !seedRepository.equals(localRepository)) {
+      command.add("-Dmaven.repo.local.tail=" + seedRepository);
+    }
     command.addAll(List.of(arguments));
     final ProcessBuilder processBuilder =
         new ProcessBuilder(command)
@@ -3934,8 +3502,17 @@ final class DependencyContextLifecycleIT {
     process.destroyForcibly();
   }
 
+  private static Path resolveSeedOrLocal(final Path localRepository, final String relativePath) {
+    final Path local = localRepository.resolve(relativePath);
+    if (Files.exists(local) || seedRepository == null) {
+      return local;
+    }
+    return seedRepository.resolve(relativePath);
+  }
+
   private static Path repositoryArtifact(final Path localRepository, final String artifactId) {
-    return localRepository.resolve(
+    return resolveSeedOrLocal(
+        localRepository,
         "io/github/spockz/elider/test/"
             + artifactId
             + "/"

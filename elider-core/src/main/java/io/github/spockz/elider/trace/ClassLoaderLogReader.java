@@ -35,8 +35,9 @@ public final class ClassLoaderLogReader implements RuntimeTraceReader {
   }
 
   /** Creates a reader for JVM class loading log files. */
-  @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  public ClassLoaderLogReader() {}
+  public ClassLoaderLogReader() {
+    // Stateless reader.
+  }
 
   /** Recognizes common text log suffixes. */
   @Override

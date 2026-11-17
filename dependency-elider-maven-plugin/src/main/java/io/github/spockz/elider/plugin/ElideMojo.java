@@ -2,24 +2,14 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
-import java.net.URI;
-import java.nio.file.Path;
-import java.time.Duration;
+import java.io.IOException;
 import java.util.List;
-import org.apache.maven.execution.MavenSession;
-import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.ProjectDependenciesResolver;
-import org.eclipse.aether.RepositorySystem;
 
 /** Applies graph-verified dependency changes after production classes are compiled. */
 @Mojo(
@@ -27,114 +17,15 @@ import org.eclipse.aether.RepositorySystem;
     defaultPhase = LifecyclePhase.PROCESS_CLASSES,
     requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
-@SuppressWarnings({"PMD.TooManyFields", "PMD.ImmutableField"})
-public final class ElideMojo extends PluginCacheMojoSupport {
+public final class ElideMojo extends AbstractElisionMojo {
   /** PMD key shared by test-mutable fields. */
   private static final String PMD_IMMUTABLE_FIELD = "PMD.ImmutableField";
-
-  /** Maven's annotation representation for disabled boolean options. */
-  private static final String DEFAULT_FALSE = "false";
-
-  /** Maven representation for enabled boolean options. */
-  private static final String DEFAULT_TRUE = "true";
-
-  /** Maven project whose artifact views are pruned. */
-  @Parameter(defaultValue = "${project}", readonly = true, required = true)
-  private MavenProject project;
-
-  /** Maven session used to detect an externally selected compiler toolchain. */
-  @Parameter(defaultValue = "${session}", readonly = true, required = true)
-  private MavenSession session;
-
-  /** Resolver used to bind an isolated ban plan to the current Maven model. */
-  @Component private ProjectDependenciesResolver projectDependenciesResolver;
-
-  /** Resolves explicitly configured mapping catalogs as isolated data artifacts. */
-  @Component private RepositorySystem repositorySystem;
-
-  /** Current execution source and ID for the injected preparation duplicate guard. */
-  @Parameter(defaultValue = "${mojoExecution}", readonly = true, required = true)
-  private MojoExecution mojoExecution;
-
-  /** User assertion that all production/generated sources exist before INITIALIZE. */
-  @Parameter(property = "elide.sourceRootsComplete", defaultValue = DEFAULT_FALSE)
-  private boolean sourceRootsComplete;
-
-  /** Asserts that production output contains every compiled production class. */
-  @Parameter(property = "elide.productionClassesComplete", defaultValue = DEFAULT_FALSE)
-  private boolean productionClassesComplete;
-
-  /**
-   * Enables per-JAR class trimming.
-   *
-   * <p>Metadata roots protect declaring and provider JARs when disabled.
-   */
-  @Parameter(property = "elide.trimJars", defaultValue = DEFAULT_FALSE)
-  private boolean trimJars;
-
-  /** Maximum workers used by JAR trimming stages. */
-  @Parameter(property = "elide.trimWorkers", defaultValue = "4")
-  private int trimWorkers = MavenDependencyTrimmer.DEFAULT_TRIM_WORKERS;
-
-  /** Additional class names that must remain available for dynamic loading. */
-  @Parameter(property = "elide.trimRoots")
-  private List<String> trimRoots;
-
-  /** Retained artifact coordinates to analyze as unchanged pass-through libraries. */
-  @Parameter(property = "elide.trimSkipArtifacts")
-  private List<String> trimSkipArtifacts;
-
-  /** Class-name patterns whose duplicate owners are retained whole. */
-  @Parameter(property = "elide.retainDuplicateClassOwners")
-  private List<String> retainDuplicateClassOwners;
-
-  /** Class-name patterns whose duplicates survive sibling trimming. */
-  @Parameter(property = "elide.trimDuplicateClassOwners")
-  private List<String> trimDuplicateClassOwners;
-
-  /** Selects MRJAR vertical shading or byte-identical pass-through. */
-  @Parameter(property = "elide.mrjarStrategy", defaultValue = "vertical-shading")
-  private String mrjarStrategy = "vertical-shading";
-
-  /** Rejects retained classpath JARs with a root module descriptor. */
-  @Parameter(property = "elide.failOnUnsupportedModuleInfo", defaultValue = DEFAULT_FALSE)
-  private boolean failOnUnsupportedModuleInfo;
-
-  /** Retains unproven ServiceLoader dynamic roots declared in META-INF/services/. */
-  @Parameter(property = "elide.conservativeServiceLoaderRoots", defaultValue = "true")
-  private boolean conservativeServiceLoaderRoots = true;
-
-  /** Allows source-root translation only; it does not waive attribution. */
-  @Parameter(property = "elide.assumeConventionalJavaSourceLayout", defaultValue = DEFAULT_TRUE)
-  private boolean assumeConventionalJavaSourceLayout;
 
   /** Explicit runtime evidence used when the goal is active. */
   @Parameter(property = "elide.traceFiles")
   private List<File> traceFiles;
 
-  /** Admits explicit runtime evidence as a closed-world class boundary. */
-  @Parameter(property = "elide.closedWorld", defaultValue = DEFAULT_FALSE)
-  private boolean closedWorld;
-
-  /** Global artifact identities that must remain in the build. */
-  @Parameter(property = "elide.retainedArtifacts")
-  private List<String> retainedArtifacts;
-
-  /** Trimmed groupId:artifactId only; each ban must be absent before publication. */
-  @Parameter(property = "elide.banishedDependencies")
-  private List<String> banishedDependencies;
-
-  /** Optional production class output for static references. */
-  @Parameter(property = "elide.productionOutput")
-  private File productionOutput;
-
-  /** Class-usage evidence; default: target/dependency-elider-class-usage.json. */
-  @Parameter(
-      property = "elide.reportFile",
-      defaultValue = "${project.build.directory}/dependency-elider-class-usage.json")
-  private File reportFile;
-
-  /** SBOM output generated when trimming is enabled. */
+  /** CycloneDX SBOM output generated for the elided dependency inventory. */
   @Parameter(
       property = "elide.sbomFile",
       defaultValue = "${project.build.directory}/dependency-elider-sbom.cdx.json")
@@ -155,57 +46,6 @@ public final class ElideMojo extends PluginCacheMojoSupport {
       property = "elide.vexFile",
       defaultValue = "${project.build.directory}/dependency-elider.openvex.json")
   private File vexFile;
-
-  /**
-   * Enables opt-in proof.
-   *
-   * <p>Every Maven class-bearing input must be declared and inspectable.
-   */
-  @Parameter(property = "elide.preconditionClassPathComplete", defaultValue = DEFAULT_FALSE)
-  private boolean preconditionClassPathComplete;
-
-  /** Optional local vulnerability-index cache directory. */
-  @Parameter(property = "elide.cveCacheDirectory")
-  private File cveCacheDirectory;
-
-  /** Vulnerability-index cache freshness in hours. */
-  @Parameter(property = "elide.cveCacheTtlHours", defaultValue = "24")
-  private int cveCacheTtlHours;
-
-  /** Forces refresh of the vulnerability-index cache. */
-  @Parameter(property = "elide.cveForceSync", defaultValue = DEFAULT_FALSE)
-  private boolean cveForceSync;
-
-  /** Remote OSV Maven database snapshot URI. */
-  @Parameter(
-      property = "elide.osvSnapshotUri",
-      defaultValue = "https://storage.googleapis.com/osv-vulnerabilities/Maven/all.zip")
-  private String osvSnapshotUri;
-
-  /** Remote Git repository URI for CVEList v5. */
-  @Parameter(
-      property = "elide.cveListGitUri",
-      defaultValue = "https://github.com/CVEProject/cvelistV5.git")
-  private String cveListGitUri;
-
-  /** Explicit POM vulnerability mappings override cache entries. */
-  @Parameter private List<VulnerabilityMappingConfig> vulnerabilityMappings;
-
-  /** Pinned G:A:V[:type[:classifier]] catalogs, resolved only as assessment data. */
-  @Parameter(property = "elide.vulnerabilityMappingCatalogs")
-  private List<String> vulnerabilityMappingCatalogs;
-
-  /** Enables optional per-artifact Snyk package issue queries. */
-  @Parameter(property = "elide.snykEnabled", defaultValue = DEFAULT_FALSE)
-  private boolean snykEnabled;
-
-  /** Snyk organization ID; falls back to SNYK_ORG_ID. */
-  @Parameter(property = "elide.snykOrgId")
-  private String snykOrgId;
-
-  /** Official Snyk regional package API origin. */
-  @Parameter(property = "elide.snykApiBaseUri", defaultValue = "https://api.snyk.io")
-  private String snykApiBaseUri;
 
   /**
    * Persisted elision snapshot for {@code report}, defaulting to
@@ -230,9 +70,10 @@ public final class ElideMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.skip", defaultValue = DEFAULT_FALSE)
   private boolean skip;
 
-  /** Restricts dependency elision to leaf modules in multi-module reactors. */
-  @Parameter(property = "elide.leafOnly", defaultValue = "true")
-  private boolean leafOnly = true;
+  /** Creates a Mojo instance for Maven injection. */
+  public ElideMojo() {
+    super();
+  }
 
   /** Analyzes runtime evidence and applies the validated retained-artifact plan. */
   @Override
@@ -271,41 +112,17 @@ public final class ElideMojo extends PluginCacheMojoSupport {
             getLog(),
             planPublication,
             vulnerabilityCacheConfig(),
-            configuredVulnerabilityMappings(),
-            SnykPackageIssuesIntegration.Configuration.configured(
-                snykEnabled, session != null && session.isOffline(), snykOrgId, snykApiBaseUri),
+            resolveConfiguredMappings(),
+            snykConfiguration(),
             preconditionClassPathComplete,
             assumeConventionalJavaSourceLayout,
             afterGenerationStaging));
   }
 
-  private CacheConfig vulnerabilityCacheConfig() {
-    final Path cacheDirectory =
-        cveCacheDirectory == null
-            ? VulnerabilityCacheManager.defaultCacheDirectory()
-            : cveCacheDirectory.toPath();
-    final URI osvSource =
-        osvSnapshotUri == null || osvSnapshotUri.isBlank() ? null : URI.create(osvSnapshotUri);
-    final URI cveListGit =
-        cveListGitUri == null || cveListGitUri.isBlank() ? null : URI.create(cveListGitUri);
-    return vulnerabilityCacheConfig(
-        cacheDirectory,
-        osvSource,
-        cveListGit,
-        Duration.ofHours(cveCacheTtlHours),
-        cveForceSync,
-        session != null && session.isOffline());
-  }
-
-  private ConfiguredVulnerabilityMappings configuredVulnerabilityMappings() {
+  private ConfiguredVulnerabilityMappings resolveConfiguredMappings() {
     try {
-      return ConfiguredVulnerabilityMappings.resolveForProject(
-          repositorySystem,
-          MavenAnalysisResolutionContext.repositorySession(session),
-          project,
-          vulnerabilityMappings,
-          vulnerabilityMappingCatalogs);
-    } catch (final java.io.IOException exception) {
+      return configuredVulnerabilityMappings();
+    } catch (final IOException exception) {
       throw new IllegalArgumentException(
           "Could not resolve configured vulnerability mapping catalogs: " + exception.getMessage(),
           exception);
@@ -324,14 +141,7 @@ public final class ElideMojo extends PluginCacheMojoSupport {
         session,
         new ElisionAnalysisModel.CompletenessOptions(
             sourceRootsComplete, useProductionClasses, trustedProcessClassesContext, true),
-        trimOptions(
-            trimJars,
-            trimRoots == null ? List.of() : trimRoots,
-            trimSkipArtifacts == null ? List.of() : trimSkipArtifacts,
-            failOnUnsupportedModuleInfo,
-            trimWorkers,
-            mrjarStrategy,
-            new DuplicateClassPolicy(retainDuplicateClassOwners, trimDuplicateClassOwners)),
+        sharedTrimOptions(),
         new ElisionAnalysisModel.DynamicRootOptions(conservativeServiceLoaderRoots),
         null,
         closedWorld);
@@ -346,16 +156,5 @@ public final class ElideMojo extends PluginCacheMojoSupport {
     }
     final String outputDirectory = project.getBuild().getOutputDirectory();
     return outputDirectory == null || outputDirectory.isBlank() ? null : new File(outputDirectory);
-  }
-
-  private boolean trustedProcessClassesContext() {
-    return mojoExecution != null
-        && EliderPreparationState.source(mojoExecution) == MojoExecution.Source.LIFECYCLE
-        && "process-classes".equals(mojoExecution.getLifecyclePhase());
-  }
-
-  /** Creates a Mojo instance for Maven injection. */
-  public ElideMojo() {
-    super();
   }
 }

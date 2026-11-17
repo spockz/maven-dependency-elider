@@ -9,7 +9,6 @@ import io.github.spockz.elider.plugin.TierClosureAnalyzer.ClosureResult;
 import io.github.spockz.elider.plugin.TierInventoryReader.Inventory;
 import io.github.spockz.elider.plugin.TierRootPlanner.RootPlan;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
-import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -31,8 +30,8 @@ final class TierAnalysisResultBuilder {
       final Inventory inventory,
       final RootPlan roots,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, TierCandidate> candidates,
-      final ClosureResult closure)
-      throws IOException {
+      final ClosureResult closure,
+      final Set<String> passThroughIdentities) {
     final Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> analyses =
         mutableAnalyses(closure.targetAnalyses());
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : roots.candidateSnapshots()) {
@@ -47,26 +46,22 @@ final class TierAnalysisResultBuilder {
       final TierCandidate candidate = entry.getValue();
       rootMap.put(entry.getKey(), candidate.roots());
       if (candidate.isMultiRelease()) {
-        final Set<String> upper = classNamesAboveRelease(entry.getKey());
+        final Set<String> upper =
+            inventory.multiReleaseCandidates().get(entry.getKey()).versionedClasses();
         upperClasses.put(entry.getKey().coordinate(), upper);
       }
     }
     return TrimRootPlanner.inMemoryResult(
-        analyses,
-        rootMap,
-        closure.reachableArtifacts(),
-        closure.analysisRuns(),
-        operation.targetRelease(),
-        operation.runtimeRelease(),
-        inventory.tiers(),
-        inventory.platformSnapshots(),
-        upperClasses);
-  }
-
-  private Set<String> classNamesAboveRelease(final ElisionAnalysisModel.ArtifactSnapshot snapshot)
-      throws IOException {
-    return MultiReleaseClassInventory.classNamesAboveRelease(
-        snapshot.filePath(), operation.targetRelease());
+            analyses,
+            rootMap,
+            closure.reachableArtifacts(),
+            closure.analysisRuns(),
+            operation.targetRelease(),
+            operation.runtimeRelease(),
+            inventory.tiers(),
+            inventory.platformSnapshots(),
+            upperClasses)
+        .withPassThroughIdentities(passThroughIdentities);
   }
 
   private static Map<ArtifactCoordinate, DependencyJarTrimmer.TrimAnalysis> mutableAnalyses(

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import io.github.spockz.elider.scanner.JarIndexScanner;
 import io.github.spockz.elider.trimmer.ArchiveSanitizer;
 import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
@@ -132,7 +133,7 @@ final class ForcedUnchangedSiblingClosureTest {
             original, result.targetRelease(), analysis.retainedClasses(), Set.of());
     final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
     final ArchiveSanitizer.PreparedOutput output =
-        sanitizer.prepareMultiRelease(original, trimmed, fixture.candidate(), analysis, plan, null);
+        sanitizer.prepareMultiRelease(original, trimmed, fixture.candidate(), analysis, plan);
     sanitizer.publish(output);
     assertAll(
         () -> {

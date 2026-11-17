@@ -125,7 +125,7 @@ record MavenBanPlan(
               .map(EffectiveGraphDecisionIndex.Gavce::of)
               .collect(java.util.stream.Collectors.toSet());
       if (effectiveMatch.artifacts().stream()
-          .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+          .map(BanishedDependencyPolicy.ArtifactCandidate::coordinate)
           .map(EffectiveGraphDecisionIndex.Gavce::of)
           .anyMatch(identity -> !originalIdentities.contains(identity))) {
         throw new MojoFailureException(
@@ -144,7 +144,7 @@ record MavenBanPlan(
       final BanishedDependencyOriginalAuditPolicy.Resolution originalResolution) {
     final List<ArtifactCoordinate> effective =
         match.artifacts().stream()
-            .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
+            .map(BanishedDependencyPolicy.ArtifactCandidate::coordinate)
             .sorted()
             .toList();
     final List<ArtifactCoordinate> original;
@@ -207,7 +207,7 @@ record MavenBanPlan(
       return;
     }
     for (final ArtifactCoordinate coordinate : forcedAbsentAfterResolution()) {
-      if (evidence.bytecodeScan().isPresent() && !evidence.bytecodeScan().get().complete()) {
+      if (evidence.bytecodeScan().filter(scan -> !scan.complete()).isPresent()) {
         throw conflict(coordinate, "production bytecode evidence is incomplete");
       }
       if (evidence.dynamicRoots().resourceProvidersByDeclaringArtifact().entrySet().stream()
@@ -310,11 +310,10 @@ record MavenBanPlan(
       final org.apache.maven.project.MavenProject project,
       final org.apache.maven.execution.MavenSession session)
       throws IOException {
-    MavenOriginalInputAudit.verifyBanFreshness(auditContext, project, session);
-  }
-
-  void verifyAuditBytesFresh() throws IOException {
-    auditContext.verifyArtifactBytes();
+    final MavenOriginalInputAudit.Inventory inventory = auditContext.inventory();
+    if (inventory != null) {
+      MavenOriginalInputAudit.verifyCaptureFresh(inventory, project, session);
+    }
   }
 
   /** One normalized policy identity and its current resolved matches. */

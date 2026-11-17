@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import io.github.spockz.elider.trace.TraceEvidenceKind;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -46,6 +47,7 @@ final class RuntimeEvidencePreparationTest extends MavenDependencyTrimmerInMemor
     final Path report = temporaryDirectory.resolve("must-not-publish.json");
 
     assertAll(
+        "Irrelevant trace input fails closed-world preparation without publishing report",
         () ->
             assertThatThrownBy(
                     () ->
@@ -57,6 +59,39 @@ final class RuntimeEvidencePreparationTest extends MavenDependencyTrimmerInMemor
                 .hasMessageContaining("irrelevant.lst")
                 .hasMessageContaining("irrelevant"),
         () -> assertThat(report).doesNotExist());
+  }
+
+  @Test
+  void rejectsMissingEmptyMalformedAndUnreadableTraceInputsInClosedWorldMode() throws Exception {
+    final Fixture fixture = fixture(false, true);
+    final MavenElisionService service = new MavenElisionService();
+    final Path empty = temporaryDirectory.resolve("empty.lst");
+    Files.write(empty, new byte[0]);
+    final Path malformed = temporaryDirectory.resolve("malformed.exec");
+    Files.write(malformed, new byte[] {0, 0, 0, 0});
+    final Path missing = temporaryDirectory.resolve("missing.lst");
+
+    assertAll(
+        "Closed-world preparation rejects missing, empty, malformed, and unreadable traces",
+        () ->
+            assertThatThrownBy(
+                    () -> service.prepare(fixture.mavenProject(), options(List.of(), true)))
+                .as("missing trace files")
+                .isInstanceOf(IOException.class),
+        () ->
+            assertThatThrownBy(() -> service.prepare(fixture.mavenProject(), options(empty, true)))
+                .as("empty trace file")
+                .isInstanceOf(IOException.class),
+        () ->
+            assertThatThrownBy(
+                    () -> service.prepare(fixture.mavenProject(), options(malformed, true)))
+                .as("malformed exec file")
+                .isInstanceOf(IOException.class),
+        () ->
+            assertThatThrownBy(
+                    () -> service.prepare(fixture.mavenProject(), options(missing, true)))
+                .as("unreadable or missing trace path")
+                .isInstanceOf(IOException.class));
   }
 
   @Test

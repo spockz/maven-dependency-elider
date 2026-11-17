@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.HexDigest;
 import java.util.List;
 
 /** Validates the node disposition records against their captured snapshot. */
@@ -58,6 +59,38 @@ final class MediatedGraphReportValidator {
   private static boolean hasProjectKey(
       final String projectKey, final ResolverArtifactGraphSnapshot snapshot) {
     return projectKey != null && snapshot != null && projectKey.equals(snapshot.projectKey());
+  }
+
+  static void validateUnavailable(
+      final String reason,
+      final String captureToken,
+      final String projectKey,
+      final String beforeFingerprint,
+      final ResolverArtifactGraphSnapshot snapshot,
+      final List<MediatedGraphReport.NodeStatus> nodeStatuses,
+      final List<MediatedGraphReport.ArtifactPath> artifactPaths) {
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("Unavailable graph report requires a reason");
+    }
+    if (hasGraphData(
+        captureToken, projectKey, beforeFingerprint, snapshot, nodeStatuses, artifactPaths)) {
+      throw new IllegalArgumentException("Unavailable graph report cannot contain graph data");
+    }
+  }
+
+  private static boolean hasGraphData(
+      final String captureToken,
+      final String projectKey,
+      final String beforeFingerprint,
+      final ResolverArtifactGraphSnapshot snapshot,
+      final List<MediatedGraphReport.NodeStatus> nodeStatuses,
+      final List<MediatedGraphReport.ArtifactPath> artifactPaths) {
+    return captureToken != null
+        || projectKey != null
+        || beforeFingerprint != null
+        || snapshot != null
+        || !nodeStatuses.isEmpty()
+        || !artifactPaths.isEmpty();
   }
 
   private static boolean hasBeforeFingerprint(final String fingerprint) {

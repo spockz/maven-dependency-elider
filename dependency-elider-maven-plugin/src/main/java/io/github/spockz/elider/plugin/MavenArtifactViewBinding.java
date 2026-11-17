@@ -9,12 +9,10 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactViews;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import org.apache.maven.artifact.Artifact;
 import org.apache.maven.project.MavenProject;
 
 /** Exact pre-analysis live views and their unique detached resolver correspondence. */
@@ -34,19 +32,11 @@ record MavenArtifactViewBinding(
   }
 
   /* package */ static LiveSnapshot capture(final MavenProject project) throws IOException {
-    final List<ArtifactSnapshot> resolved =
-        MavenArtifactInventory.snapshots(new ArrayList<>(project.getArtifacts()));
-    final Set<Artifact> directView = project.getDependencyArtifacts();
-    final boolean directPresent = directView != null;
-    final List<ArtifactSnapshot> direct =
-        MavenArtifactInventory.snapshots(directPresent ? new ArrayList<>(directView) : List.of());
-    MavenArtifactPathValidation.validateIdentityPaths(resolved);
-    MavenArtifactPathValidation.validateIdentityPaths(direct);
-    MavenArtifactPathValidation.validateDirectPaths(resolved, direct);
+    final MavenAnalysisInventory.Snapshot snapshot = MavenAnalysisInventory.capture(project);
+    MavenArtifactPathValidation.validateDirectPaths(
+        snapshot.views().resolvedSnapshots(), snapshot.views().directSnapshots());
     return new LiveSnapshot(
-        new ArtifactViews(resolved, directPresent, direct),
-        ResolvedArtifactInventoryFingerprint.fingerprint(resolved),
-        directPresent ? ResolvedArtifactInventoryFingerprint.fingerprint(direct) : "missing");
+        snapshot.views(), snapshot.resolvedFingerprint(), snapshot.directFingerprint());
   }
 
   /* package */ static MavenArtifactViewBinding bind(
@@ -80,24 +70,6 @@ record MavenArtifactViewBinding(
         analysis.policyIdentity(),
         analysis.traceDecision(),
         analysis.banPlan());
-  }
-
-  /* package */ void verifyFresh(final MavenProject project) throws IOException {
-    resolutionContext.verify();
-    final List<Artifact> resolved = new ArrayList<>(project.getArtifacts());
-    MavenArtifactViewValidation.validateCurrentView(
-        "resolved", resolved, liveViews.resolvedSnapshots());
-    final Set<Artifact> directView = project.getDependencyArtifacts();
-    final boolean directPresent = directView != null;
-    if (directPresent != liveViews.directArtifactsPresent()) {
-      throw new IOException("Maven direct artifact view presence changed after ban planning");
-    }
-    final List<Artifact> direct = directView == null ? List.of() : new ArrayList<>(directView);
-    MavenArtifactViewValidation.validateCurrentView("direct", direct, liveViews.directSnapshots());
-  }
-
-  /* package */ void verifyOriginalInputsFresh() throws IOException {
-    resolutionContext.verify();
   }
 
   private static void requireSameFingerprint(

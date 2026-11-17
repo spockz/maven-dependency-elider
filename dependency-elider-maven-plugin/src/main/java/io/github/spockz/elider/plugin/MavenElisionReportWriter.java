@@ -135,19 +135,13 @@ final class MavenElisionReportWriter {
   private static void validateFindingMode(
       final MavenElisionReportSnapshot.Mode mode, final GenericFindingAssessment finding)
       throws IOException {
-    if (mode == MavenElisionReportSnapshot.Mode.ANALYSIS && hasPhysicalProof(finding)) {
-      throw new IOException("Analysis report cannot contain physical proof outcomes");
+    if (mode == MavenElisionReportSnapshot.Mode.ANALYSIS
+        && finding.outcome() == GenericFindingAssessment.Outcome.DECLARED_CODE_ABSENT) {
+      throw new IOException("Analysis report cannot contain physical code proof outcomes");
     }
     if (mode == MavenElisionReportSnapshot.Mode.APPLIED && hasPlannedProof(finding)) {
       throw new IOException("Applied report cannot contain planned proof outcomes");
     }
-  }
-
-  private static boolean hasPhysicalProof(final GenericFindingAssessment finding) {
-    return finding.outcome() == GenericFindingAssessment.Outcome.DECLARED_CODE_ABSENT
-        || finding.outcome() == GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT
-        || finding.prerequisiteProof().isPresent()
-        || finding.prerequisiteProofEvidence().isPresent();
   }
 
   private static boolean hasPlannedProof(final GenericFindingAssessment finding) {

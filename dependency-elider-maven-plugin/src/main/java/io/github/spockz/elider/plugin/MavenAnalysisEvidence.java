@@ -10,6 +10,7 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootInputs;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootScanner;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import io.github.spockz.elider.scanner.JarIndexScanner;
@@ -26,7 +27,7 @@ import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.project.MavenProject;
 
 /** Collects the independent evidence inputs used by artifact pruning. */
-final class MavenAnalysisEvidence {
+public final class MavenAnalysisEvidence {
   private MavenAnalysisEvidence() {}
 
   /* default */ static RootEvidence scan(
@@ -80,8 +81,8 @@ final class MavenAnalysisEvidence {
         compiler.sourceAttributionFallback());
   }
 
-  /* package */ static Path invocationBase(
-      final MavenExecutionRequest request, final File projectBase) {
+  /** Resolves the Maven invocation base directory from the request or project base. */
+  public static Path invocationBase(final MavenExecutionRequest request, final File projectBase) {
     return MavenAnalysisInvocationBase.fromRequest(request, projectBase);
   }
 

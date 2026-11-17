@@ -8,6 +8,11 @@ import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootInputs;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootScanner;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageConsumedInput;
+import io.github.spockz.elider.plugin.nativeimage.NativeImagePolicyRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageServiceLoaderPolicy;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -18,20 +23,17 @@ import java.util.Map;
 import java.util.Set;
 
 /** Aggregates dependency roots once per archive with artifact policy context. */
-final class DynamicRootOrchestrator {
+public final class DynamicRootOrchestrator {
   private DynamicRootOrchestrator() {}
 
-  /* package */ static DynamicRootInputs dynamicRoots(final List<ArtifactFileRef> candidates)
+  /** Aggregates dynamic roots across candidate dependency archives. */
+  public static DynamicRootInputs dynamicRoots(final List<ArtifactFileRef> candidates)
       throws IOException {
     return dynamicRoots(candidates, DependencyDynamicRoots::scan, Set.of(), true);
   }
 
-  /* package */ static DynamicRootInputs dynamicRoots(
-      final List<ArtifactFileRef> candidates, final DynamicRootScanner scanner) throws IOException {
-    return dynamicRoots(candidates, scanner, Set.of(), true);
-  }
-
-  /* package */ static DynamicRootInputs dynamicRoots(
+  /** Aggregates dynamic roots across candidate dependency archives. */
+  public static DynamicRootInputs dynamicRoots(
       final List<ArtifactFileRef> candidates,
       final DynamicRootScanner scanner,
       final Set<String> provenServiceInterfaces,
@@ -45,7 +47,8 @@ final class DynamicRootOrchestrator {
         conservativeServiceLoaderRoots);
   }
 
-  /* package */ static DynamicRootInputs dynamicRoots(
+  /** Aggregates dynamic roots across candidate dependency archives. */
+  public static DynamicRootInputs dynamicRoots(
       final List<ArtifactFileRef> candidates,
       final DynamicRootScanner scanner,
       final NativeImageScanContext context,

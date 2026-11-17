@@ -4,6 +4,7 @@
 package io.github.spockz.elider.trimmer;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactDigests;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -17,8 +18,9 @@ import java.util.Set;
 @SuppressWarnings({"PMD.CommentSize", "PMD.TooManyMethods"})
 public final class ArchiveSanitizer {
   /** Creates a stateless archive sanitizer. */
-  @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  public ArchiveSanitizer() {}
+  public ArchiveSanitizer() {
+    // Stateless sanitizer.
+  }
 
   /** Writes archive content and records input and output hashes. */
   public ArtifactTrimRecord sanitize(
@@ -27,7 +29,7 @@ public final class ArchiveSanitizer {
       final ArtifactCoordinate coordinate,
       final DependencyJarTrimmer.TrimAnalysis analysis)
       throws IOException {
-    final PreparedOutput prepared = prepare(originalJar, trimmedJar, coordinate, analysis, null);
+    final PreparedOutput prepared = prepare(originalJar, trimmedJar, coordinate, analysis);
     try {
       return publish(prepared);
     } finally {
@@ -35,24 +37,15 @@ public final class ArchiveSanitizer {
     }
   }
 
-  /**
-   * Stages sanitized bytes without publishing them.
-   *
-   * <p>The expected digest binds the result to the analysis input.
-   */
+  /** Stages sanitized bytes without publishing them. */
   public PreparedOutput prepare(
       final Path originalJar,
       final Path trimmedJar,
       final ArtifactCoordinate coordinate,
-      final DependencyJarTrimmer.TrimAnalysis analysis,
-      final String expectedOriginalSha256)
+      final DependencyJarTrimmer.TrimAnalysis analysis)
       throws IOException {
     validateInputs(originalJar, trimmedJar, coordinate, analysis);
     final ArtifactDigests originalDigests = ArtifactDigests.read(originalJar);
-    if (expectedOriginalSha256 != null
-        && !expectedOriginalSha256.equals(originalDigests.sha256())) {
-      throw new IOException("Original dependency changed during trim analysis: " + originalJar);
-    }
     return prepareValidated(
         originalJar,
         trimmedJar,
@@ -71,17 +64,12 @@ public final class ArchiveSanitizer {
       final Path trimmedJar,
       final ArtifactCoordinate coordinate,
       final DependencyJarTrimmer.TrimAnalysis analysis,
-      final MultiReleaseArchivePlan plan,
-      final String expectedOriginalSha256)
+      final MultiReleaseArchivePlan plan)
       throws IOException {
     validateInputs(originalJar, trimmedJar, coordinate, analysis);
     Objects.requireNonNull(plan, "plan");
-    final ArtifactDigests originalDigests = ArtifactDigests.read(originalJar);
-    if (expectedOriginalSha256 != null
-        && !expectedOriginalSha256.equals(originalDigests.sha256())) {
-      throw new IOException("Original dependency changed during trim analysis: " + originalJar);
-    }
-    if (!plan.matches(originalJar.toRealPath(), originalDigests.sha256())) {
+    final ArtifactDigests originalDigests = plan.sourceDigests();
+    if (!plan.matches(originalJar, originalDigests.sha256())) {
       throw new IOException(
           "MRJAR elevation plan does not match original dependency: " + originalJar);
     }
@@ -126,20 +114,12 @@ public final class ArchiveSanitizer {
       final ArtifactDigests originalDigests,
       final Set<String> removedServiceProviders)
       throws IOException {
-    validateInputs(originalJar, trimmedJar, coordinate, analysis);
-    Objects.requireNonNull(originalDigests, "originalDigests");
-    Objects.requireNonNull(removedServiceProviders, "removedServiceProviders");
-    if (!originalDigests.matchesPath(originalJar)) {
-      throw new IOException(
-          "Captured original dependency digests belong to a different path: " + originalJar);
-    }
-    return prepareValidated(
+    return prepareWithCapturedDigests(
         originalJar,
         trimmedJar,
         coordinate,
         analysis,
         originalDigests,
-        null,
         false,
         "not_multi_release",
         removedServiceProviders);
@@ -166,6 +146,27 @@ public final class ArchiveSanitizer {
       final ArtifactDigests originalDigests,
       final Set<String> removedServiceProviders)
       throws IOException {
+    return prepareWithCapturedDigests(
+        originalJar,
+        trimmedJar,
+        coordinate,
+        analysis,
+        originalDigests,
+        true,
+        "classpath-only",
+        removedServiceProviders);
+  }
+
+  private PreparedOutput prepareWithCapturedDigests(
+      final Path originalJar,
+      final Path trimmedJar,
+      final ArtifactCoordinate coordinate,
+      final DependencyJarTrimmer.TrimAnalysis analysis,
+      final ArtifactDigests originalDigests,
+      final boolean stripRootModuleDescriptor,
+      final String mrjarStatus,
+      final Set<String> removedServiceProviders)
+      throws IOException {
     validateInputs(originalJar, trimmedJar, coordinate, analysis);
     Objects.requireNonNull(originalDigests, "originalDigests");
     Objects.requireNonNull(removedServiceProviders, "removedServiceProviders");
@@ -180,8 +181,8 @@ public final class ArchiveSanitizer {
         analysis,
         originalDigests,
         null,
-        true,
-        "classpath-only",
+        stripRootModuleDescriptor,
+        mrjarStatus,
         removedServiceProviders);
   }
 
@@ -231,7 +232,6 @@ public final class ArchiveSanitizer {
       return new PreparedOutput(
           temporaryJar,
           location.outputPath(),
-          originalJar.toAbsolutePath().normalize(),
           location.originalPath(),
           coordinate,
           originalDigests.sha256(),
@@ -255,12 +255,6 @@ public final class ArchiveSanitizer {
   public ArtifactTrimRecord publish(final PreparedOutput prepared) throws IOException {
     Objects.requireNonNull(prepared, "prepared");
     moveIntoPlace(prepared.temporaryJar(), prepared.outputPath());
-    final ArtifactDigests publishedDigests = ArtifactDigests.read(prepared.outputPath());
-    if (!prepared.trimmedSha256().equals(publishedDigests.sha256())
-        || !prepared.trimmedSha1().equals(publishedDigests.sha1())) {
-      throw new IOException(
-          "Trimmed dependency changed while being published: " + prepared.outputPath());
-    }
     return new ArtifactTrimRecord(
         prepared.coordinate(),
         prepared.originalPath(),
@@ -287,7 +281,6 @@ public final class ArchiveSanitizer {
   public record PreparedOutput(
       Path temporaryJar,
       Path outputPath,
-      Path validationPath,
       Path originalPath,
       ArtifactCoordinate coordinate,
       String originalSha256,

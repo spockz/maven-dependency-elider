@@ -11,7 +11,7 @@ import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
 
 /** Shared Maven plugin descriptor fixtures. */
-final class MavenPluginDescriptorFixtures {
+public final class MavenPluginDescriptorFixtures {
   /** Maven group used by the plugin artifact fixture. */
   private static final String GROUP_ID = "io.github.spockz";
 
@@ -27,7 +27,8 @@ final class MavenPluginDescriptorFixtures {
   }
 
   /* package */
-  static PluginDescriptor releasedPluginDescriptor() {
+  /** Builds a released plugin descriptor fixture for tests. */
+  public static PluginDescriptor releasedPluginDescriptor() {
     final Artifact artifact =
         new DefaultArtifact(
             GROUP_ID,
@@ -48,7 +49,7 @@ final class MavenPluginDescriptorFixtures {
 
   /** Supplies a released cache producer. */
   /* package */
-  static PluginCacheProducerIdentityResolver.Resolution releasedProducerResolution() {
+  public static PluginCacheProducerIdentityResolver.Resolution releasedProducerResolution() {
     return new PluginCacheProducerIdentityResolver.Resolution(
         Optional.of(new CacheProducerIdentity(GROUP_ID, ARTIFACT_ID, RELEASE_VERSION, null)),
         Optional.empty());
@@ -56,7 +57,7 @@ final class MavenPluginDescriptorFixtures {
 
   /** Supplies release identity with optional build metadata for compatibility tests. */
   /* package */
-  static PluginCacheProducerIdentityResolver.Resolution releasedProducerResolution(
+  public static PluginCacheProducerIdentityResolver.Resolution releasedProducerResolution(
       final String buildIdentity) {
     return new PluginCacheProducerIdentityResolver.Resolution(
         Optional.of(
@@ -66,7 +67,7 @@ final class MavenPluginDescriptorFixtures {
 
   /** Supplies a SNAPSHOT producer. */
   /* package */
-  static PluginCacheProducerIdentityResolver.Resolution snapshotProducerResolution(
+  public static PluginCacheProducerIdentityResolver.Resolution snapshotProducerResolution(
       final String buildIdentity) {
     return new PluginCacheProducerIdentityResolver.Resolution(
         Optional.of(
@@ -76,7 +77,7 @@ final class MavenPluginDescriptorFixtures {
 
   /** Supplies a missing producer. */
   /* package */
-  static PluginCacheProducerIdentityResolver.Resolution unavailableProducerResolution() {
+  public static PluginCacheProducerIdentityResolver.Resolution unavailableProducerResolution() {
     return new PluginCacheProducerIdentityResolver.Resolution(
         Optional.empty(), Optional.of("fixture producer identity is unavailable"));
   }

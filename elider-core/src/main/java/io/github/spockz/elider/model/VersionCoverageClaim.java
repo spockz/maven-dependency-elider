@@ -2,8 +2,6 @@
 
 package io.github.spockz.elider.model;
 
-import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
-
 /** One affected or unaffected predicate, supported or unresolved. */
 public record VersionCoverageClaim(
     String rawPredicate,
@@ -56,13 +54,6 @@ public record VersionCoverageClaim(
 
   /** Creates an affected predicate that cannot be evaluated. */
   public static VersionCoverageClaim unresolvedAffected(
-      final String rawPredicate, final String diagnostic) {
-    return new VersionCoverageClaim(
-        rawPredicate, null, VersionApplicability.UNRESOLVED, diagnostic);
-  }
-
-  /** Creates an unaffected predicate that cannot be evaluated. */
-  public static VersionCoverageClaim unresolvedUnaffected(
       final String rawPredicate, final String diagnostic) {
     return new VersionCoverageClaim(
         rawPredicate, null, VersionApplicability.UNRESOLVED, diagnostic);

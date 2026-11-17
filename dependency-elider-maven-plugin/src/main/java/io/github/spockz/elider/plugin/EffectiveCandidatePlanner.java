@@ -6,6 +6,7 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.plugin.TrimCandidatePlanner.CandidatePlan;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
 import java.io.IOException;
@@ -29,6 +30,23 @@ final class EffectiveCandidatePlanner {
       Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots) {}
 
   private record CandidateClasses(Set<String> names, boolean multiRelease, int logicalCount) {}
+
+  /* package */ record PlannedWork(TrimPassThroughPlan passThrough, List<TrimCandidate> work) {}
+
+  /* package */ static PlannedWork planWork(
+      final TrimRequest request, final EffectiveOutputPlan effectiveOutput) throws IOException {
+    final TrimPassThroughPlan passThrough = TrimPassThroughPlanner.passThroughPlan(request);
+    final CandidatePlan plan =
+        effectiveCandidatePlan(
+            request.project(),
+            passThrough.retainedLibraries(),
+            passThrough.retained(),
+            request.scanInputs().classIndex().classesByArtifact(),
+            effectiveOutput);
+    TrimCandidatePlanner.assignEffectiveAnalyses(plan, effectiveOutput.analysis());
+    ServiceProviderTrimInventory.planDescriptorOutputs(effectiveOutput, plan.work());
+    return new PlannedWork(passThrough, plan.work());
+  }
 
   /* package */ static CandidatePlan effectiveCandidatePlan(
       final MavenProject project,

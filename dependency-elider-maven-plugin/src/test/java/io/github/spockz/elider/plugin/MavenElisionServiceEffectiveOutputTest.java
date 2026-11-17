@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 
 /** Verifies effective output bytes and cache behavior. */
 // These output scenarios share the same expensive fixture and archive helpers.
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.UnitTestContainsTooManyAsserts"})
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.UnitTestContainsTooManyAsserts", "PMD.LawOfDemeter"})
 final class MavenElisionServiceEffectiveOutputTest
     extends MavenElisionServiceEffectiveOutputSupport {
   /** Trace root shared by the retained-dependency fixture cases. */
@@ -48,64 +48,86 @@ final class MavenElisionServiceEffectiveOutputTest
     final ServiceOperation operation = operation(fixture, trace, null);
     final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(operation.prepared());
-    assertThat(effective.prepared().rawDecision()).isEqualTo(operation.prepared().rawDecision());
-    assertThat(effective.forcedUnchangedCoordinates())
-        .doesNotContain(fixture.coordinate("b"), fixture.coordinate("c"));
     final List<Artifact> beforeResolved = List.copyOf(fixture.mavenProject().getArtifacts());
     final String originalDigest = ArtifactDigests.read(fixture.snapshot("a").filePath()).sha256();
     final String unchangedDigest = ArtifactDigests.read(fixture.snapshot("b").filePath()).sha256();
-    assertThat(fixture.mavenProject().getDependencyArtifacts()).isNull();
 
     final TrimResult cold = MavenDependencyTrimmer.trimEffectiveOutputs(effective);
-    assertThat(effective.rawDecision().retainedClassesPerArtifact().get(fixture.coordinate("a")))
-        .contains("closure.a.Entry");
     final ArtifactTrimRecord coldRecord = record(cold.records(), fixture.coordinate("a"));
     final ArtifactTrimRecord reachedRecord = record(cold.records(), fixture.coordinate("b"));
-    assertThat(coldRecord.trimmedPath().toString()).contains(".generations");
-    assertThat(coldRecord.trimmedPath()).isRegularFile();
-    assertThat(coldRecord.originalSha256()).isEqualTo(originalDigest);
-    assertThat(reachedRecord.totalClasses()).isEqualTo(2);
-    assertThat(reachedRecord.retainedClasses()).isEqualTo(1);
+    final String reachedMiddlePresent;
+    final Object reachedUnusedEntry;
     try (JarFile output = new JarFile(reachedRecord.trimmedPath().toFile())) {
-      assertThat(output.getEntry("closure/b/Middle.class")).isNotNull();
-      assertThat(output.getEntry("closure/b/Unused.class")).isNull();
+      reachedMiddlePresent = output.getEntry("closure/b/Middle.class").getName();
+      reachedUnusedEntry = output.getEntry("closure/b/Unused.class");
     }
-    assertThat(ArtifactDigests.read(coldRecord.trimmedPath()).sha256())
-        .isEqualTo(coldRecord.trimmedSha256());
+    final boolean coldEntryPresent;
+    final Object coldExtraEntry;
+    final String coldResourceContent;
     try (JarFile output = new JarFile(coldRecord.trimmedPath().toFile())) {
-      assertThat(output.getEntry("closure/a/Entry.class")).isNotNull();
-      assertThat(output.getEntry("closure/a/Extra.class")).isNull();
-      assertThat(output.getEntry(FIXTURE_RESOURCE)).isNotNull();
-      assertThat(
-              new String(
-                  output.getInputStream(output.getEntry(FIXTURE_RESOURCE)).readAllBytes(),
-                  StandardCharsets.UTF_8))
-          .isEqualTo(FIXTURE_RESOURCE_CONTENT);
+      coldEntryPresent = output.getEntry("closure/a/Entry.class") != null;
+      coldExtraEntry = output.getEntry("closure/a/Extra.class");
+      coldResourceContent =
+          new String(
+              output.getInputStream(output.getEntry(FIXTURE_RESOURCE)).readAllBytes(),
+              StandardCharsets.UTF_8);
     }
-    assertThat(fixture.mavenProject().getArtifacts())
-        .containsExactlyInAnyOrderElementsOf(beforeResolved);
-    assertThat(fixture.mavenProject().getDependencyArtifacts()).isNull();
-    assertThat(ArtifactDigests.read(fixture.snapshot("a").filePath()).sha256())
-        .isEqualTo(originalDigest);
-    assertThat(ArtifactDigests.read(fixture.snapshot("b").filePath()).sha256())
-        .isEqualTo(unchangedDigest);
+    final String unchangedResourceContent;
     try (JarFile unchanged = new JarFile(fixture.snapshot("b").filePath().toFile())) {
-      assertThat(unchanged.getEntry(FIXTURE_RESOURCE)).isNotNull();
-      assertThat(
-              new String(
-                  unchanged.getInputStream(unchanged.getEntry(FIXTURE_RESOURCE)).readAllBytes(),
-                  StandardCharsets.UTF_8))
-          .isEqualTo(FIXTURE_RESOURCE_CONTENT);
+      unchangedResourceContent =
+          new String(
+              unchanged.getInputStream(unchanged.getEntry(FIXTURE_RESOURCE)).readAllBytes(),
+              StandardCharsets.UTF_8);
     }
 
     final TrimResult warm =
         MavenDependencyTrimmer.trimEffectiveOutputs(
             operation.service().finishAnalysis(operation.prepared()));
     final ArtifactTrimRecord warmRecord = record(warm.records(), fixture.coordinate("a"));
-    assertThat(warm.cacheHits()).isPositive();
-    assertThat(warm.analysisRuns()).isZero();
-    assertThat(warmRecord.trimmedPath()).isEqualTo(coldRecord.trimmedPath());
-    assertThat(warmRecord.trimmedSha256()).isEqualTo(coldRecord.trimmedSha256());
+
+    assertAll(
+        "effective roots produce generation-isolated outputs and warm cache reuse",
+        () ->
+            assertThat(effective.prepared().rawDecision())
+                .isEqualTo(operation.prepared().rawDecision()),
+        () ->
+            assertThat(effective.forcedUnchangedCoordinates())
+                .doesNotContain(fixture.coordinate("b"), fixture.coordinate("c")),
+        () ->
+            assertThat(
+                    effective
+                        .rawDecision()
+                        .retainedClassesPerArtifact()
+                        .get(fixture.coordinate("a")))
+                .contains("closure.a.Entry"),
+        () -> assertThat(coldRecord.trimmedPath().toString()).contains(".generations"),
+        () -> assertThat(coldRecord.trimmedPath()).isRegularFile(),
+        () -> assertThat(coldRecord.originalSha256()).isEqualTo(originalDigest),
+        () -> assertThat(reachedRecord.totalClasses()).isEqualTo(2),
+        () -> assertThat(reachedRecord.retainedClasses()).isEqualTo(1),
+        () -> assertThat(reachedMiddlePresent).isEqualTo("closure/b/Middle.class"),
+        () -> assertThat(reachedUnusedEntry).isNull(),
+        () ->
+            assertThat(ArtifactDigests.read(coldRecord.trimmedPath()).sha256())
+                .isEqualTo(coldRecord.trimmedSha256()),
+        () -> assertThat(coldEntryPresent).isTrue(),
+        () -> assertThat(coldExtraEntry).isNull(),
+        () -> assertThat(coldResourceContent).isEqualTo(FIXTURE_RESOURCE_CONTENT),
+        () ->
+            assertThat(fixture.mavenProject().getArtifacts())
+                .containsExactlyInAnyOrderElementsOf(beforeResolved),
+        () -> assertThat(fixture.mavenProject().getDependencyArtifacts()).isNull(),
+        () ->
+            assertThat(ArtifactDigests.read(fixture.snapshot("a").filePath()).sha256())
+                .isEqualTo(originalDigest),
+        () ->
+            assertThat(ArtifactDigests.read(fixture.snapshot("b").filePath()).sha256())
+                .isEqualTo(unchangedDigest),
+        () -> assertThat(unchangedResourceContent).isEqualTo(FIXTURE_RESOURCE_CONTENT),
+        () -> assertThat(warm.cacheHits()).isPositive(),
+        () -> assertThat(warm.analysisRuns()).isZero(),
+        () -> assertThat(warmRecord.trimmedPath()).isEqualTo(coldRecord.trimmedPath()),
+        () -> assertThat(warmRecord.trimmedSha256()).isEqualTo(coldRecord.trimmedSha256()));
   }
 
   @Test
@@ -128,23 +150,33 @@ final class MavenElisionServiceEffectiveOutputTest
         MavenElisionServiceEffectiveAnalysisFixtures.withBinding(operation.prepared(), binding);
     final ElisionAnalysisModel.EffectiveAnalysis effective =
         operation.service().finishAnalysis(prepared);
-
-    assertThat(effective.graphEvaluation().ancestorPromotedArtifacts())
-        .contains(fixture.coordinate("d"));
-    assertThat(effective.effectiveDecision().retainedArtifacts()).contains(fixture.coordinate("d"));
-    assertThat(effective.effectiveDecision().elidedArtifacts()).contains(fixture.coordinate("e"));
-    assertThat(effective.trimAnalysis().candidateRoots().get(fixture.coordinate("d"))).isEmpty();
-
     final TrimResult result = MavenDependencyTrimmer.trimEffectiveOutputs(effective);
     final ArtifactTrimRecord record = record(result.records(), fixture.coordinate("d"));
-
-    assertThat(record.totalClasses()).isEqualTo(1);
-    assertThat(record.retainedClasses()).isZero();
+    final List<String> entries;
     try (JarFile output = new JarFile(record.trimmedPath().toFile())) {
-      assertThat(output.stream().map(java.util.jar.JarEntry::getName))
-          .contains("META-INF/MANIFEST.MF", FIXTURE_RESOURCE)
-          .noneMatch(name -> name.endsWith(".class"));
+      entries = output.stream().map(java.util.jar.JarEntry::getName).toList();
     }
+
+    assertAll(
+        "graph-promoted ancestor without live classes retains resources and drops descendant",
+        () ->
+            assertThat(effective.graphEvaluation().ancestorPromotedArtifacts())
+                .contains(fixture.coordinate("d")),
+        () ->
+            assertThat(effective.effectiveDecision().retainedArtifacts())
+                .contains(fixture.coordinate("d")),
+        () ->
+            assertThat(effective.effectiveDecision().elidedArtifacts())
+                .contains(fixture.coordinate("e")),
+        () ->
+            assertThat(effective.trimAnalysis().candidateRoots().get(fixture.coordinate("d")))
+                .isEmpty(),
+        () -> assertThat(record.totalClasses()).isEqualTo(1),
+        () -> assertThat(record.retainedClasses()).isZero(),
+        () ->
+            assertThat(entries)
+                .contains("META-INF/MANIFEST.MF", FIXTURE_RESOURCE)
+                .noneMatch(name -> name.endsWith(".class")));
   }
 
   @Test
@@ -159,13 +191,19 @@ final class MavenElisionServiceEffectiveOutputTest
         operation(fixture, trace(temporaryDirectory.resolve("extra"), "closure/a/Extra"), null);
     final TrimResult second = trimEffective(secondOperation);
     final ArtifactTrimRecord secondRecord = record(second.records(), fixture.coordinate("a"));
-
-    assertThat(second.cacheHits()).isZero();
-    assertThat(secondRecord.trimmedPath()).isNotEqualTo(firstRecord.trimmedPath());
+    final boolean extraPresent;
+    final boolean entryAbsent;
     try (JarFile output = new JarFile(secondRecord.trimmedPath().toFile())) {
-      assertThat(output.getEntry("closure/a/Extra.class")).isNotNull();
-      assertThat(output.getEntry("closure/a/Entry.class")).isNull();
+      extraPresent = output.getEntry("closure/a/Extra.class") != null;
+      entryAbsent = output.getEntry("closure/a/Entry.class") == null;
     }
+
+    assertAll(
+        "effective root change selects a new generation and misses the cache",
+        () -> assertThat(second.cacheHits()).isZero(),
+        () -> assertThat(secondRecord.trimmedPath()).isNotEqualTo(firstRecord.trimmedPath()),
+        () -> assertThat(extraPresent).isTrue(),
+        () -> assertThat(entryAbsent).isTrue());
   }
 
   @Test

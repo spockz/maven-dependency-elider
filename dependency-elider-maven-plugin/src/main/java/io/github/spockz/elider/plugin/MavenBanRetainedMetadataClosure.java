@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;

@@ -2,14 +2,10 @@
 
 package io.github.spockz.elider.trimmer;
 
+import io.github.spockz.elider.model.ArtifactDigests;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.HashSet;
-import java.util.Optional;
 import java.util.Set;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
@@ -25,22 +21,34 @@ final class MultiReleaseArchiveWriter {
 
   private MultiReleaseArchiveWriter() {}
 
-  static long write(
+  static ArchiveOutputStager.WriteResult write(
       final Path originalJar,
       final Path temporaryJar,
       final DependencyJarTrimmer.TrimAnalysis analysis,
       final MultiReleaseArchivePlan plan)
       throws IOException {
     final WriteState state = new WriteState(plan);
+    final int trimmedEntries;
+    final ArtifactDigests trimmedDigests;
     try (JarFile input = new JarFile(originalJar.toFile());
-        OutputStream fileOutput = Files.newOutputStream(temporaryJar);
-        JarOutputStream output = new JarOutputStream(fileOutput)) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        writeEntry(input, output, entries.nextElement(), state);
+        ArtifactDigests.HashingOutputStream hashingOutput =
+            ArchiveOutputStager.openHashingOutput(temporaryJar);
+        ArchiveOutputStager.CountingJarOutputStream output =
+            new ArchiveOutputStager.CountingJarOutputStream(hashingOutput)) {
+      for (final JarEntry entry : input.stream().toList()) {
+        writeEntry(input, output, entry, state);
       }
+      output.finish();
+      trimmedEntries = output.entryCount();
+      trimmedDigests = hashingOutput.digests();
     }
-    return state.finish(analysis);
+    return new ArchiveOutputStager.WriteResult(
+        state.finish(analysis),
+        plan.logicalClasses().size(),
+        plan.retainedLogicalClasses().size(),
+        state.seenEntryCount(),
+        trimmedEntries,
+        trimmedDigests);
   }
 
   private static void writeEntry(
@@ -68,11 +76,7 @@ final class MultiReleaseArchiveWriter {
   }
 
   private static boolean isVersionedServiceDescriptor(final String name) {
-    if (!name.startsWith(VERSIONED_PREFIX)) {
-      return false;
-    }
-    final int releaseEnd = name.indexOf('/', VERSIONED_PREFIX.length());
-    return releaseEnd >= 0 && name.startsWith("META-INF/services/", releaseEnd + 1);
+    return MultiReleaseEntrySupport.isVersionedServiceDescriptor(name);
   }
 
   private static void writeDirectory(
@@ -93,10 +97,7 @@ final class MultiReleaseArchiveWriter {
       final JarEntry entry,
       final WriteState state)
       throws IOException {
-    final Manifest manifest;
-    try (InputStream manifestInput = input.getInputStream(entry)) {
-      manifest = new Manifest(manifestInput);
-    }
+    final Manifest manifest = MultiReleaseEntrySupport.readManifest(input, entry);
     if (state.hasVersionedOutput()) {
       manifest.getMainAttributes().putValue("Multi-Release", "true");
     } else {
@@ -165,39 +166,31 @@ final class MultiReleaseArchiveWriter {
       return;
     }
     state.reserve(name);
-    if (AutoConfigurationDescriptorFilter.IMPORTS_PATH.equals(name)) {
-      final Optional<byte[]> aotContents =
-          AutoConfigurationDescriptorFilter.filterImports(
-              input, entry, state.plan.targetClasses(), state.plan.retainedTargetClasses());
-      if (aotContents.isPresent()) {
-        MultiReleaseEntrySupport.writeEntryAs(output, entry, name, aotContents.orElseThrow());
-        return;
-      }
-    }
-    if (name.startsWith("META-INF/services/")) {
-      final ServiceDescriptorFilter.Result result =
-          ServiceDescriptorFilter.filter(input, entry, state.removedServiceProviders());
-      if (result.outcome() == ServiceDescriptorFilter.Outcome.OMIT) {
-        return;
-      }
-      if (result.outcome() == ServiceDescriptorFilter.Outcome.REPLACED) {
-        MultiReleaseEntrySupport.writeEntryAs(output, entry, name, result.bytes());
-        return;
-      }
-    }
-    MultiReleaseEntrySupport.copyEntry(input, output, entry);
+    MultiReleaseEntrySupport.writeFilteredResource(
+        input,
+        output,
+        entry,
+        state.plan.targetClasses(),
+        state.plan.retainedTargetClasses(),
+        state.removedServiceProviders());
   }
 
+  @SuppressWarnings("PMD.TooManyMethods")
   private static final class WriteState {
     private final MultiReleaseArchivePlan plan;
     private final Set<String> seenNames = new HashSet<>();
     private final Set<String> writtenNames = new HashSet<>();
     private final Set<String> writtenTargetClasses = new HashSet<>();
     private final Set<String> writtenLogicalClasses = new HashSet<>();
-    private final PrunedClassByteCounter prunedClassBytes = new PrunedClassByteCounter();
+    private final MultiReleaseEntrySupport.PrunedClassByteCounter prunedClassBytes =
+        new MultiReleaseEntrySupport.PrunedClassByteCounter();
 
     private WriteState(final MultiReleaseArchivePlan plan) {
       this.plan = plan;
+    }
+
+    private int seenEntryCount() {
+      return seenNames.size();
     }
 
     private void requireUnseen(final String name) throws IOException {
@@ -263,25 +256,6 @@ final class MultiReleaseArchiveWriter {
             "Trim analysis class count does not match MRJAR target-release entries");
       }
       return prunedClassBytes.value();
-    }
-  }
-
-  private static final class PrunedClassByteCounter {
-    private long totalBytes;
-
-    private void add(final JarEntry entry) throws IOException {
-      if (entry.getSize() < 0) {
-        throw new IOException("Class entry has unknown uncompressed size: " + entry.getName());
-      }
-      try {
-        totalBytes = Math.addExact(totalBytes, entry.getSize());
-      } catch (final ArithmeticException exception) {
-        throw new IOException("Pruned class byte total overflowed", exception);
-      }
-    }
-
-    private long value() {
-      return totalBytes;
     }
   }
 }

@@ -6,6 +6,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContextTestSupport;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

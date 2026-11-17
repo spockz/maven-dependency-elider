@@ -143,9 +143,9 @@ final class MavenElisionReportWriterTest {
             Optional.of(io.github.spockz.elider.model.AssessmentIntent.AUTO_VERIFY),
             io.github.spockz.elider.model.ClaimGroupStatus.DECLARED,
             List.of(
-                new io.github.spockz.elider.model.CodeAttributionResolver.DeclarationResult(
+                new io.github.spockz.elider.applicability.CodeAttributionResolver.DeclarationResult(
                     code,
-                    io.github.spockz.elider.model.CodeAttributionResolver.Status.RESOLVED,
+                    io.github.spockz.elider.applicability.CodeAttributionResolver.Status.RESOLVED,
                     Set.of("p.Missing"),
                     List.of())),
             List.of(),

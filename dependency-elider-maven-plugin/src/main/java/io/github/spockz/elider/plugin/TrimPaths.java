@@ -4,12 +4,14 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.MultiReleaseClassInventory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
-import java.util.TreeSet;
+import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.stream.Collectors;
 import org.apache.maven.project.MavenProject;
 
 /** Defines generated archive, analysis, cache, and generation paths. */
@@ -26,13 +28,7 @@ final class TrimPaths {
   private TrimPaths() {}
 
   /* package */ static Path analysisLibraryDirectory(final MavenProject project) {
-    return project.getBuild() == null || project.getBuild().getDirectory() == null
-        ? Path.of(DEFAULT_BUILD_DIRECTORY, ELIDED_ARTIFACTS, ".analysis-libraries")
-            .toAbsolutePath()
-            .normalize()
-        : Path.of(project.getBuild().getDirectory(), ELIDED_ARTIFACTS, ".analysis-libraries")
-            .toAbsolutePath()
-            .normalize();
+    return buildDirectory(project).resolve(ELIDED_ARTIFACTS).resolve(".analysis-libraries");
   }
 
   /* package */ static Path analysisLibraryDirectory(
@@ -70,41 +66,32 @@ final class TrimPaths {
   }
 
   /* package */ static Set<String> classNames(final Path archivePath) throws IOException {
-    final Set<String> classNames = new TreeSet<>();
     try (JarFile archive = new JarFile(archivePath.toFile())) {
-      final java.util.Enumeration<java.util.jar.JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final String name = entries.nextElement().getName();
-        if (name.endsWith(CLASS_SUFFIX)
-            && !"module-info.class".equals(name)
-            && !name.endsWith("/module-info.class")) {
-          classNames.add(
-              name.substring(0, name.length() - CLASS_SUFFIX.length()).replace('/', '.'));
-        }
-      }
+      return archive.stream()
+          .map(JarEntry::getName)
+          .filter(TrimPaths::isProgramClass)
+          .map(name -> name.substring(0, name.length() - CLASS_SUFFIX.length()).replace('/', '.'))
+          .collect(Collectors.toUnmodifiableSet());
     }
-    return Set.copyOf(classNames);
   }
 
-  /* package */ static Set<String> logicalClassNames(final Path archivePath) throws IOException {
-    return MultiReleaseClassInventory.logicalClassNames(archivePath);
+  /* package */ static boolean isProgramClass(final String name) {
+    return name.endsWith(CLASS_SUFFIX) && !MultiReleaseClassInventory.isModuleDescriptor(name);
   }
 
   /* package */ static Path outputPath(
       final MavenProject project, final ArtifactCoordinate coordinate) {
-    final String basename =
-        safeFilePart(coordinate.groupId())
-            + "-"
-            + safeFilePart(coordinate.artifactId())
-            + "-"
-            + safeFilePart(coordinate.version())
-            + (coordinate.classifier().isBlank() ? "" : "-" + safeFilePart(coordinate.classifier()))
-            + "-trimmed.jar";
-    return project.getBuild() == null || project.getBuild().getDirectory() == null
-        ? Path.of(DEFAULT_BUILD_DIRECTORY, ELIDED_ARTIFACTS, basename).toAbsolutePath().normalize()
-        : Path.of(project.getBuild().getDirectory(), ELIDED_ARTIFACTS, basename)
-            .toAbsolutePath()
-            .normalize();
+    final String basename = coordinateFilePrefix(coordinate) + "-trimmed.jar";
+    return buildDirectory(project).resolve(ELIDED_ARTIFACTS).resolve(basename);
+  }
+
+  /* package */ static String coordinateFilePrefix(final ArtifactCoordinate coordinate) {
+    return safeFilePart(coordinate.groupId())
+        + "-"
+        + safeFilePart(coordinate.artifactId())
+        + "-"
+        + safeFilePart(coordinate.version())
+        + (coordinate.classifier().isBlank() ? "" : "-" + safeFilePart(coordinate.classifier()));
   }
 
   private static String safeFilePart(final String value) {

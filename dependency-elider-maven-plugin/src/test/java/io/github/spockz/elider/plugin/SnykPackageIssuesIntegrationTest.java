@@ -4,6 +4,9 @@ package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.spockz.elider.advisory.FindingSource;
+import io.github.spockz.elider.advisory.SnykPackageIssuesResult;
+import io.github.spockz.elider.advisory.SnykPackageIssuesResult.Status;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.FieldValue;
@@ -11,9 +14,6 @@ import io.github.spockz.elider.model.GenericFindingReconciler;
 import io.github.spockz.elider.model.MergePriority;
 import io.github.spockz.elider.model.VersionCoverageClaim;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;
-import io.github.spockz.elider.scanner.FindingSource;
-import io.github.spockz.elider.scanner.SnykPackageIssuesResult;
-import io.github.spockz.elider.scanner.SnykPackageIssuesResult.Status;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;

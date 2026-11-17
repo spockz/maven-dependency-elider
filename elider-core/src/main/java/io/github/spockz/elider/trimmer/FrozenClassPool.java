@@ -2,38 +2,58 @@
 
 package io.github.spockz.elider.trimmer;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import proguard.classfile.ClassPool;
 import proguard.classfile.Clazz;
+import proguard.classfile.LibraryClass;
 
 /** A graph-local pool whose membership is fixed after its index is built. */
-@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.UseConcurrentHashMap"})
+@SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
 final class FrozenClassPool extends ClassPool {
-  /** Hash index published only after all sorted pool entries are copied. */
-  private Map<String, Clazz> lookupIndex;
+  /** Hash index populated incrementally while mutable so freeze() is O(1). */
+  private final Map<String, Clazz> lookupIndex;
 
   /** Marks the boundary after which pool membership is immutable. */
   private boolean frozen;
 
-  private FrozenClassPool() {
+  /** Tracks whether every entry is a plain LibraryClass without Kotlin metadata. */
+  private boolean plainLibraryClassesOnly = true;
+
+  private FrozenClassPool(final int expectedSize) {
     super();
+    lookupIndex = expectedSize > 0 ? HashMap.newHashMap(expectedSize) : new HashMap<>();
+  }
+
+  static FrozenClassPool mutable() {
+    return new FrozenClassPool(0);
+  }
+
+  static FrozenClassPool mutable(final int expectedSize) {
+    return new FrozenClassPool(expectedSize);
   }
 
   static FrozenClassPool copyOf(final ClassPool source) {
-    final FrozenClassPool result = new FrozenClassPool();
-    source.classNames().forEachRemaining(name -> result.addClass(name, source.getClass(name)));
-    result.freeze();
-    return result;
+    final FrozenClassPool result = new FrozenClassPool(source.size());
+    source.classes().forEach(result::addClass);
+    return result.freeze();
+  }
+
+  static FrozenClassPool copyOf(final Iterable<Clazz> classes) {
+    final int expectedSize =
+        classes instanceof Collection<Clazz> collection ? collection.size() : 0;
+    final FrozenClassPool result = new FrozenClassPool(expectedSize);
+    for (final Clazz clazz : classes) {
+      result.addClass(clazz);
+    }
+    return result.freeze();
   }
 
   @Override
   public Clazz getClass(final String name) {
     Objects.requireNonNull(name, "name");
-    if (!frozen) {
-      return super.getClass(name);
-    }
     return lookupIndex.get(name);
   }
 
@@ -47,6 +67,10 @@ final class FrozenClassPool extends ClassPool {
   public void addClass(final String name, final Clazz clazz) {
     ensureMutable();
     super.addClass(name, clazz);
+    lookupIndex.put(name, clazz);
+    if (!(clazz instanceof LibraryClass libraryClass) || libraryClass.kotlinMetadata != null) {
+      plainLibraryClassesOnly = false;
+    }
   }
 
   @Override
@@ -58,23 +82,29 @@ final class FrozenClassPool extends ClassPool {
   @Override
   public Clazz removeClass(final String name) {
     ensureMutable();
-    return super.removeClass(name);
+    final Clazz removed = super.removeClass(name);
+    lookupIndex.remove(name);
+    return removed;
   }
 
   @Override
   public void clear() {
     ensureMutable();
     super.clear();
+    lookupIndex.clear();
+    plainLibraryClassesOnly = true;
   }
 
-  private void freeze() {
+  boolean isPlainLibraryClassesOnly() {
+    return plainLibraryClassesOnly;
+  }
+
+  FrozenClassPool freeze() {
     if (frozen) {
       throw new IllegalStateException("Class pool is already frozen");
     }
-    final Map<String, Clazz> entries = new HashMap<>();
-    super.classNames().forEachRemaining(name -> entries.put(name, super.getClass(name)));
-    lookupIndex = Map.copyOf(entries);
     frozen = true;
+    return this;
   }
 
   private void ensureMutable() {

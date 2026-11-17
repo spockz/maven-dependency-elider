@@ -7,6 +7,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageClassConfig;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageDescriptorKind;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageInput;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageResourceConfig;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageTypeDescriptor;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -118,36 +124,6 @@ final class DependencyDynamicRootsTest {
             "org.example.ExplicitBundle",
             "org.example.FilesystemGenerated",
             "org.example.FilesystemDependency");
-  }
-
-  @Test
-  void rejectsPredefinedClassdataEscapingThroughSymlink() throws IOException {
-    final String hash = "0123456789abcdef0123456789abcdef";
-    final Path descriptorDirectory = tempDir.resolve("descriptor-root");
-    final Path externalDirectory = tempDir.resolve("external-classdata");
-    Files.createDirectories(descriptorDirectory);
-    Files.createDirectories(externalDirectory);
-    final Path config = descriptorDirectory.resolve("arbitrary.data");
-    Files.writeString(
-        config,
-        "[{\"type\":\"agent-extracted\",\"classes\":[{\"hash\":\"" + hash + "\"}]}]",
-        StandardCharsets.UTF_8);
-    final ClassWriter writer = new ClassWriter(0);
-    writer.visit(
-        Opcodes.V21, Opcodes.ACC_PUBLIC, "org/example/Escaped", null, "java/lang/Object", null);
-    writer.visitEnd();
-    Files.write(externalDirectory.resolve(hash + ".classdata"), writer.toByteArray());
-    Files.createSymbolicLink(
-        descriptorDirectory.resolve("agent-extracted-predefined-classes"), externalDirectory);
-
-    final Set<String> roots = new java.util.LinkedHashSet<>();
-    assertThatThrownBy(
-            () ->
-                NativeImageClassConfig.readNativeImageClassConfig(
-                    NativeImageInput.file(config, NativeImageDescriptorKind.PREDEFINED_CLASSES),
-                    roots))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("Unresolved predefined class hash");
   }
 
   @Test

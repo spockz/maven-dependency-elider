@@ -7,18 +7,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
@@ -29,7 +22,6 @@ import org.junit.jupiter.api.io.TempDir;
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
   "PMD.LocalVariableCouldBeFinal",
-  "PMD.MethodArgumentCouldBeFinal",
   "PMD.UnitTestContainsTooManyAsserts"
 })
 class OpenVexGeneratorTest {
@@ -75,7 +67,7 @@ class OpenVexGeneratorTest {
         .isEqualTo(CycloneDxSbomGenerator.componentPurl(fixture.coordinate()));
     assertThat(subcomponent.path("hashes").path("sha-256").asText())
         .isEqualTo(fixture.attestation().trimmedSha256());
-    assertSchemaValid(readPinnedSchema(), document);
+    assertThat(PinnedJsonSchemaCache.openVex020().validate(document)).isEmpty();
   }
 
   @Test
@@ -110,23 +102,5 @@ class OpenVexGeneratorTest {
       assertThat(files.map(Path::getFileName).map(Path::toString))
           .noneMatch(name -> name.endsWith(".tmp"));
     }
-  }
-
-  private byte[] readPinnedSchema() throws IOException {
-    try (InputStream schemaStream =
-        getClass().getResourceAsStream("/schema/openvex-0.2.0.schema.json")) {
-      assertThat(schemaStream).isNotNull();
-      byte[] schemaBytes = schemaStream.readAllBytes();
-      assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(schemaBytes)))
-          .isEqualTo("9373597734ed1d3ea5161a8b46d3866c4a8cfe76fd632fdd16aef01fb34b3238");
-      return schemaBytes;
-    } catch (NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is unavailable", exception);
-    }
-  }
-
-  private void assertSchemaValid(byte[] schemaBytes, JsonNode document) throws IOException {
-    JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
-    assertThat(factory.getSchema(JSON.readTree(schemaBytes)).validate(document)).isEmpty();
   }
 }

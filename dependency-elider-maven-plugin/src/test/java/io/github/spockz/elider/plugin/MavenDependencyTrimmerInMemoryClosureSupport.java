@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import io.github.spockz.elider.scanner.JarIndexScanner;
 import java.io.IOException;
@@ -31,7 +32,7 @@ import org.objectweb.asm.Opcodes;
 
 /** Provides reusable immutable-input fixtures for closure tests. */
 @SuppressWarnings({"PMD.CommentDefaultAccessModifier", "PMD.TooManyMethods"})
-class MavenDependencyTrimmerInMemoryClosureSupport {
+public class MavenDependencyTrimmerInMemoryClosureSupport {
 
   /** Maven field name used for project injection. */
   protected static final String PROJECT_FIELD = "project";
@@ -72,9 +73,6 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
   /** Transitive fixture artifacts use Maven runtime scope. */
   private static final String RUNTIME_SCOPE = "runtime";
 
-  /** Entry shared by duplicate-owner fixtures and their expected archives. */
-  private static final String EXTRA_CLASS_ENTRY = "closure/a/Extra.class";
-
   /** Empty metadata scan reused when no artifact-specific roots are configured. */
   private static final DependencyDynamicRoots.RootScan EMPTY_ROOT_SCAN =
       new DependencyDynamicRoots.RootScan(Set.of(), true);
@@ -84,7 +82,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
 
   /** JUnit fills the temporary directory field after constructing this fixture base. */
   @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  MavenDependencyTrimmerInMemoryClosureSupport() {}
+  public MavenDependencyTrimmerInMemoryClosureSupport() {}
 
   /** Builds the standard complete inventory fixture. */
   protected Fixture fixture(final boolean duplicateClass) throws IOException {
@@ -186,137 +184,41 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final String secondArtifactScope,
       final boolean unusedSecond)
       throws IOException {
-    final Path sourceDirectory = Files.createDirectories(temporaryDirectory.resolve("sources"));
+    final ClosureFixtureCompileCache.FixtureKey key =
+        new ClosureFixtureCompileCache.FixtureKey(
+            duplicateClass,
+            serviceRootInA,
+            resourceOnlyB,
+            optionalAsmReference,
+            release,
+            distinctDuplicateDependencies,
+            unusedSecond);
+    final ClosureFixtureCompileCache.CachedFixtureFiles cached =
+        ClosureFixtureCompileCache.closureFixtureFiles(key);
+    final Path sources = Files.createDirectories(temporaryDirectory.resolve("sources"));
+    for (final Map.Entry<String, byte[]> entry : cached.sourceFiles().entrySet()) {
+      final Path target = sources.resolve(entry.getKey());
+      Files.createDirectories(target.getParent());
+      Files.write(target, entry.getValue());
+    }
     final Path classes = Files.createDirectories(temporaryDirectory.resolve(CLASSES_DIRECTORY));
-    final Path firstSource =
-        writeSource(
-            sourceDirectory,
-            "closure/a/Entry.java",
-            entrySource(resourceOnlyB, optionalAsmReference));
-    final Path optionalAsmSource =
-        optionalAsmReference
-            ? writeSource(
-                sourceDirectory,
-                "org/objectweb/asm/Label.java",
-                "package org.objectweb.asm; public class Label {}")
-            : null;
-    final Path extraSource =
-        writeSource(
-            sourceDirectory, "closure/a/Extra.java", extraSource(distinctDuplicateDependencies));
-    final Path secondSource =
-        writeSource(
-            sourceDirectory,
-            "closure/b/Middle.java",
-            "package closure.b; public class Middle { "
-                + "public Object make() { return new closure.c.Leaf(); } }");
-    final Path thirdSource =
-        writeSource(
-            sourceDirectory, "closure/c/Leaf.java", "package closure.c; public class Leaf {}");
-    final Path fourthSource =
-        writeSource(
-            sourceDirectory,
-            "closure/d/Ancestor.java",
-            "package closure.d; public class Ancestor { "
-                + "public Object make() { return new closure.e.Leaf(); } }");
-    final Path fifthSource =
-        writeSource(
-            sourceDirectory, "closure/e/Leaf.java", "package closure.e; public class Leaf {}");
-    final Path unusedSecondSource =
-        writeSource(
-            sourceDirectory, "closure/b/Unused.java", "package closure.b; public class Unused {}");
-    final Path unusedFirstSource =
-        unusedSecond
-            ? writeSource(
-                sourceDirectory,
-                "closure/a/Unused.java",
-                "package closure.a; public class Unused {}")
-            : null;
-    final List<Path> sources =
-        new ArrayList<>(
-            List.of(
-                firstSource,
-                extraSource,
-                secondSource,
-                thirdSource,
-                fourthSource,
-                fifthSource,
-                unusedSecondSource));
-    if (unusedFirstSource != null) {
-      sources.add(unusedFirstSource);
+    for (final Map.Entry<String, byte[]> entry : cached.classFiles().entrySet()) {
+      final Path target = classes.resolve(entry.getKey());
+      Files.createDirectories(target.getParent());
+      Files.write(target, entry.getValue());
     }
-    if (optionalAsmSource != null) {
-      sources.add(optionalAsmSource);
+    for (final Map.Entry<String, byte[]> entry : cached.jarFiles().entrySet()) {
+      Files.write(temporaryDirectory.resolve(entry.getKey()), entry.getValue());
     }
-    io.github.spockz.elider.test.CompilationFixtureSupport.compile(classes, sources, release);
-    final Path firstArtifactPath =
-        jar(
-            "a.jar",
-            classes,
-            unusedSecond
-                ? List.of("closure/a/Entry.class", EXTRA_CLASS_ENTRY, "closure/a/Unused.class")
-                : List.of("closure/a/Entry.class", EXTRA_CLASS_ENTRY),
-            serviceRootInA
-                ? Map.of(
-                    FIXTURE_RESOURCE,
-                    FIXTURE_RESOURCE_CONTENT,
-                    "META-INF/services/closure.a.Entry",
-                    "closure.b.Middle\n")
-                : Map.of(FIXTURE_RESOURCE, FIXTURE_RESOURCE_CONTENT));
-    if (distinctDuplicateDependencies) {
-      Files.writeString(
-          extraSource,
-          "package closure.a; public class Extra { "
-              + "public Object make() { return new closure.e.Leaf(); } }\n");
-      io.github.spockz.elider.test.CompilationFixtureSupport.compile(
-          classes, List.of(extraSource), "-classpath", classes.toString());
-    }
-    final List<String> secondClasses =
-        secondArtifactClasses(resourceOnlyB, duplicateClass, unusedSecond);
-    final Path secondArtifactPath =
-        jar("b.jar", classes, secondClasses, Map.of(FIXTURE_RESOURCE, FIXTURE_RESOURCE_CONTENT));
-    final Path thirdArtifactPath = jar("c.jar", classes, List.of("closure/c/Leaf.class"));
-    final Path fourthArtifactPath = jar("d.jar", classes, List.of(ANCESTOR_CLASS_ENTRY));
-    final Path fifthArtifactPath = jar("e.jar", classes, List.of("closure/e/Leaf.class"));
     return new Fixture(
-        firstArtifactPath,
-        secondArtifactPath,
-        thirdArtifactPath,
-        fourthArtifactPath,
-        fifthArtifactPath,
+        temporaryDirectory.resolve("a.jar"),
+        temporaryDirectory.resolve("b.jar"),
+        temporaryDirectory.resolve("c.jar"),
+        temporaryDirectory.resolve("d.jar"),
+        temporaryDirectory.resolve("e.jar"),
         release,
         firstArtifactScope,
         secondArtifactScope);
-  }
-
-  private static String entrySource(
-      final boolean resourceOnlyB, final boolean optionalAsmReference) {
-    if (resourceOnlyB) {
-      return "package closure.a; public class Entry {}";
-    }
-    final String asmField = optionalAsmReference ? "public org.objectweb.asm.Label optional; " : "";
-    return "package closure.a; public class Entry { "
-        + asmField
-        + "public Object make() { return new closure.b.Middle(); } }";
-  }
-
-  private static String extraSource(final boolean distinctDuplicateDependencies) {
-    return distinctDuplicateDependencies
-        ? "package closure.a; public class Extra { "
-            + "public Object make() { return new closure.c.Leaf(); } }"
-        : "package closure.a; public class Extra {}";
-  }
-
-  private static List<String> secondArtifactClasses(
-      final boolean resourceOnlyB, final boolean duplicateClass, final boolean unusedSecond) {
-    if (resourceOnlyB) {
-      return List.of();
-    }
-    if (!duplicateClass) {
-      return List.of("closure/b/Middle.class", "closure/b/Unused.class");
-    }
-    return unusedSecond
-        ? List.of(EXTRA_CLASS_ENTRY, "closure/b/Middle.class", "closure/b/Unused.class")
-        : List.of(EXTRA_CLASS_ENTRY, "closure/b/Middle.class");
   }
 
   /** Builds a fixture whose first archive is visible only at runtime. */
@@ -778,9 +680,7 @@ class MavenDependencyTrimmerInMemoryClosureSupport {
       final Path staged = temporaryDirectory.resolve("a-with-unknown-native-image.jar");
       try (java.util.jar.JarFile archive = new java.util.jar.JarFile(path.toFile());
           JarOutputStream output = new JarOutputStream(Files.newOutputStream(staged))) {
-        final java.util.Enumeration<JarEntry> entries = archive.entries();
-        while (entries.hasMoreElements()) {
-          final JarEntry entry = entries.nextElement();
+        for (final JarEntry entry : archive.stream().toList()) {
           output.putNextEntry(new JarEntry(entry.getName()));
           try (java.io.InputStream input = archive.getInputStream(entry)) {
             input.transferTo(output);

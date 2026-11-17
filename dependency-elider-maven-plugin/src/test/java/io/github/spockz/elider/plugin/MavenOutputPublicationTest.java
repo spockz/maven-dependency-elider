@@ -10,8 +10,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.engine.ClassUsageReport;
+import io.github.spockz.elider.model.HexDigest;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,7 +36,6 @@ import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.DependencyResolutionResult;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
-import org.apache.maven.toolchain.ToolchainManager;
 import org.codehaus.plexus.PlexusContainer;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.eclipse.aether.DefaultRepositorySystemSession;
@@ -52,7 +51,6 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 
 @SuppressWarnings({
-  "PMD.AvoidAccessibilityAlteration",
   "PMD.AtLeastOneConstructor",
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
@@ -89,7 +87,7 @@ final class MavenOutputPublicationTest {
     assertThat(artifactFile(fixture.affected())).isEqualTo(fixture.affectedJar());
     final JsonNode sbom = JSON.readTree(fixture.sbom().toFile());
     final JsonNode affectedComponent = component(sbom, "affected");
-    final String sha256 = ArtifactFileDigest.sha256(fixture.affectedJar());
+    final String sha256 = HexDigest.sha256(fixture.affectedJar());
     assertThat(affectedComponent.path("hashes").get(0).path("content").asText()).isEqualTo(sha256);
     final JsonNode vulnerability = sbom.path("vulnerabilities").get(0);
     assertThat(vulnerability.path("analysis").path("state").asText()).isEqualTo("not_affected");
@@ -119,6 +117,61 @@ final class MavenOutputPublicationTest {
                           "org.example:prerequisite", "org.example.prerequisite.EntryPoint"));
             });
     assertThat(report.trimmedArtifacts()).isEmpty();
+  }
+
+  @Test
+  void analyzeGoalPredictsPrerequisitesAbsentWithoutEmittingVexOrSbomOnDisk() throws Exception {
+    final Fixture fixture = fixture("analyze-non-emission", false, false);
+    fixture.session().getRequest().setGoals(List.of("clean", "process-classes"));
+    final Plugin plugin = new Plugin();
+    plugin.setGroupId("io.github.spockz");
+    plugin.setArtifactId("dependency-elider-maven-plugin");
+    final org.apache.maven.plugin.MojoExecution execution =
+        new org.apache.maven.plugin.MojoExecution(plugin, "analyze", "process-classes-binding");
+    execution.setLifecyclePhase("process-classes");
+    set(execution, "source", org.apache.maven.plugin.MojoExecution.Source.LIFECYCLE);
+    final AnalyzeMojo analyzeMojo = new AnalyzeMojo();
+    set(analyzeMojo, "mojoExecution", execution);
+    set(analyzeMojo, "project", fixture.project());
+    set(analyzeMojo, "session", fixture.session());
+    set(analyzeMojo, "projectDependenciesResolver", publicationResolver(fixture.project()));
+    set(analyzeMojo, "traceFiles", List.of(fixture.trace().toFile()));
+    set(analyzeMojo, "trimJars", true);
+    set(analyzeMojo, "trimSkipArtifacts", List.of("org.example:affected:1.0"));
+    set(analyzeMojo, "reportFile", fixture.classUsage().toFile());
+    set(analyzeMojo, "analysisSummaryFile", fixture.summary().toFile());
+    set(analyzeMojo, "cveCacheDirectory", fixture.basedir().resolve("cache").toFile());
+    set(analyzeMojo, "osvSnapshotUri", null);
+    set(analyzeMojo, "cveListGitUri", null);
+    set(analyzeMojo, "preconditionClassPathComplete", true);
+    final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
+    mapping.setCveId("CVE-2026-12345");
+    mapping.setGroupId("org.example");
+    mapping.setArtifactId("affected");
+    mapping.setVersion("1.0");
+    mapping.setVersionRangeSpec("[1.0]");
+    mapping.setAssertsAffected(true);
+    mapping.setConfidenceLevel("HIGH");
+    mapping.setRequiresDependency("org.example:prerequisite");
+    mapping.setRequiresClass("org.example.prerequisite.EntryPoint");
+    set(analyzeMojo, "vulnerabilityMappings", List.of(mapping));
+
+    analyzeMojo.execute();
+
+    final MavenElisionReportSnapshot report = MavenElisionReportWriter.read(fixture.summary());
+    assertAll(
+        "Analyze predicts PREREQUISITES_ABSENT without emitting VEX or SBOM files",
+        () -> assertThat(report.mode()).isEqualTo(MavenElisionReportSnapshot.Mode.ANALYSIS),
+        () ->
+            assertThat(report.genericFindings())
+                .singleElement()
+                .satisfies(
+                    finding ->
+                        assertThat(finding.outcome())
+                            .isEqualTo(GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT)),
+        () -> assertThat(fixture.vex()).doesNotExist(),
+        () -> assertThat(fixture.sbom()).doesNotExist(),
+        () -> assertThat(fixture.baselineSbom()).doesNotExist());
   }
 
   @Test
@@ -160,13 +213,13 @@ final class MavenOutputPublicationTest {
     set(fixture.mojo(), "closedWorld", true);
     set(fixture.mojo(), "trimSkipArtifacts", List.of());
     writeJar(fixture.affectedJar(), "sample/Keep", "sample/Unused");
-    final String inputDigest = ArtifactFileDigest.sha256(fixture.affectedJar());
+    final String inputDigest = HexDigest.sha256(fixture.affectedJar());
 
     fixture.mojo().execute();
 
     final MavenElisionReportSnapshot first = MavenElisionReportWriter.read(fixture.summary());
     final Path firstOutput = fixture.affected().getFile().toPath();
-    final String firstOutputDigest = ArtifactFileDigest.sha256(firstOutput);
+    final String firstOutputDigest = HexDigest.sha256(firstOutput);
     assertThat(first.trimmedArtifacts()).isNotEmpty();
     assertThat(firstOutput).isNotEqualTo(fixture.affectedJar());
     assertThat(firstOutputDigest).isNotEqualTo(inputDigest);
@@ -188,7 +241,7 @@ final class MavenOutputPublicationTest {
                       assertThat(finding.prerequisiteProof()).isEmpty();
                     }),
         () -> assertThat(fixture.affected().getFile().toPath()).isEqualTo(firstOutput),
-        () -> assertThat(ArtifactFileDigest.sha256(firstOutput)).isEqualTo(firstOutputDigest));
+        () -> assertThat(HexDigest.sha256(firstOutput)).isEqualTo(firstOutputDigest));
   }
 
   @Test
@@ -478,7 +531,7 @@ final class MavenOutputPublicationTest {
   }
 
   @Test
-  void testCompileSourceRootOverrideSuppressesPreconditionPublication() throws Exception {
+  void testCompileSourceRootOverrideDoesNotSuppressRuntimeProof() throws Exception {
     final Fixture fixture = fixture("test-compile-source-override", false, false);
     configure(fixture, true);
     final Plugin compiler = new Plugin();
@@ -499,8 +552,12 @@ final class MavenOutputPublicationTest {
 
     fixture.mojo().execute();
 
-    assertThat(fixture.vex()).doesNotExist();
-    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(fixture.summary()))).isEmpty();
+    assertThat(fixture.vex()).isRegularFile();
+    assertThat(prerequisiteFindings(MavenElisionReportWriter.read(fixture.summary())))
+        .singleElement()
+        .satisfies(
+            finding ->
+                assertThat(finding.candidate().toId()).isEqualTo("org.example:affected:jar:1.0"));
   }
 
   @Test
@@ -1023,7 +1080,7 @@ final class MavenOutputPublicationTest {
                         List.of();
                     case "getResolvedDependencies" -> dependencies;
                     case "getDependencyGraph" -> graph;
-                    default -> null;
+                    case null, default -> null;
                   });
     };
   }
@@ -1063,10 +1120,7 @@ final class MavenOutputPublicationTest {
             new Class<?>[] {PlexusContainer.class},
             (proxy, method, arguments) -> {
               if (LOOKUP_METHOD.equals(method.getName())) {
-                return Proxy.newProxyInstance(
-                    ToolchainManager.class.getClassLoader(),
-                    new Class<?>[] {ToolchainManager.class},
-                    (manager, managerMethod, managerArguments) -> null);
+                return new org.apache.maven.toolchain.DefaultToolchainManager();
               }
               return null;
             });
@@ -1074,9 +1128,7 @@ final class MavenOutputPublicationTest {
 
   private static void set(final Object target, final String name, final Object value) {
     try {
-      final Field field = target.getClass().getDeclaredField(name);
-      field.setAccessible(true);
-      field.set(target, value);
+      AnalyzeMojoTestFieldSupport.set(target, name, value);
     } catch (final ReflectiveOperationException exception) {
       throw new IllegalStateException("Cannot set fixture field " + name, exception);
     }

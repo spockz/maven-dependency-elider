@@ -8,7 +8,6 @@ import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarEntry;
@@ -162,9 +161,8 @@ import org.junit.jupiter.api.Test;
     final Path destination = temporaryDirectory.resolve(destinationName);
     try (JarFile archive = new JarFile(source.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(archive, output, entries.nextElement());
+      for (final JarEntry entry : archive.stream().toList()) {
+        copyEntry(archive, output, entry);
       }
       for (final Map.Entry<String, String> entry : additions.entrySet()) {
         write(

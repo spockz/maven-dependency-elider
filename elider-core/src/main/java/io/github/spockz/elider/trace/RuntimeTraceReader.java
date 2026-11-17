@@ -8,7 +8,13 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 /** Reads one supported runtime telemetry file into normalized class observations. */
-public interface RuntimeTraceReader {
+public sealed interface RuntimeTraceReader
+    permits CdsClassListReader,
+        ClassLoaderLogReader,
+        CompositeTraceReader,
+        GraalVmConfigReader,
+        JaCoCoTraceReader,
+        JfrTraceReader {
   /** Identifies the evidence semantics of files read by this reader. */
   default TraceEvidenceKind evidenceKind() {
     return TraceEvidenceKind.UNCLASSIFIED;

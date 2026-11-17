@@ -6,8 +6,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.model.TraceData;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;

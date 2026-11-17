@@ -3,13 +3,14 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContextTestSupport;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarEntry;
@@ -50,16 +51,6 @@ import java.util.jar.JarOutputStream;
         .contains("predefined.payload", hash + ".classdata");
   }
 
-  /* package */ static void assertRetargetRejectedBeforePublication(
-      final MavenElisionService service,
-      final ElisionAnalysisModel.PreparedAnalysis prepared,
-      final Path outputDirectory) {
-    assertThatThrownBy(() -> service.finish(prepared))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("input target changed after preparation");
-    assertThat(outputDirectory).doesNotExist();
-  }
-
   /* package */ static Path appendEntries(
       final Path outputDirectory,
       final Path source,
@@ -79,9 +70,8 @@ import java.util.jar.JarOutputStream;
     final Path destination = outputDirectory.resolve(destinationName);
     try (JarFile archive = new JarFile(source.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(archive, output, entries.nextElement());
+      for (final JarEntry entry : archive.stream().toList()) {
+        copyEntry(archive, output, entry);
       }
       for (final Map.Entry<String, String> addition : additions.entrySet()) {
         writeEntry(output, addition.getKey(), addition.getValue());

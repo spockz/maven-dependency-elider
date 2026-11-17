@@ -6,8 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.ProviderKind;
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.PrerequisiteOperator;
@@ -100,9 +100,9 @@ final class MavenElisionReportPrerequisitePredictionCodec {
       return Optional.empty();
     }
     try {
-      MavenElisionReportPredictionJson.shape(node, PREDICTION_FIELDS, ROOT_PATH);
+      MavenElisionReportJsonPayloadShape.shape(node, PREDICTION_FIELDS, ROOT_PATH);
       final JsonNode candidateNode = node.get("candidate");
-      MavenElisionReportPredictionJson.shape(
+      MavenElisionReportJsonPayloadShape.shape(
           candidateNode,
           Set.of("groupId", "artifactId", "version", "type", "classifier", "scope"),
           ROOT_PATH + ".candidate");
@@ -110,7 +110,7 @@ final class MavenElisionReportPrerequisitePredictionCodec {
           JSON.treeToValue(candidateNode, ArtifactCoordinate.class);
       final List<PrerequisitePrediction.GroupForecast> groups = new ArrayList<>();
       for (final JsonNode group :
-          MavenElisionReportPredictionJson.array(node, "groups", ROOT_PATH + ".groups")) {
+          MavenElisionReportJsonPayloadShape.array(node, "groups", ROOT_PATH + ".groups")) {
         groups.add(readGroup(group));
       }
       if (groups.stream().map(PrerequisitePrediction.GroupForecast::group).distinct().count()
@@ -120,10 +120,10 @@ final class MavenElisionReportPrerequisitePredictionCodec {
       return Optional.of(
           new PrerequisitePrediction(
               candidate,
-              MavenElisionReportPredictionJson.text(node, "baselineInventoryFingerprint"),
-              MavenElisionReportPredictionJson.text(node, "planFingerprint"),
+              MavenElisionReportJsonPayloadShape.text(node, "baselineInventoryFingerprint"),
+              MavenElisionReportJsonPayloadShape.text(node, "planFingerprint"),
               groups,
-              MavenElisionReportPredictionJson.nullableText(node, DETAIL)));
+              MavenElisionReportJsonPayloadShape.nullableText(node, DETAIL)));
     } catch (final IllegalArgumentException exception) {
       throw new IOException("Invalid " + ROOT_PATH + ": " + exception.getMessage(), exception);
     }
@@ -131,32 +131,32 @@ final class MavenElisionReportPrerequisitePredictionCodec {
 
   private static PrerequisitePrediction.GroupForecast readGroup(final JsonNode group)
       throws IOException {
-    MavenElisionReportPredictionJson.shape(group, GROUP_FIELDS, ROOT_PATH + ".groups[]");
+    MavenElisionReportJsonPayloadShape.shape(group, GROUP_FIELDS, ROOT_PATH + ".groups[]");
     return new PrerequisitePrediction.GroupForecast(
         readSelectedGroup(group.get("group")),
         readMembers(group),
-        MavenElisionReportPredictionJson.bool(group, "disarmed"));
+        MavenElisionReportJsonPayloadShape.bool(group, "disarmed"));
   }
 
   private static PrerequisiteGroup readSelectedGroup(final JsonNode selected) throws IOException {
-    MavenElisionReportPredictionJson.shape(
+    MavenElisionReportJsonPayloadShape.shape(
         selected, Set.of("operator", MEMBERS), ROOT_PATH + ".groups[].group");
     final Set<String> claimFields = Set.of(REQUIRES_DEPENDENCY, REQUIRES_CLASS);
     final Set<PrerequisiteClaim> selectedMembers = new java.util.HashSet<>();
     for (final JsonNode member :
-        MavenElisionReportPredictionJson.array(
+        MavenElisionReportJsonPayloadShape.array(
             selected, MEMBERS, ROOT_PATH + ".groups[].group.members")) {
-      MavenElisionReportPredictionJson.shape(
+      MavenElisionReportJsonPayloadShape.shape(
           member, claimFields, ROOT_PATH + ".groups[].group.members[]");
       if (!selectedMembers.add(
           new PrerequisiteClaim(
-              MavenElisionReportPredictionJson.text(member, REQUIRES_DEPENDENCY),
-              MavenElisionReportPredictionJson.text(member, REQUIRES_CLASS)))) {
+              MavenElisionReportJsonPayloadShape.text(member, REQUIRES_DEPENDENCY),
+              MavenElisionReportJsonPayloadShape.text(member, REQUIRES_CLASS)))) {
         throw new IOException(ROOT_PATH + ".groups[].group.members contains duplicates");
       }
     }
     return new PrerequisiteGroup(
-        MavenElisionReportPredictionJson.enumValue(
+        MavenElisionReportJsonPayloadShape.enumValue(
             selected, "operator", PrerequisiteOperator.class),
         selectedMembers);
   }
@@ -165,7 +165,7 @@ final class MavenElisionReportPrerequisitePredictionCodec {
       throws IOException {
     final List<PrerequisitePrediction.MemberForecast> members = new ArrayList<>();
     for (final JsonNode member :
-        MavenElisionReportPredictionJson.array(group, MEMBERS, ROOT_PATH + ".groups[].members")) {
+        MavenElisionReportJsonPayloadShape.array(group, MEMBERS, ROOT_PATH + ".groups[].members")) {
       members.add(readMember(member));
     }
     if (members.stream().map(PrerequisitePrediction.MemberForecast::claim).distinct().count()
@@ -177,30 +177,30 @@ final class MavenElisionReportPrerequisitePredictionCodec {
 
   private static PrerequisitePrediction.MemberForecast readMember(final JsonNode member)
       throws IOException {
-    MavenElisionReportPredictionJson.shape(
+    MavenElisionReportJsonPayloadShape.shape(
         member, MEMBER_FIELDS, ROOT_PATH + ".groups[].members[]");
     final JsonNode claim = member.get("claim");
-    MavenElisionReportPredictionJson.shape(
+    MavenElisionReportJsonPayloadShape.shape(
         claim,
         Set.of(REQUIRES_DEPENDENCY, REQUIRES_CLASS),
         ROOT_PATH + ".groups[].members[].claim");
     return new PrerequisitePrediction.MemberForecast(
         new PrerequisiteClaim(
-            MavenElisionReportPredictionJson.text(claim, REQUIRES_DEPENDENCY),
-            MavenElisionReportPredictionJson.text(claim, REQUIRES_CLASS)),
-        MavenElisionReportPredictionJson.enumValue(
+            MavenElisionReportJsonPayloadShape.text(claim, REQUIRES_DEPENDENCY),
+            MavenElisionReportJsonPayloadShape.text(claim, REQUIRES_CLASS)),
+        MavenElisionReportJsonPayloadShape.enumValue(
             member, "state", PrerequisitePrediction.MemberState.class),
-        MavenElisionReportPredictionJson.enumValue(
+        MavenElisionReportJsonPayloadShape.enumValue(
             member, "reason", PrerequisitePrediction.MemberReason.class),
         readProviders(member),
-        MavenElisionReportPredictionJson.nullableText(member, DETAIL));
+        MavenElisionReportJsonPayloadShape.nullableText(member, DETAIL));
   }
 
   private static List<PrerequisitePrediction.ProviderForecast> readProviders(final JsonNode member)
       throws IOException {
     final List<PrerequisitePrediction.ProviderForecast> providers = new ArrayList<>();
     for (final JsonNode provider :
-        MavenElisionReportPredictionJson.array(
+        MavenElisionReportJsonPayloadShape.array(
             member, "providers", ROOT_PATH + ".groups[].members[].providers")) {
       providers.add(readProvider(provider));
     }
@@ -209,21 +209,21 @@ final class MavenElisionReportPrerequisitePredictionCodec {
 
   private static PrerequisitePrediction.ProviderForecast readProvider(final JsonNode provider)
       throws IOException {
-    MavenElisionReportPredictionJson.shape(
+    MavenElisionReportJsonPayloadShape.shape(
         provider, PROVIDER_FIELDS, ROOT_PATH + ".groups[].members[].providers[]");
     final JsonNode coordinateNode = provider.get("coordinate");
     final ArtifactCoordinate coordinate = readCoordinate(coordinateNode);
-    final String providerPath = MavenElisionReportPredictionJson.text(provider, "baselinePath");
+    final String providerPath = MavenElisionReportJsonPayloadShape.text(provider, "baselinePath");
     if (!Path.of(providerPath).isAbsolute()) {
       throw new IOException(
           ROOT_PATH + ".groups[].members[].providers[].baselinePath must be absolute");
     }
     return new PrerequisitePrediction.ProviderForecast(
-        MavenElisionReportPredictionJson.enumValue(provider, KIND, ProviderKind.class),
+        MavenElisionReportJsonPayloadShape.enumValue(provider, KIND, ProviderKind.class),
         coordinate,
         Path.of(providerPath),
-        MavenElisionReportPredictionJson.text(provider, "baselineSha256"),
-        MavenElisionReportPredictionJson.enumValue(
+        MavenElisionReportJsonPayloadShape.text(provider, "baselineSha256"),
+        MavenElisionReportJsonPayloadShape.enumValue(
             provider, "plan", PrerequisitePrediction.ProviderPlan.class));
   }
 
@@ -232,7 +232,7 @@ final class MavenElisionReportPrerequisitePredictionCodec {
     if (coordinateNode == null || coordinateNode.isNull()) {
       return null;
     }
-    MavenElisionReportPredictionJson.shape(
+    MavenElisionReportJsonPayloadShape.shape(
         coordinateNode,
         Set.of("groupId", "artifactId", "version", "type", "classifier", "scope"),
         ROOT_PATH + ".groups[].members[].providers[].coordinate");

@@ -6,7 +6,6 @@ package io.github.spockz.elider.plugin;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.Analysis;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ApplyPlan;
-import io.github.spockz.elider.plugin.ElisionAnalysisModel.CurrentViews;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -29,12 +28,16 @@ final class MavenArtifactPlan {
     if (!retained.isEmpty()) {
       throw new IOException("Contradictory retained and elided artifact identities: " + retained);
     }
-    final CurrentViews currentViews = MavenArtifactInventory.verifyCurrentViews(project, analysis);
+    MavenArtifactPathValidation.validateIdentityPaths(analysis.artifacts().resolvedSnapshots());
+    MavenArtifactPathValidation.validateIdentityPaths(analysis.artifacts().directSnapshots());
+    MavenArtifactPathValidation.validateDirectPaths(
+        analysis.artifacts().resolvedSnapshots(), analysis.artifacts().directSnapshots());
+    final Set<Artifact> resolvedArtifacts = new LinkedHashSet<>(project.getArtifacts());
+    final Set<Artifact> directSet = project.getDependencyArtifacts();
+    final Set<Artifact> directArtifacts =
+        directSet == null ? Set.of() : new LinkedHashSet<>(directSet);
     return new ApplyPlan(
-        retained(currentViews.resolvedArtifacts(), elided),
-        new LinkedHashSet<>(currentViews.resolvedArtifacts()),
-        analysis.artifacts().directArtifactsPresent(),
-        new LinkedHashSet<>(currentViews.directArtifacts()));
+        retained(resolvedArtifacts, elided), resolvedArtifacts, directSet != null, directArtifacts);
   }
 
   private static Set<MavenArtifactIdentity> identities(

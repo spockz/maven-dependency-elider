@@ -10,7 +10,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Set;
 import java.util.jar.JarEntry;
@@ -151,9 +150,8 @@ final class MavenElisionNoTrimClosureTest extends MavenDependencyTrimmerInMemory
     final Path staged = temporaryDirectory.resolve("a-with-untraced-link.jar");
     try (JarFile archive = new JarFile(archivePath.toFile());
         ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(staged))) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(archive, output, entries.nextElement(), replacement);
+      for (final JarEntry entry : archive.stream().toList()) {
+        copyEntry(archive, output, entry, replacement);
       }
     }
     Files.move(staged, archivePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);

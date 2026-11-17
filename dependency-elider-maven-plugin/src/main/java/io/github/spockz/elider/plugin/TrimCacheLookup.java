@@ -3,8 +3,8 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.plugin.JarTrimCache.CacheEntry;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -16,7 +16,7 @@ final class TrimCacheLookup {
   private TrimCacheLookup() {}
 
   /** Cache states distinguish a miss from a valid unchanged archive. */
-  /* package */ sealed interface EntryLookup permits MissingEntry, UnchangedEntry, CachedArchive {}
+  /* package */ sealed interface EntryLookup {}
 
   /** A corrupt or stale entry causes the containing manifest to miss. */
   /* package */ enum MissingEntry implements EntryLookup {
@@ -80,10 +80,10 @@ final class TrimCacheLookup {
     return new CachedArchive(
         new ArtifactTrimRecord(
             candidate.archive().snapshot().coordinate(),
-            original.toRealPath(),
+            original.toAbsolutePath().normalize(),
             entry.originalSha256(),
             entry.originalSha1(),
-            output.toRealPath(),
+            output.toAbsolutePath().normalize(),
             entry.trimmedSha256(),
             entry.trimmedSha1(),
             entry.totalClasses(),

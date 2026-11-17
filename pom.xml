@@ -43,7 +43,9 @@
         <jacoco-core.version>0.8.15</jacoco-core.version>
         <jacoco-maven-plugin.version>0.8.16</jacoco-maven-plugin.version>
         <junit.version>5.11.4</junit.version>
-        <test.parallelism>2</test.parallelism>
+        <core.forkCount>1</core.forkCount>
+        <core.test.parallelism>2</core.test.parallelism>
+        <plugin.test.parallelism>4</plugin.test.parallelism>
         <assertj.version>3.27.3</assertj.version>
         <json-schema-validator.version>1.5.6</json-schema-validator.version>
         <jmh.version>1.37</jmh.version>
@@ -53,6 +55,8 @@
 
     <modules>
         <module>elider-core</module>
+        <module>elider-native-image</module>
+        <module>elider-maven-lifecycle</module>
         <module>dependency-elider-maven-plugin</module>
         <module>elider-benchmarks</module>
         <module>examples</module>
@@ -64,6 +68,16 @@
             <dependency>
                 <groupId>io.github.spockz</groupId>
                 <artifactId>elider-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.spockz</groupId>
+                <artifactId>elider-native-image</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.spockz</groupId>
+                <artifactId>elider-maven-lifecycle</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

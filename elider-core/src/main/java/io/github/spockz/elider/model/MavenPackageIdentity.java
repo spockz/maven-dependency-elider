@@ -124,21 +124,6 @@ public record MavenPackageIdentity(
         && (entry.packageUrl() != null || hasCollectionIdentity(entry));
   }
 
-  /** Matches a product identity and variant represented by an OSV Maven scope. */
-  public static boolean matchesCnaScope(
-      final CveAffectedEntryContext entry, final ArtifactCoordinate coordinate) {
-    if (!matchesCnaPackage(entry, coordinate.groupId(), coordinate.artifactId())) {
-      return false;
-    }
-    if (entry.packageUrl() != null) {
-      final MavenPackageIdentity purl = parse(entry.packageUrl()).orElse(null);
-      return purl != null
-          && purl.type().equals(coordinate.type())
-          && purl.classifier().equals(coordinate.classifier());
-    }
-    return "jar".equals(coordinate.type()) && coordinate.classifier().isEmpty();
-  }
-
   /** Matches the available product identity to one exact Maven artifact variant. */
   public static boolean matchesCnaArtifact(
       final CveAffectedEntryContext entry, final ArtifactCoordinate coordinate) {

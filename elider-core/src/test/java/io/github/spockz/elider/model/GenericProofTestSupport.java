@@ -2,6 +2,9 @@
 
 package io.github.spockz.elider.model;
 
+import io.github.spockz.elider.applicability.OmittedCodeProof;
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionProof;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.util.List;

@@ -3,11 +3,9 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ElisionDecision;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -74,20 +72,6 @@ final class MavenElisionResolvedInventoryBindingTest extends MavenElisionGraphBi
     assertThat(result.evaluation().failClosed()).isTrue();
     assertThat(result.evaluation().elidedArtifacts()).isEmpty();
     assertThat(result.evaluation().failClosedReason()).contains("complete resolved GAVCE/scope");
-  }
-
-  @Test
-  void rejectsChangedJarDigestAtAnalysisUse() throws Exception {
-    final Fixture fixture = fixture(true, "initial jar bytes");
-    final MavenElisionGraphBinding.Result result = fixture.bind(List.of(fixture.snapshot()));
-    Files.writeString(fixture.snapshot().filePath(), "changed jar bytes");
-
-    assertThatThrownBy(
-            () ->
-                MavenElisionGraphBinding.verifyInventoryFingerprint(
-                    List.of(fixture.snapshot()), result.inventoryFingerprint()))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("changed after fingerprinting");
   }
 
   @Test

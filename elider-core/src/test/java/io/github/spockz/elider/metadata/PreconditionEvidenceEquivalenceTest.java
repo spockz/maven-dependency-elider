@@ -4,7 +4,7 @@ package io.github.spockz.elider.metadata;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.spockz.elider.model.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.PrerequisiteMemberObservation;
@@ -71,6 +71,8 @@ final class PreconditionEvidenceEquivalenceTest {
                 directory, "source-b", group, otherPresent, otherPresent)
             .attestation();
 
+    final String classOne = PreconditionEvidenceTestFixture.CLASS_ONE;
+    final String classTwo = PreconditionEvidenceTestFixture.CLASS_TWO;
     Assertions.assertAll(
         "VEX records each checked member state instead of claiming all members are absent",
         () ->
@@ -78,29 +80,27 @@ final class PreconditionEvidenceEquivalenceTest {
                 .isEqualTo(second.requiredPrerequisiteGroups()),
         () -> assertThat(first.inventorySha256()).isNotEqualTo(second.inventorySha256()),
         () ->
-            assertThat(PreconditionEvidenceIdentity.from(first).memberObservations())
+            assertThat(
+                    VexSerializerSupport.PreconditionEvidenceIdentity.from(first)
+                        .memberObservations())
                 .containsExactlyInAnyOrder(
                     new PrerequisiteMemberObservation(
                         firstMember, PrerequisiteMemberObservation.State.PRESENT),
                     new PrerequisiteMemberObservation(
                         secondMember, PrerequisiteMemberObservation.State.ABSENT)),
         () ->
-            assertThat(PreconditionEvidenceIdentity.from(second).memberObservations())
+            assertThat(
+                    VexSerializerSupport.PreconditionEvidenceIdentity.from(second)
+                        .memberObservations())
                 .containsExactlyInAnyOrder(
                     new PrerequisiteMemberObservation(
                         firstMember, PrerequisiteMemberObservation.State.ABSENT),
                     new PrerequisiteMemberObservation(
                         secondMember, PrerequisiteMemberObservation.State.PRESENT)),
         () ->
-            assertThat(first.impactDetail())
-                .contains(
-                    PreconditionEvidenceTestFixture.CLASS_ONE + "=PRESENT",
-                    PreconditionEvidenceTestFixture.CLASS_TWO + "=ABSENT"),
+            assertThat(first.impactDetail()).contains(classOne + "=PRESENT", classTwo + "=ABSENT"),
         () ->
-            assertThat(second.impactDetail())
-                .contains(
-                    PreconditionEvidenceTestFixture.CLASS_ONE + "=ABSENT",
-                    PreconditionEvidenceTestFixture.CLASS_TWO + "=PRESENT"),
+            assertThat(second.impactDetail()).contains(classOne + "=ABSENT", classTwo + "=PRESENT"),
         () -> assertThat(first.impactDetail()).isNotEqualTo(second.impactDetail()));
   }
 
@@ -151,8 +151,8 @@ final class PreconditionEvidenceEquivalenceTest {
                 PrerequisiteOperator.ALL_OF, firstMember, secondMember));
     final Set<PrerequisiteClaim> claims = Set.of(firstMember, secondMember);
     final String inventoryFingerprint = "b".repeat(64);
-    final PreconditionEvidenceIdentity firstState =
-        new PreconditionEvidenceIdentity(
+    final VexSerializerSupport.PreconditionEvidenceIdentity firstState =
+        new VexSerializerSupport.PreconditionEvidenceIdentity(
             PreconditionEvidenceTestFixture.CANDIDATE,
             "requires_dependency",
             claims,
@@ -165,8 +165,8 @@ final class PreconditionEvidenceEquivalenceTest {
             Path.of("target/library.jar"),
             "c".repeat(64),
             inventoryFingerprint);
-    final PreconditionEvidenceIdentity reversedState =
-        new PreconditionEvidenceIdentity(
+    final VexSerializerSupport.PreconditionEvidenceIdentity reversedState =
+        new VexSerializerSupport.PreconditionEvidenceIdentity(
             PreconditionEvidenceTestFixture.CANDIDATE,
             "requires_dependency",
             claims,

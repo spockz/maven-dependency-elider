@@ -1,6 +1,5 @@
 package io.github.spockz.elider.model;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -36,11 +35,6 @@ public record ElisionDecision(
     return retainedArtifacts.size() + elidedArtifacts.size();
   }
 
-  /** Returns how many artifacts were removed. */
-  public int elidedCount() {
-    return elidedArtifacts.size();
-  }
-
   /** Returns how many artifacts remain. */
   public int retainedCount() {
     return retainedArtifacts.size();
@@ -72,6 +66,6 @@ public record ElisionDecision(
             immutableCopy.put(
                 Objects.requireNonNull(coordinate, "class map coordinate must not be null"),
                 immutableSet(Objects.requireNonNull(classes, "class set must not be null"))));
-    return Collections.unmodifiableMap(immutableCopy);
+    return Map.copyOf(immutableCopy);
   }
 }

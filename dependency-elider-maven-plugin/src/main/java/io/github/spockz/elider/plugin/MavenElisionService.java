@@ -8,24 +8,27 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootScanner;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.EffectiveAnalysis;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.PreparedAnalysis;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import java.io.IOException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.project.ProjectDependenciesResolver;
 
 /** Coordinates shared trace analysis and a nonmutating Maven artifact plan. */
-final class MavenElisionService {
-  /** Declares the package-scoped constructor required for this stateless facade. */
-  /* package */ MavenElisionService() {
+public final class MavenElisionService {
+  /** Creates a Maven elision service with default collaborators. */
+  public MavenElisionService() {
     super();
   }
 
-  /* default */ Analysis analyze(final MavenProject project, final AnalysisOptions options)
+  /** Runs full dependency elision analysis for the given project and options. */
+  public Analysis analyze(final MavenProject project, final AnalysisOptions options)
       throws IOException, MojoFailureException {
     return finish(prepare(project, options));
   }
 
-  /* package */ AnalyzePrediction predict(
+  /** Predicts dependency elision outcomes without mutating output artifacts. */
+  public AnalyzePrediction predict(
       final MavenProject project,
       final AnalysisOptions options,
       final ProjectDependenciesResolver resolver)
@@ -37,12 +40,14 @@ final class MavenElisionService {
     }
   }
 
-  /* package */ PreparedAnalysis prepare(final MavenProject project, final AnalysisOptions options)
+  /** Prepares dependency inventory and analysis inputs for execution. */
+  public PreparedAnalysis prepare(final MavenProject project, final AnalysisOptions options)
       throws IOException, MojoFailureException {
     return prepare(project, options, DependencyDynamicRoots::scan);
   }
 
-  /* package */ PreparedAnalysis prepare(
+  /** Prepares dependency inventory and analysis inputs for execution. */
+  public PreparedAnalysis prepare(
       final MavenProject project,
       final AnalysisOptions options,
       final DynamicRootScanner dynamicRootScanner)
@@ -50,7 +55,8 @@ final class MavenElisionService {
     return MavenAnalysisPreparation.prepare(project, options, dynamicRootScanner);
   }
 
-  /* package */ PreparedAnalysis prepare(
+  /** Prepares dependency inventory and analysis inputs for execution. */
+  public PreparedAnalysis prepare(
       final MavenProject project,
       final AnalysisOptions options,
       final MavenAnalysisResolutionContext context,
@@ -60,17 +66,19 @@ final class MavenElisionService {
         project, options, DependencyDynamicRoots::scan, context, banPlan);
   }
 
-  /* package */ Analysis finish(final PreparedAnalysis prepared)
-      throws IOException, MojoFailureException {
+  /** Completes analysis and publishes outputs from a prepared state. */
+  public Analysis finish(final PreparedAnalysis prepared) throws IOException, MojoFailureException {
     return finishEffectiveOutputs(finishAnalysis(prepared));
   }
 
-  /* package */ EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)
+  /** Runs effective analysis without publishing final artifact outputs. */
+  public EffectiveAnalysis finishAnalysis(final PreparedAnalysis prepared)
       throws IOException, MojoFailureException {
     return ElisionReachabilityEngine.finishAnalysis(prepared);
   }
 
-  /* package */ Analysis finishEffectiveOutputs(final EffectiveAnalysis effective)
+  /** Publishes outputs from a completed effective analysis. */
+  public Analysis finishEffectiveOutputs(final EffectiveAnalysis effective)
       throws IOException, MojoFailureException {
     return ElisionReachabilityEngine.finishEffectiveOutputs(effective);
   }

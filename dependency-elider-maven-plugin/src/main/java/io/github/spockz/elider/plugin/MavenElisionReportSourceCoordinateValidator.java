@@ -5,7 +5,6 @@ package io.github.spockz.elider.plugin;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
 
 /** Validates exact Maven coordinate text used by persisted source-review rows. */
@@ -63,7 +62,7 @@ final class MavenElisionReportSourceCoordinateValidator {
   }
 
   private static List<String> coordinateParts(final String text, final int suffix) {
-    return Arrays.asList(text.substring(0, suffix).split(":", -1));
+    return List.of(text.substring(0, suffix).split(":", -1));
   }
 
   private static String coordinateScope(final String text, final int suffix) throws IOException {

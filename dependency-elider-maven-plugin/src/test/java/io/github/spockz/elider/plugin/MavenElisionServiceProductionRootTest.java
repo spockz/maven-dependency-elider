@@ -5,6 +5,7 @@ package io.github.spockz.elider.plugin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

@@ -3,8 +3,8 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.advisory.VulnerabilityCacheManager.CacheConfig;
 import io.github.spockz.elider.model.ArtifactFileRef;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -65,7 +65,8 @@ final class MavenElisionOutputPublisher {
         MavenElisionReportWriter.outputPath(request.files().summary(), request.project());
     final List<Path> outputTargets = outputTargets(request, summary);
     final List<ArtifactFileRef> baselineInventory = captureBaselineInventory(plan);
-    MavenOutputTargetValidation.validate(outputTargets, artifactPaths(request, plan));
+    MavenOutputTargetValidation.validate(
+        outputTargets, artifactPaths(request, plan, baselineInventory));
     final MavenPreconditionInventory.Snapshot inventory = captureInventory(request, plan);
     final MavenVulnerabilityAssessment.Result assessment = assess(request, inventory);
     final Optional<String> staleVexDigest = staleVexDigest(request, assessment);
@@ -93,10 +94,12 @@ final class MavenElisionOutputPublisher {
 
   @SuppressWarnings("PMD.LawOfDemeter") // Maven Artifact exposes its input path through getFile().
   private static List<Path> artifactPaths(
-      final Request request, final ElisionAnalysisModel.ApplyPlan plan) throws IOException {
+      final Request request,
+      final ElisionAnalysisModel.ApplyPlan plan,
+      final List<ArtifactFileRef> baselineInventory)
+      throws IOException {
     final Set<Path> paths = new LinkedHashSet<>();
-    MavenPreconditionArtifactInventory.captureOriginal(plan, false)
-        .forEach(ref -> paths.add(ref.filePath()));
+    baselineInventory.forEach(ref -> paths.add(ref.filePath()));
     MavenPreconditionArtifactInventory.capture(plan, request.analysis(), false)
         .forEach(ref -> paths.add(ref.filePath()));
     for (final Artifact artifact : plan.directArtifacts()) {

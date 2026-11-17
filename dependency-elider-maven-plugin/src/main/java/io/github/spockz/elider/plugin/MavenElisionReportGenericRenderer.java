@@ -2,16 +2,32 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.CodeAttributionResolver;
 import io.github.spockz.elider.model.AdvisoryProvenance;
-import io.github.spockz.elider.model.CodeAttributionResolver;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
 /** Renders captured findings and independent source health. */
 final class MavenElisionReportGenericRenderer {
+  /** Maps normalized provenance prefixes to display source labels. */
+  private static final Map<String, String> SOURCE_NAMES =
+      Map.of(
+          "osv",
+          "OSV",
+          "snyk",
+          "SNYK",
+          "cve-list",
+          "CVE_LIST",
+          "catalog",
+          "CATALOG",
+          "effective-project-pom",
+          "POM");
+
   private MavenElisionReportGenericRenderer() {}
 
   /* package */ static List<String> render(
@@ -38,14 +54,20 @@ final class MavenElisionReportGenericRenderer {
 
   private static void appendFinding(
       final List<String> lines, final GenericFindingAssessment finding, final boolean predicted) {
+    final String disposition =
+        predicted
+                && finding.inventoryDisposition()
+                    == MavenVulnerabilityAssessment.InventoryDisposition.REMOVED
+            ? "WOULD_REMOVE"
+            : finding.inventoryDisposition().name();
+    final String outcome =
+        predicted
+                && (finding.outcome() == GenericFindingAssessment.Outcome.DECLARED_CODE_ABSENT
+                    || finding.outcome() == GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT)
+            ? "UNVERIFIED"
+            : finding.outcome().name();
     lines.add(
-        "  - "
-            + finding.vulnerabilityId()
-            + " "
-            + finding.candidate()
-            + " ["
-            + disposition(finding, predicted)
-            + "]");
+        "  - " + finding.vulnerabilityId() + " " + finding.candidate() + " [" + disposition + "]");
     if (finding.aliases().stream().anyMatch(alias -> !alias.equals(finding.vulnerabilityId()))) {
       lines.add("    Aliases: " + new TreeSet<>(finding.aliases()));
     }
@@ -54,7 +76,7 @@ final class MavenElisionReportGenericRenderer {
             + finding.applicability()
             + "; intent: "
             + finding.intent().map(Enum::name).orElse("UNRESOLVED"));
-    lines.add("    Outcome: " + outcome(finding, predicted) + "; " + finding.detail());
+    lines.add("    Outcome: " + outcome + "; " + finding.detail());
     for (final CodeAttributionResolver.DeclarationResult declaration : finding.codeAttribution()) {
       lines.add(
           "    Declared code: "
@@ -85,12 +107,10 @@ final class MavenElisionReportGenericRenderer {
     }
     finding
         .prerequisiteProofEvidence()
-        .ifPresent(evidence -> MavenElisionReportPrerequisiteProofRenderer.append(lines, evidence));
+        .ifPresent(evidence -> appendPrerequisiteProof(lines, evidence));
     finding
         .prerequisitePrediction()
-        .ifPresent(
-            prediction ->
-                MavenElisionReportPrerequisitePredictionRenderer.append(lines, prediction));
+        .ifPresent(prediction -> appendPrerequisitePrediction(lines, prediction));
     if (!finding.unresolvedVersionClaims().isEmpty()) {
       lines.add(
           "    Unresolved coverage: "
@@ -119,7 +139,10 @@ final class MavenElisionReportGenericRenderer {
               sources.add(source(contribution.provenance()));
               contribution.sourceProvenance().stream()
                   .map(AdvisoryProvenance::origin)
-                  .filter(MavenElisionReportGenericRenderer::isSource)
+                  .filter(
+                      origin ->
+                          origin != EvidenceOrigin.DESCRIPTION
+                              && origin != EvidenceOrigin.REFERENCE_URL)
                   .map(Enum::name)
                   .forEach(sources::add);
             });
@@ -147,37 +170,64 @@ final class MavenElisionReportGenericRenderer {
   private static String source(final String provenance) {
     final int separator = provenance.indexOf(':');
     final String prefix = separator < 0 ? provenance : provenance.substring(0, separator);
-    return switch (prefix.toLowerCase(java.util.Locale.ROOT)) {
-      case "osv" -> "OSV";
-      case "snyk" -> "SNYK";
-      case "cve-list" -> "CVE_LIST";
-      case "catalog" -> "CATALOG";
-      case "effective-project-pom" -> "POM";
-      default -> prefix;
-    };
+    return SOURCE_NAMES.getOrDefault(prefix.toLowerCase(Locale.ROOT), prefix);
   }
 
-  private static boolean isSource(final EvidenceOrigin origin) {
-    return switch (origin) {
-      case POM, CATALOG, OSV, SNYK, CVE_LIST -> true;
-      case DESCRIPTION, REFERENCE_URL -> false;
-    };
+  private static void appendPrerequisitePrediction(
+      final List<String> lines, final PrerequisitePrediction prediction) {
+    lines.add("    Planned prerequisite forecast (not verified against output bytes):");
+    for (final PrerequisitePrediction.GroupForecast group : prediction.groups()) {
+      lines.add("      " + group.group().operator() + " disarmed=" + group.disarmed());
+      for (final PrerequisitePrediction.MemberForecast member : group.members()) {
+        lines.add(
+            "        "
+                + member.claim().requiresDependency()
+                + " / "
+                + member.claim().requiresClass()
+                + ": "
+                + member.state()
+                + " ("
+                + member.reason()
+                + ")");
+      }
+    }
+    if (prediction.detail() != null) {
+      lines.add("      Forecast detail: " + prediction.detail());
+    }
   }
 
-  private static String outcome(final GenericFindingAssessment finding, final boolean predicted) {
-    return predicted
-            && (finding.outcome() == GenericFindingAssessment.Outcome.DECLARED_CODE_ABSENT
-                || finding.outcome() == GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT)
-        ? "UNVERIFIED"
-        : finding.outcome().name();
-  }
-
-  private static String disposition(
-      final GenericFindingAssessment finding, final boolean predicted) {
-    return predicted
-            && finding.inventoryDisposition()
-                == MavenVulnerabilityAssessment.InventoryDisposition.REMOVED
-        ? "WOULD_REMOVE"
-        : finding.inventoryDisposition().name();
+  private static void appendPrerequisiteProof(
+      final List<String> lines, final PrerequisiteProofEvidence evidence) {
+    lines.add(
+        "    Prerequisite proof evidence: final inventory " + evidence.finalInventoryFingerprint());
+    if (evidence.baselineDetail() != null) {
+      lines.add("      Baseline attribution: " + evidence.baselineDetail());
+    }
+    for (final PrerequisiteProofEvidence.GroupEvidence group : evidence.groups()) {
+      lines.add("      " + group.group().operator() + " group attribution: " + group.attribution());
+      for (final PrerequisiteProofEvidence.MemberEvidence member : group.members()) {
+        lines.add(
+            "        "
+                + member.claim().requiresDependency()
+                + " / "
+                + member.claim().requiresClass()
+                + "="
+                + member.state()
+                + " ("
+                + member.attribution()
+                + ")");
+        for (final PrerequisiteProofEvidence.ProviderEvidence provider : member.providers()) {
+          lines.add(
+              "          Provider "
+                  + (provider.coordinate() == null ? provider.kind() : provider.coordinate())
+                  + ": "
+                  + provider.attribution()
+                  + "; baseline="
+                  + provider.baselinePath()
+                  + "; final="
+                  + provider.finalPath());
+        }
+      }
+    }
   }
 }

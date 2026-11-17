@@ -9,7 +9,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /** Validates evidence before it enters the immutable attestation value. */
-/* package */ final class PrerequisiteEvidenceValidator {
+public final class PrerequisiteEvidenceValidator {
   /** Keeps construction within the attestation validation boundary. */
   private PrerequisiteEvidenceValidator() {}
 
@@ -65,7 +65,8 @@ import java.util.Set;
     return normalizedPath;
   }
 
-  /* package */ static void validatePrerequisiteObservations(
+  /** Validates that required prerequisites, groups, and observations agree. */
+  public static void validatePrerequisiteObservations(
       final Set<PrerequisiteClaim> requiredPrerequisites,
       final Set<PrerequisiteGroup> groups,
       final Set<PrerequisiteMemberObservation> observations) {

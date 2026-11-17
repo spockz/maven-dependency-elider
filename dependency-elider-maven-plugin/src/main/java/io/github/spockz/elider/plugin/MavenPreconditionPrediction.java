@@ -1,13 +1,13 @@
-/* WHY: Projects Analyze plans onto real baseline providers. */
+/* WHY: Adapts Maven analysis inputs into provider evidence and prerequisite forecasts. */
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.Provider;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.ProviderKind;
+import io.github.spockz.elider.applicability.PreconditionProof;
+import io.github.spockz.elider.applicability.PreconditionProof.InventoryInspection;
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.PreconditionClassInventory;
-import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
-import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
-import io.github.spockz.elider.model.PreconditionProof;
-import io.github.spockz.elider.model.PreconditionProof.InventoryInspection;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import java.io.IOException;
@@ -22,8 +22,17 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 
 /** Captures baseline providers and supported Analyze plan facts. */
-@SuppressWarnings({"PMD.CommentRequired", "PMD.CommentDefaultAccessModifier"})
+@SuppressWarnings({
+  "PMD.CommentRequired",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.CommentSize",
+  "PMD.CouplingBetweenObjects",
+  "PMD.AvoidFieldNameMatchingMethodName"
+})
 final class MavenPreconditionPrediction {
+  /** WHY: Maven test-scope entries are dependency metadata, not runtime class providers. */
+  private static final String TEST_SCOPE = "test";
+
   @FunctionalInterface
   interface CaptureSupplier {
     Capture capture() throws IOException;
@@ -33,18 +42,22 @@ final class MavenPreconditionPrediction {
 
   static Capture capture(
       final MavenProject project, final MavenSession session, final AnalyzePrediction prediction) {
+    return capture(project, session, prediction, false);
+  }
+
+  static Capture capture(
+      final MavenProject project,
+      final MavenSession session,
+      final AnalyzePrediction prediction,
+      final boolean preconditionClassPathComplete) {
     final List<Provider> providers = new ArrayList<>();
     final List<String> failures = new ArrayList<>();
-    for (final ElisionAnalysisModel.ArtifactSnapshot artifact : prediction.inputArtifacts()) {
-      try {
-        providers.add(Provider.dependencyArchive(artifact.coordinate(), artifact.filePath()));
-      } catch (final IOException
-          | UncheckedIOException
-          | IllegalArgumentException
-          | SecurityException failure) {
-        failures.add(
-            "Could not inspect input artifact " + artifact.coordinate() + ": " + message(failure));
-      }
+    final List<ElisionAnalysisModel.ArtifactSnapshot> runtimeArtifacts =
+        prediction.inputArtifacts().stream()
+            .filter(artifact -> !TEST_SCOPE.equals(artifact.coordinate().scope()))
+            .toList();
+    for (final ElisionAnalysisModel.ArtifactSnapshot artifact : runtimeArtifacts) {
+      addProvider(artifact, providers, failures);
     }
     try {
       final MavenPreconditionProviderRoots.Capture roots =
@@ -74,29 +87,76 @@ final class MavenPreconditionPrediction {
         finalDetail == null
             ? PreconditionClassInventory.complete(providers)
             : PreconditionClassInventory.incomplete(providers, finalDetail);
-    return new Capture(prediction, capturedBaseline, inspection, finalDetail);
+    final Optional<InventoryInspection> proofInspection =
+        preconditionClassPathComplete && finalDetail == null ? inspection : Optional.empty();
+    return new Capture(prediction, capturedBaseline, inspection, proofInspection, finalDetail);
   }
 
   private static String message(final Exception failure) {
     return Objects.toString(failure.getMessage(), failure.getClass().getSimpleName());
   }
 
-  @SuppressWarnings("PMD.CouplingBetweenObjects")
+  private static void addProvider(
+      final ElisionAnalysisModel.ArtifactSnapshot artifact,
+      final List<Provider> providers,
+      final List<String> failures) {
+    try {
+      providers.add(Provider.dependencyArchive(artifact.coordinate(), artifact.filePath()));
+    } catch (final IOException
+        | UncheckedIOException
+        | IllegalArgumentException
+        | SecurityException failure) {
+      failures.add(
+          "Could not inspect input artifact " + artifact.coordinate() + ": " + message(failure));
+    }
+  }
+
+  private static String exactIdentity(final ArtifactCoordinate coordinate) {
+    return coordinate.groupId()
+        + ":"
+        + coordinate.artifactId()
+        + ":"
+        + coordinate.type()
+        + ":"
+        + coordinate.classifier()
+        + ":"
+        + coordinate.version();
+  }
+
+  private static PrerequisitePrediction.MemberForecast unknown(
+      final PrerequisiteClaim claim,
+      final List<PrerequisitePrediction.ProviderForecast> providers,
+      final String detail) {
+    return new PrerequisitePrediction.MemberForecast(
+        claim,
+        PrerequisitePrediction.MemberState.UNKNOWN,
+        PrerequisitePrediction.MemberReason.UNKNOWN,
+        providers,
+        Objects.toString(detail, "Baseline provider inventory is incomplete"));
+  }
+
   static final class Capture {
     private final AnalyzePrediction prediction;
     private final PreconditionClassInventory baseline;
     private final Optional<InventoryInspection> inspection;
+    private final Optional<InventoryInspection> proofInspection;
     private final String detail;
 
     private Capture(
         final AnalyzePrediction prediction,
         final PreconditionClassInventory baseline,
         final Optional<InventoryInspection> inspection,
+        final Optional<InventoryInspection> proofInspection,
         final String detail) {
       this.prediction = Objects.requireNonNull(prediction, "prediction");
       this.baseline = Objects.requireNonNull(baseline, "baseline");
       this.inspection = Objects.requireNonNull(inspection, "inspection");
+      this.proofInspection = Objects.requireNonNull(proofInspection, "proofInspection");
       this.detail = detail;
+    }
+
+    Optional<InventoryInspection> proofInspection() {
+      return proofInspection;
     }
 
     PrerequisitePrediction predict(
@@ -198,30 +258,6 @@ final class MavenPreconditionPrediction {
           .findFirst()
           .map(AnalyzePrediction.PlannedTrim::removedClasses)
           .orElse(Set.of());
-    }
-
-    private String exactIdentity(final ArtifactCoordinate coordinate) {
-      return coordinate.groupId()
-          + ":"
-          + coordinate.artifactId()
-          + ":"
-          + coordinate.type()
-          + ":"
-          + coordinate.classifier()
-          + ":"
-          + coordinate.version();
-    }
-
-    private static PrerequisitePrediction.MemberForecast unknown(
-        final PrerequisiteClaim claim,
-        final List<PrerequisitePrediction.ProviderForecast> providers,
-        final String detail) {
-      return new PrerequisitePrediction.MemberForecast(
-          claim,
-          PrerequisitePrediction.MemberState.UNKNOWN,
-          PrerequisitePrediction.MemberReason.UNKNOWN,
-          providers,
-          Objects.toString(detail, "Baseline provider inventory is incomplete"));
     }
 
     private PrerequisitePrediction.MemberReason absenceReason(

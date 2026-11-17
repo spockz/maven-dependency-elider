@@ -4,8 +4,8 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.plugin.TierInventoryReader.Inventory;
+import io.github.spockz.elider.plugin.TierInventoryReader.JdkClassTablePlan;
 import io.github.spockz.elider.plugin.TierInventoryReader.MultiReleaseCandidateInfo;
-import io.github.spockz.elider.plugin.TierPlatformReader.JdkClassTablePlan;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -48,7 +48,7 @@ final class TierArchiveProjector {
       if (!MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(snapshot.coordinate().scope())) {
         continue;
       }
-      addTierArtifact(inventory.projectionDirectory(), release, snapshot, paths, classes);
+      addTierArtifact(inventory, release, snapshot, paths, classes);
       assignTierOwners(classes.get(snapshot), snapshot, owners, release);
     }
     return new TierContext(
@@ -64,23 +64,25 @@ final class TierArchiveProjector {
   }
 
   private void addTierArtifact(
-      final Path projectionDirectory,
+      final Inventory inventory,
       final int release,
       final ElisionAnalysisModel.ArtifactSnapshot snapshot,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Path> paths,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> classes)
       throws IOException {
     final Path source = snapshot.filePath().toAbsolutePath().normalize();
-    final boolean needsProjection =
-        MultiReleaseClassInventory.hasUnsupportedVersionedClasses(source)
-            || MultiReleaseLibraryProjection.hasRootModuleDescriptor(source);
+    final boolean needsProjection = inventory.projectedSources().contains(source);
     final Path analysisPath =
         needsProjection
             ? MultiReleaseLibraryProjection.create(
-                source, snapshot.coordinate(), projectionDirectory, release)
+                source, snapshot.coordinate(), inventory.projectionDirectory(), release)
             : source;
     paths.put(snapshot, analysisPath);
-    classes.put(snapshot, TrimPaths.classNames(analysisPath));
+    classes.put(
+        snapshot,
+        needsProjection
+            ? TrimPaths.classNames(analysisPath)
+            : inventory.classesBySourcePath().get(source));
   }
 
   @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")

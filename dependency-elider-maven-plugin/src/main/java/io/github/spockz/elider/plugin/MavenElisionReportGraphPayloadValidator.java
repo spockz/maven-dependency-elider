@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.util.HashSet;
 import java.util.Set;
 
 /** Validates the persisted mediated graph envelope and primitive snapshot fields. */
@@ -134,8 +133,6 @@ final class MavenElisionReportGraphPayloadValidator {
   }
 
   private static Set<String> fieldNames(final JsonNode value) {
-    final Set<String> fields = new HashSet<>();
-    value.fieldNames().forEachRemaining(fields::add);
-    return fields;
+    return MavenElisionReportJsonPayloadShape.fieldNames(value);
   }
 }

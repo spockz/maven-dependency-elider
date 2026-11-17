@@ -34,12 +34,13 @@ final class HelpMojoCoverageTest {
                     help ->
                         assertThat(help)
                             .contains(
-                                "This plugin has 5 goals",
+                                "This plugin has 6 goals",
                                 "dependency-elider:analyze",
                                 "dependency-elider:elide",
                                 "dependency-elider:help",
                                 "dependency-elider:report",
                                 "dependency-elider:update-cve-index",
+                                "dependency-elider:validate",
                                 "Available parameters:",
                                 "lineLength")),
         () ->
@@ -97,7 +98,7 @@ final class HelpMojoCoverageTest {
                 switch (method.getName()) {
                   case "info" -> info.add(message.toString());
                   case "warn" -> warnings.add(message.toString());
-                  default -> {}
+                  case null, default -> {}
                 }
               }
               return method.getReturnType() == boolean.class ? Boolean.TRUE : null;

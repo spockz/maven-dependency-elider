@@ -5,10 +5,10 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.Provider;
+import io.github.spockz.elider.applicability.PreconditionProof;
 import io.github.spockz.elider.model.ArtifactFileRef;
-import io.github.spockz.elider.model.PreconditionClassInventory;
-import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
-import io.github.spockz.elider.model.PreconditionProof;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
@@ -102,14 +102,21 @@ final class MavenPreconditionInventory {
     }
     try {
       MavenCompilerGenerationGuard.requireSafeCompilerConfiguration(
-          project, session, analysis.evidence().trustedProcessClassesContext());
+          project,
+          session,
+          analysis.evidence().trustedProcessClassesContext()
+              || analysis.evidence().productionClassesComplete());
       final List<ArtifactFileRef> verifiedArtifactFiles =
           MavenPreconditionArtifactInventory.capture(plan, analysis, true);
+      final List<ArtifactFileRef> runtimeArtifactFiles =
+          verifiedArtifactFiles.stream()
+              .filter(ref -> !MavenArtifactInventory.isTestScoped(ref.coordinate()))
+              .toList();
       final MavenPreconditionProviderRoots.Capture roots =
           MavenPreconditionProviderRoots.capture(project, session, analysis.evidence(), optIn);
       final List<Provider> finalProviders =
           new ArrayList<>(
-              MavenPreconditionArtifactInventory.dependencyProviders(verifiedArtifactFiles));
+              MavenPreconditionArtifactInventory.dependencyProviders(runtimeArtifactFiles));
       finalProviders.addAll(roots.providers());
       final PreconditionClassInventory finalInventory =
           PreconditionClassInventory.complete(finalProviders);
@@ -152,7 +159,9 @@ final class MavenPreconditionInventory {
       final List<Provider> providers =
           new ArrayList<>(
               MavenPreconditionArtifactInventory.dependencyProviders(
-                  MavenPreconditionArtifactInventory.captureOriginal(plan, true)));
+                  MavenPreconditionArtifactInventory.captureOriginal(plan, true).stream()
+                      .filter(ref -> !MavenArtifactInventory.isTestScoped(ref.coordinate()))
+                      .toList()));
       providers.addAll(applicationProviders);
       return PreconditionClassInventory.complete(providers);
     } catch (final IOException | IllegalArgumentException | SecurityException failure) {

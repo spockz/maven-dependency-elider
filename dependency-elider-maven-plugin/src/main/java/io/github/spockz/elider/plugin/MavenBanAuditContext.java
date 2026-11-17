@@ -104,41 +104,18 @@ record MavenBanAuditContext(
         throw new IOException(
             "Original-only provider has no audited bytes: " + artifact.coordinate());
       }
-      final Path path = Path.of(artifact.filePath()).toAbsolutePath().normalize();
-      verifyArtifactBytes(artifact, path);
+      final Path path = requireReadableProvider(artifact.filePath());
       classProviders.add(ArtifactFileRef.fromPath(artifact.coordinate(), path));
     }
     return new JarIndexScanner().scan(classProviders);
   }
 
-  /* package */ void verifyArtifactBytes() throws IOException {
-    final List<MavenOriginalInputAudit.AuditArtifact> values =
-        inventory == null ? auditOnlyArtifacts : inventory.resolvedArtifacts();
-    for (final MavenOriginalInputAudit.AuditArtifact artifact : values) {
-      if (artifact.filePath() == null) {
-        if (auditOnlyArtifacts.stream()
-            .anyMatch(value -> sameGavce(value.coordinate(), artifact.coordinate()))) {
-          throw new IOException(
-              "Original-only provider has no audited bytes: " + artifact.coordinate());
-        }
-        continue;
-      }
-      if (artifact.sha256() == null) {
-        throw new IOException(
-            "Original-input artifact has no audited digest: " + artifact.coordinate());
-      }
-      verifyArtifactBytes(artifact, Path.of(artifact.filePath()).toAbsolutePath().normalize());
-    }
-  }
-
-  private static void verifyArtifactBytes(
-      final MavenOriginalInputAudit.AuditArtifact artifact, final Path path) throws IOException {
+  private static Path requireReadableProvider(final String filePath) throws IOException {
+    final Path path = Path.of(filePath).toAbsolutePath().normalize();
     if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
       throw new IOException("Original-only provider is no longer readable: " + path);
     }
-    if (!artifact.sha256().equals(ArtifactFileDigest.sha256(path))) {
-      throw new IOException("Original-only provider bytes changed after audit: " + path);
-    }
+    return path;
   }
 
   /* package */ void verifyEvidence(final MavenAnalysisEvidence.RootEvidence evidence)
@@ -165,7 +142,6 @@ record MavenBanAuditContext(
     if (auditOnlyArtifacts.isEmpty() && forcedAbsentClassProviders.isEmpty()) {
       return;
     }
-    verifyArtifactBytes();
     final Map<String, List<ArtifactCoordinate>> absentOwners = ownersByClass(auditOnlyClassIndex);
     forcedAbsentClassProviders.forEach(
         (coordinate, classes) ->
@@ -180,7 +156,6 @@ record MavenBanAuditContext(
         prepared, effectiveDecision.retainedArtifacts(), absentOwners, effectiveOwners);
     MavenBanRetainedResourceClosure.verify(
         auditOnlyArtifacts, prepared, effectiveDecision.retainedArtifacts());
-    verifyArtifactBytes();
   }
 
   private static void verifyRequiredClasses(

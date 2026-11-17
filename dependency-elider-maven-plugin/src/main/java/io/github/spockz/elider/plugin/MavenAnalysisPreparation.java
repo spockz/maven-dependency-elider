@@ -36,15 +36,6 @@ final class MavenAnalysisPreparation {
       final MavenProject project,
       final AnalysisOptions requestedOptions,
       final DynamicRootScanner scanner,
-      final MavenAnalysisResolutionContext resolutionContext)
-      throws IOException, MojoFailureException {
-    return prepare(project, requestedOptions, scanner, resolutionContext, MavenBanPlan.empty());
-  }
-
-  /* default */ static PreparedAnalysis prepare(
-      final MavenProject project,
-      final AnalysisOptions requestedOptions,
-      final DynamicRootScanner scanner,
       final MavenAnalysisResolutionContext resolutionContext,
       final MavenBanPlan banPlan)
       throws IOException, MojoFailureException {
@@ -93,8 +84,6 @@ final class MavenAnalysisPreparation {
             evidence.declaredClasses(), evidence.productionOutputClasses());
     final ClassUsageReport classUsageReport =
         ClassUsageReport.classify(evidence.index(), evidence.trace(), evidence.bytecodeScan());
-    NativeImageConsumedInput.verifyAll(evidence.dynamicRoots().consumedInputs());
-    MavenAnalysisInventory.verifyInventory(project, inventory, resolutionContext);
     final ElisionDecision raw = rawDecision(options, inventory, evidence, keep, requiredClasses);
     final ElisionDecision decision = verifiedBanPlan.forceAbsent(raw);
     MavenElisionGraphBinding.Result graphBinding =
@@ -121,9 +110,6 @@ final class MavenAnalysisPreparation {
       graphBinding =
           graphBinding.withAdditionalOperationFingerprint(verifiedBanPlan.contextFingerprint());
     }
-    MavenAnalysisInventory.verifyGraphBinding(project, inventory, graphBinding, resolutionContext);
-    NativeImageConsumedInput.verifyAll(evidence.dynamicRoots().consumedInputs());
-    verifiedBanPlan.verifyAuditBytesFresh();
     return new PreparedAnalysis(
         analysisProject,
         options,

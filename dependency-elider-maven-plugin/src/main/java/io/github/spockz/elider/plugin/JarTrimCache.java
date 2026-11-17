@@ -5,8 +5,8 @@ package io.github.spockz.elider.plugin;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.model.CacheProducerIdentity;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import java.io.IOException;
@@ -154,6 +154,9 @@ final class JarTrimCache {
         }
         case TrimCacheLookup.UnchangedEntry ignored -> {}
         case TrimCacheLookup.CachedArchive cached -> records.add(cached.record());
+        case null -> {
+          return null;
+        }
       }
     }
     return new TrimResult(

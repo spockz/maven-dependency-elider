@@ -32,13 +32,7 @@ final class ElisionArtifactPolicy {
 
   /* package */ static Set<ArtifactCoordinate> parseRetentionCoordinates(
       final List<String> retainedArtifacts) throws MojoFailureException {
-    final Set<ArtifactCoordinate> retained = new LinkedHashSet<>();
-    if (retainedArtifacts != null) {
-      for (final String text : retainedArtifacts) {
-        retained.add(parseRetention(text));
-      }
-    }
-    return Set.copyOf(retained);
+    return BanishedDependencyPolicy.parseRetentionCoordinates(retainedArtifacts);
   }
 
   /* package */ static Set<ArtifactCoordinate> parsePassThroughCoordinates(
@@ -49,7 +43,7 @@ final class ElisionArtifactPolicy {
       return result;
     }
     for (final String raw : requested) {
-      final PassThroughCoordinate requestedCoordinate = passThroughCoordinate(raw);
+      final MavenArtifactIdentity requestedCoordinate = passThroughCoordinate(raw);
       final List<ArtifactSnapshot> matches = matchingSnapshots(requestedCoordinate, snapshots);
       if (matches.isEmpty()) {
         throw new MojoFailureException(
@@ -76,73 +70,28 @@ final class ElisionArtifactPolicy {
         jarDecision.elapsedNanos());
   }
 
-  private static PassThroughCoordinate passThroughCoordinate(final String raw)
+  private static MavenArtifactIdentity passThroughCoordinate(final String raw)
       throws MojoFailureException {
-    final String[] parts = passThroughPieces(raw);
-    final String type = optionalPiece(parts, 3, JAR_TYPE);
-    if (!JAR_TYPE.equals(type)) {
+    final MavenArtifactIdentity identity;
+    try {
+      identity = MavenArtifactIdentity.parsePassThrough(raw);
+    } catch (final IllegalArgumentException exception) {
+      throw new MojoFailureException(exception.getMessage(), exception);
+    }
+    if (!JAR_TYPE.equals(identity.type())) {
       throw new MojoFailureException("elide.trimSkipArtifacts supports JAR artifacts only: " + raw);
     }
-    return new PassThroughCoordinate(
-        parts[0], parts[1], parts[2], type, optionalPiece(parts, 4, ""));
+    return identity;
   }
 
   private static List<ArtifactSnapshot> matchingSnapshots(
-      final PassThroughCoordinate requested, final List<ArtifactSnapshot> snapshots) {
-    return snapshots.stream().filter(requested::matches).toList();
-  }
-
-  private static String[] passThroughPieces(final String raw) throws MojoFailureException {
-    if (raw == null || raw.isBlank()) {
-      throw new MojoFailureException("elide.trimSkipArtifacts must not contain blank coordinates");
-    }
-    final String[] parts = raw.trim().split(":", -1);
-    if (!validPassThroughPieces(parts)) {
-      throw new MojoFailureException(
-          "Invalid elide.trimSkipArtifacts coordinate; expected "
-              + "group:artifact:version[:type[:classifier]]: "
-              + raw);
-    }
-    return parts;
-  }
-
-  private static boolean validPassThroughPieces(final String... parts) {
-    if (parts.length < 3 || parts.length > 5) {
-      return false;
-    }
-    return !parts[0].isBlank() && !parts[1].isBlank() && !parts[2].isBlank();
-  }
-
-  private record PassThroughCoordinate(
-      String groupId, String artifactId, String version, String type, String classifier) {
-    private boolean matches(final ArtifactSnapshot snapshot) {
-      final ArtifactCoordinate coordinate = snapshot.coordinate();
-      return coordinate.groupId().equals(groupId)
-          && coordinate.artifactId().equals(artifactId)
-          && coordinate.version().equals(version)
-          && coordinate.type().equals(type)
-          && coordinate.classifier().equals(classifier)
-          && ELIGIBLE_SCOPES.contains(coordinate.scope())
-          && snapshot.filePath() != null;
-    }
-  }
-
-  private static ArtifactCoordinate parseRetention(final String text) throws MojoFailureException {
-    final String[] pieces = text.split(":", -1);
-    if (pieces.length < 2 || pieces.length > 5 || pieces[0].isBlank() || pieces[1].isBlank()) {
-      throw new MojoFailureException(
-          "Invalid elide.retainedArtifacts coordinate '"
-              + text
-              + "'; expected groupId:artifactId[:version[:type[:classifier]]]");
-    }
-    final String version = optionalPiece(pieces, 2, null);
-    final String type = optionalPiece(pieces, 3, JAR_TYPE);
-    final String classifier = optionalPiece(pieces, 4, "");
-    return new ArtifactCoordinate(pieces[0], pieces[1], version, type, classifier, "compile");
-  }
-
-  private static String optionalPiece(
-      final String[] pieces, final int index, final String defaultValue) {
-    return pieces.length > index && !pieces[index].isBlank() ? pieces[index] : defaultValue;
+      final MavenArtifactIdentity requested, final List<ArtifactSnapshot> snapshots) {
+    return snapshots.stream()
+        .filter(
+            snapshot ->
+                requested.matches(snapshot.coordinate())
+                    && ELIGIBLE_SCOPES.contains(snapshot.coordinate().scope())
+                    && snapshot.filePath() != null)
+        .toList();
   }
 }

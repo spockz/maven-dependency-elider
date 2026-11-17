@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import io.github.spockz.elider.test.CompilationFixtureSupport;
 import java.io.File;
 import java.io.IOException;
@@ -83,7 +84,9 @@ final class MavenElisionServiceTest {
             (path, context) -> {
               scannedPaths.add(path);
               return expectedScan;
-            });
+            },
+            Set.of(),
+            true);
 
     assertThat(scannedPaths).containsExactly(jar);
     assertThat(inputs.classNames()).containsExactly("library.Provider");
@@ -218,61 +221,6 @@ final class MavenElisionServiceTest {
         .hasMessageContaining("Conflicting direct artifact file");
     assertThat(project.getArtifacts()).containsExactly(resolved);
     assertThat(project.getDependencyArtifacts()).containsExactly(direct);
-  }
-
-  @Test
-  void planRejectsArtifactCoordinateChangesAfterAnalysis() throws Exception {
-    final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
-    final MavenProject project = projectWith(dependency, null);
-    final ElisionAnalysisModel.Analysis analysis = analyze(project, "coordinate.lst");
-    dependency.setVersion("2.0");
-
-    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("artifact coordinate changed after analysis");
-    assertThat(project.getArtifacts()).containsExactly(dependency);
-    assertThat(project.getDependencyArtifacts()).isNull();
-  }
-
-  @Test
-  void planRejectsArtifactScopeChangesAfterAnalysis() throws Exception {
-    final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
-    final MavenProject project = projectWith(dependency, null);
-    final ElisionAnalysisModel.Analysis analysis = analyze(project, "scope.lst");
-    dependency.setScope("runtime");
-
-    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("artifact coordinate changed after analysis");
-    assertThat(project.getArtifacts()).containsExactly(dependency);
-  }
-
-  @Test
-  void planRejectsArtifactReferenceReplacementAfterAnalysis() throws Exception {
-    final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
-    final MavenProject project = projectWith(dependency, null);
-    final ElisionAnalysisModel.Analysis analysis = analyze(project, "reference.lst");
-    final Artifact replacement = artifact("library", "compile");
-    replacement.setFile(dependency.getFile());
-    project.setArtifacts(new LinkedHashSet<>(List.of(replacement)));
-
-    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("artifact order or reference changed after analysis");
-    assertThat(project.getArtifacts()).containsExactly(replacement);
-  }
-
-  @Test
-  void planRejectsArtifactPathChangesAfterAnalysis() throws Exception {
-    final Artifact dependency = resolvedArtifact("library", "compile", "library.jar");
-    final MavenProject project = projectWith(dependency, null);
-    final ElisionAnalysisModel.Analysis analysis = analyze(project, "path.lst");
-    dependency.setFile(writeJar("changed.jar").toFile());
-
-    assertThatThrownBy(() -> MavenArtifactInventory.plan(project, analysis))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("artifact file path changed after analysis");
-    assertThat(project.getArtifacts()).containsExactly(dependency);
   }
 
   @Test

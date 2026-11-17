@@ -4,7 +4,9 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.MultiReleaseClassInventory;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashSet;
@@ -48,7 +50,7 @@ final class ServiceProviderTrimInventory {
         continue;
       }
       final Path source = snapshot.filePath().toAbsolutePath().normalize();
-      final Set<String> logicalClasses = TrimPaths.logicalClassNames(source);
+      final Set<String> logicalClasses = MultiReleaseClassInventory.logicalClassNames(source);
       ownedClasses.addAll(logicalClasses);
       if (!outputPlan.retainedCoordinates().contains(snapshot.coordinate())) {
         continue;

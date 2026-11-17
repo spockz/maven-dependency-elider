@@ -23,8 +23,9 @@ public final class JaCoCoTraceReader implements RuntimeTraceReader {
   }
 
   /** Creates a reader for JaCoCo execution data files. */
-  @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  public JaCoCoTraceReader() {}
+  public JaCoCoTraceReader() {
+    // Stateless reader.
+  }
 
   /** Recognizes files by their conventional {@code .exec} suffix. */
   @Override

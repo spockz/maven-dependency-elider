@@ -4,8 +4,9 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactDigests;
+import io.github.spockz.elider.model.HexDigest;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -54,11 +55,14 @@ final class EffectiveTrimCacheContext {
       ArtifactCoordinate coordinate, String path, String sha256, List<String> roots) {}
 
   /* package */ static String effectiveCacheContext(
-      final TrimRequest request, final EffectiveOutputPlan output) throws IOException {
+      final TrimRequest request,
+      final EffectiveOutputPlan output,
+      final Map<Path, ArtifactDigests> inputDigests)
+      throws IOException {
     final List<ArtifactCacheIdentity> inventory = new ArrayList<>();
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot :
         TrimCandidatePlanner.fullJarInventory(request.candidates())) {
-      inventory.add(artifactCacheIdentity(snapshot));
+      inventory.add(artifactCacheIdentity(snapshot, inputDigests));
     }
     final List<ArtifactRootsIdentity> artifactRoots =
         output.roots().entrySet().stream()
@@ -98,16 +102,20 @@ final class EffectiveTrimCacheContext {
             request.policy().mrjarStrategy(),
             output.failOnUnsupportedModuleInfo());
     try {
-      return TrimInputDigests.hash(JarTrimCache.serializeIdentity(identity));
+      return HexDigest.sha256(JarTrimCache.serializeIdentity(identity));
     } catch (final com.fasterxml.jackson.core.JsonProcessingException exception) {
       throw new IOException("Could not serialize effective trim cache identity", exception);
     }
   }
 
   private static ArtifactCacheIdentity artifactCacheIdentity(
-      final ElisionAnalysisModel.ArtifactSnapshot snapshot) throws IOException {
+      final ElisionAnalysisModel.ArtifactSnapshot snapshot,
+      final Map<Path, ArtifactDigests> inputDigests)
+      throws IOException {
     final ArtifactCoordinate coordinate = snapshot.coordinate();
     final Path path = snapshot.filePath().toAbsolutePath().normalize();
+    final ArtifactDigests cached = inputDigests.get(path);
+    final String sha256 = cached != null ? cached.sha256() : ArtifactDigests.read(path).sha256();
     return new ArtifactCacheIdentity(
         coordinate.groupId(),
         coordinate.artifactId(),
@@ -116,6 +124,6 @@ final class EffectiveTrimCacheContext {
         coordinate.classifier(),
         coordinate.scope(),
         path.toString(),
-        ArtifactDigests.read(path).sha256());
+        sha256);
   }
 }

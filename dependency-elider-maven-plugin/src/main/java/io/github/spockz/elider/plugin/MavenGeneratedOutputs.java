@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.model.HexDigest;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -45,7 +46,7 @@ final class MavenGeneratedOutputs {
       if (seen.add(path) && Files.isRegularFile(path)) {
         final ObjectNode output = outputs.addObject();
         output.put("path", path.toString());
-        output.put("sha256", ArtifactFileDigest.sha256(path));
+        output.put("sha256", HexDigest.sha256(path));
       }
     }
     final ObjectNode document = JSON.createObjectNode();
@@ -65,7 +66,7 @@ final class MavenGeneratedOutputs {
     for (final Registry.OwnedOutput owned : Registry.read(manifest)) {
       if (owned.path().equals(normalizedTarget)
           && Files.isRegularFile(normalizedTarget)
-          && ArtifactFileDigest.sha256(normalizedTarget).equals(owned.sha256())) {
+          && HexDigest.sha256(normalizedTarget).equals(owned.sha256())) {
         digest = Optional.of(owned.sha256());
       }
     }
@@ -188,9 +189,8 @@ final class MavenGeneratedOutputs {
     private static void validateFields(
         final JsonNode object, final Set<String> supported, final Path manifest)
         throws IOException {
-      final java.util.Iterator<String> names = object.fieldNames();
-      while (names.hasNext()) {
-        final String name = names.next();
+      for (final java.util.Map.Entry<String, JsonNode> entry : object.properties()) {
+        final String name = entry.getKey();
         if (!supported.contains(name)) {
           throw new IOException(
               "Unsupported generated output registry field " + name + ": " + manifest);

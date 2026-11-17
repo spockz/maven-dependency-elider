@@ -3,7 +3,6 @@
 package io.github.spockz.elider.model;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -22,6 +21,6 @@ public record OsvAffectedRange(String type, String repo, List<Map<String, String
       Objects.requireNonNull(event, "event");
       copy.add(Map.copyOf(new TreeMap<>(event)));
     }
-    events = Collections.unmodifiableList(copy);
+    events = List.copyOf(copy);
   }
 }

@@ -183,49 +183,65 @@ class DependencyJarTrimmerTest {
     final DependencyJarTrimmer.PreparedAnalysis prepared =
         session.prepareWithUnchangedPassThroughLibraries(
             candidateJar, siblings, jdkClassTable, Set.of());
-    assertThat(prepared.referenceGraphBuilt()).isFalse();
+    final boolean beforeGraphBuilt = prepared.referenceGraphBuilt();
     final DependencyJarTrimmer.TrimAnalysis rootlessBeforeGraph = prepared.analyze(List.of());
-    assertThat(rootlessBeforeGraph.retainedClasses()).isEmpty();
-    assertThat(prepared.referenceGraphBuilt()).isFalse();
-    assertThat(prepared.expandedNodeCount()).isZero();
+    final boolean afterRootlessGraphBuilt = prepared.referenceGraphBuilt();
+    final int expansionsBeforeGraph = prepared.expandedNodeCount();
 
     final DependencyJarTrimmer.TrimAnalysis first = prepared.analyze(List.of("fixture.A"));
-    assertThat(prepared.referenceGraphBuilt()).isTrue();
+    final boolean afterFirstGraphBuilt = prepared.referenceGraphBuilt();
     final int expansionsAfterFirst = prepared.expandedNodeCount();
 
-    assertThatThrownBy(() -> prepared.analyze(List.of("fixture.A", "fixture.GhostUser")))
-        .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
-        .hasMessageContaining("fixture/GhostUser -> class fixture/Ghost");
-    assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterFirst);
-
-    final DependencyJarTrimmer.TrimAnalysis afterFailure =
-        prepared.analyze(List.of("fixture.A", "fixture.C"));
-    final DependencyJarTrimmer.TrimAnalysis fresh =
-        new DependencyJarTrimmer()
-            .analyze(candidateJar, siblings, jdkClassTable, List.of("fixture.A", "fixture.C"));
-    assertThat(afterFailure).isEqualTo(fresh);
-    assertThat(afterFailure.retainedClasses()).containsAll(first.retainedClasses());
-    final Set<String> newlyVisited = new java.util.HashSet<>(afterFailure.retainedClasses());
-    newlyVisited.removeAll(first.retainedClasses());
-    final Set<String> newlyVisitedLibraries =
-        new java.util.HashSet<>(afterFailure.reachableLibraryClasses());
-    newlyVisitedLibraries.removeAll(first.reachableLibraryClasses());
-    newlyVisited.addAll(newlyVisitedLibraries);
-    assertThat(prepared.expandedNodeCount() - expansionsAfterFirst).isEqualTo(newlyVisited.size());
-
-    final DependencyJarTrimmer.TrimAnalysis shrunk = prepared.analyze(List.of("fixture.C"));
-    final DependencyJarTrimmer.TrimAnalysis freshShrunk =
-        new DependencyJarTrimmer()
-            .analyze(candidateJar, siblings, jdkClassTable, List.of("fixture.C"));
-    assertThat(shrunk).isEqualTo(freshShrunk);
-    final int expansionsAfterShrink = prepared.expandedNodeCount();
-    final DependencyJarTrimmer.TrimAnalysis rootless = prepared.analyze(List.of());
-    assertThat(rootless.roots()).isEmpty();
-    assertThat(rootless.retainedClasses()).isEmpty();
-    assertThat(rootless.reachableLibraryClasses()).isEmpty();
-    assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterShrink);
-    assertThat(prepared.analyze(List.of("fixture.C"))).isEqualTo(shrunk);
-    assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterShrink);
+    assertAll(
+        "prepared closure grows safely and recovers from failed root growth",
+        () -> assertThat(beforeGraphBuilt).isFalse(),
+        () -> assertThat(rootlessBeforeGraph.retainedClasses()).isEmpty(),
+        () -> assertThat(afterRootlessGraphBuilt).isFalse(),
+        () -> assertThat(expansionsBeforeGraph).isZero(),
+        () -> assertThat(afterFirstGraphBuilt).isTrue(),
+        () ->
+            assertThatThrownBy(() -> prepared.analyze(List.of("fixture.A", "fixture.GhostUser")))
+                .isInstanceOf(DependencyJarTrimmer.UnresolvedReferenceException.class)
+                .hasMessageContaining("fixture/GhostUser -> class fixture/Ghost"),
+        () -> assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterFirst),
+        () -> {
+          final DependencyJarTrimmer.TrimAnalysis afterFailure =
+              prepared.analyze(List.of("fixture.A", "fixture.C"));
+          final DependencyJarTrimmer.TrimAnalysis fresh =
+              new DependencyJarTrimmer()
+                  .analyze(
+                      candidateJar, siblings, jdkClassTable, List.of("fixture.A", "fixture.C"));
+          final Set<String> newlyVisited = new java.util.HashSet<>(afterFailure.retainedClasses());
+          newlyVisited.removeAll(first.retainedClasses());
+          final Set<String> newlyVisitedLibraries =
+              new java.util.HashSet<>(afterFailure.reachableLibraryClasses());
+          newlyVisitedLibraries.removeAll(first.reachableLibraryClasses());
+          newlyVisited.addAll(newlyVisitedLibraries);
+          assertAll(
+              "growth after failed root matches fresh analysis",
+              () -> assertThat(afterFailure).isEqualTo(fresh),
+              () -> assertThat(afterFailure.retainedClasses()).containsAll(first.retainedClasses()),
+              () ->
+                  assertThat(prepared.expandedNodeCount() - expansionsAfterFirst)
+                      .isEqualTo(newlyVisited.size()));
+        },
+        () -> {
+          final DependencyJarTrimmer.TrimAnalysis shrunk = prepared.analyze(List.of("fixture.C"));
+          final DependencyJarTrimmer.TrimAnalysis freshShrunk =
+              new DependencyJarTrimmer()
+                  .analyze(candidateJar, siblings, jdkClassTable, List.of("fixture.C"));
+          final int expansionsAfterShrink = prepared.expandedNodeCount();
+          final DependencyJarTrimmer.TrimAnalysis rootless = prepared.analyze(List.of());
+          assertAll(
+              "shrink and rootless queries preserve cached graph state",
+              () -> assertThat(shrunk).isEqualTo(freshShrunk),
+              () -> assertThat(rootless.roots()).isEmpty(),
+              () -> assertThat(rootless.retainedClasses()).isEmpty(),
+              () -> assertThat(rootless.reachableLibraryClasses()).isEmpty(),
+              () -> assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterShrink),
+              () -> assertThat(prepared.analyze(List.of("fixture.C"))).isEqualTo(shrunk),
+              () -> assertThat(prepared.expandedNodeCount()).isEqualTo(expansionsAfterShrink));
+        });
   }
 
   @Test
@@ -254,7 +270,7 @@ class DependencyJarTrimmerTest {
     assertAll(
         "empty class closure keeps non-class archive obligations",
         () -> assertThat(analysis.retainedClasses()).isEmpty(),
-        () -> assertThat(SingleReleaseArchiveWriter.countEntries(outputJar)).isEqualTo(1),
+        () -> assertThat(countEntries(outputJar)).isEqualTo(1),
         () ->
             assertThat(readJarEntry(outputJar, "config/settings.properties"))
                 .isEqualTo("enabled=true\n"));
@@ -328,12 +344,16 @@ class DependencyJarTrimmerTest {
         analyze(
             candidateWithoutShared, List.of(secondSibling, firstSibling), List.of("fixture.Root"));
 
-    assertThat(firstWins.reachableLibraryClasses())
-        .contains("fixture/Shared", "fixture/FirstOnly")
-        .doesNotContain("fixture/SecondOnly");
-    assertThat(reversedOrderWins.reachableLibraryClasses())
-        .contains("fixture/Shared", "fixture/SecondOnly")
-        .doesNotContain("fixture/FirstOnly");
+    assertAll(
+        "sibling order determines winning library class",
+        () ->
+            assertThat(firstWins.reachableLibraryClasses())
+                .contains("fixture/Shared", "fixture/FirstOnly")
+                .doesNotContain("fixture/SecondOnly"),
+        () ->
+            assertThat(reversedOrderWins.reachableLibraryClasses())
+                .contains("fixture/Shared", "fixture/SecondOnly")
+                .doesNotContain("fixture/FirstOnly"));
   }
 
   @Test
@@ -344,8 +364,6 @@ class DependencyJarTrimmerTest {
     final DependencyJarTrimmer.TrimAnalysis result =
         analyze(candidateJar, List.of(siblingJar), List.of("fixture.A"));
     final Path retainedJar = writeRetainedJar(candidateJar, result.retainedClasses());
-    assertThat(result.retainedClasses()).contains("fixture/HierarchyBase", "fixture/SiblingOnly");
-
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {retainedJar.toUri().toURL(), siblingJar.toUri().toURL()},
@@ -353,24 +371,8 @@ class DependencyJarTrimmerTest {
       final Class<?> entryClass = classLoader.loadClass("fixture.A");
       final Object entry = entryClass.getConstructor().newInstance();
       final Object resultValue = entryClass.getMethod("value").invoke(entry);
-      assertThat(resultValue.getClass().getName()).isEqualTo("fixture.B");
-      assertThat(
-              resultValue.getClass().getMethod("helper").invoke(resultValue).getClass().getName())
-          .isEqualTo("fixture.Helper");
       final Object innerValue = entryClass.getMethod("inner").invoke(entry);
-      assertThat(innerValue.getClass().getName()).isEqualTo("fixture.Outer$Inner");
-      assertThat(innerValue.getClass().getDeclaringClass().getName()).isEqualTo("fixture.Outer");
-      assertThat((List<?>) entryClass.getMethod("generic").invoke(entry)).isNotEmpty();
-      assertThat(entryClass.getMethod("record").invoke(entry).getClass().getName())
-          .isEqualTo("fixture.RecordHolder");
-      assertThat(entryClass.getMethod("value").getExceptionTypes())
-          .extracting(Class::getName)
-          .contains("fixture.Problem");
-      assertThat(entryClass.getMethod("generic").getGenericReturnType().getTypeName())
-          .contains("fixture.B");
       final Object record = entryClass.getMethod("record").invoke(entry);
-      assertThat(record.getClass().getRecordComponents()[0].getGenericType().getTypeName())
-          .isEqualTo("fixture.B");
       final java.lang.annotation.Annotation recordOnly =
           record
               .getClass()
@@ -379,30 +381,67 @@ class DependencyJarTrimmerTest {
                   classLoader
                       .loadClass("fixture.RecordOnly")
                       .asSubclass(java.lang.annotation.Annotation.class));
-      assertThat(recordOnly).isNotNull();
-      assertThat(recordOnly.annotationType().getMethod("value").invoke(recordOnly))
-          .isEqualTo(classLoader.loadClass("fixture.RecordOnlyType"));
-      assertThat(entryClass.getMethod("dynamic").invoke(entry)).isNull();
-      assertThat(entryClass.getMethod("signature").getGenericReturnType().getTypeName())
-          .contains("fixture.SignatureOnly");
-      assertThat(
-              classLoader
-                  .loadClass("fixture.SignatureOnly")
-                  .getTypeParameters()[0]
-                  .getBounds()[0]
-                  .getTypeName())
-          .isEqualTo("fixture.SignatureBound");
       final Class<?> creatorClass = entryClass.getField("creator").getType();
       final Object creator = creatorClass.getConstructor().newInstance();
       final Object siblingRoot = creatorClass.getMethod("create").invoke(creator);
-      assertThat(
-              siblingRoot
-                  .getClass()
-                  .getMethod("inherited")
-                  .invoke(siblingRoot)
-                  .getClass()
-                  .getName())
-          .isEqualTo("fixture.SiblingOnly");
+      assertAll(
+          "retained classes verify and resolve runtime metadata",
+          () ->
+              assertThat(result.retainedClasses())
+                  .contains("fixture/HierarchyBase", "fixture/SiblingOnly"),
+          () -> assertThat(resultValue.getClass().getName()).isEqualTo("fixture.B"),
+          () ->
+              assertThat(
+                      resultValue
+                          .getClass()
+                          .getMethod("helper")
+                          .invoke(resultValue)
+                          .getClass()
+                          .getName())
+                  .isEqualTo("fixture.Helper"),
+          () -> assertThat(innerValue.getClass().getName()).isEqualTo("fixture.Outer$Inner"),
+          () ->
+              assertThat(innerValue.getClass().getDeclaringClass().getName())
+                  .isEqualTo("fixture.Outer"),
+          () -> assertThat((List<?>) entryClass.getMethod("generic").invoke(entry)).isNotEmpty(),
+          () ->
+              assertThat(entryClass.getMethod("record").invoke(entry).getClass().getName())
+                  .isEqualTo("fixture.RecordHolder"),
+          () ->
+              assertThat(entryClass.getMethod("value").getExceptionTypes())
+                  .extracting(Class::getName)
+                  .contains("fixture.Problem"),
+          () ->
+              assertThat(entryClass.getMethod("generic").getGenericReturnType().getTypeName())
+                  .contains("fixture.B"),
+          () ->
+              assertThat(record.getClass().getRecordComponents()[0].getGenericType().getTypeName())
+                  .isEqualTo("fixture.B"),
+          () -> assertThat(recordOnly).isNotNull(),
+          () ->
+              assertThat(recordOnly.annotationType().getMethod("value").invoke(recordOnly))
+                  .isEqualTo(classLoader.loadClass("fixture.RecordOnlyType")),
+          () -> assertThat(entryClass.getMethod("dynamic").invoke(entry)).isNull(),
+          () ->
+              assertThat(entryClass.getMethod("signature").getGenericReturnType().getTypeName())
+                  .contains("fixture.SignatureOnly"),
+          () ->
+              assertThat(
+                      classLoader
+                          .loadClass("fixture.SignatureOnly")
+                          .getTypeParameters()[0]
+                          .getBounds()[0]
+                          .getTypeName())
+                  .isEqualTo("fixture.SignatureBound"),
+          () ->
+              assertThat(
+                      siblingRoot
+                          .getClass()
+                          .getMethod("inherited")
+                          .invoke(siblingRoot)
+                          .getClass()
+                          .getName())
+                  .isEqualTo("fixture.SiblingOnly"));
     }
   }
 
@@ -767,6 +806,12 @@ class DependencyJarTrimmerTest {
   private static DependencyJarTrimmer.TrimAnalysis analyze(
       final Path candidateJar, final List<String> roots) throws IOException {
     return analyze(candidateJar, List.of(), roots);
+  }
+
+  private static int countEntries(final Path archivePath) throws IOException {
+    try (java.util.zip.ZipFile archive = new java.util.zip.ZipFile(archivePath.toFile())) {
+      return archive.size();
+    }
   }
 
   private static String readJarEntry(final Path archive, final String entryName)

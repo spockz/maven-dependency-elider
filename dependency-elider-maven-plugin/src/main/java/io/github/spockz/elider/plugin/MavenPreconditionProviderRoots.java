@@ -1,9 +1,9 @@
-/* WHY: Enumerates compiled output and resource providers for prerequisite proof. */
+/* WHY: Enumerates shipped-runtime output and resource providers for prerequisite proof. */
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
-import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.Provider;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.ProviderKind;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,7 +17,7 @@ import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Resource;
 import org.apache.maven.project.MavenProject;
 
-/** Scans compiled output and resource roots for class and resource providers. */
+/** Scans production output and resources for runtime class and resource providers. */
 @SuppressWarnings({
   "PMD.CommentDefaultAccessModifier",
   "PMD.CommentRequired",
@@ -46,14 +46,20 @@ final class MavenPreconditionProviderRoots {
       throw new IOException("Maven project build roots are unavailable");
     }
     MavenPreconditionGenerationGuard.requireKnownProviderGeneration(
-        project, session, evidence.trustedProcessClassesContext());
+        project,
+        session,
+        evidence.trustedProcessClassesContext(),
+        evidence.productionClassesComplete());
     final List<Root> roots = declaredRoots(project, evidence);
+    requireTestOutputSeparated(project, roots);
     final Map<Path, Provider> providers = new LinkedHashMap<>();
     for (final Root root : roots) {
       addProviders(root, providers);
     }
     final String incompleteDetail =
-        explicitCompleteness || evidence.trustedProcessClassesContext()
+        explicitCompleteness
+                || evidence.productionClassesComplete()
+                || evidence.trustedProcessClassesContext()
             ? null
             : "Production output is not known complete before the process-classes phase";
     return new Capture(List.copyOf(providers.values()), incompleteDetail);
@@ -64,9 +70,7 @@ final class MavenPreconditionProviderRoots {
       throws IOException {
     final List<Root> roots = new ArrayList<>();
     addDirectoryRoot(roots, project, "production-output", project.getBuild().getOutputDirectory());
-    addDirectoryRoot(roots, project, "test-output", project.getBuild().getTestOutputDirectory());
     addResources(roots, project, "production-resource", project.getBuild().getResources());
-    addResources(roots, project, "test-resource", project.getBuild().getTestResources());
     if (evidence.bytecodeScan().isPresent()) {
       final Path scannedOutput = evidence.bytecodeScan().orElseThrow().scope();
       if (roots.stream()
@@ -76,6 +80,21 @@ final class MavenPreconditionProviderRoots {
       }
     }
     return List.copyOf(roots);
+  }
+
+  private static void requireTestOutputSeparated(
+      final MavenProject project, final List<Root> runtimeRoots) throws IOException {
+    final String configuredTestOutput = project.getBuild().getTestOutputDirectory();
+    if (configuredTestOutput == null || configuredTestOutput.isBlank()) {
+      throw new IOException("Maven test output directory is unavailable");
+    }
+    final Path testOutput = resolveProjectPath(project, configuredTestOutput);
+    for (final Root runtimeRoot : runtimeRoots) {
+      if (testOutput.startsWith(runtimeRoot.path()) || runtimeRoot.path().startsWith(testOutput)) {
+        throw new IOException(
+            "Maven test output overlaps production provider root: " + runtimeRoot.path());
+      }
+    }
   }
 
   private static void addResources(

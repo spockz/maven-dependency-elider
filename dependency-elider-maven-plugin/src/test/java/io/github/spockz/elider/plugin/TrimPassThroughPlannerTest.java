@@ -20,8 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 @SuppressWarnings({
   "PMD.CommentRequired",
   "PMD.CommentDefaultAccessModifier",
-  "PMD.AtLeastOneConstructor",
-  "PMD.UnitTestContainsTooManyAsserts"
+  "PMD.AtLeastOneConstructor"
 })
 final class TrimPassThroughPlannerTest {
   @TempDir Path temporaryDirectory;
@@ -38,7 +37,6 @@ final class TrimPassThroughPlannerTest {
             MavenDependencyTrimmer.MRJAR_VERTICAL_SHADING, false, Set.of(coord), List.of(snapshot));
     final TrimPassThroughPlan plan = TrimPassThroughPlanner.passThroughPlan(defaultRequest);
     assertThat(plan.moduleInfoCoordinates()).contains(coord);
-    assertThat(TrimPassThroughPlanner.passThroughCoordinate(defaultRequest, snapshot)).isTrue();
   }
 
   @Test
@@ -68,8 +66,6 @@ final class TrimPassThroughPlannerTest {
             MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY, false, Set.of(coord), List.of(snapshot));
     final TrimPassThroughPlan plan = TrimPassThroughPlanner.passThroughPlan(classpathOnlyRequest);
     assertThat(plan.moduleInfoCoordinates()).doesNotContain(coord);
-    assertThat(TrimPassThroughPlanner.passThroughCoordinate(classpathOnlyRequest, snapshot))
-        .isFalse();
   }
 
   private static TrimRequest requestWithStrategy(

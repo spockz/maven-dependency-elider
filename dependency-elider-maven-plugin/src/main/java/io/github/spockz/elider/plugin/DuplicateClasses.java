@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.MultiReleaseClassInventory;
 import io.github.spockz.elider.plugin.DuplicateClassPolicy.Action;
 import java.io.IOException;
 import java.nio.file.Path;

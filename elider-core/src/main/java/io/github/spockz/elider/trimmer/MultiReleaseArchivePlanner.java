@@ -117,7 +117,7 @@ final class MultiReleaseArchivePlanner {
     if (targetVariant == null) {
       throw new IOException(
           "Upper-tier public or protected class has no target-release counterpart: "
-              + upperApiVariants.get(0).entryName());
+              + upperApiVariants.getFirst().entryName());
     }
     for (final MultiReleaseArchivePlan.ClassVariant variant : upperApiVariants) {
       if (targetVariant.accessVisibility() != variant.accessVisibility()
@@ -151,7 +151,7 @@ final class MultiReleaseArchivePlanner {
         new LinkedHashMap<>();
     for (final String entryName : versionedFiles) {
       final MultiReleaseArchivePlan.VersionedPath path =
-          MultiReleaseVersionedPath.parse(entryName, false);
+          MultiReleaseArchivePlan.parseVersionedPath(entryName, false);
       if (path == null) {
         throw new IOException("Invalid indexed versioned file: " + entryName);
       }

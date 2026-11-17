@@ -10,12 +10,7 @@ import java.util.TreeSet;
 
 /** Immutable evidence for omitted-code or prerequisite-class VEX justifications. */
 // PMD DataClass is intentional: this type is an immutable verified evidence value.
-@SuppressWarnings({
-  "PMD.DataClass",
-  "PMD.AvoidFieldNameMatchingMethodName",
-  "PMD.CommentDefaultAccessModifier",
-  "PMD.TooManyMethods"
-})
+@SuppressWarnings({"PMD.DataClass", "PMD.AvoidFieldNameMatchingMethodName", "PMD.TooManyMethods"})
 public final class VexAttestation {
   /** Stable VEX justification for omitted vulnerable code. */
   private static final String OMITTED_CODE_JUSTIFICATION = "vulnerable_code_not_present";
@@ -140,7 +135,7 @@ public final class VexAttestation {
   }
 
   /** Creates verified omission evidence with source metadata. */
-  static VexAttestation genericOmittedCode(
+  public static VexAttestation genericOmittedCode(
       final GenericVulnerabilityFinding finding,
       final ArtifactCoordinate coordinate,
       final String detail,
@@ -166,7 +161,7 @@ public final class VexAttestation {
   }
 
   /** Creates verified prerequisite evidence with source metadata. */
-  static VexAttestation genericPrecondition(
+  public static VexAttestation genericPrecondition(
       final GenericVulnerabilityFinding finding,
       final ArtifactCoordinate coordinate,
       final String detail,

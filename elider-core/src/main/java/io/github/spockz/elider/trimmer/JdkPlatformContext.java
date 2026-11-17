@@ -3,6 +3,7 @@
 
 package io.github.spockz.elider.trimmer;
 
+import io.github.spockz.elider.model.ArtifactDigests;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -14,7 +15,6 @@ import java.lang.module.ModuleReference;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
@@ -24,17 +24,27 @@ import java.util.Optional;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
-import org.objectweb.asm.ClassReader;
 import proguard.classfile.ClassPool;
+import proguard.classfile.LibraryClass;
 
 /** Owns one active-runtime platform snapshot for an analysis context. */
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.CommentDefaultAccessModifier"})
+@SuppressWarnings({
+  "PMD.TooManyMethods",
+  "PMD.CommentDefaultAccessModifier",
+  "PMD.AvoidSynchronizedAtMethodLevel"
+})
 public final class JdkPlatformContext implements AutoCloseable {
   /** Changes when system-module selection or runtime-class interpretation changes. */
   public static final String READER_POLICY_VERSION = "jdk-runtime-module-reader-v1";
 
+  /** Cached immutable snapshot for the active JVM's system modules. */
+  private static PlatformSnapshot cachedSystemSnapshot;
+
   /** Standard runtime module finder for this snapshot. */
   private final ModuleFinder moduleFinder;
+
+  /** Whether this context targets the JVM's immutable active system modules. */
+  private final boolean systemRuntime;
 
   /** Cached snapshot; cleared on close to release parsed class templates. */
   private PlatformSnapshot capturedSnapshot;
@@ -47,11 +57,24 @@ public final class JdkPlatformContext implements AutoCloseable {
 
   /** Creates an identity owner for the active JVM's system modules. */
   public JdkPlatformContext() {
-    this(ModuleFinder.ofSystem());
+    this(ModuleFinder.ofSystem(), true);
   }
 
   JdkPlatformContext(final ModuleFinder moduleFinder) {
+    this(moduleFinder, false);
+  }
+
+  private JdkPlatformContext(final ModuleFinder moduleFinder, final boolean systemRuntime) {
     this.moduleFinder = Objects.requireNonNull(moduleFinder, "moduleFinder");
+    this.systemRuntime = systemRuntime;
+  }
+
+  private static synchronized PlatformSnapshot getOrCaptureSystemSnapshot(
+      final JdkPlatformContext context) throws IOException {
+    if (cachedSystemSnapshot == null) {
+      cachedSystemSnapshot = context.captureRuntimePlatform();
+    }
+    return cachedSystemSnapshot;
   }
 
   /** Captures or returns the active runtime's standard platform modules. */
@@ -60,7 +83,8 @@ public final class JdkPlatformContext implements AutoCloseable {
     try {
       ensureOpen();
       if (capturedSnapshot == null) {
-        capturedSnapshot = captureRuntimePlatform();
+        capturedSnapshot =
+            systemRuntime ? getOrCaptureSystemSnapshot(this) : captureRuntimePlatform();
       }
       return capturedSnapshot;
     } finally {
@@ -86,15 +110,30 @@ public final class JdkPlatformContext implements AutoCloseable {
     if (modules.isEmpty()) {
       throw new IOException("The active JDK exposes no standard system modules");
     }
-    final ClassPool jdkClassTable = new ClassPool();
-    final List<ModuleIdentity> identities = new ArrayList<>(modules.size());
-    for (final ModuleReference module : modules) {
-      identities.add(captureModule(module, jdkClassTable));
-    }
-    if (jdkClassTable.getClass("java/lang/Object") == null) {
-      throw new IOException("The active runtime platform does not contain java/lang/Object");
-    }
+    final List<CapturedModule> capturedModules = captureModules(modules);
+    final FrozenClassPool jdkClassTable =
+        JdkApiClassTableReader.populateClassTable(
+            capturedModules.stream().map(CapturedModule::classes).toList());
+    final List<ModuleIdentity> identities =
+        capturedModules.stream().map(CapturedModule::identity).toList();
     return new PlatformSnapshot(Runtime.version().feature(), identities, jdkClassTable);
+  }
+
+  private static List<CapturedModule> captureModules(final List<ModuleReference> modules)
+      throws IOException {
+    try {
+      return modules.parallelStream().map(JdkPlatformContext::captureModuleUnchecked).toList();
+    } catch (final UncheckedIOException exception) {
+      throw new IOException(exception.getMessage(), exception);
+    }
+  }
+
+  private static CapturedModule captureModuleUnchecked(final ModuleReference module) {
+    try {
+      return captureModule(module);
+    } catch (final IOException exception) {
+      throw new UncheckedIOException(exception.getMessage(), exception);
+    }
   }
 
   private List<ModuleReference> systemModules() throws IOException {
@@ -107,28 +146,39 @@ public final class JdkPlatformContext implements AutoCloseable {
     }
   }
 
-  private static ModuleIdentity captureModule(
-      final ModuleReference module, final ClassPool jdkClassTable) throws IOException {
+  private static CapturedModule captureModule(final ModuleReference module) throws IOException {
     final ModuleDescriptor descriptor = module.descriptor();
-    final MessageDigest digest = sha256();
+    final MessageDigest digest = ArtifactDigests.newSha256Digest();
     updateDescriptor(digest, descriptor);
     long classBytes = 0;
     long classCount = 0;
+    final JdkApiClassTableReader.ClassDeclarationCollector collector =
+        JdkApiClassTableReader.newDeclarationCollector();
+    final List<LibraryClass> classes;
     try (ModuleReader reader = module.open()) {
       final List<String> resources = classResources(reader, descriptor.name());
+      classes = new ArrayList<>(resources.size());
       for (final String resource : resources) {
         final byte[] bytes = readResource(reader, resource, descriptor.name());
         updateResource(digest, resource, bytes);
         classBytes += bytes.length;
-        addClass(bytes, resource, descriptor.name(), jdkClassTable);
+        final LibraryClass parsed =
+            JdkApiClassTableReader.parseModuleClass(bytes, resource, descriptor.name(), collector);
+        if (parsed != null) {
+          classes.add(parsed);
+        }
         if (!moduleInfo(resource)) {
           classCount++;
         }
       }
     }
-    return new ModuleIdentity(
-        descriptor.name(), classCount, classBytes, HexFormat.of().formatHex(digest.digest()));
+    return new CapturedModule(
+        new ModuleIdentity(
+            descriptor.name(), classCount, classBytes, HexFormat.of().formatHex(digest.digest())),
+        classes);
   }
+
+  private record CapturedModule(ModuleIdentity identity, List<LibraryClass> classes) {}
 
   private static List<String> classResources(final ModuleReader reader, final String moduleName)
       throws IOException {
@@ -149,34 +199,6 @@ public final class JdkPlatformContext implements AutoCloseable {
     }
     try (InputStream input = opened.orElseThrow()) {
       return input.readAllBytes();
-    }
-  }
-
-  private static void addClass(
-      final byte[] bytes,
-      final String resource,
-      final String moduleName,
-      final ClassPool jdkClassTable)
-      throws IOException {
-    final ClassReader reader;
-    try {
-      reader = new ClassReader(bytes);
-      if (moduleInfo(resource)) {
-        return;
-      }
-      final String expectedName = resource.substring(0, resource.length() - ".class".length());
-      final String actualName = reader.getClassName();
-      if (!expectedName.equals(actualName)) {
-        throw new IOException(
-            "Runtime module class path does not match name: " + moduleName + "/" + resource);
-      }
-      if (jdkClassTable.getClass(actualName) != null) {
-        throw new IOException("Duplicate active runtime class in system modules: " + actualName);
-      }
-      JdkApiClassTableReader.addLibraryClass(reader, jdkClassTable);
-    } catch (final IllegalArgumentException | IndexOutOfBoundsException exception) {
-      throw new IOException(
-          "Could not parse runtime module class: " + moduleName + "/" + resource, exception);
     }
   }
 
@@ -263,14 +285,6 @@ public final class JdkPlatformContext implements AutoCloseable {
     digest.update(ByteBuffer.allocate(Long.BYTES).putLong(value).array());
   }
 
-  private static MessageDigest sha256() {
-    try {
-      return MessageDigest.getInstance("SHA-256");
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("Required SHA-256 digest is unavailable", exception);
-    }
-  }
-
   private void ensureOpen() {
     if (closed) {
       throw new IllegalStateException("JDK platform context is closed");
@@ -289,7 +303,7 @@ public final class JdkPlatformContext implements AutoCloseable {
     private final List<ModuleIdentity> modules;
 
     /** Parsed ProGuard declarations used as templates for independent class tables. */
-    private final ClassPool jdkClassTable;
+    private final FrozenClassPool jdkClassTable;
 
     /** Deterministic identity for this runtime and its system-module contents. */
     private final String platformIdentity;
@@ -297,7 +311,7 @@ public final class JdkPlatformContext implements AutoCloseable {
     private PlatformSnapshot(
         final int runtimeRelease,
         final List<ModuleIdentity> modules,
-        final ClassPool jdkClassTable) {
+        final FrozenClassPool jdkClassTable) {
       this.activeRuntimeFeature = runtimeRelease;
       this.modules = List.copyOf(modules);
       this.jdkClassTable = jdkClassTable;

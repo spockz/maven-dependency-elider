@@ -104,10 +104,7 @@ final class MavenCompilerSettings {
       return null;
     }
     final String trimmed = version.trim();
-    if (trimmed.startsWith("1.")) {
-      return trimmed.substring(2);
-    }
-    return trimmed;
+    return trimmed.startsWith("1.") ? trimmed.substring(2) : trimmed;
   }
 
   static List<String> options(
@@ -621,15 +618,11 @@ final class MavenCompilerSettings {
   }
 
   private static Xpp3Dom configuration(final Plugin plugin) {
-    return plugin != null && plugin.getConfiguration() instanceof Xpp3Dom configuration
-        ? configuration
-        : null;
+    return plugin != null && plugin.getConfiguration() instanceof Xpp3Dom dom ? dom : null;
   }
 
   private static Xpp3Dom configuration(final PluginExecution execution) {
-    return execution != null && execution.getConfiguration() instanceof Xpp3Dom configuration
-        ? configuration
-        : null;
+    return execution != null && execution.getConfiguration() instanceof Xpp3Dom dom ? dom : null;
   }
 
   private static Xpp3Dom mergeConfigurations(final Xpp3Dom dominant, final Xpp3Dom recessive) {

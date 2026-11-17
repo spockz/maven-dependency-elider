@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /** Returns canonical trim outputs and optional generation ownership. */
-record TrimResult(
+public record TrimResult(
     List<ArtifactTrimRecord> records,
     List<ArtifactCoordinate> multiReleasePassthroughArtifacts,
     List<ArtifactCoordinate> moduleInfoPassthroughArtifacts,
@@ -45,7 +45,8 @@ record TrimResult(
         Map.of());
   }
 
-  /* default */ TrimResult {
+  /** Validates and normalizes the trim result. */
+  public TrimResult {
     records =
         records.stream().sorted(Comparator.comparing(ArtifactTrimRecord::coordinate)).toList();
     multiReleasePassthroughArtifacts = multiReleasePassthroughArtifacts.stream().sorted().toList();

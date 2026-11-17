@@ -6,12 +6,11 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 import org.apache.maven.execution.MavenExecutionRequest;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
@@ -163,22 +162,12 @@ record AnalysisEnvironment(
     if (properties == null) {
       return Map.of();
     }
-    final Map<String, String> values = new ConcurrentHashMap<>();
-    properties.stringPropertyNames().stream()
-        .sorted()
-        .forEach(key -> values.put(key, properties.getProperty(key)));
-    return Collections.unmodifiableMap(values);
+    return properties.stringPropertyNames().stream()
+        .collect(Collectors.toUnmodifiableMap(key -> key, properties::getProperty));
   }
 
   private static Map<String, String> immutableProperties(final Map<String, String> values) {
-    final Map<String, String> copy = new ConcurrentHashMap<>();
-    values.forEach(
-        (key, value) -> {
-          Objects.requireNonNull(key, "property key");
-          Objects.requireNonNull(value, "property value");
-          copy.put(key, value);
-        });
-    return Collections.unmodifiableMap(copy);
+    return Map.copyOf(values);
   }
 
   private static void appendProperties(

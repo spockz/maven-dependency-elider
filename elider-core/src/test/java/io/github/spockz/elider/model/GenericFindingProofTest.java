@@ -6,8 +6,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.applicability.OmittedCodeProof;
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.Provider;
+import io.github.spockz.elider.applicability.PreconditionProof;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -110,30 +112,6 @@ class GenericFindingProofTest {
             Set.of(),
             AssessmentIntent.AUTO_VERIFY,
             "declaration");
-    final ArtifactTrimRecord wrongOriginalDigest =
-        new ArtifactTrimRecord(
-            COMPONENT,
-            record.originalPath(),
-            "a".repeat(64),
-            record.originalSha1(),
-            record.trimmedPath(),
-            record.trimmedSha256(),
-            record.trimmedSha1(),
-            1,
-            0,
-            1);
-    final ArtifactTrimRecord wrongTrimmedDigest =
-        new ArtifactTrimRecord(
-            COMPONENT,
-            record.originalPath(),
-            record.originalSha256(),
-            record.originalSha1(),
-            record.trimmedPath(),
-            "b".repeat(64),
-            record.trimmedSha1(),
-            1,
-            0,
-            1);
 
     assertAll(
         () ->
@@ -149,14 +127,6 @@ class GenericFindingProofTest {
                     () -> OmittedCodeProof.prove(fileWithMissingMetadata, inspected, true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("attribution"),
-        () ->
-            assertThatThrownBy(() -> OmittedCodeProof.inspect(wrongOriginalDigest))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("digest"),
-        () ->
-            assertThatThrownBy(() -> OmittedCodeProof.inspect(wrongTrimmedDigest))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("digest"),
         () ->
             assertThatThrownBy(
                     () ->

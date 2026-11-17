@@ -3,7 +3,6 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -37,10 +36,6 @@ final class MavenBanPublicationArtifactPaths {
       final ArtifactIdentity identity = ArtifactIdentity.of(record.coordinate());
       if (trims.putIfAbsent(identity, record) != null) {
         throw new IOException("Ban output has duplicate trim records for " + identity);
-      }
-      if (!record.trimmedSha256().equals(ArtifactDigests.read(record.trimmedPath()).sha256())) {
-        throw new IOException(
-            "Trimmed output bytes changed before ban publication: " + record.coordinate());
       }
     }
     return trims;

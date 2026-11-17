@@ -4,6 +4,7 @@ package io.github.spockz.elider.trimmer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.test.CompilationFixtureSupport;
@@ -12,7 +13,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Set;
 import java.util.jar.Attributes;
@@ -62,8 +62,7 @@ final class MultiReleaseArchivePlanTest {
             output,
             ArtifactCoordinate.of("org.example", "fixture", "1"),
             analysis,
-            plan,
-            null);
+            plan);
 
     final ArtifactTrimRecord record;
     try {
@@ -72,35 +71,43 @@ final class MultiReleaseArchivePlanTest {
       sanitizer.discard(prepared);
     }
 
-    assertThat(record.totalClasses()).isEqualTo(3);
-    assertThat(record.retainedClasses()).isEqualTo(2);
-    assertThat(record.prunedClassBytes())
-        .isEqualTo(
-            classEntrySize(fixture.jar(), "fixture/Api.class")
-                + classEntrySize(fixture.jar(), "fixture/Drop.class"));
-    assertThat(record.mrjarStatus()).isEqualTo("elevated_and_trimmed");
-    assertThat(record.originalPhysicalEntries()).hasValue(countEntries(fixture.jar()));
-    assertThat(record.trimmedPhysicalEntries()).hasValue(countEntries(output));
     try (JarFile archive = new JarFile(output.toFile())) {
-      assertThat(readEntry(archive, "fixture/Api.class"))
-          .isEqualTo(Files.readAllBytes(fixture.versionNineApi()));
-      assertThat(archive.getEntry("fixture/Drop.class")).isNull();
-      assertThat(archive.getEntry("META-INF/versions/9/fixture/Api.class")).isNull();
-      assertThat(archive.getEntry("META-INF/versions/17/fixture/Api.class")).isNotNull();
-      assertThat(archive.getEntry("META-INF/versions/17/fixture/UpperOnly.class")).isNotNull();
-      assertThat(archive.getEntry("fixture/UpperOnly.class")).isNotNull();
-      assertThat(archive.getEntry("META-INF/versions/17/module-info.class")).isNull();
-      assertThat(archive.getEntry("config/value.txt")).isNotNull();
-      assertThat(readEntry(archive, "config/value.txt")).isEqualTo(bytes("nine"));
-      assertThat(archive.getEntry("META-INF/versions/9/config/value.txt")).isNull();
-      assertThat(archive.getEntry("META-INF/versions/17/config/value.txt")).isNotNull();
-      assertThat(readEntry(archive, "META-INF/services/example.Service"))
-          .isEqualTo(bytes("outside.Provider\rfixture.Api\r\n"));
-      assertThat(archive.getEntry("META-INF/TEST.SF")).isNull();
-      assertThat(archive.getManifest().getMainAttributes().getValue("Multi-Release"))
-          .isEqualTo("true");
+      final byte[] apiBytes = readEntry(archive, "fixture/Api.class");
+      final byte[] nineApiBytes = Files.readAllBytes(fixture.versionNineApi());
+      final byte[] configBytes = readEntry(archive, "config/value.txt");
+      final byte[] serviceBytes = readEntry(archive, "META-INF/services/example.Service");
+      final String multiRelease =
+          archive.getManifest().getMainAttributes().getValue("Multi-Release");
+      assertAll(
+          "elevates target tier, trims base, and preserves higher tier closure entries",
+          () -> assertThat(record.totalClasses()).isEqualTo(3),
+          () -> assertThat(record.retainedClasses()).isEqualTo(2),
+          () ->
+              assertThat(record.prunedClassBytes())
+                  .isEqualTo(
+                      classEntrySize(fixture.jar(), "fixture/Api.class")
+                          + classEntrySize(fixture.jar(), "fixture/Drop.class")),
+          () -> assertThat(record.mrjarStatus()).isEqualTo("elevated_and_trimmed"),
+          () -> assertThat(record.originalPhysicalEntries()).hasValue(countEntries(fixture.jar())),
+          () -> assertThat(record.trimmedPhysicalEntries()).hasValue(countEntries(output)),
+          () -> assertThat(apiBytes).isEqualTo(nineApiBytes),
+          () -> assertThat(archive.getEntry("fixture/Drop.class")).isNull(),
+          () -> assertThat(archive.getEntry("META-INF/versions/9/fixture/Api.class")).isNull(),
+          () -> assertThat(archive.getEntry("META-INF/versions/17/fixture/Api.class")).isNotNull(),
+          () ->
+              assertThat(archive.getEntry("META-INF/versions/17/fixture/UpperOnly.class"))
+                  .isNotNull(),
+          () -> assertThat(archive.getEntry("fixture/UpperOnly.class")).isNotNull(),
+          () -> assertThat(archive.getEntry("META-INF/versions/17/module-info.class")).isNull(),
+          () -> assertThat(archive.getEntry("config/value.txt")).isNotNull(),
+          () -> assertThat(configBytes).isEqualTo(bytes("nine")),
+          () -> assertThat(archive.getEntry("META-INF/versions/9/config/value.txt")).isNull(),
+          () -> assertThat(archive.getEntry("META-INF/versions/17/config/value.txt")).isNotNull(),
+          () -> assertThat(serviceBytes).isEqualTo(bytes("outside.Provider\rfixture.Api\r\n")),
+          () -> assertThat(archive.getEntry("META-INF/TEST.SF")).isNull(),
+          () -> assertThat(multiRelease).isEqualTo("true"),
+          () -> assertJarValid(output));
     }
-    assertJarValid(output);
   }
 
   @Test
@@ -118,33 +125,40 @@ final class MultiReleaseArchivePlanTest {
             output,
             ArtifactCoordinate.of("org.example", "fixture", "1"),
             analysis,
-            plan,
-            null);
+            plan);
+    final ArtifactTrimRecord record;
     try {
-      final ArtifactTrimRecord record = sanitizer.publish(prepared);
-      assertThat(record.totalClasses()).isEqualTo(3);
-      assertThat(record.retainedClasses()).isEqualTo(1);
-      assertThat(record.prunedClassBytes())
-          .isEqualTo(
-              classEntrySize(fixture.jar(), "fixture/Api.class")
-                  + classEntrySize(fixture.jar(), "fixture/Drop.class")
-                  + classEntrySize(fixture.jar(), "fixture/UpperOnly.class")
-                  + classEntrySize(fixture.jar(), "META-INF/versions/17/fixture/UpperOnly.class")
-                  + classEntrySize(fixture.jar(), "META-INF/versions/9/fixture/Api.class"));
-      assertThat(record.mrjarStatus()).isEqualTo("elevated_and_trimmed");
+      record = sanitizer.publish(prepared);
     } finally {
       sanitizer.discard(prepared);
     }
 
     try (JarFile archive = new JarFile(output.toFile());
         Stream<JarEntry> entries = archive.stream()) {
-      assertThat(archive.getManifest().getMainAttributes().getValue("Multi-Release")).isNull();
-      assertThat(entries.map(JarEntry::getName))
-          .noneMatch(name -> name.startsWith("META-INF/versions/"));
-      assertThat(readEntry(archive, "fixture/Api.class"))
-          .isEqualTo(Files.readAllBytes(fixture.versionSeventeenApi()));
+      final List<String> names = entries.map(JarEntry::getName).toList();
+      final byte[] apiBytes = readEntry(archive, "fixture/Api.class");
+      final byte[] seventeenApiBytes = Files.readAllBytes(fixture.versionSeventeenApi());
+      final String multiRelease =
+          archive.getManifest().getMainAttributes().getValue("Multi-Release");
+      assertAll(
+          "collapses all tiers at target and removes Multi-Release manifest attribute",
+          () -> assertThat(record.totalClasses()).isEqualTo(3),
+          () -> assertThat(record.retainedClasses()).isEqualTo(1),
+          () ->
+              assertThat(record.prunedClassBytes())
+                  .isEqualTo(
+                      classEntrySize(fixture.jar(), "fixture/Api.class")
+                          + classEntrySize(fixture.jar(), "fixture/Drop.class")
+                          + classEntrySize(fixture.jar(), "fixture/UpperOnly.class")
+                          + classEntrySize(
+                              fixture.jar(), "META-INF/versions/17/fixture/UpperOnly.class")
+                          + classEntrySize(fixture.jar(), "META-INF/versions/9/fixture/Api.class")),
+          () -> assertThat(record.mrjarStatus()).isEqualTo("elevated_and_trimmed"),
+          () -> assertThat(multiRelease).isNull(),
+          () -> assertThat(names).noneMatch(name -> name.startsWith("META-INF/versions/")),
+          () -> assertThat(apiBytes).isEqualTo(seventeenApiBytes),
+          () -> assertJarValid(output));
     }
-    assertJarValid(output);
   }
 
   @Test
@@ -154,18 +168,23 @@ final class MultiReleaseArchivePlanTest {
         MultiReleaseArchivePlan.create(fixture.jar(), 11, Set.of("fixture.Api"), Set.of())
             .pluginView();
 
-    assertThat(view.targetRelease()).isEqualTo(11);
-    assertThat(view.targetPresentClasses())
-        .containsExactlyInAnyOrder("fixture/Api", "fixture/Drop", "fixture/UpperOnly");
-    assertThat(view.requiredRootClasses())
-        .containsExactlyInAnyOrder("fixture/Api", "fixture/UpperOnly");
-    assertThat(view.requestedRetainedClasses()).containsExactly("fixture/Api");
-    assertThat(view.targetClassCount()).isEqualTo(3);
-    assertThat(view.logicalClassCount()).isEqualTo(3);
-    assertThat(view.retainedLogicalClassCount()).isEqualTo(2);
-    assertThat(view.versionedClassReleases()).containsExactly(9, 17);
-    assertThatThrownBy(() -> view.targetPresentClasses().add("fixture/Other"))
-        .isInstanceOf(UnsupportedOperationException.class);
+    assertAll(
+        "plugin view exposes immutable sorted release breakpoints and class counts",
+        () -> assertThat(view.targetRelease()).isEqualTo(11),
+        () ->
+            assertThat(view.targetPresentClasses())
+                .containsExactlyInAnyOrder("fixture/Api", "fixture/Drop", "fixture/UpperOnly"),
+        () ->
+            assertThat(view.requiredRootClasses())
+                .containsExactlyInAnyOrder("fixture/Api", "fixture/UpperOnly"),
+        () -> assertThat(view.requestedRetainedClasses()).containsExactly("fixture/Api"),
+        () -> assertThat(view.targetClassCount()).isEqualTo(3),
+        () -> assertThat(view.logicalClassCount()).isEqualTo(3),
+        () -> assertThat(view.retainedLogicalClassCount()).isEqualTo(2),
+        () -> assertThat(view.versionedClassReleases()).containsExactly(9, 17),
+        () ->
+            assertThatThrownBy(() -> view.targetPresentClasses().add("fixture/Other"))
+                .isInstanceOf(UnsupportedOperationException.class));
   }
 
   @Test
@@ -208,8 +227,7 @@ final class MultiReleaseArchivePlanTest {
                         temporaryDirectory.resolve(outputName + ".jar"),
                         ArtifactCoordinate.of("org.example", "fixture", "1"),
                         analysis,
-                        plan,
-                        null))
+                        plan))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("Trim analysis does not match");
   }
@@ -298,8 +316,7 @@ final class MultiReleaseArchivePlanTest {
             output,
             ArtifactCoordinate.of("org.example", "versioned-service", "1"),
             analysis,
-            plan,
-            null);
+            plan);
     try {
       sanitizer.publish(prepared);
     } finally {
@@ -309,6 +326,62 @@ final class MultiReleaseArchivePlanTest {
     try (JarFile archive = new JarFile(output.toFile())) {
       assertThat(archive.getEntry("META-INF/versions/17/META-INF/services/example.Service"))
           .isNull();
+    }
+  }
+
+  @Test
+  void retainsRootServiceProviderViableInUpperMultiReleaseTierAndOmitsDeadBaseProvider()
+      throws Exception {
+    final Fixture fixture = multiReleaseFixture("upper-tier-provider", "VALUE");
+    final Path input =
+        copyWithEntry(
+            fixture.jar(),
+            temporaryDirectory.resolve("upper-tier-provider-input.jar"),
+            "META-INF/services/example.Service",
+            bytes("fixture.UpperOnly\nfixture.Drop\n"));
+    final MultiReleaseArchivePlan plan =
+        MultiReleaseArchivePlan.create(
+            input, 11, Set.of("fixture.Api"), Set.of("fixture.Drop", "drop.Lf", "drop.Crlf"));
+    final DependencyJarTrimmer.TrimAnalysis analysis =
+        new DependencyJarTrimmer.TrimAnalysis(
+            3, Set.of(API_NAME, "fixture/UpperOnly"), Set.of(API_NAME, "fixture/UpperOnly"));
+    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
+    final Path output = temporaryDirectory.resolve("upper-tier-provider-output.jar");
+    final ArchiveSanitizer.PreparedOutput prepared =
+        sanitizer.prepareMultiRelease(
+            input,
+            output,
+            ArtifactCoordinate.of("org.example", "upper-tier-provider", "1"),
+            analysis,
+            plan);
+    try {
+      sanitizer.publish(prepared);
+    } finally {
+      sanitizer.discard(prepared);
+    }
+
+    final ServiceDescriptorFilter.Result reconciled =
+        ServiceDescriptorFilter.reconcile(
+            bytes("fixture.UpperOnly\nfixture.Drop\n"),
+            Set.of("fixture.UpperOnly", "fixture.Drop"),
+            plan.retainedLogicalClasses().stream()
+                .map(name -> name.replace('/', '.'))
+                .collect(java.util.stream.Collectors.toSet()));
+
+    try (JarFile archive = new JarFile(output.toFile())) {
+      final JarEntry descriptor = archive.getJarEntry("META-INF/services/example.Service");
+      assertThat(descriptor).as("root service descriptor must remain").isNotNull();
+      assertAll(
+          "Root service descriptor retains upper-tier provider and omits dead provider",
+          () ->
+              assertThat(reconciled.outcome()).isEqualTo(ServiceDescriptorFilter.Outcome.REPLACED),
+          () ->
+              assertThat(new String(reconciled.bytes(), StandardCharsets.UTF_8))
+                  .isEqualTo("fixture.UpperOnly\n"),
+          () ->
+              assertThat(archive.getEntry("META-INF/versions/17/META-INF/services/example.Service"))
+                  .as("no versioned service descriptor is emitted")
+                  .isNull());
     }
   }
 
@@ -527,9 +600,7 @@ final class MultiReleaseArchivePlanTest {
     try (JarFile input = new JarFile(source.toFile());
         JarOutputStream output =
             new JarOutputStream(Files.newOutputStream(destination), manifestFor(multiRelease))) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         if ("META-INF/MANIFEST.MF".equalsIgnoreCase(entry.getName())
             || entry.getName().equals(addedName)) {
           continue;
@@ -595,15 +666,9 @@ final class MultiReleaseArchivePlanTest {
   }
 
   private static int countEntries(final Path path) throws IOException {
-    int count = 0;
     try (JarFile archive = new JarFile(path.toFile())) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        entries.nextElement();
-        count++;
-      }
+      return archive.size();
     }
-    return count;
   }
 
   private static long classEntrySize(final Path path, final String name) throws IOException {
@@ -622,8 +687,11 @@ final class MultiReleaseArchivePlanTest {
     try (InputStream stream = process.getInputStream()) {
       output = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
     }
-    assertThat(process.waitFor()).as(output).isZero();
-    assertThat(output).doesNotContainIgnoringCase("warning");
+    final int exitCode = process.waitFor();
+    assertAll(
+        "jar --validate passes without warnings",
+        () -> assertThat(exitCode).as(output).isZero(),
+        () -> assertThat(output).doesNotContainIgnoringCase("warning"));
   }
 
   private record Fixture(Path jar, Path versionNineApi, Path versionSeventeenApi) {}

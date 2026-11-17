@@ -2,9 +2,9 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.CodeAttributionResolver;
 import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.ClaimGroupStatus;
-import io.github.spockz.elider.model.CodeAttributionResolver;
 import io.github.spockz.elider.model.CodeClaim;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.VersionApplicability;

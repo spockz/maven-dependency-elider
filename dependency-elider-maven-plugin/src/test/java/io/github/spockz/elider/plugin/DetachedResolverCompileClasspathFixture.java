@@ -146,7 +146,7 @@ final class DetachedResolverCompileClasspathFixture {
                       List.of();
                   case "getResolvedDependencies" -> dependencies;
                   case "getDependencyGraph" -> graph;
-                  default -> null;
+                  case null, default -> null;
                 });
   }
 

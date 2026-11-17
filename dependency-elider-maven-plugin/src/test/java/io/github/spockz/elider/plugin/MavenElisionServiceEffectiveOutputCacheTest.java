@@ -9,14 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -303,9 +302,7 @@ final class MavenElisionServiceEffectiveOutputCacheTest
       final String prefix,
       final Set<String> replacedEntries)
       throws IOException {
-    final Enumeration<JarEntry> entries = input.entries();
-    while (entries.hasMoreElements()) {
-      final JarEntry entry = entries.nextElement();
+    for (final JarEntry entry : input.stream().toList()) {
       if (entry.isDirectory()
           || "META-INF/MANIFEST.MF".equalsIgnoreCase(entry.getName())
           || replacedEntries.contains(entry.getName())) {

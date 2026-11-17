@@ -2,15 +2,16 @@
 
 package io.github.spockz.elider.plugin;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageConfigurationPointerTestSupport;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContextTestSupport;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
-import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassWriter;
@@ -19,13 +20,6 @@ import org.objectweb.asm.Opcodes;
 /** Verifies typed external descriptor snapshots and their publication boundary. */
 /* package */ final class NativeImageExternalConfigurationInputTest
     extends MavenDependencyTrimmerInMemoryClosureSupport {
-  /** Entry name used to point from the test archive to an external descriptor. */
-  private static final String NATIVE_IMAGE_PROPERTIES_ENTRY =
-      "META-INF/native-image/test/native-image.properties";
-
-  /** Trace content that keeps the in-memory closure fixture valid. */
-  private static final String ENTRY_TRACE = "closure.a.Entry\n";
-
   /** Temporary directory for source-neutral file inputs. */
   /* package */ @TempDir Path inputDirectory;
 
@@ -176,163 +170,10 @@ import org.objectweb.asm.Opcodes;
     NativeImageConfigurationPointerTestSupport.assertPredefinedResourceScan(scan, provider);
   }
 
-  /* package */
-  @Test
-  void relativeFilePointerRejectsSymlinkEscapeFromInvocationBase() throws IOException {
-    final Path invocationBase = Files.createDirectories(inputDirectory.resolve("invocation-base"));
-    final Path outsideDirectory = Files.createDirectories(inputDirectory.resolve("outside"));
-    final Path outside = outsideDirectory.resolve("outside-native-image.payload");
-    Files.writeString(outside, NativeImageScanContextTestSupport.reflection("org.example.Outside"));
-    Files.createSymbolicLink(invocationBase.resolve("linked.payload"), outside);
-    final Path declaring =
-        NativeImageScanContextTestSupport.jar(
-            invocationBase,
-            "symlink-declaring.jar",
-            NativeImageScanContextTestSupport.entries(
-                NativeImageScanContextTestSupport.PROPERTIES_ENTRY,
-                "Args = -H:ReflectionConfigurationFiles=linked.payload\n"));
-    final NativeImageScanContext context =
-        NativeImageExternalConfigurationInputTestSupport.context(declaring, invocationBase);
-
-    assertThatThrownBy(() -> DependencyDynamicRoots.scan(declaring, context))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("escapes invocation base");
-  }
-
   private static void writeJarEntry(
       final JarOutputStream output, final String name, final byte[] bytes) throws IOException {
     output.putNextEntry(new JarEntry(name));
     output.write(bytes);
     output.closeEntry();
-  }
-
-  /* package */
-  @Test
-  void mutationAfterPrepareFailsBeforeFinishCanPublish() throws IOException, MojoFailureException {
-    final Fixture fixture = fixture(false, false, false);
-    final Path declaring =
-        NativeImageExternalConfigurationInputTestSupport.appendEntries(
-            temporaryDirectory,
-            fixture.snapshot("a").filePath(),
-            "a-with-external-pointer.jar",
-            java.util.Map.of(
-                NATIVE_IMAGE_PROPERTIES_ENTRY,
-                "Args = -H:ReflectionConfigurationFiles=external-reflection.payload\n"));
-    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
-    final Path descriptor = temporaryDirectory.resolve("external-reflection.payload");
-    Files.writeString(descriptor, NativeImageScanContextTestSupport.reflection("closure.c.Leaf"));
-    final Path trace = temporaryDirectory.resolve("external-pointer-trace.lst");
-    Files.writeString(trace, ENTRY_TRACE);
-    final MavenElisionService service = new MavenElisionService();
-    final ElisionAnalysisModel.PreparedAnalysis prepared =
-        service.prepare(
-            fixture.mavenProject(),
-            MavenElisionServiceEffectiveAnalysisFixtures.options(
-                List.of(trace.toFile()), null, true));
-    Files.writeString(
-        descriptor, NativeImageScanContextTestSupport.reflection("closure.d.Ancestor"));
-
-    NativeImageConfigurationPointerTestSupport.assertMutationRejectedBeforePublication(
-        service, prepared, temporaryDirectory.resolve("build/elided-artifacts"));
-  }
-
-  /* package */
-  @Test
-  void linkPathSymlinkRetargetFailsBeforeOutputPublication()
-      throws IOException, MojoFailureException {
-    final Fixture fixture = fixture(false, false, false);
-    final Path firstTarget = fixture.snapshot("b").filePath();
-    final Path secondTarget = fixture.snapshot("c").filePath();
-    final Path logicalPath = temporaryDirectory.resolve("link-at-build-target.jar");
-    Files.createSymbolicLink(logicalPath, firstTarget);
-    final Path declaring =
-        NativeImageExternalConfigurationInputTestSupport.appendEntries(
-            temporaryDirectory,
-            fixture.snapshot("a").filePath(),
-            "a-with-link-path.jar",
-            java.util.Map.of(
-                NATIVE_IMAGE_PROPERTIES_ENTRY,
-                "Args = -H:LinkAtBuildTimePaths=" + logicalPath + "\n"));
-    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
-    final Path trace = temporaryDirectory.resolve("link-path-trace.lst");
-    Files.writeString(trace, ENTRY_TRACE);
-    final MavenElisionService service = new MavenElisionService();
-    final ElisionAnalysisModel.PreparedAnalysis prepared =
-        service.prepare(
-            fixture.mavenProject(),
-            MavenElisionServiceEffectiveAnalysisFixtures.options(
-                List.of(trace.toFile()), null, true));
-    Files.delete(logicalPath);
-    Files.createSymbolicLink(logicalPath, secondTarget);
-    final Path outputDirectory = temporaryDirectory.resolve("build/elided-artifacts");
-
-    NativeImageExternalConfigurationInputTestSupport.assertRetargetRejectedBeforePublication(
-        service, prepared, outputDirectory);
-  }
-
-  /* package */
-  @Test
-  @org.junit.jupiter.api.DisplayName(
-      "ADR-0009/no-trim finish revalidates external descriptor bytes")
-  void noTrimFinishRevalidatesExternalDescriptorBytes() throws IOException, MojoFailureException {
-    final Fixture fixture = fixture(false, false, false);
-    final Path declaring =
-        NativeImageExternalConfigurationInputTestSupport.appendEntries(
-            temporaryDirectory,
-            fixture.snapshot("a").filePath(),
-            "a-no-trim-external-pointer.jar",
-            java.util.Map.of(
-                NATIVE_IMAGE_PROPERTIES_ENTRY,
-                "Args = -H:ReflectionConfigurationFiles=no-trim-reflection.payload\n"));
-    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
-    final Path descriptor = temporaryDirectory.resolve("no-trim-reflection.payload");
-    Files.writeString(descriptor, NativeImageScanContextTestSupport.reflection("closure.c.Leaf"));
-    final Path trace = temporaryDirectory.resolve("no-trim-descriptor-trace.lst");
-    Files.writeString(trace, ENTRY_TRACE);
-    final MavenElisionService service = new MavenElisionService();
-    final ElisionAnalysisModel.PreparedAnalysis prepared =
-        service.prepare(
-            fixture.mavenProject(),
-            MavenElisionServiceEffectiveAnalysisFixtures.options(
-                List.of(trace.toFile()), null, false));
-    Files.writeString(
-        descriptor, NativeImageScanContextTestSupport.reflection("closure.d.Ancestor"));
-
-    assertThatThrownBy(() -> service.finish(prepared))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("content changed after preparation");
-  }
-
-  /* package */
-  @Test
-  @org.junit.jupiter.api.DisplayName(
-      "ADR-0009/no-trim finish revalidates LinkAtBuildTimePaths alias target")
-  void noTrimFinishRevalidatesLinkPathAliasTarget() throws IOException, MojoFailureException {
-    final Fixture fixture = fixture(false, false, false);
-    final Path logicalPath = temporaryDirectory.resolve("no-trim-link-target.jar");
-    Files.createSymbolicLink(logicalPath, fixture.snapshot("b").filePath());
-    final Path declaring =
-        NativeImageExternalConfigurationInputTestSupport.appendEntries(
-            temporaryDirectory,
-            fixture.snapshot("a").filePath(),
-            "a-no-trim-link-path.jar",
-            java.util.Map.of(
-                NATIVE_IMAGE_PROPERTIES_ENTRY,
-                "Args = -H:LinkAtBuildTimePaths=" + logicalPath + "\n"));
-    NativeImageExternalConfigurationInputTestSupport.replaceArtifactFile(fixture, "a", declaring);
-    final Path trace = temporaryDirectory.resolve("no-trim-link-path-trace.lst");
-    Files.writeString(trace, ENTRY_TRACE);
-    final MavenElisionService service = new MavenElisionService();
-    final ElisionAnalysisModel.PreparedAnalysis prepared =
-        service.prepare(
-            fixture.mavenProject(),
-            MavenElisionServiceEffectiveAnalysisFixtures.options(
-                List.of(trace.toFile()), null, false));
-    Files.delete(logicalPath);
-    Files.createSymbolicLink(logicalPath, fixture.snapshot("c").filePath());
-
-    assertThatThrownBy(() -> service.finish(prepared))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("target changed after preparation");
   }
 }

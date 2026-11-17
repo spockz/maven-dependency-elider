@@ -4,6 +4,8 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.MultiReleaseClassInventory;
+import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -28,15 +30,43 @@ final class MultiReleaseLibraryProjection {
 
   static boolean hasRootModuleDescriptor(final Path original) throws IOException {
     try (JarFile archive = new JarFile(original.toFile())) {
-      final JarEntry descriptor = archive.getJarEntry("module-info.class");
-      if (descriptor == null) {
-        return false;
-      }
-      try (InputStream input = archive.getInputStream(descriptor)) {
-        validateModuleDescriptor(original, input);
-      }
-      return true;
+      return hasRootModuleDescriptor(archive, original);
     }
+  }
+
+  private static boolean hasRootModuleDescriptor(final JarFile archive, final Path original)
+      throws IOException {
+    final JarEntry descriptor = archive.getJarEntry("module-info.class");
+    if (descriptor == null) {
+      return false;
+    }
+    try (InputStream input = archive.getInputStream(descriptor)) {
+      validateModuleDescriptor(original, input);
+    }
+    return true;
+  }
+
+  static Set<String> requiredTargetRoots(
+      final Path source,
+      final ArtifactCoordinate coordinate,
+      final Path projectionDirectory,
+      final int targetRelease)
+      throws IOException {
+    final Path targetProjection = create(source, coordinate, projectionDirectory, targetRelease);
+    final Set<String> targetClasses = TrimPaths.classNames(targetProjection);
+    final MultiReleaseArchivePlan.PluginView view =
+        MultiReleaseArchivePlan.create(source, targetRelease, Set.of(), Set.of()).pluginView();
+    final Set<String> viewClasses = dottedNames(view.targetPresentClasses());
+    if (!viewClasses.equals(targetClasses)) {
+      throw new IOException("MRJAR target projection and archive plan disagree for " + coordinate);
+    }
+    return dottedNames(view.requiredRootClasses());
+  }
+
+  private static Set<String> dottedNames(final Set<String> names) {
+    return names.stream()
+        .map(name -> name.replace('/', '.'))
+        .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
   static Path create(
@@ -49,15 +79,7 @@ final class MultiReleaseLibraryProjection {
     final Path normalizedOutputDirectory = outputDirectory.toAbsolutePath().normalize();
     final Path projection =
         normalizedOutputDirectory.resolve(
-            safe(coordinate.groupId())
-                + "-"
-                + safe(coordinate.artifactId())
-                + "-"
-                + safe(coordinate.version())
-                + (coordinate.classifier().isBlank() ? "" : "-" + safe(coordinate.classifier()))
-                + "-release-"
-                + release
-                + "-analysis.jar");
+            TrimPaths.coordinateFilePrefix(coordinate) + "-release-" + release + "-analysis.jar");
     Files.createDirectories(normalizedOutputDirectory);
     try (JarFile input =
             new JarFile(
@@ -75,11 +97,10 @@ final class MultiReleaseLibraryProjection {
       final boolean hasVersionedEntry =
           input.stream().anyMatch(entry -> entry.getName().startsWith(VERSIONS_PREFIX));
       final Set<String> outputNames = new HashSet<>();
-      final java.util.Iterator<JarEntry> entries = input.versionedStream().iterator();
-      while (entries.hasNext()) {
-        copyEffectiveClass(input, output, normalizedOriginal, entries.next(), outputNames);
+      for (final JarEntry entry : input.versionedStream().toList()) {
+        copyEffectiveClass(input, output, normalizedOriginal, entry, outputNames);
       }
-      if (!hasVersionedEntry && !hasRootModuleDescriptor(normalizedOriginal)) {
+      if (!hasVersionedEntry && !hasRootModuleDescriptor(input, normalizedOriginal)) {
         Files.deleteIfExists(projection);
         return normalizedOriginal;
       }
@@ -113,10 +134,6 @@ final class MultiReleaseLibraryProjection {
       classBytes.transferTo(output);
     }
     output.closeEntry();
-  }
-
-  private static String safe(final String value) {
-    return value.replaceAll("[^A-Za-z0-9._-]", "_");
   }
 
   private static void validateModuleDescriptor(final Path original, final InputStream input)

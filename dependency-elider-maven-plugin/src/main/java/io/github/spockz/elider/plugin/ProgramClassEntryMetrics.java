@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -24,9 +23,7 @@ record ProgramClassEntryMetrics(int entries, long uncompressedBytes) {
     int count = 0;
     long bytes = 0;
     try (JarFile jar = new JarFile(jarPath.toFile())) {
-      final Enumeration<JarEntry> entries = jar.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : jar.stream().toList()) {
         if (isProgramClass(entry.getName())) {
           count = Math.addExact(count, 1);
           bytes = Math.addExact(bytes, uncompressedSize(jar, entry));
@@ -40,9 +37,7 @@ record ProgramClassEntryMetrics(int entries, long uncompressedBytes) {
   }
 
   private static boolean isProgramClass(final String name) {
-    return name.endsWith(".class")
-        && !"module-info.class".equals(name)
-        && !name.endsWith("/module-info.class");
+    return TrimPaths.isProgramClass(name);
   }
 
   private static long uncompressedSize(final JarFile jar, final JarEntry entry) throws IOException {

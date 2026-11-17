@@ -11,9 +11,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.model.HexDigest;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImagePolicyRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContextTestSupport;
 import io.github.spockz.elider.scanner.BytecodeReferenceScan;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkApiClassTableReader;
@@ -30,7 +35,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -686,7 +690,7 @@ final class ElideMojoTest {
             new ResolverArtifactPlan.ArtifactIdentity(
                 "org.example", "runtime-dependency", "1.0", "jar", ""),
             new ResolverArtifactPlan.Replacement(
-                runtime.getFile().toPath(), ArtifactFileDigest.sha256(runtime.getFile().toPath())));
+                runtime.getFile().toPath(), HexDigest.sha256(runtime.getFile().toPath())));
 
     assertThat(runtime.getFile().toPath()).isNotEqualTo(original).isRegularFile();
     assertThat(log.messages())
@@ -2127,9 +2131,7 @@ final class ElideMojoTest {
     final Path result = tempDir.resolve(sourceJar.getFileName() + "-modular.jar");
     try (JarFile input = new JarFile(sourceJar.toFile());
         ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(result))) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         if (MODULE_INFO_CLASS.equals(entry.getName())) {
           continue;
         }
@@ -2911,9 +2913,7 @@ final class ElideMojoTest {
     boolean replaced = replacedEntry == null;
     try (JarFile input = new JarFile(jar.toFile());
         ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(rewrittenJar))) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         final byte[] contents;
         if (entry.getName().equals(replacedEntry)) {
           contents = replacementBytes;
@@ -3161,9 +3161,7 @@ final class ElideMojoTest {
     try (JarFile input = new JarFile(source.toFile());
         java.util.jar.JarOutputStream output =
             new java.util.jar.JarOutputStream(Files.newOutputStream(outputJar))) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         if (entry.isDirectory() || entry.getName().equals(omittedClass)) {
           continue;
         }
@@ -3214,9 +3212,7 @@ final class ElideMojoTest {
   private static void copyJarEntries(
       final JarFile source, final java.util.jar.JarOutputStream output, final String prefix)
       throws IOException {
-    final Enumeration<JarEntry> entries = source.entries();
-    while (entries.hasMoreElements()) {
-      final JarEntry entry = entries.nextElement();
+    for (final JarEntry entry : source.stream().toList()) {
       if (entry.isDirectory()
           || !entry.getName().endsWith(".class")
           || "org/example/optional/ScriptEvaluator.class".equals(entry.getName())) {
@@ -3301,9 +3297,7 @@ final class ElideMojoTest {
     final Path outputJar = tempDir.resolve("with-metadata-" + original.getFileName());
     try (JarFile inputJar = new JarFile(original.toFile());
         ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(outputJar))) {
-      final Enumeration<JarEntry> entries = inputJar.entries();
-      while (entries.hasMoreElements()) {
-        final ZipEntry entry = entries.nextElement();
+      for (final ZipEntry entry : inputJar.stream().toList()) {
         if (resources.containsKey(entry.getName())) {
           continue;
         }
@@ -3621,9 +3615,7 @@ final class ElideMojoTest {
 
   private static void set(final Object target, final String name, final Object value)
       throws ReflectiveOperationException {
-    final Field field = target.getClass().getDeclaredField(name);
-    field.setAccessible(true);
-    field.set(target, value);
+    AnalyzeMojoTestFieldSupport.set(target, name, value);
   }
 
   @Test
@@ -3809,8 +3801,7 @@ final class ElideMojoTest {
             projectIdentity,
             Map.of(
                 new ResolverArtifactPlan.ArtifactIdentity("org.example", "stale", "1.0", "jar", ""),
-                new ResolverArtifactPlan.Replacement(
-                    replacement, ArtifactFileDigest.sha256(replacement))));
+                new ResolverArtifactPlan.Replacement(replacement, HexDigest.sha256(replacement))));
     final MavenSession session = (MavenSession) fieldValue(mojo, "session");
     session
         .getRepositorySession()
@@ -3839,7 +3830,7 @@ final class ElideMojoTest {
 
   private static Object fieldValue(final Object target, final String name)
       throws ReflectiveOperationException {
-    final Field field = target.getClass().getDeclaredField(name);
+    final Field field = AnalyzeMojoTestFieldSupport.findField(target.getClass(), name);
     field.setAccessible(true);
     return field.get(target);
   }

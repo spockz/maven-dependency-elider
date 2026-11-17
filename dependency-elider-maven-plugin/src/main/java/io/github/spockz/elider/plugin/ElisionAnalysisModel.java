@@ -9,6 +9,9 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageConsumedInput;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import io.github.spockz.elider.scanner.BytecodeReferenceScan;
 import java.io.File;
@@ -26,10 +29,11 @@ import org.apache.maven.project.MavenProject;
 
 /** Defines immutable inputs and results shared by Maven elision collaborators. */
 @SuppressWarnings("PMD.CouplingBetweenObjects")
-final class ElisionAnalysisModel {
+public final class ElisionAnalysisModel {
   private ElisionAnalysisModel() {}
 
-  /* default */ record AnalysisOptions(
+  /** Model data record for {@code AnalysisOptions}. */
+  public record AnalysisOptions(
       List<File> traceFiles,
       List<String> retainedArtifacts,
       List<String> banishedDependencies,
@@ -106,7 +110,8 @@ final class ElisionAnalysisModel {
           false);
     }
 
-    /* default */ AnalysisOptions {
+    /** Validates and normalizes {@code AnalysisOptions}. */
+    public AnalysisOptions {
       retainedArtifacts = retainedArtifacts == null ? List.of() : List.copyOf(retainedArtifacts);
       banishedDependencies =
           banishedDependencies == null ? List.of() : List.copyOf(banishedDependencies);
@@ -132,13 +137,15 @@ final class ElisionAnalysisModel {
     }
   }
 
-  /* default */ record CompletenessOptions(
+  /** Model data record for {@code CompletenessOptions}. */
+  public record CompletenessOptions(
       boolean sourceRootsComplete,
       boolean productionClassesComplete,
       boolean trustedProcessClassesContext,
       boolean testResolutionContext) {}
 
-  /* default */ record TrimOptions(
+  /** Model data record for {@code TrimOptions}. */
+  public record TrimOptions(
       boolean enabled,
       List<String> explicitRoots,
       boolean failOnUnsupportedMultiRelease,
@@ -148,7 +155,8 @@ final class ElisionAnalysisModel {
       String mrjarStrategy,
       PluginCacheProducerIdentityResolver.Resolution cacheProducerResolution,
       DuplicateClassPolicy duplicateClasses) {
-    /* default */ TrimOptions {
+    /** Validates and normalizes {@code TrimOptions}. */
+    public TrimOptions {
       java.util.Objects.requireNonNull(cacheProducerResolution, "cacheProducerResolution");
       java.util.Objects.requireNonNull(duplicateClasses, "duplicateClasses");
     }
@@ -199,19 +207,20 @@ final class ElisionAnalysisModel {
         Optional.empty(), Optional.of("Trim cache producer identity was not provided"));
   }
 
-  /* default */ record DynamicRootOptions(boolean conservativeServiceLoaderRoots) {}
+  /** Model data record for {@code DynamicRootOptions}. */
+  public record DynamicRootOptions(boolean conservativeServiceLoaderRoots) {}
 
   /** Scans one dependency archive during an analysis invocation. */
   /* default */
   @FunctionalInterface
-  interface DynamicRootScanner {
+  public interface DynamicRootScanner {
     /** Returns the dynamic roots declared by the archive. */
     DependencyDynamicRoots.RootScan scan(Path path, NativeImageScanContext context)
         throws IOException;
   }
 
   /** Holds invocation roots and the scans reused by retained-JAR trimming. */
-  /* default */ record DynamicRootInputs(
+  public record DynamicRootInputs(
       Set<String> classNames,
       Set<ArtifactCoordinate> declaringArtifacts,
       Set<ArtifactCoordinate> resourceProviderArtifacts,
@@ -221,7 +230,8 @@ final class ElisionAnalysisModel {
       Map<ArtifactCoordinate, Set<String>> unprovenServiceRootsByCoordinate,
       Set<String> provenServiceInterfaces,
       List<NativeImageConsumedInput> consumedInputs) {
-    /* default */ DynamicRootInputs {
+    /** Validates and normalizes {@code DynamicRootInputs}. */
+    public DynamicRootInputs {
       classNames = Set.copyOf(classNames);
       declaringArtifacts = Set.copyOf(declaringArtifacts);
       resourceProviderArtifacts = Set.copyOf(resourceProviderArtifacts);
@@ -258,7 +268,8 @@ final class ElisionAnalysisModel {
     }
   }
 
-  /* default */ record PreparedAnalysis(
+  /** Model data record for {@code PreparedAnalysis}. */
+  public record PreparedAnalysis(
       MavenProject project,
       AnalysisOptions options,
       List<ArtifactSnapshot> resolvedSnapshots,
@@ -283,7 +294,8 @@ final class ElisionAnalysisModel {
       String sourceAttributionFallback,
       MavenAnalysisResolutionContext resolutionContext,
       MavenBanPlan banPlan) {
-    /* default */ PreparedAnalysis {
+    /** Validates and normalizes {@code PreparedAnalysis}. */
+    public PreparedAnalysis {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);
       java.util.Objects.requireNonNull(policyOptions, "policyOptions");
@@ -296,7 +308,8 @@ final class ElisionAnalysisModel {
     }
   }
 
-  /* default */ record EffectiveAnalysis(
+  /** Model data record for {@code EffectiveAnalysis}. */
+  public record EffectiveAnalysis(
       PreparedAnalysis prepared,
       MavenBanPlan banPlan,
       EffectiveGraphPolicy.Evaluation graphEvaluation,
@@ -307,7 +320,8 @@ final class ElisionAnalysisModel {
       String inventoryFingerprint,
       String operationFingerprint,
       ResolverArtifactGraphProjection graphProjection) {
-    /* default */ EffectiveAnalysis {
+    /** Validates and normalizes {@code EffectiveAnalysis}. */
+    public EffectiveAnalysis {
       if (!prepared.banPlan().equals(banPlan)) {
         throw new IllegalArgumentException("Effective analysis changed its prepared ban plan");
       }
@@ -315,11 +329,13 @@ final class ElisionAnalysisModel {
     }
   }
 
-  /* default */ record ArtifactViews(
+  /** Model data record for {@code ArtifactViews}. */
+  public record ArtifactViews(
       List<ArtifactSnapshot> resolvedSnapshots,
       boolean directArtifactsPresent,
       List<ArtifactSnapshot> directSnapshots) {
-    /* default */ ArtifactViews {
+    /** Validates and normalizes {@code ArtifactViews}. */
+    public ArtifactViews {
       resolvedSnapshots = List.copyOf(resolvedSnapshots);
       directSnapshots = List.copyOf(directSnapshots);
     }
@@ -339,7 +355,8 @@ final class ElisionAnalysisModel {
     }
   }
 
-  /* default */ record AnalysisEvidence(
+  /** Model data record for {@code AnalysisEvidence}. */
+  public record AnalysisEvidence(
       ClassUsageReport classUsageReport,
       Optional<BytecodeReferenceScan> bytecodeScan,
       Map<ArtifactCoordinate, Set<String>> unprovenServiceRoots,
@@ -348,7 +365,8 @@ final class ElisionAnalysisModel {
       String sourceAttributionFallback,
       Set<String> projectOutputClasses,
       List<String> unresolvedDynamicRootDiagnostics) {
-    /* default */ AnalysisEvidence {
+    /** Validates and normalizes {@code AnalysisEvidence}. */
+    public AnalysisEvidence {
       unprovenServiceRoots =
           unprovenServiceRoots != null ? Map.copyOf(unprovenServiceRoots) : Map.of();
       projectOutputClasses =
@@ -393,7 +411,8 @@ final class ElisionAnalysisModel {
     }
   }
 
-  /* default */ record Analysis(
+  /** Model data record for {@code Analysis}. */
+  public record Analysis(
       ArtifactViews artifacts,
       ElisionDecision decision,
       ElisionDecision effectiveDecision,
@@ -454,8 +473,9 @@ final class ElisionAnalysisModel {
             prepared.projectOutputClasses()));
   }
 
-  /* default */ record ArtifactSnapshot(
-      Artifact artifact, ArtifactCoordinate coordinate, Path filePath) {
+  /** Model data record for {@code ArtifactSnapshot}. */
+  public record ArtifactSnapshot(Artifact artifact, ArtifactCoordinate coordinate, Path filePath)
+      implements BanishedDependencyPolicy.ArtifactCandidate {
     /* default */ static ArtifactSnapshot from(final Artifact artifact) {
       return new ArtifactSnapshot(
           artifact,
@@ -464,12 +484,14 @@ final class ElisionAnalysisModel {
     }
   }
 
-  /* default */ record ApplyPlan(
+  /** Model data record for {@code ApplyPlan}. */
+  public record ApplyPlan(
       Set<Artifact> resolvedArtifacts,
       Set<Artifact> originalResolvedArtifacts,
       boolean directArtifactsPresent,
       Set<Artifact> directArtifacts) {
-    /* default */ ApplyPlan {
+    /** Validates and normalizes {@code ApplyPlan}. */
+    public ApplyPlan {
       resolvedArtifacts = Collections.unmodifiableSet(new LinkedHashSet<>(resolvedArtifacts));
       originalResolvedArtifacts =
           Collections.unmodifiableSet(new LinkedHashSet<>(originalResolvedArtifacts));
@@ -484,9 +506,10 @@ final class ElisionAnalysisModel {
     }
   }
 
-  /* default */ record CurrentViews(
-      List<Artifact> resolvedArtifacts, List<Artifact> directArtifacts) {
-    /* default */ CurrentViews {
+  /** Model data record for {@code CurrentViews}. */
+  public record CurrentViews(List<Artifact> resolvedArtifacts, List<Artifact> directArtifacts) {
+    /** Validates and normalizes {@code CurrentViews}. */
+    public CurrentViews {
       resolvedArtifacts = List.copyOf(resolvedArtifacts);
       directArtifacts = List.copyOf(directArtifacts);
     }

@@ -38,6 +38,7 @@ final class RuntimeEvidenceAdmissionTest {
             Set.of("fixture.Dynamic"));
 
     assertAll(
+        "Admitted closed-world boundary combines observed, explicit, and active dynamic roots",
         () ->
             assertThat(policy.observedClasses())
                 .containsExactlyInAnyOrder(ENTRY, "fixture.Dependency"),
@@ -49,6 +50,29 @@ final class RuntimeEvidenceAdmissionTest {
             assertThat(policy.evidenceKinds())
                 .containsExactlyInAnyOrder(
                     TraceEvidenceKind.CLASS_LOAD_LOG, TraceEvidenceKind.JACOCO_EXECUTION));
+  }
+
+  @Test
+  void preservesJfrKindAndRejectsEmptyEvidenceInClosedWorldMode() throws Exception {
+    final CompositeTraceEvidence jfrEvidence =
+        evidence(input("recording.jfr", TraceEvidenceKind.JFR_CLASS_LOAD, ENTRY));
+    final RuntimeEvidencePolicy admitted =
+        RuntimeEvidenceAdmission.admit(jfrEvidence, true, Set.of(ENTRY), Set.of(), Set.of());
+
+    assertAll(
+        "JFR kind is preserved and empty closed-world evidence is rejected",
+        () ->
+            assertThat(admitted.evidenceKinds()).containsExactly(TraceEvidenceKind.JFR_CLASS_LOAD),
+        () ->
+            assertThatIOException()
+                .isThrownBy(
+                    () ->
+                        RuntimeEvidenceAdmission.admit(
+                            new CompositeTraceEvidence(TraceData.empty(), List.of()),
+                            true,
+                            Set.of(ENTRY),
+                            Set.of(),
+                            Set.of())));
   }
 
   @Test
@@ -96,6 +120,7 @@ final class RuntimeEvidenceAdmissionTest {
     final ClosureQueryPolicy queryPolicy = policy.closureQueryPolicy();
 
     assertAll(
+        "Conservative mode remains unbounded even when trace evidence is present",
         () -> assertFalse(closedWorld, "conservative admission must not enable closed-world mode"),
         () -> assertThat(queryPolicy).isEqualTo(ClosureQueryPolicy.conservative()));
   }

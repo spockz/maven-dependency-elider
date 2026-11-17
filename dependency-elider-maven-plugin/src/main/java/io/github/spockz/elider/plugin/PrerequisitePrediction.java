@@ -2,8 +2,9 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.PreconditionClassInventory.ProviderKind;
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
+import io.github.spockz.elider.model.HexDigest;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.PrerequisiteOperator;
@@ -233,8 +234,6 @@ record PrerequisitePrediction(
   }
 
   private static void requireDigest(final String value, final String field) {
-    if (value == null || !value.matches("[0-9a-f]{64}")) {
-      throw new IllegalArgumentException(field + " must be a lowercase SHA-256 value");
-    }
+    HexDigest.requireSha256(value, field);
   }
 }

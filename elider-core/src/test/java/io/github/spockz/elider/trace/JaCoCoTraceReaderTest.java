@@ -4,6 +4,7 @@ package io.github.spockz.elider.trace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIOException;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.TraceData;
 import java.io.ByteArrayOutputStream;
@@ -55,12 +56,17 @@ class JaCoCoTraceReaderTest {
               new ExecutionData(13, "org/example/Duplicate", new boolean[] {false, true}));
         });
 
-    assertThat(classRecordCount(exec)).isEqualTo(3);
     final TraceData result = new JaCoCoTraceReader().read(exec);
+    final int records = classRecordCount(exec);
 
-    assertThat(result.loadedClassesDotFormat())
-        .containsExactlyInAnyOrder("org.example.Hit", "org.example.Duplicate")
-        .doesNotContain("org.example.NoHit");
+    assertAll(
+        "JaCoCo reader aggregates hit records and skips no-hit records",
+        () -> assertThat(records).as("raw exec record count").isEqualTo(3),
+        () ->
+            assertThat(result.loadedClassesDotFormat())
+                .as("hit-only loaded classes")
+                .containsExactlyInAnyOrder("org.example.Hit", "org.example.Duplicate")
+                .doesNotContain("org.example.NoHit"));
   }
 
   @Test
@@ -75,9 +81,16 @@ class JaCoCoTraceReaderTest {
     encoded[encoded.length - 1] = 0;
     Files.write(exec, encoded);
 
-    assertThat(classRecordCount(exec)).isEqualTo(1);
-    assertThat(new JaCoCoTraceReader().read(exec).loadedClassesDotFormat())
-        .doesNotContain("org.example.Unhit");
+    final int records = classRecordCount(exec);
+    final TraceData result = new JaCoCoTraceReader().read(exec);
+
+    assertAll(
+        "Record with all probes false is excluded",
+        () -> assertThat(records).as("raw exec record count").isEqualTo(1),
+        () ->
+            assertThat(result.loadedClassesDotFormat())
+                .as("unhit class must be excluded")
+                .doesNotContain("org.example.Unhit"));
   }
 
   @Test
@@ -91,20 +104,17 @@ class JaCoCoTraceReaderTest {
           writer.visitClassExecution(
               new ExecutionData(16, "org/example/Changed", new boolean[] {true, false}));
         });
-    assertThatIOException().isThrownBy(() -> new JaCoCoTraceReader().read(incompatible));
 
     final Path invalid = tempDir.resolve("invalid-name.exec");
     writeExec(
         invalid,
         writer ->
             writer.visitClassExecution(new ExecutionData(17, "bad-name", new boolean[] {true})));
-    assertThatIOException().isThrownBy(() -> new JaCoCoTraceReader().read(invalid));
 
     final Path emptyName = tempDir.resolve("empty-name.exec");
     writeExec(
         emptyName,
         writer -> writer.visitClassExecution(new ExecutionData(19, "", new boolean[] {true})));
-    assertThatIOException().isThrownBy(() -> new JaCoCoTraceReader().read(emptyName));
 
     final Path unicode = tempDir.resolve("unicode.exec");
     writeExec(
@@ -112,8 +122,25 @@ class JaCoCoTraceReaderTest {
         writer ->
             writer.visitClassExecution(
                 new ExecutionData(18, "org/example/例子/Ünicode", new boolean[] {true})));
-    assertThat(new JaCoCoTraceReader().read(unicode).loadedClassesDotFormat())
-        .containsExactly("org.example.例子.Ünicode");
+
+    assertAll(
+        "Probe count and class name validation",
+        () ->
+            assertThatIOException()
+                .as("mismatched probe counts")
+                .isThrownBy(() -> new JaCoCoTraceReader().read(incompatible)),
+        () ->
+            assertThatIOException()
+                .as("invalid class name")
+                .isThrownBy(() -> new JaCoCoTraceReader().read(invalid)),
+        () ->
+            assertThatIOException()
+                .as("empty class name")
+                .isThrownBy(() -> new JaCoCoTraceReader().read(emptyName)),
+        () ->
+            assertThat(new JaCoCoTraceReader().read(unicode).loadedClassesDotFormat())
+                .as("unicode package and class name")
+                .containsExactly("org.example.例子.Ünicode"));
   }
 
   @Test
@@ -121,8 +148,12 @@ class JaCoCoTraceReaderTest {
     final Path exec = tempDir.resolve("session.exec");
     writeExec(exec, writer -> writer.visitSessionInfo(new SessionInfo("only", 1, 2)));
 
-    assertThat(new JaCoCoTraceReader().read(exec)).isEqualTo(TraceData.empty());
-    assertThatIOException().isThrownBy(() -> new CompositeTraceReader().readAll(List.of(exec)));
+    assertAll(
+        "Session-only exec is empty for JaCoCoTraceReader and rejected by CompositeTraceReader",
+        () -> assertThat(new JaCoCoTraceReader().read(exec)).isEqualTo(TraceData.empty()),
+        () ->
+            assertThatIOException()
+                .isThrownBy(() -> new CompositeTraceReader().readAll(List.of(exec))));
   }
 
   @Test
@@ -196,15 +227,53 @@ class JaCoCoTraceReaderTest {
                 new ExecutionData(31, "org/example/Covered", new boolean[] {true})));
     Files.writeString(log, "[info][class,load] org.example.Loaded source: file:/app.jar\n");
     final CompositeTraceReader reader = new CompositeTraceReader();
-
-    assertThat(reader.supports(exec)).isTrue();
-    assertThat(reader.readAll(List.of(exec, log)).loadedClassesDotFormat())
-        .containsExactlyInAnyOrder("org.example.Covered", "org.example.Loaded");
-    assertThat(reader.readAllEvidence(List.of(exec)).inputKinds())
-        .containsExactly(TraceEvidenceKind.JACOCO_EXECUTION);
     final Path truncated = tempDir.resolve("mixed-truncated.exec");
     Files.write(truncated, new byte[] {(byte) 0x01, (byte) 0xc0});
-    assertThatIOException().isThrownBy(() -> reader.readAll(List.of(log, truncated)));
+    final boolean supportsExec = reader.supports(exec);
+
+    assertAll(
+        "Composite reader dispatches and merges JaCoCo exec files",
+        () ->
+            org.junit.jupiter.api.Assertions.assertTrue(
+                supportsExec, "Composite reader supports .exec files"),
+        () ->
+            assertThat(reader.readAll(List.of(exec, log)).loadedClassesDotFormat())
+                .containsExactlyInAnyOrder("org.example.Covered", "org.example.Loaded"),
+        () ->
+            assertThat(reader.readAllEvidence(List.of(exec)).inputKinds())
+                .containsExactly(TraceEvidenceKind.JACOCO_EXECUTION),
+        () -> assertThatIOException().isThrownBy(() -> reader.readAll(List.of(log, truncated))));
+  }
+
+  @Test
+  void rejectsXmlAndCsvJaCoCoReports() throws IOException {
+    final Path xml = tempDir.resolve("jacoco.xml");
+    Files.writeString(xml, "<report name=\"example\"/>\n");
+    final Path csv = tempDir.resolve("jacoco.csv");
+    Files.writeString(csv, "GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED\n");
+    final JaCoCoTraceReader jacocoReader = new JaCoCoTraceReader();
+    final CompositeTraceReader compositeReader = new CompositeTraceReader();
+
+    assertAll(
+        "JaCoCo XML and CSV report formats are unsupported",
+        () -> assertThat(jacocoReader.supports(xml)).as("supports xml").isFalse(),
+        () -> assertThat(jacocoReader.supports(csv)).as("supports csv").isFalse(),
+        () ->
+            assertThatIOException()
+                .as("direct JaCoCo reader rejects xml")
+                .isThrownBy(() -> jacocoReader.read(xml)),
+        () ->
+            assertThatIOException()
+                .as("direct JaCoCo reader rejects csv")
+                .isThrownBy(() -> jacocoReader.read(csv)),
+        () ->
+            assertThatIOException()
+                .as("composite reader rejects xml")
+                .isThrownBy(() -> compositeReader.readAll(List.of(xml))),
+        () ->
+            assertThatIOException()
+                .as("composite reader rejects csv")
+                .isThrownBy(() -> compositeReader.readAllEvidence(List.of(csv))));
   }
 
   private static void writeExec(final Path path, final Consumer<ExecutionDataWriter> action)

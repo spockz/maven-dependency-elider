@@ -2,6 +2,8 @@
 
 package io.github.spockz.elider.trimmer;
 
+import io.github.spockz.elider.model.ArtifactDigests;
+import io.github.spockz.elider.model.MultiReleaseEntryPath;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -21,7 +23,7 @@ import java.util.jar.Manifest;
   "PMD.CommentDefaultAccessModifier",
   "PMD.AvoidFieldNameMatchingMethodName",
   "PMD.TooManyMethods",
-  "PMD.DataClass"
+  "PMD.GodClass"
 })
 /* WHY: The immutable plan exposes named facts consumed by the writer and plugin. */
 public final class MultiReleaseArchivePlan {
@@ -31,7 +33,7 @@ public final class MultiReleaseArchivePlan {
   private static final int MINIMUM_RELEASE = 1;
 
   private final Path sourcePath;
-  private final String sourceSha256;
+  private final ArtifactDigests sourceDigests;
   private final int targetRelease;
   private final int inputPhysicalEntries;
   private final Set<String> requestedRetainedClasses;
@@ -49,7 +51,7 @@ public final class MultiReleaseArchivePlan {
 
   private MultiReleaseArchivePlan(
       final Path sourcePath,
-      final String sourceSha256,
+      final ArtifactDigests sourceDigests,
       final int targetRelease,
       final int inputPhysicalEntries,
       final Set<String> requestedRetainedClasses,
@@ -65,7 +67,7 @@ public final class MultiReleaseArchivePlan {
       final Set<String> removedServiceProviders,
       final boolean hasVersionedOutput) {
     this.sourcePath = sourcePath;
-    this.sourceSha256 = sourceSha256;
+    this.sourceDigests = sourceDigests;
     this.targetRelease = targetRelease;
     this.inputPhysicalEntries = inputPhysicalEntries;
     this.requestedRetainedClasses = Set.copyOf(requestedRetainedClasses);
@@ -98,21 +100,17 @@ public final class MultiReleaseArchivePlan {
     if (!java.nio.file.Files.isRegularFile(source)) {
       throw new IOException("Original dependency is not a regular JAR file: " + source);
     }
-    final Path sourcePath = source.toRealPath();
+    final Path sourcePath = source.toAbsolutePath().normalize();
     final ArtifactDigests sourceDigests = ArtifactDigests.read(sourcePath);
     final Set<String> normalizedRetained = normalizeClassNames(retainedClasses);
     final Set<String> normalizedRemovedProviders = normalizeBinaryNames(removedServiceProviders);
     return assemble(
-        sourcePath,
-        sourceDigests.sha256(),
-        targetRelease,
-        normalizedRetained,
-        normalizedRemovedProviders);
+        sourcePath, sourceDigests, targetRelease, normalizedRetained, normalizedRemovedProviders);
   }
 
   private static MultiReleaseArchivePlan assemble(
       final Path sourcePath,
-      final String sourceSha256,
+      final ArtifactDigests sourceDigests,
       final int targetRelease,
       final Set<String> normalizedRetained,
       final Set<String> normalizedRemovedProviders)
@@ -151,7 +149,7 @@ public final class MultiReleaseArchivePlan {
         versionedEntries.values().stream().anyMatch(VersionedEntry::preserved);
     return new MultiReleaseArchivePlan(
         sourcePath,
-        sourceSha256,
+        sourceDigests,
         targetRelease,
         names.size(),
         normalizedRetained,
@@ -185,7 +183,11 @@ public final class MultiReleaseArchivePlan {
   }
 
   String sourceSha256() {
-    return sourceSha256;
+    return sourceDigests.sha256();
+  }
+
+  ArtifactDigests sourceDigests() {
+    return sourceDigests;
   }
 
   int targetRelease() {
@@ -256,7 +258,8 @@ public final class MultiReleaseArchivePlan {
   }
 
   boolean matches(final Path source, final String sha256) {
-    return source.toAbsolutePath().normalize().equals(sourcePath) && sourceSha256.equals(sha256);
+    return source.toAbsolutePath().normalize().equals(sourcePath)
+        && sourceDigests.sha256().equals(sha256);
   }
 
   private static boolean hasMultiReleaseManifest(final Manifest manifest) {
@@ -269,7 +272,8 @@ public final class MultiReleaseArchivePlan {
 
   static VersionedPath parseVersionedPath(final String entryName, final boolean directory)
       throws IOException {
-    return MultiReleaseVersionedPath.parse(entryName, directory);
+    final MultiReleaseEntryPath parsed = MultiReleaseEntryPath.parse(entryName, directory);
+    return parsed == null ? null : new VersionedPath(parsed.release(), parsed.logicalName());
   }
 
   private static Set<String> normalizeClassNames(final Collection<String> names) {

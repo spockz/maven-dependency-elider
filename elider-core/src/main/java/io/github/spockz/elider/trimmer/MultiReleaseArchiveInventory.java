@@ -24,9 +24,8 @@ final class MultiReleaseArchiveInventory {
   static ArchiveIndex read(final java.nio.file.Path source) throws IOException {
     try (JarFile archive = new JarFile(source.toFile(), false, ZipFile.OPEN_READ)) {
       final ArchiveIndexBuilder builder = new ArchiveIndexBuilder(archive.getManifest());
-      final java.util.Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        builder.add(archive, entries.nextElement());
+      for (final JarEntry entry : archive.stream().toList()) {
+        builder.add(archive, entry);
       }
       return builder.build();
     } catch (final IllegalArgumentException exception) {

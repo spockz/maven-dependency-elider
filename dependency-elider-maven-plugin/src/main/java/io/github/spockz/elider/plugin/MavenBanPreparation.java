@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.PreparedAnalysis;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import java.io.IOException;
 import java.util.List;
 import org.apache.maven.plugin.MojoFailureException;

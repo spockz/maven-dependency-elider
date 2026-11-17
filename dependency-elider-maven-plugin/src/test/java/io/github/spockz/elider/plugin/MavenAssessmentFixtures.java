@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.advisory.VulnerabilityCacheEnvelopeWriter;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -14,7 +15,6 @@ import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.OsvAffectedRange;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
-import io.github.spockz.elider.scanner.VulnerabilityCacheEnvelopeWriter;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;

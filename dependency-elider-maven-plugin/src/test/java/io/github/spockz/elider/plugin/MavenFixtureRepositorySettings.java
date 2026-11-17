@@ -87,6 +87,15 @@ final class MavenFixtureRepositorySettings {
     xml.writeEndElement();
   }
 
+  /* package */ static String cachedRepositoryUri(
+      final String configuredRepository, final String userHome) {
+    final Path repository =
+        configuredRepository == null || configuredRepository.isBlank()
+            ? Path.of(userHome, ".m2/repository")
+            : Path.of(configuredRepository);
+    return repository.toUri().toASCIIString();
+  }
+
   /* package */ static void writeTextElement(
       final XMLStreamWriter xml, final String name, final String value) throws XMLStreamException {
     xml.writeStartElement(name);

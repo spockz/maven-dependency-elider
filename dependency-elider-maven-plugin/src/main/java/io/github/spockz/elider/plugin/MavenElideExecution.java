@@ -29,7 +29,6 @@ final class MavenElideExecution {
     final MavenProject project = lifecycle.project();
     final MavenSession session = lifecycle.session();
     final MojoExecution mojoExecution = lifecycle.mojoExecution();
-    LegacyRetentionSetting.rejectIfConfigured(project, session, mojoExecution);
     final String executionId = mojoExecution == null ? null : mojoExecution.getExecutionId();
     final String projectId = project == null ? null : project.getId();
     final MojoExecution.Source executionSource = EliderPreparationState.source(mojoExecution);
@@ -122,6 +121,7 @@ final class MavenElideExecution {
     final PreparedAnalysis prepared = service.prepare(project, configuration.analysisOptions());
     final EffectiveAnalysis effective = service.finishAnalysis(prepared);
     final Analysis analysis = service.finishEffectiveOutputs(effective);
+    configuration.publication().afterGenerationStaging().run(analysis);
     publish(configuration, service, analysis, MavenBanPlan.empty(), null);
   }
 
@@ -140,7 +140,6 @@ final class MavenElideExecution {
       final MavenBanPlan plan = preparation.plan();
       final MavenArtifactViewBinding applicationBinding =
           MavenArtifactViewBinding.bind(liveSnapshot, requestContext);
-      applicationBinding.verifyFresh(project);
       plan.verifyAuditFresh(project, lifecycle.session());
       final EffectiveAnalysis effective = service.finishAnalysis(preparation.analysis());
       final Analysis unboundAnalysis = service.finishEffectiveOutputs(effective);

@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.AsciiBinaryClassName;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -116,8 +117,11 @@ final class MavenPreconditionGenerationGuard {
   /** WHY: The standard test compiler goal is inspected. */
   private static final String GOAL_TEST_COMPILE = "testCompile";
 
-  /** WHY: Maven skips test compilation only when this property is true. */
-  private static final String MAVEN_TEST_SKIP = "maven.test.skip";
+  /** WHY: The direct elision goal can capture current physical provider inputs. */
+  private static final String GOAL_ELIDE = "elide";
+
+  /** WHY: The direct analysis goal can capture current physical provider inputs. */
+  private static final String GOAL_ANALYZE = "analyze";
 
   /** WHY: Test compilation is a later default lifecycle boundary. */
   private static final String PHASE_TEST_COMPILE = "test-compile";
@@ -305,29 +309,68 @@ final class MavenPreconditionGenerationGuard {
   static void requireKnownProviderGeneration(
       final MavenProject project, final MavenSession session, final boolean trustedProcessClasses)
       throws IOException {
+    requireKnownProviderGeneration(project, session, trustedProcessClasses, false);
+  }
+
+  static void requireKnownProviderGeneration(
+      final MavenProject project,
+      final MavenSession session,
+      final boolean trustedProcessClasses,
+      final boolean explicitProductionClassesComplete)
+      throws IOException {
     final Build build = project.getBuild();
     if (build == null
         || project.getPackaging() == null
         || !SUPPORTED_PACKAGING.contains(project.getPackaging())) {
       throw unsupported("custom or unavailable Maven packaging");
     }
+    final Optional<String> directGoal = directSupportedGoal(session);
+    if (directGoal.isPresent()) {
+      if (!explicitProductionClassesComplete) {
+        throw unsupported(
+            "direct "
+                + directGoal.orElseThrow()
+                + " requires elide.productionClassesComplete=true for runtime proof");
+      }
+      return;
+    }
     requireSafeGoalOrder(session);
     final int requestedPhaseIndex = LIFECYCLE_PHASES.indexOf(requestedDefaultPhase(session));
-    if (trustedProcessClasses
-        && requestedPhaseIndex >= LIFECYCLE_PHASES.indexOf(PHASE_TEST_COMPILE)) {
-      requireTestCompilationSkipped(project, session);
-    }
     requireSafeSurefireIfTestsRun(project, session, build);
     requireDeclaredRootsAndResourcesAreModeled(build);
     final boolean shadePackageWillRun =
         inspectConfiguredPlugins(
-            project,
-            session,
-            build,
-            requestedPhaseIndex,
-            trustedProcessClasses,
-            isMavenTestSkipEnabled(project, session));
+            project, session, build, requestedPhaseIndex, trustedProcessClasses);
     requireCleanBeforePackage(project, build, session, requestedPhaseIndex, shadePackageWillRun);
+  }
+
+  private static Optional<String> directSupportedGoal(final MavenSession session) {
+    if (session == null) {
+      return Optional.empty();
+    }
+    final List<String> goals = requestGoals(session);
+    if (goals.size() != ONE_ITEM) {
+      return Optional.empty();
+    }
+    if (isEliderGoal(goals.getFirst(), GOAL_ELIDE)) {
+      return Optional.of(GOAL_ELIDE);
+    }
+    return isEliderGoal(goals.getFirst(), GOAL_ANALYZE)
+        ? Optional.of(GOAL_ANALYZE)
+        : Optional.empty();
+  }
+
+  private static boolean isEliderGoal(final String goal, final String requestedGoal) {
+    if (("dependency-elider:" + requestedGoal).equals(goal)
+        || (ELIDER_GROUP + ":" + ELIDER + ":" + requestedGoal).equals(goal)) {
+      return true;
+    }
+    final String[] coordinates = goal.split(":", -1);
+    return coordinates.length == 4
+        && ELIDER_GROUP.equals(coordinates[FIRST_INDEX])
+        && ELIDER.equals(coordinates[1])
+        && !coordinates[2].isBlank()
+        && requestedGoal.equals(coordinates[3]);
   }
 
   private static void requireDeclaredRootsAndResourcesAreModeled(final Build build)
@@ -336,7 +379,6 @@ final class MavenPreconditionGenerationGuard {
       throw unsupported("build extensions can add unmodeled providers");
     }
     rejectFilteredResources(build.getResources(), "production");
-    rejectFilteredResources(build.getTestResources(), PHASE_TEST);
   }
 
   private static boolean inspectConfiguredPlugins(
@@ -344,15 +386,13 @@ final class MavenPreconditionGenerationGuard {
       final MavenSession session,
       final Build build,
       final int requestedPhaseIndex,
-      final boolean trustedProcessClasses,
-      final boolean mavenTestSkipEnabled)
+      final boolean trustedProcessClasses)
       throws IOException {
     rejectShadeSourcesProperty(project, session);
     final boolean shadePackageWillRun = inspectActiveShadePlugin(build, requestedPhaseIndex);
     for (final Plugin plugin : build.getPlugins()) {
       if (!isShadePlugin(plugin)) {
-        inspectPlugin(
-            plugin, build, requestedPhaseIndex, trustedProcessClasses, mavenTestSkipEnabled);
+        inspectPlugin(plugin, build, requestedPhaseIndex, trustedProcessClasses);
       }
     }
     final PluginManagement management = build.getPluginManagement();
@@ -361,8 +401,7 @@ final class MavenPreconditionGenerationGuard {
         if (!isShadePlugin(plugin)
             && !hasActiveDeclaration(build, plugin)
             && isDefaultLifecyclePlugin(plugin)) {
-          inspectPlugin(
-              plugin, build, requestedPhaseIndex, trustedProcessClasses, mavenTestSkipEnabled);
+          inspectPlugin(plugin, build, requestedPhaseIndex, trustedProcessClasses);
         }
       }
     }
@@ -603,189 +642,6 @@ final class MavenPreconditionGenerationGuard {
       requireManagedSurefireExecutions(activePlugin, managedPlugin);
     }
     requireSurefireVersion(activePlugin, managed);
-  }
-
-  private static void requireTestCompilationSkipped(
-      final MavenProject project, final MavenSession session) throws IOException {
-    final Build build = project.getBuild();
-    final List<Plugin> activePlugins =
-        build.getPlugins().stream().filter(MavenPreconditionGenerationGuard::isCompiler).toList();
-    final List<Plugin> managedPlugins =
-        build.getPluginManagement() == null
-            ? List.of()
-            : build.getPluginManagement().getPlugins().stream()
-                .filter(MavenPreconditionGenerationGuard::isCompiler)
-                .toList();
-    if (activePlugins.size() > ONE_ITEM || managedPlugins.size() > ONE_ITEM) {
-      throw unsupported("Maven Compiler Plugin test skip configuration is ambiguous");
-    }
-    final Plugin activePlugin = activePlugins.isEmpty() ? null : activePlugins.getFirst();
-    final Plugin managedPlugin = managedPlugins.isEmpty() ? null : managedPlugins.getFirst();
-    final Optional<Boolean> pluginSkip = compilerPluginSkip(activePlugin, managedPlugin);
-    final boolean mavenTestSkipEnabled = isMavenTestSkipEnabled(project, session);
-    requireDefaultTestCompileSkipped(activePlugin, managedPlugin, pluginSkip, mavenTestSkipEnabled);
-    requireAdditionalTestCompilesSkipped(
-        activePlugin, managedPlugin, pluginSkip, mavenTestSkipEnabled);
-  }
-
-  private static Optional<Boolean> compilerPluginSkip(
-      final Plugin activePlugin, final Plugin managedPlugin) throws IOException {
-    Optional<Boolean> pluginSkip = compilerSkipConfiguration(activePlugin, LOCATION_PLUGIN);
-    if (pluginSkip.isEmpty()) {
-      pluginSkip = compilerSkipConfiguration(managedPlugin, LOCATION_PLUGIN_MANAGEMENT);
-    }
-    return pluginSkip;
-  }
-
-  private static void requireDefaultTestCompileSkipped(
-      final Plugin activePlugin,
-      final Plugin managedPlugin,
-      final Optional<Boolean> pluginSkip,
-      final boolean mavenTestSkipEnabled)
-      throws IOException {
-    final Optional<Boolean> defaultExecutionSkip =
-        executionSkip(activePlugin, managedPlugin, EXEC_DEFAULT_TEST_COMPILE);
-    final boolean defaultTestCompileSkipped =
-        defaultExecutionSkip.isPresent()
-            ? defaultExecutionSkip.get()
-            : pluginSkip.orElse(mavenTestSkipEnabled);
-    if (!defaultTestCompileSkipped) {
-      throw unsupported(
-          "Maven test compilation can add providers after process-classes; use"
-              + " maven.test.skip=true");
-    }
-  }
-
-  private static void requireAdditionalTestCompilesSkipped(
-      final Plugin activePlugin,
-      final Plugin managedPlugin,
-      final Optional<Boolean> pluginSkip,
-      final boolean mavenTestSkipEnabled)
-      throws IOException {
-    for (final String executionId : compilerTestCompileExecutionIds(activePlugin, managedPlugin)) {
-      if (!EXEC_DEFAULT_TEST_COMPILE.equals(executionId)
-          && !testCompileExecutionSkipped(
-              activePlugin, managedPlugin, executionId, pluginSkip, mavenTestSkipEnabled)) {
-        throw unsupported(
-            "Maven test compilation can add providers after process-classes; use"
-                + " maven.test.skip=true");
-      }
-    }
-  }
-
-  private static boolean testCompileExecutionSkipped(
-      final Plugin activePlugin,
-      final Plugin managedPlugin,
-      final String executionId,
-      final Optional<Boolean> pluginSkip,
-      final boolean mavenTestSkipEnabled)
-      throws IOException {
-    final Optional<Boolean> executionConfiguration =
-        executionSkip(activePlugin, managedPlugin, executionId);
-    return executionConfiguration.or(() -> pluginSkip).orElse(mavenTestSkipEnabled);
-  }
-
-  private static boolean isMavenTestSkipEnabled(
-      final MavenProject project, final MavenSession session) {
-    return BOOLEAN_TRUE.equals(
-        propertyValue(
-            project.getProperties(),
-            requestSystemProperties(session),
-            session.getSystemProperties(),
-            requestUserProperties(session),
-            session.getUserProperties()));
-  }
-
-  private static String propertyValue(final Properties... sources) {
-    String value = null;
-    for (final Properties source : sources) {
-      if (source != null && source.getProperty(MAVEN_TEST_SKIP) != null) {
-        value = source.getProperty(MAVEN_TEST_SKIP);
-      }
-    }
-    return value;
-  }
-
-  private static Optional<Boolean> compilerSkipConfiguration(
-      final Plugin plugin, final String location) throws IOException {
-    return plugin == null
-        ? Optional.empty()
-        : booleanConfiguration(plugin.getConfiguration(), location);
-  }
-
-  private static Optional<Boolean> executionSkip(
-      final Plugin activePlugin, final Plugin managedPlugin, final String executionId)
-      throws IOException {
-    final Optional<Boolean> activeSkip =
-        booleanConfiguration(
-            compilerExecutionConfiguration(activePlugin, executionId), "testCompile execution");
-    return activeSkip.isPresent()
-        ? activeSkip
-        : booleanConfiguration(
-            compilerExecutionConfiguration(managedPlugin, executionId),
-            "testCompile plugin management execution");
-  }
-
-  private static Object compilerExecutionConfiguration(
-      final Plugin plugin, final String executionId) {
-    if (plugin == null) {
-      return null;
-    }
-    return plugin.getExecutions().stream()
-        .filter(execution -> executionId.equals(execution.getId()))
-        .map(PluginExecution::getConfiguration)
-        .findFirst()
-        .orElse(null);
-  }
-
-  private static Set<String> compilerTestCompileExecutionIds(
-      final Plugin activePlugin, final Plugin managedPlugin) {
-    final Set<String> executionIds = new HashSet<>();
-    final List<Plugin> plugins = new ArrayList<>();
-    if (activePlugin != null) {
-      plugins.add(activePlugin);
-    }
-    if (managedPlugin != null) {
-      plugins.add(managedPlugin);
-    }
-    for (final Plugin plugin : plugins) {
-      for (final PluginExecution execution : plugin.getExecutions()) {
-        if (EXEC_DEFAULT_TEST_COMPILE.equals(execution.getId())
-            || execution.getGoals().contains(GOAL_TEST_COMPILE)) {
-          executionIds.add(execution.getId());
-        }
-      }
-    }
-    return Set.copyOf(executionIds);
-  }
-
-  private static Optional<Boolean> booleanConfiguration(
-      final Object rawConfiguration, final String location) throws IOException {
-    if (rawConfiguration == null) {
-      return Optional.empty();
-    }
-    if (!(rawConfiguration instanceof Xpp3Dom configuration)) {
-      throw unsupported("unrecognized Maven Compiler Plugin skip configuration in " + location);
-    }
-    final Xpp3Dom skip = configuration.getChild("skip");
-    if (skip == null) {
-      return Optional.empty();
-    }
-    if (skip.getChildCount() != NO_ITEMS || !List.of(skip.getAttributeNames()).isEmpty()) {
-      throw unsupported("Maven Compiler Plugin skip configuration is not a literal boolean");
-    }
-    final String value = skip.getValue() == null ? "" : skip.getValue().trim();
-    if (BOOLEAN_TRUE.equals(value)) {
-      return Optional.of(true);
-    }
-    if (BOOLEAN_FALSE.equals(value)) {
-      return Optional.of(false);
-    }
-    throw unsupported("Maven Compiler Plugin skip configuration is not a literal boolean");
-  }
-
-  private static boolean isCompiler(final Plugin plugin) {
-    return isPlugin(plugin, COMPILER);
   }
 
   private static boolean isSurefire(final Plugin plugin) {
@@ -1348,8 +1204,7 @@ final class MavenPreconditionGenerationGuard {
       final Plugin plugin,
       final Build build,
       final int requestedPhaseIndex,
-      final boolean trustedProcessClasses,
-      final boolean mavenTestSkipEnabled)
+      final boolean trustedProcessClasses)
       throws IOException {
     final String group = plugin.getGroupId() == null ? MAVEN_GROUP : plugin.getGroupId();
     final String artifact = plugin.getArtifactId();
@@ -1365,8 +1220,7 @@ final class MavenPreconditionGenerationGuard {
       return;
     }
     inspectPluginDeclaration(plugin, build, group, artifact);
-    inspectPluginExecutions(
-        plugin, group, artifact, requestedPhaseIndex, trustedProcessClasses, mavenTestSkipEnabled);
+    inspectPluginExecutions(plugin, group, artifact, requestedPhaseIndex, trustedProcessClasses);
   }
 
   private static void inspectSurefireExecutions(final Plugin plugin, final int requestedPhaseIndex)
@@ -1403,18 +1257,11 @@ final class MavenPreconditionGenerationGuard {
       final String group,
       final String artifact,
       final int requestedPhaseIndex,
-      final boolean trustedProcessClasses,
-      final boolean mavenTestSkipEnabled)
+      final boolean trustedProcessClasses)
       throws IOException {
     for (final PluginExecution execution : plugin.getExecutions()) {
       inspectPluginExecution(
-          plugin,
-          group,
-          artifact,
-          execution,
-          requestedPhaseIndex,
-          trustedProcessClasses,
-          mavenTestSkipEnabled);
+          plugin, group, artifact, execution, requestedPhaseIndex, trustedProcessClasses);
     }
   }
 
@@ -1426,8 +1273,7 @@ final class MavenPreconditionGenerationGuard {
       final String artifact,
       final PluginExecution execution,
       final int requestedPhaseIndex,
-      final boolean trustedProcessClasses,
-      final boolean mavenTestSkipEnabled)
+      final boolean trustedProcessClasses)
       throws IOException {
     final String phase = executionPhase(group, artifact, execution);
     final int phaseIndex = LIFECYCLE_PHASES.indexOf(phase);
@@ -1448,7 +1294,7 @@ final class MavenPreconditionGenerationGuard {
         }
         if (isPlugin(group, artifact, RESOURCES)
             && isDefaultTestResourcesExecution(execution, phase)) {
-          requireSkippedDefaultTestResources(plugin, execution, mavenTestSkipEnabled);
+          requireModeledTestResourcesConfiguration(plugin, execution);
           return;
         }
         if (isKnownPostCapturePlugin(group, artifact, phase, execution)) {
@@ -1551,10 +1397,13 @@ final class MavenPreconditionGenerationGuard {
 
   private static String defaultLifecyclePhase(
       final String group, final String artifact, final PluginExecution execution) {
-    if (ELIDER_GROUP.equals(group)
-        && ELIDER.equals(artifact)
-        && execution.getGoals().contains("elide")) {
-      return PHASE_PROCESS_CLASSES;
+    if (ELIDER_GROUP.equals(group) && ELIDER.equals(artifact)) {
+      if (execution.getGoals().contains("elide")) {
+        return PHASE_PROCESS_CLASSES;
+      }
+      if (execution.getGoals().contains(PHASE_VALIDATE)) {
+        return PHASE_VALIDATE;
+      }
     }
     if (!MAVEN_GROUP.equals(group)) {
       return null;
@@ -1613,10 +1462,13 @@ final class MavenPreconditionGenerationGuard {
     }
     if (ELIDER_GROUP.equals(group)
         && ELIDER.equals(artifact)
-        && isEliderExecution(goals)
-        && (PHASE_INITIALIZE.equals(executionPhase(group, artifact, execution))
-            || trustedProcessClasses
-                && PHASE_PROCESS_CLASSES.equals(executionPhase(group, artifact, execution)))) {
+        && ((goals.equals(Set.of(PHASE_VALIDATE))
+                && PHASE_VALIDATE.equals(executionPhase(group, artifact, execution)))
+            || (isEliderExecution(goals)
+                && (PHASE_INITIALIZE.equals(executionPhase(group, artifact, execution))
+                    || trustedProcessClasses
+                        && PHASE_PROCESS_CLASSES.equals(
+                            executionPhase(group, artifact, execution)))))) {
       return;
     }
     throw unsupported("unmodeled plugin execution " + group + ":" + artifact + " goals " + goals);
@@ -1681,18 +1533,10 @@ final class MavenPreconditionGenerationGuard {
         execution, executionPhase(MAVEN_GROUP, RESOURCES, execution));
   }
 
-  private static void requireSkippedDefaultTestResources(
-      final Plugin plugin, final PluginExecution execution, final boolean mavenTestSkipEnabled)
-      throws IOException {
-    final Optional<Boolean> pluginSkip =
-        resourceSkipConfiguration(plugin.getConfiguration(), LOCATION_PLUGIN);
-    final Optional<Boolean> executionSkip =
-        resourceSkipConfiguration(execution.getConfiguration(), "execution");
-    final boolean effectiveSkip = executionSkip.or(() -> pluginSkip).orElse(mavenTestSkipEnabled);
-    if (!effectiveSkip) {
-      throw unsupported(
-          "Maven Resources Plugin testResources effective skip configuration is false");
-    }
+  private static void requireModeledTestResourcesConfiguration(
+      final Plugin plugin, final PluginExecution execution) throws IOException {
+    resourceSkipConfiguration(plugin.getConfiguration(), LOCATION_PLUGIN);
+    resourceSkipConfiguration(execution.getConfiguration(), "execution");
   }
 
   private static Optional<Boolean> resourceSkipConfiguration(

@@ -3,14 +3,9 @@
 
 package io.github.spockz.elider.plugin;
 
-import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.model.ArtifactDigests;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
@@ -39,29 +34,5 @@ final class TrimInputDigests {
           "Missing input digest for retained archive: " + normalizedPath);
     }
     return digest;
-  }
-
-  /* package */ static String sha256(final Path path) throws IOException {
-    try (InputStream input = Files.newInputStream(path)) {
-      final MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      final byte[] buffer = new byte[8192];
-      while (true) {
-        final int count = input.read(buffer);
-        if (count < 0) {
-          return HexFormat.of().formatHex(digest.digest());
-        }
-        digest.update(buffer, 0, count);
-      }
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is unavailable", exception);
-    }
-  }
-
-  /* package */ static String hash(final byte[] bytes) {
-    try {
-      return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is unavailable", exception);
-    }
   }
 }

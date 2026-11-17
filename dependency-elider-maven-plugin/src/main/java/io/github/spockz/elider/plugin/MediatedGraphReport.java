@@ -38,7 +38,7 @@ record MediatedGraphReport(
           nodeStatuses,
           artifactPaths);
     } else {
-      MediatedGraphReportAvailabilityValidator.validate(
+      MediatedGraphReportValidator.validateUnavailable(
           unavailableReason,
           captureToken,
           projectKey,

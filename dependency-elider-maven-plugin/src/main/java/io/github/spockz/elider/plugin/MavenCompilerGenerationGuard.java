@@ -96,9 +96,7 @@ final class MavenCompilerGenerationGuard {
           "maven.compiler.testCompilerArgument",
           "maven.compiler.testCompilerArguments",
           "maven.compiler.compileSourceRoots",
-          "maven.compiler.testCompileSourceRoots",
           "maven.compiler.generatedSourcesDirectory",
-          "maven.compiler.generatedTestSourcesDirectory",
           "maven.compiler.outputDirectory",
           "maven.compiler.testOutputDirectory",
           "maven.compiler.executable",
@@ -110,6 +108,9 @@ final class MavenCompilerGenerationGuard {
 
   /** WHY: This argument changes diagnostics without generating providers. */
   private static final String DIAGNOSTIC_ARGUMENT = "-Xlint:all";
+
+  /** WHY: Test compiler arguments have a separate output-safety policy. */
+  private static final String COMPILER_ARGS = "compilerArgs";
 
   private MavenCompilerGenerationGuard() {}
 
@@ -128,35 +129,17 @@ final class MavenCompilerGenerationGuard {
     rejectUnsupportedProperties(propertySources);
     requireSupportedCompilerPluginVersion(project.getBuild(), propertySources);
     final CompilerConfigurations configurations = configurations(project.getBuild());
-    requireSupportedTargetLevels(configurations, propertySources);
+    requireSafeTestCompileOutput(configurations);
     if (trustedProcessClasses) {
-      requireSafeTrustedTestCompile(configurations, propertySources);
+      requireSupportedProductionTargetLevel(configurations, propertySources);
       return;
     }
+    requireSupportedProductionTargetLevel(configurations, propertySources);
     final List<String> fallbackProcValues = rootProcValues(configurations, propertySources);
     if (!fallbackProcValues.isEmpty()) {
       requireOnlyNone(fallbackProcValues, "root compiler configuration", propertySources);
     }
     requireSafeExecutionProcessing(configurations, propertySources, !fallbackProcValues.isEmpty());
-  }
-
-  private static void requireSafeTrustedTestCompile(
-      final CompilerConfigurations configurations, final List<Properties> propertySources)
-      throws IOException {
-    final List<String> fallbackProcValues = rootProcValues(configurations, propertySources);
-    if (!fallbackProcValues.isEmpty()) {
-      requireOnlyNone(fallbackProcValues, "root compiler configuration", propertySources);
-    }
-    final boolean globalFallback = !fallbackProcValues.isEmpty();
-    for (final Xpp3Dom root : configurations.root()) {
-      rejectUnsupportedConfiguration(root);
-    }
-    rejectUnsupportedProperties(propertySources);
-    requireSafeGoalProcessing(
-        CompileGoal.TEST_COMPILE,
-        configurations.executions().get(CompileGoal.TEST_COMPILE),
-        propertySources,
-        globalFallback);
   }
 
   private static List<String> rootProcValues(
@@ -178,9 +161,56 @@ final class MavenCompilerGenerationGuard {
       final List<Properties> propertySources,
       final boolean globalFallback)
       throws IOException {
-    for (final CompileGoal goal : CompileGoal.values()) {
-      requireSafeGoalProcessing(
-          goal, configurations.executions().get(goal), propertySources, globalFallback);
+    requireSafeGoalProcessing(
+        CompileGoal.COMPILE,
+        configurations.executions().get(CompileGoal.COMPILE),
+        propertySources,
+        globalFallback);
+  }
+
+  private static void requireSafeTestCompileOutput(final CompilerConfigurations configurations)
+      throws IOException {
+    for (final Xpp3Dom root : configurations.root()) {
+      rejectTestCompileOutputOverrides(root, "plugin configuration");
+    }
+    for (final ExecutionConfiguration execution :
+        configurations.executions().get(CompileGoal.TEST_COMPILE)) {
+      final Xpp3Dom configuration = execution.configuration();
+      if (configuration == null) {
+        continue;
+      }
+      rejectTestCompileOutputOverrides(configuration, execution.executionId());
+    }
+  }
+
+  private static void rejectTestCompileOutputOverrides(
+      final Xpp3Dom configuration, final String executionId) throws IOException {
+    for (final String name :
+        List.of(
+            "compilerArgument",
+            "compilerArguments",
+            "testCompilerArgument",
+            "testCompilerArguments",
+            COMPILER_ARGS,
+            "outputDirectory",
+            "testOutputDirectory",
+            "executable",
+            "jdkToolchain",
+            "compilerVersion",
+            "compilerId",
+            "fork")) {
+      final Xpp3Dom value = configuration.getChild(name);
+      if (value == null) {
+        continue;
+      }
+      if (COMPILER_ARGS.equals(name)) {
+        if (isDiagnosticOnlyCompilerArgument(value)) {
+          continue;
+        }
+        throw unsupported("unsupported " + COMPILER_ARGS);
+      }
+      throw unsupported(
+          "custom test compiler output or mode in execution " + executionId + ": " + name);
     }
   }
 
@@ -439,14 +469,14 @@ final class MavenCompilerGenerationGuard {
     }
   }
 
-  private static void requireSupportedTargetLevels(
+  private static void requireSupportedProductionTargetLevel(
       final CompilerConfigurations configurations, final List<Properties> propertySources)
       throws IOException {
-    final TargetSettings fallback = rootSettings(configurations.root(), propertySources);
-    for (final CompileGoal goal : CompileGoal.values()) {
-      requireGoalTargetLevels(
-          goal, configurations.executions().get(goal), fallback, propertySources);
-    }
+    requireGoalTargetLevels(
+        CompileGoal.COMPILE,
+        configurations.executions().get(CompileGoal.COMPILE),
+        rootSettings(configurations.root(), propertySources),
+        propertySources);
   }
 
   private static void requireGoalTargetLevels(
@@ -692,9 +722,7 @@ final class MavenCompilerGenerationGuard {
             "testCompilerArgument",
             "testCompilerArguments",
             "compileSourceRoots",
-            "testCompileSourceRoots",
             "generatedSourcesDirectory",
-            "generatedTestSourcesDirectory",
             "outputDirectory",
             "testOutputDirectory",
             "executable",

@@ -6,7 +6,6 @@ import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactSnapshot;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.ArtifactViews;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -198,27 +197,6 @@ record MavenAnalysisResolutionContext(
       throw new IOException("Detached Maven direct inventory does not match its graph");
     }
     return new DetachedInventories(resolved, direct, pair);
-  }
-
-  /* default */ void verify() throws IOException {
-    if (artifacts.directArtifactsPresent()) {
-      ResolvedArtifactInventoryFingerprint.verifyFingerprints(
-          artifacts.resolvedSnapshots(),
-          resolvedFingerprint,
-          artifacts.directSnapshots(),
-          directFingerprint);
-    } else {
-      MavenElisionGraphBinding.verifyInventoryFingerprint(
-          artifacts.resolvedSnapshots(), resolvedFingerprint);
-    }
-    for (final ArtifactSnapshot snapshot : artifacts.resolvedSnapshots()) {
-      if ("jar".equals(snapshot.coordinate().type())
-          && (snapshot.filePath() == null
-              || !Files.isRegularFile(snapshot.filePath())
-              || !Files.isReadable(snapshot.filePath()))) {
-        throw new IOException("Maven provider is no longer readable: " + snapshot.coordinate());
-      }
-    }
   }
 
   /* default */ String graphPairFingerprint() {

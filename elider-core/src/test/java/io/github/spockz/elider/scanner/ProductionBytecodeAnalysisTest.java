@@ -47,7 +47,7 @@ final class ProductionBytecodeAnalysisTest {
     assertAll(
         () ->
             assertThat(snapshot.fingerprint())
-                .isEqualTo(ProductionBytecodeAnalysis.fingerprint(output)),
+                .isEqualTo(ProductionBytecodeAnalysis.capture(output).fingerprint()),
         () -> assertThat(directReferences).contains(SAMPLE_PACKAGE + ".Base"),
         () -> assertThat(classFilesScanned).isEqualTo(1),
         () -> assertThat(snapshot.classNames()).containsExactly(SAMPLE_PACKAGE + ".App"),
@@ -57,7 +57,7 @@ final class ProductionBytecodeAnalysisTest {
                 .containsExactly("com.example.CrossService"),
         () -> {
           Files.write(packageDirectory.resolve("Other.class"), appClass("sample/Other"));
-          assertThat(ProductionBytecodeAnalysis.fingerprint(output))
+          assertThat(ProductionBytecodeAnalysis.capture(output).fingerprint())
               .isNotEqualTo(snapshot.fingerprint());
         });
   }
@@ -82,7 +82,9 @@ final class ProductionBytecodeAnalysisTest {
         () -> assertThat(snapshot.bytecodeReferences().classFilesScanned()).isEqualTo(2),
         () ->
             assertThat(snapshot.fingerprint())
-                .isEqualTo(ProductionBytecodeAnalysis.fingerprint(mainOutput, List.of(aotOutput))));
+                .isEqualTo(
+                    ProductionBytecodeAnalysis.capture(mainOutput, List.of(aotOutput))
+                        .fingerprint()));
   }
 
   @Test
@@ -119,7 +121,8 @@ final class ProductionBytecodeAnalysisTest {
         () -> assertThat(snapshot.classNames()).containsExactly("sample.AotGenerated"),
         () ->
             assertThat(snapshot.fingerprint())
-                .isEqualTo(ProductionBytecodeAnalysis.fingerprint(output, List.of(aotOutput))));
+                .isEqualTo(
+                    ProductionBytecodeAnalysis.capture(output, List.of(aotOutput)).fingerprint()));
   }
 
   @Test

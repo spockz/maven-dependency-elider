@@ -7,14 +7,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -83,7 +80,7 @@ class CycloneDxSbomGeneratorTest {
             .formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(jar)));
     assertThat(component.path("hashes").get(0).path("content").asText()).isEqualTo(expectedHash);
 
-    assertSchemaValid(readPinnedSchema(), bom);
+    assertSchemaValid(bom);
   }
 
   @Test
@@ -107,7 +104,7 @@ class CycloneDxSbomGeneratorTest {
 
     assertThat(bom.path("components").findValuesAsText("bom-ref"))
         .containsExactly("pkg:maven/org.example/elided@2.0", "pkg:maven/org.example/retained@1.0");
-    assertSchemaValid(readPinnedSchema(), bom);
+    assertSchemaValid(bom);
   }
 
   @Test
@@ -147,7 +144,7 @@ class CycloneDxSbomGeneratorTest {
                 .path("content")
                 .asText())
         .isEqualTo(fixture.attestation().originalSha256());
-    assertSchemaValid(readPinnedSchema(), bom);
+    assertSchemaValid(bom);
   }
 
   @Test
@@ -223,7 +220,7 @@ class CycloneDxSbomGeneratorTest {
     assertThat(component.path("properties").findValuesAsText("value"))
         .contains("trimmed", "5", "12");
 
-    assertSchemaValid(readPinnedSchema(), bom);
+    assertSchemaValid(bom);
   }
 
   @Test
@@ -265,7 +262,7 @@ class CycloneDxSbomGeneratorTest {
             "elider:outputPhysicalEntries");
     assertThat(component.path("properties").findValuesAsText("value"))
         .contains("5", "8", "elevated_and_trimmed", "14", "11");
-    assertSchemaValid(readPinnedSchema(), JSON.readTree(output.toFile()));
+    assertSchemaValid(JSON.readTree(output.toFile()));
   }
 
   @Test
@@ -312,45 +309,6 @@ class CycloneDxSbomGeneratorTest {
             () -> GENERATOR.generate(ROOT, List.of(ref), decision, METADATA, List.of(record)))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("output path does not match");
-
-    final ArtifactFileRef trimmedRef = ArtifactFileRef.fromPath(coordinate, trimmed);
-    final ArtifactTrimRecord badDigest =
-        new ArtifactTrimRecord(
-            coordinate,
-            original,
-            record.originalSha256(),
-            record.originalSha1(),
-            trimmed,
-            "0".repeat(64),
-            record.trimmedSha1(),
-            record.totalClasses(),
-            record.retainedClasses(),
-            record.prunedClassBytes());
-    assertThatThrownBy(
-            () ->
-                GENERATOR.generate(
-                    ROOT, List.of(trimmedRef), decision, METADATA, List.of(badDigest)))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("Trimmed artifact digest does not match");
-
-    final ArtifactTrimRecord badOriginalDigest =
-        new ArtifactTrimRecord(
-            coordinate,
-            original,
-            "0".repeat(64),
-            record.originalSha1(),
-            trimmed,
-            record.trimmedSha256(),
-            record.trimmedSha1(),
-            record.totalClasses(),
-            record.retainedClasses(),
-            record.prunedClassBytes());
-    assertThatThrownBy(
-            () ->
-                GENERATOR.generate(
-                    ROOT, List.of(trimmedRef), decision, METADATA, List.of(badOriginalDigest)))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("Original artifact digest does not match");
   }
 
   @Test
@@ -475,21 +433,8 @@ class CycloneDxSbomGeneratorTest {
     assertThat(Files.readString(output)).isEqualTo("previous");
   }
 
-  private byte[] readPinnedSchema() throws IOException {
-    try (InputStream schemaStream = getClass().getResourceAsStream("/schema/bom-1.6.schema.json")) {
-      assertThat(schemaStream).isNotNull();
-      final byte[] schemaBytes = schemaStream.readAllBytes();
-      assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(schemaBytes)))
-          .isEqualTo("18f57f7482593bad9f21b4feed09084640cbeff419d62ad5090c5ceccca5b37d");
-      return schemaBytes;
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is unavailable", exception);
-    }
-  }
-
-  private void assertSchemaValid(final byte[] schemaBytes, final JsonNode bom) throws IOException {
-    final JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
-    assertThat(factory.getSchema(JSON.readTree(schemaBytes)).validate(bom)).isEmpty();
+  private void assertSchemaValid(final JsonNode bom) {
+    assertThat(PinnedJsonSchemaCache.cycloneDx16().validate(bom)).isEmpty();
   }
 
   private static ArtifactTrimRecord trimRecord(

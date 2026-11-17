@@ -2,10 +2,15 @@
 
 package io.github.spockz.elider.trimmer;
 
+import io.github.spockz.elider.model.ArtifactDigests;
+import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
+import java.util.jar.JarOutputStream;
+import java.util.zip.ZipEntry;
 
 /** Owns destination validation and staged archive measurements. */
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -58,33 +63,37 @@ final class ArchiveOutputStager {
       final boolean stripRootModuleDescriptor,
       final Set<String> removedServiceProviders)
       throws IOException {
-    final long prunedClassBytes;
-    final int totalClasses;
-    final int retainedClasses;
     if (elevationPlan == null) {
-      final SingleReleaseArchiveWriter.WriteResult written =
-          SingleReleaseArchiveWriter.write(
-              originalJar,
-              temporaryJar,
-              analysis,
-              stripRootModuleDescriptor,
-              removedServiceProviders);
-      prunedClassBytes = written.prunedClassBytes();
-      totalClasses = written.totalClasses();
-      retainedClasses = written.retainedClasses();
-    } else {
-      prunedClassBytes =
-          MultiReleaseArchiveWriter.write(originalJar, temporaryJar, analysis, elevationPlan);
-      totalClasses = elevationPlan.logicalClasses().size();
-      retainedClasses = elevationPlan.retainedLogicalClasses().size();
+      return SingleReleaseArchiveWriter.write(
+          originalJar, temporaryJar, analysis, stripRootModuleDescriptor, removedServiceProviders);
     }
-    return new WriteResult(
-        prunedClassBytes,
-        totalClasses,
-        retainedClasses,
-        SingleReleaseArchiveWriter.countEntries(originalJar),
-        SingleReleaseArchiveWriter.countEntries(temporaryJar),
-        ArtifactDigests.read(temporaryJar));
+    return MultiReleaseArchiveWriter.write(originalJar, temporaryJar, analysis, elevationPlan);
+  }
+
+  /** Counts physical JAR entries written to the output stream. */
+  @SuppressWarnings({"PMD.CommentRequired", "PMD.CommentDefaultAccessModifier"})
+  static final class CountingJarOutputStream extends JarOutputStream {
+    private int count;
+
+    CountingJarOutputStream(final OutputStream out) throws IOException {
+      super(out);
+    }
+
+    @Override
+    public void putNextEntry(final ZipEntry entry) throws IOException {
+      super.putNextEntry(entry);
+      count = Math.addExact(count, 1);
+    }
+
+    int entryCount() {
+      return count;
+    }
+  }
+
+  static ArtifactDigests.HashingOutputStream openHashingOutput(final Path temporaryJar)
+      throws IOException {
+    return ArtifactDigests.hashingOutputStream(
+        temporaryJar, new BufferedOutputStream(Files.newOutputStream(temporaryJar)));
   }
 
   record OutputLocation(Path directory, Path outputPath, Path originalPath) {}

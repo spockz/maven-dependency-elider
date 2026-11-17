@@ -9,22 +9,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.spockz.elider.advisory.CveListFindingIndexer;
+import io.github.spockz.elider.advisory.FindingSource;
+import io.github.spockz.elider.advisory.FindingSourceSnapshot;
+import io.github.spockz.elider.advisory.GenericFindingCacheEnvelope;
+import io.github.spockz.elider.advisory.GenericFindingCacheEnvelopeWriter;
+import io.github.spockz.elider.advisory.OsvSnapshotIndexer;
+import io.github.spockz.elider.advisory.OsvVulnerabilityFindingAdapter;
 import io.github.spockz.elider.model.CacheProducerIdentity;
-import io.github.spockz.elider.scanner.CveListFindingIndexer;
-import io.github.spockz.elider.scanner.FindingSource;
-import io.github.spockz.elider.scanner.FindingSourceSnapshot;
-import io.github.spockz.elider.scanner.GenericFindingCacheEnvelope;
-import io.github.spockz.elider.scanner.GenericFindingCacheEnvelopeWriter;
-import io.github.spockz.elider.scanner.OsvSnapshotIndexer;
-import io.github.spockz.elider.scanner.OsvVulnerabilityFindingAdapter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,6 +48,7 @@ import org.apache.maven.artifact.handler.DefaultArtifactHandler;
 import org.apache.maven.plugin.descriptor.PluginDescriptor;
 import org.apache.maven.plugin.descriptor.PluginDescriptorBuilder;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestReporter;
 import org.junit.jupiter.api.function.Executable;
@@ -65,6 +69,13 @@ import org.objectweb.asm.Opcodes;
   "PMD.UnitTestContainsTooManyAsserts"
 })
 final class GenericFindingsLifecycleIT {
+  /** Shared temporary root for the one-time seeded local Maven repository. */
+  @TempDir(cleanup = CleanupMode.ON_SUCCESS)
+  private static Path seedDirectory;
+
+  /** Pre-installed local Maven repository copied into each test workspace. */
+  private static Path seedRepository;
+
   /** Maven output marker used to verify successful fixture builds. */
   private static final String BUILD_SUCCESS = "BUILD SUCCESS";
 
@@ -147,6 +158,17 @@ final class GenericFindingsLifecycleIT {
   /** Local fixture artifact directory removed after the nested goals complete. */
   private Path fixtureArtifactDirectory;
 
+  @BeforeAll
+  static void installSeedRepository() throws Exception {
+    final Path repositoryRoot = repositoryRoot();
+    final Path cachedRepository = Path.of(requiredProperty("maven.repo.local"));
+    seedRepository = Files.createDirectories(seedDirectory.resolve("repository"));
+    final Path settings =
+        MavenFixtureRepositorySettings.write(
+            seedDirectory, cachedRepository.toUri().toASCIIString());
+    installPackagedArtifacts(repositoryRoot, seedRepository, settings);
+  }
+
   @AfterEach
   void removeLocalFixtureArtifact() throws IOException {
     if (fixtureArtifactDirectory != null) {
@@ -170,7 +192,7 @@ final class GenericFindingsLifecycleIT {
         repositoryRoot.resolve("elider-core/target/elider-core-0.1.0-SNAPSHOT.jar");
     final Path cachedRepository = Path.of(requiredProperty("maven.repo.local"));
     final Path privateRepository =
-        Files.createDirectories(temporaryDirectory.resolve("private-repository"));
+        copySeedRepository(temporaryDirectory.resolve("private-repository"));
     assertThat(privateRepository.toAbsolutePath().normalize())
         .as("private CLI repository must differ from cached dependencies at " + cachedRepository)
         .isNotEqualTo(cachedRepository.toAbsolutePath().normalize());
@@ -180,7 +202,6 @@ final class GenericFindingsLifecycleIT {
     final Path settings =
         MavenFixtureRepositorySettings.write(
             temporaryDirectory, cachedRepository.toUri().toASCIIString());
-    installPackagedArtifacts(repositoryRoot, privateRepository, settings);
     final CacheProducerIdentity producer = producerIdentity(pluginJar, coreJar, privateRepository);
     final Path fixture = copyFixture(repositoryRoot, temporaryDirectory.resolve("consumer"));
     final Path cache = Files.createDirectories(temporaryDirectory.resolve("vulnerability-cache"));
@@ -226,11 +247,10 @@ final class GenericFindingsLifecycleIT {
     final Path repositoryRoot = repositoryRoot();
     final Path dependencyRepository = Path.of(requiredProperty("maven.repo.local"));
     final Path privateRepository =
-        Files.createDirectories(temporaryDirectory.resolve("catalog-private-repository"));
+        copySeedRepository(temporaryDirectory.resolve("catalog-private-repository"));
     final Path settings =
         MavenFixtureRepositorySettings.write(
             temporaryDirectory, dependencyRepository.toUri().toASCIIString());
-    installPackagedArtifacts(repositoryRoot, privateRepository, settings);
     final CacheProducerIdentity producer =
         producerIdentity(
             repositoryRoot.resolve(
@@ -689,7 +709,7 @@ final class GenericFindingsLifecycleIT {
     copyTree(cveFixture, checkout.resolve("cves"));
     final CveListFindingIndexer.IndexResult cveResult = new CveListFindingIndexer().index(checkout);
     final List<io.github.spockz.elider.model.OsvAdvisoryRecord> osvRecords =
-        new OsvSnapshotIndexer().indexZip(osvFixtureZip(repositoryRoot), null);
+        new OsvSnapshotIndexer().indexZipIsolated(osvFixtureZip(repositoryRoot)).records();
     final OsvVulnerabilityFindingAdapter osvAdapter = new OsvVulnerabilityFindingAdapter();
     final List<io.github.spockz.elider.model.VulnerabilityFindingContribution> osvContributions =
         osvRecords.stream().flatMap(record -> osvAdapter.contributions(record).stream()).toList();
@@ -947,46 +967,66 @@ final class GenericFindingsLifecycleIT {
         .resolve(artifactId + "-" + version + ".jar");
   }
 
+  private static Path copySeedRepository(final Path destination) throws IOException {
+    try (Stream<Path> paths = Files.walk(seedRepository)) {
+      for (final Path path : paths.toList()) {
+        final Path copied = destination.resolve(seedRepository.relativize(path));
+        if (Files.isDirectory(path)) {
+          Files.createDirectories(copied);
+        } else {
+          Files.copy(path, copied);
+        }
+      }
+    }
+    return destination;
+  }
+
   @SuppressWarnings("PMD.DoNotUseThreads") // A Maven subprocess installs current packaged bytes.
-  private void installPackagedArtifacts(
+  private static void installPackagedArtifacts(
       final Path repositoryRoot, final Path localRepository, final Path settings)
       throws IOException, InterruptedException {
-    final Path log = temporaryDirectory.resolve("install-current-packaged-plugin.log");
-    final ProcessBuilder builder =
-        new ProcessBuilder(
-                repositoryRoot.resolve("mvnw").toString(),
-                "--batch-mode",
-                "--no-transfer-progress",
-                "-s",
-                settings.toString(),
-                "-Dmaven.repo.local=" + localRepository,
-                "-DskipTests",
-                "-Djacoco.skip=true",
-                "-pl",
-                "dependency-elider-maven-plugin",
-                "-am",
-                "install")
-            .directory(repositoryRoot.toFile())
-            .redirectErrorStream(true)
-            .redirectOutput(log.toFile());
-    builder.environment().remove("MAVEN_ARGS");
-    builder.environment().put("JAVA_HOME", System.getProperty("java.home"));
-    final Process process = builder.start();
-    final boolean exited;
-    try {
-      exited = process.waitFor(PROCESS_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
-    } catch (final InterruptedException interrupted) {
-      process.destroyForcibly();
-      Thread.currentThread().interrupt();
-      throw interrupted;
-    }
-    if (!exited) {
-      process.destroyForcibly();
-      throw new IOException("Current packaged plugin install exceeded " + PROCESS_TIMEOUT);
-    }
-    if (process.exitValue() != 0) {
-      throw new IOException(
-          "Could not install exact packaged plugin and core bytes:\n" + Files.readString(log));
+    final Path lockFile = repositoryRoot.resolve("target/it-install.lock");
+    Files.createDirectories(lockFile.getParent());
+    try (FileChannel channel =
+            FileChannel.open(lockFile, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+        FileLock ignored = channel.lock()) {
+      final Path log = seedDirectory.resolve("install-current-packaged-plugin.log");
+      final ProcessBuilder builder =
+          new ProcessBuilder(
+                  repositoryRoot.resolve("mvnw").toString(),
+                  "--batch-mode",
+                  "--no-transfer-progress",
+                  "-s",
+                  settings.toString(),
+                  "-Dmaven.repo.local=" + localRepository,
+                  "-DskipTests",
+                  "-Djacoco.skip=true",
+                  "-pl",
+                  "dependency-elider-maven-plugin",
+                  "-am",
+                  "install")
+              .directory(repositoryRoot.toFile())
+              .redirectErrorStream(true)
+              .redirectOutput(log.toFile());
+      builder.environment().remove("MAVEN_ARGS");
+      builder.environment().put("JAVA_HOME", System.getProperty("java.home"));
+      final Process process = builder.start();
+      final boolean exited;
+      try {
+        exited = process.waitFor(PROCESS_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+      } catch (final InterruptedException interrupted) {
+        process.destroyForcibly();
+        Thread.currentThread().interrupt();
+        throw interrupted;
+      }
+      if (!exited) {
+        process.destroyForcibly();
+        throw new IOException("Current packaged plugin install exceeded " + PROCESS_TIMEOUT);
+      }
+      if (process.exitValue() != 0) {
+        throw new IOException(
+            "Could not install exact packaged plugin and core bytes:\n" + Files.readString(log));
+      }
     }
   }
 

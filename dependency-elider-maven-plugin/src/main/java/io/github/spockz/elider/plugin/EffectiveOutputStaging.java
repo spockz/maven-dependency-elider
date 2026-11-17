@@ -3,12 +3,12 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.plugin.JarTrimCache.CacheEntry;
 import io.github.spockz.elider.plugin.ParallelTrimExecutor.PreparedOutputCleanup;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.EffectiveOutputPlan;
 import io.github.spockz.elider.plugin.TrimGenerationPublisher.PreparedEffectiveOutputs;
 import io.github.spockz.elider.trimmer.ArchiveSanitizer;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.MultiReleaseArchivePlan;
@@ -54,7 +54,8 @@ final class EffectiveOutputStaging implements AutoCloseable {
       if (analysis == null) {
         continue;
       }
-      if (!candidate.requiresOutput()) {
+      if (!candidate.requiresOutput()
+          && !requiresClasspathOnlyModuleRemoval(candidate, outputPlan)) {
         entries.put(candidate, JarTrimCache.cacheEntry(candidate, null, inputDigests));
         continue;
       }
@@ -82,14 +83,8 @@ final class EffectiveOutputStaging implements AutoCloseable {
                         stagedOutput,
                         candidate.archive().snapshot().coordinate(),
                         candidate.analysis(),
-                        plan,
-                        TrimInputDigests.requiredInputDigest(
-                                inputDigests, candidate.archive().snapshot().filePath())
-                            .sha256());
-              } else if (MrjarStrategy.parse(outputPlan.mrjarStrategy())
-                      == MrjarStrategy.CLASSPATH_ONLY
-                  && MultiReleaseLibraryProjection.hasRootModuleDescriptor(
-                      candidate.archive().snapshot().filePath())) {
+                        plan);
+              } else if (requiresClasspathOnlyModuleRemoval(candidate, outputPlan)) {
                 staged =
                     sanitizer.prepareClasspathOnly(
                         candidate.archive().snapshot().filePath(),
@@ -131,6 +126,13 @@ final class EffectiveOutputStaging implements AutoCloseable {
   @Override
   public void close() throws IOException {
     preparedOutputCleanup.close();
+  }
+
+  private static boolean requiresClasspathOnlyModuleRemoval(
+      final TrimCandidate candidate, final EffectiveOutputPlan outputPlan) throws IOException {
+    return MrjarStrategy.parse(outputPlan.mrjarStrategy()) == MrjarStrategy.CLASSPATH_ONLY
+        && MultiReleaseLibraryProjection.hasRootModuleDescriptor(
+            candidate.archive().snapshot().filePath());
   }
 
   private static ArtifactTrimRecord publishedRecord(

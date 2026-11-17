@@ -32,8 +32,9 @@ public final class GraalVmConfigReader implements RuntimeTraceReader {
   }
 
   /** Creates a reader for GraalVM reflection configuration files. */
-  @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  public GraalVmConfigReader() {}
+  public GraalVmConfigReader() {
+    // Stateless reader.
+  }
 
   /** Recognizes JSON configuration paths. */
   @Override

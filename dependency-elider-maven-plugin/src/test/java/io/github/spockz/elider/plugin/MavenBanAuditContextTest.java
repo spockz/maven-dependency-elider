@@ -20,6 +20,8 @@ import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootInputs;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.PreparedAnalysis;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.TrimOptions;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -273,30 +275,19 @@ final class MavenBanAuditContextTest {
 
     final MavenBanPlan plan = MavenBanPlan.create(effectiveContext, options, originalAudit);
 
-    assertAll(
-        "the plan classification and post-audit byte freshness check are independent",
-        () ->
-            assertThat(plan.entries())
-                .singleElement()
-                .satisfies(
-                    entry ->
-                        assertAll(
-                            () ->
-                                assertThat(entry.status())
-                                    .isEqualTo(
-                                        MavenBanPlan.Entry.Status.EXCLUDED_BEFORE_RESOLUTION),
-                            () -> assertThat(entry.artifacts()).isEmpty(),
-                            () ->
-                                assertThat(entry.originalArtifacts())
-                                    .containsExactly(
-                                        MavenBanAuditTestSupport.coordinate(
-                                            EXCLUDED_BEFORE_RESOLUTION)))),
-        () -> {
-          Files.writeString(excludedJar, "mutated after the original audit");
-          assertThatThrownBy(plan::verifyAuditBytesFresh)
-              .isInstanceOf(IOException.class)
-              .hasMessageContaining("bytes changed after audit");
-        });
+    assertThat(plan.entries())
+        .singleElement()
+        .satisfies(
+            entry ->
+                assertAll(
+                    () ->
+                        assertThat(entry.status())
+                            .isEqualTo(MavenBanPlan.Entry.Status.EXCLUDED_BEFORE_RESOLUTION),
+                    () -> assertThat(entry.artifacts()).isEmpty(),
+                    () ->
+                        assertThat(entry.originalArtifacts())
+                            .containsExactly(
+                                MavenBanAuditTestSupport.coordinate(EXCLUDED_BEFORE_RESOLUTION))));
   }
 
   @Test

@@ -2,15 +2,15 @@
 
 package io.github.spockz.elider.plugin;
 
-import static io.github.spockz.elider.scanner.SnykPackageIssuesResult.Status.COMPLETE;
-import static io.github.spockz.elider.scanner.SnykPackageIssuesResult.Status.FAILED;
+import static io.github.spockz.elider.advisory.SnykPackageIssuesResult.Status.COMPLETE;
+import static io.github.spockz.elider.advisory.SnykPackageIssuesResult.Status.FAILED;
 
+import io.github.spockz.elider.advisory.FindingContributionJsonCodec;
+import io.github.spockz.elider.advisory.FindingSource;
+import io.github.spockz.elider.advisory.SnykPackageIssuesClient;
+import io.github.spockz.elider.advisory.SnykPackageIssuesResult;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;
-import io.github.spockz.elider.scanner.FindingContributionJsonCodec;
-import io.github.spockz.elider.scanner.FindingSource;
-import io.github.spockz.elider.scanner.SnykPackageIssuesClient;
-import io.github.spockz.elider.scanner.SnykPackageIssuesResult;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

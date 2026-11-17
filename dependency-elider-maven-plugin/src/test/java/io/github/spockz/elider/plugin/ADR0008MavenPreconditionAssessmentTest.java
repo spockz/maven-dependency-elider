@@ -7,11 +7,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
-import io.github.spockz.elider.applicability.MavenVersionRangeMatcher;
+import io.github.spockz.elider.advisory.AdvisoryEvidenceWriter;
+import io.github.spockz.elider.advisory.VulnerabilityCacheManager;
+import io.github.spockz.elider.advisory.VulnerabilityCacheManager.CacheConfig;
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionClassInventory.Provider;
+import io.github.spockz.elider.applicability.PreconditionProof;
 import io.github.spockz.elider.engine.ClassUsageReport;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.AdvisoryScope;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.ClaimGroupStatus;
@@ -19,23 +25,17 @@ import io.github.spockz.elider.model.ConfidenceLevel;
 import io.github.spockz.elider.model.ElisionDecision;
 import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.FieldValue;
+import io.github.spockz.elider.model.MavenVersionRangeMatcher;
 import io.github.spockz.elider.model.MergePriority;
 import io.github.spockz.elider.model.OsvAdvisoryRecord;
 import io.github.spockz.elider.model.OsvAffectedPackage;
 import io.github.spockz.elider.model.PackageAdvisoryEvidence;
-import io.github.spockz.elider.model.PreconditionClassInventory;
-import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
-import io.github.spockz.elider.model.PreconditionProof;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.VersionApplicability;
 import io.github.spockz.elider.model.VersionCoverageClaim;
 import io.github.spockz.elider.model.VexAttestation;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;
 import io.github.spockz.elider.model.VulnerabilitySymbolMapping;
-import io.github.spockz.elider.scanner.AdvisoryEvidenceWriter;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -927,7 +927,7 @@ final class ADR0008MavenPreconditionAssessmentTest {
         .satisfies(
             finding -> {
               assertThat(finding.prerequisiteProof()).isPresent();
-              final io.github.spockz.elider.model.PrerequisiteProofResult proof =
+              final io.github.spockz.elider.applicability.PrerequisiteProofResult proof =
                   finding.prerequisiteProof().orElseThrow();
               assertAll(
                   () ->

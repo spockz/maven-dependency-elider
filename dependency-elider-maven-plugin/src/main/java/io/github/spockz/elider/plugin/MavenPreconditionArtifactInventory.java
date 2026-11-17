@@ -3,9 +3,9 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.PreconditionClassInventory.Provider;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
-import io.github.spockz.elider.model.PreconditionClassInventory.Provider;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -106,10 +106,9 @@ final class MavenPreconditionArtifactInventory {
       final List<ArtifactTrimRecord> records, final boolean strict) throws IOException {
     final Map<ArtifactCoordinate, Path> paths = new HashMap<>();
     for (final ArtifactTrimRecord record : records) {
-      if (strict && paths.putIfAbsent(record.coordinate(), record.trimmedPath()) != null) {
+      if (paths.put(record.coordinate(), record.trimmedPath()) != null && strict) {
         throw new IOException("Duplicate effective trim record: " + record.coordinate().toId());
       }
-      paths.put(record.coordinate(), record.trimmedPath());
     }
     return paths;
   }
@@ -133,13 +132,9 @@ final class MavenPreconditionArtifactInventory {
 
   private static Path canonicalRegularFile(final Path path) throws IOException {
     final Path absolute = path.toAbsolutePath().normalize();
-    if (Files.isSymbolicLink(absolute) || !Files.isRegularFile(absolute)) {
+    if (!Files.isRegularFile(absolute)) {
       throw new IOException("Maven class provider is not a regular canonical file: " + absolute);
     }
-    final Path canonical = absolute.toRealPath();
-    if (!canonical.equals(absolute)) {
-      throw new IOException("Maven class provider path is not canonical: " + absolute);
-    }
-    return canonical;
+    return absolute;
   }
 }

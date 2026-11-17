@@ -4,6 +4,9 @@ package io.github.spockz.elider.metadata;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionProof;
+import io.github.spockz.elider.applicability.PrerequisiteProofResult;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.AssessmentIntent;
@@ -12,12 +15,9 @@ import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.FieldValue;
 import io.github.spockz.elider.model.GenericVulnerabilityFinding;
 import io.github.spockz.elider.model.MergePriority;
-import io.github.spockz.elider.model.PreconditionClassInventory;
-import io.github.spockz.elider.model.PreconditionProof;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.PrerequisiteOperator;
-import io.github.spockz.elider.model.PrerequisiteProofResult;
 import io.github.spockz.elider.model.VersionCoverageClaim;
 import io.github.spockz.elider.model.VexAttestation;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;

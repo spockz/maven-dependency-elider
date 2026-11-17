@@ -2,13 +2,12 @@
 
 package io.github.spockz.elider.scanner;
 
-import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.model.HexDigest;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -22,14 +21,8 @@ import org.objectweb.asm.Opcodes;
 
 /** Immutable SourceFile metadata read from one unchanged JAR. */
 public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> classFiles) {
-  /** Prefix whose entries are versioned according to the MRJAR manifest flag. */
-  private static final String MR_PREFIX = "META-INF/versions/";
-
   /** Manifest attribute that enables versioned class entries. */
   private static final String MULTI_RELEASE_ATTRIBUTE = "Multi-Release";
-
-  /** Minimum class-file version allowed in the MRJAR versions directory. */
-  private static final int MIN_MULTI_RELEASE_VERSION = 9;
 
   /** Records the relationship between a class file and its source file attribute. */
   public record ClassSourceFile(
@@ -85,7 +78,7 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
   /** Freezes scan results and verifies the archive digest format. */
   public JarSourceFileIndex {
     Objects.requireNonNull(archiveSha256, "archiveSha256");
-    if (!archiveSha256.matches("[0-9a-f]{64}")) {
+    if (!HexDigest.isLowercaseHex(archiveSha256, 64)) {
       throw new IllegalArgumentException("archiveSha256 must be a lowercase SHA-256");
     }
     classFiles = List.copyOf(classFiles);
@@ -93,10 +86,15 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
 
   /** Reads metadata and digest for this archive. */
   public static JarSourceFileIndex read(final Path path) throws IOException {
-    final ArtifactDigests digest = ArtifactDigests.read(path);
+    return read(path, HexDigest.sha256(path));
+  }
+
+  /** Reads metadata for an archive whose SHA-256 digest is already known. */
+  public static JarSourceFileIndex read(final Path path, final String archiveSha256)
+      throws IOException {
     final List<ClassSourceFile> classes = readClassFiles(path);
     classes.sort(Comparator.comparing(ClassSourceFile::physicalJarEntry));
-    return new JarSourceFileIndex(digest.sha256(), classes);
+    return new JarSourceFileIndex(archiveSha256, classes);
   }
 
   private static List<ClassSourceFile> readClassFiles(final Path path) throws IOException {
@@ -104,12 +102,13 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
     final Set<String> physicalEntryNames = new HashSet<>();
     try (ZipFile archive = new ZipFile(path.toFile())) {
       final boolean multiRelease = isMultiRelease(archive);
-      final Enumeration<? extends ZipEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        final ZipEntry entry = entries.nextElement();
+      final List<? extends ZipEntry> entries = archive.stream().toList();
+      for (final ZipEntry entry : entries) {
         if (!physicalEntryNames.add(entry.getName())) {
           throw new IOException("duplicate physical ZIP entry: " + entry.getName());
         }
+      }
+      for (final ZipEntry entry : entries) {
         if (entry.isDirectory() || !entry.getName().endsWith(".class")) {
           continue;
         }
@@ -178,12 +177,22 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
 
   private static EntryIdentity entryIdentity(final String physicalPath, final boolean multiRelease)
       throws IOException {
-    final boolean versionedPath = physicalPath.startsWith(MR_PREFIX);
+    final boolean versionedPath =
+        physicalPath.startsWith(io.github.spockz.elider.model.MultiReleaseEntryPath.PREFIX);
     if (versionedPath && !multiRelease) {
       return null;
     }
-    final int tier = versionedPath ? multiReleaseTier(physicalPath) : 0;
-    final String logicalPath = versionedPath ? logicalPath(physicalPath) : physicalPath;
+    final int tier;
+    final String logicalPath;
+    if (versionedPath) {
+      final io.github.spockz.elider.model.MultiReleaseEntryPath parsed =
+          io.github.spockz.elider.model.MultiReleaseEntryPath.parse(physicalPath, false);
+      tier = parsed.release();
+      logicalPath = parsed.logicalName();
+    } else {
+      tier = 0;
+      logicalPath = physicalPath;
+    }
     if (!logicalPath.endsWith(".class")) {
       return null;
     }
@@ -192,37 +201,5 @@ public record JarSourceFileIndex(String archiveSha256, List<ClassSourceFile> cla
       throw new IOException("Malformed class entry identity");
     }
     return new EntryIdentity(internalName, tier);
-  }
-
-  private static int multiReleaseTier(final String physicalPath) throws IOException {
-    final int versionEnd = physicalPath.indexOf('/', MR_PREFIX.length());
-    if (versionEnd < 0 || versionEnd == physicalPath.length() - 1) {
-      throw new IOException("Malformed multi-release class entry path");
-    }
-    final String versionText = physicalPath.substring(MR_PREFIX.length(), versionEnd);
-    return requireSupportedTier(parseCanonicalTier(versionText));
-  }
-
-  private static int parseCanonicalTier(final String versionText) throws IOException {
-    if (!versionText.matches("[1-9][0-9]*")) {
-      throw new IOException("Non-canonical multi-release class entry version");
-    }
-    try {
-      return Integer.parseInt(versionText);
-    } catch (final NumberFormatException exception) {
-      throw new IOException("Invalid multi-release class entry version", exception);
-    }
-  }
-
-  private static int requireSupportedTier(final int tier) throws IOException {
-    if (tier < MIN_MULTI_RELEASE_VERSION) {
-      throw new IOException("multi-release class entry version must be at least 9");
-    }
-    return tier;
-  }
-
-  private static String logicalPath(final String physicalPath) {
-    final int versionEnd = physicalPath.indexOf('/', MR_PREFIX.length());
-    return physicalPath.substring(versionEnd + 1);
   }
 }

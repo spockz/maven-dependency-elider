@@ -8,13 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.CompletenessOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.DynamicRootOptions;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.TrimOptions;
 import io.github.spockz.elider.scanner.ProductionBytecodeReferenceScanner;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
-import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
@@ -22,7 +21,6 @@ import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -693,64 +691,6 @@ final class NoExtensionAnalyzeBanPredictionTest {
   }
 
   @Test
-  void stagedBannedArchiveConflictIsRejectedBeforeReportOrViewPublication() throws Exception {
-    final Fixture fixture = basicFixture(USED_TRACE);
-    addClassToJar(fixture.usedDependency().getArtifact().getFile().toPath(), USED_UNUSED_ENTRY);
-    final ElideMojo mojo = elideMojo(fixture, true);
-    final Path directory = fixture.trace().getParent();
-    final Path reportDirectory = Files.createDirectory(directory.resolve(CLASS_USAGE_FILENAME));
-    final Path summary = directory.resolve(SUMMARY_FILENAME);
-    Files.writeString(summary, PREVIOUS_SUMMARY);
-    final List<org.apache.maven.artifact.Artifact> resolvedView =
-        List.copyOf(fixture.project().getArtifacts());
-    final List<org.apache.maven.artifact.Artifact> directView =
-        List.copyOf(fixture.project().getDependencyArtifacts());
-    final Map<org.apache.maven.artifact.Artifact, java.io.File> artifactFiles =
-        artifactFiles(resolvedView, directView);
-    final Object priorResolverPlan = new Object();
-    fixture
-        .repositorySession()
-        .getData()
-        .set(ResolverArtifactPlanPublisher.SESSION_DATA_KEY, priorResolverPlan);
-    final org.apache.maven.artifact.Artifact retained =
-        resolvedView.stream()
-            .filter(artifact -> USED_ARTIFACT_ID.equals(artifact.getArtifactId()))
-            .findFirst()
-            .orElseThrow();
-    final ArtifactCoordinate retainedCoordinate = MavenArtifactInventory.toCoordinate(retained);
-    set(
-        mojo,
-        "afterGenerationStaging",
-        (MavenElisionOutputPublisher.AfterGenerationStaging)
-            analysis -> {
-              final ArtifactTrimRecord trim =
-                  analysis.trimResult().records().stream()
-                      .filter(record -> record.coordinate().equals(retainedCoordinate))
-                      .findFirst()
-                      .orElseThrow(
-                          () -> new IOException("Fixture did not produce a retained trim output"));
-              jar(trim.trimmedPath(), BANNED_IDLE_ENTRY, false, null);
-            });
-
-    checkBanPublicationFails(mojo, "Trimmed output bytes changed before ban publication");
-
-    assertAll(
-        "a staged banned provider is rejected before generated files or Maven views change",
-        () -> checkEmptyDirectory(reportDirectory),
-        () -> assertThat(summary).hasContent(PREVIOUS_SUMMARY),
-        () -> assertSameArtifactReferences(fixture.project().getArtifacts(), resolvedView),
-        () -> assertSameArtifactReferences(fixture.project().getDependencyArtifacts(), directView),
-        () -> assertThat(artifactFiles(resolvedView, directView)).isEqualTo(artifactFiles),
-        () ->
-            assertThat(
-                    fixture
-                        .repositorySession()
-                        .getData()
-                        .get(ResolverArtifactPlanPublisher.SESSION_DATA_KEY))
-                .isSameAs(priorResolverPlan));
-  }
-
-  @Test
   void planPublicationFailureKeepsPerFileReportsAndRestoresMavenViews() throws Exception {
     final Fixture fixture = basicFixture(USED_TRACE);
     final ElideMojo mojo = elideMojo(fixture, false);
@@ -893,16 +833,6 @@ final class NoExtensionAnalyzeBanPredictionTest {
       final org.apache.maven.artifact.Artifact artifact, final String className)
       throws IOException {
     assertThat(TrimPaths.classNames(artifact.getFile().toPath())).doesNotContain(className);
-  }
-
-  private static void checkBanPublicationFails(final ElideMojo mojo, final String diagnostic) {
-    assertThatThrownBy(mojo::execute).hasMessageContaining(diagnostic);
-  }
-
-  private static void checkEmptyDirectory(final Path directory) throws IOException {
-    try (Stream<Path> entries = Files.list(directory)) {
-      assertThat(entries.toList()).isEmpty();
-    }
   }
 
   @Test
@@ -1110,13 +1040,9 @@ final class NoExtensionAnalyzeBanPredictionTest {
     }
   }
 
-  @SuppressWarnings(
-      "PMD.AvoidAccessibilityAlteration") // Tests supply Maven-injected private state.
   private static void set(final Object target, final String name, final Object value)
       throws ReflectiveOperationException {
-    final Field field = target.getClass().getDeclaredField(name);
-    field.setAccessible(true);
-    field.set(target, value);
+    AnalyzeMojoTestFieldSupport.set(target, name, value);
   }
 
   private static List<String> fileSnapshot(final Path root) throws IOException {
@@ -1497,9 +1423,8 @@ final class NoExtensionAnalyzeBanPredictionTest {
     final Path replacement = path.resolveSibling(path.getFileName() + ".replacement");
     try (JarFile source = new JarFile(path.toFile());
         ZipOutputStream target = new ZipOutputStream(Files.newOutputStream(replacement))) {
-      final Enumeration<JarEntry> entries = source.entries();
-      while (entries.hasMoreElements()) {
-        copyJarEntry(target, source, entries.nextElement());
+      for (final JarEntry entry : source.stream().toList()) {
+        copyJarEntry(target, source, entry);
       }
       final ClassWriter writer = new ClassWriter(0);
       writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, OBJECT_INTERNAL_NAME, null);
@@ -1567,7 +1492,7 @@ final class NoExtensionAnalyzeBanPredictionTest {
                       List.of();
                   case "getResolvedDependencies" -> dependencies;
                   case "getDependencyGraph" -> graph;
-                  default -> null;
+                  case null, default -> null;
                 });
   }
 

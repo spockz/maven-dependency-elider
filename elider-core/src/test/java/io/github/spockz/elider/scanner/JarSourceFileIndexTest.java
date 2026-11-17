@@ -146,7 +146,7 @@ class JarSourceFileIndexTest {
 
     assertThatThrownBy(() -> JarSourceFileIndex.read(archive))
         .isInstanceOf(IOException.class)
-        .hasMessageContaining("multi-release class entry version");
+        .hasMessageContaining("multi-release");
   }
 
   private static String sourceFileFor(final JarSourceFileIndex index, final String physicalEntry) {

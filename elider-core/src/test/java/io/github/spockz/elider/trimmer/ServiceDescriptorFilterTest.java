@@ -13,6 +13,9 @@ import org.junit.jupiter.api.Test;
 
 /** Covers unchanged, rewritten, omitted, and malformed root service descriptors. */
 final class ServiceDescriptorFilterTest {
+  /** Absent provider class name shared across descriptor reconciliation tests. */
+  private static final String KNOWN_DEAD = "known.Dead";
+
   @SuppressWarnings("PMD.UnnecessaryConstructor")
   /* default */ ServiceDescriptorFilterTest() {
     // WHY: PMD requires an explicit package-private JUnit constructor here.
@@ -29,6 +32,7 @@ final class ServiceDescriptorFilterTest {
         ServiceDescriptorFilter.reconcile(original, Set.of(liveProvider), Set.of(liveProvider));
 
     assertAll(
+        "Service descriptor remains unchanged when all known providers are retained",
         () -> assertThat(result.outcome()).isEqualTo(ServiceDescriptorFilter.Outcome.UNCHANGED),
         () -> assertThat(result.bytes()).containsExactly(original));
   }
@@ -46,9 +50,10 @@ final class ServiceDescriptorFilterTest {
 
     final ServiceDescriptorFilter.Result result =
         ServiceDescriptorFilter.reconcile(
-            original, Set.of("known.Dead", "known.Live"), Set.of("known.Live"));
+            original, Set.of(KNOWN_DEAD, "known.Live"), Set.of("known.Live"));
 
     assertAll(
+        "Service descriptor replacement removes only absent known providers",
         () -> assertThat(result.outcome()).isEqualTo(ServiceDescriptorFilter.Outcome.REPLACED),
         () -> assertThat(result.bytes()).containsExactly(expected));
   }
@@ -64,15 +69,16 @@ final class ServiceDescriptorFilterTest {
             .getBytes(StandardCharsets.UTF_8);
 
     final ServiceDescriptorFilter.Result dead =
-        ServiceDescriptorFilter.reconcile(deadOnly, Set.of("known.Dead"), Set.of());
+        ServiceDescriptorFilter.reconcile(deadOnly, Set.of(KNOWN_DEAD), Set.of());
     final ServiceDescriptorFilter.Result comments =
         ServiceDescriptorFilter.reconcile(commentsOnly, Set.of(), Set.of());
     final ServiceDescriptorFilter.Result blank =
         ServiceDescriptorFilter.reconcile(blankOnly, Set.of(), Set.of());
     final ServiceDescriptorFilter.Result deadAndComments =
-        ServiceDescriptorFilter.reconcile(deadWithComments, Set.of("known.Dead"), Set.of());
+        ServiceDescriptorFilter.reconcile(deadWithComments, Set.of(KNOWN_DEAD), Set.of());
 
     assertAll(
+        "Service descriptor omission vs comment/blank preservation",
         () -> assertThat(dead.outcome()).isEqualTo(ServiceDescriptorFilter.Outcome.OMIT),
         () -> assertThat(deadAndComments.outcome()).isEqualTo(ServiceDescriptorFilter.Outcome.OMIT),
         () -> assertThat(comments.outcome()).isEqualTo(ServiceDescriptorFilter.Outcome.UNCHANGED),
@@ -81,6 +87,22 @@ final class ServiceDescriptorFilterTest {
         () -> assertThat(deadAndComments.bytes()).isEmpty(),
         () -> assertThat(comments.bytes()).containsExactly(commentsOnly),
         () -> assertThat(blank.bytes()).containsExactly(blankOnly));
+  }
+
+  @Test
+  void preservesDuplicateProviderDeclarationWhenAnotherArchiveSuppliesProvider()
+      throws IOException {
+    final byte[] original = "known.Duplicate\nknown.Dead\n".getBytes(StandardCharsets.UTF_8);
+    final byte[] expected = "known.Duplicate\n".getBytes(StandardCharsets.UTF_8);
+
+    final ServiceDescriptorFilter.Result result =
+        ServiceDescriptorFilter.reconcile(
+            original, Set.of("known.Duplicate", KNOWN_DEAD), Set.of("known.Duplicate"));
+
+    assertAll(
+        "Provider supplied by another archive in the global retained set is preserved",
+        () -> assertThat(result.outcome()).isEqualTo(ServiceDescriptorFilter.Outcome.REPLACED),
+        () -> assertThat(result.bytes()).containsExactly(expected));
   }
 
   @Test

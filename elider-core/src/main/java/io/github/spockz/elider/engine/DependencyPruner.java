@@ -23,8 +23,12 @@ import java.util.stream.Collectors;
  *
  * <p>Class-only traces lack origin data, so retain every duplicate owner.
  */
-@SuppressWarnings("PMD.AtLeastOneConstructor")
 public final class DependencyPruner {
+  /** Creates a dependency pruner. */
+  public DependencyPruner() {
+    // Explicit constructor satisfies PMD AtLeastOneConstructor.
+  }
+
   /**
    * Uses traces; refuses empty/unmatched evidence and coordinate conflicts.
    *

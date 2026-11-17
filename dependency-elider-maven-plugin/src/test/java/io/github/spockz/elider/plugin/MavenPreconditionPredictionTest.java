@@ -1,4 +1,4 @@
-/* WHY: Verifies Analyze forecasts prerequisite membership without claiming physical proof. */
+/* WHY: Verifies Analyze's physical prerequisite evidence and planned forecasts. */
 
 package io.github.spockz.elider.plugin;
 
@@ -6,14 +6,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import io.github.spockz.elider.advisory.VulnerabilityCacheManager;
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.AssessmentIntent;
-import io.github.spockz.elider.model.PreconditionClassInventory;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.PrerequisiteOperator;
 import io.github.spockz.elider.model.VersionApplicability;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager;
 import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
@@ -103,6 +103,148 @@ final class MavenPreconditionPredictionTest {
         () -> assertThat(member.reason()).isEqualTo(PrerequisitePrediction.MemberReason.UNKNOWN),
         () -> assertThat(member.detail()).contains("Could not inspect input artifact"),
         () -> assertThat(forecast.detail()).contains("provider read denied"));
+  }
+
+  @Test
+  void directAnalyzeScansCurrentRuntimeInputsAndExcludesTestOutput() throws IOException {
+    final ArtifactCoordinate candidate = ArtifactCoordinate.of("org.example", "library", "1.0");
+    final ArtifactCoordinate testDependency =
+        new ArtifactCoordinate("org.example", "test-support", "1.0", "jar", "", "test");
+    final Path candidateArchive = temporaryDirectory.resolve("direct-analyze-library.jar");
+    final Path testDependencyArchive =
+        temporaryDirectory.resolve("direct-analyze-test-support.jar");
+    writeClassJar(candidateArchive, "org/example/Vulnerable");
+    writeClassJar(testDependencyArchive, "org/example/Required");
+    final Artifact candidateArtifact = artifact(candidate, candidateArchive);
+    final Artifact testDependencyArtifact = artifact(testDependency, testDependencyArchive);
+    final AnalyzePrediction prediction =
+        prediction(
+            List.of(candidateArtifact, testDependencyArtifact),
+            candidate,
+            Set.of(),
+            explicitProductionEvidence());
+    final MavenProject project = project(temporaryDirectory.resolve("direct-analyze-project"));
+    final Path productionClass =
+        temporaryDirectory.resolve("direct-analyze-project/target/classes/app/Main.class");
+    final Path testOnlyPrerequisite =
+        temporaryDirectory.resolve(
+            "direct-analyze-project/target/test-classes/org/example/Required.class");
+    Files.createDirectories(productionClass.getParent());
+    Files.write(productionClass, classBytes("app/Main"));
+    Files.createDirectories(testOnlyPrerequisite.getParent());
+    Files.write(testOnlyPrerequisite, classBytes("org/example/Required"));
+    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+    request.setGoals(List.of("dependency-elider:analyze"));
+    final MavenSession session = new MavenSession(null, request, null, project);
+
+    final MavenPreconditionPrediction.Capture capture =
+        MavenPreconditionPrediction.capture(project, session, prediction, true);
+    final PrerequisitePrediction forecast =
+        capture.predict(candidate, Set.of(anyOf("org.example.Required")));
+    final PrerequisitePrediction.MemberForecast member =
+        forecast.groups().getFirst().members().getFirst();
+
+    assertAll(
+        "direct Analyze observes the current production runtime inventory",
+        () -> assertThat(forecast.detail()).isNull(),
+        () -> assertThat(member.state()).isEqualTo(PrerequisitePrediction.MemberState.ABSENT),
+        () ->
+            assertThat(member.reason())
+                .isEqualTo(PrerequisitePrediction.MemberReason.ALREADY_ABSENT),
+        () -> assertThat(Files.exists(productionClass)).isTrue(),
+        () -> assertThat(Files.exists(testOnlyPrerequisite)).isTrue(),
+        () -> assertThat(Files.exists(testDependencyArchive)).isTrue());
+  }
+
+  @Test
+  void directAnalyzeCanProvePrerequisiteAbsenceInItsCurrentRuntimeInventory() throws IOException {
+    final ArtifactCoordinate candidate = ArtifactCoordinate.of("org.example", "library", "1.0");
+    final Path candidateArchive = temporaryDirectory.resolve("direct-proof-library.jar");
+    writeClassJar(candidateArchive, "org/example/Vulnerable");
+    final AnalyzePrediction prediction =
+        prediction(
+            List.of(artifact(candidate, candidateArchive)),
+            candidate,
+            Set.of(),
+            explicitProductionEvidence());
+    final MavenProject project = project(temporaryDirectory.resolve("direct-proof-project"));
+    final Path productionClass =
+        temporaryDirectory.resolve("direct-proof-project/target/classes/app/Main.class");
+    Files.createDirectories(productionClass.getParent());
+    Files.write(productionClass, classBytes("app/Main"));
+    final DefaultMavenExecutionRequest request = new DefaultMavenExecutionRequest();
+    request.setGoals(List.of("dependency-elider:analyze"));
+    final MavenSession session = new MavenSession(null, request, null, project);
+    final MavenPreconditionPrediction.Capture capture =
+        MavenPreconditionPrediction.capture(project, session, prediction, true);
+    final MavenPreconditionPrediction.Capture unprovenCapture =
+        MavenPreconditionPrediction.capture(project, session, prediction);
+    final VulnerabilityMappingConfig mapping = new VulnerabilityMappingConfig();
+    mapping.setCveId("CVE-2026-99004");
+    mapping.setGroupId(candidate.groupId());
+    mapping.setArtifactId(candidate.artifactId());
+    mapping.setVersion(candidate.version());
+    mapping.setAssertsAffected(true);
+    mapping.setRequiresDependency("org.example:required");
+    mapping.setRequiresClass("org.example.Required");
+    final VulnerabilityCacheManager.CacheConfig cache =
+        new VulnerabilityCacheManager.CacheConfig(
+            temporaryDirectory.resolve("direct-proof-cache"),
+            null,
+            null,
+            Duration.ofHours(24),
+            false,
+            true,
+            VulnerabilityCacheManager.bundledEmptySeed(),
+            MavenAssessmentFixtures.CACHE_PRODUCER);
+
+    final ConfiguredVulnerabilityMappings configured =
+        ConfiguredVulnerabilityMappings.fromPom(List.of(mapping));
+    final MavenVulnerabilityAssessment.Result unprovenAssessment =
+        new MavenVulnerabilityAssessment(new RecordingMavenLog())
+            .assess(cache, configured, prediction, () -> unprovenCapture);
+    final MavenVulnerabilityAssessment.Result assessment =
+        new MavenVulnerabilityAssessment(new RecordingMavenLog())
+            .assess(cache, configured, prediction, () -> capture);
+    final GenericFindingAssessment finding = assessment.genericFindings().getFirst();
+    final GenericFindingAssessment unprovenFinding =
+        unprovenAssessment.genericFindings().getFirst();
+    final Path report = temporaryDirectory.resolve("direct-proof-report.json");
+    MavenElisionReportWriter.write(
+        report,
+        MavenElisionReportSnapshot.from(
+            project,
+            prediction,
+            assessment,
+            ExclusionReview.unavailable("Direct Analyze has no captured exclusion provenance")));
+    final MavenElisionReportSnapshot replayed = MavenElisionReportWriter.read(report);
+
+    assertAll(
+        "current physical absence is proof even when Analyze has no trim to apply",
+        () ->
+            assertThat(unprovenFinding.outcome())
+                .isEqualTo(GenericFindingAssessment.Outcome.NO_PROOF),
+        () -> assertThat(unprovenFinding.prerequisitePrediction()).isPresent(),
+        () ->
+            assertThat(finding.outcome())
+                .isEqualTo(GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT),
+        () -> assertThat(finding.prerequisiteProof()).isPresent(),
+        () -> assertThat(finding.prerequisitePrediction()).isEmpty(),
+        () -> assertThat(assessment.attestations()).hasSize(1),
+        () -> assertThat(replayed.mode()).isEqualTo(MavenElisionReportSnapshot.Mode.ANALYSIS),
+        () ->
+            assertThat(replayed.genericFindings())
+                .singleElement()
+                .satisfies(
+                    replayedFinding ->
+                        assertAll(
+                            () ->
+                                assertThat(replayedFinding.outcome())
+                                    .isEqualTo(
+                                        GenericFindingAssessment.Outcome.PREREQUISITES_ABSENT),
+                            () ->
+                                assertThat(replayedFinding.prerequisiteProofEvidence())
+                                    .isPresent())));
   }
 
   @Test
@@ -322,7 +464,7 @@ final class MavenPreconditionPredictionTest {
             new io.github.spockz.elider.engine.ClassUsageReport(List.of()),
             Optional.empty(),
             Map.of(),
-            true,
+            false,
             false,
             null,
             Set.of());
@@ -807,6 +949,17 @@ final class MavenPreconditionPredictionTest {
         Map.of(),
         false,
         true,
+        null,
+        Set.of());
+  }
+
+  private static ElisionAnalysisModel.AnalysisEvidence explicitProductionEvidence() {
+    return new ElisionAnalysisModel.AnalysisEvidence(
+        new io.github.spockz.elider.engine.ClassUsageReport(List.of()),
+        Optional.empty(),
+        Map.of(),
+        true,
+        false,
         null,
         Set.of());
   }

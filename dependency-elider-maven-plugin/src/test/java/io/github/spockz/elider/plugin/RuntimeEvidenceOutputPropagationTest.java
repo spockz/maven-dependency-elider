@@ -14,7 +14,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -28,7 +27,12 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 
 /** Checks that service admission reaches bytecode closure and archive generation. */
-@SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.TooManyMethods"})
+@SuppressWarnings({
+  "PMD.AtLeastOneConstructor",
+  "PMD.TooManyMethods",
+  "PMD.LawOfDemeter",
+  "PMD.AvoidInstantiatingObjectsInLoops"
+})
 final class RuntimeEvidenceOutputPropagationTest extends MavenElisionServiceEffectiveOutputSupport {
   /** Class admitted by both runtime evidence formats. */
   private static final String ENTRY = "closure/a/Entry";
@@ -51,6 +55,86 @@ final class RuntimeEvidenceOutputPropagationTest extends MavenElisionServiceEffe
         () -> assertThat(conservative.middleEntries()).contains("closure/b/Middle.class"),
         () -> assertThat(conservative.middleEntries()).doesNotContain("closure/b/Unused.class"),
         () -> assertThat(closedWorld.middleEntries()).isEmpty());
+  }
+
+  @Test
+  void closedWorldTransformedSubclassRunsInFreshJvmAndFailsOnOmittedPath() throws Exception {
+    final Fixture fixture = fixtureWithRuntimeA();
+    final Path subSource = Files.createDirectories(temporaryDirectory.resolve("subclass-source"));
+    final Path baseJava = subSource.resolve("fixture/sub/BaseA.java");
+    final Path liveJava = subSource.resolve("fixture/sub/LiveA.java");
+    Files.createDirectories(baseJava.getParent());
+    Files.writeString(
+        baseJava,
+        "package fixture.sub; public class BaseA { public String base() { return \"base\"; } }\n");
+    Files.writeString(
+        liveJava,
+        "package fixture.sub;\n"
+            + "public final class LiveA extends BaseA {\n"
+            + "  public static void main(final String[] args) {\n"
+            + "    if (\"outside\".equals(args[0])) {\n"
+            + "      System.out.println(new closure.b.Middle());\n"
+            + "    } else {\n"
+            + "      System.out.println(new LiveA().base());\n"
+            + "    }\n"
+            + "  }\n"
+            + "}\n");
+    final Path classes = temporaryDirectory.resolve("subclass-classes");
+    CompilationFixtureSupport.compile(
+        classes,
+        List.of(baseJava, liveJava),
+        21,
+        "-classpath",
+        fixture.snapshot("b").filePath().toString());
+    final Path jarA = fixture.snapshot("a").filePath();
+    final Path rewrittenA = temporaryDirectory.resolve("a-subclass.jar");
+    try (JarFile input = new JarFile(jarA.toFile());
+        JarOutputStream output = new JarOutputStream(Files.newOutputStream(rewrittenA))) {
+      for (final JarEntry entry : input.stream().toList()) {
+        output.putNextEntry(outputEntry(entry));
+        try (InputStream content = input.getInputStream(entry)) {
+          content.transferTo(output);
+        }
+        output.closeEntry();
+      }
+      for (final String name : List.of("fixture/sub/BaseA.class", "fixture/sub/LiveA.class")) {
+        output.putNextEntry(new JarEntry(name));
+        Files.copy(classes.resolve(name), output);
+        output.closeEntry();
+      }
+    }
+    Files.move(rewrittenA, jarA, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+    final Path evidence = trace(temporaryDirectory, "fixture.sub.LiveA");
+    final ServiceOperation operation = runtimeEvidenceOperation(fixture, List.of(evidence), true);
+    final ElisionAnalysisModel.Analysis analysis = operation.service().finish(operation.prepared());
+    final ArtifactTrimRecord recordA = recordFor(analysis.trimResult(), "a");
+    final String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+    final Process usedProc =
+        new ProcessBuilder(
+                javaBin, "-cp", recordA.trimmedPath().toString(), "fixture.sub.LiveA", "used")
+            .redirectErrorStream(true)
+            .start();
+    final String usedOut =
+        new String(
+            usedProc.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    final int usedExit = usedProc.waitFor();
+    final Process outsideProc =
+        new ProcessBuilder(
+                javaBin, "-cp", recordA.trimmedPath().toString(), "fixture.sub.LiveA", "outside")
+            .redirectErrorStream(true)
+            .start();
+    final String outsideOut =
+        new String(
+            outsideProc.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+    final int outsideExit = outsideProc.waitFor();
+
+    assertAll(
+        "fresh JVM runs LiveA extends BaseA for traced path and fails linkage on omitted path",
+        () -> assertThat(usedExit).isZero(),
+        () -> assertThat(usedOut.trim()).isEqualTo("base"),
+        () -> assertThat(outsideExit).isNotZero(),
+        () -> assertThat(outsideOut).contains("NoClassDefFoundError").contains("closure/b/Middle"));
   }
 
   @Test
@@ -216,9 +300,7 @@ final class RuntimeEvidenceOutputPropagationTest extends MavenElisionServiceEffe
     manifest.getMainAttributes().putValue("Multi-Release", "true");
     try (JarFile input = new JarFile(sourceJar.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(rewritten), manifest)) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         output.putNextEntry(outputEntry(entry));
         try (InputStream content = input.getInputStream(entry)) {
           content.transferTo(output);

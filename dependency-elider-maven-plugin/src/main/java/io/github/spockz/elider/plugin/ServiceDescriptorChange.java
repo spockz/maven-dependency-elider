@@ -2,6 +2,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.AsciiBinaryClassName;
 import java.util.Objects;
 
 /** One root service descriptor changed while preparing an artifact output. */

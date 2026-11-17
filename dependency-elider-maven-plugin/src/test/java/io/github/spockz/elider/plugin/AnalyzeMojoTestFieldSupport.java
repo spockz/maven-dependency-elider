@@ -20,9 +20,22 @@ final class AnalyzeMojoTestFieldSupport {
   @SuppressWarnings("PMD.AvoidAccessibilityAlteration")
   /* package */ static void set(final Object target, final String name, final Object value)
       throws ReflectiveOperationException {
-    final Field field = target.getClass().getDeclaredField(name);
+    final Field field = findField(target.getClass(), name);
     field.setAccessible(true);
     field.set(target, value);
+  }
+
+  /* package */ static Field findField(final Class<?> type, final String name)
+      throws NoSuchFieldException {
+    Class<?> current = type;
+    while (current != null) {
+      try {
+        return current.getDeclaredField(name);
+      } catch (final NoSuchFieldException ignored) {
+        current = current.getSuperclass();
+      }
+    }
+    throw new NoSuchFieldException(name);
   }
 
   /* package */ static void installLegacyPredictionFixture(final AnalyzeMojo mojo)

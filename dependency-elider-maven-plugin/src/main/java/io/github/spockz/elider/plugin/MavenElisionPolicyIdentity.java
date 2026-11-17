@@ -3,6 +3,7 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.HexDigest;
 import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.trace.TraceEvidenceKind;
 import java.util.List;
@@ -23,10 +24,7 @@ record MavenElisionPolicyIdentity(
         List.copyOf(Objects.requireNonNull(banishedDependencies, "banishedDependencies"));
     allowedClasses = canonicalClasses(allowedClasses);
     evidenceKinds = List.copyOf(Objects.requireNonNull(evidenceKinds, "evidenceKinds"));
-    Objects.requireNonNull(operationFingerprint, "operationFingerprint");
-    if (!operationFingerprint.matches("[0-9a-f]{64}")) {
-      throw new IllegalArgumentException("operationFingerprint must be a lowercase SHA-256 value");
-    }
+    HexDigest.requireSha256(operationFingerprint, "operationFingerprint");
     try {
       final List<String> normalizedRetained =
           ElisionArtifactPolicy.parseRetentionCoordinates(retainedArtifacts).stream()

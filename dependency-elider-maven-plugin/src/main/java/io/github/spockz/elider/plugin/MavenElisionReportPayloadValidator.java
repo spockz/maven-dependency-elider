@@ -4,6 +4,7 @@ package io.github.spockz.elider.plugin;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.AsciiBinaryClassName;
 import io.github.spockz.elider.model.TraceData;
 import io.github.spockz.elider.trace.TraceEvidenceKind;
 import java.io.IOException;
@@ -819,8 +820,6 @@ final class MavenElisionReportPayloadValidator {
   }
 
   private static Set<String> fieldNames(final JsonNode value) {
-    final Set<String> fields = new HashSet<>();
-    value.fieldNames().forEachRemaining(fields::add);
-    return fields;
+    return MavenElisionReportJsonPayloadShape.fieldNames(value);
   }
 }

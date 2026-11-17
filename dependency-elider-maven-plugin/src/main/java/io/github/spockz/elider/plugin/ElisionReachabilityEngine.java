@@ -30,7 +30,6 @@ final class ElisionReachabilityEngine {
     }
     EffectiveGraphPolicy.Evaluation evaluation = binding.evaluation();
     banPlan.verifyGraph(evaluation);
-    MavenArtifactInventory.verifyPreparedInventory(prepared);
     ElisionDecision policyInput = rawDecision;
     ElisionDecision effectiveDecision = evaluation.effectiveDecision(rawDecision);
     final Set<ArtifactCoordinate> forcedUnchanged = Set.of();

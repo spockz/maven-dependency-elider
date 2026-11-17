@@ -2,7 +2,6 @@
 
 package io.github.spockz.elider.model;
 
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /** CVE metadata and source digest retained with CNA entries. */
@@ -40,18 +39,5 @@ public record CveSourceRecordMetadata(
     if (sourceRecordSha256 == null || !SHA256.matcher(sourceRecordSha256).matches()) {
       throw new IllegalArgumentException("sourceRecordSha256 must be a canonical SHA-256");
     }
-  }
-
-  /** Returns whether this source record identifies the requested published CVE. */
-  public boolean authorizesStructuredClaims(
-      final String requestedCveId, final String osvId, final Set<String> aliases) {
-    return cveMetadataPresent
-        && cveMetadataObject
-        && cveIdPresent
-        && requestedCveId != null
-        && requestedCveId.equals(cveId)
-        && (requestedCveId.equals(osvId) || aliases.contains(requestedCveId))
-        && statePresent
-        && "PUBLISHED".equals(state);
   }
 }

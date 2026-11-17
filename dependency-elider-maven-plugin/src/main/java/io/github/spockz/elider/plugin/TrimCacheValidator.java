@@ -3,6 +3,7 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.model.HexDigest;
 import io.github.spockz.elider.plugin.JarTrimCache.CacheEntry;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -30,7 +31,7 @@ final class TrimCacheValidator {
   }
 
   private static boolean validCacheCollections(final CacheEntry entry) {
-    return validDigest(entry.originalSha256(), 64)
+    return HexDigest.isLowercaseHex(entry.originalSha256(), 64)
         && entry.roots() != null
         && !entry.roots().contains(null)
         && entry.retainedClassNames() != null
@@ -68,9 +69,9 @@ final class TrimCacheValidator {
           && entry.trimmedSha256() == null
           && entry.trimmedSha1() == null;
     }
-    return validDigest(entry.originalSha1(), 40)
-        && validDigest(entry.trimmedSha256(), 64)
-        && validDigest(entry.trimmedSha1(), 40)
+    return HexDigest.isLowercaseHex(entry.originalSha1(), 40)
+        && HexDigest.isLowercaseHex(entry.trimmedSha256(), 64)
+        && HexDigest.isLowercaseHex(entry.trimmedSha1(), 40)
         && entry.originalPhysicalEntries() != null
         && entry.trimmedPhysicalEntries() != null
         && entry.originalPhysicalEntries() >= 0
@@ -81,21 +82,9 @@ final class TrimCacheValidator {
             || !entry.originalSha256().equals(entry.trimmedSha256()));
   }
 
-  private static boolean validDigest(final String value, final int length) {
-    return HexDigest.isLowercaseHex(value, length);
-  }
-
   /* package */ static int physicalEntryCount(final Path archivePath) throws IOException {
-    int count = 0;
     try (JarFile archive = new JarFile(archivePath.toFile())) {
-      final java.util.Enumeration<java.util.jar.JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        entries.nextElement();
-        count = Math.addExact(count, 1);
-      }
-    } catch (final ArithmeticException exception) {
-      throw new IOException("Archive entry count overflowed: " + archivePath, exception);
+      return archive.size();
     }
-    return count;
   }
 }

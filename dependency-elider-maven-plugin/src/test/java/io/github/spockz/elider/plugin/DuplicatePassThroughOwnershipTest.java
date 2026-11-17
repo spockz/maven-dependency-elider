@@ -121,9 +121,7 @@ final class DuplicatePassThroughOwnershipTest extends MavenDependencyTrimmerInMe
     final Path outputPath = temporaryDirectory.resolve("replaced.jar");
     try (JarFile input = new JarFile(path.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(outputPath))) {
-      final java.util.Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         output.putNextEntry(new JarEntry(entry.getName()));
         if (ENTRY.equals(entry.getName())) {
           final ClassWriter writer = new ClassWriter(0);

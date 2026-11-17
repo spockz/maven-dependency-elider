@@ -8,19 +8,17 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
 import io.github.spockz.elider.model.ElisionDecision;
+import io.github.spockz.elider.model.HexDigest;
 import io.github.spockz.elider.model.VexAttestation;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,7 +29,6 @@ import java.util.UUID;
 
 /** Generates a deterministic CycloneDX 1.6 component inventory for an applied elision decision. */
 @SuppressWarnings({
-  "PMD.AssignmentInOperand",
   "PMD.AvoidDuplicateLiterals",
   "PMD.AvoidInstantiatingObjectsInLoops",
   "PMD.AvoidLiteralsInIfCondition",
@@ -41,13 +38,10 @@ import java.util.UUID;
   "PMD.CouplingBetweenObjects",
   "PMD.CyclomaticComplexity",
   "PMD.GodClass",
-  "PMD.ConsecutiveAppendsShouldReuse",
   "PMD.LawOfDemeter",
   "PMD.LocalVariableCouldBeFinal",
   "PMD.LooseCoupling",
   "PMD.MethodArgumentCouldBeFinal",
-  "PMD.ShortVariable",
-  "PMD.UseExplicitTypes",
   "PMD.UseConcurrentHashMap",
   "PMD.TooManyMethods"
 })
@@ -123,7 +117,7 @@ public final class CycloneDxSbomGenerator {
       throws IOException {
     Objects.requireNonNull(output, "output must not be null");
     byte[] bytes = generate(root, appliedRetainedInventory, decision, metadata, trimRecords);
-    writeBytes(output, bytes);
+    writeAtomically(output, bytes, atomicReplacer);
   }
 
   /** Writes a retained inventory with evidence-backed CycloneDX VEX statements. */
@@ -137,9 +131,10 @@ public final class CycloneDxSbomGenerator {
       Collection<VexAttestation> attestations)
       throws IOException {
     Objects.requireNonNull(output, "output must not be null");
-    writeBytes(
+    writeAtomically(
         output,
-        generate(root, appliedRetainedInventory, decision, metadata, trimRecords, attestations));
+        generate(root, appliedRetainedInventory, decision, metadata, trimRecords, attestations),
+        atomicReplacer);
   }
 
   /** Writes a baseline inventory before whole-artifact elision has been applied. */
@@ -150,7 +145,7 @@ public final class CycloneDxSbomGenerator {
       DocumentMetadata metadata)
       throws IOException {
     Objects.requireNonNull(output, "output must not be null");
-    writeBytes(output, generateBaseline(root, baselineInventory, metadata));
+    writeAtomically(output, generateBaseline(root, baselineInventory, metadata), atomicReplacer);
   }
 
   /** Generates a baseline inventory before whole-artifact elision has been applied. */
@@ -161,7 +156,12 @@ public final class CycloneDxSbomGenerator {
         root, baselineInventory, metadata, Set.of(), List.of(), Optional.empty());
   }
 
-  private void writeBytes(Path output, byte[] bytes) throws IOException {
+  static void writeAtomically(Path output, byte[] bytes) throws IOException {
+    writeAtomically(output, bytes, CycloneDxSbomGenerator::atomicReplace);
+  }
+
+  private static void writeAtomically(Path output, byte[] bytes, AtomicReplacer replacer)
+      throws IOException {
     Path absolute = output.toAbsolutePath();
     Path parent = absolute.getParent();
     if (parent == null) {
@@ -172,10 +172,23 @@ public final class CycloneDxSbomGenerator {
         parent.resolve("." + absolute.getFileName() + "." + UUID.randomUUID() + ".tmp");
     try {
       Files.write(temporary, bytes);
-      atomicReplacer.replace(temporary, absolute);
+      replacer.replace(temporary, absolute);
     } finally {
       Files.deleteIfExists(temporary);
     }
+  }
+
+  private static void atomicReplace(Path temporary, Path destination) throws IOException {
+    Files.move(
+        temporary,
+        destination,
+        StandardCopyOption.ATOMIC_MOVE,
+        StandardCopyOption.REPLACE_EXISTING);
+  }
+
+  @FunctionalInterface
+  interface AtomicReplacer {
+    void replace(Path temporary, Path destination) throws IOException;
   }
 
   byte[] generate(
@@ -335,12 +348,7 @@ public final class CycloneDxSbomGenerator {
             "VEX attestation does not match a retained component: " + identity);
       }
       final String emittedComponentSha256 = componentDigests.get(identity);
-      final String actualComponentSha256 =
-          VexSerializerSupport.verifyAttestation(attestation, component.ref);
-      if (!actualComponentSha256.equals(emittedComponentSha256)) {
-        throw new IllegalArgumentException(
-            "Retained component changed while generating VEX evidence: " + identity);
-      }
+      VexSerializerSupport.verifyAttestation(attestation, component.ref, emittedComponentSha256);
       if (!VexSerializerSupport.isPrecondition(attestation)) {
         validateOmittedCodeTrim(attestation, trimsByIdentity.get(identity), identity);
       }
@@ -383,22 +391,24 @@ public final class CycloneDxSbomGenerator {
 
   private static ObjectNode component(ComponentEntry entry, ArtifactTrimRecord trimRecord)
       throws IOException {
-    ArtifactCoordinate c = entry.ref.coordinate();
+    ArtifactCoordinate coordinate = entry.ref.coordinate();
     ObjectNode node = JSON.createObjectNode();
     node.put("type", "library");
-    String purl = componentPurl(c);
+    String purl = componentPurl(coordinate);
     node.put("bom-ref", purl);
-    node.put("group", c.groupId());
-    node.put("name", c.artifactId());
-    node.put("version", c.version());
+    node.put("group", coordinate.groupId());
+    node.put("name", coordinate.artifactId());
+    node.put("version", coordinate.version());
     node.put("purl", purl);
     ArrayNode hashes = node.putArray("hashes");
-    hashes.addObject().put("alg", "SHA-256").put("content", sha256(entry.ref.filePath()));
+    final String hash =
+        trimRecord != null ? trimRecord.trimmedSha256() : HexDigest.sha256(entry.ref.filePath());
+    hashes.addObject().put("alg", "SHA-256").put("content", hash);
     ArrayNode properties = node.putArray("properties");
     properties.addObject().put("name", "maven:scope").put("value", String.join(",", entry.scopes));
-    properties.addObject().put("name", "maven:type").put("value", c.type());
-    if (!c.classifier().isEmpty()) {
-      properties.addObject().put("name", "maven:classifier").put("value", c.classifier());
+    properties.addObject().put("name", "maven:type").put("value", coordinate.type());
+    if (!coordinate.classifier().isEmpty()) {
+      properties.addObject().put("name", "maven:classifier").put("value", coordinate.classifier());
     }
     if (trimRecord != null) {
       properties.addObject().put("name", "elider:status").put("value", "trimmed");
@@ -475,12 +485,6 @@ public final class CycloneDxSbomGenerator {
     if (Files.isSameFile(record.originalPath(), outputPath)) {
       throw new IllegalArgumentException("Trim record output must differ from original artifact");
     }
-    if (!record.originalSha256().equals(sha256(record.originalPath()))) {
-      throw new IOException("Original artifact digest does not match trim record");
-    }
-    if (!record.trimmedSha256().equals(sha256(outputPath))) {
-      throw new IOException("Trimmed artifact digest does not match trim record");
-    }
   }
 
   private static boolean sameFile(final Path path1, final Path path2) {
@@ -551,66 +555,39 @@ public final class CycloneDxSbomGenerator {
         + purl(root.version());
   }
 
-  private static void atomicReplace(Path temporary, Path destination) throws IOException {
-    Files.move(
-        temporary,
-        destination,
-        StandardCopyOption.ATOMIC_MOVE,
-        StandardCopyOption.REPLACE_EXISTING);
-  }
-
-  @FunctionalInterface
-  interface AtomicReplacer {
-    void replace(Path temporary, Path destination) throws IOException;
-  }
-
-  static String sha256(Path file) throws IOException {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      try (var input = Files.newInputStream(file)) {
-        byte[] buffer = new byte[8192];
-        int count;
-        while ((count = input.read(buffer)) != -1) {
-          digest.update(buffer, 0, count);
-        }
-      }
-      return HexFormat.of().formatHex(digest.digest());
-    } catch (NoSuchAlgorithmException ex) {
-      throw new IllegalStateException("SHA-256 is unavailable", ex);
-    }
-  }
-
   private static String purlQualifiers(ArtifactCoordinate coordinate) {
     StringBuilder qualifiers = new StringBuilder(64);
     if (!coordinate.classifier().isEmpty()) {
       qualifiers.append("?classifier=").append(purl(coordinate.classifier()));
     }
     if (!"jar".equals(coordinate.type())) {
-      qualifiers.append(qualifiers.isEmpty() ? "?" : "&");
-      qualifiers.append("type=").append(purl(coordinate.type()));
+      qualifiers
+          .append(qualifiers.isEmpty() ? "?" : "&")
+          .append("type=")
+          .append(purl(coordinate.type()));
     }
     return qualifiers.toString();
   }
 
-  private static String identity(ArtifactCoordinate c) {
-    return c.groupId()
+  private static String identity(ArtifactCoordinate coordinate) {
+    return coordinate.groupId()
         + ":"
-        + c.artifactId()
+        + coordinate.artifactId()
         + ":"
-        + c.version()
+        + coordinate.version()
         + ":"
-        + c.type()
+        + coordinate.type()
         + ":"
-        + c.classifier();
+        + coordinate.classifier();
   }
 
   private static String purl(String value) {
     StringBuilder encoded = new StringBuilder();
-    for (byte b : value.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
-      int unsigned = b & 0xff;
-      char ch = (char) unsigned;
-      if (unsigned < 128 && PURL_SAFE.indexOf(ch) >= 0) {
-        encoded.append(ch);
+    for (byte rawByte : value.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+      int unsigned = rawByte & 0xff;
+      char character = (char) unsigned;
+      if (unsigned < 128 && PURL_SAFE.indexOf(character) >= 0) {
+        encoded.append(character);
       } else {
         encoded
             .append('%')

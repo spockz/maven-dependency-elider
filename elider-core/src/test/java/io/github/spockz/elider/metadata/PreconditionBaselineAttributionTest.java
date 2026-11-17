@@ -4,11 +4,11 @@ package io.github.spockz.elider.metadata;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.spockz.elider.model.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PrerequisiteProofResult;
 import io.github.spockz.elider.model.PrerequisiteAbsenceAttribution;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.PrerequisiteOperator;
-import io.github.spockz.elider.model.PrerequisiteProofResult;
 import io.github.spockz.elider.model.VexAttestation;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -101,11 +101,12 @@ final class PreconditionBaselineAttributionTest {
                 List.of(candidateProvider), "baseline unavailable"),
             actualFinal);
     final Map<String, VexAttestation> preconditions = new TreeMap<>();
-    final PreconditionEvidenceIdentity finalEvidence =
-        PreconditionEvidenceIdentity.from(alreadyAbsent.attestation());
+    final VexSerializerSupport.PreconditionEvidenceIdentity finalEvidence =
+        VexSerializerSupport.PreconditionEvidenceIdentity.from(alreadyAbsent.attestation());
     for (final PrerequisiteProofResult proof :
         List.of(alreadyAbsent, trimmed, elided, mixed, unknown)) {
-      assertThat(PreconditionEvidenceIdentity.from(proof.attestation())).isEqualTo(finalEvidence);
+      assertThat(VexSerializerSupport.PreconditionEvidenceIdentity.from(proof.attestation()))
+          .isEqualTo(finalEvidence);
       VexSerializerSupport.addAttestation(
           Map.of(), preconditions, proof.attestation().cveId(), proof.attestation());
     }

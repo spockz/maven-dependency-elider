@@ -2,20 +2,15 @@
 
 package io.github.spockz.elider.trimmer;
 
+import io.github.spockz.elider.model.ArtifactDigests;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
-import java.util.zip.ZipFile;
-import org.objectweb.asm.ClassReader;
 
 /** Writes the retained root view of an ordinary JAR. */
 final class SingleReleaseArchiveWriter {
@@ -28,12 +23,9 @@ final class SingleReleaseArchiveWriter {
   /** WHY: Shared suffix for physical class entry parsing. */
   private static final String CLASS_SUFFIX = ".class";
 
-  /** WHY: Root service files carry global provider declarations. */
-  private static final String SERVICE_PREFIX = "META-INF/services/";
-
   private SingleReleaseArchiveWriter() {}
 
-  /* default */ static WriteResult write(
+  /* default */ static ArchiveOutputStager.WriteResult write(
       final Path originalJar,
       final Path temporaryJar,
       final DependencyJarTrimmer.TrimAnalysis analysis)
@@ -41,7 +33,7 @@ final class SingleReleaseArchiveWriter {
     return write(originalJar, temporaryJar, analysis, false);
   }
 
-  /* default */ static WriteResult write(
+  /* default */ static ArchiveOutputStager.WriteResult write(
       final Path originalJar,
       final Path temporaryJar,
       final DependencyJarTrimmer.TrimAnalysis analysis,
@@ -50,7 +42,7 @@ final class SingleReleaseArchiveWriter {
     return write(originalJar, temporaryJar, analysis, stripRootModuleDescriptor, Set.of());
   }
 
-  /* default */ static WriteResult write(
+  /* default */ static ArchiveOutputStager.WriteResult write(
       final Path originalJar,
       final Path temporaryJar,
       final DependencyJarTrimmer.TrimAnalysis analysis,
@@ -59,32 +51,22 @@ final class SingleReleaseArchiveWriter {
       throws IOException {
     final EntryWriter writer =
         new EntryWriter(analysis, stripRootModuleDescriptor, removedServiceProviders);
+    final int trimmedEntries;
+    final ArtifactDigests trimmedDigests;
     try (JarFile input = new JarFile(originalJar.toFile())) {
       writer.scanInput(input);
-      try (OutputStream fileOutput = Files.newOutputStream(temporaryJar);
-          JarOutputStream output = new JarOutputStream(fileOutput)) {
+      try (ArtifactDigests.HashingOutputStream hashingOutput =
+              ArchiveOutputStager.openHashingOutput(temporaryJar);
+          ArchiveOutputStager.CountingJarOutputStream output =
+              new ArchiveOutputStager.CountingJarOutputStream(hashingOutput)) {
         writer.writeEntries(input, output);
+        output.finish();
+        trimmedEntries = output.entryCount();
+        trimmedDigests = hashingOutput.digests();
       }
     }
     writer.verify(analysis.totalClasses());
-    return writer.result();
-  }
-
-  /** Class metrics from a physical single-release write. */
-  /* default */ record WriteResult(long prunedClassBytes, int totalClasses, int retainedClasses) {}
-
-  /* default */ static int countEntries(final Path archivePath) throws IOException {
-    int count = 0;
-    try (ZipFile archive = new ZipFile(archivePath.toFile())) {
-      final Enumeration<? extends java.util.zip.ZipEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        entries.nextElement();
-        count = Math.addExact(count, 1);
-      }
-    } catch (final ArithmeticException exception) {
-      throw new IOException("Archive entry count overflowed: " + archivePath, exception);
-    }
-    return count;
+    return writer.result(trimmedEntries, trimmedDigests);
   }
 
   /** WHY: Keeps mutable entry state scoped to one archive write. */
@@ -102,7 +84,8 @@ final class SingleReleaseArchiveWriter {
     private final Set<String> inputClasses = new HashSet<>();
 
     /** WHY: Output metrics count omitted class payload bytes. */
-    private final PrunedClassByteCounter prunedClassBytes = new PrunedClassByteCounter();
+    private final MultiReleaseEntrySupport.PrunedClassByteCounter prunedClassBytes =
+        new MultiReleaseEntrySupport.PrunedClassByteCounter();
 
     /** WHY: Selects the module-info-only classpath transformation. */
     private final boolean stripRootModuleDescriptor;
@@ -130,9 +113,8 @@ final class SingleReleaseArchiveWriter {
     }
 
     private void scanInput(final JarFile input) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final String name = entries.nextElement().getName();
+      for (final JarEntry entry : input.stream().toList()) {
+        final String name = entry.getName();
         hasRootModuleDescriptor |= MODULE_DESCRIPTOR.equals(name);
         if (name.endsWith(CLASS_SUFFIX)
             && !MODULE_DESCRIPTOR.equals(name)
@@ -147,9 +129,8 @@ final class SingleReleaseArchiveWriter {
 
     private void writeEntries(final JarFile input, final JarOutputStream output)
         throws IOException {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        writeEntry(input, output, entries.nextElement());
+      for (final JarEntry entry : input.stream().toList()) {
+        writeEntry(input, output, entry);
       }
     }
 
@@ -160,7 +141,7 @@ final class SingleReleaseArchiveWriter {
         throw new IOException("Duplicate archive entry cannot be preserved safely: " + name);
       }
       if (entry.isDirectory()) {
-        copyEntry(input, output, entry);
+        MultiReleaseEntrySupport.copyEntry(input, output, entry);
       } else if (!JarSignatureSanitizer.isSignatureFile(name)
           && !contentWriter.isVersionedServiceDescriptor(name)
           && !DependencyJarTrimmer.isVersionedModuleDescriptor(name)) {
@@ -188,8 +169,15 @@ final class SingleReleaseArchiveWriter {
       verifyClasses(inputClasses, writtenClasses, retainedClasses, expectedTotalClasses);
     }
 
-    private WriteResult result() {
-      return new WriteResult(prunedClassBytes.value(), inputClasses.size(), writtenClasses.size());
+    private ArchiveOutputStager.WriteResult result(
+        final int trimmedPhysicalEntries, final ArtifactDigests trimmedDigests) {
+      return new ArchiveOutputStager.WriteResult(
+          prunedClassBytes.value(),
+          inputClasses.size(),
+          writtenClasses.size(),
+          seenNames.size(),
+          trimmedPhysicalEntries,
+          trimmedDigests);
     }
   }
 
@@ -208,7 +196,7 @@ final class SingleReleaseArchiveWriter {
     private final Set<String> writtenClasses;
 
     /** WHY: Pruned payload size is part of archive metrics. */
-    private final PrunedClassByteCounter prunedClassBytes;
+    private final MultiReleaseEntrySupport.PrunedClassByteCounter prunedClassBytes;
 
     /** WHY: Module descriptors are removed only in this mode. */
     private final boolean stripRootModuleDescriptor;
@@ -218,7 +206,7 @@ final class SingleReleaseArchiveWriter {
         final Set<String> removedServiceProviders,
         final Set<String> inputClasses,
         final Set<String> writtenClasses,
-        final PrunedClassByteCounter prunedClassBytes,
+        final MultiReleaseEntrySupport.PrunedClassByteCounter prunedClassBytes,
         final boolean stripRootModuleDescriptor) {
       this.retainedClasses = retainedClasses;
       this.removedServiceProviders = removedServiceProviders;
@@ -249,102 +237,34 @@ final class SingleReleaseArchiveWriter {
       if (name.startsWith(VERSIONED_PREFIX)) {
         throw new IOException("Unsupported modular or multi-release entry: " + name);
       }
-      final String className = className(input, entry, name);
-      if (!name.equals(className + CLASS_SUFFIX)) {
-        throw new IOException("Class entry path does not match its declared name: " + name);
-      }
+      final String className = MultiReleaseEntrySupport.readClassName(input, entry);
       if (retainedClasses.contains(className)) {
         inputClasses.add(className);
         writtenClasses.add(className);
-        copyEntry(input, output, entry);
+        MultiReleaseEntrySupport.copyEntry(input, output, entry);
       } else {
         inputClasses.add(className);
         prunedClassBytes.add(entry);
       }
     }
 
-    private String className(final JarFile input, final JarEntry entry, final String name)
-        throws IOException {
-      try (InputStream classInput = input.getInputStream(entry)) {
-        return new ClassReader(classInput).getClassName();
-      } catch (final IllegalArgumentException | IndexOutOfBoundsException exception) {
-        throw new IOException("Could not read class entry: " + name, exception);
-      }
-    }
-
     private void writeResource(
         final JarFile input, final JarOutputStream output, final JarEntry entry)
         throws IOException {
-      if (entry.getName().startsWith(SERVICE_PREFIX)) {
-        final ServiceDescriptorFilter.Result descriptor =
-            ServiceDescriptorFilter.filter(input, entry, removedServiceProviders);
-        if (descriptor.outcome() == ServiceDescriptorFilter.Outcome.OMIT) {
-          return;
-        }
-        if (descriptor.outcome() == ServiceDescriptorFilter.Outcome.REPLACED) {
-          writeEntryBytes(output, entry, descriptor.bytes());
-          return;
-        }
-      }
-      if (AutoConfigurationDescriptorFilter.IMPORTS_PATH.equals(entry.getName())) {
-        final java.util.Optional<byte[]> filtered =
-            AutoConfigurationDescriptorFilter.filterImports(
-                input, entry, inputClasses, retainedClasses);
-        if (filtered.isPresent()) {
-          writeEntryBytes(output, entry, filtered.get());
-          return;
-        }
-      }
-      copyEntry(input, output, entry);
+      MultiReleaseEntrySupport.writeFilteredResource(
+          input, output, entry, inputClasses, retainedClasses, removedServiceProviders);
     }
 
     private boolean isVersionedServiceDescriptor(final String name) {
-      final int releaseEnd =
-          name.startsWith(VERSIONED_PREFIX) ? name.indexOf('/', VERSIONED_PREFIX.length()) : -1;
-      return releaseEnd >= 0 && name.startsWith(SERVICE_PREFIX, releaseEnd + 1);
+      return MultiReleaseEntrySupport.isVersionedServiceDescriptor(name);
     }
   }
 
   private static void writeManifest(
       final JarFile input, final JarOutputStream output, final JarEntry entry) throws IOException {
-    final Manifest manifest;
-    try (InputStream manifestInput = input.getInputStream(entry)) {
-      manifest = new Manifest(manifestInput);
-    }
+    final Manifest manifest = MultiReleaseEntrySupport.readManifest(input, entry);
     JarSignatureSanitizer.cleanse(manifest);
     JarSignatureSanitizer.writeManifest(output, entry, manifest);
-  }
-
-  private static void copyEntry(
-      final JarFile input, final JarOutputStream output, final JarEntry entry) throws IOException {
-    final JarEntry copy = new JarEntry(entry.getName());
-    if (entry.getTime() >= 0) {
-      copy.setTime(entry.getTime());
-    }
-    if (entry.getComment() != null) {
-      copy.setComment(entry.getComment());
-    }
-    output.putNextEntry(copy);
-    if (!entry.isDirectory()) {
-      try (InputStream contents = input.getInputStream(entry)) {
-        contents.transferTo(output);
-      }
-    }
-    output.closeEntry();
-  }
-
-  private static void writeEntryBytes(
-      final JarOutputStream output, final JarEntry entry, final byte[] bytes) throws IOException {
-    final JarEntry copy = new JarEntry(entry.getName());
-    if (entry.getTime() >= 0) {
-      copy.setTime(entry.getTime());
-    }
-    if (entry.getComment() != null) {
-      copy.setComment(entry.getComment());
-    }
-    output.putNextEntry(copy);
-    output.write(bytes);
-    output.closeEntry();
   }
 
   private static void verifyClasses(
@@ -368,27 +288,6 @@ final class SingleReleaseArchiveWriter {
               + inputClasses.size()
               + " != "
               + totalClasses);
-    }
-  }
-
-  /** WHY: Counts omitted payload bytes without retaining each pruned class body. */
-  private static final class PrunedClassByteCounter {
-    /** WHY: Counts omitted bytes without holding class contents. */
-    private long totalBytes;
-
-    private void add(final JarEntry entry) throws IOException {
-      if (entry.getSize() < 0) {
-        throw new IOException("Class entry has unknown uncompressed size: " + entry.getName());
-      }
-      try {
-        totalBytes = Math.addExact(totalBytes, entry.getSize());
-      } catch (final ArithmeticException exception) {
-        throw new IOException("Pruned class byte total overflowed", exception);
-      }
-    }
-
-    private long value() {
-      return totalBytes;
     }
   }
 }

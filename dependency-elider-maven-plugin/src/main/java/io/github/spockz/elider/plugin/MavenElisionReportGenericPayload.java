@@ -6,21 +6,20 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.spockz.elider.advisory.FindingContributionJsonCodec;
+import io.github.spockz.elider.advisory.FindingSource;
+import io.github.spockz.elider.applicability.CodeAttributionResolver;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.AssessmentIntent;
 import io.github.spockz.elider.model.ClaimGroupStatus;
-import io.github.spockz.elider.model.CodeAttributionResolver;
 import io.github.spockz.elider.model.CodeClaim;
 import io.github.spockz.elider.model.CodeReference;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.VersionApplicability;
 import io.github.spockz.elider.model.VersionCoverageClaim;
-import io.github.spockz.elider.scanner.FindingContributionJsonCodec;
-import io.github.spockz.elider.scanner.FindingSource;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -279,14 +278,7 @@ final class MavenElisionReportGenericPayload {
 
   private static void shape(final JsonNode node, final Set<String> expected, final String name)
       throws IOException {
-    if (node == null || !node.isObject()) {
-      throw new IOException(name + " must be an object");
-    }
-    final Set<String> actual = new HashSet<>();
-    node.fieldNames().forEachRemaining(actual::add);
-    if (!actual.equals(expected)) {
-      throw new IOException(name + " has invalid fields");
-    }
+    MavenElisionReportJsonPayloadShape.shape(node, expected, name);
   }
 
   private static JsonNode array(final JsonNode node, final String name) throws IOException {
@@ -356,10 +348,7 @@ final class MavenElisionReportGenericPayload {
 
   private static <T extends Enum<T>> T enumName(final String name, final Class<T> type)
       throws IOException {
-    try {
-      return Enum.valueOf(type, name);
-    } catch (final IllegalArgumentException exception) {
-      throw new IOException("Unknown " + type.getSimpleName() + ": " + name, exception);
-    }
+    return MavenElisionReportJsonPayloadShape.enumName(
+        name, type, "Unknown " + type.getSimpleName() + ": " + name);
   }
 }

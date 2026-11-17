@@ -26,7 +26,7 @@ final class MavenBanRetainedBytecodeClosure {
       final Map<String, List<ArtifactCoordinate>> effectiveOwners)
       throws IOException, MojoFailureException {
     final Set<ArtifactCoordinate> retained = effectiveDecision.retainedArtifacts();
-    final Set<String> passThrough = passThrough(prepared, retained);
+    final Set<String> passThrough = trimAnalysis.passThroughIdentities();
     final ProductionBytecodeReferenceScanner scanner = new ProductionBytecodeReferenceScanner();
     for (final ElisionAnalysisModel.ArtifactSnapshot snapshot : prepared.resolvedSnapshots()) {
       verifyCandidate(
@@ -40,18 +40,6 @@ final class MavenBanRetainedBytecodeClosure {
           absentOwners,
           effectiveOwners);
     }
-  }
-
-  private static Set<String> passThrough(
-      final ElisionAnalysisModel.PreparedAnalysis prepared, final Set<ArtifactCoordinate> retained)
-      throws IOException {
-    if (!prepared.options().trim().enabled()) {
-      return Set.of();
-    }
-    return TrimPassThroughPlanner.passThroughPlan(
-            TrimRequestFactory.fromPreparedAnalysis(
-                prepared, retained, prepared.sourceRequiredClasses()))
-        .skippedArtifactIdentities();
   }
 
   private static void verifyCandidate(

@@ -9,18 +9,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
 
 /** Captures production class bytes once for all analysis passes. */
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity", "PMD.CommentSize"})
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CommentSize"})
 public final class ProductionBytecodeAnalysis {
   /** WHY: Keeps cache identities stable across output generations. */
   private static final byte[] FINGERPRINT_VERSION =
@@ -126,12 +124,8 @@ public final class ProductionBytecodeAnalysis {
   private static List<ClassFile> captureClassFiles(final Path scope) throws IOException {
     final List<ClassFile> classFiles = new ArrayList<>();
     try (Stream<Path> paths = Files.walk(scope)) {
-      final Iterator<Path> iterator = paths.iterator();
-      while (iterator.hasNext()) {
-        final Path path = iterator.next();
-        if (Files.isRegularFile(path) && isClassFile(path)) {
-          classFiles.add(new ClassFile(path, Files.readAllBytes(path)));
-        }
+      for (final Path path : paths.filter(p -> Files.isRegularFile(p) && isClassFile(p)).toList()) {
+        classFiles.add(new ClassFile(path, Files.readAllBytes(path)));
       }
     }
     return List.copyOf(classFiles);
@@ -185,52 +179,6 @@ public final class ProductionBytecodeAnalysis {
     return scope;
   }
 
-  /** Computes the versioned fingerprint by rereading the current production output. */
-  public static String fingerprint(final Path output) throws IOException {
-    return fingerprint(output, List.of());
-  }
-
-  /** Computes the versioned fingerprint by rereading current production outputs. */
-  public static String fingerprint(final Path output, final List<Path> additionalOutputs)
-      throws IOException {
-    final Path scope = output.toAbsolutePath().normalize();
-    final boolean missingScope = Files.notExists(scope);
-    if (!missingScope && !Files.isDirectory(scope)) {
-      throw new IOException("Production class output path is not a directory: " + scope);
-    }
-    final List<Path> roots = new ArrayList<>();
-    roots.add(scope);
-    for (final Path additional : additionalOutputs) {
-      final Path normalized = additional.toAbsolutePath().normalize();
-      if (Files.isDirectory(normalized)) {
-        roots.add(normalized);
-      }
-    }
-    final List<Path> classes = new ArrayList<>();
-    for (final Path root : roots) {
-      if (Files.notExists(root)) {
-        continue;
-      }
-      if (!Files.isDirectory(root)) {
-        throw new IOException("Production class output path is not a directory: " + root);
-      }
-      try (Stream<Path> paths = Files.walk(root)) {
-        classes.addAll(
-            paths
-                .filter(Files::isRegularFile)
-                .filter(ProductionBytecodeAnalysis::isClassFile)
-                .toList());
-      }
-    }
-    classes.sort(Comparator.naturalOrder());
-    final MessageDigest digest = startFingerprint();
-    for (final Path classFile : classes) {
-      final Path root = roots.stream().filter(classFile::startsWith).findFirst().orElse(scope);
-      updateFingerprint(digest, root, classFile, Files.readAllBytes(classFile));
-    }
-    return HexFormat.of().formatHex(digest.digest());
-  }
-
   private static String fingerprintCapturedFiles(
       final List<Path> roots, final List<ClassFile> classFiles) {
     final MessageDigest digest = startFingerprint();
@@ -244,7 +192,7 @@ public final class ProductionBytecodeAnalysis {
   }
 
   private static MessageDigest startFingerprint() {
-    final MessageDigest digest = sha256();
+    final MessageDigest digest = io.github.spockz.elider.model.ArtifactDigests.newSha256Digest();
     digest.update(FINGERPRINT_VERSION);
     return digest;
   }
@@ -261,14 +209,6 @@ public final class ProductionBytecodeAnalysis {
 
   private static void updateLength(final MessageDigest digest, final int length) {
     digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(length).array());
-  }
-
-  private static MessageDigest sha256() {
-    try {
-      return MessageDigest.getInstance("SHA-256");
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is unavailable", exception);
-    }
   }
 
   private static boolean isClassFile(final Path path) {

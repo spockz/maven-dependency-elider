@@ -8,10 +8,9 @@ import io.github.spockz.elider.model.TraceData;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -62,17 +61,17 @@ public final class ServiceLoaderCallScanner {
   }
 
   /** Creates a new ServiceLoader call scanner. */
-  @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  public ServiceLoaderCallScanner() {}
+  public ServiceLoaderCallScanner() {
+    // Stateless scanner.
+  }
 
   /** Scans a directory of class files for ServiceLoader invocations. */
   public ScanResult scan(final Path rootDirectory) throws IOException {
     if (rootDirectory == null || !Files.isDirectory(rootDirectory)) {
       return new ScanResult(Set.of());
     }
-    final Set<String> proven = new HashSet<>();
-    final Map<String, Object> staticConstants = new HashMap<>();
     final Path scope = rootDirectory.toAbsolutePath().normalize();
+    final List<ScannedClass> readers = new ArrayList<>();
     try (Stream<Path> paths = Files.walk(scope)) {
       final List<Path> classFiles =
           paths
@@ -84,89 +83,61 @@ public final class ServiceLoaderCallScanner {
                   })
               .toList();
       for (final Path classFile : classFiles) {
-        scanConstants(classFile, staticConstants);
-      }
-      for (final Path classFile : classFiles) {
-        scanMethods(classFile, staticConstants, proven);
+        readers.add(readClass(classFile, Files.readAllBytes(classFile)));
       }
     }
-    return new ScanResult(proven);
+    return scanReaders(readers);
   }
 
   /** Scans class bytes directly from an input stream. */
   public ScanResult scan(final InputStream classInputStream) throws IOException {
     final Set<String> proven = new HashSet<>();
     final Map<String, Object> staticConstants = new HashMap<>();
-    final byte[] bytes = classInputStream.readAllBytes();
-    new ClassReader(bytes).accept(new ConstantCollectorVisitor(staticConstants), 0);
-    new ClassReader(bytes).accept(new ServiceLoaderCallVisitor(staticConstants, proven), 0);
+    final ClassReader reader = new ClassReader(classInputStream.readAllBytes());
+    reader.accept(new ConstantCollectorVisitor(staticConstants), 0);
+    reader.accept(new ServiceLoaderCallVisitor(staticConstants, proven), 0);
     return new ScanResult(proven);
   }
 
   static ScanResult scanCaptured(final List<ProductionBytecodeAnalysis.ClassFile> classFiles)
       throws IOException {
-    final Set<String> proven = new HashSet<>();
-    final Map<String, Object> staticConstants = new HashMap<>();
+    final List<ScannedClass> readers = new ArrayList<>(classFiles.size());
     for (final ProductionBytecodeAnalysis.ClassFile classFile : classFiles) {
-      scanCapturedConstants(classFile, staticConstants);
+      readers.add(readClass(classFile.path(), classFile.content()));
     }
-    for (final ProductionBytecodeAnalysis.ClassFile classFile : classFiles) {
-      scanCapturedMethods(classFile, staticConstants, proven);
-    }
-    return new ScanResult(proven);
+    return scanReaders(readers);
   }
 
-  private static void scanCapturedConstants(
-      final ProductionBytecodeAnalysis.ClassFile classFile, final Map<String, Object> constants)
-      throws IOException {
+  private static ScannedClass readClass(final Path path, final byte[] bytes) throws IOException {
     try {
-      new ClassReader(classFile.content()).accept(new ConstantCollectorVisitor(constants), 0);
-    } catch (final RuntimeException exception) {
-      throw new IOException("Could not scan class constants: " + classFile.path(), exception);
-    }
-  }
-
-  private static void scanCapturedMethods(
-      final ProductionBytecodeAnalysis.ClassFile classFile,
-      final Map<String, Object> constants,
-      final Set<String> proven)
-      throws IOException {
-    try {
-      new ClassReader(classFile.content())
-          .accept(new ServiceLoaderCallVisitor(constants, proven), 0);
-    } catch (final RuntimeException exception) {
-      throw new IOException("Could not scan ServiceLoader calls: " + classFile.path(), exception);
-    }
-  }
-
-  private static void scanConstants(final Path path, final Map<String, Object> constants)
-      throws IOException {
-    final BasicFileAttributes attributes =
-        Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-    if (!attributes.isRegularFile()) {
-      return;
-    }
-    try (InputStream inputStream = Files.newInputStream(path)) {
-      new ClassReader(inputStream).accept(new ConstantCollectorVisitor(constants), 0);
+      return new ScannedClass(path, new ClassReader(bytes));
     } catch (final RuntimeException exception) {
       throw new IOException("Could not scan class constants: " + path, exception);
     }
   }
 
-  private static void scanMethods(
-      final Path path, final Map<String, Object> constants, final Set<String> proven)
-      throws IOException {
-    final BasicFileAttributes attributes =
-        Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-    if (!attributes.isRegularFile()) {
-      return;
+  @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+  private static ScanResult scanReaders(final List<ScannedClass> readers) throws IOException {
+    final Set<String> proven = new HashSet<>();
+    final Map<String, Object> staticConstants = new HashMap<>();
+    for (final ScannedClass entry : readers) {
+      try {
+        entry.reader().accept(new ConstantCollectorVisitor(staticConstants), 0);
+      } catch (final RuntimeException exception) {
+        throw new IOException("Could not scan class constants: " + entry.path(), exception);
+      }
     }
-    try (InputStream inputStream = Files.newInputStream(path)) {
-      new ClassReader(inputStream).accept(new ServiceLoaderCallVisitor(constants, proven), 0);
-    } catch (final RuntimeException exception) {
-      throw new IOException("Could not scan ServiceLoader calls: " + path, exception);
+    for (final ScannedClass entry : readers) {
+      try {
+        entry.reader().accept(new ServiceLoaderCallVisitor(staticConstants, proven), 0);
+      } catch (final RuntimeException exception) {
+        throw new IOException("Could not scan ServiceLoader calls: " + entry.path(), exception);
+      }
     }
+    return new ScanResult(proven);
   }
+
+  private record ScannedClass(Path path, ClassReader reader) {}
 
   private static final class ConstantCollectorVisitor extends ClassVisitor {
     private final Map<String, Object> constants;
@@ -231,13 +202,12 @@ public final class ServiceLoaderCallScanner {
 
     @Override
     public void visitLdcInsn(final Object value) {
-      if (value instanceof String str) {
-        lastConstant = str;
-      } else if (value instanceof Type type && type.getSort() == Type.OBJECT) {
-        lastConstant = type.getClassName();
-      } else {
-        lastConstant = UNKNOWN;
-      }
+      lastConstant =
+          switch (value) {
+            case String str -> str;
+            case Type type when type.getSort() == Type.OBJECT -> type.getClassName();
+            case null, default -> UNKNOWN;
+          };
       super.visitLdcInsn(value);
     }
 
@@ -340,13 +310,12 @@ public final class ServiceLoaderCallScanner {
 
     @Override
     public void visitLdcInsn(final Object value) {
-      if (value instanceof String str) {
-        push(str);
-      } else if (value instanceof Type type && type.getSort() == Type.OBJECT) {
-        push(type.getClassName());
-      } else {
-        push(UNKNOWN);
-      }
+      push(
+          switch (value) {
+            case String str -> str;
+            case Type type when type.getSort() == Type.OBJECT -> type.getClassName();
+            case null, default -> UNKNOWN;
+          });
       super.visitLdcInsn(value);
     }
 
@@ -369,20 +338,26 @@ public final class ServiceLoaderCallScanner {
     @Override
     public void visitFieldInsn(
         final int opcode, final String owner, final String name, final String descriptor) {
-      if (opcode == Opcodes.GETSTATIC) {
-        final Object constVal = constants.get(owner + "#" + name);
-        push(constVal != null ? constVal : UNKNOWN);
-      } else if (opcode == Opcodes.PUTSTATIC) {
-        final Object val = pop();
-        if (owner.equals(currentClass) && val != UNKNOWN) {
-          constants.put(owner + "#" + name, val);
+      switch (opcode) {
+        case Opcodes.GETSTATIC -> {
+          final Object constVal = constants.get(owner + "#" + name);
+          push(constVal != null ? constVal : UNKNOWN);
         }
-      } else if (opcode == Opcodes.GETFIELD) {
-        pop();
-        push(UNKNOWN);
-      } else if (opcode == Opcodes.PUTFIELD) {
-        pop();
-        pop();
+        case Opcodes.PUTSTATIC -> {
+          final Object val = pop();
+          if (owner.equals(currentClass) && val != UNKNOWN) {
+            constants.put(owner + "#" + name, val);
+          }
+        }
+        case Opcodes.GETFIELD -> {
+          pop();
+          push(UNKNOWN);
+        }
+        case Opcodes.PUTFIELD -> {
+          pop();
+          pop();
+        }
+        default -> {}
       }
       super.visitFieldInsn(opcode, owner, name, descriptor);
     }

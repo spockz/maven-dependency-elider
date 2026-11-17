@@ -209,6 +209,67 @@ final class RuntimeEvidenceOutputParityTest extends MavenDependencyTrimmerInMemo
                 .isEqualTo("upper"));
   }
 
+  @Test
+  void analyzePredictionMatchesElideOutputForClosedWorldAndTrimOff() throws Exception {
+    final Path trace = temporaryDirectory.resolve("closed-world-parity.lst");
+    Files.writeString(trace, "closure/a/Entry\n");
+
+    final Fixture closedWorldFixture = fixture(false);
+    final Path cwAnalyzeReport = temporaryDirectory.resolve("cw-analyze-report.json");
+    final Path cwAnalyzeSummary = temporaryDirectory.resolve("cw-analyze-summary.json");
+    final Path cwElideReport = temporaryDirectory.resolve("cw-elide-report.json");
+    final Path cwElideSummary = temporaryDirectory.resolve("cw-elide-summary.json");
+    final MavenElisionReportSnapshot cwPrediction =
+        analyze(
+            closedWorldFixture, trace, List.of(), cwAnalyzeReport, cwAnalyzeSummary, true, true);
+    final MavenElisionReportSnapshot cwApplied =
+        elide(closedWorldFixture, trace, List.of(), cwElideReport, cwElideSummary, true, true);
+
+    final Fixture trimOffFixture = fixture(false);
+    final Path offAnalyzeReport = temporaryDirectory.resolve("off-analyze-report.json");
+    final Path offAnalyzeSummary = temporaryDirectory.resolve("off-analyze-summary.json");
+    final Path offElideReport = temporaryDirectory.resolve("off-elide-report.json");
+    final Path offElideSummary = temporaryDirectory.resolve("off-elide-summary.json");
+    final MavenElisionReportSnapshot offPrediction =
+        analyze(trimOffFixture, trace, List.of(), offAnalyzeReport, offAnalyzeSummary, false, true);
+    final MavenElisionReportSnapshot offApplied =
+        elide(trimOffFixture, trace, List.of(), offElideReport, offElideSummary, false, true);
+
+    assertAll(
+        "Analyze and Elide match for closedWorld=true with trimJars=true and trimJars=false",
+        () ->
+            assertThat(cwPrediction.trimmedArtifacts())
+                .extracting(
+                    MavenElisionReportSnapshot.TrimmedArtifact::coordinate,
+                    MavenElisionReportSnapshot.TrimmedArtifact::plannedClasses,
+                    MavenElisionReportSnapshot.TrimmedArtifact::programClassesPruned)
+                .containsExactlyInAnyOrderElementsOf(
+                    cwApplied.trimmedArtifacts().stream()
+                        .map(
+                            value ->
+                                org.assertj.core.groups.Tuple.tuple(
+                                    value.coordinate(),
+                                    value.plannedClasses(),
+                                    value.programClassesPruned()))
+                        .toList()),
+        () ->
+            assertThat(cwPrediction.droppedArtifacts())
+                .extracting(MavenElisionReportSnapshot.DroppedArtifact::coordinate)
+                .containsExactlyInAnyOrderElementsOf(
+                    cwApplied.droppedArtifacts().stream()
+                        .map(MavenElisionReportSnapshot.DroppedArtifact::coordinate)
+                        .toList()),
+        () -> assertThat(offPrediction.trimmedArtifacts()).isEmpty(),
+        () -> assertThat(offApplied.trimmedArtifacts()).isEmpty(),
+        () ->
+            assertThat(offPrediction.droppedArtifacts())
+                .extracting(MavenElisionReportSnapshot.DroppedArtifact::coordinate)
+                .containsExactlyInAnyOrderElementsOf(
+                    offApplied.droppedArtifacts().stream()
+                        .map(MavenElisionReportSnapshot.DroppedArtifact::coordinate)
+                        .toList()));
+  }
+
   private static Map<String, List<ServiceDescriptorChange>> descriptorChangesByCoordinate(
       final MavenElisionReportSnapshot snapshot) {
     return snapshot.trimmedArtifacts().stream()
@@ -228,13 +289,28 @@ final class RuntimeEvidenceOutputParityTest extends MavenDependencyTrimmerInMemo
           IOException,
           MojoExecutionException,
           MojoFailureException {
+    return analyze(fixture, trace, trimRoots, report, summary, true, false);
+  }
+
+  private static MavenElisionReportSnapshot analyze(
+      final Fixture fixture,
+      final Path trace,
+      final List<String> trimRoots,
+      final Path report,
+      final Path summary,
+      final boolean trimJars,
+      final boolean closedWorld)
+      throws ReflectiveOperationException,
+          IOException,
+          MojoExecutionException,
+          MojoFailureException {
     final AnalyzeMojo mojo = new AnalyzeMojo();
     AnalyzeMojoTestFieldSupport.set(
         mojo, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession session = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());
     RuntimeEvidenceGoalFixture.seedCapturedGraph(session, fixture);
     AnalyzeMojoTestFieldSupport.set(mojo, RuntimeEvidenceGoalFixture.SESSION_FIELD, session);
-    configureGoal(mojo, trace, trimRoots, report);
+    configureGoal(mojo, trace, trimRoots, report, trimJars, closedWorld);
     AnalyzeMojoTestFieldSupport.set(mojo, "analysisSummaryFile", summary.toFile());
     mojo.execute();
     return MavenElisionReportWriter.read(summary);
@@ -250,24 +326,45 @@ final class RuntimeEvidenceOutputParityTest extends MavenDependencyTrimmerInMemo
           IOException,
           MojoExecutionException,
           MojoFailureException {
+    return elide(fixture, trace, trimRoots, report, summary, true, false);
+  }
+
+  private static MavenElisionReportSnapshot elide(
+      final Fixture fixture,
+      final Path trace,
+      final List<String> trimRoots,
+      final Path report,
+      final Path summary,
+      final boolean trimJars,
+      final boolean closedWorld)
+      throws ReflectiveOperationException,
+          IOException,
+          MojoExecutionException,
+          MojoFailureException {
     final ElideMojo mojo = new ElideMojo();
     AnalyzeMojoTestFieldSupport.set(
         mojo, RuntimeEvidenceGoalFixture.PROJECT_FIELD, fixture.mavenProject());
     final MavenSession session = RuntimeEvidenceGoalFixture.session(fixture.mavenProject());
     RuntimeEvidenceGoalFixture.seedCapturedGraph(session, fixture);
     AnalyzeMojoTestFieldSupport.set(mojo, RuntimeEvidenceGoalFixture.SESSION_FIELD, session);
-    configureGoal(mojo, trace, trimRoots, report);
+    configureGoal(mojo, trace, trimRoots, report, trimJars, closedWorld);
     AnalyzeMojoTestFieldSupport.set(mojo, "summaryFile", summary.toFile());
     mojo.execute();
     return MavenElisionReportWriter.read(summary);
   }
 
   private static void configureGoal(
-      final Object mojo, final Path trace, final List<String> trimRoots, final Path report)
+      final Object mojo,
+      final Path trace,
+      final List<String> trimRoots,
+      final Path report,
+      final boolean trimJars,
+      final boolean closedWorld)
       throws ReflectiveOperationException {
     AnalyzeMojoTestFieldSupport.set(
         mojo, RuntimeEvidenceGoalFixture.TRACE_FILES_FIELD, List.of(trace.toFile()));
-    AnalyzeMojoTestFieldSupport.set(mojo, "trimJars", true);
+    AnalyzeMojoTestFieldSupport.set(mojo, "trimJars", trimJars);
+    AnalyzeMojoTestFieldSupport.set(mojo, "closedWorld", closedWorld);
     AnalyzeMojoTestFieldSupport.set(mojo, "trimRoots", trimRoots);
     AnalyzeMojoTestFieldSupport.set(
         mojo, "mrjarStrategy", MavenDependencyTrimmer.MRJAR_PASS_THROUGH);

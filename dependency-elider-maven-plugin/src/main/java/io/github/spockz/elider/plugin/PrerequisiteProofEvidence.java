@@ -3,13 +3,14 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.applicability.PreconditionClassInventory.ProviderKind;
+import io.github.spockz.elider.applicability.PrerequisiteProofResult;
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.model.PreconditionClassInventory.ProviderKind;
+import io.github.spockz.elider.model.HexDigest;
 import io.github.spockz.elider.model.PrerequisiteAbsenceAttribution;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.PrerequisiteGroup;
 import io.github.spockz.elider.model.PrerequisiteMemberObservation;
-import io.github.spockz.elider.model.PrerequisiteProofResult;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -27,9 +28,6 @@ record PrerequisiteProofEvidence(
     String postElisionSha256,
     List<GroupEvidence> groups,
     String baselineDetail) {
-  /** Canonical lowercase SHA-256 syntax persisted in the detached report. */
-  private static final String SHA_256_PATTERN = "[0-9a-f]{64}";
-
   /** Names the group array in validation diagnostics. */
   private static final String GROUPS_FIELD = "groups";
 
@@ -205,9 +203,7 @@ record PrerequisiteProofEvidence(
   }
 
   private static void requireDigest(final String value, final String field) {
-    if (value == null || !value.matches(SHA_256_PATTERN)) {
-      throw new IllegalArgumentException(field + " must be a lowercase SHA-256 digest");
-    }
+    HexDigest.requireSha256(value, field);
   }
 
   /** One operator group and its observed members. */

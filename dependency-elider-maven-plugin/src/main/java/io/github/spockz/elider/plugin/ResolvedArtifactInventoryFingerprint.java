@@ -4,13 +4,10 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.model.HexDigest;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -34,7 +31,7 @@ final class ResolvedArtifactInventoryFingerprint {
     return fingerprint(inventory, new HashMap<>());
   }
 
-  private static String fingerprint(
+  static String fingerprint(
       final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
       final Map<Path, String> contentDigests)
       throws IOException {
@@ -55,37 +52,7 @@ final class ResolvedArtifactInventoryFingerprint {
       entries.add(inventoryEntry(snapshot, extension, contentDigests));
     }
     entries.sort(Comparator.naturalOrder());
-    return sha256(entries);
-  }
-
-  static void verifyFingerprint(
-      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory, final String expectedFingerprint)
-      throws IOException {
-    verifyFingerprint(inventory, expectedFingerprint, new HashMap<>());
-  }
-
-  private static void verifyFingerprint(
-      final List<ElisionAnalysisModel.ArtifactSnapshot> inventory,
-      final String expectedFingerprint,
-      final Map<Path, String> contentDigests)
-      throws IOException {
-    if (expectedFingerprint == null
-        || !expectedFingerprint.equals(fingerprint(inventory, contentDigests))) {
-      throw new IOException("Resolved artifact inventory changed after fingerprinting");
-    }
-  }
-
-  // WHY: The map is local to one call and never shared between threads.
-  @SuppressWarnings("PMD.UseConcurrentHashMap")
-  static void verifyFingerprints(
-      final List<ElisionAnalysisModel.ArtifactSnapshot> firstInventory,
-      final String firstExpectedFingerprint,
-      final List<ElisionAnalysisModel.ArtifactSnapshot> secondInventory,
-      final String secondExpectedFingerprint)
-      throws IOException {
-    final Map<Path, String> contentDigests = new HashMap<>();
-    verifyFingerprint(firstInventory, firstExpectedFingerprint, contentDigests);
-    verifyFingerprint(secondInventory, secondExpectedFingerprint, contentDigests);
+    return HexDigest.sha256LengthPrefixed(entries);
   }
 
   /** Reads the resolver extension through Maven's artifact handler. */
@@ -120,7 +87,7 @@ final class ResolvedArtifactInventoryFingerprint {
       if (cachedDigest != null) {
         return cachedDigest;
       }
-      final String digest = ArtifactDigests.read(path).sha256();
+      final String digest = HexDigest.sha256(path);
       contentDigests.put(path, digest);
       return digest;
     }
@@ -140,20 +107,5 @@ final class ResolvedArtifactInventoryFingerprint {
         + extension
         + ":"
         + coordinate.classifier();
-  }
-
-  private static String sha256(final List<String> values) {
-    try {
-      final MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      for (final String value : values) {
-        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        digest.update(Integer.toString(bytes.length).getBytes(StandardCharsets.US_ASCII));
-        digest.update((byte) ':');
-        digest.update(bytes);
-      }
-      return java.util.HexFormat.of().formatHex(digest.digest());
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new AssertionError("SHA-256 is unavailable", exception);
-    }
   }
 }

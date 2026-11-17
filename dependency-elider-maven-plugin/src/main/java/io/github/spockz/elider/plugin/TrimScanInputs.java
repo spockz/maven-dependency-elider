@@ -3,6 +3,8 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageConsumedInput;
 import io.github.spockz.elider.scanner.ArtifactClassIndex;
 import java.nio.file.Path;
 import java.util.List;

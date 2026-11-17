@@ -3,7 +3,6 @@
 package io.github.spockz.elider.model;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -32,7 +31,7 @@ public record CveVersionClaim(
     Objects.requireNonNull(changes, "changes");
     final List<Map<String, String>> copy = new ArrayList<>();
     changes.forEach(change -> copy.add(immutableChange(change)));
-    changes = Collections.unmodifiableList(copy);
+    changes = List.copyOf(copy);
   }
 
   private static Map<String, String> immutableChange(final Map<String, String> change) {

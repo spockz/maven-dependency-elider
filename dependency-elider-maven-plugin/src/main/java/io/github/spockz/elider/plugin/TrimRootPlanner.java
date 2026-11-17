@@ -4,7 +4,8 @@
 package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
-import io.github.spockz.elider.trimmer.ArtifactDigests;
+import io.github.spockz.elider.model.HexDigest;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import io.github.spockz.elider.trimmer.DependencyJarTrimmer;
 import io.github.spockz.elider.trimmer.JdkPlatformContext;
 import java.io.IOException;
@@ -216,7 +217,7 @@ final class TrimRootPlanner {
                   () ->
                       new IOException("Effective roots have no inventory artifact: " + coordinate));
       final Path path = owner.filePath().toAbsolutePath().normalize();
-      return new TrimArtifactRootKey(coordinate, path, ArtifactDigests.read(path).sha256());
+      return new TrimArtifactRootKey(coordinate, path, HexDigest.sha256(path));
     }
 
     private static ElisionAnalysisModel.ArtifactSnapshot validate(
@@ -239,9 +240,6 @@ final class TrimRootPlanner {
                       new IOException(
                           "Discovered roots do not match an inventory artifact: "
                               + key.coordinate()));
-      if (!ArtifactDigests.read(key.path()).sha256().equals(key.sha256())) {
-        throw new IOException("Discovered-root input digest changed: " + key.coordinate());
-      }
       final Set<String> classes = classesByPath.get(key.path());
       if (classes == null || !classes.containsAll(entry.getValue())) {
         throw new IOException(

@@ -54,6 +54,20 @@ final class MavenPreconditionPredictionAssessment {
     }
     final List<PrerequisitePrediction.GroupForecast> groups = prediction.orElseThrow().groups();
     return !groups.isEmpty()
-        && groups.stream().allMatch(PrerequisitePrediction.GroupForecast::disarmed);
+        && groups.stream().allMatch(PrerequisitePrediction.GroupForecast::disarmed)
+        && groups.stream().anyMatch(group -> !alreadyDisarmed(group));
+  }
+
+  private static boolean alreadyDisarmed(final PrerequisitePrediction.GroupForecast group) {
+    return switch (group.group().operator()) {
+      case ANY_OF ->
+          group.members().stream()
+              .allMatch(
+                  member -> member.reason() == PrerequisitePrediction.MemberReason.ALREADY_ABSENT);
+      case ALL_OF ->
+          group.members().stream()
+              .anyMatch(
+                  member -> member.reason() == PrerequisitePrediction.MemberReason.ALREADY_ABSENT);
+    };
   }
 }

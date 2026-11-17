@@ -43,11 +43,7 @@ final class MavenElisionGraphInventory {
 
   static boolean matchesGraphCoordinates(
       final ResolverArtifactGraphSnapshot graph, final List<ArtifactCoordinate> inventory) {
-    final Set<String> expected = new HashSet<>();
-    for (final ArtifactCoordinate coordinate : inventory) {
-      expected.add(inventoryKey(coordinate, coordinate.type()));
-    }
-    return expected.size() == inventory.size() && matchesGraphKeys(graph, expected);
+    return MavenOriginalInputInventory.matchesGraphCoordinates(graph, inventory);
   }
 
   static boolean matchesDirectGraph(

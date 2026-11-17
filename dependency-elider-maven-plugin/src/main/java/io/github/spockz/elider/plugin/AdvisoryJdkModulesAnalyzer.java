@@ -23,15 +23,11 @@ import java.util.spi.ToolProvider;
   "PMD.CognitiveComplexity",
   "PMD.CyclomaticComplexity",
   "PMD.NPathComplexity",
-  "PMD.AvoidLiteralsInIfCondition",
-  "PMD.ShortVariable",
-  "PMD.UnnecessaryConstructor",
-  "PMD.UncommentedEmptyConstructor"
+  "PMD.AtLeastOneConstructor"
 })
 final class AdvisoryJdkModulesAnalyzer {
   static final String ADVISORY_MODULES_FILENAME = "dependency-elider-jdk-modules.txt";
-
-  /* default */ AdvisoryJdkModulesAnalyzer() {}
+  private static final int FIRST_MODULAR_RELEASE = 9;
 
   /**
    * Analyzes the given input paths (e.g. application classes directory, retained jars) with jdeps
@@ -48,20 +44,20 @@ final class AdvisoryJdkModulesAnalyzer {
     final List<String> args = new ArrayList<>();
     args.add("--print-module-deps");
     args.add("--ignore-missing-deps");
-    if (targetRelease >= 9) {
+    if (targetRelease >= FIRST_MODULAR_RELEASE) {
       args.add("--multi-release");
       args.add(String.valueOf(targetRelease));
     }
     if (!classPathEntries.isEmpty()) {
-      final StringBuilder cp = new StringBuilder();
+      final StringBuilder classpath = new StringBuilder();
       for (final Path entry : classPathEntries) {
-        if (!cp.isEmpty()) {
-          cp.append(java.io.File.pathSeparator);
+        if (!classpath.isEmpty()) {
+          classpath.append(java.io.File.pathSeparator);
         }
-        cp.append(entry.toAbsolutePath().normalize());
+        classpath.append(entry.toAbsolutePath().normalize());
       }
       args.add("--class-path");
-      args.add(cp.toString());
+      args.add(classpath.toString());
     }
 
     for (final Path input : inputPaths) {
@@ -95,10 +91,10 @@ final class AdvisoryJdkModulesAnalyzer {
   }
 
   static String formatModuleList(final Set<String> modules) {
-    final StringBuilder sb = new StringBuilder();
+    final StringBuilder output = new StringBuilder();
     for (final String module : new TreeSet<>(modules)) {
-      sb.append(module).append('\n');
+      output.append(module).append('\n');
     }
-    return sb.toString();
+    return output.toString();
   }
 }

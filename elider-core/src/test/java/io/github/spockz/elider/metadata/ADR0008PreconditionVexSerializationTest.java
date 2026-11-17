@@ -7,8 +7,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
+import io.github.spockz.elider.applicability.PreconditionClassInventory;
+import io.github.spockz.elider.applicability.PreconditionProof;
 import io.github.spockz.elider.model.AdvisoryProvenance;
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
@@ -18,22 +18,16 @@ import io.github.spockz.elider.model.EvidenceOrigin;
 import io.github.spockz.elider.model.FieldValue;
 import io.github.spockz.elider.model.GenericVulnerabilityFinding;
 import io.github.spockz.elider.model.MergePriority;
-import io.github.spockz.elider.model.PreconditionClassInventory;
-import io.github.spockz.elider.model.PreconditionProof;
 import io.github.spockz.elider.model.PrerequisiteClaim;
 import io.github.spockz.elider.model.VersionCoverageClaim;
 import io.github.spockz.elider.model.VexAttestation;
 import io.github.spockz.elider.model.VulnerabilityFindingContribution;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -480,37 +474,11 @@ class ADR0008PreconditionVexSerializationTest {
     return new ElisionDecision(Set.of(coordinate), Set.of(), Map.of(), Map.of(), 0);
   }
 
-  private void assertCycloneDxSchemaValid(final JsonNode bom) throws IOException {
-    assertThat(
-            schema(
-                    "/schema/bom-1.6.schema.json",
-                    SpecVersion.VersionFlag.V7,
-                    "18f57f7482593bad9f21b4feed09084640cbeff419d62ad5090c5ceccca5b37d")
-                .validate(bom))
-        .isEmpty();
+  private void assertCycloneDxSchemaValid(final JsonNode bom) {
+    assertThat(PinnedJsonSchemaCache.cycloneDx16().validate(bom)).isEmpty();
   }
 
-  private void assertOpenVexSchemaValid(final JsonNode document) throws IOException {
-    assertThat(
-            schema(
-                    "/schema/openvex-0.2.0.schema.json",
-                    SpecVersion.VersionFlag.V202012,
-                    "9373597734ed1d3ea5161a8b46d3866c4a8cfe76fd632fdd16aef01fb34b3238")
-                .validate(document))
-        .isEmpty();
-  }
-
-  private com.networknt.schema.JsonSchema schema(
-      final String resource, final SpecVersion.VersionFlag version, final String expectedSha256)
-      throws IOException {
-    try (InputStream input = getClass().getResourceAsStream(resource)) {
-      assertThat(input).isNotNull();
-      final byte[] schemaBytes = input.readAllBytes();
-      assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(schemaBytes)))
-          .isEqualTo(expectedSha256);
-      return JsonSchemaFactory.getInstance(version).getSchema(JSON.readTree(schemaBytes));
-    } catch (final NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is unavailable", exception);
-    }
+  private void assertOpenVexSchemaValid(final JsonNode document) {
+    assertThat(PinnedJsonSchemaCache.openVex020().validate(document)).isEmpty();
   }
 }

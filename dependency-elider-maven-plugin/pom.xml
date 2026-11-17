@@ -17,10 +17,38 @@
     <name>Dependency Elider Maven Plugin</name>
     <description>Maven plugin for trace-grounded dependency analysis and whole-artifact elision.</description>
 
+    <properties>
+        <failsafe.forkCount>2</failsafe.forkCount>
+        <surefire.forkCount>4</surefire.forkCount>
+        <surefire.reuseForks>true</surefire.reuseForks>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>io.github.spockz</groupId>
             <artifactId>elider-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.spockz</groupId>
+            <artifactId>elider-native-image</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.spockz</groupId>
+            <artifactId>elider-maven-lifecycle</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.spockz</groupId>
+            <artifactId>elider-maven-lifecycle</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.spockz</groupId>
+            <artifactId>elider-native-image</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -79,8 +107,15 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
+                    <forkCount>${failsafe.forkCount}</forkCount>
+                    <reuseForks>false</reuseForks>
                     <systemPropertyVariables>
                         <maven.repo.local>${settings.localRepository}</maven.repo.local>
+                        <junit.jupiter.execution.parallel.enabled>true</junit.jupiter.execution.parallel.enabled>
+                        <junit.jupiter.execution.parallel.mode.default>same_thread</junit.jupiter.execution.parallel.mode.default>
+                        <junit.jupiter.execution.parallel.config.strategy>fixed</junit.jupiter.execution.parallel.config.strategy>
+                        <junit.jupiter.execution.parallel.config.fixed.parallelism>12</junit.jupiter.execution.parallel.config.fixed.parallelism>
+                        <junit.jupiter.execution.parallel.config.fixed.max-pool-size>12</junit.jupiter.execution.parallel.config.fixed.max-pool-size>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
@@ -88,8 +123,8 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <forkCount>2C</forkCount>
-                    <reuseForks>true</reuseForks>
+                    <forkCount>${surefire.forkCount}</forkCount>
+                    <reuseForks>${surefire.reuseForks}</reuseForks>
                     <excludes>
                         <exclude>**/*IT.java</exclude>
                     </excludes>
@@ -99,11 +134,11 @@
                         <elide.transcriptPluginArtifactId>${project.artifactId}</elide.transcriptPluginArtifactId>
                         <elide.transcriptPluginVersion>${project.version}</elide.transcriptPluginVersion>
                         <junit.jupiter.execution.parallel.enabled>true</junit.jupiter.execution.parallel.enabled>
-                        <junit.jupiter.execution.parallel.mode.default>same_thread</junit.jupiter.execution.parallel.mode.default>
+                        <junit.jupiter.execution.parallel.mode.default>concurrent</junit.jupiter.execution.parallel.mode.default>
                         <junit.jupiter.execution.parallel.mode.classes.default>concurrent</junit.jupiter.execution.parallel.mode.classes.default>
                         <junit.jupiter.execution.parallel.config.strategy>fixed</junit.jupiter.execution.parallel.config.strategy>
-                        <junit.jupiter.execution.parallel.config.fixed.parallelism>${test.parallelism}</junit.jupiter.execution.parallel.config.fixed.parallelism>
-                        <junit.jupiter.execution.parallel.config.fixed.max-pool-size>${test.parallelism}</junit.jupiter.execution.parallel.config.fixed.max-pool-size>
+                        <junit.jupiter.execution.parallel.config.fixed.parallelism>${plugin.test.parallelism}</junit.jupiter.execution.parallel.config.fixed.parallelism>
+                        <junit.jupiter.execution.parallel.config.fixed.max-pool-size>${plugin.test.parallelism}</junit.jupiter.execution.parallel.config.fixed.max-pool-size>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.TraceData;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
 import io.github.spockz.elider.test.CompilationFixtureSupport;
 import io.github.spockz.elider.trimmer.ArtifactTrimRecord;
 import java.io.IOException;
@@ -57,8 +58,6 @@ final class MavenElisionServiceEffectiveAnalysisTest
             fixture.mavenProject(),
             MavenElisionServiceEffectiveAnalysisFixtures.options(
                 List.of(trace.toFile()), null, false));
-    assertThat(prepared.dynamicRootInputs().classNames()).contains(ENTRY_CLASS, MIDDLE_CLASS);
-    assertThat(prepared.pruningRequiredClasses()).contains(MIDDLE_CLASS);
     final ElisionAnalysisModel.Analysis analysis = service.finish(prepared);
     final ArtifactCoordinate artifactA =
         MavenElisionServiceEffectiveAnalysisFixtures.coordinate(
@@ -70,8 +69,17 @@ final class MavenElisionServiceEffectiveAnalysisTest
         MavenElisionServiceEffectiveAnalysisFixtures.coordinate(
             analysis.artifacts().resolvedSnapshots(), "c");
 
-    assertThat(analysis.decision().retainedArtifacts()).contains(artifactA, artifactB, artifactC);
-    assertThat(analysis.decision().elidedArtifacts()).doesNotContain(artifactA, artifactB);
+    assertAll(
+        "metadata roots retain declaring and provider artifacts without JAR trimming",
+        () ->
+            assertThat(prepared.dynamicRootInputs().classNames())
+                .contains(ENTRY_CLASS, MIDDLE_CLASS),
+        () -> assertThat(prepared.pruningRequiredClasses()).contains(MIDDLE_CLASS),
+        () ->
+            assertThat(analysis.decision().retainedArtifacts())
+                .contains(artifactA, artifactB, artifactC),
+        () ->
+            assertThat(analysis.decision().elidedArtifacts()).doesNotContain(artifactA, artifactB));
   }
 
   @Test
@@ -98,12 +106,6 @@ final class MavenElisionServiceEffectiveAnalysisTest
             new ElisionAnalysisModel.DynamicRootOptions(true));
     final ElisionAnalysisModel.PreparedAnalysis raw =
         service.prepare(fixture.mavenProject(), options);
-    assertThat(raw.rawDecision().elidedArtifacts())
-        .contains(
-            fixture.coordinate("b"),
-            fixture.coordinate("c"),
-            fixture.coordinate("d"),
-            fixture.coordinate("e"));
     final ResolverArtifactGraphCapturePair pair =
         MavenElisionServiceEffectiveAnalysisFixtures.graphPair(fixture);
     final EffectiveGraphPolicy.Evaluation initialPolicy =
@@ -120,38 +122,59 @@ final class MavenElisionServiceEffectiveAnalysisTest
         new LinkedHashSet<>(fixture.mavenProject().getArtifacts());
     final ElisionAnalysisModel.EffectiveAnalysis result = service.finishAnalysis(prepared);
 
-    assertThat(result.rawDecision().elidedArtifacts())
-        .contains(
-            fixture.coordinate("b"),
-            fixture.coordinate("c"),
-            fixture.coordinate("d"),
-            fixture.coordinate("e"));
-    assertThat(result.effectiveDecision().elidedArtifacts()).contains(fixture.coordinate("e"));
-    assertThat(result.effectiveDecision().retainedArtifacts())
-        .contains(
-            fixture.coordinate("a"),
-            fixture.coordinate("b"),
-            fixture.coordinate("c"),
-            fixture.coordinate("d"))
-        .doesNotContain(fixture.coordinate("e"));
-    assertThat(result.graphEvaluation().ancestorPromotedArtifacts())
-        .contains(fixture.coordinate("d"));
-    assertThat(result.trimAnalysis().reachableArtifacts()).isEmpty();
-    assertThat(result.trimAnalysis().candidateRoots().get(fixture.coordinate("a")))
-        .contains(ENTRY_CLASS);
-    assertThat(result.trimAnalysis().candidateAnalyses().get(fixture.coordinate("a")).roots())
-        .contains(ENTRY_CLASS.replace('.', '/'));
-    assertThat(result.trimAnalysis().candidateRoots().get(fixture.coordinate("d"))).isEmpty();
-    assertThat(
-            result
-                .trimAnalysis()
-                .candidateAnalyses()
-                .get(fixture.coordinate("d"))
-                .retainedClasses())
-        .isEmpty();
-    assertThat(fixture.mavenProject().getArtifacts())
-        .containsExactlyInAnyOrderElementsOf(beforeArtifacts);
-    assertThat(temporaryDirectory.resolve("build/elided-artifacts")).doesNotExist();
+    assertAll(
+        "service alternates bytecode promotion with graph ancestor closure",
+        () ->
+            assertThat(raw.rawDecision().elidedArtifacts())
+                .contains(
+                    fixture.coordinate("b"),
+                    fixture.coordinate("c"),
+                    fixture.coordinate("d"),
+                    fixture.coordinate("e")),
+        () ->
+            assertThat(result.rawDecision().elidedArtifacts())
+                .contains(
+                    fixture.coordinate("b"),
+                    fixture.coordinate("c"),
+                    fixture.coordinate("d"),
+                    fixture.coordinate("e")),
+        () ->
+            assertThat(result.effectiveDecision().elidedArtifacts())
+                .contains(fixture.coordinate("e")),
+        () ->
+            assertThat(result.effectiveDecision().retainedArtifacts())
+                .contains(
+                    fixture.coordinate("a"),
+                    fixture.coordinate("b"),
+                    fixture.coordinate("c"),
+                    fixture.coordinate("d"))
+                .doesNotContain(fixture.coordinate("e")),
+        () ->
+            assertThat(result.graphEvaluation().ancestorPromotedArtifacts())
+                .contains(fixture.coordinate("d")),
+        () -> assertThat(result.trimAnalysis().reachableArtifacts()).isEmpty(),
+        () ->
+            assertThat(result.trimAnalysis().candidateRoots().get(fixture.coordinate("a")))
+                .contains(ENTRY_CLASS),
+        () ->
+            assertThat(
+                    result.trimAnalysis().candidateAnalyses().get(fixture.coordinate("a")).roots())
+                .contains(ENTRY_CLASS.replace('.', '/')),
+        () ->
+            assertThat(result.trimAnalysis().candidateRoots().get(fixture.coordinate("d")))
+                .isEmpty(),
+        () ->
+            assertThat(
+                    result
+                        .trimAnalysis()
+                        .candidateAnalyses()
+                        .get(fixture.coordinate("d"))
+                        .retainedClasses())
+                .isEmpty(),
+        () ->
+            assertThat(fixture.mavenProject().getArtifacts())
+                .containsExactlyInAnyOrderElementsOf(beforeArtifacts),
+        () -> assertThat(temporaryDirectory.resolve("build/elided-artifacts")).doesNotExist());
   }
 
   @Test
@@ -178,13 +201,8 @@ final class MavenElisionServiceEffectiveAnalysisTest
             new ElisionAnalysisModel.DynamicRootOptions(true));
     final ElisionAnalysisModel.PreparedAnalysis raw =
         service.prepare(fixture.mavenProject(), options);
-    assertThat(raw.dynamicRootInputs().classNames()).contains(ENTRY_CLASS, MIDDLE_CLASS);
-    assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("a"));
-    assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("b"));
     final ResolverArtifactGraphCapturePair pair =
         MavenElisionServiceEffectiveAnalysisFixtures.graphPair(fixture);
-    assertThat(MavenElisionGraphInventory.matchesGraph(pair.after(), raw.resolvedSnapshots()))
-        .isTrue();
     final EffectiveGraphPolicy.Evaluation initialPolicy =
         EffectiveGraphPolicy.evaluatePair(pair, raw.rawDecision());
     final MavenElisionGraphBinding.Result binding =
@@ -198,10 +216,22 @@ final class MavenElisionServiceEffectiveAnalysisTest
         service.finishAnalysis(
             MavenElisionServiceEffectiveAnalysisFixtures.withBinding(raw, binding));
 
-    assertThat(raw.rawDecision().elidedArtifacts()).doesNotContain(fixture.coordinate("b"));
-    assertThat(result.effectiveDecision().retainedArtifacts()).contains(fixture.coordinate("b"));
-    assertThat(result.effectiveDecision().elidedArtifacts()).isEmpty();
-    assertThat(temporaryDirectory.resolve("build/elided-artifacts")).doesNotExist();
+    assertAll(
+        "retained service root preserves its provider without JAR trimming",
+        () -> assertThat(raw.dynamicRootInputs().classNames()).contains(ENTRY_CLASS, MIDDLE_CLASS),
+        () -> assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("a")),
+        () -> assertThat(raw.rawDecision().retainedArtifacts()).contains(fixture.coordinate("b")),
+        () ->
+            org.junit.jupiter.api.Assertions.assertTrue(
+                MavenElisionGraphInventory.matchesGraph(pair.after(), raw.resolvedSnapshots()),
+                "captured graph matches resolved snapshots"),
+        () ->
+            assertThat(raw.rawDecision().elidedArtifacts()).doesNotContain(fixture.coordinate("b")),
+        () ->
+            assertThat(result.effectiveDecision().retainedArtifacts())
+                .contains(fixture.coordinate("b")),
+        () -> assertThat(result.effectiveDecision().elidedArtifacts()).isEmpty(),
+        () -> assertThat(temporaryDirectory.resolve("build/elided-artifacts")).doesNotExist());
   }
 
   @Test
@@ -328,8 +358,10 @@ final class MavenElisionServiceEffectiveAnalysisTest
         service.prepare(fixture.mavenProject(), options);
     final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
 
-    assertThat(prepared.projectOutputClasses()).contains("sample.App", "sample.Helper");
-    assertThat(effective.effectiveDecision().elidedArtifacts()).isEmpty();
+    assertAll(
+        "compiled production types are recognized without source scanning",
+        () -> assertThat(prepared.projectOutputClasses()).contains("sample.App", "sample.Helper"),
+        () -> assertThat(effective.effectiveDecision().elidedArtifacts()).isEmpty());
   }
 
   @Test
@@ -352,6 +384,7 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final ElisionAnalysisModel.EffectiveAnalysis effective = service.finishAnalysis(prepared);
 
     assertAll(
+        "unknown dynamic owner fails closed without expanding the raw keep set",
         () ->
             assertThat(prepared.rawDecision().retainedArtifacts())
                 .contains(fixture.coordinate("a"))
@@ -416,7 +449,11 @@ final class MavenElisionServiceEffectiveAnalysisTest
     final TrimAnalysisResult analysis =
         MavenDependencyTrimmer.analyzeInMemory(request, Map.of(), Set.of());
 
-    assertThat(analysis.candidateAnalyses()).doesNotContainKey(unchangedCoordinate);
-    assertThat(analysis.candidateRoots().get(fixture.coordinate("c"))).contains("closure.c.Leaf");
+    assertAll(
+        "scope " + scope + " remains an unchanged analysis library",
+        () -> assertThat(analysis.candidateAnalyses()).doesNotContainKey(unchangedCoordinate),
+        () ->
+            assertThat(analysis.candidateRoots().get(fixture.coordinate("c")))
+                .contains("closure.c.Leaf"));
   }
 }

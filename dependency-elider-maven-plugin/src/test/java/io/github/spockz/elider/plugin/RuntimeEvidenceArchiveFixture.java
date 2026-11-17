@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Enumeration;
 import java.util.Map;
 import java.util.Set;
 import java.util.jar.Attributes;
@@ -37,9 +36,7 @@ final class RuntimeEvidenceArchiveFixture {
     manifest.getMainAttributes().putValue("Multi-Release", "true");
     try (JarFile input = new JarFile(source.toFile());
         JarOutputStream jar = new JarOutputStream(Files.newOutputStream(output), manifest)) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         if (entry.isDirectory() || "closure/b/Unused.class".equals(entry.getName())) {
           continue;
         }
@@ -106,9 +103,8 @@ final class RuntimeEvidenceArchiveFixture {
   /* default */ static Set<String> classNames(final Path archivePath) throws IOException {
     final Set<String> names = new java.util.TreeSet<>();
     try (JarFile archive = new JarFile(archivePath.toFile())) {
-      final Enumeration<JarEntry> entries = archive.entries();
-      while (entries.hasMoreElements()) {
-        String name = entries.nextElement().getName();
+      for (final JarEntry entry : archive.stream().toList()) {
+        String name = entry.getName();
         if (!name.endsWith(".class")) {
           continue;
         }
@@ -145,9 +141,7 @@ final class RuntimeEvidenceArchiveFixture {
   private static void copyEntries(
       final JarFile source, final JarOutputStream destination, final String prefix)
       throws IOException {
-    final Enumeration<JarEntry> entries = source.entries();
-    while (entries.hasMoreElements()) {
-      final JarEntry entry = entries.nextElement();
+    for (final JarEntry entry : source.stream().toList()) {
       if (entry.isDirectory()) {
         continue;
       }

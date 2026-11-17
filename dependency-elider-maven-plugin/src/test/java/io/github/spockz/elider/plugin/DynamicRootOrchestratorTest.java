@@ -41,6 +41,7 @@ final class DynamicRootOrchestratorTest {
         DynamicRootOrchestrator.dynamicRootArtifactOwners(roots, index);
 
     assertAll(
+        "unresolved external dynamic root keeps only the known owner archive",
         () -> assertThat(owners).contains(knownOwner.coordinate()),
         () -> assertThat(owners).doesNotContain(unrelatedOwner.coordinate()));
   }

@@ -24,8 +24,9 @@ public final class JfrTraceReader implements RuntimeTraceReader {
   private static final long NO_DATA_LOSS = 0L;
 
   /** Creates the public reader implementation used by runtime evidence clients. */
-  @SuppressWarnings("PMD.UncommentedEmptyConstructor")
-  public JfrTraceReader() {}
+  public JfrTraceReader() {
+    // Stateless reader.
+  }
 
   @Override
   public TraceEvidenceKind evidenceKind() {

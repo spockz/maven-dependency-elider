@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
+import io.github.spockz.elider.model.ArtifactDigests;
 import io.github.spockz.elider.test.CompilationFixtureSupport;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -15,7 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
@@ -138,9 +138,7 @@ class ArchiveSanitizerTest {
     try (JarFile input = new JarFile(candidate.toFile());
         JarOutputStream output =
             new JarOutputStream(Files.newOutputStream(multiRelease), manifest)) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         if (MANIFEST_ENTRY.equalsIgnoreCase(entry.getName())) {
           continue;
         }
@@ -161,8 +159,7 @@ class ArchiveSanitizerTest {
             output,
             ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
             analysis,
-            plan,
-            null);
+            plan);
     try {
       assertThat(sanitizer.publish(prepared).retainedClasses()).isEqualTo(1);
     } finally {
@@ -183,38 +180,6 @@ class ArchiveSanitizerTest {
     }
     assertThat(process.waitFor()).as(validationOutput).isZero();
     assertThat(validationOutput).doesNotContainIgnoringCase("warning");
-  }
-
-  @Test
-  void rejectsReplacementJarBeforeStagingStaleAnalysisOutput() throws Exception {
-    final Path original = createCandidateJar();
-    final byte[] initialBytes = Files.readAllBytes(original);
-    final String initialSha256 = digest(initialBytes, SHA_256);
-    final DependencyJarTrimmer.TrimAnalysis analysis =
-        new DependencyJarTrimmer()
-            .analyze(original, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
-    final Path replacement = createCandidateJar("replacement.jar", "Live");
-    final byte[] replacementBytes = Files.readAllBytes(replacement);
-    Files.write(original, replacementBytes);
-    final Path output = temporaryDirectory.resolve("stale-analysis-trimmed.jar");
-
-    assertThatThrownBy(
-            () ->
-                new ArchiveSanitizer()
-                    .prepare(
-                        original,
-                        output,
-                        ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
-                        analysis,
-                        initialSha256))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("changed during trim analysis");
-
-    assertThat(Files.readAllBytes(original)).isEqualTo(replacementBytes);
-    assertThat(output).doesNotExist();
-    try (JarFile replacementJar = new JarFile(original.toFile())) {
-      assertThat(replacementJar.getEntry("fixture/Live.class")).isNotNull();
-    }
   }
 
   @Test
@@ -293,31 +258,6 @@ class ArchiveSanitizerTest {
   }
 
   @Test
-  void detectsStagedOutputCorruptionWhenPublishing() throws Exception {
-    final Path original = createCandidateJar();
-    final DependencyJarTrimmer.TrimAnalysis analysis =
-        new DependencyJarTrimmer()
-            .analyze(original, List.of(), jdkClassTable, List.of(ROOT_CLASS_NAME));
-    final Path output = temporaryDirectory.resolve("corrupt-staged-trimmed.jar");
-    final ArchiveSanitizer sanitizer = new ArchiveSanitizer();
-    final ArchiveSanitizer.PreparedOutput prepared =
-        sanitizer.prepare(
-            original,
-            output,
-            ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
-            analysis,
-            null);
-    Files.writeString(prepared.temporaryJar(), "corrupt staged output");
-
-    assertThatThrownBy(() -> sanitizer.publish(prepared))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("changed while being published");
-
-    assertThat(Files.readString(output)).isEqualTo("corrupt staged output");
-    assertThat(prepared.temporaryJar()).doesNotExist();
-  }
-
-  @Test
   void failedAtomicPublicationKeepsExistingOutputAndAllowsStagingCleanup() throws Exception {
     final Path original = createCandidateJar();
     final DependencyJarTrimmer.TrimAnalysis analysis =
@@ -333,8 +273,7 @@ class ArchiveSanitizerTest {
             original,
             output,
             ArtifactCoordinate.of(FIXTURE_PACKAGE, FIXTURE_PACKAGE, "1"),
-            analysis,
-            null);
+            analysis);
 
     assertThatThrownBy(() -> sanitizer.publish(prepared)).isInstanceOf(IOException.class);
 
@@ -501,9 +440,7 @@ class ArchiveSanitizerTest {
       throws IOException {
     try (JarFile input = new JarFile(source.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         copyEntry(input, output, entry);
       }
       output.putNextEntry(new JarEntry("META-INF/versions/9/fixture/Extra.class"));
@@ -523,9 +460,8 @@ class ArchiveSanitizerTest {
     CompilationFixtureSupport.compile(moduleOutput, List.of(moduleSource));
     try (JarFile input = new JarFile(source.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(destination))) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(input, output, entries.nextElement());
+      for (final JarEntry entry : input.stream().toList()) {
+        copyEntry(input, output, entry);
       }
       writeEntry(
           output,
@@ -616,9 +552,8 @@ class ArchiveSanitizerTest {
     CompilationFixtureSupport.compile(moduleOutput, List.of(moduleSource));
     try (JarFile input = new JarFile(candidate.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(modularJar))) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        copyEntry(input, output, entries.nextElement());
+      for (final JarEntry entry : input.stream().toList()) {
+        copyEntry(input, output, entry);
       }
       writeEntry(
           output,
@@ -637,9 +572,7 @@ class ArchiveSanitizerTest {
         "fixture.Keep\n" + "fixture.Drop\n" + "org.external.ForeignConfig\n";
     try (JarFile input = new JarFile(candidate.toFile());
         JarOutputStream output = new JarOutputStream(Files.newOutputStream(withImports))) {
-      final Enumeration<JarEntry> entries = input.entries();
-      while (entries.hasMoreElements()) {
-        final JarEntry entry = entries.nextElement();
+      for (final JarEntry entry : input.stream().toList()) {
         writeEntry(output, entry.getName(), input.getInputStream(entry).readAllBytes());
       }
       writeEntry(

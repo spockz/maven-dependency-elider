@@ -3,8 +3,8 @@
 
 package io.github.spockz.elider.plugin;
 
+import io.github.spockz.elider.advisory.VulnerabilityCacheManager.CacheConfig;
 import io.github.spockz.elider.plugin.ElisionAnalysisModel.AnalysisOptions;
-import io.github.spockz.elider.scanner.VulnerabilityCacheManager.CacheConfig;
 import java.io.IOException;
 import java.util.List;
 import org.apache.maven.execution.MavenSession;

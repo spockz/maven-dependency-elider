@@ -5,6 +5,9 @@ package io.github.spockz.elider.plugin;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
 import io.github.spockz.elider.model.ArtifactFileRef;
+import io.github.spockz.elider.plugin.nativeimage.DependencyDynamicRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImagePolicyRoots;
+import io.github.spockz.elider.plugin.nativeimage.NativeImageScanContext;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashSet;
