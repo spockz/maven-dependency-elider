@@ -18,25 +18,22 @@
     <description>Spring Boot web application with runtime-only mail classes and an unused Commons Codec dependency.</description>
 
     <properties>
-        <spring-boot.version>3.3.5</spring-boot.version>
-        <jackson-bom.version>${jackson.version}</jackson-bom.version>
+        <spring-boot.version>4.1.1</spring-boot.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <dependency>
-                <groupId>com.fasterxml.jackson</groupId>
-                <artifactId>jackson-bom</artifactId>
-                <version>${jackson.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>${spring-boot.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.github.luben</groupId>
+                <artifactId>zstd-jni</artifactId>
+                <version>1.5.7-18</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -66,6 +63,11 @@
         <dependency>
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.luben</groupId>
+            <artifactId>zstd-jni</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- Optional Spring integrations are present so trimming can resolve their type links. -->
@@ -143,6 +145,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
