@@ -8,7 +8,7 @@ Maven Dependency Elider provides four primary goals:
 * `report`: Displays the persisted elision snapshot and mediated dependency graph from the last successful build.
 * `update-cve-index`: Refreshes local vulnerability intelligence from OSV and CVEList v5.
 
-For common questions, see the [User FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/faq.md) and [Contributor Decisions and FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/contributor-decisions-and-faq.md).
+For common questions, see the [User FAQ](faq.html) and [Contributor Decisions and FAQ](https://github.com/spockz/maven-dependency-elider/blob/main/docs/contributor-decisions-and-faq.md).
 
 ---
 

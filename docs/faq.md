@@ -1,137 +1,112 @@
 <!-- WHY: Answers practical user questions about configuring elision, interpreting its results, and understanding supported boundaries. -->
 # User FAQ
 
-This page covers user-facing configuration, outcomes, compatibility limits, and practical concerns. For implementation rationale, benchmark evidence, and contributor decisions, see the [Contributor Decision Register and Engineering FAQ](contributor-decisions-and-faq.md).
+This page covers configuration, report outcomes, and compatibility. For design rationale and benchmarks, see the [Contributor Decision Register and Engineering FAQ](contributor-decisions-and-faq.md).
 
 ## Using Elision
 
 ### What does the plugin remove?
 
-Elision can remove unused dependency artifacts from a compatible Maven resolver graph and can optionally remove unused classes from retained dependency JARs. It does not edit your POM or rewrite dependency declarations. Whole-artifact removal requires the production core extension and a unique compatible TEST graph capture; if either is unavailable, the goal keeps the whole-artifact candidates and reports them separately from effective drops.
+Elision automatically removes unused dependency JARs from the build's resolved Maven artifact view (requiring the core extension and a valid `TEST` graph capture) and prunes unused classes from retained JARs (`elide.trimJars=true`)—giving you smaller, cleaner artifacts and OpenVEX/SBOM proofs without manually maintaining `<exclusions>` or auditing transitive trees by hand. If whole-artifact removal cannot bind an unambiguous graph, raw candidates are kept and reported separately.
 
 ### How do I enable elision?
 
-Configure a supported trace file and set `-Delide.skip=false`. See [Maven plugin usage](../dependency-elider-maven-plugin/src/site/markdown/usage.md) for trace formats, JAR trimming options, and examples.
-
-For the repository examples, use `-Delide.mode=baseline` or `-Delide.mode=elision` with the same POM. `elision` activates the example profile; `baseline` is the default. This makes it easy to compare the two packaged outputs without maintaining separate POMs.
+Configure a trace file and set `-Delide.skip=false`. See [Maven plugin usage](../dependency-elider-maven-plugin/src/site/markdown/usage.md) for trace formats and options. For the repository examples, use `-Delide.mode=baseline` (default) or `-Delide.mode=elision`.
 
 ### How can I see the dependencies effective after elision?
 
-With the core extension in `.mvn/extensions.xml` and an active elider execution in the POM, run the bare tree goal:
+With the core extension in `.mvn/extensions.xml` and an active elider execution, run:
 
 ```sh
 ./mvnw -Delide.skip=false -Delide.traceFiles=/path/to/trace.log dependency:tree
 ```
 
-The production sequence is fixture-verified for Maven CLI 3.9.11 and Dependency Plugin 3.8.1: the extension schedules the configured elider before a bare `dependency:tree` request, and repeated tree goals show the dropped leaf absent while retaining the used dependency. The test includes a skipped-elision control that shows both dependencies. The verified case is a single-project leaf graph; automatic preparation rejects multi-project reactors. Normal lifecycle commands reach `process-classes`, the default elider phase. A later Maven invocation computes a fresh plan; it does not restore the prior session's plan from the report. See [the integration tests](../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIT.java#L583) and [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
+For single-project modules, the extension schedules elision before `dependency:tree` so dropped leaves disappear from the output (multi-project reactors are rejected). Each invocation computes a fresh plan. See [the integration tests](../dependency-elider-maven-plugin/src/test/java/io/github/spockz/elider/plugin/DependencyContextLifecycleIT.java#L583) and [RQ-0006](research/RQ-0006-maven-artifact-view-consistency-and-early-resolution-hooks.md).
 
 ### Why did a raw dependency candidate remain in my build?
 
-The goal removes a whole artifact only when it can bind one unambiguous initial TEST graph to the Maven artifact inventory and later validate the exact source graph before projection. Install and load the production core extension from `.mvn/extensions.xml`; missing, ambiguous, or changed graph evidence leaves raw candidates retained. The report lists raw candidates separately from effective whole-artifact drops. Retained JAR class trimming can still run when whole-artifact removal fails closed.
+Whole-artifact removal requires the core extension (`.mvn/extensions.xml`) and an unambiguous, unchanged `TEST` graph capture. If graph evidence is missing, ambiguous, or stale, whole-artifact drops fail closed and remain in the build (class-level JAR trimming can still run).
 
 ### What does the nonmutating `analyze` summary mean?
 
-It reports artifacts that would be elided by that analysis and the exact sum of their original on-disk JAR sizes. The byte total is an estimate of possible savings; the final package delta may differ. `analyze` uses trim-disabled options and does not predict intra-JAR class removal. It does not mutate Maven artifact views or package output.
+It forecasts whole-artifact drops and on-disk JAR byte savings in a read-only pass. With `elide.trimJars=true` (default), it also previews intra-JAR class pruning (`Classes that would be pruned from this JAR`; full list in `target/dependency-elider-analysis-report.json`). With `elide.trimJars=false`, it runs a fast streaming ASM pass for whole-artifact elision only.
 
 ### How can I keep a dependency JAR unchanged?
 
-Set `elide.trimSkipArtifacts` to the exact resolved coordinate, such as `groupId:artifactId:version:jar:`. The JAR remains byte-identical and is protected from whole-artifact elision. Its classes can still cause linked classes in other trim candidates to be retained. See [Maven plugin usage](../dependency-elider-maven-plugin/src/site/markdown/usage.md) for the Spring example.
+Set `elide.trimSkipArtifacts` to `groupId:artifactId[:version[:type[:classifier]]]`; omitted `version` or `classifier` parts (or `*`) act as wildcards. The JAR stays byte-identical and cannot be dropped, though its live classes still retain linked classes in trim candidates. See [Maven plugin usage](../dependency-elider-maven-plugin/src/site/markdown/usage.md).
 
 ### How can I retain an artifact from whole-artifact elision?
 
-Set `elide.retainedArtifacts` to its `groupId:artifactId`, for example `-Delide.retainedArtifacts=org.example:library`. This retains a matching artifact in the current graph; it does not promise that the original JAR bytes remain unchanged. Use `elide.trimSkipArtifacts` when byte-identical preservation is required. The former `elide.excludedArtifacts` property and `<excludedArtifacts>` element are rejected because this setting controls retention rather than Maven dependency exclusions.
+Set `elide.retainedArtifacts` to `groupId:artifactId` (e.g. `-Delide.retainedArtifacts=org.example:library`). This keeps the artifact in the graph, though its classes may still be trimmed unless also listed in `elide.trimSkipArtifacts`. The legacy `elide.excludedArtifacts` setting is rejected.
 
 ### How can I request that a dependency be removed?
 
-The ban policy uses exact `groupId:artifactId` identities. An Analyze-only invocation, with or without the core extension, predicts outcomes and never applies bans. If the same Maven invocation also selects `elide`, its selected policy injects exclusions before collection and Analyze observes that shared graph; Elide owns enforcement. `elide` applies only a validated plan: with the extension, selected exclusions are injected before collection and checked against the original-input audit; without it, Elide uses isolated current-model Resolver planning. In that no-extension ban operation, Elide may also evaluate unrelated trace-derived drops after graph and content closure succeeds; ordinary no-extension runs without bans keep those candidates. A matched or pre-resolution-excluded request requires complete production class output (`elide.productionClassesComplete=true`) or a trusted `process-classes` lifecycle binding. The legacy `elide.sourceRootsComplete=true` assertion is rejected. A requested identity matching an unsupported Maven scope or artifact type, a direct dependency, a retained obligation, or an unresolved class/resource/provider link fails before publication. Unmatched requests are reported distinctly, do not fail by themselves, and do not prove absence. Enforcement covers this project's resolved views and generated outputs; it does not rewrite consumer POMs or promise changes to plugin realms or annotation-processor paths.
-
-The original dependency model is frozen before exclusion injection; original-input Resolver audit resolution happens later using that capture and remains read-only. Audit evidence is not a promise that every resolver request is intercepted or that all consumers see the ban. An `elide` enforcement failure occurs before reports, generated outputs, Maven artifact views, or the resolver plan are published. See [ADR-0012](adr/0012-dual-layer-ban-policy-and-retention-naming.md).
+Configure bans using exact `groupId:artifactId` identities (`elide.banishedDependencies`). `analyze` only forecasts bans; `elide` enforces them (injecting exclusions before collection when the core extension is loaded, or via isolated resolver planning otherwise) and fails before publication if a ban targets a direct dependency, retained obligation, unsupported scope/type, or unresolved link. Unmatched bans do not fail and do not prove absence. Complete production classes (`elide.productionClassesComplete=true` or `process-classes`) are required. See [ADR-0012](adr/0012-dual-layer-ban-policy-and-retention-naming.md).
 
 ### What if a dependency JAR changes during or between Maven builds?
 
-The elider uses exact content digests to identify dependency JARs and the active runtime's system-module descriptors and class resources. It does not inspect `ct.sym` or JMOD layouts. Concurrent edits to dependency or platform inputs during a Maven invocation are unsupported and can make that invocation nondeterministic. A later invocation recalculates content identity, so changed inputs are recognized. Maven's resolution-time checksum verification does not lock files for the rest of the build. See [ADR 0004](adr/0004-assume-resolved-inputs-stable-during-build.md).
+Elider hashes dependency JARs and runtime system-module descriptors/classes by content digest. Concurrent edits during a single Maven run are unsupported; subsequent runs recalculate digests and pick up changes. See [ADR 0004](adr/0004-assume-resolved-inputs-stable-during-build.md).
 
 ### What happens if a dependency contains multi-release implementation classes?
 
-When `elide.trimJars=true`, the plugin selects the effective compiler release first, then target, and elevates that analysis target's classes to the JAR root. If neither is configured, Elider uses the active runtime feature as its analysis default; this does not claim Maven's emitted-bytecode default. Higher-tier entries remain unchanged, while class bodies at tier breakpoints through the Maven runtime release contribute to sibling dependency closure. This analysis also uses an MRJAR configured for `pass-through` as an unchanged program input when another dependency is trimmed. Tiers above that runtime are preserved without linkage analysis. SPI descriptors stay at the root and provider names for removed classes are filtered. Set `-Delide.mrjarStrategy=pass-through` to keep the original MRJAR byte-identical; references from tiers above the Maven runtime remain outside the sibling-closure proof. Root module descriptors follow the existing classpath pass-through policy; versioned module descriptors are removed from trimmed output.
+With `elide.trimJars=true` and default `elide.mrjarStrategy=vertical-shading`, Elider elevates classes for the effective compiler target release to the JAR root, preserves higher-tier entries unchanged, strips versioned `module-info.class`, and filters `META-INF/services/` for removed providers. Set `-Delide.mrjarStrategy=pass-through` to keep MRJARs byte-identical (higher-tier links above the Maven runtime are not included in sibling closure).
 
 ### What happens to reports and outputs if publication fails?
 
-A failure before the publication commit restores the previous reports, output generation, Maven artifact views, and resolver plan. If backup cleanup fails after publication commits, Maven reports that cleanup error while the new reports and outputs remain active.
+Any failure before publication commits rolls back the previous reports, generated outputs, Maven artifact views, and resolver plan.
 
 ### What if my application runs on a different JDK than Maven?
 
-MRJAR linkage analysis selects the release from Maven's effective compiler configuration, then target; target-only configuration is supported, while source-only configuration does not establish Elider's target. Captured user properties take precedence over captured system and project properties when no explicit plugin value supplies the setting. If neither release nor target is configured, Elider uses the active runtime feature as its analysis default. This fallback is an analysis policy, not a claim about Maven compiler's emitted bytecode default. The JDK class table describes the active runtime; it does not validate API availability for an older target. If the deployed application uses a newer JDK, higher-tier entries are preserved but their references to sibling JARs are not included in the analyzed closure. Run the build with the deployment JDK to verify those links. Pass-through preserves the MRJAR bytes but does not preserve sibling dependencies referenced only from unanalysed tiers.
+Elider selects the target release from Maven's effective compiler configuration (`release`, then `target`; `source` alone is ignored), falling back to the active Maven runtime JDK if unset. Because the JDK class table reflects the Maven runtime rather than historical APIs, run the build on your target deployment JDK to verify higher-tier MRJAR links.
 
 ### What if production output is not ready at `process-classes`?
 
-The default elider phase is `process-classes`, after production compilation and configured code generation. It derives production roots from emitted class files. `elide.sourceRootsComplete=true` is no longer supported; it fails with migration guidance to use `process-classes` and compiled output.
-
-Source-free modules may have absent or empty production output. If the project has Java sources but no class files have been emitted, run compilation first or use the normal Maven lifecycle. For manual invocations that assert output completeness, set `elide.productionClassesComplete=true`. Source files are not scanned, so dependencies referenced only through compile-time-inlined primitive or `String` constants may need explicit retention with `elide.retainedArtifacts`.
-
-Compiled Kotlin and other JVM bytecode is analyzed through class-file references, but source files and language metadata do not supply reachability roots. Direct `mvn dependency-elider:elide` and `mvn dependency-elider:analyze` can inspect current physical runtime inputs when `elide.productionClassesComplete=true` explicitly asserts complete compiled output. With `elide.preconditionClassPathComplete=true`, either goal can record physical prerequisite absence from a complete inventory; Analyze does not need to apply a trim to establish current absence. Test-only source, class, and resource roots and test-scoped dependency archives are excluded from the proof's provider scan; their dependency-scope rows remain in resolver decisions and SBOMs. Test compilation may run, though custom compiler arguments or output directories that could redirect classes remain unsupported. If Elide's lifecycle request reaches tests, `-DskipTests=true` is still required because executed tests could change production output after capture. `maven.test.skip=true` is unnecessary. A prerequisite absent in current bytes can be proved now; absence that depends only on Analyze's proposed removals remains a forecast until the output exists and is inspected. Analyze does not publish VEX files.
+Elider runs at `process-classes` by default and derives production roots from compiled `.class` files (`elide.sourceRootsComplete=true` is rejected). For direct `analyze` or `elide` invocations, run `compile` first and pass `-Delide.productionClassesComplete=true` (plus `-DskipTests=true` if lifecycle reaches tests). Java sources are not scanned, so retain compile-time-inlined constants explicitly via `elide.retainedArtifacts`. For physical prerequisite proofs, set `elide.preconditionClassPathComplete=true` (`analyze` never writes VEX files; only `elide` does).
 
 ### What happens to JARs with a root `module-info.class`?
 
-On the classpath, such JARs are kept byte-identical with a warning. Set `-Delide.failOnUnsupportedModuleInfo=true` to fail instead. JPMS module-path behavior is not supported.
+Classpath JARs with a root `module-info.class` are kept byte-identical with a warning. Set `-Delide.failOnUnsupportedModuleInfo=true` to fail instead. JPMS module-path execution is unsupported.
 
 ### What happens when the plugin encounters metadata or an archive layout it does not understand?
 
-It fails before changing Maven artifact pointers rather than assuming unknown metadata is unused. Multi-release JARs use the configured `elide.mrjarStrategy` (vertical shading by default or byte-identical pass-through), while root-module-info JARs follow the module-info policy above. Unsupported metadata outside those policies still fails closed.
+It fails closed before modifying Maven artifact pointers rather than assuming unknown metadata is unused, outside the configured MRJAR and `module-info.class` policies.
 
 ### What happens when a dependency has an unsupported native-image argument?
 
-Syntactically valid arguments outside the audited GraalVM Native Image 21.0.12+7.1 inventory are accepted without inferred class roots. The plugin does not promise that arbitrary future options cannot declare roots. Recognized class, package, configuration, and indirection inputs must be modeled; malformed values or unreadable referenced configuration fail with an error rather than being ignored. See [ADR-0009](adr/0009-permissive-graalvm-native-image-metadata-ingestion.md) for the modeled boundary.
+Syntactically valid arguments outside the audited GraalVM Native Image 21.0.12+7.1 inventory are accepted without inferring class roots; malformed values or unreadable referenced configs fail closed. See [ADR-0009](adr/0009-permissive-graalvm-native-image-metadata-ingestion.md).
 
-Native Image resource-bundle names from `-H:IncludeResourceBundles` and configuration descriptors accept the same Unicode family-name grammar, including locale suffixes; only indexed bundle classes become class roots.
+### Why use Dependency Elider alongside GraalVM Native Image?
+
+* **Smaller `native-image` input**: Drops unused JARs and prunes unreachable classes before GraalVM compilation while preserving `META-INF/native-image/**` and tracing-agent roots.
+* **OpenVEX and SBOM proofs**: Emits CycloneDX SBOMs (`dependency-elider-sbom.cdx.json`) and OpenVEX documents (`dependency-elider.openvex.json`) proving omitted vulnerable artifacts and classes.
 
 ### Does removing classes make a vulnerability finding go away?
 
-Not necessarily. Package scanners can continue reporting the same artifact coordinates and version after classes are removed. Dependency Elider assesses effective vulnerability declarations through the same checks regardless of their source. Omitted-code proof requires exact component/version binding, attributable declared classes in the original JAR, and their physical absence from the resulting artifact. A package match, heuristic hint, confidence label or higher merge priority cannot establish that proof. A verified observation covers the declared classes; it does not independently verify the vulnerability or the completeness of the declaration.
-
-Precondition proof requires every effective prerequisite coordinate/class pair to be absent and `elide.preconditionClassPathComplete=true`, with a complete verified declared inventory. The class need not have been present in a separate baseline inventory; the observed current/final bytes establish absence. Missing inventory inputs, a retained prerequisite, unresolved prerequisite scope or review-only intent prevent that proof. The provider scan excludes test-scoped archives, but their dependency-scope rows remain in resolver decisions and SBOMs. Analyze may record physical proof about its current inventory; absence that depends only on planned removals remains a prediction. Only Elide publishes CycloneDX/OpenVEX files. Code and prerequisite groups are independent, so an unresolved code mapping does not invalidate a separately verified prerequisite proof. The inventory assertion does not cover providers added by later packaging or deployment mechanisms. Inspect and scan the final packaged artifact separately. See [RQ-0008](research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) and [RQ-0013](research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
+Not automatically. Package scanners still see the original coordinate unless the whole JAR is dropped. Elider emits a physical omission proof (`DECLARED_CODE_ABSENT`) only when an exact component/version's attributable declared classes are verified absent from the final artifact (package matches or `REVIEW_LEAD` heuristics cannot establish proof). Prerequisite proofs (`PREREQUISITES_ABSENT`) require `elide.preconditionClassPathComplete=true`. Only `elide` publishes CycloneDX/OpenVEX files. See [RQ-0008](research/RQ-0008-osv-sbom-comparison-and-vex-evidence.md) and [RQ-0013](research/RQ-0013-precondition-gated-vex-and-multi-artifact-exploitability.md).
 
 ### Which sources produce vulnerability findings?
 
-The OSV Maven snapshot, CVE List v5, configured manual mappings, and explicitly adopted Maven mapping catalogs independently contribute to a common finding model. An optional Snyk API lookup can also contribute findings for the project's queried Maven versions when enabled with an authorized account; see [Snyk configuration](../dependency-elider-maven-plugin/src/site/markdown/usage.md#optional-snyk-package-findings). A CVE List record with supported Maven identity and version information can produce a finding without a matching OSV entry. Missing or unsupported identity/version information remains unresolved rather than becoming an invented Maven match. Reports retain each contributing source and record reference; the source name does not select a different assessment or proof route.
+OSV Maven snapshots, CVE List v5, POM manual mappings, adopted Maven mapping catalogs, and optional Snyk lookups ([Snyk configuration](../dependency-elider-maven-plugin/src/site/markdown/usage.md#optional-snyk-package-findings)) merge into one finding model. Missing/unsupported Maven identities stay unresolved rather than being guessed.
 
 ### How do I adopt a shared vulnerability mapping catalog?
 
-Configure explicit, pinned Maven coordinates for the `analyze` and/or `elide` goal with `-Delide.vulnerabilityMappingCatalogs=groupId:artifactId:version[:type[:classifier]]`. The default artifact type is `jar`; an omitted classifier uses the selected Maven artifact type's default. The catalog artifact must provide `META-INF/elider/vulnerability-mappings.json` with a supported schema. Version ranges, `LATEST`, `RELEASE`, and snapshots are rejected so the selected data is reproducible. Resolution uses the project's effective artifact repositories and does not collect the catalog POM's dependencies or add the artifact to the application classpath, inventory, or SBOM. A required missing artifact or invalid catalog fails the goal rather than producing an empty successful mapping set. The saved report records resolved catalog coordinates, the observed artifact SHA-256, schema and row IDs for replay; the digest identifies the bytes observed by the build and is not publisher authentication. `report` replays this saved adoption evidence without resolving the artifact again.
+Pass `-Delide.vulnerabilityMappingCatalogs=groupId:artifactId:version[:type[:classifier]]` with a pinned release (no ranges or `SNAPSHOT`s). The artifact must contain `META-INF/elider/vulnerability-mappings.json`. Catalogs are data-only (excluded from classpath/SBOM) and fail closed if missing or malformed; `report` replays the saved SHA-256 and catalog metadata.
 
 ### How are findings merged, and do manual mappings take priority?
 
-For the same vulnerability and Maven component, automatic code declarations are normalized and combined as sets. A source with code details can enrich another source's package-only finding. Affected-version coverage is the union of supported ranges: disjoint intervals keep their gaps. Code declarations retain their applicable version scope, so widening package coverage does not invent code mappings for other versions. Shared catalogs use the same merge policy and carry `CATALOG` provenance; supplied fields rank POM/manual > catalog > automatic, with review-only intent preserved.
-
-Manual mappings have higher merge priority within their configured CVE/component/version scope. Supplied manual fields replace lower-priority fields; omitted fields can be enriched. A supplied manual code mapping replaces the whole lower-priority class/file/routine mapping for that scope. All resulting fields then use the same validation and physical checks. Manual `LOW` or `MEDIUM` keeps the result review-only even when missing code details are enriched; a lower-priority declaration cannot bypass that intent. Severity scores do not affect this process.
-
-In a POM mapping, `versionRangeSpec` defines the range where supplemental code or prerequisite evidence applies. It does not assert that a version is affected by default, even when the range is an exact pin. `assertsAffected` defaults to `false`; set it to `true` only when the mapping independently asserts that the vulnerability affects the component in that range. A scope-only mapping neither makes versions outside its range unaffected nor creates a vulnerability finding by itself. Affectedness must come from a separate affected claim; otherwise the result is `NO_AFFECTED_ASSERTION` and cannot produce VEX.
+Automatic code paths normalize into sets and affected ranges combine by union (preserving gaps). Merge priority is **POM/manual > catalog > automatic**: manual mappings override supplied fields for their scope while allowing omitted fields to be enriched (`LOW`/`MEDIUM` manual intent stays review-only). In POM mappings, `versionRangeSpec` is evidence scope only (`assertsAffected` defaults to `false`; set `true` to assert affectedness).
 
 ### What does the conventional Java source-layout option do?
 
-`elide.assumeConventionalJavaSourceLayout` defaults to `true` and permits the documented source-root translation when attributing a declared Java source path. Set it to `false` to disable that assumption. The option does not waive unambiguous class attribution or physical omission checks. Ambiguous filenames and unsupported claims remain visible for review. The saved report retains the assumption and attribution used by the successful run; `report` replays those values independently of current configuration.
-
-The report also retains package-only and heuristic candidates as review findings with their contributing sources. Each finding identifies the assessed component and version coverage; unsupported ranges stay explicit. Removed, trimmed and unchanged describe inventory disposition rather than mitigation. Verify the declaration and exact artifact before adding a manual correction.
-
-The saved report's `policy` section records canonical `retainedArtifacts`, `banishedDependencies`, and the SHA-256 identity of the operation that produced the snapshot. `appliedBans` records each request as `FORCED_ABSENT_AFTER_RESOLUTION`, `EXCLUDED_BEFORE_RESOLUTION`, or `UNMATCHED`, with the original and effective artifact matches. `rawDroppedCoordinates` excludes artifacts removed because of an explicit ban; whole-artifact drop metrics still describe every artifact absent from the final Maven view.
+`elide.assumeConventionalJavaSourceLayout` (default `true`) translates Java source paths to class names when attributing advisories. The saved report records this setting, the `policy` identity, `appliedBans`, and `InventoryDisposition` (`REMOVED`, `RETAINED_AND_TRIMMED`, `RETAINED_UNCHANGED`), which `report` replays verbatim.
 
 ### How does the report distinguish the analysis target from the Maven runtime?
 
-The schema-v1 elision report requires `executionEnvironment.targetRelease` and
-`executionEnvironment.runtimeRelease`. The target records Elider's analysis baseline from the
-effective compile configuration: release first, then target, then the active runtime feature when
-neither is set. The effective `default-compile` execution is considered even when its POM entry has
-no explicit goals; `testCompile` does not select the production target. That last case is Elider's
-analysis default, not a claim about Maven compiler's emitted bytecode default. The runtime records
-the JDK that ran Maven. `dependency-elider:report` validates and displays the saved values without
-replacing them with settings from the current Maven run. The active JDK class table still does not
-emulate a historical target API.
+`executionEnvironment.targetRelease` records the effective compiler target (`release`, then `target`, then Maven runtime JDK if unset; `testCompile` is ignored), while `executionEnvironment.runtimeRelease` records the JDK running Maven. `report` replays both saved values.
 
 ### What happens if an advisory maps multiple vulnerable classes that do not exist in an older version?
 
-Omitted-code proof requires every effective declared class to be attributable to the original dependency JAR before certifying its absence from the result. A broad mapping that names classes missing from an older JAR remains unresolved for that JAR. The finding stays visible, but that code group cannot produce omission proof.
-
-After checking the declaration against the exact artifact version, an engineer can supply a scoped correction in `pom.xml` under `<configuration><vulnerabilityMappings>`:
+Omitted-code proof requires every declared class to exist in the original JAR; missing classes leave that mapping unresolved. To scope a correction in `pom.xml`:
 
 ```xml
 <vulnerabilityMappings>
@@ -149,54 +124,35 @@ After checking the declaration against the exact artifact version, an engineer c
 </vulnerabilityMappings>
 ```
 
-The manual code set replaces automatic code mappings only within its version scope. Every class in the effective set, including its nested classes, must pass physical verification. An explicitly empty `<vulnerableClasses/>` clears the mapping in scope and produces no omission proof; omitting that element permits enrichment from automatic declarations.
+An empty `<vulnerableClasses/>` clears the mapping in scope; omitting it allows automatic enrichment.
 
 ### Why can `META-INF/services/` retain declared vulnerable code?
 
-Java Service Provider Interface (SPI) entries in `META-INF/services/` declare provider implementations loaded dynamically at runtime via `java.util.ServiceLoader`. Omitting these providers without proof can cause runtime `ServiceConfigurationError` exceptions.
-
-Keeping a service provider can also keep classes it references, including code named by a vulnerability declaration.
-
-Maven Dependency Elider analyzes `ServiceLoader` usage:
-
-1. **Positive Proof of Use**: The scanner analyzes application bytecode for calls to `ServiceLoader.load(...)` or `ServiceLoader.loadInstalled(...)` where the service parameter is either a constant class/string literal or points to a `static final` constant field. When a service factory in a dependency JAR matches an observed call, the SPI entry is proven in use and retained as a legitimate root.
-2. **Conservative Fallback (`elide.conservativeServiceLoaderRoots`, default `true`)**: When negative proof is unavailable (the service interface is not observed statically, but reflection or dynamic loading might still occur), unproven SPI providers are retained by default for runtime safety.
-3. **Vulnerability findings**: Retained effective declared code prevents the corresponding omission proof. The common finding reports its attribution and outcome regardless of which source supplied the declaration.
-4. **Disabling Conservative Fallback**: If your application does not require unobserved dynamic SPI lookups for that library, disable the fallback to allow those providers to be pruned:
-
-```xml
-<configuration>
-  <conservativeServiceLoaderRoots>false</conservativeServiceLoaderRoots>
-</configuration>
-```
-
-Or pass `-Delide.conservativeServiceLoaderRoots=false` on the command line. This changes retention policy; the resulting classes must still satisfy the same attribution and physical verification checks before any proof is emitted.
+`META-INF/services/` entries are loaded dynamically via `ServiceLoader`. By default (`elide.conservativeServiceLoaderRoots=true`), Elider keeps statically proven `ServiceLoader.load(...)` providers *plus* unproven SPI providers to avoid `ServiceConfigurationError` (which can transitively keep vulnerable classes). Disable the fallback with `-Delide.conservativeServiceLoaderRoots=false` (or `<conservativeServiceLoaderRoots>false</conservativeServiceLoaderRoots>`) if unobserved dynamic SPI lookups are not needed.
 
 ## Compatibility and Performance
 
 ### What Java versions and target compilation levels are supported?
 
-There is an important distinction between the JDK running Maven and your application's compilation target:
-
-* **Build Runtime (JDK executing Maven)**: Requires **JDK 21 or newer**. The plugin is implemented in Java 21 LTS using modern language features (such as Records, pattern matching, and sequenced collections) and requires a Java 21+ JVM process to run inside Maven.
-* **Application Compilation Target (Target Bytecode)**: Supports compilation targets from **Java 1.1 up through Java 27** (class-file major versions 45 through 71), including **Java 25** (version 69). A project can compile with `<release>8</release>`, `<release>11</release>`, `<release>17</release>`, `<release>21</release>`, or `<release>25</release>` and use intra-JAR trimming, reachability link closure, and whole-artifact elision normally, provided Maven itself is executed with JDK 21+.
-* **Bytecode Engine Compatibility**: The pinned bytecode engine (`com.guardsquare:proguard-core:9.4.0`) natively supports class-file versions through Java 27 (major version 71), fully supporting Java 25 class-file analysis.
+* **Build Runtime**: Requires **JDK 21+** to run Maven.
+* **Target Bytecode**: Supports **Java 1.1 through Java 27** (class-file major versions 45–71, via `proguard-core:9.4.0`).
 
 ### What Kotlin features are supported?
 
-Kotlin support is limited to JVM class files and the Kotlin metadata ProGuard Core can read. There is no Kotlin source compiler or Kotlin source-reference scanner.
+Kotlin is analyzed strictly as JVM bytecode (no `.kt`/`.kts` source scanning).
 
 | Kotlin feature | Status | Boundary and evidence |
 | :--- | :--- | :--- |
-| Kotlin-compiled dependency bytecode | Supported as JVM bytecode | Class reachability uses normal JVM linkage. This does not make missing Kotlin or coroutine types implicitly optional. |
-| `kotlin.Metadata` on sibling library classes | Parsed and validated; not a reachability source | Metadata-bearing siblings are reparsed per context because ProGuard mutates metadata. Malformed metadata fails closed. [`LibraryArchiveTemplates`](../elider-core/src/main/java/io/github/spockz/elider/trimmer/LibraryArchiveTemplates.java#L61) and a real Kotlin class resource are covered by [`ArchiveSnapshotTemplateTest`](../elider-core/src/test/java/io/github/spockz/elider/trimmer/ArchiveSnapshotTemplateTest.java#L148), but parsing is not Kotlin metadata reachability support. |
-| Class references encoded only in Kotlin metadata | Not followed | The [reference visitor](../elider-core/src/main/java/io/github/spockz/elider/trimmer/ProGuardReferenceVisitors.java#L49) does not traverse metadata-only names, and trim candidates are read without initializing Kotlin metadata in [`ArchiveSnapshot`](../elider-core/src/main/java/io/github/spockz/elider/trimmer/ArchiveSnapshot.java#L142). Do not rely on Kotlin reflection or downstream Kotlin compilation metadata to keep otherwise unreferenced classes. |
-| Kotlin application source (`.kt`, `.kts`) | Not source-scanned | Compiled Kotlin bytecode is analyzed as JVM class files. Source-only references, including dependencies used only through inlined constants, are not inferred; retain those dependencies explicitly when needed. The legacy `elide.sourceRootsComplete=true` property is rejected with lifecycle migration guidance. |
-| Missing optional Kotlin/coroutine references in a library | Unchanged owners | A reachable missing reference in an archive being transformed fails closed. Retained `provided` and `system` JARs remain unchanged; for a compile/runtime owner that must remain unchanged, use `elide.trimSkipArtifacts`. For an MRJAR, `elide.mrjarStrategy=pass-through` is also available. The unchanged owner still contributes resolved links to sibling trim candidates. |
-| Kotlin metadata in a supplied JDK class table | Unsupported | The internal runtime-module snapshot rejects metadata-bearing JDK classes. This is separate from parsing metadata on sibling library classes. |
+| Kotlin-compiled dependency bytecode | Supported as JVM bytecode | Uses normal JVM linkage; missing optional Kotlin/coroutine types are not implicitly ignored. |
+| `kotlin.Metadata` on sibling library classes | Parsed and validated; not a reachability source | Reparsed per context; malformed metadata fails closed ([`LibraryArchiveTemplates`](../elider-core/src/main/java/io/github/spockz/elider/trimmer/LibraryArchiveTemplates.java#L61), [`ArchiveSnapshotTemplateTest`](../elider-core/src/test/java/io/github/spockz/elider/trimmer/ArchiveSnapshotTemplateTest.java#L148)). |
+| Class references encoded only in Kotlin metadata | Not followed | Not traversed by [the reference visitor](../elider-core/src/main/java/io/github/spockz/elider/trimmer/ProGuardReferenceVisitors.java#L49) or [`ArchiveSnapshot`](../elider-core/src/main/java/io/github/spockz/elider/trimmer/ArchiveSnapshot.java#L142). |
+| Kotlin application source (`.kt`, `.kts`) | Not source-scanned | Source-only references (e.g. inlined constants) are not inferred; retain explicitly if needed. |
+| Missing optional Kotlin/coroutine references in a library | Unchanged pass-through fallback | With `elide.trimPassThroughOnUnresolved=true` (default), candidates with unresolved optional references are kept unchanged as pass-through JARs; set `false` to fail closed. Use `elide.trimSkipArtifacts` (or `elide.mrjarStrategy=pass-through` for MRJARs) to configure explicitly. |
+| Kotlin metadata in a supplied JDK class table | Unsupported | Rejected on internal runtime-module snapshots. |
 
-The Spring regression test uses synthetic Java bytecode that references an absent `kotlin.coroutines.Continuation`; it verifies pass-through policy, not Kotlin compiler output or Kotlin source scanning. Kotlin compiler and plugin-version combinations have not been independently verified.
+### How much build time and memory does elision add?
 
-### How much build time does elision add?
+* **`elide.trimJars=false`**: Streams retained JARs with ASM without ProGuard pools (`example-spring-boot-app` runs in `~7 s` under `-Xmx512m`).
+* **`elide.trimJars=true`**: Builds ProGuard `ClassPool`s and per-candidate closures (pass-through JARs still stream with ASM). Repeated identical requests hit the `<10 ms` trim cache.
 
-Three baseline-first `clean verify` cycles measured Basic at a median 2.262 seconds without elision and 4.224 seconds with it; the median of the three paired differences was +1.977 seconds. Spring Boot measured medians of 4.106 seconds and 24.523 seconds, with a median paired difference of +20.417 seconds. These are descriptive observations, not stable performance guarantees or isolated causal estimates. The fresh-context trim-cache operation remains above the <10 ms target; the repeated same-request cache hit is below it. Elision remains under active development and should not be used to remove dependencies from production builds. See [RQ-0003](research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for measurement details.
+See [RQ-0003](research/RQ-0003-sub-10ms-maven-fast-path-invariant-and-benchmarking.md) for benchmark methodology; elision remains experimental for production builds.

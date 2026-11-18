@@ -18,7 +18,8 @@ sed \
   -e 's|(docs/adr/\([^)]*\)\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/adr/\1.md)|g' \
   -e 's|(docs/research/\([^)]*\)\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/research/\1.md)|g' \
   -e 's|(docs/handovers/\([^)]*\)\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/handovers/\1.md)|g' \
-  -e 's|(docs/faq\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/faq.md)|g' \
+  -e 's|(docs/faq\.md)|(faq.html)|g' \
+  -e 's|(docs/faq\.md#\([^)]*\))|(faq.html#\1)|g' \
   -e 's|(docs/contributor-decisions-and-faq\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/contributor-decisions-and-faq.md)|g' \
   -e 's|(docs/adr/)|(https://github.com/spockz/maven-dependency-elider/tree/main/docs/adr/)|g' \
   -e 's|(docs/research/)|(https://github.com/spockz/maven-dependency-elider/tree/main/docs/research/)|g' \
@@ -28,3 +29,13 @@ sed \
   "$REPO_ROOT/README.md" > "$OUTPUT_FILE"
 
 echo "Generated site index at $OUTPUT_FILE from README.md"
+
+FAQ_OUTPUT_FILE="$OUTPUT_DIR/faq.md"
+sed \
+  -e 's|(\.\./dependency-elider-maven-plugin/src/site/markdown/\([^)]*\)\.md)|(\1.html)|g' \
+  -e 's|(adr/\([^)]*\)\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/adr/\1.md)|g' \
+  -e 's|(research/\([^)]*\)\.md)|(https://github.com/spockz/maven-dependency-elider/blob/main/docs/research/\1.md)|g' \
+  -e 's|(\.\./elider-core/\([^)]*\))|(https://github.com/spockz/maven-dependency-elider/blob/main/elider-core/\1)|g' \
+  "$REPO_ROOT/docs/faq.md" > "$FAQ_OUTPUT_FILE"
+
+echo "Generated site FAQ at $FAQ_OUTPUT_FILE from docs/faq.md"
