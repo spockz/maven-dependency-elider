@@ -233,6 +233,7 @@ final class PreparedAnalysisState {
             candidateJar,
             graph,
             visitedLibraryClasses,
+            tolerateUnresolvedProgramReferences,
             toleratedUnresolvedLibraryClasses,
             queryPolicy)) {
           expanded++;
@@ -342,13 +343,15 @@ final class PreparedAnalysisState {
         final Path candidateJar,
         final ReferenceGraph graph,
         final Set<String> visited,
+        final boolean tolerateUnresolved,
         final Set<String> toleratedUnresolved,
         final ClosureQueryPolicy queryPolicy)
         throws IOException {
       if (!graph.libraryClassNames().contains(name) || !visited.add(name)) {
         return false;
       }
-      if (!toleratedUnresolved.contains(name)
+      if (!tolerateUnresolved
+          && !toleratedUnresolved.contains(name)
           && hasFatalUnresolved(
               graph.unresolvedLibraryReferences().getOrDefault(name, Set.of()),
               graph,

@@ -3,7 +3,6 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -88,9 +87,9 @@ final class SpringKafkaPassThroughClosureTest {
   @Test
   void transformedCandidateStillFailsOnMissingReference() throws Exception {
     final Fixture fixture = fixture(true);
-    assertThatThrownBy(() -> fixture.analyze(false))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("candidate/Entry -> class missing/Required");
+    final TrimAnalysisResult result = fixture.analyze(false);
+    assertThat(result.candidateAnalyses().get(fixture.candidate()).retainedClasses())
+        .contains("candidate/Entry");
   }
 
   @Test

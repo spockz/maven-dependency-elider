@@ -64,7 +64,10 @@ final class TierAnalysisPreparer {
         .forEach(coordinate -> skipped.add(TrimPassThroughPlanner.artifactIdentity(coordinate)));
     TrimPassThroughPlanner.retainedAnalysisLibraries(operation.request()).stream()
         .map(ElisionAnalysisModel.ArtifactSnapshot::coordinate)
-        .filter(TrimPassThroughPlanner::unchangedScope)
+        .filter(
+            coordinate ->
+                !operation.request().policy().trimEnabled()
+                    || TrimPassThroughPlanner.unchangedScope(coordinate))
         .map(TrimPassThroughPlanner::artifactIdentity)
         .forEach(skipped::add);
     return skipped;
@@ -173,15 +176,22 @@ final class TierAnalysisPreparer {
               final boolean allowModular =
                   MavenDependencyTrimmer.MRJAR_CLASSPATH_ONLY.equals(
                       operation.request().policy().mrjarStrategy());
+              final boolean tolerateUnresolved =
+                  !operation.request().policy().trimPassThroughOnUnresolved();
               return sharedTier != null
                   ? sharedTier.prepareWithUnchangedPassThroughLibraries(
-                      projection.pathFor(snapshot), siblings, unchangedClasses, allowModular)
+                      projection.pathFor(snapshot),
+                      siblings,
+                      unchangedClasses,
+                      allowModular,
+                      tolerateUnresolved)
                   : session.prepareWithUnchangedPassThroughLibraries(
                       projection.pathFor(snapshot),
                       siblings,
                       projection.jdkClassTable(),
                       unchangedClasses,
-                      allowModular);
+                      allowModular,
+                      tolerateUnresolved);
             });
     final Map<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
         prepared =

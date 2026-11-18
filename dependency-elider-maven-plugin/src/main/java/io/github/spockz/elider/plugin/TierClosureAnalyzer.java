@@ -199,7 +199,13 @@ final class TierClosureAnalyzer {
               final TierCandidate candidate = candidates.get(entry.getKey());
               final Set<String> localRoots =
                   candidate.localRoots(context.classesOf(entry.getKey()));
-              return candidateAnalysis(candidate, localRoots, entry.getValue(), closureQueryPolicy);
+              try {
+                return candidateAnalysis(
+                    candidate, localRoots, entry.getValue(), closureQueryPolicy);
+              } catch (final DependencyJarTrimmer.UnresolvedReferenceException exception) {
+                throw new CandidateUnresolvedReferenceException(
+                    entry.getKey().coordinate(), exception);
+              }
             });
     for (int index = 0; index < entries.size(); index++) {
       final Map.Entry<ElisionAnalysisModel.ArtifactSnapshot, DependencyJarTrimmer.PreparedAnalysis>
@@ -262,4 +268,23 @@ final class TierClosureAnalyzer {
       Map<ArtifactCoordinate, Set<String>> liveProgramClasses) {}
 
   /* package */ record ClosureIteration(boolean rootsChanged, int analysisRuns) {}
+
+  /** Carries the failing candidate coordinate for pass-through demotion. */
+  /* package */ static final class CandidateUnresolvedReferenceException extends IOException {
+    private static final long serialVersionUID = 1L;
+
+    /** Coordinate of the candidate whose closure hit an unresolved reference. */
+    private final ArtifactCoordinate candidateCoordinate;
+
+    /* package */ CandidateUnresolvedReferenceException(
+        final ArtifactCoordinate coordinate,
+        final DependencyJarTrimmer.UnresolvedReferenceException cause) {
+      super(cause.getMessage(), cause);
+      this.candidateCoordinate = coordinate;
+    }
+
+    /* package */ ArtifactCoordinate coordinate() {
+      return candidateCoordinate;
+    }
+  }
 }

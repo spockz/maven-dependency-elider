@@ -25,6 +25,7 @@ final class EffectiveOutputPlanFactory {
             prepared.resolvedSnapshots(), effective.trimAnalysis().candidateRoots());
     final Set<ArtifactCoordinate> unchangedCoordinates =
         new LinkedHashSet<>(effective.forcedUnchangedCoordinates());
+    unchangedCoordinates.addAll(effective.trimAnalysis().forcedUnchangedCoordinates());
     final Set<Path> serviceDescriptorOwners =
         prepared.dynamicRootInputs().scansByPath().entrySet().stream()
             .filter(entry -> !entry.getValue().serviceDescriptors().isEmpty())

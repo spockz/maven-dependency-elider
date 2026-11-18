@@ -46,7 +46,8 @@ final class TrimRequestFactory {
             trim.enabled(),
             options.dynamicRoots().conservativeServiceLoaderRoots(),
             trim.workers(),
-            trim.duplicateClasses()),
+            trim.duplicateClasses(),
+            trim.passThroughOnUnresolved()),
         trim.cacheProducerResolution().identity());
   }
 }

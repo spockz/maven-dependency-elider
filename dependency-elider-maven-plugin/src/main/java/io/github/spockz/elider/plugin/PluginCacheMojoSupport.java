@@ -94,6 +94,27 @@ abstract class PluginCacheMojoSupport extends AbstractMojo {
       final int workers,
       final String mrjarStrategy,
       final DuplicateClassPolicy duplicateClasses) {
+    return trimOptions(
+        enabled,
+        explicitRoots,
+        passThroughArtifacts,
+        failOnUnsupportedModuleInfo,
+        workers,
+        mrjarStrategy,
+        duplicateClasses,
+        false);
+  }
+
+  /** Builds trim settings with the shared installed-producer identity policy. */
+  protected final ElisionAnalysisModel.TrimOptions trimOptions(
+      final boolean enabled,
+      final List<String> explicitRoots,
+      final List<String> passThroughArtifacts,
+      final boolean failOnUnsupportedModuleInfo,
+      final int workers,
+      final String mrjarStrategy,
+      final DuplicateClassPolicy duplicateClasses,
+      final boolean passThroughOnUnresolved) {
     final PluginCacheProducerIdentityResolver.Resolution producer = cacheProducerResolution();
     if (enabled && producer.identity().isEmpty() && getLog().isWarnEnabled()) {
       getLog()
@@ -110,7 +131,8 @@ abstract class PluginCacheMojoSupport extends AbstractMojo {
         workers,
         mrjarStrategy,
         producer,
-        duplicateClasses);
+        duplicateClasses,
+        passThroughOnUnresolved);
   }
 
   /** Creates shared support for plugin cache configuration. */

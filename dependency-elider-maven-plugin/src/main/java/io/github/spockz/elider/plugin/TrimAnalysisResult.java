@@ -22,7 +22,8 @@ record TrimAnalysisResult(
     List<Integer> analyzedTiers,
     Map<ArtifactCoordinate, Set<String>> upperTierClasses,
     Set<String> passThroughIdentities,
-    Map<ArtifactCoordinate, Set<String>> liveProgramClasses) {
+    Map<ArtifactCoordinate, Set<String>> liveProgramClasses,
+    Set<ArtifactCoordinate> forcedUnchangedCoordinates) {
   TrimAnalysisResult {
     candidateAnalyses = TrimRootPlanner.immutableAnalysisMap(candidateAnalyses);
     candidateRoots = TrimRootPlanner.immutableSetMap(candidateRoots);
@@ -32,6 +33,8 @@ record TrimAnalysisResult(
     upperTierClasses = TrimRootPlanner.immutableSetMap(upperTierClasses);
     passThroughIdentities = Set.copyOf(passThroughIdentities);
     liveProgramClasses = TrimRootPlanner.immutableSetMap(liveProgramClasses);
+    forcedUnchangedCoordinates =
+        java.util.Collections.unmodifiableSet(new TreeSet<>(forcedUnchangedCoordinates));
   }
 
   /* package */ TrimAnalysisResult(
@@ -55,7 +58,8 @@ record TrimAnalysisResult(
         analyzedTiers,
         upperTierClasses,
         Set.of(),
-        Map.of());
+        Map.of(),
+        Set.of());
   }
 
   /* package */ TrimAnalysisResult withPassThroughIdentities(
@@ -71,7 +75,8 @@ record TrimAnalysisResult(
         analyzedTiers,
         upperTierClasses,
         passThroughIdentities,
-        liveProgramClasses);
+        liveProgramClasses,
+        forcedUnchangedCoordinates);
   }
 
   /* package */ TrimAnalysisResult withLiveProgramClasses(
@@ -87,6 +92,24 @@ record TrimAnalysisResult(
         analyzedTiers,
         upperTierClasses,
         passThroughIdentities,
-        liveProgramClasses);
+        liveProgramClasses,
+        forcedUnchangedCoordinates);
+  }
+
+  /* package */ TrimAnalysisResult withForcedUnchangedCoordinates(
+      final Set<ArtifactCoordinate> forcedUnchangedCoordinates) {
+    return new TrimAnalysisResult(
+        candidateAnalyses,
+        candidateRoots,
+        reachableArtifacts,
+        analysisRuns,
+        targetRelease,
+        runtimeRelease,
+        platformIdentities,
+        analyzedTiers,
+        upperTierClasses,
+        passThroughIdentities,
+        liveProgramClasses,
+        forcedUnchangedCoordinates);
   }
 }

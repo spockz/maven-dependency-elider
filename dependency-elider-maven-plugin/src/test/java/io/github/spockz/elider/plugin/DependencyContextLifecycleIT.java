@@ -888,11 +888,11 @@ final class DependencyContextLifecycleIT {
                 .isLessThan(output.indexOf("dependency-elider:0.1.0-SNAPSHOT:elide (run-elider)")),
         () ->
             assertThat(output)
-                .contains("Cannot safely complete trimming analysis")
-                .contains("linking-api-1.0.0.jar")
+                .contains("elide.banishedDependencies conflicts with")
+                .contains("io.github.spockz.elider.test:linking-api:jar:1.0.0")
                 .contains(
-                    "fixture/link/Link -> class "
-                        + "io/github/spockz/elider/fixture/drop/DropEntry"),
+                    "no retained provider for class"
+                        + " io.github.spockz.elider.fixture.drop.DropEntry"),
         () ->
             assertTrue(
                 Files.isRegularFile(fixture.consumer().resolve("target/classes/app/App.class")),

@@ -114,12 +114,42 @@ public final class TrimAnalysisSession {
       final Collection<String> unchangedPassThroughClassNames,
       final boolean allowModularCandidate)
       throws IOException {
+    return prepareWithUnchangedPassThroughLibraries(
+        candidateJar,
+        libraryClassPath,
+        jdkClassTable,
+        unchangedPassThroughClassNames,
+        allowModularCandidate,
+        false);
+  }
+
+  /**
+   * Prepares candidate closure; optionally tolerating unresolved program references.
+   *
+   * @param candidateJar candidate archive under analysis
+   * @param libraryClassPath resolved compile dependencies
+   * @param jdkClassTable ProGuard {@code LibraryClass} API definitions
+   * @param unchangedPassThroughClassNames classes passed through unchanged
+   * @param allowModularCandidate whether to allow modular candidates in classpath-only mode
+   * @param tolerateUnresolvedProgramReferences whether to tolerate references absent from the
+   *     classpath
+   * @return prepared analysis
+   * @throws IOException on read or analysis error
+   */
+  public DependencyJarTrimmer.PreparedAnalysis prepareWithUnchangedPassThroughLibraries(
+      final Path candidateJar,
+      final Collection<Path> libraryClassPath,
+      final ClassPool jdkClassTable,
+      final Collection<String> unchangedPassThroughClassNames,
+      final boolean allowModularCandidate,
+      final boolean tolerateUnresolvedProgramReferences)
+      throws IOException {
     // Copy API signatures now so later caller mutations cannot change this context.
     return trimmer.prepareInternal(
         candidateJar,
         libraryClassPath,
         jdkClassTable,
-        false,
+        tolerateUnresolvedProgramReferences,
         normalizeClassNames(unchangedPassThroughClassNames),
         (path, candidate) -> archives.read(path, candidate, allowModularCandidate));
   }
@@ -271,11 +301,27 @@ public final class TrimAnalysisSession {
         final Collection<String> unchangedPassThroughClassNames,
         final boolean allowModularCandidate)
         throws IOException {
+      return prepareWithUnchangedPassThroughLibraries(
+          candidateJar,
+          libraryClassPath,
+          unchangedPassThroughClassNames,
+          allowModularCandidate,
+          false);
+    }
+
+    /** Prepares candidate closure using the shared tier index. */
+    public DependencyJarTrimmer.PreparedAnalysis prepareWithUnchangedPassThroughLibraries(
+        final Path candidateJar,
+        final Collection<Path> libraryClassPath,
+        final Collection<String> unchangedPassThroughClassNames,
+        final boolean allowModularCandidate,
+        final boolean tolerateUnresolvedProgramReferences)
+        throws IOException {
       return session.prepareWithSharedTier(
           candidateJar,
           libraryClassPath,
           jdkClassTable,
-          false,
+          tolerateUnresolvedProgramReferences,
           normalizeClassNames(unchangedPassThroughClassNames),
           (path, candidate) -> session.readArchive(path, candidate, allowModularCandidate),
           this::getOrBuild);

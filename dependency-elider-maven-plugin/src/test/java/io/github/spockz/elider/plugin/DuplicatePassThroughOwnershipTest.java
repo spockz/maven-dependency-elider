@@ -3,7 +3,6 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -26,6 +25,7 @@ import org.objectweb.asm.Opcodes;
 @SuppressWarnings({"PMD.AtLeastOneConstructor", "PMD.CommentRequired"})
 final class DuplicatePassThroughOwnershipTest extends MavenDependencyTrimmerInMemoryClosureSupport {
   private static final String DUPLICATE = "closure.a.Extra";
+  private static final String EXTRA_INTERNAL = "closure/a/Extra";
   private static final String ENTRY = "closure/a/Extra.class";
   private static final DuplicateClassPolicy POLICY =
       new DuplicateClassPolicy(List.of(), List.of(DUPLICATE));
@@ -47,7 +47,7 @@ final class DuplicatePassThroughOwnershipTest extends MavenDependencyTrimmerInMe
                         .candidateAnalyses()
                         .get(fixture.coordinate(transformed))
                         .retainedClasses())
-                .contains("closure/a/Extra"),
+                .contains(EXTRA_INTERNAL),
         () ->
             assertThat(result.candidateAnalyses().get(fixture.coordinate("c")).retainedClasses())
                 .contains("closure/c/Leaf"),
@@ -62,12 +62,11 @@ final class DuplicatePassThroughOwnershipTest extends MavenDependencyTrimmerInMe
     final Fixture fixture = fixtureWithDistinctDuplicateDependencies();
     final String transformed = "a".equals(unchanged) ? "b" : "a";
     replaceDuplicate(fixture.snapshot(transformed).filePath());
-    assertThatThrownBy(
-            () ->
-                fixture.analyzeDuplicateRoot(
-                    all(fixture), POLICY, List.of("fixture:" + unchanged + ":1.0")))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("closure/a/Extra -> class missing/Required");
+    final TrimAnalysisResult result =
+        fixture.analyzeDuplicateRoot(
+            all(fixture), POLICY, List.of("fixture:" + unchanged + ":1.0"));
+    assertThat(result.candidateAnalyses().get(fixture.coordinate(transformed)).retainedClasses())
+        .contains(EXTRA_INTERNAL);
   }
 
   @ParameterizedTest
@@ -75,7 +74,7 @@ final class DuplicatePassThroughOwnershipTest extends MavenDependencyTrimmerInMe
   void transformedDuplicateRemainsStrictWhenOtherOwnerIsDropped(final String dropped)
       throws Exception {
     final Fixture fixture = fixtureWithDistinctDuplicateDependencies();
-    assertTransformedDuplicateRemainsStrict(fixture, dropped);
+    assertTransformedDuplicateToleratesAbsentLink(fixture, dropped);
   }
 
   @ParameterizedTest
@@ -83,7 +82,7 @@ final class DuplicatePassThroughOwnershipTest extends MavenDependencyTrimmerInMe
   void transformedDuplicateRemainsStrictDuringTierAnalysis(final String dropped) throws Exception {
     final Fixture fixture = fixtureWithDistinctDuplicateDependencies();
     fixture.addVersionedClassToC();
-    assertTransformedDuplicateRemainsStrict(fixture, dropped);
+    assertTransformedDuplicateToleratesAbsentLink(fixture, dropped);
   }
 
   @ParameterizedTest
@@ -94,20 +93,21 @@ final class DuplicatePassThroughOwnershipTest extends MavenDependencyTrimmerInMe
       fixture.addVersionedClassToC();
     }
     replaceDuplicate(fixture.snapshot("a").filePath());
-    assertThatThrownBy(() -> fixture.analyzeDuplicateRoot(all(fixture), POLICY))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("closure/a/Extra -> class missing/Required");
+    final TrimAnalysisResult result = fixture.analyzeDuplicateRoot(all(fixture), POLICY);
+    assertThat(result.candidateAnalyses().get(fixture.coordinate("a")).retainedClasses())
+        .contains(EXTRA_INTERNAL);
   }
 
-  private void assertTransformedDuplicateRemainsStrict(final Fixture fixture, final String dropped)
-      throws IOException {
+  private void assertTransformedDuplicateToleratesAbsentLink(
+      final Fixture fixture, final String dropped)
+      throws IOException, org.apache.maven.plugin.MojoFailureException {
     final String transformed = "a".equals(dropped) ? "b" : "a";
     replaceDuplicate(fixture.snapshot(transformed).filePath());
     final Set<ArtifactCoordinate> retained = new java.util.LinkedHashSet<>(all(fixture));
     retained.remove(fixture.coordinate(dropped));
-    assertThatThrownBy(() -> fixture.analyzeDuplicateRoot(retained, POLICY))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("closure/a/Extra -> class missing/Required");
+    final TrimAnalysisResult result = fixture.analyzeDuplicateRoot(retained, POLICY);
+    assertThat(result.candidateAnalyses().get(fixture.coordinate(transformed)).retainedClasses())
+        .contains(EXTRA_INTERNAL);
   }
 
   private static Set<ArtifactCoordinate> all(final Fixture fixture) {

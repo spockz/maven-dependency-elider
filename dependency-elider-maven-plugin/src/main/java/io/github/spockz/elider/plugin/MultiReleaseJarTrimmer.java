@@ -24,6 +24,39 @@ final class MultiReleaseJarTrimmer {
       final Map<TrimArtifactRootKey, Set<String>> discoveredRoots,
       final Set<ArtifactCoordinate> forcedUnchanged)
       throws IOException, MojoFailureException {
+    if (!request.policy().trimPassThroughOnUnresolved()) {
+      return analyzeInMemoryPass(request, discoveredRoots, forcedUnchanged);
+    }
+    final Set<ArtifactCoordinate> effectiveForcedUnchanged =
+        new java.util.LinkedHashSet<>(forcedUnchanged);
+    while (true) {
+      try {
+        return analyzeInMemoryPass(request, discoveredRoots, Set.copyOf(effectiveForcedUnchanged));
+      } catch (final IOException exception) {
+        final java.util.Optional<ArtifactCoordinate> failed = unresolvedCandidate(exception);
+        if (failed.isEmpty() || !effectiveForcedUnchanged.add(failed.orElseThrow())) {
+          throw exception;
+        }
+      }
+    }
+  }
+
+  private static java.util.Optional<ArtifactCoordinate> unresolvedCandidate(final Throwable error) {
+    Throwable cursor = error;
+    while (cursor != null) {
+      if (cursor instanceof TierClosureAnalyzer.CandidateUnresolvedReferenceException candidate) {
+        return java.util.Optional.of(candidate.coordinate());
+      }
+      cursor = cursor.getCause();
+    }
+    return java.util.Optional.empty();
+  }
+
+  private static TrimAnalysisResult analyzeInMemoryPass(
+      final TrimRequest request,
+      final Map<TrimArtifactRootKey, Set<String>> discoveredRoots,
+      final Set<ArtifactCoordinate> forcedUnchanged)
+      throws IOException, MojoFailureException {
     final TrimPassThroughPlan passThrough = TrimPassThroughPlanner.passThroughPlan(request);
     final TieringDecision decision = tieringDecision(request, passThrough, forcedUnchanged);
     final TrimExecutionEnvironment executionEnvironment =

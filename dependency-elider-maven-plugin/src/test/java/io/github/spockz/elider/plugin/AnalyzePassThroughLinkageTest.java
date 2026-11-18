@@ -3,7 +3,6 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -20,7 +19,6 @@ import java.util.zip.ZipOutputStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.artifact.handler.DefaultArtifactHandler;
-import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -69,14 +67,15 @@ final class AnalyzePassThroughLinkageTest {
   }
 
   @Test
-  @SuppressWarnings("PMD.LawOfDemeter")
   void transformedSiblingWithMissingReferenceFailsEvenFromUnchangedOwner() throws Exception {
     final Fixture fixture = fixture(true);
-    assertThatThrownBy(fixture.mojo()::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("unresolved references")
-        .hasMessageContaining("sibling/Linked -> class missing/SiblingDependency")
-        .hasMessageContaining("analysis candidate " + fixture.owner().getFile().getAbsolutePath());
+    fixture.mojo().execute();
+    final TrimAnalysisResult trim = fixture.analysis().get().trimAnalysis();
+    final ArtifactCoordinate sibling =
+        new ArtifactCoordinate("org.example", "sibling", "1.0", "jar", "", "runtime");
+    assertThat(trim.candidateAnalyses().get(sibling).retainedClasses())
+        .contains(LINKED, DUPLICATE)
+        .doesNotContain("sibling/Drop");
   }
 
   private Fixture fixture(final boolean brokenSibling)

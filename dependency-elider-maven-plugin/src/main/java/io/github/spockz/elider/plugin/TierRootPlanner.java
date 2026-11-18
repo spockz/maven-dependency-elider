@@ -48,7 +48,8 @@ final class TierRootPlanner {
         unchangedPrograms.stream()
             .filter(
                 snapshot ->
-                    TrimPassThroughPlanner.unchangedScope(snapshot.coordinate())
+                    !operation.request().policy().trimEnabled()
+                        || TrimPassThroughPlanner.unchangedScope(snapshot.coordinate())
                         || retainJarOwners.contains(snapshot.coordinate()))
             .collect(java.util.stream.Collectors.toUnmodifiableSet());
     final Map<ElisionAnalysisModel.ArtifactSnapshot, Set<String>> roots =
@@ -135,6 +136,9 @@ final class TierRootPlanner {
       final TrimPassThroughPlan passThrough,
       final List<TierContext> projections,
       final Map<ElisionAnalysisModel.ArtifactSnapshot, MultiReleaseCandidateInfo> multiRelease) {
+    if (!operation.request().policy().trimEnabled()) {
+      return List.of();
+    }
     final Set<ArtifactCoordinate> retainJarOwners = retainJarDuplicateOwners(projections);
     return passThrough.retained().stream()
         .filter(snapshot -> !operation.forcedUnchanged().contains(snapshot.coordinate()))

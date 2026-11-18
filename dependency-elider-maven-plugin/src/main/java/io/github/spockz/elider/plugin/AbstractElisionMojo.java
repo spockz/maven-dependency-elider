@@ -81,6 +81,10 @@ abstract class AbstractElisionMojo extends PluginCacheMojoSupport {
   @Parameter(property = "elide.trimSkipArtifacts")
   protected List<String> trimSkipArtifacts;
 
+  /** Demotes candidates with unresolved references to pass-through. */
+  @Parameter(property = "elide.trimPassThroughOnUnresolved", defaultValue = DEFAULT_FALSE)
+  protected boolean trimPassThroughOnUnresolved;
+
   /** Class-name patterns whose duplicate owners are retained whole. */
   @Parameter(property = "elide.retainDuplicateClassOwners")
   protected List<String> retainDuplicateClassOwners;
@@ -203,7 +207,8 @@ abstract class AbstractElisionMojo extends PluginCacheMojoSupport {
         failOnUnsupportedModuleInfo,
         trimWorkers,
         mrjarStrategy,
-        new DuplicateClassPolicy(retainDuplicateClassOwners, trimDuplicateClassOwners));
+        new DuplicateClassPolicy(retainDuplicateClassOwners, trimDuplicateClassOwners),
+        trimPassThroughOnUnresolved);
   }
 
   /** Returns whether execution runs in a trusted process-classes context. */

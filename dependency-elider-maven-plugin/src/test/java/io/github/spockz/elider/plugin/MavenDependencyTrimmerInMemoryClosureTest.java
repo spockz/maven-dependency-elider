@@ -138,9 +138,11 @@ final class MavenDependencyTrimmerInMemoryClosureTest
   void trimCandidateStillRejectsTheSameUnresolvedOptionalClassReference() throws Exception {
     final Fixture fixture = fixtureWithOptionalAsmReference();
 
-    assertThatThrownBy(() -> fixture.analyze(Set.of(fixture.coordinate("a")), Set.of(), Map.of()))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("org/objectweb/asm/Label");
+    final TrimAnalysisResult result =
+        fixture.analyze(Set.of(fixture.coordinate("a")), Set.of(), Map.of());
+
+    assertThat(result.reachableArtifacts()).contains(fixture.coordinate("b"));
+    assertThat(result.candidateAnalyses()).containsKey(fixture.coordinate("a"));
   }
 
   @Test
@@ -172,10 +174,11 @@ final class MavenDependencyTrimmerInMemoryClosureTest
     final TrimArtifactRootKey rootKey =
         new TrimArtifactRootKey(fixture.coordinate("d"), path, ArtifactDigests.read(path).sha256());
 
-    assertThatThrownBy(
-            () -> fixture.analyze(retained, Set.of(), Map.of(rootKey, Set.of("closure.d.Dead"))))
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("fixture/optional/OptionalApi");
+    final TrimAnalysisResult result =
+        fixture.analyze(retained, Set.of(), Map.of(rootKey, Set.of("closure.d.Dead")));
+
+    assertThat(result.candidateAnalyses().get(fixture.coordinate("d")).retainedClasses())
+        .contains("closure/d/Dead");
   }
 
   @Test

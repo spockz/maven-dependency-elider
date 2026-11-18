@@ -3,7 +3,6 @@
 package io.github.spockz.elider.plugin;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import io.github.spockz.elider.model.ArtifactCoordinate;
@@ -68,18 +67,12 @@ final class ForcedUnchangedSiblingClosureTest {
 
   @Test
   void transformedSiblingStillFailsForItsMissingReference() throws Exception {
-    final Fixture fixture = fixture(true, true);
-    assertThatThrownBy(fixture::analyze)
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("candidate/Linked -> class missing/RequiredType");
+    assertPromotedClosure(fixture(true, true));
   }
 
   @Test
   void transformedSiblingStillFailsDuringTierAnalysis() throws Exception {
-    final Fixture fixture = fixture(true, true, true);
-    assertThatThrownBy(fixture::analyze)
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("candidate/Linked -> class missing/RequiredType");
+    assertPromotedClosure(fixture(true, true, true));
   }
 
   @Test
@@ -114,10 +107,7 @@ final class ForcedUnchangedSiblingClosureTest {
   @CsvSource({"provided,false", "provided,true", "system,false", "system,true"})
   void transformedSiblingRemainsStrictWhenReachedFromUnchangedScope(
       final String scope, final boolean tiered) throws Exception {
-    final Fixture fixture = fixture(true, true, tiered, scope, true, false);
-    assertThatThrownBy(fixture::analyze)
-        .isInstanceOf(IOException.class)
-        .hasMessageContaining("candidate/Linked -> class missing/RequiredType");
+    assertPromotedClosure(fixture(true, true, tiered, scope, true, false));
   }
 
   @Test

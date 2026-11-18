@@ -45,7 +45,7 @@ final class ElisionReachabilityEngine {
     if (noTrimResult.isPresent()) {
       return noTrimResult.orElseThrow();
     }
-    final Set<String> closureRoots = closureRoots(prepared, binding, effectiveDecision);
+    final Set<String> closureRoots = prepared.sourceRequiredClasses();
     Map<TrimArtifactRootKey, Set<String>> discoveredRoots = Map.of();
     TrimAnalysisResult analysis;
     while (true) {
@@ -130,31 +130,6 @@ final class ElisionReachabilityEngine {
       throws IOException, MojoFailureException {
     return MavenEffectiveAnalysisReport.create(
         effective, MavenDependencyTrimmer.stageEffectiveOutputs(effective));
-  }
-
-  private static Set<String> closureRoots(
-      final PreparedAnalysis prepared,
-      final MavenElisionGraphBinding.Result binding,
-      final ElisionDecision decision) {
-    final Set<String> roots = new LinkedHashSet<>(prepared.sourceRequiredClasses());
-    if (!prepared.options().trim().enabled()
-        && binding.pair() != null
-        && !decision.elidedArtifacts().isEmpty()) {
-      prepared
-          .index()
-          .classesByArtifact()
-          .forEach(
-              (artifact, classes) -> {
-                final ArtifactCoordinate coordinate = artifact.coordinate();
-                if (decision.retainedArtifacts().contains(coordinate)
-                    && MavenDependencyTrimmer.JAR_TYPE.equals(coordinate.type())
-                    && MavenDependencyTrimmer.ANALYSIS_LIBRARY_SCOPES.contains(
-                        coordinate.scope())) {
-                  roots.addAll(classes);
-                }
-              });
-    }
-    return Set.copyOf(roots);
   }
 
   private static ResolverArtifactGraphProjection projection(

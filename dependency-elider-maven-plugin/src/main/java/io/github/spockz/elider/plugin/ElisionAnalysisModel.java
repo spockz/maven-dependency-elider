@@ -154,11 +154,35 @@ public final class ElisionAnalysisModel {
       int workers,
       String mrjarStrategy,
       PluginCacheProducerIdentityResolver.Resolution cacheProducerResolution,
-      DuplicateClassPolicy duplicateClasses) {
+      DuplicateClassPolicy duplicateClasses,
+      boolean passThroughOnUnresolved) {
     /** Validates and normalizes {@code TrimOptions}. */
     public TrimOptions {
       java.util.Objects.requireNonNull(cacheProducerResolution, "cacheProducerResolution");
       java.util.Objects.requireNonNull(duplicateClasses, "duplicateClasses");
+    }
+
+    /* default */ TrimOptions(
+        final boolean enabled,
+        final List<String> explicitRoots,
+        final boolean failOnUnsupportedMultiRelease,
+        final List<String> passThroughArtifacts,
+        final boolean failOnUnsupportedModuleInfo,
+        final int workers,
+        final String mrjarStrategy,
+        final PluginCacheProducerIdentityResolver.Resolution cacheProducerResolution,
+        final DuplicateClassPolicy duplicateClasses) {
+      this(
+          enabled,
+          explicitRoots,
+          failOnUnsupportedMultiRelease,
+          passThroughArtifacts,
+          failOnUnsupportedModuleInfo,
+          workers,
+          mrjarStrategy,
+          cacheProducerResolution,
+          duplicateClasses,
+          false);
     }
 
     /* default */ TrimOptions(

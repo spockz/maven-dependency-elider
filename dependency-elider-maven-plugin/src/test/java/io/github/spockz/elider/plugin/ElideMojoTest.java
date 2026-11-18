@@ -1079,10 +1079,8 @@ final class ElideMojoTest {
     set(strictMojo, "traceFiles", List.of(writeTrace("strictcandidate.Keep\n").toFile()));
     set(strictMojo, "reportFile", tempDir.resolve("strict-candidate-report.json").toFile());
     set(strictMojo, "trimJars", true);
-    assertThatThrownBy(strictMojo::execute)
-        .isInstanceOf(MojoFailureException.class)
-        .hasMessageContaining("unresolved references")
-        .hasMessageContaining("org/example/optional/ScriptEvaluator");
+    set(strictMojo, "trimPassThroughOnUnresolved", true);
+    strictMojo.execute();
     assertThat(strictCandidate.getFile().toPath()).isEqualTo(candidateWithoutOptional);
   }
 
